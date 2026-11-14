@@ -999,8 +999,8 @@ describe("AUTH-02/ORG-01: run-scoped agent tokens on org routes", () => {
       prompt: "exercise org reads with the run Okou token",
     });
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.executionInput(created.runId);
-    const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+    const execution = await runs.executionInput(created.runId);
+    const okouToken = execution.platformEnvironment.OKOU_TOKEN;
     if (!okouToken) {
       throw new Error(
         "Expected claim.platformEnvironment.OKOU_TOKEN to carry the run-scoped Okou token",

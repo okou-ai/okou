@@ -586,7 +586,7 @@ export const rustConstantBindings = [
     value: rustString(SESSION_HISTORY_ENCODING_GZIP),
     rustDoc: [
       "Wire and blob metadata value for gzip-compressed resume session history.",
-      "Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.",
+      "Rust and TypeScript components use this shared contract value when negotiating session history uploads and execution publications.",
     ],
   },
   {
@@ -595,7 +595,7 @@ export const rustConstantBindings = [
     value: rustString(SESSION_HISTORY_ENCODING_IDENTITY),
     rustDoc: [
       "Wire and blob metadata value for uncompressed resume session history.",
-      "Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.",
+      "Rust and TypeScript components use this shared contract value when negotiating session history uploads and execution publications.",
     ],
   },
   {
@@ -604,7 +604,7 @@ export const rustConstantBindings = [
     value: rustString(SESSION_HISTORY_ENCODING_ZSTD),
     rustDoc: [
       "Wire and blob metadata value for zstd-compressed resume session history.",
-      "Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.",
+      "Rust and TypeScript components use this shared contract value when negotiating session history uploads and execution publications.",
     ],
   },
   {

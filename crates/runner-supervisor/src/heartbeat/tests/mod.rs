@@ -51,7 +51,7 @@ impl runner_provider::LocalJobSource for RecordingProvider {
     async fn claim(
         &self,
         _candidate: runner_provider::JobCandidate,
-    ) -> Option<runner_provider::ClaimedJob> {
+    ) -> Option<runner_provider::ExecutionJob> {
         None
     }
 }
@@ -866,19 +866,19 @@ async fn home_cache_states_filter_claimed_reuse_key() {
     tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
     let cache = HomeImageCache::new(paths.clone());
     seed_home_cache_state(&cache, &paths, "sess-cache", "2026-06-01T00:00:00.000Z").await;
-    seed_home_cache_state(&cache, &paths, "sess-claimed", "2026-06-01T00:00:01.000Z").await;
+    seed_home_cache_state(&cache, &paths, "sess-job", "2026-06-01T00:00:01.000Z").await;
     let active_runs = test_active_runs();
     let profiles = test_profiles();
     let cache_states = home_cache_states(Some(&cache), &profiles).await;
-    let states = filter_current_held_home_states(cache_states, &active_runs, Some("sess-claimed"));
+    let states = filter_current_held_home_states(cache_states, &active_runs, Some("sess-job"));
 
     assert!(
         states.iter().any(|state| state.reuse_key == "sess-cache"),
         "unrelated home cache should remain advertised"
     );
     assert!(
-        !states.iter().any(|state| state.reuse_key == "sess-claimed"),
-        "currently claimed reuse key should be filtered until the run finishes"
+        !states.iter().any(|state| state.reuse_key == "sess-job"),
+        "currently job reuse key should be filtered until the run finishes"
     );
 }
 
@@ -988,7 +988,7 @@ fn held_sandbox_states_filter_active_reuse_keys() {
     ];
 
     let filtered =
-        filter_current_held_sandbox_states(states.clone(), &active_runs, Some("thread-claimed"));
+        filter_current_held_sandbox_states(states.clone(), &active_runs, Some("thread-job"));
 
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].reuse_key, "thread-held");

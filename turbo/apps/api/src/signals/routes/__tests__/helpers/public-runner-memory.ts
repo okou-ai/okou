@@ -37,7 +37,7 @@ export function memoryFilesArchive(
   return gzipSync(Buffer.concat(blocks));
 }
 
-/** Ordinary storage owners originate in paid onboarding and real Runner claims. */
+/** Ordinary storage owners originate in paid onboarding and dispatched Runs. */
 export function createPublicRunnerMemory(
   context: TestContext,
   options: ApiTestUserOptions = {},
@@ -104,7 +104,7 @@ export function createPublicRunnerMemory(
         ? bdd.user({ orgId: fixture.actor.orgId, orgRole: "org:admin" })
         : fixture.actor;
     // Only an admin can initialize the organization's default Agent. The
-    // member remains the owner of the Memory, Agent and Runner claims below.
+    // member remains the owner of the Memory, Agent and executions below.
     await fixture.fund(admin);
     await api.ensurePersonalSubscriptionModel(fixture.actor, {
       model: "claude-fable-5-1",
@@ -134,9 +134,9 @@ export function createPublicRunnerMemory(
     fixture.registerRun(run.runId);
     return run;
   }
-  async function claimQueued(run: Awaited<ReturnType<typeof enqueue>>) {
+  async function readExecution(run: Awaited<ReturnType<typeof enqueue>>) {
     const execution = await api.executionInput(run.runId);
-    fixture.registerClaim(run.runId, execution.sandboxToken);
+    fixture.registerExecution(run.runId, execution.sandboxToken);
     const manifest = expectCanonicalStorageManifest(execution.storageManifest);
     const memories =
       manifest?.storageMounts.filter((mount) => {
@@ -152,15 +152,15 @@ export function createPublicRunnerMemory(
       headers: { authorization: `Bearer ${execution.sandboxToken}` },
     };
   }
-  async function claim(
+  async function startExecution(
     agentId: string,
     prompt: string,
     model = "claude-fable-5-1",
   ) {
-    return await claimQueued(await enqueue(agentId, prompt, model));
+    return await readExecution(await enqueue(agentId, prompt, model));
   }
   async function publish(
-    claimed: Awaited<ReturnType<typeof claim>>,
+    execution: Awaited<ReturnType<typeof startExecution>>,
     files: readonly { path: string; content: string }[],
   ) {
     const entries = files.map((file) => {
@@ -168,12 +168,12 @@ export function createPublicRunnerMemory(
     });
     const prepared = await webhooks.requestAgentStoragePrepare(
       {
-        runId: claimed.run.runId,
-        storageId: claimed.memory.storageId,
-        parentVersionId: claimed.memory.versionId,
+        runId: execution.run.runId,
+        storageId: execution.memory.storageId,
+        parentVersionId: execution.memory.versionId,
         files: entries,
       },
-      claimed.headers,
+      execution.headers,
       [200],
     );
     if (prepared.status !== 200 || !prepared.body.uploads) {
@@ -192,45 +192,45 @@ export function createPublicRunnerMemory(
     );
     await webhooks.requestAgentStorageCommit(
       {
-        runId: claimed.run.runId,
-        storageId: claimed.memory.storageId,
-        parentVersionId: claimed.memory.versionId,
+        runId: execution.run.runId,
+        storageId: execution.memory.storageId,
+        parentVersionId: execution.memory.versionId,
         versionId: prepared.body.versionId,
         files: entries,
       },
-      claimed.headers,
+      execution.headers,
       [200],
     );
     await webhooks.requestAgentComplete(
       {
-        runId: claimed.run.runId,
+        runId: execution.run.runId,
         exitCode: 0,
         completion: {
           cliAgentType: "claude-code",
-          cliAgentSessionId: `memory-writer-${claimed.run.runId}`,
+          cliAgentSessionId: `memory-writer-${execution.run.runId}`,
           cliAgentSessionHistoryDisposition: "native_only",
           storageOutputs: [
             {
-              name: claimed.memory.name,
-              mountPath: claimed.memory.mountPath,
+              name: execution.memory.name,
+              mountPath: execution.memory.mountPath,
               version: prepared.body.versionId,
-              ...(claimed.memory.missingRootPolicy === undefined
+              ...(execution.memory.missingRootPolicy === undefined
                 ? {}
-                : { missingRootPolicy: claimed.memory.missingRootPolicy }),
+                : { missingRootPolicy: execution.memory.missingRootPolicy }),
             },
           ],
         },
       },
-      claimed.headers,
+      execution.headers,
       [200],
     );
     return prepared.body.versionId;
   }
-  async function cancel(claimed: Awaited<ReturnType<typeof claim>>) {
-    await api.requestCancelRun(fixture.actor, claimed.run.runId, [200]);
+  async function cancel(execution: Awaited<ReturnType<typeof startExecution>>) {
+    await api.requestCancelRun(fixture.actor, execution.run.runId, [200]);
     await webhooks.requestAgentComplete(
-      { runId: claimed.run.runId, exitCode: 1, error: "Owned Run cancelled" },
-      claimed.headers,
+      { runId: execution.run.runId, exitCode: 1, error: "Owned Run cancelled" },
+      execution.headers,
       [200],
     );
   }
@@ -240,9 +240,9 @@ export function createPublicRunnerMemory(
     bdd,
     webhooks,
     initializeNative,
-    claim,
+    startExecution,
     enqueue,
-    claimQueued,
+    readExecution,
     publish,
     cancel,
     objects,

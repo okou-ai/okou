@@ -62,7 +62,7 @@ const {
   chatCallbacks,
   entitledChatActor: createEntitledChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   waitForThreadMessages,
   waitForRunUserMessage,
   completeChatRunOk,
@@ -1116,7 +1116,7 @@ describe("CHAT-02: generation templates and attachments", () => {
   }, 90_000);
 
   it("is one-shot: a follow-up without re-attaching the style gets no template context", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
     const style = ILLUSTRATION_TEMPLATE_ITEMS[0];
     if (!style) {
       throw new Error("Expected a registered illustration style");
@@ -1144,9 +1144,9 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(firstPrompt).toContain("--compiled-prompt");
     expect(firstPrompt).toContain(style.illustrationStyleId);
 
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    const firstExecution = await runExecution(first.runId);
     chatCallbacks.mockChatOutputEvents([assistantEvent(0, "here is a fox")]);
-    await completeChatRunOk(first.runId, firstClaim.sandboxHeaders, {
+    await completeChatRunOk(first.runId, firstExecution.sandboxHeaders, {
       lastEventSequence: 0,
     });
     await waitForThreadMessages(actor, first.threadId, (items) => {
@@ -2450,13 +2450,13 @@ describe("CHAT-02: generation templates and attachments", () => {
 
 describe("CHAT-02: queued attachments on auto-send", () => {
   it("preserves structured part order when a queued message is promoted", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
 
     const anchor = await sendChatRun(actor, {
       agentId,
       prompt: "anchor before the structured queue item",
     });
-    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
+    const anchorExecution = await runExecution(anchor.runId);
 
     const fileId = randomUUID();
     const queuedId = randomUUID();
@@ -2495,7 +2495,7 @@ describe("CHAT-02: queued attachments on auto-send", () => {
     );
 
     chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    await completeChatRunOk(anchor.runId, anchorExecution.sandboxHeaders);
     await flushWaitUntilForTest();
     const messages = await waitForThreadMessages(
       actor,
@@ -2541,13 +2541,13 @@ describe("CHAT-02: queued attachments on auto-send", () => {
   }, 90_000);
 
   it("carries queued attachments into the auto-sent follow-up run", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
 
     const anchor = await sendChatRun(actor, {
       agentId,
       prompt: "anchor before the queued attachment",
     });
-    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
+    const anchorExecution = await runExecution(anchor.runId);
 
     const fileId = randomUUID();
     const secondFileId = randomUUID();
@@ -2588,7 +2588,7 @@ describe("CHAT-02: queued attachments on auto-send", () => {
     // Completing the anchor run promotes the queued message into a fresh
     // run whose prompt carries the resolved attachment references.
     chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    await completeChatRunOk(anchor.runId, anchorExecution.sandboxHeaders);
     await flushWaitUntilForTest();
     const messages = await waitForThreadMessages(
       actor,

@@ -155,7 +155,7 @@ interface ResolvedExecutionStorageInput {
 }
 
 /** A selected version can be removed by its owner after Run admission. */
-export class ExecutionStorageUnavailableError extends Error {
+class ExecutionStorageUnavailableError extends Error {
   constructor() {
     super("Accepted execution storage is unavailable");
   }

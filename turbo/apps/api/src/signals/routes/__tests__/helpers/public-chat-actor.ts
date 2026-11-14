@@ -143,7 +143,7 @@ export async function publicChatActor(
   return {
     ...entitled,
     run,
-    rememberClaim: owner.rememberClaim,
+    rememberExecution: owner.rememberExecution,
     ownsFeatureSwitches() {
       ownsFeatures = true;
     },
@@ -168,7 +168,7 @@ export async function publicChatActor(
           queueActor,
           body,
           (blocker) => {
-            owner.rememberClaim(blocker.runId, blocker.sandboxToken);
+            owner.rememberExecution(blocker.runId, blocker.sandboxToken);
             waitingThreads.add(blocker.threadId);
           },
         );
@@ -176,8 +176,10 @@ export async function publicChatActor(
           launch() {
             return run(async () => {
               const launched = await waiting.launch();
-              const claim = await fixture.api.executionInput(launched.runId);
-              owner.rememberClaim(launched.runId, claim.sandboxToken);
+              const execution = await fixture.api.executionInput(
+                launched.runId,
+              );
+              owner.rememberExecution(launched.runId, execution.sandboxToken);
               waitingThreads.delete(waiting.blocker.threadId);
               return launched;
             });
@@ -199,20 +201,23 @@ export async function publicChatActor(
         return fixture.requestSendEventWithBearer(...parameters);
       });
     },
-    claimRunnerRun: (
+    executionInput: (
       ...parameters: Parameters<typeof fixture.api.executionInput>
     ) => {
       return run(async () => {
-        const claim = await fixture.api.executionInput(...parameters);
-        owner.rememberClaim(parameters[0], claim.sandboxToken);
-        return claim;
+        const execution = await fixture.api.executionInput(...parameters);
+        owner.rememberExecution(parameters[0], execution.sandboxToken);
+        return execution;
       });
     },
-    claimChatRun: (...parameters: Parameters<typeof fixture.claimChatRun>) => {
+    runExecution: (...parameters: Parameters<typeof fixture.runExecution>) => {
       return run(async () => {
-        const claimed = await fixture.claimChatRun(...parameters);
-        owner.rememberClaim(parameters[1], claimed.claim.sandboxToken);
-        return claimed;
+        const execution = await fixture.runExecution(...parameters);
+        owner.rememberExecution(
+          parameters[0],
+          execution.execution.sandboxToken,
+        );
+        return execution;
       });
     },
   };

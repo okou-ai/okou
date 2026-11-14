@@ -48,7 +48,7 @@ function availableModel(
   });
 }
 
-type Claim = Awaited<ReturnType<typeof runs.executionInput>>;
+type ExecutionInput = Awaited<ReturnType<typeof runs.executionInput>>;
 
 /**
  * Sends a prompt, lets the background pick run, and returns the rejection the
@@ -183,7 +183,7 @@ async function fixture(type: SubscriptionType, withUpstreamIdentity = true) {
     });
     return sent.runId;
   };
-  const claim = async (runId: string) => {
+  const execution = async (runId: string) => {
     const state = await runs.readRun(actor, runId);
     expect(state.status, JSON.stringify(state)).toBe("running");
     await runs.heartbeatRunner(runnerGroup);
@@ -194,15 +194,15 @@ async function fixture(type: SubscriptionType, withUpstreamIdentity = true) {
     connected,
     subscription,
     start,
-    claim,
+    execution,
     agentId: agent.agentId,
     type,
     model,
   };
 }
 
-function authBody(claim: Claim, type: SubscriptionType) {
-  if (!claim.encryptedSecrets) {
+function authBody(execution: ExecutionInput, type: SubscriptionType) {
+  if (!execution.encryptedSecrets) {
     throw new Error("Expected runtime credential envelope");
   }
   const accessKey =
@@ -210,22 +210,23 @@ function authBody(claim: Claim, type: SubscriptionType) {
       ? "CHATGPT_ACCESS_TOKEN"
       : "CLAUDE_CODE_OAUTH_TOKEN";
   return {
-    encryptedSecrets: claim.encryptedSecrets,
+    encryptedSecrets: execution.encryptedSecrets,
     authHeaders: {
       Authorization: `Bearer ${secretTemplate(accessKey)}`,
       ...(type === "codex-oauth-token"
         ? { "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID") }
         : {}),
     },
-    secretConnectorMap: claim.secretConnectorMap ?? undefined,
-    secretConnectorMetadataMap: claim.secretConnectorMetadataMap ?? undefined,
+    secretConnectorMap: execution.secretConnectorMap ?? undefined,
+    secretConnectorMetadataMap:
+      execution.secretConnectorMetadataMap ?? undefined,
   };
 }
 
-async function resolve(claim: Claim, type: SubscriptionType) {
+async function resolve(execution: ExecutionInput, type: SubscriptionType) {
   const response = await firewall.requestFirewallAuth(
-    { authorization: `Bearer ${claim.sandboxToken}` },
-    authBody(claim, type),
+    { authorization: `Bearer ${execution.sandboxToken}` },
+    authBody(execution, type),
     [200],
   );
   if (response.status !== 200) {
@@ -234,17 +235,17 @@ async function resolve(claim: Claim, type: SubscriptionType) {
   return response.body.headers;
 }
 
-function accountId(claim: Claim, type: SubscriptionType) {
+function accountId(execution: ExecutionInput, type: SubscriptionType) {
   const key =
     type === "codex-oauth-token"
       ? "CHATGPT_ACCESS_TOKEN"
       : "CLAUDE_CODE_OAUTH_TOKEN";
-  const id = claim.secretConnectorMetadataMap?.[key]?.sourceId;
+  const id = execution.secretConnectorMetadataMap?.[key]?.sourceId;
   if (!id) {
     throw new Error("Expected an exact subscription sourceId");
   }
   for (const metadata of Object.values(
-    claim.secretConnectorMetadataMap ?? {},
+    execution.secretConnectorMetadataMap ?? {},
   )) {
     if (metadata.sourceType === "model-provider") {
       expect(metadata.sourceId).toBe(id);
@@ -256,7 +257,7 @@ function accountId(claim: Claim, type: SubscriptionType) {
 async function finish(
   actor: ApiTestUser,
   runId: string,
-  claim: Claim,
+  execution: ExecutionInput,
   status: Exclude<TestTerminalRunStatus, "timeout">,
 ) {
   if (status === "cancelled") {
@@ -269,17 +270,17 @@ async function finish(
         ...(status === "completed"
           ? {
               completion: {
-                cliAgentType: claim.cliAgentType,
+                cliAgentType: execution.cliAgentType,
                 cliAgentSessionId:
-                  claim.cliAgentType === "pi"
-                    ? (claim.piSessionId ?? runId)
+                  execution.cliAgentType === "pi"
+                    ? (execution.piSessionId ?? runId)
                     : `subscription-${runId}`,
                 cliAgentSessionHistoryDisposition: "native_only",
               },
             }
           : { error: "Upstream run failed" }),
       },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
   }
@@ -290,12 +291,12 @@ describe("personal subscription run identity", () => {
   it("executes without proven upstream identity but denies failed-run account management", async () => {
     const f = await fixture("claude-code-oauth-token", false);
     const runId = await f.start();
-    const claim = await f.claim(runId);
-    expect(accountId(claim, f.type)).toBe(f.connected.id);
+    const execution = await f.execution(runId);
+    expect(accountId(execution, f.type)).toBe(f.connected.id);
     expect((await runs.readRun(f.actor, runId)).source?.account).toStrictEqual({
       status: "unknown",
     });
-    await finish(f.actor, runId, claim, "failed");
+    await finish(f.actor, runId, execution, "failed");
     expect(
       (
         await support.readPersonalModelProviderAccount(
@@ -361,7 +362,7 @@ describe("personal subscription run identity", () => {
       }
       const orgId = actor.orgId;
       let ownedRunId: string | undefined;
-      let ownedClaim: Claim | undefined;
+      let ownedExecution: ExecutionInput | undefined;
       let completed = false;
       const owner = createPublicBillingZeroFixture(context, actor, {
         beforeOrganizationCleanup: async () => {
@@ -373,10 +374,10 @@ describe("personal subscription run identity", () => {
               await runs.requestCancelRun(actor, ownedRunId, [200]);
             }
             await flushWaitUntilForTest();
-            if (ownedClaim) {
+            if (ownedExecution) {
               await createWebhookCallbackApi(context).requestAgentComplete(
                 { runId: ownedRunId, exitCode: 1, error: "fixture cleanup" },
-                { authorization: `Bearer ${ownedClaim.sandboxToken}` },
+                { authorization: `Bearer ${ownedExecution.sandboxToken}` },
                 [200],
               );
             }
@@ -410,11 +411,11 @@ describe("personal subscription run identity", () => {
         const state = await runs.readRun(actor, sent.runId);
         expect(state.status, JSON.stringify(state)).toBe("running");
         await runs.heartbeatRunner(runnerGroup);
-        const claim = await runs.executionInput(sent.runId);
-        ownedClaim = claim;
+        const execution = await runs.executionInput(sent.runId);
+        ownedExecution = execution;
         // The member's own subscription account serves the run, not Built-in.
-        expect(accountId(claim, type)).toBe(connected.id);
-        await finish(actor, sent.runId, claim, "failed");
+        expect(accountId(execution, type)).toBe(connected.id);
+        await finish(actor, sent.runId, execution, "failed");
         completed = true;
       });
     },
@@ -424,9 +425,9 @@ describe("personal subscription run identity", () => {
     async function recoveryFixture() {
       const f = await fixture("codex-oauth-token");
       const runId = await f.start();
-      const claim = await f.claim(runId);
-      const captured = accountId(claim, f.type);
-      await finish(f.actor, runId, claim, "failed");
+      const execution = await f.execution(runId);
+      const captured = accountId(execution, f.type);
+      await finish(f.actor, runId, execution, "failed");
       const auth = createAuthDeviceApiActions(context);
       mockCodexDeviceAuthProvider({
         accountId: "identity-b",
@@ -754,8 +755,8 @@ describe("personal subscription run identity", () => {
     if (!claimedRunId) {
       throw new Error("Expected the input to be claimed by one run");
     }
-    const claim = await f.claim(claimedRunId);
-    await finish(f.actor, claimedRunId, claim, "completed");
+    const execution = await f.execution(claimedRunId);
+    await finish(f.actor, claimedRunId, execution, "completed");
     const events = (await chat.listThreadEvents(f.actor, thread.id)).events;
     expect(
       events.filter((event) => {
@@ -774,15 +775,15 @@ describe("personal subscription run identity", () => {
 
     const first = await f.start();
     const pending = await f.start();
-    const firstClaim = await f.claim(first);
-    const captured = accountId(firstClaim, f.type);
+    const firstExecution = await f.execution(first);
+    const captured = accountId(firstExecution, f.type);
     await connect(f.actor, f.type, "identity-b");
-    await expect(resolve(firstClaim, f.type)).resolves.toMatchObject({
+    await expect(resolve(firstExecution, f.type)).resolves.toMatchObject({
       "ChatGPT-Account-ID": "identity-a",
     });
-    const pendingClaim = await f.claim(pending);
-    expect(accountId(pendingClaim, f.type)).toBe(captured);
-    await expect(resolve(pendingClaim, f.type)).resolves.toMatchObject({
+    const pendingExecution = await f.execution(pending);
+    expect(accountId(pendingExecution, f.type)).toBe(captured);
+    await expect(resolve(pendingExecution, f.type)).resolves.toMatchObject({
       "ChatGPT-Account-ID": "identity-a",
     });
     await runs.requestCancelRun(f.actor, first, [200]);
@@ -795,8 +796,8 @@ describe("personal subscription run identity", () => {
   it("keeps both admitted identities when reconnect merges a duplicate account", async () => {
     const f = await fixture("codex-oauth-token");
     const first = await f.start();
-    const firstClaim = await f.claim(first);
-    const accountA = accountId(firstClaim, f.type);
+    const firstExecution = await f.execution(first);
+    const accountA = accountId(firstExecution, f.type);
     const auth = createAuthDeviceApiActions(context);
     async function oauth(mode: "add" | "reconnect", modelProviderId?: string) {
       mockCodexDeviceAuthProvider({
@@ -822,13 +823,13 @@ describe("personal subscription run identity", () => {
     const accountB = await oauth("add");
     await support.activatePersonalModelProviderAccount(f.actor, accountB);
     const second = await f.start();
-    const secondClaim = await f.claim(second);
+    const secondExecution = await f.execution(second);
     await support.activatePersonalModelProviderAccount(f.actor, accountA);
     await expect(oauth("reconnect", accountA)).resolves.toBe(accountB);
-    await expect(resolve(firstClaim, f.type)).resolves.toMatchObject({
+    await expect(resolve(firstExecution, f.type)).resolves.toMatchObject({
       "ChatGPT-Account-ID": "identity-a",
     });
-    await expect(resolve(secondClaim, f.type)).resolves.toMatchObject({
+    await expect(resolve(secondExecution, f.type)).resolves.toMatchObject({
       "ChatGPT-Account-ID": "identity-b",
     });
     const listed = await support.listPersonalModelProviders(f.actor, [200]);
@@ -852,8 +853,8 @@ describe("personal subscription run identity", () => {
     async (type) => {
       const f = await fixture(type);
       const runId = await f.start();
-      const claim = await f.claim(runId);
-      const captured = accountId(claim, type);
+      const execution = await f.execution(runId);
+      const captured = accountId(execution, type);
       onTestFinished(async () => {
         await runs.requestCancelRun(f.actor, runId, [200]);
       });
@@ -868,7 +869,7 @@ describe("personal subscription run identity", () => {
         modelProviders: [{ id: replacement.id, isActive: true }],
       });
       // The real authenticated Runner still owns its captured retained bundle.
-      await expect(resolve(claim, type)).resolves.toMatchObject({
+      await expect(resolve(execution, type)).resolves.toMatchObject({
         Authorization: `Bearer ${f.connected.token}`,
       });
       await support.activatePersonalModelProviderAccount(
@@ -881,12 +882,12 @@ describe("personal subscription run identity", () => {
   it("reuses the same Claude identity across a reconnect", async () => {
     const f = await fixture("claude-code-oauth-token");
     const runId = await f.start();
-    const claim = await f.claim(runId);
-    const captured = accountId(claim, f.type);
+    const execution = await f.execution(runId);
+    const captured = accountId(execution, f.type);
     expect((await connect(f.actor, f.type, "identity-a")).id).toBe(captured);
     await support.deletePersonalModelProviderAccount(f.actor, captured);
     expect((await connect(f.actor, f.type, "identity-a")).id).toBe(captured);
-    await expect(resolve(claim, f.type)).resolves.toMatchObject({
+    await expect(resolve(execution, f.type)).resolves.toMatchObject({
       Authorization: `Bearer ${f.connected.token}`,
     });
     await runs.requestCancelRun(f.actor, runId, [200]);
@@ -905,10 +906,10 @@ describe("personal subscription run identity", () => {
     async (eventType) => {
       const f = await fixture("codex-oauth-token");
       const runId = await f.start();
-      const claim = await f.claim(runId);
+      const execution = await f.execution(runId);
       await support.deletePersonalModelProviderAccount(
         f.actor,
-        accountId(claim, f.type),
+        accountId(execution, f.type),
       );
       const webhooks = createWebhookCallbackApi(context);
       webhooks.configureClerkWebhookSecret();
@@ -933,8 +934,8 @@ describe("personal subscription run identity", () => {
       // Observe with the already-issued sandbox credential: terminal Run
       // refusal does not require erasing the captured account or its token.
       const denied = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${claim.sandboxToken}` },
-        authBody(claim, f.type),
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        authBody(execution, f.type),
         [400, 401, 403, 424],
       );
       expect(denied.status).not.toBe(200);
@@ -955,40 +956,45 @@ describe("personal subscription run identity", () => {
         return await owner.run(async () => {
           const runId = await f.start();
           admitted.push(runId);
-          const claim = await f.claim(runId);
-          const captured = accountId(claim, type);
-          await expect(resolve(claim, type)).resolves.toMatchObject({
+          const execution = await f.execution(runId);
+          const captured = accountId(execution, type);
+          await expect(resolve(execution, type)).resolves.toMatchObject({
             Authorization: `Bearer ${f.connected.token}`,
           });
           await support.deletePersonalModelProvider(f.actor, type, [204]);
           expect(
             (await support.listPersonalModelProviders(f.actor, [200])).body,
           ).toMatchObject({ modelProviders: [] });
-          await expect(resolve(claim, type)).resolves.toMatchObject({
+          await expect(resolve(execution, type)).resolves.toMatchObject({
             Authorization: `Bearer ${f.connected.token}`,
           });
-          return { f, admitted, owner, claim, captured };
+          return { f, admitted, owner, claim: execution, captured };
         });
       }
 
       it("denies the retained credentials to the replacement sandbox", async () => {
-        const { f, admitted, owner, claim, captured } =
-          await removedProviderFixture();
+        const {
+          f,
+          admitted,
+          owner,
+          claim: execution,
+          captured,
+        } = await removedProviderFixture();
         await owner.run(async () => {
           const next = await connect(f.actor, type, "identity-b");
           const nextRun = await f.start();
           admitted.push(nextRun);
-          const nextClaim = await f.claim(nextRun);
+          const nextClaim = await f.execution(nextRun);
           expect(accountId(nextClaim, type)).not.toBe(captured);
           await expect(resolve(nextClaim, type)).resolves.toMatchObject({
             Authorization: `Bearer ${next.token}`,
           });
-          await expect(resolve(claim, type)).resolves.toMatchObject({
+          await expect(resolve(execution, type)).resolves.toMatchObject({
             Authorization: `Bearer ${f.connected.token}`,
           });
           const denied = await firewall.requestFirewallAuth(
             { authorization: `Bearer ${nextClaim.sandboxToken}` },
-            authBody(claim, type),
+            authBody(execution, type),
             [424],
           );
           expect(denied.status).toBe(424);
@@ -1007,15 +1013,15 @@ describe("personal subscription run identity", () => {
       const f = await fixture("codex-oauth-token");
       const first = await f.start();
       const second = await f.start();
-      const firstClaim = await f.claim(first);
-      const secondClaim = await f.claim(second);
-      const captured = accountId(firstClaim, f.type);
+      const firstExecution = await f.execution(first);
+      const secondExecution = await f.execution(second);
+      const captured = accountId(firstExecution, f.type);
       await support.deletePersonalModelProviderAccount(f.actor, captured);
-      await finish(f.actor, first, firstClaim, status);
-      await expect(resolve(secondClaim, f.type)).resolves.toMatchObject({
+      await finish(f.actor, first, firstExecution, status);
+      await expect(resolve(secondExecution, f.type)).resolves.toMatchObject({
         "ChatGPT-Account-ID": "identity-a",
       });
-      await finish(f.actor, second, secondClaim, status);
+      await finish(f.actor, second, secondExecution, status);
       const reconnected = await connect(f.actor, f.type, "identity-a");
       expect(reconnected.id).not.toBe(captured);
     },
@@ -1024,8 +1030,8 @@ describe("personal subscription run identity", () => {
   it("does not resurrect a retained credential when final cancellation races refresh", async () => {
     const f = await fixture("codex-oauth-token");
     const runId = await f.start();
-    const claim = await f.claim(runId);
-    const captured = accountId(claim, f.type);
+    const execution = await f.execution(runId);
+    const captured = accountId(execution, f.type);
     await connect(f.actor, f.type, "identity-a", true);
     await support.deletePersonalModelProviderAccount(f.actor, captured);
     const started = createDeferredPromise<void>(context.signal);
@@ -1040,8 +1046,8 @@ describe("personal subscription run identity", () => {
       });
     });
     const refreshing = firewall.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      authBody(claim, f.type),
+      { authorization: `Bearer ${execution.sandboxToken}` },
+      authBody(execution, f.type),
       [200, 403],
     );
     onTestFinished(async () => {
@@ -1064,8 +1070,8 @@ describe("personal subscription run identity", () => {
     await Promise.all([refreshing, cancelling]);
     expect((await runs.readRun(f.actor, runId)).status).toBe("cancelled");
     const denied = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      authBody(claim, f.type),
+      { authorization: `Bearer ${execution.sandboxToken}` },
+      authBody(execution, f.type),
       [400, 403, 424],
     );
     expect(denied.status).not.toBe(200);
@@ -1097,21 +1103,21 @@ describe("exact subscription selection", () => {
         modelRuntimeProvider: type,
         modelRuntimeModel: model,
       });
-      const claim = await f.claim(runId);
-      expect(claim.environment?.[modelEnv]).toBe(model);
-      expect(Object.values(claim.environment ?? {})).not.toContain(
+      const execution = await f.execution(runId);
+      expect(execution.environment?.[modelEnv]).toBe(model);
+      expect(Object.values(execution.environment ?? {})).not.toContain(
         f.connected.token,
       );
-      expect(accountId(claim, type)).toBe(f.connected.id);
+      expect(accountId(execution, type)).toBe(f.connected.id);
       // Queue claim consumes the transient context; a later preference is not execution provenance.
       await runs.updateUserModelPreference(f.actor, f.model);
       const captured = await reads.requestReadLogById(f.actor, runId, [200]);
       expect(captured.body).toMatchObject({
         selectedModel: model,
         modelRuntimeProvider: type,
-        modelRuntimeModel: claim.environment?.[modelEnv],
+        modelRuntimeModel: execution.environment?.[modelEnv],
       });
-      await expect(resolve(claim, type)).resolves.toMatchObject({
+      await expect(resolve(execution, type)).resolves.toMatchObject({
         Authorization: `Bearer ${f.connected.token}`,
         ...(type === "codex-oauth-token"
           ? { "ChatGPT-Account-ID": "identity-a" }
@@ -1124,12 +1130,12 @@ describe("exact subscription selection", () => {
 test("keeps a Claude identity shared after a type-wide disconnect and reconnect", async () => {
   const f = await fixture("claude-code-oauth-token");
   const runId = await f.start();
-  const claim = await f.claim(runId);
-  const captured = accountId(claim, f.type);
+  const execution = await f.execution(runId);
+  const captured = accountId(execution, f.type);
   await support.deletePersonalModelProvider(f.actor, f.type, [204]);
   const restored = await connect(f.actor, f.type, "identity-a");
   expect(restored.id).toBe(captured);
-  await expect(resolve(claim, f.type)).resolves.toMatchObject({
+  await expect(resolve(execution, f.type)).resolves.toMatchObject({
     Authorization: `Bearer ${restored.token}`,
   });
   await runs.requestCancelRun(f.actor, runId, [200]);
@@ -1150,8 +1156,8 @@ describe("personal priority connection boundaries", () => {
         }),
       });
       const runId = await f.start();
-      const claim = await f.claim(runId);
-      await expect(resolve(claim, type)).resolves.toMatchObject({
+      const execution = await f.execution(runId);
+      await expect(resolve(execution, type)).resolves.toMatchObject({
         Authorization: `Bearer ${f.connected.token}`,
       });
       await runs.requestCancelRun(f.actor, runId, [200]);
@@ -1271,8 +1277,8 @@ describe("subscription bundle decryption ownership", () => {
     async (mutation) => {
       const f = await fixture("codex-oauth-token");
       const runId = await f.start();
-      const claim = await f.claim(runId);
-      const captured = accountId(claim, f.type);
+      const execution = await f.execution(runId);
+      const captured = accountId(execution, f.type);
       if (!f.actor.orgId) {
         throw new Error("Expected an organization");
       }
@@ -1331,8 +1337,8 @@ describe("subscription bundle decryption ownership", () => {
         }
       });
       const reading = firewall.requestFirewallAuth(
-        { authorization: `Bearer ${claim.sandboxToken}` },
-        authBody(claim, f.type),
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        authBody(execution, f.type),
         [200, 400, 403, 424],
       );
       requests.push(reading);
@@ -1370,8 +1376,8 @@ describe("subscription bundle decryption ownership", () => {
       }
       if (mutation === "membership" || mutation === "final-cancel") {
         const denied = await firewall.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
-          authBody(claim, f.type),
+          { authorization: `Bearer ${execution.sandboxToken}` },
+          authBody(execution, f.type),
           [400, 401, 403, 424],
         );
         expect(denied.status).not.toBe(200);
@@ -1382,7 +1388,7 @@ describe("subscription bundle decryption ownership", () => {
         }
       } else {
         expect(observed.status).toBe(200);
-        await expect(resolve(claim, f.type)).resolves.toMatchObject({
+        await expect(resolve(execution, f.type)).resolves.toMatchObject({
           Authorization: `Bearer ${replacement?.token ?? f.connected.token}`,
           "ChatGPT-Account-ID": "identity-a",
         });
@@ -1391,7 +1397,7 @@ describe("subscription bundle decryption ownership", () => {
           onTestFinished(async () => {
             await runs.requestCancelRun(f.actor, next, [200]);
           });
-          const nextClaim = await f.claim(next);
+          const nextClaim = await f.execution(next);
           expect(accountId(nextClaim, f.type)).toBe(accountB);
           await expect(resolve(nextClaim, f.type)).resolves.toMatchObject({
             "ChatGPT-Account-ID": "identity-b",
@@ -1408,10 +1414,10 @@ describe("personal priority credential and session boundaries", () => {
 
     const billingBefore = await runs.readBillingStatus(f.actor);
     const runId = await f.start();
-    const claim = await f.claim(runId);
+    const execution = await f.execution(runId);
     onTestFinished(async () => {
       useSecretKmsProbe();
-      await finish(f.actor, runId, claim, "cancelled");
+      await finish(f.actor, runId, execution, "cancelled");
       await flushWaitUntilForTest();
     });
     const kms = useSecretKmsProbe(undefined, () => {
@@ -1424,15 +1430,15 @@ describe("personal priority credential and session boundaries", () => {
     });
     expect(kms.decryptCalls).toBe(0);
     const denied = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
-      authBody(claim, f.type),
+      { authorization: `Bearer ${execution.sandboxToken}` },
+      authBody(execution, f.type),
       [400],
     );
     expect(denied.body).toMatchObject({
       error: { message: "Failed to decrypt secrets" },
     });
     expect(kms.decryptCalls).toBeGreaterThan(0);
-    expect(claim.billableFirewalls).toStrictEqual([]);
+    expect(execution.billableFirewalls).toStrictEqual([]);
     await expect(runs.readRun(f.actor, runId)).resolves.toMatchObject({
       source: {
         providerType: f.type,
@@ -1454,7 +1460,7 @@ describe("personal priority credential and session boundaries", () => {
       model: f.model,
       prompt: "first account",
     });
-    const first = await f.claim(sent.runId);
+    const first = await f.execution(sent.runId);
     await chat.requestSendEvent(
       f.actor,
       {
@@ -1490,7 +1496,7 @@ describe("personal priority credential and session boundaries", () => {
       throw new Error("Expected the queued message to be promoted");
     }
     const promotedRunId = nextRunId;
-    const second = await f.claim(promotedRunId);
+    const second = await f.execution(promotedRunId);
     onTestFinished(async () => {
       await finish(f.actor, promotedRunId, second, "cancelled");
       await flushWaitUntilForTest();

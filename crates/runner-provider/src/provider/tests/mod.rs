@@ -11,9 +11,9 @@ fn minimal_context(run_id: RunId) -> ExecutionContext {
 fn local_completion_keeps_local_authority() {
     let run_id = RunId::from(uuid::Uuid::nil());
 
-    let claimed = ClaimedJob::local(run_id, minimal_context(run_id))
+    let job = ExecutionJob::local(run_id, minimal_context(run_id))
         .expect("matching local context is valid");
-    let (context, auth, _) = claimed.into_parts();
+    let (context, auth, _) = job.into_parts();
     assert_eq!(context.run_id, run_id);
     assert!(matches!(
         auth.into_sandbox_token(run_id),

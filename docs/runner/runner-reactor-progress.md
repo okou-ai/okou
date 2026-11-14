@@ -19,7 +19,7 @@ branch wins, but only the reactor polls that future. This can deadlock even when
 no mutex guard crosses an await:
 
 1. A retained heartbeat future queues for the idle-pool mutex.
-2. Another branch wins. Inline admission or drain queues for that mutex too.
+2. Another branch wins. Inline acceptance or drain queues for that mutex too.
 3. The current holder releases the mutex. Tokio's FIFO mutex reserves progress
    for the heartbeat waiter.
 4. The reactor is awaiting its own lock request, so it cannot poll the heartbeat
@@ -48,24 +48,27 @@ Publication is an atomic file replacement, not a file/directory fsync guarantee.
 
 ## Ownership and shutdown
 
-| Work                           | Owner and progress rule                                                                                                                                                                                                                    | Shutdown                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Heartbeat                      | One independently scheduled task; triggers coalesce into at most one pending request. The next send uses live state and lifecycle mode. Shared immutable configuration is allocated once per controller.                                   | Natural drain flushes a Stopping snapshot. Common teardown joins the active send before provider shutdown. Abnormal controller drop aborts the task; dropping a client request does not retract a remote request, so snapshot generation/sequence fencing remains required.                                                                                                               |
-| Admission / claim / activation | Up to four independently scheduled transactions, including ordinary activation and failure recovery; authoritative budget and exclusive sandbox reservations remain stricter. Completed results retain a slot until Reactor consumes them. | Soft drain stops new admission and settles in-flight results before idle drain or natural completion. Common teardown joins all admissions before idle/provider shutdown. Dropping task handles does not abort accepted work; unconsumed successful results schedule tracked no-sandbox completion and rollback. Process/runtime termination remains an abnormal reconciliation boundary. |
-| Status retry                   | One independently scheduled task. State generations, ordered persistence, and atomic-write continuation remain authoritative.                                                                                                              | Join the retry before final status publication. If the reactor itself is cancelled, the task retains ownership until it finishes.                                                                                                                                                                                                                                                         |
-| Routine home-cache GC          | One independently scheduled task, with a host-global routine flock owning inventory/entry cleanup and completion-marker cadence.                                                                                                           | Join before dependent teardown. Do not abort the task during normal shutdown: filesystem deletion may outlive a dropped async future. If the reactor itself is cancelled, the task retains its locks through completion rather than releasing them over unfinished I/O. Process/runtime termination remains an abnormal boundary.                                                         |
+| Work                      | Owner and progress rule                                                                                                                                                                                                                    | Shutdown                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Heartbeat                 | One independently scheduled task; triggers coalesce into at most one pending request. The next send uses live state and lifecycle mode. Shared immutable configuration is allocated once per controller.                                   | Natural drain flushes a Stopping snapshot. Common teardown joins the active send before provider shutdown. Abnormal controller drop aborts the task; dropping a client request does not retract a remote request, so snapshot generation/sequence fencing remains required.                                                                                                                      |
+| Acceptance and activation | Up to four independently scheduled transactions, including ordinary activation and failure recovery; authoritative budget and exclusive sandbox reservations remain stricter. Completed results retain a slot until Reactor consumes them. | Soft drain stops new acceptance and settles in-flight results before idle drain or natural completion. Common teardown joins all acceptance tasks before idle/provider shutdown. Dropping task handles does not abort accepted work; unconsumed successful results schedule tracked no-sandbox completion and rollback. Process/runtime termination remains an abnormal reconciliation boundary. |
+| Status retry              | One independently scheduled task. State generations, ordered persistence, and atomic-write continuation remain authoritative.                                                                                                              | Join the retry before final status publication. If the reactor itself is cancelled, the task retains ownership until it finishes.                                                                                                                                                                                                                                                                |
+| Routine home-cache GC     | One independently scheduled task, with a host-global routine flock owning inventory/entry cleanup and completion-marker cadence.                                                                                                           | Join before dependent teardown. Do not abort the task during normal shutdown: filesystem deletion may outlive a dropped async future. If the reactor itself is cancelled, the task retains its locks through completion rather than releasing them over unfinished I/O. Process/runtime termination remains an abnormal boundary.                                                                |
 
 Required task join failures stop the reactor through its existing lifecycle and common
 teardown path and are returned as terminal errors. Ordinary optional GC or status
 retry errors remain warnings. Runtime task ownership does not make an individual
 filesystem or network operation infinitely fast or cancellation-safe.
 
+The API owns Run admission, preparation and dispatch. Runner acceptance is the
+receiver decision after checking complete input and local execution capacity;
+activation transfers accepted work to its executor. Resource-specific CPU and IO
+admission controls retain their qualified budget responsibilities.
+
 Remote work enters through complete HTTP publications. Independent filesystem
-submissions expose a local discovery capability; remote providers expose no
-discovery or Claim operation. Routing preferences, remote candidate waits,
-poll exclusions and speculative acquisition no longer participate in this
-reactor. Direct intake retains deadline, generation, deduplication and Run
-registration fences before transferring execution custody.
+submissions expose a local discovery capability; remote providers own execution
+reporting and control. Direct intake retains deadline, generation, deduplication
+and Run registration fences before transferring execution custody.
 
 Memory-triggered idle maintenance has one independently scheduled observation or
 cleanup at a time. It accepts selected cleanup with `IdleDestroyTracker` before
@@ -107,7 +110,7 @@ with the shared `IdleDestroyTracker` before status publication or another await.
 Its receiver observes completion and cannot abort accepted work. A dropped or
 cancelled caller leaves cleanup independently scheduled; common teardown joins
 the tracker before cache and factory shutdown. Keep each logical budget lease
-with its payload through completion, except where admission deliberately performs
+with its payload through completion, except where acceptance deliberately performs
 an atomic logical resource substitution.
 
 Soft drain captures its current idle batch and runs cleanup and the final status
@@ -161,8 +164,8 @@ the activation registry without retaining or releasing the replacement lease.
 This transfer grants no physical memory credit.
 
 The supplied-policy finalizing component preserves actual broker delivery
-bindings in `GuardedFinalizingOffer` and keeps the original bound `ClaimedJob`
-in `GuardedFinalizingAdmission`. Both capsules remain outside borrowed
+bindings in `GuardedFinalizingOffer` and keeps the original bound `ExecutionJob`
+in `GuardedFinalizingHandoff`. Both capsules remain outside borrowed
 observation/activation futures. Producer capture precedes broker transfer;
 receipt and post-unpark validation use that original process generation. A
 parked candidate and a fenced running handoff remain distinct; uncertain or
@@ -187,7 +190,7 @@ Callers must settle or drop their finalizing capsules before dependent teardown.
 execution inputs afterward. Successful cleanup leases and accepted uncertainty
 remain in the separate activation registry. Recovery is an explicit
 reconciliation boundary, not completion proof or memory credit. The production
-root still owns its admission policy. Native finalizing fixtures do not by
+root still owns its acceptance policy. Native finalizing fixtures do not by
 themselves establish full session/history restoration or calibrate production
 host limits.
 
@@ -222,7 +225,7 @@ Only actual available space establishes recovery: an unlinked image can remain
 allocated while another descriptor is open.
 
 Background maintenance and pressure requests bind to the current Running
-lifecycle generation. Drain stops new admission and expires queued work and
+lifecycle generation. Drain stops new acceptance and expires queued work and
 continuations, even when a rapid drain/resume leaves the latest mode Running.
 Resume admits fresh requests. A selected entry cleanup or victim operation keeps
 its physical I/O and locks until completion; later units stop cooperatively.
@@ -329,7 +332,7 @@ after a later recovery. No pressure-state lock survives IO or provider work.
 ## Other retained work
 
 - Local filesystem discovery stays pinned across reactor turns. Candidate
-  consumption requires an available admission slot and ordinary resource
+  consumption requires an available acceptance slot and ordinary resource
   capacity. Discovery waits for local reservation readiness or rejection before
   re-evaluating capacity, while accepted local claims can progress concurrently.
 - Both supplied HTTP work and filesystem acquisition reserve local resources,
@@ -341,11 +344,11 @@ after a later recovery. No pressure-state lock survives IO or provider work.
   publication through the joined cleanup tracker before another await.
   Preparation, diagnostics and later discovery can progress while advisory status
   waits. Revision/generation fences reject stale inventory; shutdown joins these
-  accepted writers. Initial resource admission and required durable
+  accepted writers. Initial receiver resource checks and required durable
   Preparing before physical reuse remain authoritative.
-- Admission tasks own activation and recovery independently. The shared four
+- Acceptance tasks own activation and recovery independently. The shared four
   slots include activation waits and completed unconsumed results. Prepared
-  results retain ClaimedActivationGuard until synchronous executor dispatch.
+  results retain JobActivationGuard until synchronous executor dispatch.
   Preparing must persist before unpark. Cancellation transfer gates release
   before returning results, and lost results retain tracked completion and
   resource recovery. Normal shutdown joins accepted work.
@@ -379,7 +382,7 @@ after a later recovery. No pressure-state lock survives IO or provider work.
   contested gates are not awaited while holding the idle pool.
 
 New branches must be checked against both lock holders and queued waiters. Do not
-spawn discovery unconditionally or change admission/reuse policy to work around
+spawn discovery unconditionally or change acceptance/reuse policy to work around
 resource ownership problems.
 
 ## Helper recovery and required cleanup
@@ -397,7 +400,7 @@ polled while recovery is in flight: an already expired timer must not spin the
 reactor while it cannot yet spawn another attempt.
 
 DNS/kmsg monitor completion starts independently scheduled child cleanup, then
-the reactor cancels admission and active runs and publishes Stopping. Each
+the reactor cancels acceptance and active runs and publishes Stopping. Each
 network-log process retains its cleanup handle for normal shutdown to join;
 dropping the reactor does not abort that reaper. DNS cleanup still precedes
 runtime/filter removal. Cleanup errors are reported instead of logging a

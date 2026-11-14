@@ -8,7 +8,7 @@ use super::support::{
 };
 
 // -----------------------------------------------------------------------
-// Test 11: Budget full → job skipped (not claimed) → budget freed → next job succeeds
+// Test 11: Budget full → job skipped before claim → budget freed → next job succeeds
 //
 // Different from test 4 (claim failure): here try_reserve returns false
 // so claim() is never called. The job stays in the channel but the main

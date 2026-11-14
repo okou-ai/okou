@@ -4,7 +4,7 @@ import { testContext } from "../../../__tests__/test-context";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import {
   createChatEventsFixture,
-  okouTokenFromClaim,
+  okouTokenFromExecution,
   type PromptMessage,
   requireOrgId,
   userMessages,
@@ -121,8 +121,7 @@ describe("CHAT-02: model-first routing", () => {
       run: own,
       actor,
       agentId,
-      runnerGroup,
-      claimChatRun,
+      runExecution,
       sendChatRun,
       requestSendEventWithBearer,
     } = await publicChatActor(context);
@@ -140,8 +139,8 @@ describe("CHAT-02: model-first routing", () => {
       prompt: "delegate a non-interactive Pi turn",
       model: "claude-fable-5-1",
     });
-    const sourceClaim = await claimChatRun(runnerGroup, source.runId);
-    const sourceToken = okouTokenFromClaim(sourceClaim.claim);
+    const sourceExecution = await runExecution(source.runId);
+    const sourceToken = okouTokenFromExecution(sourceExecution.execution);
     const targetThread = await own(async () => {
       return await chat.createThread(actor, { agentId });
     });
@@ -200,7 +199,7 @@ describe("CHAT-02: model-first routing", () => {
         actor,
         answer: "delegated chat admission answer",
         historyObjects,
-        claim: await claimChatRun(runnerGroup, delegatedRunId),
+        execution: await runExecution(delegatedRunId),
         prompt: delegatedPrompt,
         run: delegatedRun,
       });
@@ -225,7 +224,7 @@ describe("CHAT-02: model-first routing", () => {
       return await cancelChatRun(
         actor,
         source.runId,
-        sourceClaim.sandboxHeaders,
+        sourceExecution.sandboxHeaders,
       );
     });
   }, 90_000);

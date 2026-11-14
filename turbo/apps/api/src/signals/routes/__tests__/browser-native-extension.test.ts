@@ -11,7 +11,7 @@ import {
   MINUTE,
   START,
 } from "./helpers/browser-fixture";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 
 const context = testContext();
 const { fixture, open, renew, view } = createBrowserFixtures(context);
@@ -22,7 +22,9 @@ type Fixture = Awaited<ReturnType<typeof fixture>>;
 type Chat = Awaited<ReturnType<Fixture["start"]>>;
 function use(chat: Chat) {
   return client().use({
-    headers: { authorization: `Bearer ${okouTokenFromClaim(chat.claim)}` },
+    headers: {
+      authorization: `Bearer ${okouTokenFromExecution(chat.execution)}`,
+    },
     body: {},
   });
 }

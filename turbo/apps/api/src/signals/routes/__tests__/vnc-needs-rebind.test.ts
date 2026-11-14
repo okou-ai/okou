@@ -14,7 +14,7 @@ import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { runnerVncRoutes } from "../runner-vnc";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { vncAccessRoutes } from "../vnc-access";
-import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
+import { createVncExecutionApi } from "./helpers/vnc-execution";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import {
@@ -30,7 +30,7 @@ import {
 const context = testContext();
 
 describe("VNC depends on current SSH binding", () => {
-  const claimed = createClaimedVncApi(context);
+  const claimed = createVncExecutionApi(context);
   const query = { view: "scoped" as const };
   const configs = () => {
     return setupApp({ context, routes: cloudflareAccessRoutes })(

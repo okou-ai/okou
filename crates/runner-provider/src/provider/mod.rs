@@ -39,7 +39,7 @@ pub enum CompletionReportTiming {
     AfterFinalization,
 }
 
-/// Independent local submission, carrying no remote acquisition protocol.
+/// Independent local submission discovered by its source.
 #[derive(Clone, Debug)]
 pub struct JobCandidate {
     run_id: RunId,
@@ -82,7 +82,7 @@ impl JobCandidate {
 }
 
 /// Execution input and Run-scoped reporting authority transferred to the executor.
-pub struct ClaimedJob {
+pub struct ExecutionJob {
     context: ExecutionContext,
     completion_auth: CompletionAuth,
     active_input_source: Option<ActiveInputSource>,
@@ -90,13 +90,13 @@ pub struct ClaimedJob {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ClaimedJobRunIdMismatch {
+pub struct ExecutionJobRunIdMismatch {
     pub expected_run_id: RunId,
     pub context_run_id: RunId,
 }
 
-impl ClaimedJob {
-    /// Full context supplied by the control plane, with normal Run auth but no Claim observation.
+impl ExecutionJob {
+    /// Complete execution input and Run-scoped reporting authority from dispatch.
     pub fn supplied(
         context: ExecutionContext,
         active_input_source: Option<ActiveInputSource>,
@@ -114,11 +114,11 @@ impl ClaimedJob {
     fn validate_run_id(
         expected_run_id: RunId,
         context: &ExecutionContext,
-    ) -> Result<(), ClaimedJobRunIdMismatch> {
+    ) -> Result<(), ExecutionJobRunIdMismatch> {
         if context.run_id == expected_run_id {
             Ok(())
         } else {
-            Err(ClaimedJobRunIdMismatch {
+            Err(ExecutionJobRunIdMismatch {
                 expected_run_id,
                 context_run_id: context.run_id,
             })
@@ -129,7 +129,7 @@ impl ClaimedJob {
     pub fn local(
         expected_run_id: RunId,
         context: ExecutionContext,
-    ) -> Result<Self, ClaimedJobRunIdMismatch> {
+    ) -> Result<Self, ExecutionJobRunIdMismatch> {
         Self::local_with_active_input_source(expected_run_id, context, None)
     }
 
@@ -137,7 +137,7 @@ impl ClaimedJob {
         expected_run_id: RunId,
         context: ExecutionContext,
         active_input_source: Option<ActiveInputSource>,
-    ) -> Result<Self, ClaimedJobRunIdMismatch> {
+    ) -> Result<Self, ExecutionJobRunIdMismatch> {
         Self::validate_run_id(expected_run_id, &context)?;
         Ok(Self {
             context,
@@ -213,9 +213,9 @@ pub trait LocalJobSource: Send + Sync {
     /// Wait for a local candidate without claiming it. Discovery may prune
     /// completed local job files. Reactor retains this future across maintenance ticks.
     async fn discover(&self) -> Option<JobCandidate>;
-    /// Atomic local claim. Accepted admission tasks retain this future until
+    /// Atomic local claim. Acceptance tasks retain this future until
     /// ownership transfers to execution or explicit completion/rollback.
-    async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob>;
+    async fn claim(&self, candidate: JobCandidate) -> Option<ExecutionJob>;
 }
 
 /// Shared readiness, execution reporting and control lifecycle.
@@ -229,7 +229,7 @@ pub trait JobProvider: Send + Sync {
         Ok(())
     }
     /// Attach controls/reporting to full input already owned by the receiver.
-    async fn bind_supplied(&self, _context: ExecutionContext) -> ProviderResult<ClaimedJob> {
+    async fn bind_supplied(&self, _context: ExecutionContext) -> ProviderResult<ExecutionJob> {
         Err(crate::ProviderError::Config(
             "provider does not support direct dispatch".into(),
         ))

@@ -1594,11 +1594,8 @@ describe("POST /api/mail/drafts/link", () => {
         agentId: owned.agentId,
         prompt: "Link the existing Gmail draft",
       });
-      const { claim } = await owned.claimChatRun(
-        owned.runnerGroup,
-        source.runId,
-      );
-      const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+      const { execution } = await owned.runExecution(source.runId);
+      const okouToken = execution.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
         throw new Error("Expected the Runner-issued connector token");
       }

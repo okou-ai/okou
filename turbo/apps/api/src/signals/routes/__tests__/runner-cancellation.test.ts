@@ -55,15 +55,15 @@ async function fixture(options: { orgId?: string; userId?: string } = {}) {
     await bdd.requestDeleteAgent(actor, agent.agentId, [204, 404]);
   });
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.executionInput(run.runId);
+  const execution = await runs.executionInput(run.runId);
   return {
     bdd,
     runs,
     actor,
     agentId: agent.agentId,
     runId: run.runId,
-    headers: { authorization: `Bearer ${claim.sandboxToken}` },
-    agentToken: claim.platformEnvironment.OKOU_TOKEN,
+    headers: { authorization: `Bearer ${execution.sandboxToken}` },
+    agentToken: execution.platformEnvironment.OKOU_TOKEN,
     query: { runnerGroup, ...identity },
     markIdentityDeleted: () => {
       identityDeleted = true;
@@ -150,8 +150,8 @@ async function directFixture(runCounts: readonly number[]) {
         acknowledged: false,
       };
       ownedRuns.push(owned);
-      const claim = await runs.executionInput(run.runId);
-      owned.sandboxToken = claim.sandboxToken;
+      const execution = await runs.executionInput(run.runId);
+      owned.sandboxToken = execution.sandboxToken;
       const runner = await runs.requestRunRunner(actor, run.runId, [200]);
       expect(runner.body).toMatchObject({
         runnerId: identity.runnerId,

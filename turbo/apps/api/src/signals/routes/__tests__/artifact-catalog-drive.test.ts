@@ -16,7 +16,7 @@ import {
   mockGoogleDriveFilesList,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -45,7 +45,7 @@ async function uploadedArtifact() {
     agentId: owner.agentId,
     prompt: "Create an artifact for lazy Drive status",
   });
-  const claimed = await owner.claimChatRun(owner.runnerGroup, run.runId);
+  const execution = await owner.runExecution(run.runId);
   const fileId = randomUUID();
   const storage = callbacks.acceptChatObjectStorage();
   storage.addObject({
@@ -54,7 +54,7 @@ async function uploadedArtifact() {
     size: 64,
   });
   await chat.completeUploadWithBearer(
-    `Bearer ${okouTokenFromClaim(claimed.claim)}`,
+    `Bearer ${okouTokenFromExecution(execution.execution)}`,
     { id: fileId },
     [200],
   );

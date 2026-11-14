@@ -19,21 +19,21 @@ const {
   chat,
   entitledChatActor,
   configureSubscriptionPiModel,
-  claimChatRun,
+  runExecution,
   completeChatRunOk,
   failChatRun,
   cancelChatRun,
   sessionHeaders,
   threadPiAutomationsClient,
   lastThreadPiAutomationRun,
-  claimGptPiSandbox,
+  launchGptPiSandbox,
   mockPiObjectStore,
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
 describe("thread-bound Pi Automation execution", () => {
   it("rotates a signed event Automation session into Pi and preserves its user conversation", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor({}, "team");
+    const { actor, agentId } = await entitledChatActor({}, "team");
     const workflowId = await createWorkflowsBddApi(context).createWorkflow(
       actor,
       {
@@ -71,8 +71,8 @@ describe("thread-bound Pi Automation execution", () => {
       timestamp: Math.floor(now() / 1000),
     });
     const legacyRunId = await lastThreadPiAutomationRun(actor, threadId);
-    const legacyClaim = await claimChatRun(runnerGroup, legacyRunId);
-    await completeChatRunOk(legacyRunId, legacyClaim.sandboxHeaders, {
+    const legacyExecution = await runExecution(legacyRunId);
+    await completeChatRunOk(legacyRunId, legacyExecution.sandboxHeaders, {
       cliAgentType: "claude-code",
     });
     await flushWaitUntilForTest();
@@ -95,17 +95,17 @@ describe("thread-bound Pi Automation execution", () => {
     });
     const piRunId = await lastThreadPiAutomationRun(actor, threadId);
     expect(piRunId).not.toBe(legacyRunId);
-    const piClaim = await claimChatRun(runnerGroup, piRunId);
-    expect(piClaim.claim.piModelConfig).toMatchObject({
+    const piExecution = await runExecution(piRunId);
+    expect(piExecution.execution.piModelConfig).toMatchObject({
       provider: "openai-codex",
       model: "gpt-6-luna",
     });
     await completeSandboxFirstPiRun({
       actor,
       run: { runId: piRunId, threadId },
-      claim: piClaim,
+      execution: piExecution,
       historyObjects,
-      prompt: piClaim.claim.prompt,
+      prompt: piExecution.execution.prompt,
       answer: "owned event answer",
       responsesModel: { provider: "openai-codex", model: "gpt-6-luna" },
     });
@@ -119,15 +119,15 @@ describe("thread-bound Pi Automation execution", () => {
       threadId,
       prompt: "continue this Automation conversation",
     });
-    const userClaim = await claimChatRun(runnerGroup, user.runId);
-    expect(userClaim.claim.piModelConfig).toMatchObject({
+    const userExecution = await runExecution(user.runId);
+    expect(userExecution.execution.piModelConfig).toMatchObject({
       provider: "openai-codex",
       model: "gpt-6-luna",
     });
     await completeSandboxFirstPiRun({
       actor,
       run: user,
-      claim: userClaim,
+      execution: userExecution,
       historyObjects,
       prompt: "continue this Automation conversation",
       answer: "owned user answer",
@@ -143,7 +143,7 @@ describe("thread-bound Pi Automation execution", () => {
 describe("CHAT effort: automation launches", () => {
   async function startAutomation() {
     const scenario = await entitledChatActor({}, "pro");
-    const { actor, agentId, runnerGroup } = scenario;
+    const { actor, agentId } = scenario;
     // Fable keeps the automation on the Claude Code Runner claim protocol;
     // the Sonnet fixture default would launch a Pi run instead.
     await api.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -168,20 +168,22 @@ describe("CHAT effort: automation launches", () => {
     );
     const threadId = started.body.chatThreadId;
     const runId = await lastThreadPiAutomationRun(actor, threadId);
-    const claimed = await claimChatRun(runnerGroup, runId);
+    const execution = await runExecution(runId);
     // No saved thread effort yet: the launch uses Fable's route default.
-    expect(claimed.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe("max");
+    expect(execution.execution.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
+      "max",
+    );
     return {
       ...scenario,
       threadId,
       runId,
-      claimed,
+      claimed: execution,
       automationId: created.body.id,
     };
   }
 
   it("captures automation effort at enqueue and applies edits to later triggers", async () => {
-    const { actor, runnerGroup, threadId, runId, claimed, automationId } =
+    const { actor, threadId, runId, claimed, automationId } =
       await startAutomation();
     await chat.updateThreadModelSelection(actor, threadId, "claude-fable-5-1", {
       reasoningEffort: "extra",
@@ -203,8 +205,10 @@ describe("CHAT effort: automation launches", () => {
     await flushWaitUntilForTest();
     const nextRunId = await lastThreadPiAutomationRun(actor, threadId);
     expect(nextRunId).not.toBe(runId);
-    const next = await claimChatRun(runnerGroup, nextRunId);
-    expect(next.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe("extra");
+    const next = await runExecution(nextRunId);
+    expect(next.execution.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
+      "extra",
+    );
     await expect(
       chat.readThreadMetadata(actor, threadId),
     ).resolves.toMatchObject({
@@ -222,13 +226,15 @@ describe("CHAT effort: automation launches", () => {
     );
     const latestRunId = await lastThreadPiAutomationRun(actor, threadId);
     expect(latestRunId).not.toBe(nextRunId);
-    const latest = await claimChatRun(runnerGroup, latestRunId);
-    expect(latest.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe("high");
+    const latest = await runExecution(latestRunId);
+    expect(latest.execution.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
+      "high",
+    );
     await cancelChatRun(actor, latestRunId, latest.sandboxHeaders);
   }, 90_000);
 
   it("uses route defaults for unsupported effort at automation launch", async () => {
-    const { actor, runnerGroup, threadId, runId, claimed, automationId } =
+    const { actor, threadId, runId, claimed, automationId } =
       await startAutomation();
     await completeChatRunOk(runId, claimed.sandboxHeaders, {
       cliAgentType: "claude-code",
@@ -275,12 +281,12 @@ describe("CHAT effort: automation launches", () => {
       const startedRunId = await lastThreadPiAutomationRun(actor, threadId);
       expect(startedRunId).not.toBe(previousRunId);
       previousRunId = startedRunId;
-      const next = await claimChatRun(runnerGroup, startedRunId);
-      expect(next.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
+      const next = await runExecution(startedRunId);
+      expect(next.execution.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
         route.effectiveEffort,
       );
       if (route.pi) {
-        expect(next.claim.piModelConfig).toMatchObject({
+        expect(next.execution.piModelConfig).toMatchObject({
           thinkingLevel: route.effectiveEffort,
         });
       }
@@ -332,28 +338,19 @@ describe("thread-bound Pi terminal failures", () => {
         run = { runId, threadId };
         await flushWaitUntilForTest();
         await api.heartbeatRunner(runnerGroup);
-        const claim = await claimGptPiSandbox(actor, runId, undefined);
-        const claimed = {
-          claim,
-          sandboxHeaders: { authorization: `Bearer ${claim.sandboxToken}` },
+        const execution = await launchGptPiSandbox(actor, runId, undefined);
+        const sandboxHeaders = {
+          authorization: `Bearer ${execution.sandboxToken}`,
         };
-        expect(claimed.claim.piModelConfig).toMatchObject({
+        expect(execution.piModelConfig).toMatchObject({
           model: "gpt-6.1-sol",
         });
         if (status === "cancelled") {
-          await cancelChatRun(actor, runId, claimed.sandboxHeaders);
+          await cancelChatRun(actor, runId, sandboxHeaders);
         } else {
-          await failChatRun(
-            runId,
-            claimed.sandboxHeaders,
-            "subscription rejected",
-          );
+          await failChatRun(runId, sandboxHeaders, "subscription rejected");
         }
-        await failChatRun(
-          runId,
-          claimed.sandboxHeaders,
-          "duplicate terminal delivery",
-        );
+        await failChatRun(runId, sandboxHeaders, "duplicate terminal delivery");
       }
       await flushWaitUntilForTest();
 

@@ -234,10 +234,10 @@ async function failClaimedRun(
     throw new Error("Expected a launched Teams run");
   }
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.executionInput(runId);
+  const execution = await runs.executionInput(runId);
   await webhooks.requestAgentComplete(
     { runId, exitCode: 1, error: "Agent exited" },
-    { authorization: `Bearer ${claim.sandboxToken}` },
+    { authorization: `Bearer ${execution.sandboxToken}` },
     [200],
   );
   await flushWaitUntilForTest();

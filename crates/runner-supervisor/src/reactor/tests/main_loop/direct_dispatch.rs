@@ -24,7 +24,7 @@ impl JobProvider for SuppliedProvider {
     async fn bind_supplied(
         &self,
         context: runner_types::types::ExecutionContext,
-    ) -> runner_provider::ProviderResult<runner_provider::ClaimedJob> {
+    ) -> runner_provider::ProviderResult<runner_provider::ExecutionJob> {
         if let Some(gate) = &self.1 {
             gate.enter_and_wait().await;
         }
@@ -126,12 +126,12 @@ async fn supplied_http_caller_disconnect_does_not_cancel_accepted_execution() {
 
 #[tokio::test]
 async fn supplied_http_activation_panic_uses_existing_terminal_recovery() {
-    assert_supplied_panic(OuterJobPanicPoint::ClaimedActivation).await;
+    assert_supplied_panic(OuterJobPanicPoint::JobActivation).await;
 }
 
 #[tokio::test]
 async fn supplied_http_finalizing_preparation_panic_completes_once_without_a_sandbox() {
-    assert_supplied_panic(OuterJobPanicPoint::ClaimedWithoutSandbox).await;
+    assert_supplied_panic(OuterJobPanicPoint::AcceptedWithoutSandbox).await;
 }
 
 async fn assert_supplied_panic(point: OuterJobPanicPoint) {
@@ -139,7 +139,7 @@ async fn assert_supplied_panic(point: OuterJobPanicPoint) {
     config.test_hooks.outer_job_panic = Some(point);
     config.provider.provider = Arc::new(SuppliedProvider(config.provider.provider.clone(), None));
     let source = RunId::new_v4();
-    let producer = (point == OuterJobPanicPoint::ClaimedWithoutSandbox).then(|| {
+    let producer = (point == OuterJobPanicPoint::AcceptedWithoutSandbox).then(|| {
         env.active_runs.register(
             source,
             Some("thread:finalizing-panic".into()),
@@ -196,9 +196,9 @@ async fn assert_supplied_panic(point: OuterJobPanicPoint) {
     assert_eq!(
         completion.error.as_deref(),
         Some(if producer.is_some() {
-            "runner panicked while preparing a claimed finalizing successor"
+            "runner panicked while preparing a finalizing successor"
         } else {
-            "claimed activation setup panicked"
+            "job activation setup panicked"
         })
     );
     assert_eq!(completion.sandbox_id, None);
@@ -249,7 +249,7 @@ async fn supplied_http_returns_429_before_body_intake_and_retries_after_slot_rec
     let body = envelope(identity, run_id).to_string();
     let mut stream = tokio::net::UnixStream::connect(&socket).await.unwrap();
     // Withhold the body: a busy receiver must answer from headers alone,
-    // without waiting for either an admission slot or the upload deadline.
+    // without waiting for either an acceptance slot or the upload deadline.
     stream.write_all(format!("POST /runners/{}/control/runs/{run_id}/dispatch HTTP/1.1\r\nHost: {HOST}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", identity.runner_id(), body.len()).as_bytes()).await.unwrap();
     let mut bytes = Vec::new();
     tokio::time::timeout(Duration::from_secs(1), stream.read_to_end(&mut bytes))

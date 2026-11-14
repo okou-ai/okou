@@ -35,7 +35,7 @@ describe("Teams completion delivery", () => {
         throw new Error("Expected the dispatched Teams Run");
       }
       await runs.heartbeatRunner("vm0/test");
-      const claim = await runs.executionInput(run.id);
+      const execution = await runs.executionInput(run.id);
       let deliveryAttempts = 0;
       server.use(
         http.post(
@@ -55,7 +55,9 @@ describe("Teams completion delivery", () => {
           cliAgentSessionHistoryDisposition: "native_only" as const,
         },
       };
-      const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
+      const sandboxHeaders = {
+        authorization: `Bearer ${execution.sandboxToken}`,
+      };
       await webhooks.requestAgentComplete(complete, sandboxHeaders, [200]);
       await flushWaitUntilForTest();
       expect((await runs.readRun(teams.actor, run.id)).status).toBe(

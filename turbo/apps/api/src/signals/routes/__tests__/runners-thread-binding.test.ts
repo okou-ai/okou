@@ -27,8 +27,8 @@ async function initializedPredecessor() {
       prompt: "establish the predecessor's native context",
       model: "claude-fable-5-1",
     });
-    const claim = await owned.claimRunnerRun(run.runId);
-    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+    const execution = await owned.executionInput(run.runId);
+    const headers = { authorization: `Bearer ${execution.sandboxToken}` };
     await completePublicClaudeRun(
       context,
       run,
@@ -108,7 +108,7 @@ describe("Runner first-start Thread binding", () => {
         threadId: first.threadId,
         prompt: "Continue after preparing input was cancelled",
       });
-      const input = await owned.claimRunnerRun(next.runId);
+      const input = await owned.executionInput(next.runId);
       expect(input.nativeContinuation).toMatchObject({
         sessionId: first.threadId,
         generationRunId: first.runId,
@@ -146,7 +146,7 @@ describe("Runner first-start Thread binding", () => {
         },
         [201],
       );
-      const input = await owned.claimRunnerRun(blocker.runId);
+      const input = await owned.executionInput(blocker.runId);
       await completePublicClaudeRun(
         context,
         blocker,
@@ -158,7 +158,7 @@ describe("Runner first-start Thread binding", () => {
         threadId: first.threadId,
         prompt: "Continue after recalling the waiting input",
       });
-      const execution = await owned.claimRunnerRun(next.runId);
+      const execution = await owned.executionInput(next.runId);
       expect(execution.nativeContinuation).toMatchObject({
         sessionId: first.threadId,
         generationRunId: first.runId,
@@ -176,8 +176,8 @@ describe("Runner first-start Thread binding", () => {
           threadId: first.threadId,
           prompt: "start without publishing a native session",
         });
-        const claim = await owned.claimRunnerRun(second.runId);
-        expect(claim.nativeContinuation).toMatchObject({
+        const execution = await owned.executionInput(second.runId);
+        expect(execution.nativeContinuation).toMatchObject({
           sessionId: first.threadId,
           generationRunId: first.runId,
         });
@@ -206,7 +206,7 @@ describe("Runner first-start Thread binding", () => {
             exitCode: 1,
             error: "Stopped before native initialization",
           },
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           [200],
         );
         await flushWaitUntilForTest();
@@ -218,8 +218,8 @@ describe("Runner first-start Thread binding", () => {
           threadId: first.threadId,
           prompt: "recover the Thread without skipping the last executed Run",
         });
-        const nextClaim = await owned.claimRunnerRun(next.runId);
-        expect(nextClaim.nativeContinuation).toMatchObject({
+        const nextExecution = await owned.executionInput(next.runId);
+        expect(nextExecution.nativeContinuation).toMatchObject({
           sessionId: null,
           generationRunId: null,
           recoveryPrompt: expect.stringContaining(
@@ -240,7 +240,7 @@ describe("Runner first-start Thread binding", () => {
           threadId: first.threadId,
           prompt: "initialize exactly one winning claim",
         });
-        const execution = await owned.claimRunnerRun(second.runId);
+        const execution = await owned.executionInput(second.runId);
         expect(execution.nativeContinuation).toMatchObject({
           sessionId: first.threadId,
           generationRunId: first.runId,
@@ -281,8 +281,8 @@ describe("Runner first-start Thread binding", () => {
           threadId: first.threadId,
           prompt: "resume the confirmed session after Runner settlement",
         });
-        const nextClaim = await owned.claimRunnerRun(next.runId);
-        expect(nextClaim.nativeContinuation).toMatchObject({
+        const nextExecution = await owned.executionInput(next.runId);
+        expect(nextExecution.nativeContinuation).toMatchObject({
           sessionId,
           generationRunId: second.runId,
         });

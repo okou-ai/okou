@@ -1,7 +1,7 @@
 import { storedTemplateGuidanceBundleSchema } from "./template-guidance-bundle";
 import {
   contentBundleSchema,
-  claimedContentBundlesSchema,
+  executionContentBundlesSchema,
 } from "./content-bundle";
 import {
   array,
@@ -151,9 +151,8 @@ const runnerProcessIdentitySchema = object({
 }).strict();
 
 /**
- * Atomic advisory decision for cross-runner reuse coordination. A preferred
- * runner is not an exclusive assignee; another runner with a better compatible
- * local resource remains eligible to claim.
+ * Advisory ordering for eligible serving processes. A definite refusal lets
+ * the sender select another process with compatible local resources.
  */
 export const runnerPreferenceSchema = union([
   object({
@@ -948,8 +947,8 @@ export const preparedExecutionContextSchema =
  */
 const executionContextObjectSchema = object({
   // Selected immutable packages, including an empty set for agentless jobs.
-  contentBundles: claimedContentBundlesSchema,
-  // Response-only telemetry context; unavailable for non-chat executions.
+  contentBundles: executionContentBundlesSchema,
+  // Chat execution telemetry context.
   isFirstRun: boolean().optional(),
   runId: uuid(),
   reuseKey: string().nullable().optional(),
@@ -1109,7 +1108,7 @@ export const runnersCancellationContract = c.router({
       401: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary: "Read the stop intent or confirmed absence of a claimed Run",
+    summary: "Read the stop intent or confirmed absence of an executing Run",
   },
 });
 

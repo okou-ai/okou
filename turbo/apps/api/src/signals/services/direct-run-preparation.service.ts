@@ -7,9 +7,9 @@ import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { array, boolean, object } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { rawSqlReadDb$ } from "../external/db";
-import { agentInstructionsSelectionSql } from "./agent-instructions-claim.service";
+import { agentInstructionsSelectionSql } from "./execution-instructions-selection";
 import { createExecutionContext } from "./execution-context";
-import { contentBundleAvailableCondition } from "./content-bundle-claim";
+import { contentBundleAvailableCondition } from "./execution-content-bundle";
 import {
   cachedContentBundleUrlSchema,
   contentBundleUrlCacheContext$,
@@ -17,8 +17,8 @@ import {
 } from "./content-bundle-presigned-url-cache";
 import { encryptExecutionSecrets$ } from "./execution-secrets.service";
 import {
-  executionResponseBody,
-  prepareExecutionResponse$,
+  executionContextBody,
+  prepareExecutionPublication$,
   withExecutionContentBundles$,
   executionBundleHashes,
   type ExecutionPublicationRun,
@@ -27,10 +27,10 @@ import type { RunnerReusePreparation } from "./runner-reuse-preference";
 import { persistStoragePresignedUrls$ } from "./system-storage-presigned-url-cache.service";
 import { recordExecutionPreparationTimings } from "./api-dispatch-timing.service";
 import {
-  claimedWorkflowSchema,
-  workflowClaimInput,
-  workflowClaimSelectionSql,
-} from "./workflow-claim.service";
+  executionWorkflowSchema,
+  executionWorkflowInput,
+  executionWorkflowSelectionSql,
+} from "./execution-workflow-selection";
 
 /** Retained result of this graph's own durable admission, never a stored payload. */
 export interface AdmittedRunLaunch {
@@ -46,7 +46,7 @@ export interface AdmittedRunLaunch {
 const packageSelectionSchema = object({
   available: boolean(),
   isFirstRun: boolean(),
-  workflows: array(claimedWorkflowSchema),
+  workflows: array(executionWorkflowSchema),
   instructionsBundle: contentBundleSchema.nullable(),
   cachedBundleUrls: array(cachedContentBundleUrlSchema),
 });
@@ -57,35 +57,21 @@ export function createDirectRunPreparation(
 ) {
   const executionInput$ = computed(async (get) => {
     const input = await get(input$);
-    return { run: input.run, executionContext: input.executionContext };
+    return { run: input.run, context: input.executionContext };
   });
-  const materialized$ = createExecutionContext(executionInput$);
-  const prepared$ = computed(async (get) => {
-    const materialized = await get(materialized$);
-    if (materialized.status === "unavailable") {
-      throw new Error("Admitted Run execution sources are unavailable");
-    }
-    if (!materialized.result.success) {
-      throw new Error("Admitted Run execution input is invalid");
-    }
-    return {
-      materialized,
-      context: materialized.result.data,
-    };
-  });
+  const prepared$ = createExecutionContext(executionInput$);
   const packages$ = computed(async (get) => {
     const [input, prepared] = await Promise.all([get(input$), get(prepared$)]);
     const db = get(rawSqlReadDb$);
-    const selection = workflowClaimInput(prepared.context);
+    const selection = executionWorkflowInput(prepared.context);
     const cache = get(contentBundleUrlCacheContext$);
-    // These aliases are the shared authorization-selection SQL contract; this
-    // is an ordinary source read and acquires no explicit Run/queue lock.
-    const rows = await db.execute(sql`WITH locked_run AS MATERIALIZED (
+    // Read the admitted identity and its authorized packages in one snapshot.
+    const rows = await db.execute(sql`WITH admitted_run AS MATERIALIZED (
       SELECT ${agentRuns.id} AS "id",${agentRuns.chatThreadId} AS "chatThreadId",${agentRuns.agentId} AS "agentId",
         ${agentRuns.userId} AS "userId",${agentRuns.orgId} AS "orgId",${agentRuns.triggerSource} AS "triggerSource",${agentRuns.workflowAutomationId} AS "workflowAutomationId"
       FROM ${agentRuns} WHERE ${and(eq(agentRuns.id, input.run.id), eq(agentRuns.userId, input.run.userId), eq(agentRuns.orgId, input.run.orgId), eq(agentRuns.status, "pending"))}
     ), ${agentInstructionsSelectionSql(sql`${input.executionContext.featureFlags?.singleAgent === true}`)},
-      ${workflowClaimSelectionSql(selection)}
+      ${executionWorkflowSelectionSql(selection)}
     SELECT EXISTS(SELECT 1 FROM workflow_admission)
       AND COALESCE((SELECT "bundlesAvailable" FROM workflow_selection),false)
       AND NOT EXISTS(SELECT 1 FROM selected_agent WHERE NOT ${contentBundleAvailableCondition(sql`selected_agent."instructionsBundle"`)}) AS available,
@@ -133,29 +119,29 @@ export const prepareDirectRun$ = command(
       ...prepared.context,
       encryptedSecrets: await set(
         encryptExecutionSecrets$,
-        prepared.materialized.secrets,
+        prepared.secrets,
         signal,
       ),
     };
     const response = await set(
-      prepareExecutionResponse$,
+      prepareExecutionPublication$,
       {
         run,
-        storedContext: context,
-        networkPolicyInputs: prepared.materialized.networkPolicyInputs,
+        preparedContext: context,
+        networkPolicyInputs: prepared.networkPolicyInputs,
       },
       signal,
     );
     const publication = await set(
       withExecutionContentBundles$,
       {
-        responseBody: executionResponseBody({
+        executionContext: executionContextBody({
           run,
           reuseKey: input.reuseKey,
-          storedContext: context,
+          preparedContext: context,
           ...response,
         }),
-        claim: packages.row,
+        packages: packages.row,
         workflowInput: packages.selection,
         officialWorkflowBundles: context.officialWorkflowBundles,
         seedSkillBundles: context.seedSkillBundles,
@@ -166,7 +152,7 @@ export const prepareDirectRun$ = command(
     );
     await set(
       persistStoragePresignedUrls$,
-      [...prepared.materialized.storageCacheWrites, ...publication.cacheWrites],
+      [...prepared.storageCacheWrites, ...publication.cacheWrites],
       signal,
     );
     signal.throwIfAborted();
@@ -174,10 +160,10 @@ export const prepareDirectRun$ = command(
       runId: input.run.id,
       runnerGroup: input.runnerGroup,
       profile: input.profile,
-      records: prepared.materialized.connectorOperationTimings,
+      records: prepared.connectorOperationTimings,
     });
     return {
-      executionContext: publication.responseBody,
+      executionContext: publication.executionContext,
       sourceAuthorization: {
         workflows: packages.selection,
         workflowIds: packages.row.workflows.map((workflow) => {
@@ -194,7 +180,7 @@ export const prepareDirectRun$ = command(
           ...context,
           networkPolicies: response.refreshedPolicies.networkPolicies,
         },
-        secretNames: Object.keys(prepared.materialized.secrets ?? {}),
+        secretNames: Object.keys(prepared.secrets ?? {}),
         secretValues: response.secretValues,
       },
     };

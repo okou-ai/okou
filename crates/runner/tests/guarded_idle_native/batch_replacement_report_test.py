@@ -122,7 +122,7 @@ class ReplacementReportTests(unittest.TestCase):
         self.assertEqual(set(result["cases"]),replacement.CASES)
         self.assertTrue(result["native_batch_replacement_complete"])
         for key in ("memory_envelope_calibrated","production_protection_proven","bootstrap_provenance_verified",
-                    "incoming_required_history_proven","actual_api_claim_loss_proven"):
+                    "incoming_required_history_proven"):
             self.assertIs(result[key],False)
 
     def test_real_cli_reads_original_files_and_refuses_missing_phase(self):

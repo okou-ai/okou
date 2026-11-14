@@ -99,7 +99,7 @@ describe("default connector account runtime wakeups", () => {
           agentId: agent.agentId,
           prompt: "Keep a teammate's run active",
         });
-        await memberRuns.claim(created.runId);
+        await memberRuns.executionInput(created.runId);
         return created;
       });
       await expect(runs.readRun(member, otherRun.runId)).resolves.toMatchObject(
@@ -143,7 +143,7 @@ describe("default connector account runtime wakeups", () => {
         ]),
       );
 
-      await owned.claimRunnerRun(run.runId);
+      await owned.executionInput(run.runId);
       context.mocks.ably.batchPublish.mockClear();
       await accept(requestDefault(owned.actor, target, first.id), [200]);
       expect(context.mocks.ably.batchPublish).toHaveBeenCalledExactlyOnceWith(
@@ -184,7 +184,7 @@ describe("default connector account runtime wakeups", () => {
         agentId: outsider.agentId,
         prompt: "A different workspace remains active",
       });
-      await outsider.claimRunnerRun(foreignRun.runId);
+      await outsider.executionInput(foreignRun.runId);
     });
     await owned.run(async () => {
       mockOptionalEnv("RUNNER_DEFAULT_GROUP", owned.runnerGroup);
@@ -219,7 +219,7 @@ describe("default connector account runtime wakeups", () => {
         agentId: owned.agentId,
         prompt: "Observe custom account defaults",
       });
-      await owned.claimRunnerRun(run.runId);
+      await owned.executionInput(run.runId);
       context.mocks.ably.batchPublish.mockClear();
       context.mocks.ably.batchPublish.mockRejectedValueOnce(
         new Error("Ably rejected this notification"),

@@ -57,12 +57,12 @@ async function createRun(actor = bdd.user()): Promise<RunFixture> {
     prompt: "Read X resources",
   });
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.executionInput(run.runId);
+  const execution = await runs.executionInput(run.runId);
   return {
     actor,
     agentId: agent.agentId,
     runId: run.runId,
-    authorization: `Bearer ${claim.sandboxToken}`,
+    authorization: `Bearer ${execution.sandboxToken}`,
   };
 }
 

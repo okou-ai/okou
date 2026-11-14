@@ -23,14 +23,14 @@ async fn claim_rejects_mismatched_context() {
     let (provider, _handle) = MockJobProvider::new(CancellationToken::new());
     provider.set_claim_result(candidate_run_id, Some(minimal_context(context_run_id)));
 
-    let claimed = provider
+    let job = provider
         .claim(JobCandidate::new(
             candidate_run_id,
             runner_types::profile_name::DEFAULT_PROFILE.to_owned(),
         ))
         .await;
 
-    assert!(claimed.is_none());
+    assert!(job.is_none());
 }
 
 #[tokio::test]
@@ -39,7 +39,7 @@ async fn claim_accepts_matching_context() {
     let (provider, _handle) = MockJobProvider::new(CancellationToken::new());
     provider.set_claim_result(run_id, Some(minimal_context(run_id)));
 
-    let claimed = provider
+    let job = provider
         .claim(JobCandidate::new(
             run_id,
             runner_types::profile_name::DEFAULT_PROFILE.to_owned(),
@@ -47,7 +47,7 @@ async fn claim_accepts_matching_context() {
         .await
         .expect("matching context should be claimed");
 
-    assert_eq!(claimed.context().run_id, run_id);
+    assert_eq!(job.context().run_id, run_id);
 }
 
 #[tokio::test]

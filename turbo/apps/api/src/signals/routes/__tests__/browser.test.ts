@@ -1,6 +1,6 @@
 import { createPublicComputerUseHosts } from "./helpers/public-computer-use-hosts";
 import { publicChatActor } from "./helpers/public-chat-actor";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
@@ -7178,20 +7178,20 @@ function acceptBrowserUseCdpSessions(
   }
 }
 
-async function claimChatRun(
+async function runExecution(
   runs: ReturnType<typeof createRunsApi>,
   runId: string,
 ) {
   await flushWaitUntilForTest();
-  const claim = await runs.executionInput(runId);
-  const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+  const execution = await runs.executionInput(runId);
+  const okouToken = execution.platformEnvironment.OKOU_TOKEN;
   if (!okouToken) {
     throw new Error("Expected the runner claim to include OKOU_TOKEN");
   }
   return {
     browserHeaders: { authorization: `Bearer ${okouToken}` },
     sandboxHeaders: {
-      authorization: `Bearer ${claim.sandboxToken}`,
+      authorization: `Bearer ${execution.sandboxToken}`,
     },
   };
 }
@@ -7312,7 +7312,7 @@ async function setupOwnedNativeFileBrowserScenario() {
       cloudBrowserEnabled: true,
     });
     threadId = sent.threadId;
-    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    const execution = await owned.runExecution(sent.runId);
     return {
       ...owned,
       actor,
@@ -7325,9 +7325,9 @@ async function setupOwnedNativeFileBrowserScenario() {
         threadId: sent.threadId,
         claim: {
           browserHeaders: {
-            authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
+            authorization: `Bearer ${okouTokenFromExecution(execution.execution)}`,
           },
-          sandboxHeaders: claimed.sandboxHeaders,
+          sandboxHeaders: execution.sandboxHeaders,
         },
       },
       rememberAction(requestToken: string) {
@@ -7384,7 +7384,7 @@ async function createClaimedChatRun(
   return {
     runId: sent.runId,
     threadId: sent.threadId,
-    claim: await claimChatRun(runs, sent.runId),
+    claim: await runExecution(runs, sent.runId),
   };
 }
 
@@ -7510,11 +7510,11 @@ describe("okou browser route", () => {
         chat.readThreadMetadata(actor, sent.threadId),
       ).resolves.toMatchObject({ cloudBrowserEnabled: enabled });
       await flushWaitUntilForTest();
-      const claim = await runs.executionInput(sent.runId);
+      const execution = await runs.executionInput(sent.runId);
       const browser = await accept(
         client().get({
           headers: {
-            authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+            authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
           },
           params: { threadId: sent.threadId },
         }),
@@ -7579,23 +7579,23 @@ describe("okou browser route", () => {
       cloudBrowserEnabled: false,
     });
     await flushWaitUntilForTest();
-    const claim = await runs.executionInput(sent.runId);
-    expect(claim.appendSystemPrompt ?? "").toContain(
+    const execution = await runs.executionInput(sent.runId);
+    expect(execution.appendSystemPrompt ?? "").toContain(
       "Okou Browser is currently off for this chat thread",
     );
-    expect(claim.appendSystemPrompt ?? "").not.toContain(
+    expect(execution.appendSystemPrompt ?? "").not.toContain(
       "Browser user input priority:",
     );
-    expect(claim.appendSystemPrompt ?? "").not.toContain(
+    expect(execution.appendSystemPrompt ?? "").not.toContain(
       "okou browser input-request",
     );
-    expect(claim.appendSystemPrompt ?? "").not.toContain(
+    expect(execution.appendSystemPrompt ?? "").not.toContain(
       "Browser tab continuity:",
     );
-    expect(claim.appendSystemPrompt ?? "").not.toContain(
+    expect(execution.appendSystemPrompt ?? "").not.toContain(
       "Browser shared profile:",
     );
-    const browserToken = claim.platformEnvironment.OKOU_TOKEN;
+    const browserToken = execution.platformEnvironment.OKOU_TOKEN;
     if (!browserToken) {
       throw new Error("Expected a claimed agent token");
     }
@@ -7617,8 +7617,8 @@ describe("okou browser route", () => {
     });
 
     await flushWaitUntilForTest();
-    const claim = await runs.executionInput(sent.runId);
-    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+    const execution = await runs.executionInput(sent.runId);
+    const appendSystemPrompt = execution.appendSystemPrompt ?? "";
     expect(appendSystemPrompt).toContain("this chat's managed Browser");
     expect(appendSystemPrompt).toContain(
       "Each chat has its own window and tabs",
@@ -7654,8 +7654,8 @@ describe("okou browser route", () => {
     });
 
     await flushWaitUntilForTest();
-    const claim = await runs.executionInput(sent.runId);
-    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+    const execution = await runs.executionInput(sent.runId);
+    const appendSystemPrompt = execution.appendSystemPrompt ?? "";
     expect(appendSystemPrompt).toContain(
       "prefer `okou browser input-request` over direct Browser takeover",
     );
@@ -7700,8 +7700,8 @@ describe("okou browser route", () => {
         cloudBrowserEnabled: true,
       });
     });
-    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
-    const browserToken = okouTokenFromClaim(claimed.claim);
+    const execution = await owned.runExecution(sent.runId);
+    const browserToken = okouTokenFromExecution(execution.execution);
     const host = await owned.startHost();
 
     await owned.run(() => {
@@ -7740,9 +7740,9 @@ describe("okou browser route", () => {
         cloudBrowserEnabled: false,
       });
     });
-    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    const execution = await owned.runExecution(sent.runId);
     await owned.run(async () => {
-      const sandboxRunToken = claimed.claim.sandboxToken;
+      const sandboxRunToken = execution.execution.sandboxToken;
       const sandboxCreated = await accept(
         authorizationClient().create({
           headers: { authorization: `Bearer ${sandboxRunToken}` },
@@ -7753,7 +7753,7 @@ describe("okou browser route", () => {
       expect(new URL(sandboxCreated.body.authorizationUrl).origin).toBe(
         "https://app.okou.ai",
       );
-      const okouRunToken = okouTokenFromClaim(claimed.claim);
+      const okouRunToken = okouTokenFromExecution(execution.execution);
       const createdOnOkouApi = await accept(
         authorizationClient("https://api.okou.ai").create({
           headers: { authorization: `Bearer ${okouRunToken}` },
@@ -7843,12 +7843,12 @@ describe("okou browser route", () => {
           cloudBrowserEnabled: false,
         });
       });
-      const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+      const execution = await owned.runExecution(sent.runId);
       await owned.run(async () => {
         const created = await accept(
           authorizationClient().create({
             headers: {
-              authorization: `Bearer ${claimed.claim.sandboxToken}`,
+              authorization: `Bearer ${execution.execution.sandboxToken}`,
             },
             body: {},
           }),
@@ -7934,12 +7934,12 @@ describe("okou browser route", () => {
         cloudBrowserEnabled: false,
       });
     });
-    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    const execution = await owned.runExecution(sent.runId);
     await owned.run(async () => {
       const created = await accept(
         authorizationClient().create({
           headers: {
-            authorization: `Bearer ${claimed.claim.sandboxToken}`,
+            authorization: `Bearer ${execution.execution.sandboxToken}`,
           },
           body: {},
         }),
@@ -8017,12 +8017,12 @@ describe("okou browser route", () => {
         cloudBrowserEnabled: false,
       });
     });
-    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    const execution = await owned.runExecution(sent.runId);
     await owned.run(async () => {
       const created = await accept(
         authorizationClient().create({
           headers: {
-            authorization: `Bearer ${claimed.claim.sandboxToken}`,
+            authorization: `Bearer ${execution.execution.sandboxToken}`,
           },
           body: {},
         }),

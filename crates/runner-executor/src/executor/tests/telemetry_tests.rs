@@ -69,7 +69,7 @@ fn elapsed_since_api_start_ms_rejects_seconds_shaped_start() {
 #[test]
 fn blank_pool_selection_records_one_latest_bounded_outcome() {
     let mut telemetry = new_telemetry();
-    let mut timing = RunnerPreSpawnTiming::start_after_claim();
+    let mut timing = RunnerPreSpawnTiming::start_after_acceptance();
     timing.record_blank_pool_selection(BlankPoolSelection::Miss(
         BlankPoolSelectionReason::EmptyInventory,
     ));
@@ -77,12 +77,12 @@ fn blank_pool_selection_records_one_latest_bounded_outcome() {
         BlankPoolSelectionReason::HeadroomReserved,
     ));
 
-    RunnerSpawnTiming::start(Some(timing)).record_claim_to_executor_start(&mut telemetry);
+    RunnerSpawnTiming::start(Some(timing)).record_acceptance_to_executor_start(&mut telemetry);
 
     let operations = telemetry.pending_ops_with_outcome_snapshot();
     let matching: Vec<_> = operations
         .iter()
-        .filter(|operation| operation.0 == "runner_claim_blank_pool_selection")
+        .filter(|operation| operation.0 == "runner_pre_spawn_blank_pool_selection")
         .collect();
     assert_eq!(matching.len(), 1, "blank selection should emit once");
     assert!(matching[0].1);
@@ -744,42 +744,42 @@ const GUEST_CONNECTION_PHASE_NAMES: [&str; 8] = [
 const RUNNER_PRE_SPAWN_PHASE_CASES: &[(RunnerPreSpawnPhase, &str, u64)] = &[
     (
         RunnerPreSpawnPhase::ResumeSessionValidation,
-        "runner_claim_resume_session_validation",
+        "runner_pre_spawn_resume_session_validation",
         1,
     ),
     (
         RunnerPreSpawnPhase::DeviceRateLimits,
-        "runner_claim_device_rate_limits",
+        "runner_pre_spawn_device_rate_limits",
         4,
     ),
     (
         RunnerPreSpawnPhase::IdleReuseLookup,
-        "runner_claim_idle_reuse_lookup",
+        "runner_pre_spawn_idle_reuse_lookup",
         5,
     ),
     (
         RunnerPreSpawnPhase::HomeCacheStateLookup,
-        "runner_claim_home_cache_state_lookup",
+        "runner_pre_spawn_home_cache_state_lookup",
         6,
     ),
     (
         RunnerPreSpawnPhase::HomePromotionValidation,
-        "runner_claim_home_promotion_validation",
+        "runner_pre_spawn_home_promotion_validation",
         7,
     ),
     (
         RunnerPreSpawnPhase::IdleUnpark,
-        "runner_claim_idle_unpark",
+        "runner_pre_spawn_idle_unpark",
         8,
     ),
     (
         RunnerPreSpawnPhase::ActiveStatusPublish,
-        "runner_claim_active_status_publish",
+        "runner_pre_spawn_active_status_publish",
         9,
     ),
     (
         RunnerPreSpawnPhase::SpawnJobSetup,
-        "runner_claim_spawn_job_setup",
+        "runner_pre_spawn_job_setup",
         10,
     ),
 ];
@@ -789,7 +789,7 @@ fn assert_pre_spawn_phase_actions_succeeded(telemetry: &JobTelemetry) {
         assert_action_success(telemetry, action, true);
         assert_action_once_with_duration(telemetry, action, duration_ms);
     }
-    assert_action_success(telemetry, "runner_claim_task_schedule_wait", true);
+    assert_action_success(telemetry, "runner_pre_spawn_task_schedule_wait", true);
 }
 
 fn pre_spawn_timing_with_phases() -> RunnerPreSpawnTiming {
@@ -874,9 +874,9 @@ async fn execute_job_fresh_path_preserves_preparation_telemetry() {
     )
     .await;
 
-    assert_lacks_action(&telemetry, "runner_claim_to_executor_start");
-    assert_lacks_action(&telemetry, "runner_claim_resume_session_validation");
-    assert_lacks_action(&telemetry, "runner_claim_task_schedule_wait");
+    assert_lacks_action(&telemetry, "runner_accepted_to_executor_start");
+    assert_lacks_action(&telemetry, "runner_pre_spawn_resume_session_validation");
+    assert_lacks_action(&telemetry, "runner_pre_spawn_task_schedule_wait");
     assert_action_success(&telemetry, "runner_fresh_sandbox_start", true);
     assert_action_success(&telemetry, "home_drive_mount_guest_exec_unavailable", true);
     assert_lacks_action(&telemetry, "home_drive_mount_guest_exec");
@@ -914,11 +914,11 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
     .await;
 
     for action in [
-        "runner_claim_to_executor_start",
+        "runner_accepted_to_executor_start",
         "runner_executor_start_to_spawn",
-        "runner_claim_to_spawn",
+        "runner_accepted_to_spawn",
         "runner_executor_start_to_agent_ready",
-        "runner_claim_to_agent_ready",
+        "runner_accepted_to_agent_ready",
         "runner_fresh_sandbox_prepare",
         "runner_fresh_sandbox_factory_create",
         "runner_fresh_sandbox_proxy_register",
@@ -1031,7 +1031,7 @@ async fn execute_job_attributes_overlapping_pre_spawn_work_and_releases_membersh
         .await;
 
         for action in [
-            "runner_claim_to_executor_start",
+            "runner_accepted_to_executor_start",
             "runner_fresh_sandbox_prepare",
             "runner_agent_start_process",
             "api_to_spawn",
@@ -1081,7 +1081,7 @@ async fn execute_job_attributes_overlapping_pre_spawn_work_and_releases_membersh
 #[test]
 fn pre_finalization_deadline_records_bounded_handoff_outcome() {
     let mut telemetry = new_telemetry();
-    let mut timing = RunnerPreSpawnTiming::start_after_claim();
+    let mut timing = RunnerPreSpawnTiming::start_after_acceptance();
 
     timing.record_finalizing_handoff(
         FinalizingHandoffOutcome::PreFinalizationDeadline,
@@ -1094,7 +1094,7 @@ fn pre_finalization_deadline_records_bounded_handoff_outcome() {
 
     assert_action_outcome(
         &telemetry,
-        "runner_claim_finalizing_handoff",
+        "runner_pre_spawn_finalizing_handoff",
         false,
         Some("pre_finalization_deadline"),
     );
@@ -1103,7 +1103,7 @@ fn pre_finalization_deadline_records_bounded_handoff_outcome() {
             .pending_ops_with_outcome_snapshot()
             .iter()
             .any(|operation| {
-                operation.0 == "runner_claim_finalizing_handoff"
+                operation.0 == "runner_pre_spawn_finalizing_handoff"
                     && operation.2.as_deref() == Some("pre_finalization_deadline")
                     && operation.3.as_deref() == Some("pre_finalization_deadline")
             })
@@ -1149,7 +1149,7 @@ async fn execute_job_attributes_resource_budget_occupancy_until_agent_ready() {
         RunnerResourceBudgetLeaseCountBucket::Two,
     ));
     for action in [
-        "runner_claim_to_executor_start",
+        "runner_accepted_to_executor_start",
         "runner_fresh_sandbox_prepare",
         "runner_agent_start_process",
         "api_to_spawn",
@@ -1487,11 +1487,11 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
 
     assert_reused_proxy_registration_timing(&telemetry);
     for action in [
-        "runner_claim_to_executor_start",
+        "runner_accepted_to_executor_start",
         "runner_executor_start_to_spawn",
-        "runner_claim_to_spawn",
+        "runner_accepted_to_spawn",
         "runner_executor_start_to_agent_ready",
-        "runner_claim_to_agent_ready",
+        "runner_accepted_to_agent_ready",
         "runner_reused_sandbox_prepare",
         "runner_guest_state_restore",
         "runner_required_private_files_write",
@@ -1621,13 +1621,13 @@ async fn execution_entries_preserve_start_telemetry_on_session_rejection() {
         assert_eq!(requests.len(), 2);
         let mut expected_actions = Vec::new();
         if with_hooks {
-            expected_actions.extend(["runner_claim_to_executor_start"]);
+            expected_actions.extend(["runner_accepted_to_executor_start"]);
             expected_actions.extend(
                 RUNNER_PRE_SPAWN_PHASE_CASES
                     .iter()
                     .map(|(_, action, _)| *action),
             );
-            expected_actions.extend(["runner_claim_task_schedule_wait"]);
+            expected_actions.extend(["runner_pre_spawn_task_schedule_wait"]);
         }
         if api_start_time == Some(api_epoch_ms) {
             expected_actions.push("api_to_sandbox_start");
@@ -1828,7 +1828,7 @@ async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
     };
 
     let cancel = tokio_util::sync::CancellationToken::new();
-    let mut pre_spawn_timing = RunnerPreSpawnTiming::start_after_claim();
+    let mut pre_spawn_timing = RunnerPreSpawnTiming::start_after_acceptance();
     pre_spawn_timing.record_blank_pool_selection(BlankPoolSelection::Hit);
     let mut context = minimal_context();
     context.is_first_run = Some(false);
@@ -1865,7 +1865,7 @@ async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
     }));
     let blank_selection = telemetry.pending_ops_with_outcome_snapshot();
     assert!(blank_selection.iter().any(|operation| {
-        operation.0 == "runner_claim_blank_pool_selection"
+        operation.0 == "runner_pre_spawn_blank_pool_selection"
             && operation.2.as_deref() == Some("hit")
             && operation.3.is_none()
     }));
@@ -2137,9 +2137,9 @@ async fn start_process_failure_records_phase_failure_without_spawn_completion() 
     assert_action_success(&telemetry, "runner_agent_start_process", false);
     assert_action_success(&telemetry, "agent_execute", false);
     assert_lacks_action(&telemetry, "runner_executor_start_to_spawn");
-    assert_lacks_action(&telemetry, "runner_claim_to_spawn");
+    assert_lacks_action(&telemetry, "runner_accepted_to_spawn");
     assert_lacks_action(&telemetry, "runner_executor_start_to_agent_ready");
-    assert_lacks_action(&telemetry, "runner_claim_to_agent_ready");
+    assert_lacks_action(&telemetry, "runner_accepted_to_agent_ready");
     assert_lacks_action(&telemetry, "runner_agent_start_to_ready");
     assert_pre_spawn_concurrency_bucket(
         &telemetry,

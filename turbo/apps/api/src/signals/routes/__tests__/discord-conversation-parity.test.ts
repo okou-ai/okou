@@ -88,7 +88,7 @@ async function claimMessage(
   await runsApi.heartbeatRunner(actor.runnerGroup);
   return {
     runId: input.runId,
-    claim: await runsApi.executionInput(input.runId),
+    executionInput: await runsApi.executionInput(input.runId),
   };
 }
 
@@ -300,7 +300,7 @@ describe("Discord context parity through public OAuth bindings", () => {
         guild_id: actor.guildId,
       },
     };
-    const { claim } = await claimMessage(actor, message);
+    const { executionInput: claim } = await claimMessage(actor, message);
     expect(claim.appendSystemPrompt).toContain("Original thread starter");
     expect(claim.appendSystemPrompt).toContain("Parent discussion 1");
     expect(claim.appendSystemPrompt).toContain(
@@ -376,7 +376,7 @@ describe("Discord context parity through public OAuth bindings", () => {
       content: "Future channel message",
     });
     provider.messages.set(future.id, future);
-    const { claim } = await claimMessage(actor, message);
+    const { executionInput: claim } = await claimMessage(actor, message);
     const history = claim.appendSystemPrompt?.split(
       "# Recent Channel Messages",
     )[1];
@@ -442,7 +442,7 @@ describe("Discord context parity through public OAuth bindings", () => {
         guild_id: actor.guildId,
       },
     };
-    const { claim } = await claimMessage(actor, message);
+    const { executionInput: claim } = await claimMessage(actor, message);
     const [channelContext, threadContext] = claim
       .appendSystemPrompt!.split("# Recent Channel Messages")[1]!
       .split("# Discord Thread Context");
@@ -515,7 +515,7 @@ describe("Discord context parity through public OAuth bindings", () => {
         guild_id: actor.guildId,
       },
     };
-    const { claim } = await claimMessage(actor, message);
+    const { executionInput: claim } = await claimMessage(actor, message);
     expect(claim.appendSystemPrompt).toContain(history.content);
     expect(claim.appendSystemPrompt).not.toContain(parent.content);
     expect(claim.appendSystemPrompt).not.toContain(elsewhere.content);
@@ -543,7 +543,7 @@ describe("Discord context parity through public OAuth bindings", () => {
       { ...message, id: "123456789012345679" },
       "Another organization's private DM content",
     );
-    const { claim } = await claimMessage(actor, message);
+    const { executionInput: claim } = await claimMessage(actor, message);
     expect(claim.appendSystemPrompt).not.toContain(
       "Another organization's private DM content",
     );
@@ -553,7 +553,7 @@ describe("Discord context parity through public OAuth bindings", () => {
   it("adds run attribution once to a split native send", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
-    const { claim } = await claimMessage(
+    const { executionInput: claim } = await claimMessage(
       actor,
       discordMessageForTest(actor, {
         channelId: provider.guildChannelId,

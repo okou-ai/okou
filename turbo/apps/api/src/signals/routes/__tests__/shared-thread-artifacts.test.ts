@@ -39,7 +39,7 @@ import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -606,8 +606,8 @@ test("copies an uploaded video with independent bytes and the parent revocation"
   const f = await fixture();
   const sourceRun = await f.selection("Upload a video");
   await runs.heartbeatRunner(f.runnerGroup);
-  const claim = await runs.executionInput(sourceRun.runId);
-  const bearerToken = okouTokenFromClaim(claim);
+  const execution = await runs.executionInput(sourceRun.runId);
+  const bearerToken = okouTokenFromExecution(execution);
   const source = await f.upload(f.actor, "Private video bytes", {
     filename: "video.mp4",
     contentType: "video/mp4",

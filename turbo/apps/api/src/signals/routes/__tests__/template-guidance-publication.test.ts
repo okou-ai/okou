@@ -31,7 +31,9 @@ const context = testContext();
 const bdd = createBddApi(context);
 const mocks = createRouteMocks(context);
 const chat = createChatEventsFixture(context);
-type RunnerClaim = Awaited<ReturnType<typeof chat.claimChatRun>>["claim"];
+type RunnerExecutionInput = Awaited<
+  ReturnType<typeof chat.runExecution>
+>["execution"];
 const sourceType =
   "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 const ownerKinds = ["user-template", "presentation-template"] as const;
@@ -137,12 +139,12 @@ async function remove(kind: OwnerKind, id: string) {
 
 function claimedFiles(
   fixture: Fixture,
-  claim: RunnerClaim,
+  execution: RunnerExecutionInput,
   kind: OwnerKind,
   id: string,
 ) {
-  expect(claim.contentBundles.templates).toHaveLength(1);
-  const bundle = claim.contentBundles.templates?.[0];
+  expect(execution.contentBundles.templates).toHaveLength(1);
+  const bundle = execution.contentBundles.templates?.[0];
   if (!bundle) {
     throw new Error("Expected captured template guidance");
   }
@@ -230,17 +232,17 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
         prompt: "Use the current template",
         template: selection(kind, id),
       });
-      const first = await owner.claimChatRun(owner.runnerGroup, firstRun.runId);
-      const next = await owner.claimChatRun(owner.runnerGroup, nextRun.runId);
-      expect(first.claim.cliAgentType).toBe(framework);
+      const first = await owner.runExecution(firstRun.runId);
+      const next = await owner.runExecution(nextRun.runId);
+      expect(first.execution.cliAgentType).toBe(framework);
       await owner.run(() => {
         return remove(kind, id);
       });
       // Each dispatched Run retains its immutable package after replacement/deletion.
-      expect(claimedFiles(fixture, first.claim, kind, id)).toStrictEqual(
+      expect(claimedFiles(fixture, first.execution, kind, id)).toStrictEqual(
         oldFiles,
       );
-      expect(claimedFiles(fixture, next.claim, kind, id)).toStrictEqual(
+      expect(claimedFiles(fixture, next.execution, kind, id)).toStrictEqual(
         kind === "user-template" ? guidance("B") : oldFiles,
       );
       await owner.run(async () => {
@@ -385,10 +387,10 @@ test("mounts both template owner kinds once when selections repeat", async () =>
       ],
     },
   });
-  const { claim } = await owner.claimChatRun(owner.runnerGroup, run.runId);
-  expect(claim.contentBundles.templates).toHaveLength(expected.length);
+  const { execution } = await owner.runExecution(run.runId);
+  expect(execution.contentBundles.templates).toHaveLength(expected.length);
   for (const item of expected) {
-    const bundle = claim.contentBundles.templates?.find((candidate) => {
+    const bundle = execution.contentBundles.templates?.find((candidate) => {
       return (
         candidate.ownerKind === item.ownerKind &&
         candidate.templateId === item.templateId
@@ -472,9 +474,9 @@ test("allows package replacement and retry after a completed metadata edit", asy
     prompt: "Read the replacement after renaming",
     template: selection("user-template", id),
   });
-  const claimed = await owner.claimChatRun(owner.runnerGroup, run.runId);
+  const execution = await owner.runExecution(run.runId);
   expect(
-    claimedFiles(fixture, claimed.claim, "user-template", id),
+    claimedFiles(fixture, execution.execution, "user-template", id),
   ).toStrictEqual(guidance("B"));
 });
 
@@ -585,9 +587,9 @@ test.each(["replacement", "metadata edit"] as const)(
       prompt: "Read the winning template",
       template: selection("user-template", id),
     });
-    const claimed = await owner.claimChatRun(owner.runnerGroup, run.runId);
+    const execution = await owner.runExecution(run.runId);
     expect(
-      claimedFiles(fixture, claimed.claim, "user-template", id),
+      claimedFiles(fixture, execution.execution, "user-template", id),
     ).toStrictEqual(guidance(change === "replacement" ? "winner" : "A"));
   },
 );
@@ -618,8 +620,8 @@ test("delivers a valid template archive larger than the Skill bundle ceiling", a
     prompt: "Read the large template",
     template: selection("user-template", published.body.id),
   });
-  const claimed = await owner.claimChatRun(owner.runnerGroup, run.runId);
-  const bundle = claimed.claim.contentBundles.templates?.[0];
+  const execution = await owner.runExecution(run.runId);
+  const bundle = execution.execution.contentBundles.templates?.[0];
   if (!bundle) {
     throw new Error("Expected large template guidance");
   }

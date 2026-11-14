@@ -161,7 +161,7 @@ describe("retained chat input observation", () => {
         throw new Error("Expected the accepted input to identify its Run");
       }
       const before = await chat.readThread(f.actor, first.threadId);
-      const claimed = await f.claimChatRun(f.runnerGroup, assigned.runId);
+      const execution = await f.runExecution(assigned.runId);
       const prompt = "x".repeat(32_001);
       const second = mcpSendChatMessageOutputSchema.parse(
         toolBody(
@@ -179,9 +179,12 @@ describe("retained chat input observation", () => {
         runId: null,
         terminal: null,
       });
-      await runs.nextSteerableInput(claimed.claim.sandboxToken, assigned.runId);
+      await runs.nextSteerableInput(
+        execution.execution.sandboxToken,
+        assigned.runId,
+      );
       await runs.declareSteeredInput(
-        claimed.claim.sandboxToken,
+        execution.execution.sandboxToken,
         assigned.runId,
         second.eventId,
       );
@@ -207,7 +210,10 @@ describe("retained chat input observation", () => {
       expect(Buffer.byteLength(JSON.stringify(toolResult))).toBeLessThanOrEqual(
         CHAT_INPUT_STATUS_MAX_RESPONSE_BYTES,
       );
-      await lifecycle.completeChatRunOk(assigned.runId, claimed.sandboxHeaders);
+      await lifecycle.completeChatRunOk(
+        assigned.runId,
+        execution.sandboxHeaders,
+      );
       await flushWaitUntilForTest();
       const events = await chat.listThreadEventRows(f.actor, first.threadId);
       const terminal = events.find((event) => {
@@ -261,11 +267,11 @@ describe("retained chat input observation", () => {
           prompt: "Observe the terminal outcome",
           clientEventId: eventId,
         });
-        const claim = await f.claimChatRun(f.runnerGroup, run.runId);
+        const execution = await f.runExecution(run.runId);
         if (status === "failed") {
           await webhooks.requestAgentComplete(
             { runId: run.runId, exitCode: 1, error: "private failure detail" },
-            claim.sandboxHeaders,
+            execution.sandboxHeaders,
             [200],
           );
         } else {
@@ -279,7 +285,7 @@ describe("retained chat input observation", () => {
           });
           await lifecycle.failChatRun(
             run.runId,
-            claim.sandboxHeaders,
+            execution.sandboxHeaders,
             "private failure detail",
           );
         }
@@ -309,8 +315,11 @@ describe("retained chat input observation", () => {
         prompt: "Complete the first request",
         clientEventId: firstEventId,
       });
-      const firstClaim = await f.claimChatRun(f.runnerGroup, first.runId);
-      await lifecycle.completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
+      const firstExecution = await f.runExecution(first.runId);
+      await lifecycle.completeChatRunOk(
+        first.runId,
+        firstExecution.sandboxHeaders,
+      );
       await flushWaitUntilForTest();
       const completed = await read(f.token(), first.threadId, firstEventId);
       expect(completed).toMatchObject({
@@ -338,10 +347,10 @@ describe("retained chat input observation", () => {
         read(f.token(), first.threadId, firstEventId),
       ).resolves.toStrictEqual(completed);
 
-      const nextClaim = await f.claimChatRun(f.runnerGroup, next.runId);
+      const nextExecution = await f.runExecution(next.runId);
       await lifecycle.failChatRun(
         next.runId,
-        nextClaim.sandboxHeaders,
+        nextExecution.sandboxHeaders,
         "The later request failed",
       );
       await flushWaitUntilForTest();
@@ -378,7 +387,7 @@ describe("retained chat input observation", () => {
         agentId: f.agentId,
         prompt: "Wait for additional inputs",
       });
-      await f.claimChatRun(f.runnerGroup, active.runId);
+      await f.runExecution(active.runId);
       const eventId = randomUUID();
       await f.requestSendEvent(
         f.actor,

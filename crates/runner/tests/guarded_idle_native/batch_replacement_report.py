@@ -157,7 +157,7 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
             "allocated":[0,0,0],"accounting":joined["accounting"]},"replacement producers remain owned")
     return {**result,"format":"native-batch-replacement-report-v1","native_batch_replacement_complete":True,
             "replacement_scope":"same-key distinct tenant-free incoming; original required home; captured old AccountingChanged",
-            "incoming_required_history_proven":False,"actual_api_claim_loss_proven":False}
+            "incoming_required_history_proven":False,}
 
 
 if __name__ == "__main__":

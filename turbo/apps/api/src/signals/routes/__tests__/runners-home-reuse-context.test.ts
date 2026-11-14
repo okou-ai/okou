@@ -15,7 +15,7 @@ describe("Runner claim home-reuse context", () => {
       actor,
       agentId,
       run: own,
-      claimRunnerRun,
+      executionInput,
     } = await publicChatActor(context);
 
     await own(async () => {
@@ -24,12 +24,12 @@ describe("Runner claim home-reuse context", () => {
         agentId,
         prompt: "first home-reuse context",
       });
-      const firstClaim = await claimRunnerRun(first.runId);
+      const firstExecution = await executionInput(first.runId);
       // The first prompt is already attributed to this Run when claim reads it.
-      expect(firstClaim).toMatchObject({ isFirstRun: true });
+      expect(firstExecution).toMatchObject({ isFirstRun: true });
       await webhooks.requestAgentComplete(
         { runId: first.runId, exitCode: 0 },
-        { authorization: `Bearer ${firstClaim.sandboxToken}` },
+        { authorization: `Bearer ${firstExecution.sandboxToken}` },
         [200],
       );
 
@@ -38,11 +38,11 @@ describe("Runner claim home-reuse context", () => {
         threadId: first.threadId,
         prompt: "subsequent home-reuse context",
       });
-      const nextClaim = await claimRunnerRun(next.runId);
-      expect(nextClaim).toMatchObject({ isFirstRun: false });
+      const nextExecution = await executionInput(next.runId);
+      expect(nextExecution).toMatchObject({ isFirstRun: false });
       await webhooks.requestAgentComplete(
         { runId: next.runId, exitCode: 0 },
-        { authorization: `Bearer ${nextClaim.sandboxToken}` },
+        { authorization: `Bearer ${nextExecution.sandboxToken}` },
         [200],
       );
 
@@ -51,8 +51,8 @@ describe("Runner claim home-reuse context", () => {
         prompt: "first context in another thread",
       });
       expect(other.threadId).not.toBe(first.threadId);
-      const otherClaim = await claimRunnerRun(other.runId);
-      expect(otherClaim).toMatchObject({ isFirstRun: true });
+      const otherExecution = await executionInput(other.runId);
+      expect(otherExecution).toMatchObject({ isFirstRun: true });
     });
   });
 });

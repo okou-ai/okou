@@ -108,7 +108,7 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
+import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 import { setPaidToolDisabled } from "./helpers/paid-tools";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
@@ -584,15 +584,15 @@ function customSkillMount(
     );
   });
 }
-const piClaimFixture = createChatEventsFixture(context);
+const piExecutionFixture = createChatEventsFixture(context);
 
 /**
  * Pi-eligible chat models run in the sandbox. Run creation publishes the Pi
  * launch handoff to object storage, so route tests capture it before sending
  * and then inspect the frozen claim.
  */
-function preparePiSandboxClaim(): void {
-  piClaimFixture.mockPiObjectStore();
+function preparePiSandboxExecution(): void {
+  piExecutionFixture.mockPiObjectStore();
 }
 
 async function entitledRunActor(
@@ -819,15 +819,15 @@ function useOrdinaryOAuthRuns() {
           return run;
         },
         async executionInput(...args: Parameters<typeof runs.executionInput>) {
-          const claim = await runs.executionInput(...args);
+          const execution = await runs.executionInput(...args);
           const owned = ownedRuns.get(args[0]);
           if (!owned) {
             throw new Error(
               "Expected an owned Run before claiming OAuth runtime",
             );
           }
-          owned.sandboxToken = claim.sandboxToken;
-          return claim;
+          owned.sandboxToken = execution.sandboxToken;
+          return execution;
         },
       },
       async entitledRunActor(...args: Parameters<typeof entitledRunActor>) {
@@ -1016,8 +1016,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "turn this deck into a template",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+        const execution = await api.executionInput(run.runId);
+        const appendSystemPrompt = execution.appendSystemPrompt ?? "";
         expect(appendSystemPrompt).toContain(
           "okou resource pull skill:presentation-reverse-template --dir ./generated/resources",
         );
@@ -1040,8 +1040,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the Okou CLI",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        expect(claim.appendSystemPrompt).toContain(
+        const execution = await api.executionInput(run.runId);
+        expect(execution.appendSystemPrompt).toContain(
           "You have access to the Okou CLI. Run commands with: `okou <command>`.",
         );
         await api.requestCancelRun(actor, run.runId, [200]);
@@ -1073,9 +1073,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "inspect this Run's provider-token usage",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(created.runId);
-        const prompt = claim.appendSystemPrompt ?? "";
-        const token = claim.platformEnvironment.OKOU_TOKEN;
+        const execution = await api.executionInput(created.runId);
+        const prompt = execution.appendSystemPrompt ?? "";
+        const token = execution.platformEnvironment.OKOU_TOKEN;
         if (!token) {
           throw new Error("Expected a minted Run token");
         }
@@ -1134,14 +1134,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(created.runId);
-        expect(claim.appendSystemPrompt ?? "").toContain("Timezone: UTC");
-        expect(claim.userTimezone).toBeUndefined();
-        expect(claim.environment).toMatchObject({
+        const execution = await api.executionInput(created.runId);
+        expect(execution.appendSystemPrompt ?? "").toContain("Timezone: UTC");
+        expect(execution.userTimezone).toBeUndefined();
+        expect(execution.environment).toMatchObject({
           CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
         });
-        expect(claim.billableFirewalls).toStrictEqual([]);
-        expect(claim.connectorRuntimeTargets).toStrictEqual([]);
+        expect(execution.billableFirewalls).toStrictEqual([]);
+        expect(execution.connectorRuntimeTargets).toStrictEqual([]);
       });
 
       it("reuses scoped runtime entries and materializes sibling connectors", async () => {
@@ -1219,8 +1219,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        expect(findFirewallEntry(claim.firewalls, "x")).toStrictEqual({
+        const execution = await api.executionInput(run.runId);
+        expect(findFirewallEntry(execution.firewalls, "x")).toStrictEqual({
           kind: "builtin",
           name: "x",
           sourceId: expect.any(String),
@@ -1281,9 +1281,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "establish canonical storage for overlap",
         });
-        const initialClaim = await api.executionInput(initialRun.runId);
+        const initialExecution = await api.executionInput(initialRun.runId);
         const initialMemory = expectCanonicalStorageManifest(
-          initialClaim.storageManifest,
+          initialExecution.storageManifest,
         )?.storageMounts.find((mount) => {
           return mount.name === "memory";
         });
@@ -1297,7 +1297,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           `session overlap ${initialRun.runId}`,
         );
         const sandboxHeaders = {
-          authorization: `Bearer ${initialClaim.sandboxToken}`,
+          authorization: `Bearer ${initialExecution.sandboxToken}`,
         };
         const memoryPreparation = await webhooks.requestAgentStoragePrepare(
           {
@@ -1348,7 +1348,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               ],
             },
           },
-          { authorization: `Bearer ${initialClaim.sandboxToken}` },
+          { authorization: `Bearer ${initialExecution.sandboxToken}` },
           [200],
         );
 
@@ -1405,15 +1405,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           threadId: initialRun.threadId,
           prompt: "Retry the complete canonical storage manifest",
         });
-        const largeClaim = await api.executionInput(retry.runId);
+        const largeExecution = await api.executionInput(retry.runId);
         const largeManifest = expectCanonicalStorageManifest(
-          largeClaim.storageManifest,
+          largeExecution.storageManifest,
         );
         if (!largeManifest) {
           throw new Error("Expected a canonical large Storage manifest");
         }
         for (const mount of requestMounts) {
-          expect(largeClaim.contentBundles.skills).toContainEqual(
+          expect(largeExecution.contentBundles.skills).toContainEqual(
             expect.objectContaining(mount),
           );
         }
@@ -1431,7 +1431,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(mount).not.toHaveProperty("userId");
         }
         await api.requestCancelRun(actor, retry.runId, [200]);
-        await finishCancelledRun(retry.runId, largeClaim.sandboxToken);
+        await finishCancelledRun(retry.runId, largeExecution.sandboxToken);
       });
 
       it("prepares the storage manifest without uploading empty artifact objects", async () => {
@@ -1457,11 +1457,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const created = await api.createThreadRun(actor, { agentId, prompt });
 
         const initialStorageCalls = [...context.mocks.s3.send.mock.calls];
-        const claim = await api.executionInput(created.runId);
+        const execution = await api.executionInput(created.runId);
         const mounts =
-          expectCanonicalStorageManifest(claim.storageManifest)
+          expectCanonicalStorageManifest(execution.storageManifest)
             ?.storageMounts ?? [];
-        expect(claim.contentBundles.skills).toContainEqual(
+        expect(execution.contentBundles.skills).toContainEqual(
           expect.objectContaining({
             sha256: expect.any(String),
             archiveBytes: expect.any(Number),
@@ -1493,7 +1493,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             storageId: memoryArtifact.storageId,
             files: [storageTextFile("prefix-probe.txt", created.runId)],
           },
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           [200],
         );
         if (prefixPreparation.status !== 200) {
@@ -1573,13 +1573,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         expect(created.status).toBe("running");
 
-        const claim = await api.executionInput(created.runId);
-        const manifest = expectCanonicalStorageManifest(claim.storageManifest);
+        const execution = await api.executionInput(created.runId);
+        const manifest = expectCanonicalStorageManifest(
+          execution.storageManifest,
+        );
         if (!manifest) {
           throw new Error("Expected canonical Storage mounts");
         }
         const workflowMountPath = readonlySkill.mountPath;
-        expect(claim.contentBundles.skills).toContainEqual(
+        expect(execution.contentBundles.skills).toContainEqual(
           expect.objectContaining({
             mountPath: workflowMountPath,
             sha256: readonlySkill.sha256,
@@ -1624,9 +1626,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "canonical storage claim",
         });
-        const canonicalClaim = await api.executionInput(canonicalRun.runId);
+        const canonicalExecution = await api.executionInput(canonicalRun.runId);
         const canonicalManifest = expectCanonicalStorageManifest(
-          canonicalClaim.storageManifest,
+          canonicalExecution.storageManifest,
         );
         if (!canonicalManifest) {
           throw new Error("Expected canonical storageMounts manifest");
@@ -1668,8 +1670,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "persist canonical storage mounts",
         });
-        const initialClaim = await api.executionInput(initialRun.runId);
-        const initialManifest = initialClaim.storageManifest;
+        const initialExecution = await api.executionInput(initialRun.runId);
+        const initialManifest = initialExecution.storageManifest;
         if (!initialManifest || !("storageMounts" in initialManifest)) {
           throw new Error("Expected an initial canonical Storage manifest");
         }
@@ -1680,7 +1682,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           throw new Error("Expected the canonical memory mount");
         }
         for (const mount of workflowMounts) {
-          expect(initialClaim.contentBundles.skills).toContainEqual(
+          expect(initialExecution.contentBundles.skills).toContainEqual(
             expect.objectContaining(mount),
           );
         }
@@ -1690,7 +1692,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         context.mocks.s3.send.mockResolvedValue({ ContentLength: 4096 });
         const sandboxHeaders = {
-          authorization: `Bearer ${initialClaim.sandboxToken}`,
+          authorization: `Bearer ${initialExecution.sandboxToken}`,
         };
         const memoryPreparation = await webhooks.requestAgentStoragePrepare(
           {
@@ -1737,7 +1739,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               ],
             },
           },
-          { authorization: `Bearer ${initialClaim.sandboxToken}` },
+          { authorization: `Bearer ${initialExecution.sandboxToken}` },
           [200],
         );
         const completedInitialRun = await api.readRun(actor, initialRun.runId);
@@ -1752,14 +1754,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           threadId: initialRun.threadId,
           prompt: "continue canonical storage session",
         });
-        const sessionClaim = await api.executionInput(sessionRun.runId);
+        const sessionExecution = await api.executionInput(sessionRun.runId);
 
         for (const bundle of workflowMounts) {
-          expect(sessionClaim.contentBundles.skills).toContainEqual(
+          expect(sessionExecution.contentBundles.skills).toContainEqual(
             expect.objectContaining(bundle),
           );
         }
-        const sessionManifest = sessionClaim.storageManifest;
+        const sessionManifest = sessionExecution.storageManifest;
         if (!sessionManifest || !("storageMounts" in sessionManifest)) {
           throw new Error("Expected canonical mounts from session persistence");
         }
@@ -1782,7 +1784,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const fixture = createPublicRunnerMemory(context);
         await fixture.run(async () => {
           const agentId = await fixture.initializeNative();
-          const initial = await fixture.claim(
+          const initial = await fixture.startExecution(
             agentId,
             "initial empty artifact creation should not block later commits",
           );
@@ -1897,7 +1899,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             versionId: prepared.body.versionId,
             fileCount: 1,
           });
-          const next = await fixture.claim(
+          const next = await fixture.startExecution(
             agentId,
             "committed artifact head should stay non-empty",
           );
@@ -1932,8 +1934,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         expect(created.status).toBe("running");
-        const claim = await api.executionInput(created.runId);
-        expect(claim.prompt).toBe(prompt);
+        const execution = await api.executionInput(created.runId);
+        expect(execution.prompt).toBe(prompt);
         expect(context.mocks.axiom.ingest).toHaveBeenCalledWith("run-context", [
           expect.objectContaining({
             runId: created.runId,
@@ -1959,8 +1961,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         expect(created.status).toBe("running");
-        const claim = await api.executionInput(created.runId);
-        expect(claim.prompt).toBe(prompt);
+        const execution = await api.executionInput(created.runId);
+        expect(execution.prompt).toBe(prompt);
 
         await api.requestCancelRun(actor, created.runId, [200]);
       });
@@ -1977,7 +1979,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "start a finalized timing session",
         });
-        const claim = await api.executionInput(first.runId);
+        const execution = await api.executionInput(first.runId);
         const history = `bdd timing session history ${first.runId}`;
         const historyHash = createHash("sha256").update(history).digest("hex");
         mockSessionHistoryBlob(historyHash, history);
@@ -1993,7 +1995,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               cliAgentSessionHistoryDisposition: "native_only",
             },
           },
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           [200],
         );
         // Continuing the thread resumes its Agent session: the claim carries the
@@ -2003,8 +2005,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           threadId: first.threadId,
           prompt: "continue finalized timing session",
         });
-        const resumedClaim = await api.executionInput(resumed.runId);
-        expect(resumedClaim.nativeContinuation).toMatchObject({
+        const resumedExecution = await api.executionInput(resumed.runId);
+        expect(resumedExecution.nativeContinuation).toMatchObject({
           sessionId: `bdd-timing-cli-${first.runId}`,
           generationRunId: expect.any(String),
         });
@@ -2022,9 +2024,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const {
           actor,
           agentId,
-          runnerGroup,
           run: own,
-          claimChatRun,
+          runExecution,
         } = await publicChatActor(context, {
           restoreEnvironment: () => {
             restorePreviousHistory ??= captureSessionStorageMocks(context);
@@ -2044,19 +2045,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(queue.body.concurrency.tier).toBe("pro");
           expect(queue.body.concurrency.active).toBe(1);
 
-          const { claim } = await claimChatRun(runnerGroup, created.runId);
-          expect(claim.prompt).toBe("summarize the repository");
-          expect(claim.environment).toMatchObject({
+          const { execution } = await runExecution(created.runId);
+          expect(execution.prompt).toBe("summarize the repository");
+          expect(execution.environment).toMatchObject({
             CLAUDE_CODE_OAUTH_TOKEN: expect.stringMatching(/.+/),
           });
-          expect(claim.cliAgentType).toBe("claude-code");
+          expect(execution.cliAgentType).toBe("claude-code");
 
           const running = await api.readRun(actor, created.runId);
           expect(running.status).toBe("running");
           expect(running.startedAt).toBeDefined();
 
           const sandboxHeaders = {
-            authorization: `Bearer ${claim.sandboxToken}`,
+            authorization: `Bearer ${execution.sandboxToken}`,
           };
           await webhooks.requestAgentHeartbeat(
             { runId: created.runId },
@@ -2168,10 +2169,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
           return { cliSessionId, hash };
         };
-        const firstClaim = await api.executionInput(first.runId);
+        const firstExecution = await api.executionInput(first.runId);
         const firstHistory = await finalized(
           first.runId,
-          firstClaim.sandboxToken,
+          firstExecution.sandboxToken,
         );
         await flushWaitUntilForTest();
         const resumed = await api.createThreadRun(actor, {
@@ -2179,14 +2180,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           threadId: first.threadId,
           prompt: "continue the session",
         });
-        const resumedClaim = await api.executionInput(resumed.runId);
-        expect(resumedClaim.nativeContinuation).toMatchObject({
+        const resumedExecution = await api.executionInput(resumed.runId);
+        expect(resumedExecution.nativeContinuation).toMatchObject({
           sessionId: firstHistory.cliSessionId,
           generationRunId: expect.any(String),
         });
         await finalized(
           resumed.runId,
-          resumedClaim.sandboxToken,
+          resumedExecution.sandboxToken,
           firstHistory.cliSessionId,
         );
         await flushWaitUntilForTest();
@@ -2277,9 +2278,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "start a managed direct session",
           model: selectedModel,
         });
-        const firstClaim = await api.executionInput(first.runId);
+        const firstExecution = await api.executionInput(first.runId);
         const initialStorageManifest = expectCanonicalStorageManifest(
-          firstClaim.storageManifest,
+          firstExecution.storageManifest,
         );
         if (!initialStorageManifest) {
           throw new Error(
@@ -2299,12 +2300,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             exitCode: 0,
             lastEventSequence: 0,
             completion: {
-              cliAgentType: firstClaim.cliAgentType,
+              cliAgentType: firstExecution.cliAgentType,
               cliAgentSessionId,
               cliAgentSessionHistoryDisposition: "native_only",
             },
           },
-          { authorization: `Bearer ${firstClaim.sandboxToken}` },
+          { authorization: `Bearer ${firstExecution.sandboxToken}` },
           [200],
         );
         await api.requestHeartbeatRunner(true, [200], {
@@ -2319,13 +2320,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "continue on the same runtime and model family",
           model: selectedModel,
         });
-        const resumedClaim = await api.executionInput(resumed.runId);
-        expect(resumedClaim.nativeContinuation).toMatchObject({
+        const resumedExecution = await api.executionInput(resumed.runId);
+        expect(resumedExecution.nativeContinuation).toMatchObject({
           sessionId: cliAgentSessionId,
           generationRunId: expect.any(String),
         });
         const resumedStorageManifest = expectCanonicalStorageManifest(
-          resumedClaim.storageManifest,
+          resumedExecution.storageManifest,
         );
         if (!resumedStorageManifest) {
           throw new Error(
@@ -2338,10 +2339,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await expect(api.readRun(actor, resumed.runId)).resolves.toMatchObject({
           source: { model: selectedModel, providerType: "codex-oauth-token" },
         });
-        expect(resumedClaim.billableFirewalls).toStrictEqual([]);
+        expect(resumedExecution.billableFirewalls).toStrictEqual([]);
 
         await api.requestCancelRun(actor, resumed.runId, [200]);
-        await finishCancelledRun(resumed.runId, resumedClaim.sandboxToken);
+        await finishCancelledRun(resumed.runId, resumedExecution.sandboxToken);
         await flushWaitUntilForTest();
         const changedRuntime = await api.createThreadRun(actor, {
           agentId,
@@ -2349,10 +2350,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "continue on a different native runtime",
           model: NATIVE_RUNNER_ROUTE.model,
         });
-        const changedRuntimeClaim = await api.executionInput(
+        const changedRuntimeExecution = await api.executionInput(
           changedRuntime.runId,
         );
-        expect(changedRuntimeClaim.cliAgentType).toBe("claude-code");
+        expect(changedRuntimeExecution.cliAgentType).toBe("claude-code");
 
         await api.requestCancelRun(actor, changedRuntime.runId, [200]);
       });
@@ -2516,8 +2517,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "issue real run-scoped credentials",
           });
-          const { claim: sourceClaim } = await owned.claimChatRun(
-            owned.runnerGroup,
+          const { execution: sourceClaim } = await owned.runExecution(
             source.runId,
           );
           const sourceToken = sourceClaim.platformEnvironment.OKOU_TOKEN;
@@ -2657,12 +2657,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "subscription subscription run",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await ownedRuns.claim(run.runId);
-        const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+        const execution = await ownedRuns.executionInput(run.runId);
+        const appendSystemPrompt = execution.appendSystemPrompt ?? "";
         expect(appendSystemPrompt).toContain("okou chat send");
         expect(appendSystemPrompt).toContain("okou chat cancel");
         await api.requestCancelRun(actor, run.runId, [200]);
-        await finishCancelledRun(run.runId, claim.sandboxToken);
+        await finishCancelledRun(run.runId, execution.sandboxToken);
 
         await plan.update("canceled");
         const subscriptionPrompt = `suspended subscription ${randomUUID()}`;
@@ -2767,7 +2767,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             expect(input.body.error.code).toBe("BAD_REQUEST");
           } else {
             await flushWaitUntilForTest();
-            const messages = await piClaimFixture.waitForThreadMessages(
+            const messages = await piExecutionFixture.waitForThreadMessages(
               actor,
               thread.id,
               (events) => {
@@ -2832,7 +2832,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           displayName: "BDD managed key agent",
           visibility: "private",
         });
-        preparePiSandboxClaim();
+        preparePiSandboxExecution();
 
         // No personal subscription and an Auto send: the managed route.
         const run = await api.createThreadRun(actor, {
@@ -2840,17 +2840,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: `managed Auto run ${randomUUID()}`,
           model: null,
         });
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
 
         // The managed provider firewall is configured, and its key travels
         // only inside the encrypted firewall secrets.
         expect(
-          claim.firewalls?.map((firewall) => {
+          execution.firewalls?.map((firewall) => {
             return firewallEntryName(firewall);
           }),
         ).toContain("model-provider:openrouter-codex");
-        expect(claim.encryptedSecrets).toStrictEqual(expect.any(String));
-        expect(claim.platformEnvironment).not.toHaveProperty(
+        expect(execution.encryptedSecrets).toStrictEqual(expect.any(String));
+        expect(execution.platformEnvironment).not.toHaveProperty(
           ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
         );
 
@@ -2864,7 +2864,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         for (const delivered of [
           api.dispatchedRun(run.runId),
-          claim,
+          execution,
           runRead,
           threadEvents,
           logs.body,
@@ -2875,7 +2875,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
 
         await api.requestCancelRun(actor, run.runId, [200]);
-        await finishCancelledRun(run.runId, claim.sandboxToken);
+        await finishCancelledRun(run.runId, execution.sandboxToken);
       });
 
       it("claims personal Codex GPT 6 chat runs through Pi without platform model billing", async () => {
@@ -2891,7 +2891,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
 
         await setPaidToolDisabled(context, actor, "image-generation", true);
-        preparePiSandboxClaim();
+        preparePiSandboxExecution();
 
         const sent = await chat.sendAndLaunch(actor, {
           agentId,
@@ -2899,27 +2899,27 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           model: selectedModel,
         });
 
-        const claim = await api.executionInput(sent.runId);
+        const execution = await api.executionInput(sent.runId);
         await expect(api.readRun(actor, sent.runId)).resolves.toMatchObject({
           source: { model: selectedModel, providerType: "codex-oauth-token" },
         });
 
         // The personal Codex route launches a Pi turn rather than a native job.
-        expect(claim.cliAgentType).toBe("pi");
-        expect(claim.platformEnvironment).not.toHaveProperty(
+        expect(execution.cliAgentType).toBe("pi");
+        expect(execution.platformEnvironment).not.toHaveProperty(
           ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
         );
-        expect(claim.piModelConfig).toMatchObject({
+        expect(execution.piModelConfig).toMatchObject({
           provider: "openai-codex",
           model: selectedModel,
         });
         expect(
-          claim.firewalls?.map((firewall) => {
+          execution.firewalls?.map((firewall) => {
             return firewallEntryName(firewall);
           }),
         ).toContain("model-provider:codex-oauth-token");
-        expect(claim.billableFirewalls).toStrictEqual([]);
-        expect(claim.modelUsageProvider).toBe(selectedModel);
+        expect(execution.billableFirewalls).toStrictEqual([]);
+        expect(execution.modelUsageProvider).toBe(selectedModel);
 
         await api.requestCancelRun(actor, sent.runId, [200]);
       });
@@ -2936,9 +2936,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "generate an image with claude",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claudeWebClaim = await api.executionInput(claudeWebRun.runId);
-        expect(claudeWebClaim.cliAgentType).toBe("claude-code");
-        expect(claudeWebClaim.appendSystemPrompt ?? "").not.toContain(
+        const claudeWebExecution = await api.executionInput(claudeWebRun.runId);
+        expect(claudeWebExecution.cliAgentType).toBe("claude-code");
+        expect(claudeWebExecution.appendSystemPrompt ?? "").not.toContain(
           CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
         );
         await api.requestCancelRun(actor, claudeWebRun.runId, [200]);
@@ -2995,29 +2995,31 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(sent.runId);
-        expect(claim.cliAgentType).toBe("codex");
-        expect(claim.environment?.OPENAI_MODEL).toBe("gpt-6-astra");
-        expect(claim.environment?.CHATGPT_ACCESS_TOKEN).toBe(
+        const execution = await api.executionInput(sent.runId);
+        expect(execution.cliAgentType).toBe("codex");
+        expect(execution.environment?.OPENAI_MODEL).toBe("gpt-6-astra");
+        expect(execution.environment?.CHATGPT_ACCESS_TOKEN).toBe(
           modelProviderPlaceholder("codex-oauth-token", "CHATGPT_ACCESS_TOKEN"),
         );
-        expect(claim.environment?.CHATGPT_ACCOUNT_ID).toBe(
+        expect(execution.environment?.CHATGPT_ACCOUNT_ID).toBe(
           modelProviderPlaceholder("codex-oauth-token", "CHATGPT_ACCOUNT_ID"),
         );
         // The saved account ID comes from the ID-token claim, not auth.json's
         // informational tokens.account_id field.
-        expect(claim.environment?.CODEX_OAUTH_ACCOUNT_ID).toBe(
+        expect(execution.environment?.CODEX_OAUTH_ACCOUNT_ID).toBe(
           "ws_acct_bdd_id_token",
         );
-        expect(claim.environment).not.toHaveProperty("CHATGPT_REFRESH_TOKEN");
+        expect(execution.environment).not.toHaveProperty(
+          "CHATGPT_REFRESH_TOKEN",
+        );
         expect(
-          claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN,
+          execution.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN,
         ).toMatchObject({
           sourceType: "model-provider",
           sourceUserId: actor.userId,
         });
 
-        const mountPaths = claim.contentBundles.skills.map((skill) => {
+        const mountPaths = execution.contentBundles.skills.map((skill) => {
           return skill.mountPath;
         });
         for (const workflowName of workflowNames) {
@@ -3056,13 +3058,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "run without enabled stored connectors",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
 
-        expect(claim.environment ?? {}).not.toHaveProperty("X_TOKEN");
-        expect(claim.secretConnectorMap ?? {}).not.toHaveProperty("X_TOKEN");
-        expect(findFirewallEntry(claim.firewalls, "x")).toBeUndefined();
-        expect(claim.billableFirewalls).not.toContain("x");
-        expect(claim.networkPolicies ?? {}).not.toHaveProperty("x");
+        expect(execution.environment ?? {}).not.toHaveProperty("X_TOKEN");
+        expect(execution.secretConnectorMap ?? {}).not.toHaveProperty(
+          "X_TOKEN",
+        );
+        expect(findFirewallEntry(execution.firewalls, "x")).toBeUndefined();
+        expect(execution.billableFirewalls).not.toContain("x");
+        expect(execution.networkPolicies ?? {}).not.toHaveProperty("x");
 
         await api.requestCancelRun(actor, run.runId, [200]);
         const cancelled = await api.readRun(actor, run.runId);
@@ -3092,16 +3096,18 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the x connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
 
-        expect(claim.environment?.X_TOKEN).toBe(
+        expect(execution.environment?.X_TOKEN).toBe(
           connectorPlaceholder("x", "X_TOKEN"),
         );
-        expect(claim.environment).not.toHaveProperty("X_ACCESS_TOKEN");
-        expect(claim.environment).not.toHaveProperty("X_REFRESH_TOKEN");
-        expect(claim.secretConnectorMap).toMatchObject({ X_TOKEN: "x" });
-        expect(claim.secretConnectorMap).not.toHaveProperty("X_REFRESH_TOKEN");
-        expect(claim.secretConnectorMetadataMap).toMatchObject({
+        expect(execution.environment).not.toHaveProperty("X_ACCESS_TOKEN");
+        expect(execution.environment).not.toHaveProperty("X_REFRESH_TOKEN");
+        expect(execution.secretConnectorMap).toMatchObject({ X_TOKEN: "x" });
+        expect(execution.secretConnectorMap).not.toHaveProperty(
+          "X_REFRESH_TOKEN",
+        );
+        expect(execution.secretConnectorMetadataMap).toMatchObject({
           X_TOKEN: {
             sourceType: "connector",
             sourceId: expect.any(String),
@@ -3109,36 +3115,36 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         expect(
-          claim.firewalls?.map((firewall) => {
+          execution.firewalls?.map((firewall) => {
             return firewallEntryName(firewall);
           }),
         ).toContain("x");
-        expect(findFirewallEntry(claim.firewalls, "x")).toStrictEqual({
+        expect(findFirewallEntry(execution.firewalls, "x")).toStrictEqual({
           kind: "builtin",
           name: "x",
           sourceId: expect.any(String),
         });
-        expect(claim.billableFirewalls).toContain("x");
-        expect(claim.networkPolicies?.x?.unknownPolicy).toBe("allow");
-        expect(claim.environment).not.toHaveProperty("SLACK_TOKEN");
-        expect(claim.secretConnectorMap).not.toHaveProperty("SLACK_TOKEN");
-        expect(findFirewallEntry(claim.firewalls, "slack")).toBeUndefined();
-        expect(claim.billableFirewalls).not.toContain("slack");
-        expect(claim.networkPolicies ?? {}).not.toHaveProperty("slack");
+        expect(execution.billableFirewalls).toContain("x");
+        expect(execution.networkPolicies?.x?.unknownPolicy).toBe("allow");
+        expect(execution.environment).not.toHaveProperty("SLACK_TOKEN");
+        expect(execution.secretConnectorMap).not.toHaveProperty("SLACK_TOKEN");
+        expect(findFirewallEntry(execution.firewalls, "slack")).toBeUndefined();
+        expect(execution.billableFirewalls).not.toContain("slack");
+        expect(execution.networkPolicies ?? {}).not.toHaveProperty("slack");
 
         // The stored access token is only readable through the firewall-auth
         // webhook with the claimed run's sandbox token.
-        if (!claim.encryptedSecrets) {
+        if (!execution.encryptedSecrets) {
           throw new Error("Expected the x claim to carry encrypted secrets");
         }
         const resolved = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           {
-            encryptedSecrets: claim.encryptedSecrets,
+            encryptedSecrets: execution.encryptedSecrets,
             authHeaders: { Authorization: `Bearer \${{ secrets.X_TOKEN }}` },
-            secretConnectorMap: claim.secretConnectorMap ?? undefined,
+            secretConnectorMap: execution.secretConnectorMap ?? undefined,
             secretConnectorMetadataMap:
-              claim.secretConnectorMetadataMap ?? undefined,
+              execution.secretConnectorMetadataMap ?? undefined,
           },
           [200],
         );
@@ -3184,8 +3190,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        expect(findFirewallEntry(claim.firewalls, "test-oauth")).toStrictEqual({
+        const execution = await api.executionInput(run.runId);
+        expect(
+          findFirewallEntry(execution.firewalls, "test-oauth"),
+        ).toStrictEqual({
           kind: "builtin",
           name: "test-oauth",
           sourceId: expect.any(String),
@@ -3193,7 +3201,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             TEST_OAUTH_TENANT_ID: "test-oauth-oauth-tenantid",
           },
         });
-        expect(claim.environment?.TEST_OAUTH_TENANT_ID).toBe(
+        expect(execution.environment?.TEST_OAUTH_TENANT_ID).toBe(
           "test-oauth-oauth-tenantId",
         );
 
@@ -3218,12 +3226,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use gitlab without the optional host",
         });
         await api.heartbeatRunner(runnerGroup);
-        const bareClaim = await api.executionInput(withoutHost.runId);
-        expect(bareClaim.environment?.GITLAB_TOKEN).toBe(
+        const bareExecution = await api.executionInput(withoutHost.runId);
+        expect(bareExecution.environment?.GITLAB_TOKEN).toBe(
           connectorPlaceholder("gitlab", "GITLAB_TOKEN"),
         );
-        expect(bareClaim.environment).not.toHaveProperty("GITLAB_HOST");
-        expect(bareClaim.secretConnectorMap).toMatchObject({
+        expect(bareExecution.environment).not.toHaveProperty("GITLAB_HOST");
+        expect(bareExecution.secretConnectorMap).toMatchObject({
           GITLAB_TOKEN: "gitlab",
         });
 
@@ -3243,19 +3251,21 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "use gitlab with the optional host",
         });
-        const hostClaim = await api.executionInput(withHost.runId);
-        expect(hostClaim.environment?.GITLAB_TOKEN).toBe(
+        const hostExecution = await api.executionInput(withHost.runId);
+        expect(hostExecution.environment?.GITLAB_TOKEN).toBe(
           connectorPlaceholder("gitlab", "GITLAB_TOKEN"),
         );
-        expect(hostClaim.environment?.GITLAB_HOST).toBe("gitlab.example.com");
-        expect(hostClaim.vars).toMatchObject({
+        expect(hostExecution.environment?.GITLAB_HOST).toBe(
+          "gitlab.example.com",
+        );
+        expect(hostExecution.vars).toMatchObject({
           GITLAB_HOST: "gitlab.example.com",
         });
 
         await api.requestCancelRun(actor, withoutHost.runId, [200]);
         await api.requestCancelRun(actor, withHost.runId, [200]);
-        await finishCancelledRun(withoutHost.runId, bareClaim.sandboxToken);
-        await finishCancelledRun(withHost.runId, hostClaim.sandboxToken);
+        await finishCancelledRun(withoutHost.runId, bareExecution.sandboxToken);
+        await finishCancelledRun(withHost.runId, hostExecution.sandboxToken);
         const drained = await api.readRunQueue(actor);
         expect(drained.body.concurrency.active).toBe(0);
       });
@@ -3290,16 +3300,18 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "use prefetched connector auth credentials",
         });
-        const claim = await api.executionInput(run.runId);
-        expect(claim.environment).toMatchObject({
+        const execution = await api.executionInput(run.runId);
+        expect(execution.environment).toMatchObject({
           X_TOKEN: connectorPlaceholder("x", "X_TOKEN"),
           GITLAB_TOKEN: connectorPlaceholder("gitlab", "GITLAB_TOKEN"),
           FIGMA_TOKEN: connectorPlaceholder("figma", "FIGMA_TOKEN"),
         });
-        expect(claim.environment).not.toHaveProperty("X_REFRESH_TOKEN");
-        expect(claim.secretConnectorMap).not.toHaveProperty("X_REFRESH_TOKEN");
-        expect(claim.encryptedSecrets).toBeTruthy();
-        const serializedClaim = JSON.stringify(claim);
+        expect(execution.environment).not.toHaveProperty("X_REFRESH_TOKEN");
+        expect(execution.secretConnectorMap).not.toHaveProperty(
+          "X_REFRESH_TOKEN",
+        );
+        expect(execution.encryptedSecrets).toBeTruthy();
+        const serializedClaim = JSON.stringify(execution);
         for (const credential of [
           "x-bdd-lazy-access",
           "x-bdd-lazy-refresh",
@@ -3312,7 +3324,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
         const cancelled = await api.readRun(actor, run.runId);
         expect(cancelled.status).toBe("cancelled");
-        await oauth.finishCancelledRun(run.runId, claim.sandboxToken);
+        await oauth.finishCancelledRun(run.runId, execution.sandboxToken);
       });
 
       it("uses the builtin Figma firewall for personal access tokens", async () => {
@@ -3330,40 +3342,40 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "use figma personal access token",
         });
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         const figmaTokenPlaceholder = connectorPlaceholder(
           "figma",
           "FIGMA_TOKEN",
         );
         const figmaTokenTemplate = ["$", "{{ secrets.FIGMA_TOKEN }}"].join("");
 
-        expect(claim.environment?.FIGMA_TOKEN).toBe(figmaTokenPlaceholder);
-        expect(claim.secretConnectorMap).toMatchObject({
+        expect(execution.environment?.FIGMA_TOKEN).toBe(figmaTokenPlaceholder);
+        expect(execution.secretConnectorMap).toMatchObject({
           FIGMA_TOKEN: "figma",
         });
 
-        const figmaEntry = findFirewallEntry(claim.firewalls, "figma");
+        const figmaEntry = findFirewallEntry(execution.firewalls, "figma");
         expect(figmaEntry).toStrictEqual({
           kind: "builtin",
           name: "figma",
           sourceId: expect.any(String),
         });
 
-        if (!claim.encryptedSecrets) {
+        if (!execution.encryptedSecrets) {
           throw new Error(
             "Expected the figma claim to carry encrypted secrets",
           );
         }
         const resolved = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           {
-            encryptedSecrets: claim.encryptedSecrets,
+            encryptedSecrets: execution.encryptedSecrets,
             authHeaders: {
               "X-Figma-Token": figmaTokenTemplate,
             },
-            secretConnectorMap: claim.secretConnectorMap ?? undefined,
+            secretConnectorMap: execution.secretConnectorMap ?? undefined,
             secretConnectorMetadataMap:
-              claim.secretConnectorMetadataMap ?? undefined,
+              execution.secretConnectorMetadataMap ?? undefined,
           },
           [200],
         );
@@ -3375,13 +3387,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const missingSource = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           {
-            encryptedSecrets: claim.encryptedSecrets,
+            encryptedSecrets: execution.encryptedSecrets,
             authHeaders: {
               "X-Figma-Token": figmaTokenTemplate,
             },
-            secretConnectorMap: claim.secretConnectorMap ?? undefined,
+            secretConnectorMap: execution.secretConnectorMap ?? undefined,
           },
           [424],
         );
@@ -3424,33 +3436,35 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use lark before any cached access token exists",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
 
-        expect(claim.environment?.LARK_TOKEN).toBe(
+        expect(execution.environment?.LARK_TOKEN).toBe(
           connectorPlaceholder("lark", "LARK_TOKEN"),
         );
-        expect(claim.environment).not.toHaveProperty("LARK_APP_ID");
-        expect(claim.environment).not.toHaveProperty("LARK_APP_SECRET");
-        expect(claim.environment).not.toHaveProperty("LARK_ACCESS_TOKEN");
-        expect(claim.secretConnectorMap).toMatchObject({ LARK_TOKEN: "lark" });
-        expect(claim.secretConnectorMetadataMap).toMatchObject({
+        expect(execution.environment).not.toHaveProperty("LARK_APP_ID");
+        expect(execution.environment).not.toHaveProperty("LARK_APP_SECRET");
+        expect(execution.environment).not.toHaveProperty("LARK_ACCESS_TOKEN");
+        expect(execution.secretConnectorMap).toMatchObject({
+          LARK_TOKEN: "lark",
+        });
+        expect(execution.secretConnectorMetadataMap).toMatchObject({
           LARK_TOKEN: {
             sourceType: "connector",
             sourceId: connected.id,
           },
         });
-        expect(findFirewallEntry(claim.firewalls, "lark")).toMatchObject({
+        expect(findFirewallEntry(execution.firewalls, "lark")).toMatchObject({
           kind: "builtin",
           sourceId: connected.id,
         });
-        expect(claim.connectorRuntimeTargets).toContainEqual(
+        expect(execution.connectorRuntimeTargets).toContainEqual(
           expect.objectContaining({
             kind: "builtin",
             connectorSlug: "lark",
             sourceId: connected.id,
           }),
         );
-        const larkTarget = claim.connectorRuntimeTargets.find((target) => {
+        const larkTarget = execution.connectorRuntimeTargets.find((target) => {
           return target.kind === "builtin" && target.connectorSlug === "lark";
         });
         if (!larkTarget || larkTarget.kind !== "builtin") {
@@ -3611,8 +3625,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "refresh lark through exact current-catalog accounts",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        const larkTarget = claim.connectorRuntimeTargets.find((target) => {
+        const execution = await api.executionInput(run.runId);
+        const larkTarget = execution.connectorRuntimeTargets.find((target) => {
           return target.kind === "builtin" && target.connectorSlug === "lark";
         });
         if (!larkTarget || larkTarget.kind !== "builtin") {
@@ -3620,11 +3634,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         expect(larkTarget.sourceId).toBe(connected.id);
         const permissionedTarget = customConnectorRuntimeRegistration(
-          claim,
+          execution,
           permissionedCustom.id,
         );
         const plainTarget = customConnectorRuntimeRegistration(
-          claim,
+          execution,
           plainCustom.id,
         );
         const mixedTargets = [larkTarget, permissionedTarget, plainTarget];
@@ -3707,16 +3721,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use google ads",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
 
-        expect(claim.environment).not.toHaveProperty(
+        expect(execution.environment).not.toHaveProperty(
           "GOOGLE_ADS_DEVELOPER_TOKEN",
         );
-        expect(claim.secretConnectorMap).toMatchObject({
+        expect(execution.secretConnectorMap).toMatchObject({
           GOOGLE_ADS_TOKEN: "google-ads",
           GOOGLE_ADS_DEVELOPER_TOKEN: "google-ads",
         });
-        expect(claim.secretConnectorMetadataMap).toMatchObject({
+        expect(execution.secretConnectorMetadataMap).toMatchObject({
           GOOGLE_ADS_TOKEN: {
             sourceType: "connector",
             sourceId: expect.any(String),
@@ -3724,16 +3738,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           GOOGLE_ADS_DEVELOPER_TOKEN: { sourceType: "platform-secret" },
         });
         const googleAdsFirewall = findFirewallEntry(
-          claim.firewalls,
+          execution.firewalls,
           "google-ads",
         );
         if (!googleAdsFirewall || googleAdsFirewall.kind !== "builtin") {
           throw new Error("Expected the google ads built-in firewall");
         }
         expect(googleAdsFirewall.sourceId).toBe(
-          claim.secretConnectorMetadataMap?.GOOGLE_ADS_TOKEN?.sourceId,
+          execution.secretConnectorMetadataMap?.GOOGLE_ADS_TOKEN?.sourceId,
         );
-        if (!claim.encryptedSecrets) {
+        if (!execution.encryptedSecrets) {
           throw new Error(
             "Expected the google ads claim to carry encrypted secrets",
           );
@@ -3744,16 +3758,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "developer-token-after-claim",
         );
         const resolved = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           {
-            encryptedSecrets: claim.encryptedSecrets,
+            encryptedSecrets: execution.encryptedSecrets,
             authHeaders: {
               Authorization: `Bearer \${{ secrets.GOOGLE_ADS_TOKEN }}`,
               "developer-token": `\${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}`,
             },
-            secretConnectorMap: claim.secretConnectorMap ?? undefined,
+            secretConnectorMap: execution.secretConnectorMap ?? undefined,
             secretConnectorMetadataMap:
-              claim.secretConnectorMetadataMap ?? undefined,
+              execution.secretConnectorMetadataMap ?? undefined,
           },
           [200],
         );
@@ -3766,9 +3780,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const missingWithoutMetadata = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           {
-            encryptedSecrets: claim.encryptedSecrets,
+            encryptedSecrets: execution.encryptedSecrets,
             authHeaders: {
               "developer-token": `\${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}`,
             },
@@ -3785,15 +3799,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         const conflictingSource = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           {
-            encryptedSecrets: claim.encryptedSecrets,
+            encryptedSecrets: execution.encryptedSecrets,
             authHeaders: {
               Authorization: `Bearer \${{ secrets.GOOGLE_ADS_TOKEN }}`,
             },
-            secretConnectorMap: claim.secretConnectorMap ?? undefined,
+            secretConnectorMap: execution.secretConnectorMap ?? undefined,
             secretConnectorMetadataMap: {
-              ...claim.secretConnectorMetadataMap,
+              ...execution.secretConnectorMetadataMap,
               GOOGLE_ADS_TOKEN: {
                 sourceType: "connector",
                 sourceId: randomUUID(),
@@ -3812,15 +3826,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(conflictingSource.status).toBe(400);
 
         const missingExactSource = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           {
-            encryptedSecrets: claim.encryptedSecrets,
+            encryptedSecrets: execution.encryptedSecrets,
             authHeaders: {
               Authorization: `Bearer \${{ secrets.GOOGLE_ADS_TOKEN }}`,
             },
-            secretConnectorMap: claim.secretConnectorMap ?? undefined,
+            secretConnectorMap: execution.secretConnectorMap ?? undefined,
             secretConnectorMetadataMap: {
-              ...claim.secretConnectorMetadataMap,
+              ...execution.secretConnectorMetadataMap,
               GOOGLE_ADS_TOKEN: {
                 sourceType: "connector",
                 sourceId: randomUUID(),
@@ -3853,11 +3867,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "run without a connected axiom connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
 
-        expect(claim.environment).not.toHaveProperty("OPENAI_TOKEN");
+        expect(execution.environment).not.toHaveProperty("OPENAI_TOKEN");
         expect(
-          claim.firewalls?.some((firewall) => {
+          execution.firewalls?.some((firewall) => {
             return firewallEntryName(firewall) === "openai";
           }),
         ).toBeFalsy();
@@ -3881,11 +3895,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         async ({ generation, serviceTier }) => {
           const api = createRunsApi(context);
           const { actor, agentId } = await entitledRunActor();
-          preparePiSandboxClaim();
+          preparePiSandboxExecution();
           const ownedRuns = publicRunOwner(context, actor);
 
           await ownedRuns.run(async () => {
-            await piClaimFixture.configureSubscriptionPiModel(actor);
+            await piExecutionFixture.configureSubscriptionPiModel(actor);
             const run = await createChatFilesBddApi(context).sendAndLaunch(
               actor,
               {
@@ -3900,13 +3914,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 },
               },
             );
-            const capableClaim = await api.executionInput(run.runId);
-            ownedRuns.rememberClaim(run.runId, capableClaim.sandboxToken);
-            expect(capableClaim).toMatchObject({
+            const capableExecution = await api.executionInput(run.runId);
+            ownedRuns.rememberExecution(
+              run.runId,
+              capableExecution.sandboxToken,
+            );
+            expect(capableExecution).toMatchObject({
               cliAgentType: "pi",
               piSessionId: run.threadId,
             });
-            expect(capableClaim.piModelConfig).toStrictEqual({
+            expect(capableExecution.piModelConfig).toStrictEqual({
               schemaVersion: generation,
               dialect: "openai-codex-responses",
               transport: "sse",
@@ -4019,12 +4036,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the no-auth HTTP and MCP connectors",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         const httpInternalName = `custom_connector_${httpConnector.id.replaceAll("-", "")}`;
         const mcpInternalName = `custom_connector_${mcpConnector.id.replaceAll("-", "")}`;
         const automaticInternalName = `custom_connector_${automaticConnector.id.replaceAll("-", "")}`;
         expect(
-          inlineFirewallApis(claim.firewalls, httpInternalName),
+          inlineFirewallApis(execution.firewalls, httpInternalName),
         ).toMatchObject([
           {
             base: `https://us-east.${rand}.no-auth.example.test/v1/`,
@@ -4036,7 +4053,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         ]);
         expect(
-          inlineFirewallApis(claim.firewalls, mcpInternalName),
+          inlineFirewallApis(execution.firewalls, mcpInternalName),
         ).toMatchObject([
           {
             base: `https://${rand}.no-auth-mcp.example.test/mcp`,
@@ -4044,7 +4061,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         ]);
         expect(
-          inlineFirewallApis(claim.firewalls, automaticInternalName),
+          inlineFirewallApis(execution.firewalls, automaticInternalName),
         ).toMatchObject([
           {
             base: "https://automatic-mcp.example.test/server",
@@ -4052,13 +4069,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         ]);
         expect(
-          customConnectorRuntimeRegistration(claim, httpConnector.id),
+          customConnectorRuntimeRegistration(execution, httpConnector.id),
         ).toMatchObject({ baseUrlVars: { region: "us-east" } });
         expect(
-          customConnectorRuntimeRegistration(claim, mcpConnector.id),
+          customConnectorRuntimeRegistration(execution, mcpConnector.id),
         ).toMatchObject({ baseUrlVars: {} });
         expect(
-          customConnectorRuntimeRegistration(claim, automaticConnector.id),
+          customConnectorRuntimeRegistration(execution, automaticConnector.id),
         ).toMatchObject({
           baseUrlVars: {},
           sourceId: automaticConnection.body.connectionId,
@@ -4066,9 +4083,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const runtimeResults = await api.syncConnectorRuntime(run.runId, {
           targets: [
-            customConnectorRuntimeRegistration(claim, httpConnector.id),
-            customConnectorRuntimeRegistration(claim, mcpConnector.id),
-            customConnectorRuntimeRegistration(claim, automaticConnector.id),
+            customConnectorRuntimeRegistration(execution, httpConnector.id),
+            customConnectorRuntimeRegistration(execution, mcpConnector.id),
+            customConnectorRuntimeRegistration(
+              execution,
+              automaticConnector.id,
+            ),
           ],
         });
         expect(
@@ -4132,10 +4152,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the explicitly connected custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
-        expect(findFirewallEntry(claim.firewalls, internalName)).toBeDefined();
-        expect(claim.connectorRuntimeTargets).toContainEqual({
+        expect(
+          findFirewallEntry(execution.firewalls, internalName),
+        ).toBeDefined();
+        expect(execution.connectorRuntimeTargets).toContainEqual({
           kind: "custom",
           customConnectorId: custom.id,
           baseUrlVars: {},
@@ -4184,34 +4206,34 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the custom connector instead of the built-in connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
-        expect(findFirewallEntry(claim.firewalls, "figma")).toMatchObject({
+        expect(findFirewallEntry(execution.firewalls, "figma")).toMatchObject({
           kind: "builtin",
           name: "figma",
         });
-        expect(inlineFirewallApis(claim.firewalls, internalName)).toMatchObject(
-          [
-            {
-              base: "https://api.figma.com/",
-            },
-          ],
-        );
-        expect(claim.connectorRuntimeTargets).toContainEqual(
+        expect(
+          inlineFirewallApis(execution.firewalls, internalName),
+        ).toMatchObject([
+          {
+            base: "https://api.figma.com/",
+          },
+        ]);
+        expect(execution.connectorRuntimeTargets).toContainEqual(
           expect.objectContaining({
             kind: "builtin",
             connectorSlug: "figma",
             sourceId: expect.any(String),
           }),
         );
-        expect(claim.connectorRuntimeTargets).toContainEqual(
+        expect(execution.connectorRuntimeTargets).toContainEqual(
           expect.objectContaining({
             kind: "custom",
             customConnectorId: custom.id,
           }),
         );
-        expect(claim.networkPolicies).toHaveProperty("figma");
-        expect(claim.networkPolicies?.[internalName]?.unknownPolicy).toBe(
+        expect(execution.networkPolicies).toHaveProperty("figma");
+        expect(execution.networkPolicies?.[internalName]?.unknownPolicy).toBe(
           "allow",
         );
 
@@ -4258,20 +4280,20 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use custom auth for Figma files and built-in auth elsewhere",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
-        expect(findFirewallEntry(claim.firewalls, "figma")).toMatchObject({
+        expect(findFirewallEntry(execution.firewalls, "figma")).toMatchObject({
           kind: "builtin",
           name: "figma",
         });
-        expect(inlineFirewallApis(claim.firewalls, internalName)).toMatchObject(
-          [
-            {
-              base: "https://api.figma.com/v1/files/",
-            },
-          ],
-        );
-        expect(claim.connectorRuntimeTargets).toContainEqual({
+        expect(
+          inlineFirewallApis(execution.firewalls, internalName),
+        ).toMatchObject([
+          {
+            base: "https://api.figma.com/v1/files/",
+          },
+        ]);
+        expect(execution.connectorRuntimeTargets).toContainEqual({
           kind: "builtin",
           connectorSlug: "figma",
           sourceId: expect.any(String),
@@ -4419,13 +4441,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await own(() => {
             return api.heartbeatRunner(runnerGroup);
           });
-          const { claim } = await own(() => {
-            return owned.claimChatRun(runnerGroup, run.runId);
+          const { execution } = await own(() => {
+            return owned.runExecution(run.runId);
           });
 
           const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
           const secretKey = `CUSTOM_${custom.id.replaceAll("-", "")}_S_SECRET`;
-          const customApis = inlineFirewallApis(claim.firewalls, internalName);
+          const customApis = inlineFirewallApis(
+            execution.firewalls,
+            internalName,
+          );
           expect(customApis).toMatchObject([
             {
               base: "http://acme.internal.example.com:8080/api/",
@@ -4446,25 +4471,28 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               },
             },
           ]);
-          expect(claim.networkPolicies?.[internalName]?.unknownPolicy).toBe(
+          expect(execution.networkPolicies?.[internalName]?.unknownPolicy).toBe(
             "allow",
           );
-          expect(claim.secretValues).not.toContain("custom-secret-value");
-          expect(claim.connectorRuntimeTargets).toContainEqual({
+          expect(execution.secretValues).not.toContain("custom-secret-value");
+          expect(execution.connectorRuntimeTargets).toContainEqual({
             kind: "custom",
             customConnectorId: custom.id,
             baseUrlVars: { tenant: "acme" },
             sourceId: expect.any(String),
           });
           const customFirewall = findFirewallEntry(
-            claim.firewalls,
+            execution.firewalls,
             internalName,
           );
           if (!customFirewall || customFirewall.kind !== "inline") {
             throw new Error("Expected the custom connector firewall");
           }
           expect(customFirewall.customConnectorId).toBe(custom.id);
-          const target = customConnectorRuntimeRegistration(claim, custom.id);
+          const target = customConnectorRuntimeRegistration(
+            execution,
+            custom.id,
+          );
           expect(customFirewall.sourceId).toBe(target.sourceId);
 
           const targetIdentity = {
@@ -4497,7 +4525,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(initialAvailable.networkPolicy.unknownPolicy).toBe("allow");
           const initialCurrentAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${claim.sandboxToken}` },
+              { authorization: `Bearer ${execution.sandboxToken}` },
               currentAuthBody,
               [200],
             );
@@ -4526,7 +4554,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const missingSourceAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${claim.sandboxToken}` },
+              { authorization: `Bearer ${execution.sandboxToken}` },
               {
                 ...currentAuthBody,
                 matchedFirewall: {
@@ -4560,7 +4588,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const missingExactAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${claim.sandboxToken}` },
+              { authorization: `Bearer ${execution.sandboxToken}` },
               {
                 ...currentAuthBody,
                 matchedFirewall: {
@@ -4589,7 +4617,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const currentUpdatedAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${claim.sandboxToken}` },
+              { authorization: `Bearer ${execution.sandboxToken}` },
               currentAuthBody,
               [200],
             );
@@ -4607,7 +4635,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }
           const unknownAliasAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${claim.sandboxToken}` },
+              { authorization: `Bearer ${execution.sandboxToken}` },
               {
                 ...currentAuthBody,
                 authHeaders: {
@@ -4634,7 +4662,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const recoveredAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${claim.sandboxToken}` },
+              { authorization: `Bearer ${execution.sandboxToken}` },
               currentAuthBody,
               [200],
             );
@@ -4659,7 +4687,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
           const updatedCurrentAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${claim.sandboxToken}` },
+              { authorization: `Bearer ${execution.sandboxToken}` },
               updatedAuthBody,
               [200],
             );
@@ -4685,7 +4713,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const restoredCredentialsAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${claim.sandboxToken}` },
+              { authorization: `Bearer ${execution.sandboxToken}` },
               updatedAuthBody,
               [200],
             );
@@ -4794,7 +4822,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const lastKnownGoodAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${claim.sandboxToken}` },
+              { authorization: `Bearer ${execution.sandboxToken}` },
               currentAuthBody,
               [200],
             );
@@ -4827,7 +4855,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const orphanedFieldAuth = await own(() => {
             return fw.requestFirewallAuth(
-              { authorization: `Bearer ${claim.sandboxToken}` },
+              { authorization: `Bearer ${execution.sandboxToken}` },
               currentAuthBody,
               [424],
             );
@@ -4868,7 +4896,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await own(() => {
             return createWebhookCallbackApi(context).requestAgentComplete(
               { runId: run.runId, exitCode: 1, error: "Run cancelled" },
-              { authorization: `Bearer ${claim.sandboxToken}` },
+              { authorization: `Bearer ${execution.sandboxToken}` },
               [200],
             );
           });
@@ -4927,12 +4955,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the admitted MCP connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         const mcpInternalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
         const mcpClient = setupApp({ context, routes: mcpConnectorsRoutes })(
           mcpConnectorsContract,
         );
-        const mcpToken = claim.platformEnvironment.OKOU_TOKEN;
+        const mcpToken = execution.platformEnvironment.OKOU_TOKEN;
         if (!mcpToken) {
           throw new Error("Expected the Run's MCP client token");
         }
@@ -4952,13 +4980,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         const admittedIds = [http.id, mcp.id].sort();
         expect(
-          claim.connectorRuntimeTargets
+          execution.connectorRuntimeTargets
             .flatMap((target) => {
               return target.kind === "custom" ? [target.customConnectorId] : [];
             })
             .sort(),
         ).toStrictEqual(admittedIds);
-        const mcpTarget = customConnectorRuntimeRegistration(claim, mcp.id);
+        const mcpTarget = customConnectorRuntimeRegistration(execution, mcp.id);
         expect(mcpTarget).toStrictEqual({
           kind: "custom",
           customConnectorId: mcp.id,
@@ -4966,7 +4994,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           sourceId: expect.any(String),
         });
         const mcpPrompt = mcpConnectorPromptSection(
-          claim.appendSystemPrompt ?? "",
+          execution.appendSystemPrompt ?? "",
         );
         expect(mcpPrompt).toContain(`- \`${mcp.slug}\``);
         expect(mcpPrompt).toContain("okou mcp list --json");
@@ -4982,7 +5010,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(mcpPrompt).not.toContain("Use the admitted MCP server.");
         expect(mcpPrompt).not.toContain("mcp-runtime-token");
 
-        const mcpFirewall = findFirewallEntry(claim.firewalls, mcpInternalName);
+        const mcpFirewall = findFirewallEntry(
+          execution.firewalls,
+          mcpInternalName,
+        );
         if (!mcpFirewall || mcpFirewall.kind !== "inline") {
           throw new Error("Expected the MCP connector firewall");
         }
@@ -4997,14 +5028,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(mcpApi?.auth.headers?.Authorization).toBe(
           `Bearer \${{ secrets.${mcpSecretKey} }}`,
         );
-        expect(claim.networkPolicies?.[mcpInternalName]).toStrictEqual({
+        expect(execution.networkPolicies?.[mcpInternalName]).toStrictEqual({
           allow: [],
           deny: [],
           ask: [],
           unknownPolicy: "allow",
         });
-        expect(claim.secretValues).not.toContain("mcp-runtime-token");
-        expect(customSkillMount(claim.contentBundles, mcp.id)).toMatchObject({
+        expect(execution.secretValues).not.toContain("mcp-runtime-token");
+        expect(
+          customSkillMount(execution.contentBundles, mcp.id),
+        ).toMatchObject({
           sha256: expect.any(String),
           archiveBytes: expect.any(Number),
         });
@@ -5028,7 +5061,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           fw.encryptedSecretsBody({}),
         );
         const initialAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           initialAuthBody,
           [200],
         );
@@ -5143,7 +5176,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           reason: "connector-unavailable",
         });
         const disconnectedAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           initialAuthBody,
           [424],
         );
@@ -5158,13 +5191,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "identify an authorized MCP connector that needs connection",
         });
-        const disconnectedClaim = await api.executionInput(
+        const disconnectedExecution = await api.executionInput(
           disconnectedRun.runId,
         );
         expect(
-          mcpConnectorPromptSection(disconnectedClaim.appendSystemPrompt ?? ""),
+          mcpConnectorPromptSection(
+            disconnectedExecution.appendSystemPrompt ?? "",
+          ),
         ).toContain(`- \`${mcp.slug}\``);
-        expect(disconnectedClaim.connectorRuntimeTargets).not.toContainEqual(
+        expect(
+          disconnectedExecution.connectorRuntimeTargets,
+        ).not.toContainEqual(
           expect.objectContaining({
             kind: "custom",
             customConnectorId: mcp.id,
@@ -5210,8 +5247,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: "use the exact custom connector account",
           });
           await api.heartbeatRunner(runnerGroup);
-          const { claim } = await owned.claimChatRun(runnerGroup, run.runId);
-          const target = customConnectorRuntimeRegistration(claim, custom.id);
+          const { execution } = await owned.runExecution(run.runId);
+          const target = customConnectorRuntimeRegistration(
+            execution,
+            custom.id,
+          );
           if (!target.sourceId) {
             throw new Error("Expected the admitted exact source");
           }
@@ -5254,7 +5294,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             reason: "connector-unavailable",
           });
           const rejected = await fw.requestFirewallAuth(
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             originalAuth,
             [424],
           );
@@ -5386,9 +5426,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "inspect bounded MCP awareness",
         });
         await fixture.api.heartbeatRunner(fixture.runnerGroup);
-        const claim = await fixture.api.executionInput(run.runId);
-        expect(claim.cliAgentType).toBe("claude-code");
-        expectBoundedMcpAwareness(claim.appendSystemPrompt, fixture);
+        const execution = await fixture.api.executionInput(run.runId);
+        expect(execution.cliAgentType).toBe("claude-code");
+        expectBoundedMcpAwareness(execution.appendSystemPrompt, fixture);
         await fixture.api.requestCancelRun(fixture.actor, run.runId, [200]);
       });
 
@@ -5399,9 +5439,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "inspect bounded MCP awareness",
         });
         await fixture.api.heartbeatRunner(fixture.runnerGroup);
-        const firstClaim = await fixture.api.executionInput(first.runId);
+        const firstExecution = await fixture.api.executionInput(first.runId);
         const initialPrompt = expectBoundedMcpAwareness(
-          firstClaim.appendSystemPrompt,
+          firstExecution.appendSystemPrompt,
           fixture,
         );
         const history = `bounded MCP awareness history ${first.runId}`;
@@ -5418,7 +5458,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               cliAgentSessionHistoryDisposition: "native_only",
             },
           },
-          { authorization: `Bearer ${firstClaim.sandboxToken}` },
+          { authorization: `Bearer ${firstExecution.sandboxToken}` },
           [200],
         );
         const resumed = await fixture.api.createThreadRun(fixture.actor, {
@@ -5426,10 +5466,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           threadId: first.threadId,
           prompt: "continue with bounded MCP awareness",
         });
-        const resumedClaim = await fixture.api.executionInput(resumed.runId);
-        expect(resumedClaim.appendSystemPrompt).toContain("# Agent Tools");
+        const resumedExecution = await fixture.api.executionInput(
+          resumed.runId,
+        );
+        expect(resumedExecution.appendSystemPrompt).toContain("# Agent Tools");
         expect(
-          mcpConnectorPromptSection(resumedClaim.appendSystemPrompt ?? ""),
+          mcpConnectorPromptSection(resumedExecution.appendSystemPrompt ?? ""),
         ).toBe(initialPrompt);
         await fixture.api.requestCancelRun(fixture.actor, resumed.runId, [200]);
       });
@@ -5441,9 +5483,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "inspect bounded MCP awareness",
         });
         await fixture.api.heartbeatRunner(fixture.runnerGroup);
-        const claudeClaim = await fixture.api.executionInput(claude.runId);
+        const claudeExecution = await fixture.api.executionInput(claude.runId);
         const claudePrompt = expectBoundedMcpAwareness(
-          claudeClaim.appendSystemPrompt,
+          claudeExecution.appendSystemPrompt,
           fixture,
         );
         await fixture.api.requestCancelRun(fixture.actor, claude.runId, [200]);
@@ -5472,12 +5514,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "inspect MCP awareness with Codex",
           model: "gpt-6-astra",
         });
-        const codexClaim = await fixture.api.executionInput(codex.runId);
-        expect(codexClaim.cliAgentType).toBe("codex");
+        const codexExecution = await fixture.api.executionInput(codex.runId);
+        expect(codexExecution.cliAgentType).toBe("codex");
         // Web chat Codex runs append their image-upload guidance after the
         // identical MCP section, without a heading of its own.
         const codexSection =
-          mcpConnectorPromptSection(codexClaim.appendSystemPrompt ?? "") ?? "";
+          mcpConnectorPromptSection(codexExecution.appendSystemPrompt ?? "") ??
+          "";
         expect(codexSection.slice(0, claudePrompt.length)).toBe(claudePrompt);
         expect(codexSection.slice(claudePrompt.length)).toMatch(
           /^\n\nIf you use the built-in image generation tool and it saves generated output image file\(s\) to local paths, upload each output file you intend to show with `okou web upload-file -f <path>`/,
@@ -5614,10 +5657,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         owned.runId = run.runId;
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        owned.sandboxToken = claim.sandboxToken;
+        const execution = await api.executionInput(run.runId);
+        owned.sandboxToken = execution.sandboxToken;
         const runtimeTarget = customConnectorRuntimeRegistration(
-          claim,
+          execution,
           runtimeConnector.id,
         );
         for (const unsupportedHostname of [
@@ -5657,7 +5700,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           fw.encryptedSecretsBody({}),
         );
         const auth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           authBody,
           [200],
         );
@@ -5725,12 +5768,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "Observe the initial skill version",
           });
-          const initialClaim = await fixture.claimChatRun(
-            runnerGroup,
-            initialRun.runId,
-          );
+          const initialExecution = await fixture.runExecution(initialRun.runId);
           const initialSkill = customSkillMount(
-            initialClaim.claim.contentBundles,
+            initialExecution.execution.contentBundles,
             custom.id,
           );
           if (!initialSkill) {
@@ -5739,7 +5779,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await createChatEventsFixture(context).cancelChatRun(
             actor,
             initialRun.runId,
-            initialClaim.sandboxHeaders,
+            initialExecution.sandboxHeaders,
           );
           const disconnectedRun = await fixture.sendChatRun(actor, {
             agentId,
@@ -5757,11 +5797,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             storageVersion: custom.storageVersion,
           });
           await api.heartbeatRunner(runnerGroup);
-          const disconnected = await fixture.claimChatRun(
-            runnerGroup,
+          const disconnected = await fixture.runExecution(
             disconnectedRun.runId,
           );
-          const disconnectedClaim = disconnected.claim;
+          const disconnectedClaim = disconnected.execution;
           expect(
             findFirewallEntry(disconnectedClaim.firewalls, internalName),
           ).toBeUndefined();
@@ -5795,11 +5834,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "use the reconnected custom connector",
           });
-          const restored = await fixture.claimChatRun(
-            runnerGroup,
-            restoredRun.runId,
-          );
-          const restoredClaim = restored.claim;
+          const restored = await fixture.runExecution(restoredRun.runId);
+          const restoredClaim = restored.execution;
           const customApis = inlineFirewallApis(
             restoredClaim.firewalls,
             internalName,
@@ -5926,8 +5962,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the current unrefreshable custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const currentClaim = await api.executionInput(currentRun.runId);
-        expect(currentClaim.connectorRuntimeTargets).toContainEqual(target);
+        const currentExecution = await api.executionInput(currentRun.runId);
+        expect(currentExecution.connectorRuntimeTargets).toContainEqual(target);
         expect(provider.tokenBodies).toHaveLength(1);
         await api.requestCancelRun(actor, currentRun.runId, [200]);
 
@@ -5945,13 +5981,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "try the expired unrefreshable custom connector",
         });
-        const expiredClaim = await api.executionInput(expiredRun.runId);
-        expect(expiredClaim.connectorRuntimeTargets).toContainEqual(target);
+        const expiredExecution = await api.executionInput(expiredRun.runId);
+        expect(expiredExecution.connectorRuntimeTargets).toContainEqual(target);
         const [runtimeResult] = await api.syncConnectorRuntime(
           expiredRun.runId,
           {
             targets: [
-              customConnectorRuntimeRegistration(expiredClaim, custom.id),
+              customConnectorRuntimeRegistration(expiredExecution, custom.id),
             ],
           },
         );
@@ -5961,7 +5997,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           fw.encryptedSecretsBody({}),
         );
         const reconnectRequired = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${expiredClaim.sandboxToken}` },
+          { authorization: `Bearer ${expiredExecution.sandboxToken}` },
           authBody,
           [502],
         );
@@ -6095,20 +6131,23 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await own(() => {
           return api.heartbeatRunner(runnerGroup);
         });
-        const { claim } = await fixture.claimChatRun(runnerGroup, run.runId);
+        const { execution } = await fixture.runExecution(run.runId);
         const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
         const secretKey = `CUSTOM_${custom.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
-        const customApis = inlineFirewallApis(claim.firewalls, internalName);
+        const customApis = inlineFirewallApis(
+          execution.firewalls,
+          internalName,
+        );
         expect(customApis).toHaveLength(1);
         expect(customApis[0]?.auth?.headers?.Authorization).toBe(
           `Bearer \${{ secrets.${secretKey} }}`,
         );
-        expect(claim.secretValues).not.toContain(
+        expect(execution.secretValues).not.toContain(
           "Bearer custom-oauth-initial-access-token",
         );
         const [runtimeResult] = await own(() => {
           return api.syncConnectorRuntime(run.runId, {
-            targets: [customConnectorRuntimeRegistration(claim, custom.id)],
+            targets: [customConnectorRuntimeRegistration(execution, custom.id)],
           });
         });
         const runtime = availableCustomConnectorRuntime(runtimeResult);
@@ -6118,7 +6157,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         const missingExactOAuth = await own(() => {
           return fw.requestFirewallAuth(
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             {
               ...currentAuthBody,
               forceRefresh: true,
@@ -6140,7 +6179,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const revoked = await own(() => {
           return fw.requestFirewallAuth(
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             { ...currentAuthBody, forceRefresh: true },
             [502],
           );
@@ -6174,7 +6213,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const recovered = await own(() => {
           return fw.requestFirewallAuth(
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             currentAuthBody,
             [200],
           );
@@ -6219,7 +6258,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const currentResolved = await own(() => {
           return fw.requestFirewallAuth(
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             currentAuthBody,
             [200],
           );
@@ -6238,7 +6277,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         mockNow(forceRefreshAt);
         const forceResolved = await own(() => {
           return fw.requestFirewallAuth(
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             { ...currentAuthBody, forceRefresh: true },
             [200],
           );
@@ -6278,7 +6317,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const failedRefresh = await own(() => {
           return fw.requestFirewallAuth(
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             { ...currentAuthBody, forceRefresh: true },
             [502],
           );
@@ -6298,7 +6337,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await own(() => {
           return callbacks.requestAgentComplete(
             { runId: run.runId, exitCode: 1, error: "Run cancelled" },
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             [200],
           );
         });
@@ -6377,9 +6416,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ).toStrictEqual(["authorization_code"]);
 
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(firstRun.runId);
+        const execution = await api.executionInput(firstRun.runId);
         const [runtimeResult] = await api.syncConnectorRuntime(firstRun.runId, {
-          targets: [customConnectorRuntimeRegistration(claim, custom.id)],
+          targets: [customConnectorRuntimeRegistration(execution, custom.id)],
         });
         const runtime = availableCustomConnectorRuntime(runtimeResult);
         const { body: currentAuthBody } = customConnectorRuntimeAuthBody(
@@ -6391,7 +6430,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           clearMockNow();
         });
         const reconnectRequired = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           currentAuthBody,
           [502],
         );
@@ -6405,7 +6444,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const [reconnectRuntimeResult] = await api.syncConnectorRuntime(
           firstRun.runId,
-          { targets: [customConnectorRuntimeRegistration(claim, custom.id)] },
+          {
+            targets: [customConnectorRuntimeRegistration(execution, custom.id)],
+          },
         );
         const reconnectRuntime = availableCustomConnectorRuntime(
           reconnectRuntimeResult,
@@ -6435,13 +6476,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "retry the revoked OAuth custom connector",
         });
         expect(provider.tokenBodies).toHaveLength(2);
-        const secondClaim = await api.executionInput(secondRun.runId);
+        const secondExecution = await api.executionInput(secondRun.runId);
         const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
         expect(
-          findFirewallEntry(secondClaim.firewalls, internalName),
+          findFirewallEntry(secondExecution.firewalls, internalName),
         ).toBeDefined();
-        expect(secondClaim.networkPolicies ?? {}).toHaveProperty(internalName);
-        expect(secondClaim.connectorRuntimeTargets).toContainEqual(
+        expect(secondExecution.networkPolicies ?? {}).toHaveProperty(
+          internalName,
+        );
+        expect(secondExecution.connectorRuntimeTargets).toContainEqual(
           expect.objectContaining({
             kind: "custom",
             customConnectorId: custom.id,
@@ -6451,7 +6494,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           secondRun.runId,
           {
             targets: [
-              customConnectorRuntimeRegistration(secondClaim, custom.id),
+              customConnectorRuntimeRegistration(secondExecution, custom.id),
             ],
           },
         );
@@ -6462,7 +6505,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           fw.encryptedSecretsBody({}),
         );
         const retriedReconnectRequired = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${secondClaim.sandboxToken}` },
+          { authorization: `Bearer ${secondExecution.sandboxToken}` },
           secondAuthBody,
           [502],
         );
@@ -6523,7 +6566,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         );
         const recovered = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${secondClaim.sandboxToken}` },
+          { authorization: `Bearer ${secondExecution.sandboxToken}` },
           { ...secondAuthBody, forceRefresh: true },
           [200],
         );
@@ -6594,15 +6637,18 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the OAuth MCP connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         const internalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
         expect(
-          inlineFirewallApis(claim.firewalls, internalName)[0],
+          inlineFirewallApis(execution.firewalls, internalName)[0],
         ).toMatchObject({
           base: "https://mcp-oauth.example.test/oauth/mcp",
           permissions: [],
         });
-        const runtimeTarget = customConnectorRuntimeRegistration(claim, mcp.id);
+        const runtimeTarget = customConnectorRuntimeRegistration(
+          execution,
+          mcp.id,
+        );
         const [runtimeResult] = await api.syncConnectorRuntime(run.runId, {
           targets: [runtimeTarget],
         });
@@ -6612,7 +6658,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           fw.encryptedSecretsBody({}),
         );
         const resolved = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           authBody,
           [200],
         );
@@ -6621,7 +6667,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             Authorization: "Bearer custom-oauth-initial-access-token",
           },
         });
-        expect(claim.secretValues).not.toContain(
+        expect(execution.secretValues).not.toContain(
           "custom-oauth-initial-access-token",
         );
 
@@ -6650,10 +6696,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use builtin Automatic OAuth through catalog no-auth",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
+        const execution = await api.executionInput(run.runId);
+        const target = builtinConnectorRuntimeRegistration(
+          execution,
+          catalog.slug,
+        );
         expect(
-          builtinFirewallEntry(claim.firewalls, catalog.slug),
+          builtinFirewallEntry(execution.firewalls, catalog.slug),
         ).toStrictEqual({
           kind: "builtin",
           name: catalog.slug,
@@ -6667,7 +6716,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const check = await accept(
           checkClient.check({
             headers: {
-              authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+              authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
             },
             body: {
               mode: "url",
@@ -6683,10 +6732,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           connector: { credentialResolution: "none" },
         });
         const staleOAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           {
             encryptedSecrets:
-              claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
+              execution.encryptedSecrets ?? fw.encryptedSecretsBody({}),
             authHeaders: {
               Authorization: AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE,
             },
@@ -6707,10 +6756,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         expect(provider.tokenBodies).toHaveLength(1);
         const resolved = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           {
             encryptedSecrets:
-              claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
+              execution.encryptedSecrets ?? fw.encryptedSecretsBody({}),
             authHeaders: catalog.firewallAuthHeaders,
             forceRefresh: true,
             matchedFirewall: {
@@ -6773,11 +6822,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "refresh builtin Automatic credentials",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+        const execution = await api.executionInput(run.runId);
+        const headers = { authorization: `Bearer ${execution.sandboxToken}` };
         const body = {
           encryptedSecrets:
-            claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
+            execution.encryptedSecrets ?? fw.encryptedSecretsBody({}),
           authHeaders: catalog.firewallAuthHeaders,
           matchedFirewall: {
             name: catalog.slug,
@@ -6848,7 +6897,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         expect(provider.tokenBodies).toHaveLength(4);
         const [runtime] = await api.syncConnectorRuntime(run.runId, {
-          targets: [builtinConnectorRuntimeRegistration(claim, catalog.slug)],
+          targets: [
+            builtinConnectorRuntimeRegistration(execution, catalog.slug),
+          ],
         });
         expect(runtime).toMatchObject({
           state: "available",
@@ -6886,10 +6937,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use builtin Automatic without refresh token",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         const body = {
           encryptedSecrets:
-            claim.encryptedSecrets ?? fw.encryptedSecretsBody({}),
+            execution.encryptedSecrets ?? fw.encryptedSecretsBody({}),
           authHeaders: catalog.firewallAuthHeaders,
           matchedFirewall: {
             name: catalog.slug,
@@ -6901,7 +6952,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         };
         const auth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           body,
           [200],
         );
@@ -6915,7 +6966,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         mockNow(connectedAt + 120_000);
         const expired = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           body,
           [502],
         );
@@ -6995,14 +7046,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await own(() => {
           return api.heartbeatRunner(runnerGroup);
         });
-        const { claim } = await fixture.claimChatRun(runnerGroup, run.runId);
+        const { execution } = await fixture.runExecution(run.runId);
         const internalName = `custom_connector_${mcp.id.replaceAll("-", "")}`;
         const secretKey = `CUSTOM_${mcp.id.replaceAll("-", "")}_S___OAUTH_ACCESS_TOKEN`;
         expect(
-          inlineFirewallApis(claim.firewalls, internalName)[0]?.auth.headers
+          inlineFirewallApis(execution.firewalls, internalName)[0]?.auth.headers
             ?.Authorization,
         ).toBe(`Bearer \${{ secrets.${secretKey} }}`);
-        const target = customConnectorRuntimeRegistration(claim, mcp.id);
+        const target = customConnectorRuntimeRegistration(execution, mcp.id);
         const [runtimeResult] = await own(() => {
           return api.syncConnectorRuntime(run.runId, {
             targets: [target],
@@ -7015,7 +7066,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         const resolved = await own(() => {
           return fw.requestFirewallAuth(
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             authBody,
             [200],
           );
@@ -7061,7 +7112,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await own(() => {
           return callbacks.requestAgentComplete(
             { runId: run.runId, exitCode: 1, error: "Run cancelled" },
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             [200],
           );
         });
@@ -7074,8 +7125,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await own(() => {
           return api.heartbeatRunner(runnerGroup);
         });
-        const { claim: noAuthClaim } = await fixture.claimChatRun(
-          runnerGroup,
+        const { execution: noAuthClaim } = await fixture.runExecution(
           noAuthRun.runId,
         );
         const noAuthTarget = customConnectorRuntimeRegistration(
@@ -7193,14 +7243,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         expect(kms.decryptCalls).toBe(0);
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
 
         const idPart = saved.connector.id.replaceAll("-", "");
         const internalName = `custom_connector_${idPart}`;
         const secretKey = `CUSTOM_${idPart}_S_API_KEY`;
         const variableKey = `CUSTOM_${idPart}_V_SUBDOMAIN`;
         const scopeVariableKey = `CUSTOM_${idPart}_V_SCOPE`;
-        const customApis = inlineFirewallApis(claim.firewalls, internalName);
+        const customApis = inlineFirewallApis(
+          execution.firewalls,
+          internalName,
+        );
         const customApi = customApis[0];
         if (!customApi) {
           throw new Error(
@@ -7209,7 +7262,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         expect(customApi.base).toBe(`https://xn--mnich-kva.${rand}.test/v1/`);
         const pinnedTarget = customConnectorRuntimeRegistration(
-          claim,
+          execution,
           saved.connector.id,
         );
         expect(pinnedTarget).toStrictEqual({
@@ -7246,7 +7299,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         };
         const resolved = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           authBody,
           [200],
         );
@@ -7295,7 +7348,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           `https://xn--mnich-kva.${rand}.test/v1/`,
         );
         const updatedAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           authBody,
           [200],
         );
@@ -7313,15 +7366,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "use the updated custom connector route",
         });
-        const laterClaim = await api.executionInput(laterRun.runId);
-        expect(laterClaim.connectorRuntimeTargets).toContainEqual({
+        const laterExecution = await api.executionInput(laterRun.runId);
+        expect(laterExecution.connectorRuntimeTargets).toContainEqual({
           kind: "custom",
           customConnectorId: saved.connector.id,
           baseUrlVars: { subdomain: "later-run" },
           sourceId: expect.any(String),
         });
         expect(
-          inlineFirewallApis(laterClaim.firewalls, internalName)[0]?.base,
+          inlineFirewallApis(laterExecution.firewalls, internalName)[0]?.base,
         ).toBe(`https://later-run.${rand}.test/v1/`);
         await api.requestCancelRun(actor, laterRun.runId, [200]);
 
@@ -7394,14 +7447,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the optional custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
 
         const idPart = saved.connector.id.replaceAll("-", "");
         const internalName = `custom_connector_${idPart}`;
         const secretKey = `CUSTOM_${idPart}_S_API_KEY`;
         const secondarySecretKey = `CUSTOM_${idPart}_S_SECONDARY_TOKEN`;
         const tenantVarKey = `CUSTOM_${idPart}_V_TENANT_ID`;
-        const customApis = inlineFirewallApis(claim.firewalls, internalName);
+        const customApis = inlineFirewallApis(
+          execution.firewalls,
+          internalName,
+        );
         expect(customApis[0]?.auth?.headers).toStrictEqual({
           Authorization:
             `Bearer \${{ secrets.${secretKey} }}:` +
@@ -7412,7 +7468,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         const runtimeTarget = customConnectorRuntimeRegistration(
-          claim,
+          execution,
           saved.connector.id,
         );
         const [runtimeResult] = await api.syncConnectorRuntime(run.runId, {
@@ -7430,7 +7486,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           tenant: `\${{ secrets.${tenantVarKey} }}`,
         });
         const missingHeaderAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           runtimeAuthBody,
           [424],
         );
@@ -7461,7 +7517,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         );
         const restoredAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           runtimeAuthBody,
           [200],
         );
@@ -7543,13 +7599,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "do not use the incompatible custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         const internalName = `custom_connector_${saved.connector.id.replaceAll("-", "")}`;
         expect(
-          findFirewallEntry(claim.firewalls, internalName),
+          findFirewallEntry(execution.firewalls, internalName),
         ).toBeUndefined();
-        expect(claim.networkPolicies ?? {}).not.toHaveProperty(internalName);
-        expect(claim.connectorRuntimeTargets).not.toContainEqual(
+        expect(execution.networkPolicies ?? {}).not.toHaveProperty(
+          internalName,
+        );
+        expect(execution.connectorRuntimeTargets).not.toContainEqual(
           expect.objectContaining({
             kind: "custom",
             customConnectorId: saved.connector.id,
@@ -7658,8 +7716,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await own(() => {
           return api.heartbeatRunner(runnerGroup);
         });
-        const { claim: blockedClaim } = await fixture.claimChatRun(
-          runnerGroup,
+        const { execution: blockedClaim } = await fixture.runExecution(
           blockedRun.runId,
         );
         const internalName = `custom_connector_${saved.connector.id.replaceAll("-", "")}`;
@@ -7734,8 +7791,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: "use the reconnected custom connector",
           });
         });
-        const { claim: admittedClaim } = await fixture.claimChatRun(
-          runnerGroup,
+        const { execution: admittedClaim } = await fixture.runExecution(
           admittedRun.runId,
         );
         expect(
@@ -7816,15 +7872,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "do not admit an incomplete custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const incompleteClaim = await api.executionInput(incompleteRun.runId);
+        const incompleteExecution = await api.executionInput(
+          incompleteRun.runId,
+        );
         const internalName = `custom_connector_${saved.connector.id.replaceAll("-", "")}`;
         expect(
-          findFirewallEntry(incompleteClaim.firewalls, internalName),
+          findFirewallEntry(incompleteExecution.firewalls, internalName),
         ).toBeUndefined();
-        expect(incompleteClaim.networkPolicies ?? {}).not.toHaveProperty(
+        expect(incompleteExecution.networkPolicies ?? {}).not.toHaveProperty(
           internalName,
         );
-        expect(incompleteClaim.connectorRuntimeTargets).not.toContainEqual(
+        expect(incompleteExecution.connectorRuntimeTargets).not.toContainEqual(
           expect.objectContaining({
             kind: "custom",
             customConnectorId: saved.connector.id,
@@ -7873,14 +7931,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "do not admit an unroutable custom connector",
         });
-        const unroutableClaim = await api.executionInput(unroutableRun.runId);
+        const unroutableExecution = await api.executionInput(
+          unroutableRun.runId,
+        );
         expect(
-          findFirewallEntry(unroutableClaim.firewalls, internalName),
+          findFirewallEntry(unroutableExecution.firewalls, internalName),
         ).toBeUndefined();
-        expect(unroutableClaim.networkPolicies ?? {}).not.toHaveProperty(
+        expect(unroutableExecution.networkPolicies ?? {}).not.toHaveProperty(
           internalName,
         );
-        expect(unroutableClaim.connectorRuntimeTargets).not.toContainEqual(
+        expect(unroutableExecution.connectorRuntimeTargets).not.toContainEqual(
           expect.objectContaining({
             kind: "custom",
             customConnectorId: saved.connector.id,
@@ -7902,15 +7962,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "use the fully recovered custom connector",
         });
-        const recoveredClaim = await api.executionInput(recoveredRun.runId);
-        expect(recoveredClaim.connectorRuntimeTargets).toContainEqual({
+        const recoveredExecution = await api.executionInput(recoveredRun.runId);
+        expect(recoveredExecution.connectorRuntimeTargets).toContainEqual({
           kind: "custom",
           customConnectorId: saved.connector.id,
           baseUrlVars: { subdomain: "version-two" },
           sourceId: expect.any(String),
         });
         expect(
-          inlineFirewallApis(recoveredClaim.firewalls, internalName)[0]?.base,
+          inlineFirewallApis(recoveredExecution.firewalls, internalName)[0]
+            ?.base,
         ).toBe(`https://${fixedPrefix}version-two.${rand}.recovery.test/v1/`);
 
         await api.requestCancelRun(actor, recoveredRun.runId, [200]);
@@ -7972,23 +8033,25 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the optional-only custom connector",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
 
         const idPart = saved.connector.id.replaceAll("-", "");
         const internalName = `custom_connector_${idPart}`;
         const secretKey = `CUSTOM_${idPart}_S_SECRET`;
         const tenantVarKey = `CUSTOM_${idPart}_V_TENANT`;
-        expect(findFirewallEntry(claim.firewalls, internalName)).toMatchObject({
+        expect(
+          findFirewallEntry(execution.firewalls, internalName),
+        ).toMatchObject({
           kind: "inline",
           customConnectorId: saved.connector.id,
         });
-        expect(claim.networkPolicies?.[internalName]?.unknownPolicy).toBe(
+        expect(execution.networkPolicies?.[internalName]?.unknownPolicy).toBe(
           "allow",
         );
 
         const [runtimeResult] = await api.syncConnectorRuntime(run.runId, {
           targets: [
-            customConnectorRuntimeRegistration(claim, saved.connector.id),
+            customConnectorRuntimeRegistration(execution, saved.connector.id),
           ],
         });
         const runtime = availableCustomConnectorRuntime(runtimeResult);
@@ -8002,7 +8065,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           tenant: `\${{ secrets.${tenantVarKey} }}`,
         });
         const missingQueryAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           runtimeAuthBody,
           [424],
         );
@@ -8033,7 +8096,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         );
         const restoredAuth = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           runtimeAuthBody,
           [200],
         );
@@ -8093,24 +8156,27 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "expand custom and connector bases",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
 
         const internalName = `custom_connector_${custom.id.replaceAll("-", "")}`;
-        const customApis = inlineFirewallApis(claim.firewalls, internalName);
+        const customApis = inlineFirewallApis(
+          execution.firewalls,
+          internalName,
+        );
         expect(
-          claim.firewalls?.map((firewall) => {
+          execution.firewalls?.map((firewall) => {
             return firewallEntryName(firewall);
           }),
         ).toContain("test-subdomain");
         expect(
-          findFirewallEntry(claim.firewalls, "test-subdomain"),
+          findFirewallEntry(execution.firewalls, "test-subdomain"),
         ).toStrictEqual({
           kind: "builtin",
           name: "test-subdomain",
           baseUrlVars: { SUBDOMAIN_TEST_SUBDOMAIN: "xn--mnich-kva" },
           sourceId: expect.any(String),
         });
-        expect(claim.connectorRuntimeTargets).toContainEqual({
+        expect(execution.connectorRuntimeTargets).toContainEqual({
           kind: "builtin",
           connectorSlug: "test-subdomain",
           baseUrlVars: { SUBDOMAIN_TEST_SUBDOMAIN: "xn--mnich-kva" },
@@ -8170,17 +8236,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "expire a queued permission",
         });
-        const expiredClaim = await api.executionInput(expiringRun.runId);
-        expect(expiredClaim.networkPolicies?.slack?.deny).toContain(
+        const expiredExecution = await api.executionInput(expiringRun.runId);
+        expect(expiredExecution.networkPolicies?.slack?.deny).toContain(
           "chat:write",
         );
-        expect(expiredClaim.networkPolicies?.slack?.allow).not.toContain(
+        expect(expiredExecution.networkPolicies?.slack?.allow).not.toContain(
           "chat:write",
         );
         await api.requestCancelRun(actor, expiringRun.runId, [200]);
         await oauth.finishCancelledRun(
           expiringRun.runId,
-          expiredClaim.sandboxToken,
+          expiredExecution.sandboxToken,
         );
 
         await api.applyUserPermissionGrant(actor, {
@@ -8200,17 +8266,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "revoke a queued permission",
         });
-        const revokedClaim = await api.executionInput(revokedRun.runId);
-        expect(revokedClaim.networkPolicies?.slack?.deny).toContain(
+        const revokedExecution = await api.executionInput(revokedRun.runId);
+        expect(revokedExecution.networkPolicies?.slack?.deny).toContain(
           "chat:write",
         );
-        expect(revokedClaim.networkPolicies?.slack?.allow).not.toContain(
+        expect(revokedExecution.networkPolicies?.slack?.allow).not.toContain(
           "chat:write",
         );
         await api.requestCancelRun(actor, revokedRun.runId, [200]);
         await oauth.finishCancelledRun(
           revokedRun.runId,
-          revokedClaim.sandboxToken,
+          revokedExecution.sandboxToken,
         );
       });
 
@@ -8227,12 +8293,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId: agent.agentId,
           prompt: "claim without built-in connectors",
         });
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
 
-        expect(claim.environment).toMatchObject({
+        expect(execution.environment).toMatchObject({
           CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
         });
-        expect(claim.billableFirewalls).toStrictEqual([]);
+        expect(execution.billableFirewalls).toStrictEqual([]);
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
@@ -8258,7 +8324,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.enableAgentConnectors(actor, agentId, ["slack"]);
 
         async function claimSlackContext(prompt: string): Promise<{
-          readonly claim: Awaited<ReturnType<typeof api.executionInput>>;
+          readonly execution: Awaited<ReturnType<typeof api.executionInput>>;
           readonly policy: {
             readonly allow: readonly string[];
             readonly deny: readonly string[];
@@ -8270,14 +8336,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt,
           });
-          const claim = await api.executionInput(run.runId);
+          const execution = await api.executionInput(run.runId);
           await api.requestCancelRun(actor, run.runId, [200]);
-          await oauth.finishCancelledRun(run.runId, claim.sandboxToken);
-          const policy = claim.networkPolicies?.slack;
+          await oauth.finishCancelledRun(run.runId, execution.sandboxToken);
+          const policy = execution.networkPolicies?.slack;
           if (!policy) {
             throw new Error("Expected a slack network policy on the claim");
           }
-          return { claim, policy };
+          return { execution, policy };
         }
 
         async function claimSlackPolicy(prompt: string): Promise<{
@@ -8357,17 +8423,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const grantedContext = await claimSlackContext("granted permissions");
         const granted = grantedContext.policy;
         expect(
-          grantedContext.claim.networkPolicyRefreshes?.slack?.nextRefreshAt,
+          grantedContext.execution.networkPolicyRefreshes?.slack?.nextRefreshAt,
         ).toBe(firstExpiry);
-        expect(grantedContext.claim.environment).toMatchObject({
+        expect(grantedContext.execution.environment).toMatchObject({
           CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
         });
-        expect(grantedContext.claim.billableFirewalls).toStrictEqual([]);
-        expect(grantedContext.claim.connectorRuntimeTargets).toContainEqual({
-          kind: "builtin",
-          connectorSlug: "slack",
-          sourceId: expect.any(String),
-        });
+        expect(grantedContext.execution.billableFirewalls).toStrictEqual([]);
+        expect(grantedContext.execution.connectorRuntimeTargets).toContainEqual(
+          {
+            kind: "builtin",
+            connectorSlug: "slack",
+            sourceId: expect.any(String),
+          },
+        );
         expect(granted.allow).toContain("chat:write");
         expect(granted.allow).toContain("files:read");
         expect(granted.deny).not.toContain("chat:write");
@@ -8384,7 +8452,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(expired.allow).toContain("search:read");
         expect(expired.allow).toContain("conversations:read");
         expect(
-          expiredContext.claim.networkPolicyRefreshes?.slack?.nextRefreshAt,
+          expiredContext.execution.networkPolicyRefreshes?.slack?.nextRefreshAt,
         ).toBe(laterExpiry);
 
         // Unknown-permission grants flip only the unknown policy.
@@ -8419,15 +8487,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           permission: "chat:write",
           action: "deny",
         });
-        const snapshotClaim = await api.executionInput(snapshotRun.runId);
+        const snapshotExecution = await api.executionInput(snapshotRun.runId);
         const snapshotSlackTarget = builtinConnectorRuntimeRegistration(
-          snapshotClaim,
+          snapshotExecution,
           "slack",
         );
-        expect(snapshotClaim.networkPolicies?.slack?.deny).not.toContain(
+        expect(snapshotExecution.networkPolicies?.slack?.deny).not.toContain(
           "chat:write",
         );
-        expect(snapshotClaim.networkPolicies?.slack?.allow).toContain(
+        expect(snapshotExecution.networkPolicies?.slack?.allow).toContain(
           "chat:write",
         );
         const actorRunnerKey = await api.createCliToken(actor);
@@ -8560,7 +8628,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(1);
         await oauth.finishCancelledRun(
           snapshotRun.runId,
-          snapshotClaim.sandboxToken,
+          snapshotExecution.sandboxToken,
         );
         const drained = await api.readRunQueue(actor);
         expect(drained.body.concurrency.active).toBe(0);
@@ -8583,12 +8651,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "complete before runner policy cleanup",
         });
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         const history = `terminal refresh history ${run.runId}`;
         const historyHash = createHash("sha256").update(history).digest("hex");
         mockSessionHistoryBlob(historyHash, history);
         const sandboxHeaders = {
-          authorization: `Bearer ${claim.sandboxToken}`,
+          authorization: `Bearer ${execution.sandboxToken}`,
         };
         await webhooks.requestAgentComplete(
           {
@@ -8641,7 +8709,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "fail before runner policy cleanup",
         });
-        const failedClaim = await api.executionInput(failedRun.runId);
+        const failedExecution = await api.executionInput(failedRun.runId);
         await webhooks.requestAgentComplete(
           {
             runId: failedRun.runId,
@@ -8649,7 +8717,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             error: "terminal refresh failure fixture",
             lastEventSequence: 0,
           },
-          { authorization: `Bearer ${failedClaim.sandboxToken}` },
+          { authorization: `Bearer ${failedExecution.sandboxToken}` },
           [200],
         );
         expect((await api.readRun(actor, failedRun.runId)).status).toBe(
@@ -8759,18 +8827,18 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         await oauth.connect(actor, {
           connectorSlug: "slack",
-          accessToken: "xoxb-bdd-claim-response-timing",
+          accessToken: "xoxb-bdd-execution-delivery-timing",
         });
         await api.enableAgentConnectors(actor, agentId, ["slack"]);
         await api.heartbeatRunner(runnerGroup);
 
-        const firstPrompt = "start combined claim response timing";
+        const firstPrompt = "start combined execution delivery timing";
         const first = await api.createThreadRun(actor, {
           agentId,
           prompt: firstPrompt,
         });
-        const firstClaim = await api.executionInput(first.runId);
-        expect(firstClaim.networkPolicies?.slack).toBeDefined();
+        const firstExecution = await api.executionInput(first.runId);
+        expect(firstExecution.networkPolicies?.slack).toBeDefined();
 
         const history = `bdd combined claim history ${first.runId}`;
         const historyHash = createHash("sha256").update(history).digest("hex");
@@ -8786,26 +8854,26 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               cliAgentSessionHistoryDisposition: "native_only",
             },
           },
-          { authorization: `Bearer ${firstClaim.sandboxToken}` },
+          { authorization: `Bearer ${firstExecution.sandboxToken}` },
           [200],
         );
         const completed = await api.readRun(actor, first.runId);
         expect(completed.status).toBe("completed");
 
-        const resumedPrompt = "continue combined claim response timing";
+        const resumedPrompt = "continue combined execution delivery timing";
         context.mocks.ably.publish.mockClear();
         const resumed = await api.createThreadRun(actor, {
           agentId,
           threadId: first.threadId,
           prompt: resumedPrompt,
         });
-        const resumedClaim = await api.executionInput(resumed.runId);
-        expect(resumedClaim.nativeContinuation).toMatchObject({
+        const resumedExecution = await api.executionInput(resumed.runId);
+        expect(resumedExecution.nativeContinuation).toMatchObject({
           sessionId: `bdd-combined-cli-${first.runId}`,
           generationRunId: first.runId,
         });
 
-        expect(resumedClaim.networkPolicies?.slack).toBeDefined();
+        expect(resumedExecution.networkPolicies?.slack).toBeDefined();
 
         await api.requestCancelRun(actor, resumed.runId, [200]);
       });
@@ -8849,9 +8917,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt,
           });
-          const claim = await api.executionInput(run.runId);
+          const execution = await api.executionInput(run.runId);
           await api.requestCancelRun(actor, run.runId, [200]);
-          const policy = claim.networkPolicies?.cloudflare;
+          const policy = execution.networkPolicies?.cloudflare;
           if (!policy) {
             throw new Error(
               "Expected a cloudflare network policy on the claim",
@@ -8916,20 +8984,22 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "thread run cloudflare defaults",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        expect(claim.environment?.CLOUDFLARE_TOKEN).toBe(
+        const execution = await api.executionInput(run.runId);
+        expect(execution.environment?.CLOUDFLARE_TOKEN).toBe(
           connectorPlaceholder("cloudflare", "CLOUDFLARE_TOKEN"),
         );
-        expect(claim.secretConnectorMap).toMatchObject({
+        expect(execution.secretConnectorMap).toMatchObject({
           CLOUDFLARE_TOKEN: "cloudflare",
         });
-        expect(findFirewallEntry(claim.firewalls, "cloudflare")).toStrictEqual({
+        expect(
+          findFirewallEntry(execution.firewalls, "cloudflare"),
+        ).toStrictEqual({
           kind: "builtin",
           name: "cloudflare",
           sourceId: expect.any(String),
         });
 
-        const policy = claim.networkPolicies?.cloudflare;
+        const policy = execution.networkPolicies?.cloudflare;
         if (!policy) {
           throw new Error("Expected a cloudflare network policy on the claim");
         }
@@ -9016,9 +9086,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "summarize release",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
 
-        const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+        const appendSystemPrompt = execution.appendSystemPrompt ?? "";
         expect(appendSystemPrompt).toContain("# Agent Identity");
         expect(appendSystemPrompt).toContain("Your name is Research Bot.");
         expect(appendSystemPrompt).toContain(
@@ -9161,43 +9231,43 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(appendSystemPrompt).toContain("Name: BDD User");
         expect(appendSystemPrompt).toContain(`Email: ${actor.email}`);
         expect(appendSystemPrompt).toContain("Timezone: America/Los_Angeles");
-        expect(claim.userTimezone).toBe("America/Los_Angeles");
+        expect(execution.userTimezone).toBe("America/Los_Angeles");
 
-        expect(claim.disallowedTools).toStrictEqual(
+        expect(execution.disallowedTools).toStrictEqual(
           EXPECTED_AGENT_RUN_DISALLOWED_TOOLS,
         );
         expectCanonicalOkouRunEnvironment({
-          environment: claim.environment,
-          platformEnvironment: claim.platformEnvironment,
-          secretValues: claim.secretValues,
+          environment: execution.environment,
+          platformEnvironment: execution.platformEnvironment,
+          secretValues: execution.secretValues,
           appUrl,
           agentId: agent.agentId,
           userId: actor.userId,
           orgId: actor.orgId,
           runId: run.runId,
         });
-        expect(claim.platformEnvironment).toMatchObject({
+        expect(execution.platformEnvironment).toMatchObject({
           OKOU_CURRENT_INTEGRATION: "web",
         });
-        for (const key of Object.keys(claim.platformEnvironment)) {
-          expect(claim.environment).not.toHaveProperty(key);
+        for (const key of Object.keys(execution.platformEnvironment)) {
+          expect(execution.environment).not.toHaveProperty(key);
         }
-        expect(claim.environment?.APP_URL).toBeUndefined();
-        expect(findFirewallEntry(claim.firewalls, "slack")).toStrictEqual({
+        expect(execution.environment?.APP_URL).toBeUndefined();
+        expect(findFirewallEntry(execution.firewalls, "slack")).toStrictEqual({
           kind: "builtin",
           name: "slack",
           sourceId: expect.any(String),
         });
-        expect(claim.networkPolicies?.slack?.allow).toContain("chat:write");
-        expect(claim.networkPolicies?.slack?.allow).toContain(
+        expect(execution.networkPolicies?.slack?.allow).toContain("chat:write");
+        expect(execution.networkPolicies?.slack?.allow).toContain(
           "conversations:read",
         );
         const customConnectorName = `custom_connector_${customConnector.id.replaceAll("-", "")}`;
         expect(
-          inlineFirewallApis(claim.firewalls, customConnectorName),
+          inlineFirewallApis(execution.firewalls, customConnectorName),
         ).toHaveLength(1);
         expect(
-          claim.contentBundles.skills.map((skill) => {
+          execution.contentBundles.skills.map((skill) => {
             return skill.mountPath;
           }),
         ).toContain(`/home/user/.claude/skills/${workflowName}`);
@@ -9215,7 +9285,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "prepare an Outlook email",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         for (const hint of [
           "Gmail email from web chat: use the Gmail skill",
           "Outlook email from web chat",
@@ -9225,7 +9295,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "Never call `sendMail`",
           "PATCH /me/messages/<draft-id>",
         ]) {
-          expect(claim.appendSystemPrompt).toContain(hint);
+          expect(execution.appendSystemPrompt).toContain(hint);
         }
         await api.requestCancelRun(actor, run.runId, [200]);
       });
@@ -9277,8 +9347,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use my available capabilities",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        const prompt = claim.appendSystemPrompt ?? "";
+        const execution = await api.executionInput(run.runId);
+        const prompt = execution.appendSystemPrompt ?? "";
         expect(prompt).not.toContain("okou data tools --family web-search");
         // Discovery stays generic; the CLI hides disabled Router families.
         expect(prompt).toContain("- Managed research data:");
@@ -9289,10 +9359,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(prompt).toContain("okou data describe <tool>");
         expect(prompt).toContain("# Restricted Explicit Content");
         expect(
-          claim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
+          execution.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
         ).toBe("true");
         await api.requestCancelRun(actor, run.runId, [200]);
-        await finishCancelledRun(run.runId, claim.sandboxToken);
+        await finishCancelledRun(run.runId, execution.sandboxToken);
       });
 
       it("explains live tool discovery and schema-based calls to the agent", async () => {
@@ -9306,8 +9376,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "discover a managed research tool",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        const prompt = claim.appendSystemPrompt ?? "";
+        const execution = await api.executionInput(run.runId);
+        const prompt = execution.appendSystemPrompt ?? "";
         expect(prompt).toContain("okou data tools");
         expect(prompt).toContain("okou data describe <tool>");
         expect(prompt).toContain("okou data call <tool> --input");
@@ -9316,7 +9386,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "It lists only the Data Router families and tools enabled for this Run",
         );
         await api.requestCancelRun(actor, run.runId, [200]);
-        await finishCancelledRun(run.runId, claim.sandboxToken);
+        await finishCancelledRun(run.runId, execution.sandboxToken);
       });
 
       it("snapshots paid tool preferences for queued runs and applies later changes to new runs", async () => {
@@ -9334,54 +9404,56 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await setPaidToolDisabled(context, actor, "web-search", false);
         await setPaidToolDisabled(context, actor, "image-generation", false);
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(queued.runId);
-        expect(claim.appendSystemPrompt).not.toContain(
+        const execution = await api.executionInput(queued.runId);
+        expect(execution.appendSystemPrompt).not.toContain(
           "okou data tools --family web-search",
         );
-        expect(claim.appendSystemPrompt).not.toContain(
+        expect(execution.appendSystemPrompt).not.toContain(
           "# Built-in image model",
         );
-        expect(claim.appendSystemPrompt).toContain("- Managed research data:");
-        expect(claim.appendSystemPrompt).toContain(
+        expect(execution.appendSystemPrompt).toContain(
+          "- Managed research data:",
+        );
+        expect(execution.appendSystemPrompt).toContain(
           "plus connector-backed music",
         );
-        expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
+        expect(execution.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
           '["image-generation","web-search"]',
         );
         expect(
-          claim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
+          execution.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
         ).toBe("true");
-        expect(claim.platformEnvironment).not.toHaveProperty(
+        expect(execution.platformEnvironment).not.toHaveProperty(
           ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
         );
-        expect(claim.environment).not.toHaveProperty(
+        expect(execution.environment).not.toHaveProperty(
           DISABLED_PAID_TOOLS_ENV_VAR,
         );
-        expect(claim.environment).not.toHaveProperty(
+        expect(execution.environment).not.toHaveProperty(
           ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
         );
         await api.requestCancelRun(actor, queued.runId, [200]);
-        await finishCancelledRun(queued.runId, claim.sandboxToken);
+        await finishCancelledRun(queued.runId, execution.sandboxToken);
 
         const enabled = await api.createThreadRun(actor, {
           agentId,
           prompt: "use the updated paid tool preferences",
         });
-        const enabledClaim = await api.executionInput(enabled.runId);
-        expect(enabledClaim.appendSystemPrompt).toContain(
+        const enabledExecution = await api.executionInput(enabled.runId);
+        expect(enabledExecution.appendSystemPrompt).toContain(
           "okou data tools --family web-search",
         );
-        expect(enabledClaim.appendSystemPrompt).toContain(
+        expect(enabledExecution.appendSystemPrompt).toContain(
           "# Built-in image model",
         );
         expect(
-          enabledClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
+          enabledExecution.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
         ).toBe("[]");
-        expect(enabledClaim.platformEnvironment).not.toHaveProperty(
+        expect(enabledExecution.platformEnvironment).not.toHaveProperty(
           ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
         );
         await api.requestCancelRun(actor, enabled.runId, [200]);
-        await finishCancelledRun(enabled.runId, enabledClaim.sandboxToken);
+        await finishCancelledRun(enabled.runId, enabledExecution.sandboxToken);
 
         await setPaidToolDisabled(context, actor, "web-search", true);
         await setPaidToolDisabled(context, actor, "video-generation", true);
@@ -9389,15 +9461,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "apply the latest paid tool preferences",
         });
-        const latestClaim = await api.executionInput(latest.runId);
+        const latestExecution = await api.executionInput(latest.runId);
         expect(
-          latestClaim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
+          latestExecution.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
         ).toBe('["video-generation","web-search"]');
         expect(
-          latestClaim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
+          latestExecution.platformEnvironment[
+            ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR
+          ],
         ).toBe("true");
         await api.requestCancelRun(actor, latest.runId, [200]);
-        await finishCancelledRun(latest.runId, latestClaim.sandboxToken);
+        await finishCancelledRun(latest.runId, latestExecution.sandboxToken);
 
         // gpt-6-astra has no Pi route, so it runs the native Codex CLI.
         await createBddIntegrationApi(context)
@@ -9410,19 +9484,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use Codex native web search",
           model: "gpt-6-astra",
         });
-        const codexSubscriptionClaim = await api.executionInput(
+        const codexSubscriptionExecution = await api.executionInput(
           codexSubscription.runId,
         );
-        expect(codexSubscriptionClaim.cliAgentType).toBe("codex");
+        expect(codexSubscriptionExecution.cliAgentType).toBe("codex");
         expect(
-          codexSubscriptionClaim.platformEnvironment[
+          codexSubscriptionExecution.platformEnvironment[
             ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR
           ],
         ).toBe("true");
         await api.requestCancelRun(actor, codexSubscription.runId, [200]);
         await finishCancelledRun(
           codexSubscription.runId,
-          codexSubscriptionClaim.sandboxToken,
+          codexSubscriptionExecution.sandboxToken,
         );
       });
 
@@ -9445,48 +9519,52 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await setPaidToolDisabled(context, actor, "image-generation", false);
         await setPaidToolDisabled(context, actor, "web-search", true);
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(queued.runId);
-        expect(claim.cliAgentType).toBe("codex");
-        expect(claim.appendSystemPrompt).not.toContain(
+        const execution = await api.executionInput(queued.runId);
+        expect(execution.cliAgentType).toBe("codex");
+        expect(execution.appendSystemPrompt).not.toContain(
           "# Built-in image model",
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(execution.appendSystemPrompt).toContain(
           "okou data tools --family web-search",
         );
         expect(
-          claim.platformEnvironment[ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR],
+          execution.platformEnvironment[
+            ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR
+          ],
         ).toBe("true");
-        expect(claim.platformEnvironment).not.toHaveProperty(
+        expect(execution.platformEnvironment).not.toHaveProperty(
           ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
         );
-        expect(claim.environment).not.toHaveProperty(
+        expect(execution.environment).not.toHaveProperty(
           ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
         );
         await api.requestCancelRun(actor, queued.runId, [200]);
-        await finishCancelledRun(queued.runId, claim.sandboxToken);
+        await finishCancelledRun(queued.runId, execution.sandboxToken);
 
         const managedImages = await api.createThreadRun(actor, {
           agentId,
           prompt: "use managed images with native web search",
           model: "gpt-6-astra",
         });
-        const managedClaim = await api.executionInput(managedImages.runId);
-        expect(managedClaim.appendSystemPrompt).toContain(
+        const managedExecution = await api.executionInput(managedImages.runId);
+        expect(managedExecution.appendSystemPrompt).toContain(
           "# Built-in image model",
         );
-        expect(managedClaim.appendSystemPrompt).not.toContain(
+        expect(managedExecution.appendSystemPrompt).not.toContain(
           "okou data tools --family web-search",
         );
-        expect(managedClaim.platformEnvironment).not.toHaveProperty(
+        expect(managedExecution.platformEnvironment).not.toHaveProperty(
           ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR,
         );
         expect(
-          managedClaim.platformEnvironment[ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR],
+          managedExecution.platformEnvironment[
+            ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR
+          ],
         ).toBe("true");
         await api.requestCancelRun(actor, managedImages.runId, [200]);
         await finishCancelledRun(
           managedImages.runId,
-          managedClaim.sandboxToken,
+          managedExecution.sandboxToken,
         );
 
         await setPaidToolDisabled(context, actor, "image-generation", true);
@@ -9495,13 +9573,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use native images and web search",
           model: "gpt-6-astra",
         });
-        const nativeClaim = await api.executionInput(nativeTools.runId);
-        expect(nativeClaim.platformEnvironment).toMatchObject({
+        const nativeExecution = await api.executionInput(nativeTools.runId);
+        expect(nativeExecution.platformEnvironment).toMatchObject({
           [ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR]: "true",
           [ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR]: "true",
         });
         await api.requestCancelRun(actor, nativeTools.runId, [200]);
-        await finishCancelledRun(nativeTools.runId, nativeClaim.sandboxToken);
+        await finishCancelledRun(
+          nativeTools.runId,
+          nativeExecution.sandboxToken,
+        );
       });
 
       it("uses the executing member's paid tool preferences for a shared agent", async () => {
@@ -9526,12 +9607,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           model: NATIVE_RUNNER_ROUTE.model,
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         // Router family preferences pass through opaquely for the CLI to apply.
-        expect(claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
+        expect(execution.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]).toBe(
           '["scrape"]',
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(execution.appendSystemPrompt).toContain(
           "okou data tools --family web-search",
         );
         await api.requestCancelRun(member, run.runId, [200]);
@@ -9550,8 +9631,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "review my recent banking activity",
         });
         await api.heartbeatRunner(runnerGroup);
-        const gatedOffClaim = await api.executionInput(gatedOff.runId);
-        expect(gatedOffClaim.appendSystemPrompt ?? "").not.toContain(
+        const gatedOffExecution = await api.executionInput(gatedOff.runId);
+        expect(gatedOffExecution.appendSystemPrompt ?? "").not.toContain(
           "okou banking access-request",
         );
         await api.requestCancelRun(actor, gatedOff.runId, [200]);
@@ -9564,8 +9645,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "review my recent banking activity",
         });
         await api.heartbeatRunner(runnerGroup);
-        const gatedOnClaim = await api.executionInput(gatedOn.runId);
-        const appendSystemPrompt = gatedOnClaim.appendSystemPrompt ?? "";
+        const gatedOnExecution = await api.executionInput(gatedOn.runId);
+        const appendSystemPrompt = gatedOnExecution.appendSystemPrompt ?? "";
         expect(appendSystemPrompt).toContain("okou banking access-request");
         expect(appendSystemPrompt).toContain("account-scoped, expiring grant");
         expect(appendSystemPrompt).toContain(
@@ -9615,8 +9696,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(sshGuidance).toHaveLength(1);
         expect(sshGuidance.join("\n").length).toBeLessThanOrEqual(400);
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        const token = claim.platformEnvironment.OKOU_TOKEN;
+        const execution = await api.executionInput(run.runId);
+        const token = execution.platformEnvironment.OKOU_TOKEN;
         if (!token) {
           throw new Error("Expected a minted Run token");
         }
@@ -9637,9 +9718,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         expect(run.status).toBe("running");
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        const prompt = claim.appendSystemPrompt ?? "";
-        const token = claim.platformEnvironment.OKOU_TOKEN;
+        const execution = await api.executionInput(run.runId);
+        const prompt = execution.appendSystemPrompt ?? "";
+        const token = execution.platformEnvironment.OKOU_TOKEN;
         if (!token) {
           throw new Error("Expected a minted Run token");
         }
@@ -9668,7 +9749,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
         await webhooks.requestAgentComplete(
           { runId: run.runId, exitCode: 1 },
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           [200],
         );
       });
@@ -9690,9 +9771,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           expect(run.status).toBe("running");
           await api.heartbeatRunner(runnerGroup);
-          const claim = await api.executionInput(run.runId);
-          const prompt = claim.appendSystemPrompt ?? "";
-          const token = claim.platformEnvironment.OKOU_TOKEN;
+          const execution = await api.executionInput(run.runId);
+          const prompt = execution.appendSystemPrompt ?? "";
+          const token = execution.platformEnvironment.OKOU_TOKEN;
           if (!token) {
             throw new Error("Expected a minted Run token");
           }
@@ -9721,7 +9802,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await api.requestCancelRun(actor, run.runId, [200]);
           await webhooks.requestAgentComplete(
             { runId: run.runId, exitCode: 1 },
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             [200],
           );
         },
@@ -9742,8 +9823,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: "prepare the connector permissions needed for this task",
           });
           await api.heartbeatRunner(runnerGroup);
-          const claim = await api.executionInput(run.runId);
-          const prompt = claim.appendSystemPrompt ?? "";
+          const execution = await api.executionInput(run.runId);
+          const prompt = execution.appendSystemPrompt ?? "";
           if (enabled) {
             expect(prompt).toContain(
               "okou connector permission-request --batch-file <path>",
@@ -9761,7 +9842,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await api.requestCancelRun(actor, run.runId, [200]);
           await webhooks.requestAgentComplete(
             { runId: run.runId, exitCode: 1 },
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             [200],
           );
         },
@@ -9815,12 +9896,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the private workflow override",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        const workflowMounts = claim.contentBundles.skills.filter((skill) => {
-          return (
-            skill.mountPath === `/home/user/.claude/skills/${workflowName}`
-          );
-        });
+        const execution = await api.executionInput(run.runId);
+        const workflowMounts = execution.contentBundles.skills.filter(
+          (skill) => {
+            return (
+              skill.mountPath === `/home/user/.claude/skills/${workflowName}`
+            );
+          },
+        );
 
         expect(workflowMounts).toHaveLength(1);
         const selected = workflowMounts[0];
@@ -9828,7 +9911,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           throw new Error("Expected the caller's private Workflow bundle");
         }
         expect(
-          readClaimedContentBundle(s3.objects, selected)
+          readExecutionContentBundle(s3.objects, selected)
             .get("SKILL.md")
             ?.toString(),
         ).toContain(privateInstruction);
@@ -9845,18 +9928,20 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "continue the task",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
 
-        expect(claim.disallowedTools).toStrictEqual(
+        expect(execution.disallowedTools).toStrictEqual(
           EXPECTED_AGENT_RUN_DISALLOWED_TOOLS,
         );
-        expect(claim.appendSystemPrompt ?? "").toContain(
+        expect(execution.appendSystemPrompt ?? "").toContain(
           "check `okou data tools` for a page extraction tool first",
         );
-        expect(claim.appendSystemPrompt ?? "").toContain(
+        expect(execution.appendSystemPrompt ?? "").toContain(
           "okou data tools --family web-search",
         );
-        expect(claim.appendSystemPrompt ?? "").toContain("--callback-prompt");
+        expect(execution.appendSystemPrompt ?? "").toContain(
+          "--callback-prompt",
+        );
 
         await api.requestCancelRun(actor, run.runId, [200]);
         const cancelled = await api.readRun(actor, run.runId);
@@ -9891,10 +9976,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "use the workflow",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
-        expect(claim.cliAgentType).toBe("claude-code");
+        const execution = await api.executionInput(run.runId);
+        expect(execution.cliAgentType).toBe("claude-code");
         expect(
-          claim.contentBundles.skills.map((skill) => {
+          execution.contentBundles.skills.map((skill) => {
             return skill.mountPath;
           }),
         ).toContain(`/home/user/.claude/skills/${workflowName}`);
@@ -9915,7 +10000,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           runnerGroup,
           run: own,
-          claimChatRun,
+          runExecution,
         } = await publicChatActor(context);
         await own(async () => {
           await api.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -9924,7 +10009,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: "cancel while running",
           });
           await api.heartbeatRunner(runnerGroup);
-          const claimed = await claimChatRun(runnerGroup, run.runId);
+          const execution = await runExecution(run.runId);
 
           const running = await api.readRun(actor, run.runId);
           expect(running.status).toBe("running");
@@ -9941,7 +10026,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(repeated.status).toBe(200);
           await createWebhookCallbackApi(context).requestAgentComplete(
             { runId: run.runId, exitCode: 1, error: "Run cancelled" },
-            claimed.sandboxHeaders,
+            execution.sandboxHeaders,
             [200],
           );
         });
@@ -10019,19 +10104,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           // Current preview access cannot upgrade this Run's admission receipt.
           mockEnv("ENV", "preview");
           mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", claimBypass);
-          const claim = await api.executionInput(runId);
+          const execution = await api.executionInput(runId);
           if (request.authorized) {
-            expect(claim.platformEnvironment).toMatchObject({
+            expect(execution.platformEnvironment).toMatchObject({
               VERCEL_AUTOMATION_BYPASS_SECRET: previewBypass,
             });
-            expect(claim.secretValues).toContain(previewBypass);
+            expect(execution.secretValues).toContain(previewBypass);
           } else {
-            expect(claim.platformEnvironment).not.toHaveProperty(
+            expect(execution.platformEnvironment).not.toHaveProperty(
               "VERCEL_AUTOMATION_BYPASS_SECRET",
             );
-            expect(claim.secretValues).not.toContain(claimBypass);
+            expect(execution.secretValues).not.toContain(claimBypass);
           }
-          expect(claim.environment).not.toHaveProperty(
+          expect(execution.environment).not.toHaveProperty(
             "VERCEL_AUTOMATION_BYPASS_SECRET",
           );
           mockEnv("ENV", "development");
@@ -10049,9 +10134,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
         const source = await api.createThreadRun(actor, {
           agentId,
-          prompt: "create history for a failed claim response",
+          prompt: "create history for a failed execution delivery",
         });
-        const sourceClaim = await api.executionInput(source.runId);
+        const sourceExecution = await api.executionInput(source.runId);
 
         await webhooks.requestAgentComplete(
           {
@@ -10064,7 +10149,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               cliAgentSessionHistoryDisposition: "native_only",
             },
           },
-          { authorization: `Bearer ${sourceClaim.sandboxToken}` },
+          { authorization: `Bearer ${sourceExecution.sandboxToken}` },
           [200],
         );
 
@@ -10245,16 +10330,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: "cancel before heartbeat",
           });
 
-          const { claim: completedClaim } = await owned.claimChatRun(
-            owned.runnerGroup,
+          const { execution: completedClaim } = await owned.runExecution(
             completed.runId,
           );
-          const { claim: failedClaim } = await owned.claimChatRun(
-            owned.runnerGroup,
+          const { execution: failedClaim } = await owned.runExecution(
             failed.runId,
           );
-          const { claim: cancelledClaim } = await owned.claimChatRun(
-            owned.runnerGroup,
+          const { execution: cancelledClaim } = await owned.runExecution(
             cancelled.runId,
           );
           const tokens = new Map([
@@ -10312,12 +10394,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: "report snapshots and telemetry",
           });
           await api.heartbeatRunner(runnerGroup);
-          const { claim } = await fixture.claimChatRun(
-            runnerGroup,
-            created.runId,
-          );
+          const { execution } = await fixture.runExecution(created.runId);
           const storageMounts =
-            expectCanonicalStorageManifest(claim.storageManifest)
+            expectCanonicalStorageManifest(execution.storageManifest)
               ?.storageMounts ?? [];
           const memoryArtifact = storageMounts.find((mount) => {
             return mount.name === "memory";
@@ -10326,7 +10405,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             throw new Error("Expected the run to mount memory");
           }
           const sandboxHeaders = {
-            authorization: `Bearer ${claim.sandboxToken}`,
+            authorization: `Bearer ${execution.sandboxToken}`,
           };
           await webhooks.requestAgentTelemetryUnchecked(
             {
@@ -10585,7 +10664,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: `fail ${modelProvider} with ${args.failureReason}`,
           });
           await api.heartbeatRunner(runnerGroup);
-          const claim = await api.executionInput(run.runId);
+          const execution = await api.executionInput(run.runId);
           const error = `provider failure for ${run.runId}`;
           const completed = await webhooks.requestAgentComplete(
             {
@@ -10594,7 +10673,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               error,
               failureReason: args.failureReason,
             },
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             [200],
           );
           expect(completed.body).toStrictEqual({
@@ -10668,8 +10747,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "recover native history after Runner fallback",
           });
-          const claim = await api.executionInput(run.runId);
-          const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+          const execution = await api.executionInput(run.runId);
+          const headers = { authorization: `Bearer ${execution.sandboxToken}` };
           if (terminalStatus === "cancelled") {
             await api.requestCancelRun(actor, run.runId, [200]);
           } else {
@@ -10781,15 +10860,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: `complete with ${cliAgentType} history`,
             model,
           });
-          const claim = await api.executionInput(run.runId);
-          expect(claim.cliAgentType).toBe(cliAgentType);
+          const execution = await api.executionInput(run.runId);
+          expect(execution.cliAgentType).toBe(cliAgentType);
           const history = `bdd combined ${cliAgentType} history ${run.runId}`;
           const historyHash = createHash("sha256")
             .update(history)
             .digest("hex");
           const cliAgentSessionId = `bdd-combined-${cliAgentType}-${run.runId}`;
           const sandboxHeaders = {
-            authorization: `Bearer ${claim.sandboxToken}`,
+            authorization: `Bearer ${execution.sandboxToken}`,
           };
 
           mockSessionHistoryBlob(historyHash, history);
@@ -10873,8 +10952,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: `resume combined ${cliAgentType} history`,
             model,
           });
-          const continuedClaim = await api.executionInput(continued.runId);
-          expect(continuedClaim.nativeContinuation).toMatchObject({
+          const continuedExecution = await api.executionInput(continued.runId);
+          expect(continuedExecution.nativeContinuation).toMatchObject({
             sessionId: cliAgentSessionId,
             generationRunId: expect.any(String),
           });
@@ -10895,7 +10974,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 cliAgentSessionHistoryDisposition: "native_only",
               },
             },
-            { authorization: `Bearer ${continuedClaim.sandboxToken}` },
+            { authorization: `Bearer ${continuedExecution.sandboxToken}` },
             [200],
           );
 
@@ -10918,8 +10997,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: `resume successor ${cliAgentType} history`,
             model,
           });
-          const afterRetryClaim = await api.executionInput(afterRetry.runId);
-          expect(afterRetryClaim.nativeContinuation).toMatchObject({
+          const afterRetryExecution = await api.executionInput(
+            afterRetry.runId,
+          );
+          expect(afterRetryExecution.nativeContinuation).toMatchObject({
             sessionId: successorCliAgentSessionId,
             generationRunId: expect.any(String),
           });
@@ -10938,13 +11019,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "cancel before combined recovery",
         });
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         const history = `bdd cancellation recovery ${run.runId}`;
         const historyHash = createHash("sha256").update(history).digest("hex");
         const cliAgentSessionId = `bdd-cancel-recovery-${run.runId}`;
         mockSessionHistoryBlob(historyHash, history);
         const sandboxHeaders = {
-          authorization: `Bearer ${claim.sandboxToken}`,
+          authorization: `Bearer ${execution.sandboxToken}`,
         };
         await api.requestCancelRun(actor, run.runId, [200]);
 
@@ -10974,8 +11055,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           threadId: run.threadId,
           prompt: "resume cancellation recovery",
         });
-        const continuedClaim = await api.executionInput(continued.runId);
-        expect(continuedClaim.nativeContinuation).toMatchObject({
+        const continuedExecution = await api.executionInput(continued.runId);
+        expect(continuedExecution.nativeContinuation).toMatchObject({
           sessionId: cliAgentSessionId,
           generationRunId: expect.any(String),
         });
@@ -10996,9 +11077,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "time out after the runner execution budget",
         });
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         const sandboxHeaders = {
-          authorization: `Bearer ${claim.sandboxToken}`,
+          authorization: `Bearer ${execution.sandboxToken}`,
         };
 
         mockNow(issuedAt + 2 * 60 * 60 * 1000 + 60_000);
@@ -11059,7 +11140,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "run until the execution deadline",
           });
-          const sourceClaim = await api.executionInput(source.runId);
+          const sourceExecution = await api.executionInput(source.runId);
           const history = `bdd timeout recovery history ${source.runId}`;
           const historyHash = createHash("sha256")
             .update(history)
@@ -11067,7 +11148,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const cliSessionId = `bdd-timeout-cli-${source.runId}`;
           mockSessionHistoryBlob(historyHash, history);
           const sandboxHeaders = {
-            authorization: `Bearer ${sourceClaim.sandboxToken}`,
+            authorization: `Bearer ${sourceExecution.sandboxToken}`,
           };
 
           if (nativeState === "initialized") {
@@ -11131,14 +11212,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             threadId: source.threadId,
             prompt: "continue after the execution deadline",
           });
-          const continuedClaim = await api.executionInput(continued.runId);
+          const continuedExecution = await api.executionInput(continued.runId);
           if (nativeState === "initialized") {
-            expect(continuedClaim.nativeContinuation).toMatchObject({
+            expect(continuedExecution.nativeContinuation).toMatchObject({
               sessionId: cliSessionId,
               generationRunId: source.runId,
             });
           } else {
-            expect(continuedClaim.nativeContinuation).toStrictEqual({
+            expect(continuedExecution.nativeContinuation).toStrictEqual({
               sessionId: null,
               generationRunId: null,
               recoveryPrompt: expect.stringContaining(
@@ -11161,11 +11242,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "complete without native session outputs",
           });
-          const claim = await owned.claimRunnerRun(run.runId);
+          const execution = await owned.executionInput(run.runId);
           const selected = (await api.requestRunRunner(actor, run.runId, [200]))
             .body;
           const sandboxHeaders = {
-            authorization: `Bearer ${claim.sandboxToken}`,
+            authorization: `Bearer ${execution.sandboxToken}`,
           };
 
           const missing = await webhooks.requestAgentComplete(
@@ -11204,7 +11285,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "cancel before the completion report",
           });
-          const claim = await owned.claimRunnerRun(run.runId);
+          const execution = await owned.executionInput(run.runId);
           const selected = (await api.requestRunRunner(actor, run.runId, [200]))
             .body;
           await api.requestCancelRun(actor, run.runId, [200]);
@@ -11216,7 +11297,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               lastEventSequence: 0,
             },
             {
-              authorization: `Bearer ${claim.sandboxToken}`,
+              authorization: `Bearer ${execution.sandboxToken}`,
             },
             [200],
           );
@@ -11236,7 +11317,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               lastEventSequence: 0,
             },
             {
-              authorization: `Bearer ${claim.sandboxToken}`,
+              authorization: `Bearer ${execution.sandboxToken}`,
             },
             [200],
           );
@@ -11261,12 +11342,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "publish outputs, cancel, then complete",
           });
-          const { claim } = await owned.claimChatRun(
-            owned.runnerGroup,
-            run.runId,
-          );
+          const { execution } = await owned.runExecution(run.runId);
           const sandboxHeaders = {
-            authorization: `Bearer ${claim.sandboxToken}`,
+            authorization: `Bearer ${execution.sandboxToken}`,
           };
 
           await api.requestCancelRun(actor, run.runId, [200]);
@@ -11307,12 +11385,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentId,
             prompt: "publish outputs without vars",
           });
-          const { claim } = await owned.claimChatRun(
-            owned.runnerGroup,
-            run.runId,
-          );
+          const { execution } = await owned.runExecution(run.runId);
           const sandboxHeaders = {
-            authorization: `Bearer ${claim.sandboxToken}`,
+            authorization: `Bearer ${execution.sandboxToken}`,
           };
 
           await webhooks.requestAgentComplete(
@@ -11398,7 +11473,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: "generate images",
           });
           expect(run.status, JSON.stringify(run)).toBe("running");
-          const claim = await runs.executionInput(run.runId);
+          const execution = await runs.executionInput(run.runId);
           await webhooks.requestAgentUsageEvent(
             {
               runId: run.runId,
@@ -11426,12 +11501,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 },
               ],
             },
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             [200],
           );
           await webhooks.requestAgentComplete(
             { runId: run.runId, exitCode: 1 },
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             [200],
           );
           // The terminal route owns settlement in waitUntil; drain its normal work.
@@ -11585,9 +11660,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "report events",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(run.runId);
+        const execution = await api.executionInput(run.runId);
         const sandboxHeaders = {
-          authorization: `Bearer ${claim.sandboxToken}`,
+          authorization: `Bearer ${execution.sandboxToken}`,
         };
 
         let ingestRequests = 0;
@@ -11653,9 +11728,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "publish ordinary assistant output",
         });
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(runId);
+        const execution = await api.executionInput(runId);
         const sandboxHeaders = {
-          authorization: `Bearer ${claim.sandboxToken}`,
+          authorization: `Bearer ${execution.sandboxToken}`,
         };
         await webhooks.requestAgentEvents(
           {
@@ -11707,9 +11782,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
 
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(runId);
+        const execution = await api.executionInput(runId);
         const sandboxHeaders = {
-          authorization: `Bearer ${claim.sandboxToken}`,
+          authorization: `Bearer ${execution.sandboxToken}`,
         };
         await webhooks.requestAgentEvents(
           {
@@ -11818,10 +11893,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(pending.status).toBe("running");
 
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(runId);
-        expect(claim.apiStartTime).toBe(requestedAt);
+        const execution = await api.executionInput(runId);
+        expect(execution.apiStartTime).toBe(requestedAt);
         const sandboxHeaders = {
-          authorization: `Bearer ${claim.sandboxToken}`,
+          authorization: `Bearer ${execution.sandboxToken}`,
         };
         await flushWaitUntilForTest();
         context.mocks.ably.publish.mockClear();
@@ -12081,8 +12156,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const acknowledgedAt = requestedAt + 5000;
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(runId);
-        expect(claim.apiStartTime).toBe(requestedAt);
+        const execution = await api.executionInput(runId);
+        expect(execution.apiStartTime).toBe(requestedAt);
         await flushWaitUntilForTest();
         context.mocks.ably.publish.mockClear();
 
@@ -12106,7 +12181,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         mockNow(acknowledgedAt);
 
         const sandboxHeaders = {
-          authorization: `Bearer ${claim.sandboxToken}`,
+          authorization: `Bearer ${execution.sandboxToken}`,
         };
         const publications = [
           webhooks.requestAgentEvents(
@@ -12191,9 +12266,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const acknowledgedAt = requestedAt + 2468;
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(runId);
-        expect(claim.apiStartTime).toBe(requestedAt);
-        expect(claim.cliAgentType).toBe("codex");
+        const execution = await api.executionInput(runId);
+        expect(execution.apiStartTime).toBe(requestedAt);
+        expect(execution.cliAgentType).toBe("codex");
         await flushWaitUntilForTest();
         context.mocks.ably.publish.mockClear();
         mockNow(acknowledgedAt);
@@ -12233,7 +12308,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               },
             ],
           },
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           [200],
         );
         await flushWaitUntilForTest();
@@ -12280,7 +12355,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "occupy the second concurrency slot",
         });
         // At capacity the chat input waits in its thread without a run.
-        const waiting = await piClaimFixture.sendWaitingChatInput(actor, {
+        const waiting = await piExecutionFixture.sendWaitingChatInput(actor, {
           agentId,
           prompt: "pick this chat input",
         });
@@ -12297,9 +12372,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await flushWaitUntilForTest();
         const picked = await waiting.launchedRun();
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(picked.runId);
+        const execution = await api.executionInput(picked.runId);
         // Only a pick inside its own send request is anchored at receipt.
-        expect(claim.apiStartTime).toBeUndefined();
+        expect(execution.apiStartTime).toBeUndefined();
 
         await api.requestCancelRun(actor, second.runId, [200]);
         await api.requestCancelRun(actor, picked.runId, [200]);
@@ -12320,7 +12395,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         await flushWaitUntilForTest();
         await api.heartbeatRunner(runnerGroup);
-        const claim = await api.executionInput(runId);
+        const execution = await api.executionInput(runId);
         context.mocks.ably.publish.mockClear();
 
         await webhooks.requestAgentEvents(
@@ -12339,7 +12414,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               },
             ],
           },
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           [200],
         );
         await flushWaitUntilForTest();

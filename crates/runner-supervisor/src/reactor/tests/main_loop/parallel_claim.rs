@@ -3,7 +3,7 @@ use super::super::support::{
     assert_run_exits_within, minimal_context, mock_run_config, push_job, shutdown, test_profiles,
     wait_budget_count, wait_cancel_token, wait_cancel_token_removed, wait_status_mode,
 };
-use crate::reactor::claim_tasks::MAX_IN_FLIGHT_CLAIMS;
+use crate::reactor::acceptance_tasks::MAX_IN_FLIGHT_ACCEPTANCES;
 
 #[tokio::test]
 async fn fast_claim_executes_while_earlier_claim_is_blocked_and_duplicate_is_skipped() {
@@ -66,7 +66,7 @@ async fn concurrent_claims_have_finite_backpressure_and_all_queued_jobs_complete
     let (config, env) = mock_run_config(test_profiles(), 128, 262144, 32);
     env.handle.block_claims();
     let runner = tokio::spawn(run(config));
-    let runs: Vec<_> = (0..MAX_IN_FLIGHT_CLAIMS + 2)
+    let runs: Vec<_> = (0..MAX_IN_FLIGHT_ACCEPTANCES + 2)
         .map(|_| RunId::new_v4())
         .collect();
     for &run_id in &runs {
@@ -74,10 +74,13 @@ async fn concurrent_claims_have_finite_backpressure_and_all_queued_jobs_complete
     }
     assert!(
         env.handle
-            .wait_claim_in_flight(MAX_IN_FLIGHT_CLAIMS, Duration::from_secs(10))
+            .wait_claim_in_flight(MAX_IN_FLIGHT_ACCEPTANCES, Duration::from_secs(10))
             .await
     );
-    assert_eq!(env.handle.claim_candidates().len(), MAX_IN_FLIGHT_CLAIMS);
+    assert_eq!(
+        env.handle.claim_candidates().len(),
+        MAX_IN_FLIGHT_ACCEPTANCES
+    );
     env.handle.unblock_claims();
     for &run_id in &runs {
         assert_eq!(
@@ -90,7 +93,7 @@ async fn concurrent_claims_have_finite_backpressure_and_all_queued_jobs_complete
         );
     }
     shutdown(&env, runner).await;
-    assert_eq!(env.handle.max_claim_in_flight(), MAX_IN_FLIGHT_CLAIMS);
+    assert_eq!(env.handle.max_claim_in_flight(), MAX_IN_FLIGHT_ACCEPTANCES);
     assert_eq!(env.handle.claim_candidates().len(), runs.len());
     assert_eq!(env.handle.completions.lock().unwrap().len(), runs.len());
     assert!(!env.handle.shutdown_with_claim_in_flight());
@@ -100,7 +103,9 @@ async fn concurrent_claims_have_finite_backpressure_and_all_queued_jobs_complete
 async fn buffered_local_candidates_claim_in_parallel() {
     let (config, env) = mock_run_config(test_profiles(), 32, 65536, 16);
     env.handle.block_claims();
-    let runs: Vec<_> = (0..MAX_IN_FLIGHT_CLAIMS).map(|_| RunId::new_v4()).collect();
+    let runs: Vec<_> = (0..MAX_IN_FLIGHT_ACCEPTANCES)
+        .map(|_| RunId::new_v4())
+        .collect();
     for &run_id in &runs[1..] {
         env.provider
             .set_claim_result(run_id, Some(minimal_context(run_id)));
@@ -116,7 +121,7 @@ async fn buffered_local_candidates_claim_in_parallel() {
     push_job(&env, runs[0], "vm0/default", Some(minimal_context(runs[0])));
     assert!(
         env.handle
-            .wait_claim_in_flight(MAX_IN_FLIGHT_CLAIMS, Duration::from_secs(10))
+            .wait_claim_in_flight(MAX_IN_FLIGHT_ACCEPTANCES, Duration::from_secs(10))
             .await
     );
     env.handle.unblock_claims();
@@ -131,7 +136,7 @@ async fn buffered_local_candidates_claim_in_parallel() {
         );
     }
     shutdown(&env, runner).await;
-    assert_eq!(env.handle.max_claim_in_flight(), MAX_IN_FLIGHT_CLAIMS);
+    assert_eq!(env.handle.max_claim_in_flight(), MAX_IN_FLIGHT_ACCEPTANCES);
 }
 
 #[tokio::test]
@@ -254,7 +259,7 @@ async fn soft_drain_settles_parallel_claims_and_does_not_admit_later_work() {
     assert_run_exits_within(
         runner,
         Duration::from_secs(10),
-        "soft drain must settle both admitted claims",
+        "soft drain must settle both accepted local claims",
     )
     .await;
     wait_budget_count(&budget, 0, Duration::from_secs(10)).await;
@@ -351,7 +356,10 @@ async fn discovery_end_settles_parallel_claims_without_hard_cancellation() {
             .await
     );
     assert!(!second_token.is_cancelled());
-    assert!(!runner.is_finished(), "teardown must join every admission");
+    assert!(
+        !runner.is_finished(),
+        "teardown must join every acceptance task"
+    );
     assert!(!env.handle.shutdown_with_claim_in_flight());
 
     env.handle.unblock_claim(runs[1]);

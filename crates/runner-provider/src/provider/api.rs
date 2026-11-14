@@ -7,7 +7,9 @@ use super::builtin_firewall_catalog::{
     BuiltinFirewallCatalog, BuiltinFirewallCatalogRefreshController,
 };
 use super::connector_runtime_sync::ConnectorRuntimeSyncHandle;
-use super::{ClaimedJob, CompletionAuth, CompletionAuthError, CompletionReportTiming, JobProvider};
+use super::{
+    CompletionAuth, CompletionAuthError, CompletionReportTiming, ExecutionJob, JobProvider,
+};
 use crate::active_input::{ActiveInputNotifications, ActiveInputSource};
 use crate::duration::duration_ms;
 use crate::error::{
@@ -289,7 +291,7 @@ impl JobProvider for ApiProvider {
         Ok(())
     }
 
-    async fn bind_supplied(&self, context: ExecutionContext) -> ProviderResult<ClaimedJob> {
+    async fn bind_supplied(&self, context: ExecutionContext) -> ProviderResult<ExecutionJob> {
         let run_id = context.run_id;
         let source = supports_thread_active_input(context.reuse_key.as_deref()).then(|| {
             ActiveInputSource::api(
@@ -303,7 +305,7 @@ impl JobProvider for ApiProvider {
             self.cancellation_reconciliation
                 .observe(run_id, handle, context.sandbox_token.clone());
         }
-        Ok(ClaimedJob::supplied(context, source))
+        Ok(ExecutionJob::supplied(context, source))
     }
 
     async fn heartbeat(&self, state: &HeartbeatState) -> ProviderResult<()> {

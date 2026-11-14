@@ -863,7 +863,7 @@ async fn home_cache_promotion_triggers_immediate_heartbeat_without_park() {
     };
     assert!(
         omitted_active_home,
-        "post-claim heartbeat should stop advertising the active home cache; heartbeats: {post_claim_heartbeats:?}",
+        "post-acceptance heartbeat should stop advertising the active home cache; heartbeats: {post_claim_heartbeats:?}",
     );
     overrides.clear_wait_process_lifecycle_gate();
     second_gate.release_one();

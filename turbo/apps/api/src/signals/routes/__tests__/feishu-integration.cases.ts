@@ -3,7 +3,7 @@ import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 import {
@@ -671,9 +671,9 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
   }
   async function claimRun(runId: string) {
     return await own(async () => {
-      const claim = await runsApi.executionInput(runId);
-      claims.set(runId, claim.sandboxToken);
-      return claim;
+      const execution = await runsApi.executionInput(runId);
+      claims.set(runId, execution.sandboxToken);
+      return execution;
     });
   }
   async function grantEntitlement(actor: ApiTestUser) {
@@ -5649,7 +5649,7 @@ export function registerFeishuIntegrationTests(
             }).toString()}`,
             {
               headers: {
-                authorization: `Bearer ${okouTokenFromClaim(claim)}`,
+                authorization: `Bearer ${okouTokenFromExecution(claim)}`,
               },
             },
           );
@@ -5684,7 +5684,7 @@ export function registerFeishuIntegrationTests(
             }).toString()}`,
             {
               headers: {
-                authorization: `Bearer ${okouTokenFromClaim(otherClaim)}`,
+                authorization: `Bearer ${okouTokenFromExecution(otherClaim)}`,
               },
             },
           );
@@ -5833,7 +5833,7 @@ export function registerFeishuIntegrationTests(
             actor,
             chatId: message.chat_id,
             chatMode: chatType,
-            okouToken: okouTokenFromClaim(claim),
+            okouToken: okouTokenFromExecution(claim),
             prompt: claim.prompt,
             resources: [
               { messageId, fileKey: "img_post_second", type: "image" },
@@ -6124,7 +6124,7 @@ export function registerFeishuIntegrationTests(
           actor,
           chatId: "oc_feishu_dm",
           chatMode: "p2p",
-          okouToken: okouTokenFromClaim(claim),
+          okouToken: okouTokenFromExecution(claim),
           prompt: history,
           resources: [
             {
@@ -7233,7 +7233,7 @@ export function registerFeishuIntegrationTests(
           actor,
           chatId: "oc_feishu_group",
           chatMode: "group",
-          okouToken: okouTokenFromClaim(groupClaim),
+          okouToken: okouTokenFromExecution(groupClaim),
           prompt: history,
           resources: [
             {

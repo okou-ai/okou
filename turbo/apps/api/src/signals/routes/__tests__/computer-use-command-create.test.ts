@@ -40,7 +40,7 @@ function createScenario() {
     readonly actor: ApiTestUser;
     readonly hostId?: string;
   }) {
-    const actual = await scenario.claim(args.actor, args.hostId);
+    const actual = await scenario.launchRun(args.actor, args.hostId);
     return { bearer: actual.token, runId: actual.runId };
   }
 

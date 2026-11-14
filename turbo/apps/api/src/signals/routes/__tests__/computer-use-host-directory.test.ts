@@ -98,7 +98,7 @@ describe("standalone Computer Use host directory", () => {
         });
         expect(personalAccessToken).toStrictEqual(session);
 
-        const unbound = await scenario.claim(actor);
+        const unbound = await scenario.launchRun(actor);
         const capabilityDenied = await computerUse.requestListComputerUseHosts(
           { bearer: unbound.token },
           [403],
@@ -204,10 +204,10 @@ describe("standalone Computer Use host directory", () => {
         const actor = orgScoped(bdd.user());
         const other = await startRetainedHost(actor, "Other Desktop");
         const bound = await startRetainedHost(actor, "Bound Offline Desktop");
-        const claim = await scenario.claim(actor, bound.hostId);
+        const execution = await scenario.launchRun(actor, bound.hostId);
         await computerUse.stopComputerUseHost(bound.connection);
         const listed = await computerUse.listComputerUseHosts({
-          bearer: claim.token,
+          bearer: execution.token,
         });
         expect(listed.hosts).toStrictEqual([
           expect.objectContaining({

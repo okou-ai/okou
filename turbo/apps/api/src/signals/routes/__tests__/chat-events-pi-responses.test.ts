@@ -32,7 +32,7 @@ const {
   chatCallbacks,
   configureSubscriptionPiModel,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   waitForThreadMessages,
   completeChatRunOk,
   cancelChatRun,
@@ -53,7 +53,7 @@ async function configureResponsesWithOwnedRuns(args: {
   readonly runModel: string;
   readonly run: ReturnType<typeof createFixtureOperationOwner>["run"];
   readonly sendChatRun: typeof sendChatRun;
-  readonly claimChatRun: typeof claimChatRun;
+  readonly runExecution: typeof runExecution;
   readonly cancelChatRun: typeof cancelChatRun;
 }> {
   const model = args.selectedModel;
@@ -158,14 +158,16 @@ async function configureResponsesWithOwnedRuns(args: {
     return run;
   }
 
-  async function claimOwnedRun(...parameters: Parameters<typeof claimChatRun>) {
-    const claim = await claimChatRun(...parameters);
-    const run = owned.get(parameters[1]);
+  async function observeOwnedExecution(
+    ...parameters: Parameters<typeof runExecution>
+  ) {
+    const execution = await runExecution(...parameters);
+    const run = owned.get(parameters[0]);
     if (!run) {
-      throw new Error("Expected to own the claimed OpenRouter test Run");
+      throw new Error("Expected to own the dispatched OpenRouter test Run");
     }
-    run.sandboxToken = claim.claim.sandboxToken;
-    return claim;
+    run.sandboxToken = execution.execution.sandboxToken;
+    return execution;
   }
 
   async function cancelOwnedRun(
@@ -173,7 +175,7 @@ async function configureResponsesWithOwnedRuns(args: {
   ): Promise<void> {
     const run = owned.get(parameters[1]);
     if (!run?.sandboxToken) {
-      throw new Error("Expected a claimed OpenRouter test Run to cancel");
+      throw new Error("Expected a dispatched OpenRouter test Run to cancel");
     }
     await cancelChatRun(
       parameters[0],
@@ -196,9 +198,9 @@ async function configureResponsesWithOwnedRuns(args: {
         return sendOwnedRun(...parameters);
       });
     },
-    claimChatRun: (...parameters) => {
+    runExecution: (...parameters) => {
       return runOwned(() => {
-        return claimOwnedRun(...parameters);
+        return observeOwnedExecution(...parameters);
       });
     },
     cancelChatRun: (...parameters) => {
@@ -217,7 +219,7 @@ describe("CHAT-02: model-first routing", () => {
       run: own,
       model,
       sendChatRun,
-      claimChatRun,
+      runExecution,
     } = await configureResponsesWithOwnedRuns({
       actor,
       agentId,
@@ -244,17 +246,19 @@ describe("CHAT-02: model-first routing", () => {
       model,
     });
     await flushWaitUntilForTest();
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    expect(firstClaim.claim.piModelConfig).toMatchObject({
+    const firstExecution = await runExecution(first.runId);
+    expect(firstExecution.execution.piModelConfig).toMatchObject({
       model: selectedModel,
     });
-    expect(firstClaim.claim.piModelConfig).not.toHaveProperty("serviceTier");
+    expect(firstExecution.execution.piModelConfig).not.toHaveProperty(
+      "serviceTier",
+    );
     await own(async () => {
       return await completeSandboxFirstPiRun({
         actor,
         answer: answers[0],
         historyObjects,
-        claim: firstClaim,
+        execution: firstExecution,
         prompt: prompts[0],
         run: first,
         responsesModel: { provider: "openai-codex", model: selectedModel },
@@ -274,8 +278,8 @@ describe("CHAT-02: model-first routing", () => {
       runOptions: { codexServiceTier: "fast" },
     });
     await flushWaitUntilForTest();
-    const fastClaim = await claimChatRun(runnerGroup, fast.runId);
-    expect(fastClaim.claim.piModelConfig).toMatchObject({
+    const fastExecution = await runExecution(fast.runId);
+    expect(fastExecution.execution.piModelConfig).toMatchObject({
       model: selectedModel,
       serviceTier: "fast",
     });
@@ -284,7 +288,7 @@ describe("CHAT-02: model-first routing", () => {
         actor,
         answer: answers[1],
         historyObjects,
-        claim: fastClaim,
+        execution: fastExecution,
         prompt: prompts[1],
         run: fast,
         responsesModel: { provider: "openai-codex", model: selectedModel },
@@ -311,17 +315,19 @@ describe("CHAT-02: model-first routing", () => {
       model,
     });
     await flushWaitUntilForTest();
-    const returnedClaim = await claimChatRun(runnerGroup, returned.runId);
-    expect(returnedClaim.claim.piModelConfig).toMatchObject({
+    const returnedExecution = await runExecution(returned.runId);
+    expect(returnedExecution.execution.piModelConfig).toMatchObject({
       model: selectedModel,
     });
-    expect(returnedClaim.claim.piModelConfig).not.toHaveProperty("serviceTier");
+    expect(returnedExecution.execution.piModelConfig).not.toHaveProperty(
+      "serviceTier",
+    );
     await own(async () => {
       return await completeSandboxFirstPiRun({
         actor,
         answer: answers[2],
         historyObjects,
-        claim: returnedClaim,
+        execution: returnedExecution,
         prompt: prompts[2],
         run: returned,
         responsesModel: { provider: "openai-codex", model: selectedModel },
@@ -408,8 +414,7 @@ describe("CHAT-02: model-first routing", () => {
       run: own,
       actor,
       agentId,
-      runnerGroup,
-      claimChatRun,
+      runExecution,
       sendChatRun,
       requestSendEvent,
     } = await publicChatActor(context);
@@ -423,7 +428,7 @@ describe("CHAT-02: model-first routing", () => {
       prompt: "hold the thread before queued fast Luna",
       model: "claude-fable-5-1",
     });
-    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
+    const anchorExecution = await runExecution(anchor.runId);
 
     await own(async () => {
       return await configureSubscriptionPiModel(actor, {}, selectedModel);
@@ -455,7 +460,7 @@ describe("CHAT-02: model-first routing", () => {
     await own(async () => {
       return await completeChatRunOk(
         anchor.runId,
-        anchorClaim.sandboxHeaders,
+        anchorExecution.sandboxHeaders,
         {},
       );
     });
@@ -480,9 +485,9 @@ describe("CHAT-02: model-first routing", () => {
     const promotedRunId = promoted.runId;
     await flushWaitUntilForTest();
 
-    const promotedClaim = await claimChatRun(runnerGroup, promotedRunId);
-    expect(promotedClaim.claim.cliAgentType).toBe("pi");
-    expect(promotedClaim.claim.piModelConfig).toMatchObject({
+    const promotedExecution = await runExecution(promotedRunId);
+    expect(promotedExecution.execution.cliAgentType).toBe("pi");
+    expect(promotedExecution.execution.piModelConfig).toMatchObject({
       model: selectedModel,
       serviceTier: "fast",
     });
@@ -491,7 +496,7 @@ describe("CHAT-02: model-first routing", () => {
         actor,
         answer,
         historyObjects,
-        claim: promotedClaim,
+        execution: promotedExecution,
         prompt,
         run: { runId: promotedRunId, threadId: anchor.threadId },
         responsesModel: { provider: "openai-codex", model: selectedModel },

@@ -90,12 +90,12 @@ function legacyPublicRunOwner(
       });
     },
     cleanup,
-    async claim(runId: string) {
-      const claim = await createRunsApi(context).executionInput(runId);
-      tokens.set(runId, claim.sandboxToken);
-      return claim;
+    async executionInput(runId: string) {
+      const execution = await createRunsApi(context).executionInput(runId);
+      tokens.set(runId, execution.sandboxToken);
+      return execution;
     },
-    rememberClaim(runId: string, sandboxToken: string) {
+    rememberExecution(runId: string, sandboxToken: string) {
       tokens.set(runId, sandboxToken);
     },
   };
@@ -309,10 +309,10 @@ export function createPublicRunLifecycle(
       });
     },
     finish: lifecycle.finish,
-    async claim(runId: string) {
-      const claim = await createRunsApi(context).executionInput(runId);
-      tokens.set(runId, claim.sandboxToken);
-      return claim;
+    async executionInput(runId: string) {
+      const execution = await createRunsApi(context).executionInput(runId);
+      tokens.set(runId, execution.sandboxToken);
+      return execution;
     },
   };
 }
@@ -328,7 +328,7 @@ function automaticStrictRunOwner(
   });
   return {
     run: lifecycle.run,
-    claim: lifecycle.claim,
+    executionInput: lifecycle.executionInput,
     cleanup(): Promise<void> {
       return Promise.reject(
         new Error("Strict Run cleanup is owned by fixture finalization"),

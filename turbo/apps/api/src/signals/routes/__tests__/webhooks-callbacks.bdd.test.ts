@@ -128,11 +128,11 @@ async function createEventWebhookRun(prompt: string) {
     agentId: owned.agentId,
     prompt,
   });
-  const claimed = await owned.claimChatRun(owned.runnerGroup, run.runId);
+  const execution = await owned.runExecution(run.runId);
   return {
     actor: owned.actor,
     runId: run.runId,
-    headers: claimed.sandboxHeaders,
+    headers: execution.sandboxHeaders,
     run: owned.run,
     ownsFeatureSwitches: owned.ownsFeatureSwitches,
   };
@@ -191,7 +191,7 @@ async function sandboxStorageWriteFixture(label: string) {
   });
   const runs = createRunsApi(context);
   const chat = createChatEventsFixture(context);
-  const claimed = await owned.run(async () => {
+  const execution = await owned.run(async () => {
     await runs.updateUserModelPreference(owned.actor, "claude-fable-5-1");
     const sent = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
@@ -199,11 +199,11 @@ async function sandboxStorageWriteFixture(label: string) {
     });
     return {
       ...sent,
-      ...(await owned.claimChatRun(owned.runnerGroup, sent.runId)),
+      ...(await owned.runExecution(sent.runId)),
     };
   });
   const mount = expectCanonicalStorageManifest(
-    claimed.claim.storageManifest,
+    execution.execution.storageManifest,
   )?.storageMounts.find((candidate) => {
     return candidate.writeback;
   });
@@ -216,43 +216,43 @@ async function sandboxStorageWriteFixture(label: string) {
   }
   return {
     actor: owned.actor,
-    runId: claimed.runId,
+    runId: execution.runId,
     mount,
-    headers: claimed.sandboxHeaders,
+    headers: execution.sandboxHeaders,
     run,
     terminal: (status: (typeof TERMINAL_RUN_STATUSES)[number]) => {
       return run(async () => {
         if (status === "cancelled") {
           await chat.cancelChatRun(
             owned.actor,
-            claimed.runId,
-            claimed.sandboxHeaders,
+            execution.runId,
+            execution.sandboxHeaders,
           );
         } else if (status === "failed") {
           await chat.failChatRun(
-            claimed.runId,
-            claimed.sandboxHeaders,
+            execution.runId,
+            execution.sandboxHeaders,
             "Storage writer failed",
           );
         } else {
           await run(() => {
             return api.requestAgentComplete(
               {
-                runId: claimed.runId,
+                runId: execution.runId,
                 exitCode: 0,
                 completion: {
                   cliAgentType: "claude-code",
-                  cliAgentSessionId: claimed.threadId,
+                  cliAgentSessionId: execution.threadId,
                   cliAgentSessionHistoryDisposition: "native_only",
                 },
               },
-              claimed.sandboxHeaders,
+              execution.sandboxHeaders,
               [200],
             );
           });
         }
         await flushWaitUntilForTest();
-        expect((await runs.readRun(owned.actor, claimed.runId)).status).toBe(
+        expect((await runs.readRun(owned.actor, execution.runId)).status).toBe(
           status,
         );
       });
@@ -261,15 +261,12 @@ async function sandboxStorageWriteFixture(label: string) {
       return run(async () => {
         const next = await owned.sendChatRun(owned.actor, {
           agentId: owned.agentId,
-          threadId: claimed.threadId,
+          threadId: execution.threadId,
           prompt: "Read the current storage mount",
         });
-        const nextClaim = await owned.claimChatRun(
-          owned.runnerGroup,
-          next.runId,
-        );
+        const nextExecution = await owned.runExecution(next.runId);
         const current = expectCanonicalStorageManifest(
-          nextClaim.claim.storageManifest,
+          nextExecution.execution.storageManifest,
         )?.storageMounts.find((candidate) => {
           return candidate.storageId === mount.storageId;
         });
@@ -1237,10 +1234,7 @@ describe("WHCB-04: internal callback and event-consumer boundaries", () => {
       agentId: owned.agentId,
       prompt: "emit events to Axiom",
     });
-    const { sandboxHeaders: headers } = await owned.claimChatRun(
-      owned.runnerGroup,
-      run.runId,
-    );
+    const { sandboxHeaders: headers } = await owned.runExecution(run.runId);
     await owned.run(async () => {
       await createBillingMediaApi(context).updateFeatureSwitches(actor, {
         [FeatureSwitchKey.OkouDebug]: true,
@@ -2051,14 +2045,16 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
   it("prepares, commits, dedups, and bounds sandbox storage writes for the run org", async () => {
     const runs = createRunsApi(context);
     const fixture = await publicChatActor(context);
-    const { actor, agentId, runnerGroup } = fixture;
+    const { actor, agentId } = fixture;
     await fixture.run(async () => {
       const run = await fixture.sendChatRun(actor, {
         agentId,
         prompt: "write artifacts from the sandbox",
       });
-      const { claim } = await fixture.claimChatRun(runnerGroup, run.runId);
-      const manifest = expectCanonicalStorageManifest(claim.storageManifest);
+      const { execution } = await fixture.runExecution(run.runId);
+      const manifest = expectCanonicalStorageManifest(
+        execution.storageManifest,
+      );
       const writebackMount = manifest?.storageMounts.find((mount) => {
         return mount.writeback === true;
       });
@@ -2066,7 +2062,7 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
         throw new Error("Expected a canonical writeback mount");
       }
       const headers = {
-        authorization: `Bearer ${claim.sandboxToken}`,
+        authorization: `Bearer ${execution.sandboxToken}`,
       };
 
       const unmountedStorage = await api.requestAgentStoragePrepare(
@@ -2194,10 +2190,10 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
         agentId,
         prompt: "Read the committed Memory",
       });
-      const nextClaim = await fixture.claimChatRun(runnerGroup, next.runId);
+      const nextExecution = await fixture.runExecution(next.runId);
       expect(
         expectCanonicalStorageManifest(
-          nextClaim.claim.storageManifest,
+          nextExecution.execution.storageManifest,
         )?.storageMounts.find((mount) => {
           return mount.storageId === writebackMount.storageId;
         }),
@@ -2209,7 +2205,7 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
       await createChatEventsFixture(context).cancelChatRun(
         actor,
         next.runId,
-        nextClaim.sandboxHeaders,
+        nextExecution.sandboxHeaders,
       );
     });
   });
@@ -3206,11 +3202,11 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     });
 
     for (const runId of [first.runId, second.runId, third.runId, pickedRunId]) {
-      const claim = await runs.executionInput(runId);
+      const execution = await runs.executionInput(runId);
       await runs.requestCancelRun(actor, runId, [200]);
       await api.requestAgentComplete(
         { runId, exitCode: 137, error: "Run cancelled" },
-        { authorization: `Bearer ${claim.sandboxToken}` },
+        { authorization: `Bearer ${execution.sandboxToken}` },
         [200],
       );
     }
@@ -5026,7 +5022,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     });
     expect(run.status).toBe("running");
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.executionInput(run.runId);
+    const execution = await runs.executionInput(run.runId);
     await gh.installGithubApp(actor, agent.agentId, {
       oauthCode: {
         code: `whcb08a-${randomUUID().slice(0, 8)}`,
@@ -5087,7 +5083,11 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       );
     });
     await expect(
-      runs.readRunnerCancellation(claim.sandboxToken, run.runId, runnerGroup),
+      runs.readRunnerCancellation(
+        execution.sandboxToken,
+        run.runId,
+        runnerGroup,
+      ),
     ).resolves.toMatchObject({ state: "present", mode: "hard" });
     // Org-private catalog reads require a live organization. The original
     // Runner and provider callbacks remain legitimate retention observers.
@@ -5704,7 +5704,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
         prompt: "doomed run on the retained Agent",
       });
       await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.executionInput(doomedRun.runId);
+      const execution = await runs.executionInput(doomedRun.runId);
 
       await startUserDeletion(fixture);
       await flushWaitUntilForTest();
@@ -5726,7 +5726,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       // The original Runner remains a real observer after identity deletion.
       await expect(
         runs.readRunnerCancellation(
-          claim.sandboxToken,
+          execution.sandboxToken,
           doomedRun.runId,
           runnerGroup,
         ),
@@ -5776,7 +5776,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
       prompt: "banned user cleanup run",
     });
     expect(run.status).toBe("running");
-    const claim = await runs.executionInput(run.runId);
+    const execution = await runs.executionInput(run.runId);
 
     context.mocks.stripe.subscriptions.list.mockResolvedValue({
       data: [],
@@ -5803,7 +5803,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     expect(stopping.body.concurrency.active).toBe(1);
     await api.requestAgentComplete(
       { runId: run.runId, exitCode: 137, error: "Run cancelled" },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();

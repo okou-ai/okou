@@ -37,10 +37,7 @@ async function traceRun() {
     agentId: owned.agentId,
     prompt: "deliver an optional diagnostic trace",
   });
-  const { sandboxHeaders: headers } = await owned.claimChatRun(
-    owned.runnerGroup,
-    run.runId,
-  );
+  const { sandboxHeaders: headers } = await owned.runExecution(run.runId);
   const body = {
     runId: run.runId,
     events: [

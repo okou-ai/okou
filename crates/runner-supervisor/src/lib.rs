@@ -4,7 +4,7 @@
 //! and base-directory locks, and supplies concrete factory plans and resources.
 //! This crate owns the retained reactor, ordered factory startup/teardown, job
 //! dispatch, independent maintenance, lifecycle signal consumption, and adjacent
-//! idle/admission/finalization/heartbeat/orphan policies.
+//! idle/acceptance/finalization/heartbeat/orphan policies.
 
 use std::sync::Arc;
 
@@ -32,24 +32,24 @@ use runner_provider::http;
 use runner_storage::storage_cache;
 use runner_types::storage_fingerprints;
 
+pub mod activation;
 pub mod blank_pool;
-pub mod claimed_activation;
-pub mod claimed_resource_activation;
 mod duration;
-pub mod finalizing_admission;
+pub mod finalizing_handoff;
 pub mod heartbeat;
 pub mod host_memory;
 pub mod idle_lifecycle;
 pub mod idle_pressure;
 pub mod ingress;
+pub mod job_acceptance;
 pub mod job_lifecycle;
 mod network_log_http_adapter;
 pub mod orphan_reap;
 pub mod ownership;
-pub mod pre_claim_admission;
 #[cfg(test)]
 mod provider_test_support;
 pub mod reactor;
+pub mod resource_activation;
 pub mod sandbox_finalization;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;

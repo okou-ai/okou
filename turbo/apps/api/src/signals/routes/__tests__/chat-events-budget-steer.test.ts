@@ -17,7 +17,7 @@ const {
   chat,
   entitledNativeChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   completeChatRunOk,
   cancelChatRun,
 } = createChatEventsFixture(context);
@@ -41,7 +41,7 @@ async function startBudgetRun(app: Awaited<ReturnType<typeof setupApp>>) {
     agentId,
     prompt: "work until the runner's time-budget warning",
   });
-  const claimed = await claimChatRun(runnerGroup, active.runId);
+  const execution = await runExecution(active.runId);
   const run = await api.readRun(actor, active.runId);
   if (!run.startedAt) {
     throw new Error("Expected the claimed run's public start time");
@@ -52,7 +52,7 @@ async function startBudgetRun(app: Awaited<ReturnType<typeof setupApp>>) {
     agentId,
     runnerGroup,
     active,
-    claimed,
+    claimed: execution,
     startedAt,
     requestBudgetSweep,
   };
@@ -96,7 +96,7 @@ async function startRunAtBudgetBoundary(
   const prompt = chatEventDisplayText(budget);
   expect(prompt).toContain("leaving approximately 5 minutes");
   await expect(
-    api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+    api.nextSteerableInput(claimed.execution.sandboxToken, active.runId),
   ).resolves.toStrictEqual({ input: { eventId: budget.id, prompt } });
   return {
     ...started,
@@ -139,7 +139,7 @@ describe("run-targeted time budget steering through HTTP", () => {
     });
     const { actor, active, claimed, budget } =
       await startRunAtBudgetBoundary(app);
-    const token = claimed.claim.sandboxToken;
+    const token = claimed.execution.sandboxToken;
     await expect(
       api.declareSteeredInput(token, active.runId, budget.id),
     ).resolves.toStrictEqual({ outcome: "steered" });
@@ -198,13 +198,17 @@ describe("run-targeted time budget steering through HTTP", () => {
       threadId: active.threadId,
       prompt: "continue after the prior run finished",
     });
-    const successorClaim = await claimChatRun(runnerGroup, successor.runId);
+    const successorExecution = await runExecution(successor.runId);
     await expect(
       api.nextSteerableInput(
-        successorClaim.claim.sandboxToken,
+        successorExecution.execution.sandboxToken,
         successor.runId,
       ),
     ).resolves.toStrictEqual({ input: null });
-    await cancelChatRun(actor, successor.runId, successorClaim.sandboxHeaders);
+    await cancelChatRun(
+      actor,
+      successor.runId,
+      successorExecution.sandboxHeaders,
+    );
   }, 90_000);
 });

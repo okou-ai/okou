@@ -8,7 +8,7 @@ import {
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { debugMorningBriefRoutes } from "../debug-morning-brief";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { claimBudgetRun } from "./helpers/public-autonomy-budget";
+import { launchBudgetRun } from "./helpers/public-autonomy-budget";
 import { publicChatActor } from "./helpers/public-chat-actor";
 
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
@@ -48,7 +48,7 @@ import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
+import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -241,7 +241,7 @@ async function ordinaryDelegationScenario() {
       agentId: owned.agentId,
       prompt: "Delegate a workflow",
     });
-    const source = await claimBudgetRun(context, owned, sent);
+    const source = await launchBudgetRun(context, owned, sent);
     return { owned, actor: owned.actor, workflow: detail.body, source };
   });
 }
@@ -296,9 +296,9 @@ describe("Workflow schedules", () => {
       )
     ).body;
     const started = await fireSchedule(actor, automation);
-    const claim = await runs.executionInput(started.runId);
-    expect(claim.prompt).toContain("scheduled-report");
-    expect(claim.appendSystemPrompt).not.toContain(
+    const execution = await runs.executionInput(started.runId);
+    expect(execution.prompt).toContain("scheduled-report");
+    expect(execution.appendSystemPrompt).not.toContain(
       "# Suggestions feedback context",
     );
   });
@@ -572,14 +572,14 @@ describe("Workflow schedule recovery", () => {
     automation: WorkflowAutomationSummary,
   ) {
     const fired = await runScheduleNow(actor, automation.id);
-    const claim = await runs.executionInput(fired.runId);
+    const execution = await runs.executionInput(fired.runId);
     await webhooks.requestAgentComplete(
       {
         runId: fired.runId,
         exitCode: 1,
         error: "Managed provider temporarily unavailable",
       },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
@@ -626,8 +626,8 @@ describe("Workflow schedule recovery", () => {
       runScheduleNow(actor, automation.id),
       runs.heartbeatRunner(runnerGroup),
     ]);
-    const claim = await runs.executionInput(fired.runId);
-    expect(claim.cliAgentType).toBe("claude-code");
+    const execution = await runs.executionInput(fired.runId);
+    expect(execution.cliAgentType).toBe("claude-code");
     mockNow(new Date("2030-01-01T00:10:00.000Z"));
     const schedule = {
       type: "cron" as const,
@@ -648,7 +648,7 @@ describe("Workflow schedule recovery", () => {
     });
     mockNow(new Date("2030-01-01T00:16:00.000Z"));
     await createChatEventsFixture(context).completeChatRunOk(fired.runId, {
-      authorization: `Bearer ${claim.sandboxToken}`,
+      authorization: `Bearer ${execution.sandboxToken}`,
     });
     await flushWaitUntilForTest();
     const completed = await accept(
@@ -834,11 +834,10 @@ describe("Workflow Run admission", () => {
           agentId: owned.agentId,
           prompt: "Use current Workflows again",
         }));
-      const { claim, sandboxHeaders } = await owned.claimChatRun(
-        owned.runnerGroup,
+      const { execution, sandboxHeaders } = await owned.runExecution(
         current.runId,
       );
-      const skills = claim.contentBundles.skills;
+      const skills = execution.contentBundles.skills;
       expect(skills).toHaveLength(2 + SEED_SKILLS.length);
       for (const workflow of published) {
         const skill = skills.find((item) => {
@@ -848,7 +847,7 @@ describe("Workflow Run admission", () => {
           throw new Error("Expected the current Workflow bundle");
         }
         expect(
-          readClaimedContentBundle(s3.objects, skill)
+          readExecutionContentBundle(s3.objects, skill)
             .get("SKILL.md")
             ?.toString(),
         ).toContain(
@@ -894,15 +893,12 @@ describe("Workflow Run admission", () => {
       }
       expect(launchedRunId).not.toBe(sourceRunId);
       expect(launched.body.chatThreadId).not.toBe(sourceThreadId);
-      const { claim } = await owned.claimChatRun(
-        owned.runnerGroup,
-        launchedRunId,
-      );
-      expect(claim.prompt).toBe(`/${workflow.name}`);
-      expect(claim.appendSystemPrompt).toContain(
+      const { execution } = await owned.runExecution(launchedRunId);
+      expect(execution.prompt).toBe(`/${workflow.name}`);
+      expect(execution.appendSystemPrompt).toContain(
         `SOURCE_RUN_ID: ${sourceRunId}`,
       );
-      expect(claim.appendSystemPrompt).toContain(
+      expect(execution.appendSystemPrompt).toContain(
         `SOURCE_THREAD_ID: ${sourceThreadId}`,
       );
     });

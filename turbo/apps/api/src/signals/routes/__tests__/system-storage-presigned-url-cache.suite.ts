@@ -96,7 +96,7 @@ describe("system storage presigned URL cache", () => {
         clockTime += milliseconds;
       },
       signedCount,
-      async claim(prompt: string) {
+      async executionInput(prompt: string) {
         await owned.run(() => {
           return api.registerDirectRunner(owned.runnerGroup);
         });
@@ -104,8 +104,8 @@ describe("system storage presigned URL cache", () => {
           agentId: owned.agentId,
           prompt,
         });
-        const claimed = await owned.claimChatRun(owned.runnerGroup, run.runId);
-        const matchingMounts = claimed.claim.contentBundles.skills.filter(
+        const execution = await owned.runExecution(run.runId);
+        const matchingMounts = execution.execution.contentBundles.skills.filter(
           (entry) => {
             return entry.mountPath === mountPath;
           },
@@ -120,7 +120,7 @@ describe("system storage presigned URL cache", () => {
         expect(mount.mountPath).toBe(
           `/home/user/.claude/skills/custom-${connector.slug.slice(1, 49)}-${connector.id.replaceAll("-", "").slice(0, 8)}`,
         );
-        expect(claimed.claim.connectorRuntimeTargets).not.toContainEqual(
+        expect(execution.execution.connectorRuntimeTargets).not.toContainEqual(
           expect.objectContaining({
             kind: "custom",
             customConnectorId: connector.id,
@@ -131,7 +131,7 @@ describe("system storage presigned URL cache", () => {
         await owned.run(() => {
           return fixture.failChatRun(
             run.runId,
-            claimed.sandboxHeaders,
+            execution.sandboxHeaders,
             "Cache inspection finished",
           );
         });
@@ -197,8 +197,12 @@ describe("system storage presigned URL cache", () => {
 
   it("reuses one exact cached URL for a Connector Skill bundle", async () => {
     const scenario = await readonlyCacheScenario();
-    const first = await scenario.claim("issue the readonly storage URL");
-    const second = await scenario.claim("reuse the readonly storage URL");
+    const first = await scenario.executionInput(
+      "issue the readonly storage URL",
+    );
+    const second = await scenario.executionInput(
+      "reuse the readonly storage URL",
+    );
     expect(second).toStrictEqual(first);
     const objectKey = decodeURIComponent(
       new URL(first.downloadUrl).pathname.slice(1),
@@ -214,12 +218,14 @@ describe("system storage presigned URL cache", () => {
     "enforces the four-hour readonly archive margin at $remainingMs ms remaining",
     async ({ remainingMs, refresh }) => {
       const scenario = await readonlyCacheScenario();
-      const first = await scenario.claim("issue the readonly archive URL");
+      const first = await scenario.executionInput(
+        "issue the readonly archive URL",
+      );
       const objectKey = decodeURIComponent(
         new URL(first.downloadUrl).pathname.slice(1),
       );
       scenario.advance(CACHE_TTL_SECONDS * 1000 - remainingMs);
-      const second = await scenario.claim(
+      const second = await scenario.executionInput(
         "select the archive near its lifetime boundary",
       );
       expect(second).toStrictEqual({
@@ -238,7 +244,7 @@ describe("system storage presigned URL cache", () => {
           expect.objectContaining({ expiresIn: CACHE_TTL_SECONDS }),
         );
       }
-      const third = await scenario.claim(
+      const third = await scenario.executionInput(
         "reuse the selected readonly archive URL",
       );
       expect(third).toStrictEqual(second);
@@ -266,7 +272,7 @@ describe("system storage presigned URL cache", () => {
       });
     const signedCount = mockUniquePresignedUrls();
     const api = createRunsApi(context);
-    const createAndClaim = async (prompt: string) => {
+    const createAndExecution = async (prompt: string) => {
       const run = await api.createThreadRun(actor, {
         agentId: runFixture.agentId,
         prompt,
@@ -275,10 +281,10 @@ describe("system storage presigned URL cache", () => {
         await api.requestCancelRun(actor, run.runId, [200, 404]);
       });
       await api.heartbeatRunner(runFixture.runnerGroup);
-      const claim = await api.executionInput(run.runId);
+      const execution = await api.executionInput(run.runId);
       // The post-commit cache write completes before the run is cancelled.
       await flushWaitUntilForTest();
-      const mounts = claim.contentBundles.skills.filter((mount) => {
+      const mounts = execution.contentBundles.skills.filter((mount) => {
         return expectedMounts.some((expected) => {
           return expected.mountPath === mount.mountPath;
         });
@@ -289,7 +295,7 @@ describe("system storage presigned URL cache", () => {
       });
     };
 
-    const expected = await createAndClaim(
+    const expected = await createAndExecution(
       "request all connector skill bundles",
     );
     expect(
@@ -337,7 +343,7 @@ describe("system storage presigned URL cache", () => {
       "use the mixed-scope storage URL cache",
       "reuse the mixed-scope storage URL cache",
     ]) {
-      await expect(createAndClaim(prompt)).resolves.toStrictEqual(expected);
+      await expect(createAndExecution(prompt)).resolves.toStrictEqual(expected);
     }
     expect(
       objectKeys.map((objectKey) => {
@@ -352,12 +358,14 @@ describe("system storage presigned URL cache", () => {
 
   it("refreshes a hard-expired readonly archive with a new exact URL", async () => {
     const scenario = await readonlyCacheScenario();
-    const first = await scenario.claim("issue the readonly archive URL");
+    const first = await scenario.executionInput(
+      "issue the readonly archive URL",
+    );
     const objectKey = decodeURIComponent(
       new URL(first.downloadUrl).pathname.slice(1),
     );
     scenario.advance(CACHE_TTL_SECONDS * 1000 + 60_000);
-    const refreshed = await scenario.claim(
+    const refreshed = await scenario.executionInput(
       "refresh the hard-expired readonly URL",
     );
     expect(refreshed).toStrictEqual({

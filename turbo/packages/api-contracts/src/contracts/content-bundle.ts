@@ -28,8 +28,8 @@ const contentBundleDownloadSchema = contentBundleSchema
   })
   .strict();
 
-/** Immutable content selected and authorized by the successful claim. */
-export const claimedContentBundlesSchema = object({
+/** Immutable packages selected and authorized for execution. */
+export const executionContentBundlesSchema = object({
   format: literal("tar-gzip-v1"),
   instructions: contentBundleDownloadSchema.optional(),
   // Omit entirely until a selected template has an immutable owner reference.

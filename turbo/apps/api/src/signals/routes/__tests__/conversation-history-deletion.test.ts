@@ -26,8 +26,8 @@ async function completedRun(actor: ApiTestUser, agentId?: string) {
     prompt: "retain history",
   });
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.executionInput(run.runId);
-  const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+  const execution = await runs.executionInput(run.runId);
+  const headers = { authorization: `Bearer ${execution.sandboxToken}` };
   const completion = {
     cliAgentType: "claude-code" as const,
     cliAgentSessionId: run.runId,

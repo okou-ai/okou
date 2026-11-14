@@ -6,7 +6,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
 import {
-  claimEnvironment,
+  executionEnvironment,
   createChatEventsFixture,
   requireOrgId,
 } from "./helpers/chat-events-fixture";
@@ -73,8 +73,7 @@ describe("Codex execution switch", () => {
     async ({ model, tier }) => {
       const owned = await ownedChatActor();
       await owned.run(async () => {
-        const { actor, agentId, runnerGroup, sendChatRun, claimChatRun } =
-          owned;
+        const { actor, agentId, sendChatRun, runExecution } = owned;
         const accountId = `codex-switch-${randomUUID()}`;
         const connected = await configureSubscriptionPiModel(
           actor,
@@ -105,21 +104,23 @@ describe("Codex execution switch", () => {
           prompt: "run the same subscription through Codex",
           runOptions: { codexServiceTier: tier, reasoningEffort: "high" },
         });
-        const { claim } = await claimChatRun(runnerGroup, run.runId);
-        expect(claim.cliAgentType).toBe("codex");
-        expect(claim.piModelConfig).toBeUndefined();
-        expect(claim.piLaunchConfig).toBeUndefined();
-        expect(claim.piSessionId).toBeUndefined();
+        const { execution } = await runExecution(run.runId);
+        expect(execution.cliAgentType).toBe("codex");
+        expect(execution.piModelConfig).toBeUndefined();
+        expect(execution.piLaunchConfig).toBeUndefined();
+        expect(execution.piSessionId).toBeUndefined();
 
-        expect(claim.billableFirewalls).toStrictEqual([]);
-        expect(claimEnvironment(claim)).toMatchObject({
+        expect(execution.billableFirewalls).toStrictEqual([]);
+        expect(executionEnvironment(execution)).toMatchObject({
           OPENAI_MODEL: model,
           CODEX_OAUTH_ACCOUNT_ID: accountId,
           OKOU_REASONING_EFFORT: "high",
         });
-        expect(claimEnvironment(claim).OKOU_CODEX_SERVICE_TIER).toBe(tier);
+        expect(executionEnvironment(execution).OKOU_CODEX_SERVICE_TIER).toBe(
+          tier,
+        );
         expect(
-          claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN,
+          execution.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN,
         ).toMatchObject({
           sourceId: connected.accountSourceId,
         });
@@ -130,7 +131,7 @@ describe("Codex execution switch", () => {
   it("uses the switch when an event-triggered workflow launches a subscription chat", async () => {
     const owned = await ownedChatActor("team");
     await owned.run(async () => {
-      const { actor, agentId, runnerGroup, claimChatRun } = owned;
+      const { actor, agentId, runExecution } = owned;
       const accountId = `codex-workflow-${randomUUID()}`;
       await configureSubscriptionPiModel(actor, { accountId }, "gpt-6-luna");
       const thread = await chat.createThread(actor, {
@@ -146,21 +147,21 @@ describe("Codex execution switch", () => {
       const workflowRun = await createWorkflowsBddApi(
         context,
       ).startEventAutomationRun(actor, agentId, thread.id);
-      const { claim } = await claimChatRun(runnerGroup, workflowRun.runId);
-      expect(claim.cliAgentType).toBe("codex");
-      expect(claim.piLaunchConfig).toBeUndefined();
-      expect(claimEnvironment(claim)).toMatchObject({
+      const { execution } = await runExecution(workflowRun.runId);
+      expect(execution.cliAgentType).toBe("codex");
+      expect(execution.piLaunchConfig).toBeUndefined();
+      expect(executionEnvironment(execution)).toMatchObject({
         OPENAI_MODEL: "gpt-6-luna",
         CODEX_OAUTH_ACCOUNT_ID: accountId,
       });
-      expect(claim.billableFirewalls).toStrictEqual([]);
+      expect(execution.billableFirewalls).toStrictEqual([]);
     });
   });
 
   it("leaves Claude subscriptions on Claude Code", async () => {
     const owned = await ownedChatActor();
     await owned.run(async () => {
-      const { actor, agentId, runnerGroup, sendChatRun, claimChatRun } = owned;
+      const { actor, agentId, sendChatRun, runExecution } = owned;
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId: requireOrgId(actor) },
@@ -171,25 +172,27 @@ describe("Codex execution switch", () => {
         model: "claude-fable-5-1",
         prompt: "keep Claude on its own harness",
       });
-      const { claim } = await claimChatRun(runnerGroup, run.runId);
-      expect(claim.cliAgentType).toBe("claude-code");
-      expect(claim.piModelConfig).toBeUndefined();
-      expect(claimEnvironment(claim).ANTHROPIC_MODEL).toBe("claude-fable-5-1");
+      const { execution } = await runExecution(run.runId);
+      expect(execution.cliAgentType).toBe("claude-code");
+      expect(execution.piModelConfig).toBeUndefined();
+      expect(executionEnvironment(execution).ANTHROPIC_MODEL).toBe(
+        "claude-fable-5-1",
+      );
     });
   });
 
   it("rotates native sessions and preserves visible context when switching both ways", async () => {
     const owned = await ownedChatActor();
     await owned.run(async () => {
-      const { actor, agentId, runnerGroup, sendChatRun, claimChatRun } = owned;
+      const { actor, agentId, sendChatRun, runExecution } = owned;
       await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
       mockPiResourceArchiveDownloads(true);
       const historyObjects = mockPiObjectStore();
 
       const prompt = "start this conversation on Pi";
       const first = await sendChatRun(actor, { agentId, prompt });
-      const firstClaim = await claimChatRun(runnerGroup, first.runId);
-      expect(firstClaim.claim.cliAgentType).toBe("pi");
+      const firstExecution = await runExecution(first.runId);
+      expect(firstExecution.execution.cliAgentType).toBe("pi");
       // Changing the switch does not rewrite the already claimed Pi run.
       await updateFeatureSwitchesForUser(
         context,
@@ -200,7 +203,7 @@ describe("Codex execution switch", () => {
         actor,
         answer: "The earlier Pi answer",
         historyObjects,
-        claim: firstClaim,
+        execution: firstExecution,
         prompt,
         run: first,
         responsesModel: { provider: "openai-codex", model: "gpt-6-luna" },
@@ -210,15 +213,15 @@ describe("Codex execution switch", () => {
         threadId: first.threadId,
         prompt: "continue this conversation on Codex",
       });
-      const secondClaim = await claimChatRun(runnerGroup, second.runId);
-      expect(secondClaim.claim.cliAgentType).toBe("codex");
+      const secondExecution = await runExecution(second.runId);
+      expect(secondExecution.execution.cliAgentType).toBe("codex");
 
-      expect(secondClaim.claim.appendSystemPrompt).not.toContain(
+      expect(secondExecution.execution.appendSystemPrompt).not.toContain(
         "The earlier Pi answer",
       );
-      expect(secondClaim.claim.nativeContinuation?.recoveryPrompt).toContain(
-        "okou chat messages --output-dir /tmp/okou-chat-history",
-      );
+      expect(
+        secondExecution.execution.nativeContinuation?.recoveryPrompt,
+      ).toContain("okou chat messages --output-dir /tmp/okou-chat-history");
       chatCallbacks.mockChatOutputEvents([
         {
           type: "assistant",
@@ -229,7 +232,7 @@ describe("Codex execution switch", () => {
         },
         { type: "result", sequenceNumber: 2, result: "The later Codex answer" },
       ]);
-      await completeChatRunOk(second.runId, secondClaim.sandboxHeaders, {
+      await completeChatRunOk(second.runId, secondExecution.sandboxHeaders, {
         cliAgentType: "codex",
         cliAgentSessionId: randomUUID(),
       });
@@ -248,10 +251,10 @@ describe("Codex execution switch", () => {
         threadId: first.threadId,
         prompt: "return this conversation to Pi",
       });
-      const thirdClaim = await claimChatRun(runnerGroup, third.runId);
-      expect(thirdClaim.claim.cliAgentType).toBe("pi");
+      const thirdExecution = await runExecution(third.runId);
+      expect(thirdExecution.execution.cliAgentType).toBe("pi");
 
-      expect(thirdClaim.claim.appendSystemPrompt).not.toContain(
+      expect(thirdExecution.execution.appendSystemPrompt).not.toContain(
         "The later Codex answer",
       );
     });

@@ -275,29 +275,32 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
 }> {
   const runs = createRunsApi(context);
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.nextReceivedExecution(runnerGroup);
-  const runId = claim.runId;
-  if (claim.cliAgentType !== "claude-code" && claim.cliAgentType !== "codex") {
+  const execution = await runs.nextReceivedExecution(runnerGroup);
+  const runId = execution.runId;
+  if (
+    execution.cliAgentType !== "claude-code" &&
+    execution.cliAgentType !== "codex"
+  ) {
     throw new Error(
-      `Expected a native AgentPhone claim, got ${claim.cliAgentType}`,
+      `Expected a native AgentPhone claim, got ${execution.cliAgentType}`,
     );
   }
-  if (claim.nativeContinuation?.sessionId) {
+  if (execution.nativeContinuation?.sessionId) {
     nativeSessionStore.set(claimedNativeSessions$, {
       ...nativeSessionStore.get(claimedNativeSessions$),
-      [runId]: claim.nativeContinuation.sessionId,
+      [runId]: execution.nativeContinuation.sessionId,
     });
   }
   return {
     runId,
-    sandboxToken: claim.sandboxToken,
-    prompt: claim.prompt,
-    appendSystemPrompt: claim.appendSystemPrompt ?? "",
-    okouToken: claim.platformEnvironment.OKOU_TOKEN,
-    resumedSessionId: claim.nativeContinuation?.sessionId ?? undefined,
-    cliAgentType: claim.cliAgentType,
-    environment: claim.environment,
-    serviceTier: claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER,
+    sandboxToken: execution.sandboxToken,
+    prompt: execution.prompt,
+    appendSystemPrompt: execution.appendSystemPrompt ?? "",
+    okouToken: execution.platformEnvironment.OKOU_TOKEN,
+    resumedSessionId: execution.nativeContinuation?.sessionId ?? undefined,
+    cliAgentType: execution.cliAgentType,
+    environment: execution.environment,
+    serviceTier: execution.platformEnvironment.OKOU_CODEX_SERVICE_TIER,
   };
 }
 
@@ -5918,8 +5921,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         prompt: "deliver a phone attachment",
       });
       await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.executionInput(run.runId);
-      const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+      const execution = await runs.executionInput(run.runId);
+      const okouToken = execution.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
         throw new Error("Expected the claimed run to expose OKOU_TOKEN");
       }
@@ -6015,7 +6018,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       );
       expectApiError(unauthorized.body);
 
-      await completeSandboxRun(claim.sandboxToken, run.runId, 0);
+      await completeSandboxRun(execution.sandboxToken, run.runId, 0);
     },
   );
 

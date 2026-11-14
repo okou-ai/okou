@@ -10,6 +10,19 @@ import re
 import stat
 import uuid
 
+
+def regular(path, limit):
+    """Read bounded original evidence without following links or blocking on a special file."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            raise ValueError("original evidence must be a regular file")
+        raw = stream.read(limit+1)
+    if len(raw) > limit:
+        raise ValueError("original evidence exceeded its bound")
+    return raw
+
+
 PREFIX = "NATIVE_TERMINAL_RECEIPT "
 NATIVE_PROFILE = {"vcpu": 2, "memory_mib": 4096, "home_mib": 24576}
 NATIVE_HOME_BYTES = NATIVE_PROFILE["home_mib"] * 1024**2

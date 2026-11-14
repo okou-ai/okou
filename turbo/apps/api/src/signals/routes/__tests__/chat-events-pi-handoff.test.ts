@@ -14,7 +14,7 @@ import {
 } from "./helpers/public-thread-usage";
 import {
   createChatEventsFixture,
-  claimEnvironment,
+  executionEnvironment,
   modelProviderSecretPlaceholder,
   eventBackedContents,
   PI_RESOURCE_ARCHIVE_DOWNLOAD_URL,
@@ -44,11 +44,10 @@ describe("CHAT-02: model-first routing", () => {
       const {
         actor,
         agentId,
-        runnerGroup,
         run: own,
         sendChatRun,
         sendWaitingChatInput,
-        claimChatRun,
+        runExecution,
       } = await publicChatActor(context, {
         optionalEnvironmentNames: ["CONCURRENT_RUN_LIMIT_CAP"],
       });
@@ -70,14 +69,14 @@ describe("CHAT-02: model-first routing", () => {
           prompt: "hold capacity for the personal Pi input",
           model: "claude-fable-5-1",
         });
-        const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
+        const anchorExecution = await runExecution(anchor.runId);
         await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
         const waiting = await sendWaitingChatInput(actor, {
           agentId,
           prompt,
           model: "gpt-6-luna",
         });
-        await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+        await completeChatRunOk(anchor.runId, anchorExecution.sandboxHeaders);
         let run = await waiting.launchedRun();
         let previousRunId: string | undefined;
         for (const turn of [1, 2]) {
@@ -90,25 +89,29 @@ describe("CHAT-02: model-first routing", () => {
               model: "gpt-6-luna",
             });
           }
-          const claim = await claimChatRun(runnerGroup, run.runId);
-          expect(claim.claim).toMatchObject({
+          const execution = await runExecution(run.runId);
+          expect(execution.execution).toMatchObject({
             cliAgentType: "pi",
             piSessionId: run.threadId,
             prompt: originalPrompt,
           });
 
-          expect(claim.claim.nativeContinuation).toMatchObject({
+          expect(execution.execution.nativeContinuation).toMatchObject({
             sessionId: turn === 1 ? null : run.threadId,
             generationRunId: previousRunId ?? null,
           });
           if (turn === 1) {
-            expect(claim.claim.nativeContinuation?.recoveryPrompt).toBeNull();
+            expect(
+              execution.execution.nativeContinuation?.recoveryPrompt,
+            ).toBeNull();
           } else {
-            expect(claim.claim.nativeContinuation?.recoveryPrompt).toContain(
+            expect(
+              execution.execution.nativeContinuation?.recoveryPrompt,
+            ).toContain(
               "okou chat messages --output-dir /tmp/okou-chat-history",
             );
           }
-          expect(claim.claim.appendSystemPrompt).not.toContain(
+          expect(execution.execution.appendSystemPrompt).not.toContain(
             "native Sandbox answer 1",
           );
           const usage = {
@@ -121,7 +124,7 @@ describe("CHAT-02: model-first routing", () => {
           for (const _receipt of [1, 2]) {
             await webhooks.requestAgentUsageEvent(
               { runId: run.runId, events: [usage] },
-              claim.sandboxHeaders,
+              execution.sandboxHeaders,
               [200],
             );
           }
@@ -130,7 +133,7 @@ describe("CHAT-02: model-first routing", () => {
             actor,
             answer,
             historyObjects,
-            claim,
+            execution,
             prompt: originalPrompt,
             run,
           });
@@ -175,8 +178,7 @@ describe("CHAT-02: model-first routing", () => {
         run: own,
         actor,
         agentId,
-        runnerGroup,
-        claimChatRun,
+        runExecution,
         sendChatRun,
       } = await publicChatActor(context);
       await own(async () => {
@@ -189,13 +191,15 @@ describe("CHAT-02: model-first routing", () => {
         });
         await flushWaitUntilForTest();
 
-        const claimed = await claimChatRun(runnerGroup, run.runId);
-        expect(claimed.claim.piModelConfig).toMatchObject({
+        const execution = await runExecution(run.runId);
+        expect(execution.execution.piModelConfig).toMatchObject({
           provider: "openai-codex",
           model: selectedModel,
         });
-        expect(claimed.claim.piModelConfig).not.toHaveProperty("serviceTier");
-        const credentials = claimEnvironment(claimed.claim);
+        expect(execution.execution.piModelConfig).not.toHaveProperty(
+          "serviceTier",
+        );
+        const credentials = executionEnvironment(execution.execution);
         expect(credentials.CHATGPT_ACCESS_TOKEN).toBe(
           modelProviderSecretPlaceholder(
             "codex-oauth-token",
@@ -213,14 +217,14 @@ describe("CHAT-02: model-first routing", () => {
           own(async () => {
             return await webhooks.requestAgentUsageEvent(
               { runId: run.runId, events: [sandboxUsageEvent] },
-              claimed.sandboxHeaders,
+              execution.sandboxHeaders,
               [200],
             );
           }),
           own(async () => {
             return await webhooks.requestAgentUsageEvent(
               { runId: run.runId, events: [sandboxUsageEvent] },
-              claimed.sandboxHeaders,
+              execution.sandboxHeaders,
               [200],
             );
           }),
@@ -237,7 +241,7 @@ describe("CHAT-02: model-first routing", () => {
         await own(async () => {
           return await failChatRun(
             run.runId,
-            claimed.sandboxHeaders,
+            execution.sandboxHeaders,
             "Run cancelled",
           );
         });

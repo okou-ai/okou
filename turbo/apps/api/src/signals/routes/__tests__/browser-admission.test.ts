@@ -8,7 +8,7 @@ import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import {
   createBrowserFixtures,
   MINUTE,
@@ -23,7 +23,7 @@ function client() {
   return setupApp({ context, routes: browserRoutes })(browserContract);
 }
 function runHeaders(chat: Chat) {
-  return { authorization: `Bearer ${okouTokenFromClaim(chat.claim)}` };
+  return { authorization: `Bearer ${okouTokenFromExecution(chat.execution)}` };
 }
 async function use(chat: Chat) {
   return (

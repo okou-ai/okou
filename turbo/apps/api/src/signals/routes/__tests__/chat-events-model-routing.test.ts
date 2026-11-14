@@ -12,7 +12,7 @@ import {
   createChatEventsFixture,
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
   type PromptMessage,
-  claimEnvironment,
+  executionEnvironment,
   userMessages,
 } from "./helpers/chat-events-fixture";
 
@@ -28,7 +28,7 @@ const {
   sendChatRun,
   requestSendEventRaw,
   expectThreadCreatedModelEvent,
-  claimChatRun,
+  runExecution,
   waitForThreadMessages,
   completeChatRunOk,
   cancelAndCompleteChatRun,
@@ -101,7 +101,7 @@ async function waitForPickedInput(
 
 describe("CHAT-02: model-first routing", () => {
   it("adds Codex image upload guidance for web chat Codex sends", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
     const prompt =
       "generate an image in web chat using the aurora-21210 color palette";
 
@@ -121,9 +121,9 @@ describe("CHAT-02: model-first routing", () => {
       prompt,
       model: "gpt-6-astra",
     });
-    const { claim } = await claimChatRun(runnerGroup, run.runId);
-    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
-    expect(claim.cliAgentType).toBe("codex");
+    const { execution } = await runExecution(run.runId);
+    const appendSystemPrompt = execution.appendSystemPrompt ?? "";
+    expect(execution.cliAgentType).toBe("codex");
     expect(appendSystemPrompt).toContain(
       "You are currently running inside: Web",
     );
@@ -173,7 +173,7 @@ describe("CHAT-02: model-first routing", () => {
   });
 
   it("queues an existing-thread input with its model until the active run releases the thread", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
@@ -222,8 +222,8 @@ describe("CHAT-02: model-first routing", () => {
     if (picked.runId === undefined) {
       throw new Error("Expected the follow-up to launch after the cancel");
     }
-    const { claim } = await claimChatRun(runnerGroup, picked.runId);
-    expect(claim.modelUsageProvider).toBe("claude-fable-5-1");
+    const { execution } = await runExecution(picked.runId);
+    expect(execution.modelUsageProvider).toBe("claude-fable-5-1");
     await cancelAndCompleteChatRun(actor, picked.runId);
   }, 90_000);
 
@@ -275,7 +275,7 @@ describe("CHAT-02: model-first routing", () => {
         await flushWaitUntilForTest();
       },
     });
-    const { actor, agentId, runnerGroup } = fixture;
+    const { actor, agentId } = fixture;
     await fixture.run(async () => {
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
       const anchor = await fixture.sendChatRun(actor, {
@@ -283,10 +283,7 @@ describe("CHAT-02: model-first routing", () => {
         model: "claude-fable-5-1",
         prompt: "Keep the native run slot occupied",
       });
-      const { sandboxHeaders } = await fixture.claimChatRun(
-        runnerGroup,
-        anchor.runId,
-      );
+      const { sandboxHeaders } = await fixture.runExecution(anchor.runId);
       await api.updateUserModelPreference(actor, null);
       const threadId = randomUUID();
       queuedThreads.add(threadId);
@@ -340,7 +337,7 @@ describe("CHAT-02: model-first routing", () => {
         await flushWaitUntilForTest();
       },
     });
-    const { actor, agentId, runnerGroup } = fixture;
+    const { actor, agentId } = fixture;
     await fixture.run(async () => {
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
       const anchor = await fixture.sendChatRun(actor, {
@@ -348,10 +345,7 @@ describe("CHAT-02: model-first routing", () => {
         model: "claude-fable-5-1",
         prompt: "Keep the native run slot occupied",
       });
-      const { sandboxHeaders } = await fixture.claimChatRun(
-        runnerGroup,
-        anchor.runId,
-      );
+      const { sandboxHeaders } = await fixture.runExecution(anchor.runId);
       const thread = await chat.createThread(actor, {
         agentId,
         model: "claude-fable-5-1",
@@ -410,10 +404,9 @@ describe("CHAT-02: model-first routing", () => {
     const {
       actor,
       agentId,
-      runnerGroup,
       run: own,
       sendChatRun,
-      claimChatRun,
+      runExecution,
     } = await publicChatActor(context);
     await own(async () => {
       await api.ensurePersonalSubscriptionModel(actor, {
@@ -424,13 +417,13 @@ describe("CHAT-02: model-first routing", () => {
         prompt: "start before the thread model is removed",
         model: "claude-fable-5-1",
       });
-      const firstClaim = await claimChatRun(runnerGroup, first.runId);
-      expect(firstClaim.claim.cliAgentType).toBe("claude-code");
-      expect(claimEnvironment(firstClaim.claim).ANTHROPIC_MODEL).toBe(
-        "claude-fable-5-1",
-      );
+      const firstExecution = await runExecution(first.runId);
+      expect(firstExecution.execution.cliAgentType).toBe("claude-code");
+      expect(
+        executionEnvironment(firstExecution.execution).ANTHROPIC_MODEL,
+      ).toBe("claude-fable-5-1");
       chatCallbacks.mockChatOutputEvents([]);
-      await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
+      await completeChatRunOk(first.runId, firstExecution.sandboxHeaders);
       await flushWaitUntilForTest();
 
       await misc.deletePersonalModelProvider(
@@ -533,7 +526,7 @@ describe("CHAT-02: model-first routing", () => {
   }, 90_000);
 
   it("keeps the enqueued model after thread and member defaults change", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
 
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -573,9 +566,9 @@ describe("CHAT-02: model-first routing", () => {
       (await chat.readThreadMetadata(actor, first.threadId)).selectedModel,
     ).toBe("auto");
 
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    const firstExecution = await runExecution(first.runId);
     chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
+    await completeChatRunOk(first.runId, firstExecution.sandboxHeaders);
     await flushWaitUntilForTest();
 
     const promotedMessages = await waitForThreadMessages(
@@ -599,11 +592,11 @@ describe("CHAT-02: model-first routing", () => {
       throw new Error("Expected the queued legacy-thread message to run");
     }
 
-    const promotedClaim = await claimChatRun(runnerGroup, promotedRunId);
-    expect(promotedClaim.claim.cliAgentType).toBe("claude-code");
-    expect(claimEnvironment(promotedClaim.claim).ANTHROPIC_MODEL).toBe(
-      "claude-fable-5-1",
-    );
+    const promotedExecution = await runExecution(promotedRunId);
+    expect(promotedExecution.execution.cliAgentType).toBe("claude-code");
+    expect(
+      executionEnvironment(promotedExecution.execution).ANTHROPIC_MODEL,
+    ).toBe("claude-fable-5-1");
     expect(
       (await chat.readThreadMetadata(actor, first.threadId)).selectedModel,
     ).toBe("auto");
@@ -624,11 +617,11 @@ describe("CHAT-02: model-first routing", () => {
       }),
     ).toStrictEqual([expect.objectContaining({ selectedModel: "auto" })]);
 
-    await cancelChatRun(actor, promotedRunId, promotedClaim.sandboxHeaders);
+    await cancelChatRun(actor, promotedRunId, promotedExecution.sandboxHeaders);
   }, 90_000);
 
   it("does not overwrite a concurrent explicit thread model selection", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
 
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -669,21 +662,21 @@ describe("CHAT-02: model-first routing", () => {
     if (racedRunId === undefined) {
       throw new Error("Expected the concurrent send to create a run");
     }
-    const racedClaim = await claimChatRun(runnerGroup, racedRunId);
+    const racedExecution = await runExecution(racedRunId);
     expect(["okou-1.0", "claude-fable-5-1"]).toContain(
-      racedClaim.claim.modelUsageProvider,
+      racedExecution.execution.modelUsageProvider,
     );
-    await cancelChatRun(actor, racedRunId, racedClaim.sandboxHeaders);
+    await cancelChatRun(actor, racedRunId, racedExecution.sandboxHeaders);
 
     const followUp = await sendChatRun(actor, {
       agentId,
       threadId: thread.id,
       prompt: "continue on the explicit sticky model",
     });
-    const followUpClaim = await claimChatRun(runnerGroup, followUp.runId);
-    expect(claimEnvironment(followUpClaim.claim).ANTHROPIC_MODEL).toBe(
-      "claude-fable-5-1",
-    );
+    const followUpExecution = await runExecution(followUp.runId);
+    expect(
+      executionEnvironment(followUpExecution.execution).ANTHROPIC_MODEL,
+    ).toBe("claude-fable-5-1");
 
     const events = await chat.requestThreadEvents(actor, {}, [200]);
     if (events.status !== 200) {
@@ -714,10 +707,9 @@ describe("CHAT-02: model-first routing", () => {
     const {
       actor,
       agentId,
-      runnerGroup,
       run: own,
       sendChatRun,
-      claimChatRun,
+      runExecution,
     } = await publicChatActor(context);
     await own(async () => {
       await api.ensurePersonalSubscriptionModel(actor, {
@@ -761,14 +753,14 @@ describe("CHAT-02: model-first routing", () => {
         selectedModel: "gpt-6-sol",
         serviceTier: "priority",
       });
-      const fastClaim = await claimChatRun(runnerGroup, fast.runId);
-      expect(fastClaim.claim.cliAgentType).toBe("pi");
-      expect(fastClaim.claim.piModelConfig).toMatchObject({
+      const fastExecution = await runExecution(fast.runId);
+      expect(fastExecution.execution.cliAgentType).toBe("pi");
+      expect(fastExecution.execution.piModelConfig).toMatchObject({
         provider: "openai-codex",
         model: "gpt-6-sol",
         serviceTier: "fast",
       });
-      await cancelChatRun(actor, fast.runId, fastClaim.sandboxHeaders);
+      await cancelChatRun(actor, fast.runId, fastExecution.sandboxHeaders);
       expect(
         (await readThreadProjection(actor, fast.threadId)).serviceTier,
       ).toBe("priority");
@@ -861,8 +853,8 @@ describe("CHAT-02: model-first routing", () => {
         type: "model",
         selectedModel: "gpt-6.1-sol",
       });
-      const { claim: standardClaim, sandboxHeaders: standardHeaders } =
-        await claimChatRun(runnerGroup, standard.runId);
+      const { execution: standardClaim, sandboxHeaders: standardHeaders } =
+        await runExecution(standard.runId);
       expect(standardClaim.cliAgentType).toBe("pi");
       expect(standardClaim.piModelConfig).toMatchObject({
         provider: "openai-codex",

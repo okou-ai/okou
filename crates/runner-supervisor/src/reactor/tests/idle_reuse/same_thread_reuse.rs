@@ -292,7 +292,7 @@ async fn fresh_claim_reuses_exact_sandbox_parked_while_claim_is_pending() {
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
-        .expect("claimed fresh admission should select the newly parked exact sandbox");
+        .expect("fresh job activation should select the newly parked exact sandbox");
     assert_eq!(completion.exit_code, 0);
     assert_eq!(completion.sandbox_id, Some(sandbox_id));
     wait_idle_pool_reuse_keys(&idle_pool, &[&reuse_key], Duration::from_secs(5)).await;

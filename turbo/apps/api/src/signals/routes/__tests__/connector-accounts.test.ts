@@ -26,7 +26,7 @@ import { builtinConnectorsRoutes } from "../connectors";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -38,7 +38,7 @@ import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const claimedToken = createRunExecutionCredentials(context).okouToken;
 const mocks = createRouteMocks(context);
 const routes = Object.freeze([
   ...connectorAccountRoutes,

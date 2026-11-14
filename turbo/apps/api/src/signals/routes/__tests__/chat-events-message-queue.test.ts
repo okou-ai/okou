@@ -17,7 +17,7 @@ const {
   entitledNativeChatActor,
   sendChatRun,
   expectNoThreadModelUpdateEvent,
-  claimChatRun,
+  runExecution,
   waitForThreadMessages,
   waitForRunStatus,
   completeChatRunOk,
@@ -26,13 +26,13 @@ const {
 
 describe("CHAT-02: queueing and recalling messages", () => {
   it("steers rich inputs one at a time and settles concurrent declarations once", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
 
     const active = await sendChatRun(actor, {
       agentId,
       prompt: "anchor durable active input delivery",
     });
-    const claimed = await claimChatRun(runnerGroup, active.runId);
+    const execution = await runExecution(active.runId);
     const firstEventId = randomUUID();
     const secondEventId = randomUUID();
     const fileId = randomUUID();
@@ -75,8 +75,8 @@ describe("CHAT-02: queueing and recalling messages", () => {
     );
 
     const reads = await Promise.all([
-      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
-      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+      api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
+      api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
     ]);
     const [firstRead, concurrentRead] = reads;
     expect(concurrentRead).toStrictEqual(firstRead);
@@ -86,7 +86,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
 
     // Model a lost first response: a retry reads the same pending input.
     await expect(
-      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+      api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
     ).resolves.toStrictEqual(firstRead);
 
     // Enqueue notifications run in waitUntil; finish them before counting the
@@ -95,12 +95,12 @@ describe("CHAT-02: queueing and recalling messages", () => {
     context.mocks.ably.publish.mockClear();
     const declarations = await Promise.all([
       api.declareSteeredInput(
-        claimed.claim.sandboxToken,
+        execution.execution.sandboxToken,
         active.runId,
         firstEventId,
       ),
       api.declareSteeredInput(
-        claimed.claim.sandboxToken,
+        execution.execution.sandboxToken,
         active.runId,
         firstEventId,
       ),
@@ -114,7 +114,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
     });
     await expect(
       api.declareSteeredInput(
-        claimed.claim.sandboxToken,
+        execution.execution.sandboxToken,
         active.runId,
         firstEventId,
       ),
@@ -137,7 +137,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
     });
 
     await expect(
-      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+      api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
     ).resolves.toStrictEqual({
       input: {
         eventId: secondEventId,
@@ -150,13 +150,13 @@ describe("CHAT-02: queueing and recalling messages", () => {
     });
     await expect(
       api.declareSteeredInput(
-        claimed.claim.sandboxToken,
+        execution.execution.sandboxToken,
         active.runId,
         secondEventId,
       ),
     ).resolves.toStrictEqual({ outcome: "steered" });
     await expect(
-      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+      api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
     ).resolves.toStrictEqual({ input: null });
     const events = await chat.listThreadEvents(actor, active.threadId);
     const replacements = events.events.filter((event) => {
@@ -189,13 +189,13 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("steers a message into the running sandbox run by its source event id", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
 
     const active = await sendChatRun(actor, {
       agentId,
       prompt: "run that receives a steer",
     });
-    const claimed = await claimChatRun(runnerGroup, active.runId);
+    const execution = await runExecution(active.runId);
     const steerEventId = randomUUID();
     const sent = await chat.requestSendEvent(
       actor,
@@ -212,24 +212,24 @@ describe("CHAT-02: queueing and recalling messages", () => {
     }
 
     await expect(
-      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+      api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
     ).resolves.toStrictEqual({
       input: { eventId: steerEventId, prompt: "steer into the running run" },
     });
     await expect(
       api.declareSteeredInput(
-        claimed.claim.sandboxToken,
+        execution.execution.sandboxToken,
         active.runId,
         steerEventId,
       ),
     ).resolves.toStrictEqual({ outcome: "steered" });
-    await completeChatRunOk(active.runId, claimed.sandboxHeaders);
+    await completeChatRunOk(active.runId, execution.sandboxHeaders);
     await flushWaitUntilForTest();
     await waitForRunStatus(actor, active.runId, "completed");
     // A repeated declaration after completion stays idempotent.
     await expect(
       api.declareSteeredInput(
-        claimed.claim.sandboxToken,
+        execution.execution.sandboxToken,
         active.runId,
         steerEventId,
       ),
@@ -255,13 +255,13 @@ describe("CHAT-02: queueing and recalling messages", () => {
   }, 90_000);
 
   it("releases unconfirmed prompts before draining in FIFO order", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
 
     const active = await sendChatRun(actor, {
       agentId,
       prompt: "finalize an unconfirmed delivery",
     });
-    const claimed = await claimChatRun(runnerGroup, active.runId);
+    const execution = await runExecution(active.runId);
     const releasedEventId = randomUUID();
     await chat.requestSendEvent(
       actor,
@@ -275,7 +275,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
     );
     // Read but never declared steered: completion leaves it queued.
     await expect(
-      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+      api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
     ).resolves.toStrictEqual({
       input: { eventId: releasedEventId, prompt: "released queue head" },
     });
@@ -294,7 +294,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
       throw new Error("Expected later input to remain queued");
     }
 
-    await completeChatRunOk(active.runId, claimed.sandboxHeaders);
+    await completeChatRunOk(active.runId, execution.sandboxHeaders);
     await flushWaitUntilForTest();
 
     const messages = await waitForThreadMessages(
@@ -322,7 +322,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
       }),
     ).toHaveLength(0);
 
-    const successorClaim = await claimChatRun(runnerGroup, promoted.runId);
+    const successorExecution = await runExecution(promoted.runId);
     await chat.requestSendEvent(
       actor,
       {
@@ -332,17 +332,21 @@ describe("CHAT-02: queueing and recalling messages", () => {
       },
       [201],
     );
-    await cancelChatRun(actor, promoted.runId, successorClaim.sandboxHeaders);
+    await cancelChatRun(
+      actor,
+      promoted.runId,
+      successorExecution.sandboxHeaders,
+    );
   }, 90_000);
 
   it("applies the control payload limit without consuming an oversized prompt", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
 
     const active = await sendChatRun(actor, {
       agentId,
       prompt: "validate durable delivery payload limit",
     });
-    const claimed = await claimChatRun(runnerGroup, active.runId);
+    const execution = await runExecution(active.runId);
     const emptyDeliveryPayloadBytes = Buffer.byteLength(
       JSON.stringify({
         type: "active-input",
@@ -365,7 +369,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
       [201],
     );
     const exact = await api.nextSteerableInput(
-      claimed.claim.sandboxToken,
+      execution.execution.sandboxToken,
       active.runId,
     );
     if (!exact.input) {
@@ -383,7 +387,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
       ),
     ).toBe(ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES);
     await api.declareSteeredInput(
-      claimed.claim.sandboxToken,
+      execution.execution.sandboxToken,
       active.runId,
       exact.input.eventId,
     );
@@ -405,7 +409,7 @@ describe("CHAT-02: queueing and recalling messages", () => {
     );
     // An oversized prompt is not steerable and stays queued for the next pick.
     await expect(
-      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+      api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
     ).resolves.toStrictEqual({ input: null });
     expect(
       (await chat.listThreadEvents(actor, active.threadId)).events.filter(

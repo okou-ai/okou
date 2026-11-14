@@ -29,10 +29,10 @@ export async function terminalPredecessor(
     });
   });
   const fixture = { api, owned, actor, agentId, group, run, runnerId, clock };
-  const claimed = await owned.claimRunnerRun(run.runId);
+  const execution = await owned.executionInput(run.runId);
   await owned.run(async () => {
     const webhooks = createWebhookCallbackApi(context);
-    const headers = { authorization: `Bearer ${claimed.sandboxToken}` };
+    const headers = { authorization: `Bearer ${execution.sandboxToken}` };
     if (initialize) {
       await webhooks.requestAgentEvents(
         {

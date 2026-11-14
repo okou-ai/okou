@@ -99,12 +99,9 @@ describe("workflow skill storage presigned URL cache", () => {
         agentId,
         prompt: "Read the immutable Workflow attachment",
       });
-      const { claim, sandboxHeaders } = await chats.claimChatRun(
-        runnerGroup,
-        run.runId,
-      );
+      const { execution, sandboxHeaders } = await chats.runExecution(run.runId);
       await chats.cancelChatRun(actor, run.runId, sandboxHeaders);
-      return claim.contentBundles;
+      return execution.contentBundles;
     };
     return {
       actor,
@@ -148,14 +145,14 @@ describe("workflow skill storage presigned URL cache", () => {
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
     const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(custom.slug, custom.id)}`;
     mockUniquePresignedUrls();
-    const createAndClaim = async (prompt: string) => {
+    const createAndExecution = async (prompt: string) => {
       const run = await api.createThreadRun(actor, {
         agentId,
         prompt,
       });
       await api.heartbeatRunner(runnerGroup);
-      const claim = await api.executionInput(run.runId);
-      const mount = claim.contentBundles.skills.find((entry) => {
+      const execution = await api.executionInput(run.runId);
+      const mount = execution.contentBundles.skills.find((entry) => {
         return entry.mountPath === mountPath;
       });
       if (!mount?.downloadUrl) {
@@ -164,7 +161,7 @@ describe("workflow skill storage presigned URL cache", () => {
       expect(mount.mountPath).toBe(
         `/home/user/.claude/skills/custom-${custom.slug.slice(1, 49)}-${custom.id.replaceAll("-", "").slice(0, 8)}`,
       );
-      expect(claim.connectorRuntimeTargets).not.toContainEqual(
+      expect(execution.connectorRuntimeTargets).not.toContainEqual(
         expect.objectContaining({
           kind: "custom",
           customConnectorId: custom.id,
@@ -173,13 +170,15 @@ describe("workflow skill storage presigned URL cache", () => {
       return { runId: run.runId, archiveUrl: mount.downloadUrl };
     };
 
-    const first = await createAndClaim("request the readonly skill archive");
+    const first = await createAndExecution(
+      "request the readonly skill archive",
+    );
     expect(new URL(first.archiveUrl).searchParams.get("X-Amz-Expires")).toBe(
       "172800",
     );
     await flushWaitUntilForTest();
     await api.requestCancelRun(actor, first.runId, [200]);
-    const second = await createAndClaim("reuse the readonly skill archive");
+    const second = await createAndExecution("reuse the readonly skill archive");
     expect(second.archiveUrl).toBe(first.archiveUrl);
     await api.requestCancelRun(actor, second.runId, [200]);
   });
@@ -252,15 +251,8 @@ describe("workflow skill storage presigned URL cache", () => {
   });
 
   it("pins dispatched Workflow URLs and selects later edits for the following Run", async () => {
-    const {
-      actor,
-      agentId,
-      runnerGroup,
-      workflow,
-      misc,
-      chats,
-      claimWorkflow,
-    } = await workflowCacheFixture();
+    const { actor, agentId, workflow, misc, chats, claimWorkflow } =
+      await workflowCacheFixture();
     const cached = await claimWorkflow();
     const queued = await chats.sendChatRun(actor, {
       agentId,
@@ -272,17 +264,16 @@ describe("workflow skill storage presigned URL cache", () => {
       "# Updated Workflow package",
       [200],
     );
-    const { claim, sandboxHeaders } = await chats.claimChatRun(
-      runnerGroup,
+    const { execution, sandboxHeaders } = await chats.runExecution(
       queued.runId,
     );
-    expect(claim.contentBundles.skills[0]?.mountPath).toBe(
+    expect(execution.contentBundles.skills[0]?.mountPath).toBe(
       cached.skills[0]?.mountPath,
     );
-    expect(claim.contentBundles.skills[0]?.sha256).toBe(
+    expect(execution.contentBundles.skills[0]?.sha256).toBe(
       cached.skills[0]?.sha256,
     );
-    expect(claim.contentBundles.skills[0]?.downloadUrl).toBe(
+    expect(execution.contentBundles.skills[0]?.downloadUrl).toBe(
       cached.skills[0]?.downloadUrl,
     );
     await chats.cancelChatRun(actor, queued.runId, sandboxHeaders);
