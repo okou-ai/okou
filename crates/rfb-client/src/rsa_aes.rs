@@ -362,7 +362,7 @@ where
     let mut result = if security.full() {
         AuthenticatedStream::rsa_aes(stream)
     } else {
-        AuthenticatedStream::rsa_aes_raw(stream.into_raw()?)
+        AuthenticatedStream::raw(stream.into_raw()?)
     };
     phase(
         AuthenticationStage::RsaAesAuthentication,
