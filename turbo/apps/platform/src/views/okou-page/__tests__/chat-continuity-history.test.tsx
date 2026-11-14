@@ -5,7 +5,7 @@ import {
   chatEventsContract,
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
@@ -103,7 +103,11 @@ function setScrollableGeometry(
   Object.defineProperties(scroller, {
     scrollHeight: { configurable: true, value: scrollHeight },
     clientHeight: { configurable: true, value: clientHeight },
+    clientWidth: { configurable: true, value: 720 },
   });
+  vi.spyOn(scroller, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 720, clientHeight),
+  );
 }
 
 function eventAnchorCount(container: ParentNode, eventId: string): number {
