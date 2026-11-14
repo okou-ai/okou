@@ -25,14 +25,16 @@ const browserSchemes = Object.freeze([
 ]);
 
 function knownSuffix(host: string): boolean {
-  return (
-    host.includes(".") &&
-    parseDomain(host, {
-      allowPrivateDomains: false,
-      extractHostname: false,
-      validateHostname: false,
-    }).isIcann === true
-  );
+  if (!host.includes(".")) {
+    return false;
+  }
+  const domain = parseDomain(host, {
+    allowPrivateDomains: false,
+    extractHostname: false,
+    validateHostname: false,
+  });
+  // A registry identifier such as co.uk is not itself a registered domain.
+  return domain.isIcann === true && domain.domain !== null;
 }
 
 function localHost(host: string): boolean {
@@ -77,12 +79,16 @@ function inputScheme(
   return scheme;
 }
 
-function parseAddress(text: string): ParsedAddress | null {
+function parseAddress(
+  text: string,
+  completeHost: boolean,
+): ParsedAddress | null {
   const value = text.replace(/^(https?|wss?|file|about|chrome);/i, "$1:");
   const withoutPrefix = value.startsWith("//") ? value.slice(2) : value;
   const authority = withoutPrefix.split(/[/?#\\]/, 1)[0]!;
   const path = withoutPrefix.slice(authority.length).split(/[?#]/, 1)[0]!;
-  const hostPort = /^[^:]+:\d+$/.test(authority);
+  const port = /^[^:]+:(\d+)$/.exec(authority)?.[1];
+  const hostPort = port !== undefined && Number(port) <= 65_535;
   const scheme = inputScheme(value, authority, hostPort);
   if (scheme && !browserSchemes.includes(scheme)) {
     return null;
@@ -94,9 +100,15 @@ function parseAddress(text: string): ParsedAddress | null {
   const candidate = scheme
     ? value
     : "http:" + (value.startsWith("//") ? value : "//" + value);
-  return URL.canParse(candidate)
+  let url: URL | null = null;
+  if (completeHost) {
+    url = completedURL(candidate);
+  } else if (URL.canParse(candidate)) {
+    url = new URL(candidate);
+  }
+  return url
     ? {
-        url: new URL(candidate),
+        url,
         authority,
         path,
         hostPort,
@@ -111,7 +123,6 @@ function normalizeHost(url: URL): string | null {
   if (
     !host ||
     host.includes("..") ||
-    host.replace(/\.$/, "").endsWith(".invalid") ||
     (!host.startsWith("[") && !/^[a-z\d_.-]+$/i.test(host))
   ) {
     return null;
@@ -157,6 +168,9 @@ function nonHostComponents(input: ParsedAddress): number {
 }
 
 function navigationIntent(input: ParsedAddress, host: string): boolean {
+  if (host === "invalid" || host.endsWith(".invalid")) {
+    return false;
+  }
   const ip = ipIntent(input, host);
   if (ip !== null) {
     return ip;
@@ -174,32 +188,55 @@ function navigationIntent(input: ParsedAddress, host: string): boolean {
   if (input.url.username || input.url.password) {
     return false;
   }
-  return (
-    input.hostPort ||
-    Boolean(input.url.port) ||
-    knownSuffix(host) ||
-    localHost(host)
-  );
+  return Boolean(input.url.port) || knownSuffix(host) || localHost(host);
 }
 
-function completedURL(input: ParsedAddress, host: string): URL {
-  const { url } = input;
-  if (knownSuffix(host) || host.startsWith("[")) {
-    return url;
+function completedURL(candidate: string): URL | null {
+  const parts = /^(https?|wss?):[/\\]*([^/\\?#]*)(.*)$/i.exec(candidate);
+  if (!parts) {
+    return null;
   }
-  const ip = /^\d+(?:\.\d+){3}$/.test(host);
-  const domain = (ip && !input.explicit ? originalHost(input) : host).replace(
-    /^\.+|\.+$/g,
+  const authority = parts[2]!;
+  const userEnd = authority.lastIndexOf("@") + 1;
+  const hostPort = authority.slice(userEnd);
+  if (hostPort.startsWith("[")) {
+    return URL.canParse(candidate) ? new URL(candidate) : null;
+  }
+  const port = /:\d*$/.exec(hostPort);
+  const original = port ? hostPort.slice(0, port.index) : hostPort;
+  const domain = original.replace(
+    /^[.\u3002\uff0e\uff61]+|[.\u3002\uff0e\uff61]+$/gu,
     "",
   );
-  url.hostname =
-    (domain.startsWith("www.") ? domain : "www." + domain) + ".com";
+  if (!domain) {
+    return null;
+  }
+  // Qualify before URL canonicalization can coerce numeric text into an IP or
+  // reject it as an overflowing IP. URLFixer applies the desired TLD first too.
+  const qualified =
+    parts[1]! +
+    "://" +
+    authority.slice(0, userEnd) +
+    domain +
+    ".com" +
+    (port?.[0] ?? "") +
+    parts[3]!;
+  if (!URL.canParse(qualified)) {
+    return null;
+  }
+  const url = new URL(qualified);
+  const host = url.hostname.slice(0, -".com".length);
+  if (knownSuffix(host)) {
+    url.hostname = host + (/[.\u3002\uff0e\uff61]$/u.test(original) ? "." : "");
+  } else if (!url.hostname.startsWith("www.")) {
+    url.hostname = "www." + url.hostname;
+  }
   return url;
 }
 
 /** Mirror the profile-independent URL intent rules in Chromium AutocompleteInput. */
 function addressURL(text: string, completeHost: boolean): URL | null {
-  const input = parseAddress(text);
+  const input = parseAddress(text, completeHost);
   if (!input) {
     return null;
   }
@@ -215,7 +252,7 @@ function addressURL(text: string, completeHost: boolean): URL | null {
     return null;
   }
   if (completeHost) {
-    return completedURL(input, host);
+    return url;
   }
   return navigationIntent(input, host) ? url : null;
 }
