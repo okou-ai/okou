@@ -9,7 +9,7 @@ from pathlib import Path
 BOUNDARY = Path("app/src/main/kotlin/ai/okou/android/state/SavedUiState.kt")
 RESTRICTED = re.compile(
     r"\bandroidx\s*\.\s*compose\s*\.\s*runtime\s*\.\s*saveable\b"
-    r"|\bandroidx\s*\.\s*lifecycle\s*\.\s*SavedStateHandle\b"
+    r"|\bandroidx\s*\.\s*lifecycle\s*\.\s*(?:SavedStateHandle|createSavedStateHandle)\b"
     r"|\bandroidx\s*\.\s*savedstate\s*\.\s*SavedStateRegistry(?:Owner|Controller)?\b"
     r"|\bimport\s+androidx\s*\.\s*(?:lifecycle|savedstate)\s*\.\s*\*"
     r"|\b(?:registerSavedStateProvider|setSavedStateProvider)\b"

@@ -226,9 +226,9 @@ thread instead of becoming an unrelated new-chat draft.
 `state/SavedUiState.kt` owns first-party Bundle metadata and both journal-backed
 editor adapters. Text stays in its existing private journal; native selection is
 restored only after that body is available. Raw saveable APIs and provider writes
-outside this boundary fail `scripts/check-saved-state.py`, including aliases and
-qualified references. This source-policy check does not infer arbitrary Kotlin
-data flow or inspect dependencies' internal providers.
+outside this boundary fail `scripts/check-saved-state.py`, including handle
+creation factories, aliases and qualified references. This source-policy check
+does not infer arbitrary Kotlin data flow or inspect dependencies' internal providers.
 
 `MainActivity` checks the entire app-owned saved Bundle after its superclass
 collects Jetpack providers on every Debug save. The shared budget is **less than

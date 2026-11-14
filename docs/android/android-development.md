@@ -123,9 +123,10 @@ own private persistent owner; a Bundle budget must not become a document limit.
 First-party saveable APIs belong in
 [`SavedUiState.kt`](../../android/app/src/main/kotlin/ai/okou/android/state/SavedUiState.kt).
 Use its native metadata/editor adapters and explicit collection retention policy.
-The source audit rejects direct saved-state API imports, aliases, wildcard imports,
-qualified references and provider registration outside that boundary. This is an
-architectural source boundary, not a general Kotlin data-flow or third-party SDK audit.
+The source audit rejects direct saved-state API imports, handle creation factories,
+aliases, wildcard imports, qualified references and provider registration outside
+that boundary. This is an architectural source boundary, not a general Kotlin
+data-flow or third-party SDK audit.
 Framework controls such as lazy lists can also contribute saved state indirectly.
 
 Journal-backed editors save native selection only and wait for the body to load
