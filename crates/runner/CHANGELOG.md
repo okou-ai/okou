@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.9...runner-rs-v0.249.10) (2026-11-14)
+
+
+### Refactoring
+
+* **python:** bind firewall cache provenance to resolved entries ([#47230](https://github.com/okou-ai/okou/issues/47230)) ([b9c0370](https://github.com/okou-ai/okou/commit/b9c0370dc9cb42a17ac1ca3527d8c17253c9a08d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.8...runner-rs-v0.249.9) (2026-11-14)
 
 ## [0.249.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.7...runner-rs-v0.249.8) (2026-11-14)

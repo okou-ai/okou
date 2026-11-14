@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.25](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.24...nbd-cow-v0.5.25) (2026-11-14)
+
+
+### Refactoring
+
+* **nbd-cow:** own netlink timing in one accumulator ([#47236](https://github.com/okou-ai/okou/issues/47236)) ([d317592](https://github.com/okou-ai/okou/commit/d317592ecdee315481de31d35b277541d34e1963))
+
 ## [0.5.24](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.23...nbd-cow-v0.5.24) (2026-11-14)
 
 ## [0.5.23](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.22...nbd-cow-v0.5.23) (2026-11-14)

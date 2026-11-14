@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.8](https://github.com/okou-ai/okou/compare/ios-v0.43.7...ios-v0.43.8) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** preserve share selection bottom corners ([#47238](https://github.com/okou-ai/okou/issues/47238)) ([b783453](https://github.com/okou-ai/okou/commit/b7834534422818a17e2228f793eb95c3e9fce111))
+
 ## [0.43.7](https://github.com/okou-ai/okou/compare/ios-v0.43.6...ios-v0.43.7) (2026-11-14)
 
 
