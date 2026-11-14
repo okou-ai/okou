@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1130.1](https://github.com/okou-ai/okou/compare/app-v0.1130.0...app-v0.1130.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** match existing web chat sharing behavior ([#47105](https://github.com/okou-ai/okou/issues/47105)) ([e25ad70](https://github.com/okou-ai/okou/commit/e25ad705a20e4cf55d75ade9c6dd7c0a9d45d0e5))
+
+
+### Refactoring
+
+* **app:** continue layout work from owning commands ([#47085](https://github.com/okou-ai/okou/issues/47085)) ([13e8551](https://github.com/okou-ai/okou/commit/13e85512767faa1659f591b30c5e98f8a5134f36))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.63.1
+    * @okouai/core bumped to 8.839.1
+    * @okouai/ui bumped to 1.21.17
+
 ## [0.1130.0](https://github.com/okou-ai/okou/compare/app-v0.1129.0...app-v0.1130.0) (2026-11-14)
 
 

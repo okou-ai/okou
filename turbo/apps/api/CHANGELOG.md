@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.70.3](https://github.com/okou-ai/okou/compare/api-v2.70.2...api-v2.70.3) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** match existing web chat sharing behavior ([#47105](https://github.com/okou-ai/okou/issues/47105)) ([e25ad70](https://github.com/okou-ai/okou/commit/e25ad705a20e4cf55d75ade9c6dd7c0a9d45d0e5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.63.1
+    * @okouai/core bumped to 8.839.1
+    * @okouai/db bumped to 2.35.4
+    * @okouai/pi-agent-runtime bumped to 1.51.123
+
 ## [2.70.2](https://github.com/okou-ai/okou/compare/api-v2.70.1...api-v2.70.2) (2026-11-14)
 
 

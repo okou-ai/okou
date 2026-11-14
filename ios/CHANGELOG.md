@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.3](https://github.com/okou-ai/okou/compare/ios-v0.43.2...ios-v0.43.3) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** match existing web chat sharing behavior ([#47105](https://github.com/okou-ai/okou/issues/47105)) ([e25ad70](https://github.com/okou-ai/okou/commit/e25ad705a20e4cf55d75ade9c6dd7c0a9d45d0e5))
+
 ## [0.43.2](https://github.com/okou-ai/okou/compare/ios-v0.43.1...ios-v0.43.2) (2026-11-14)
 
 
