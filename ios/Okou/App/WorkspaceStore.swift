@@ -32,6 +32,7 @@ final class WorkspaceStore {
   private(set) var chatLinkError: String?
   private(set) var threadFeedback: ChatThreadFeedback?
   private(set) var threadPreview: ChatThreadPreviewResources?
+  let sidebarInteraction = SidebarInteraction()
   private var chatLinkRequestID = UUID()
   @ObservationIgnored private var chatLinkThreadID: String?
   @ObservationIgnored private let selectedThread = CCState.State<String?>(nil)
@@ -754,11 +755,14 @@ final class WorkspaceStore {
       thread, archived: archived, eventID: eventID, onFailure: { failure = $0 },
       didBegin: {
         // The list owns the write, so leaving the detail cannot cancel it.
-        if leaving { self.startNewChat() }
+        if leaving { self.sidebarInteraction.setOpen(true) }
       })
     guard !closed, !needsUpgrade else { return false }
     if succeeded {
-      if reopenOnSuccess { selectChat(id) }
+      if reopenOnSuccess {
+        selectChat(id)
+        sidebarInteraction.setOpen(false)
+      }
       let message =
         archived
         ? (thread.isMuted
@@ -766,7 +770,9 @@ final class WorkspaceStore {
           : "Chat archived. A new reply will bring it back.")
         : "Chat unarchived."
       threadFeedback = ChatThreadFeedback(
-        threadID: id, message: message, actionTitle: "Undo", requiresNavigation: restore
+        threadID: id, message: message,
+        actionTitle: restore ? String(localized: "Undo and return to chat") : "Undo",
+        requiresNavigation: restore
       ) {
         [weak self] in
         guard let self else { return }

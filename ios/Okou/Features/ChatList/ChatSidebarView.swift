@@ -549,7 +549,7 @@ struct ChatSidebarView: View {
       ChatThreadMenuContent(
         menu: ChatThreadMenu(
           workspace: store, threadID: thread.id, moveToProject: { membershipThread = $0 },
-          pinNeighbors: pinNeighbors, archive: { archiveThread($0.id, leaveDetail: true) }))
+          pinNeighbors: pinNeighbors, archive: { archiveThread($0.id) }))
     } preview: {
       ChatThreadPreview(thread: thread, workspace: store)
     }
@@ -571,7 +571,7 @@ struct ChatSidebarView: View {
 
   }
 
-  private func archiveThread(_ id: String, leaveDetail: Bool = false) {
+  private func archiveThread(_ id: String) {
     guard !store.needsUpgrade, store.list.canUpdate(id), !fadingThreadIDs.contains(id),
       let thread = store.list.threads.first(where: { $0.id == id })
     else { return }
@@ -581,7 +581,7 @@ struct ChatSidebarView: View {
       || (store.sidebar.filter == .archived && !archived)
     let commit: () -> Void = {
       Task {
-        await store.setArchived(id, archived: archived, leaveDetail: leaveDetail)
+        await store.setArchived(id, archived: archived)
         guard !Task.isCancelled else { return }
         // A rejected action leaves the row in place; restore its content without collapsing it.
         if store.list.threads.first(where: { $0.id == id })?.isArchived != archived {
