@@ -1,3 +1,5 @@
+import { chatShareSelectionContract } from "@okouai/api-contracts/contracts/chat-share-selection";
+import { readChatShareSelection$ } from "../services/chat-share-selection.service";
 import { sharedThreadVisibilityContract } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import {
   readSharedThreadVisibility$,
@@ -60,7 +62,7 @@ const createSharedThreadResponse$ = command(
     { get, set },
     body: Pick<
       CreateSharedThreadArgs,
-      "threadId" | "eventIds" | "id" | "audience"
+      "threadId" | "eventIds" | "id" | "audience" | "strictSelection"
     >,
     signal: AbortSignal,
   ) => {
@@ -74,6 +76,7 @@ const createSharedThreadResponse$ = command(
         userId: auth.userId,
         threadId: body.threadId,
         eventIds: body.eventIds,
+        ...(body.strictSelection ? { strictSelection: true } : {}),
         ...(body.audience === undefined ? {} : { audience: body.audience }),
         ...(body.id === undefined ? {} : { id: body.id }),
         canReadAttachments:
@@ -98,6 +101,11 @@ const createSharedThreadResponse$ = command(
     if (result.kind === "artifact-unavailable") {
       return badRequestMessage(
         "A selected artifact or hosted dependency is unavailable for sharing",
+      );
+    }
+    if (result.kind === "selection-changed") {
+      return conflict(
+        "Selected messages changed. Review your selection and try again.",
       );
     }
     if (result.kind === "id-conflict") {
@@ -140,6 +148,66 @@ const createVisibleSharedThreadInner$ = command(
           signal,
         )
       : parsed.response;
+  },
+);
+
+// Retain the published selection contract for installed clients. Current clients
+// select visible groups locally and use sharedThreadVisibilityContract.
+const getShareSelection$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "private, no-store");
+    const auth = get(organizationAuthContext$);
+    const selection = await set(
+      readChatShareSelection$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        ...get(pathParamsOf(chatShareSelectionContract.get)),
+      },
+      signal,
+    );
+    return selection
+      ? { status: 200 as const, body: selection }
+      : notFound("Chat thread not found");
+  },
+);
+
+const createSelectedShare$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const parsed = await get(bodyResultOf(chatShareSelectionContract.create));
+    signal.throwIfAborted();
+    if (!parsed.ok) {
+      return parsed.response;
+    }
+    const params = get(pathParamsOf(chatShareSelectionContract.create));
+    const selection = await set(
+      readChatShareSelection$,
+      { orgId: auth.orgId, userId: auth.userId, ...params },
+      signal,
+    );
+    if (!selection) {
+      return notFound("Chat thread not found");
+    }
+    const valid = new Set(
+      selection.messages.map((message) => {
+        return message.eventId;
+      }),
+    );
+    if (
+      parsed.data.eventIds.some((id) => {
+        return !valid.has(id);
+      })
+    ) {
+      return conflict(
+        "Selected messages changed. Review your selection and try again.",
+      );
+    }
+    return await set(
+      createSharedThreadResponse$,
+      { ...params, ...parsed.data, strictSelection: true },
+      signal,
+    );
   },
 );
 
@@ -255,6 +323,28 @@ const visibilityOwnerAuth = {
 } as const;
 
 export const sharedThreadRoutes: readonly RouteEntry[] = [
+  {
+    route: chatShareSelectionContract.get,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "chat-event:read",
+      },
+      getShareSelection$,
+    ),
+  },
+  {
+    route: chatShareSelectionContract.create,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "chat-event:read",
+      },
+      createSelectedShare$,
+    ),
+  },
   {
     route: sharedThreadVisibilityContract.create,
     handler: authRoute(

@@ -65,6 +65,7 @@ export interface CreateSharedThreadArgs {
   readonly threadId: string;
   readonly eventIds: readonly string[];
   readonly canReadAttachments: boolean;
+  readonly strictSelection?: boolean;
   readonly audience?: SharedThreadAudience;
   /** Client-generated ID, so the caller can copy the link before creation. */
   readonly id?: string;
@@ -77,6 +78,7 @@ type CreateSharedThreadResult =
   | { readonly kind: "no-shareable-messages" }
   | { readonly kind: "artifact-unavailable" }
   | { readonly kind: "too-large" }
+  | { readonly kind: "selection-changed" }
   | { readonly kind: "id-conflict" };
 
 interface SharedThreadSourceRow {
@@ -224,10 +226,10 @@ const loadSharedThreadSourceRows$ = command(
   },
 );
 
-const ownsSharedThreadSource$ = command(
+export const ownsSharedThreadSource$ = command(
   async (
     { get },
-    args: CreateSharedThreadArgs,
+    args: Pick<CreateSharedThreadArgs, "orgId" | "userId" | "threadId">,
     signal: AbortSignal,
   ): Promise<boolean> => {
     const [thread] = await get(db$)
@@ -702,6 +704,9 @@ export const createSharedThread$ = command(
     );
     signal.throwIfAborted();
 
+    if (args.strictSelection && rows.length !== selectedEventIds.length) {
+      return { kind: "selection-changed" };
+    }
     const shareId = args.id?.toLowerCase() ?? randomUUID();
     const prepared = await set(
       prepareSharedThreadMessages$,
