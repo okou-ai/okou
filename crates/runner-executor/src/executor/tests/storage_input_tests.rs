@@ -50,6 +50,23 @@ fn guest_path(root: &Path, path: &str) -> PathBuf {
     root.join(Path::new(path).strip_prefix("/").unwrap())
 }
 
+fn assert_complete_file(path: &Path, expected: &[u8], context: &str) {
+    use std::io::Read as _;
+
+    let mut file = fs::File::open(path).expect(context);
+    let mut buffer = [0; 64 * 1024];
+    for expected in expected.chunks(buffer.len()) {
+        let (observed, _) = buffer.split_at_mut(expected.len());
+        file.read_exact(observed).expect(context);
+        assert!(observed == expected, "{context}");
+    }
+    let end = file.read_exact(&mut [0]);
+    assert!(
+        matches!(end, Err(ref error) if error.kind() == std::io::ErrorKind::UnexpectedEof),
+        "{context}: expected EOF, got {end:?}"
+    );
+}
+
 /// Execute the captured production Storage input with the real Guest helper.
 /// Remap only the sandbox filesystem root and optional external archive fixture URL.
 fn apply_guest_storage(
@@ -628,12 +645,11 @@ async fn large_instruction_package_streams_and_applies_the_complete_file() {
     );
     apply_guest_instructions(&overrides, guest.path(), 0);
     download.assert_calls(1);
-    let actual = fs::read(guest_path(guest.path(), "/home/user/.codex/AGENTS.md")).unwrap();
-    assert!(
-        actual.as_slice() == content.as_bytes(),
-        "fresh instructions must match the complete original content"
+    assert_complete_file(
+        &guest_path(guest.path(), "/home/user/.codex/AGENTS.md"),
+        content.as_bytes(),
+        "fresh instructions must match the complete original content",
     );
-    drop(actual);
     let target = guest_path(guest.path(), "/home/user/.codex/AGENTS.md");
     fs::remove_file(&target).unwrap();
     let (idle, _lease) = make_reusable_idle_sandbox_with_fingerprints(
@@ -673,9 +689,10 @@ async fn large_instruction_package_streams_and_applies_the_complete_file() {
     );
     apply_guest_instructions(&overrides, guest.path(), first_exec);
     download.assert_calls(2);
-    assert!(
-        fs::read(target).unwrap().as_slice() == content.as_bytes(),
-        "reused instructions must match the complete original content"
+    assert_complete_file(
+        &target,
+        content.as_bytes(),
+        "reused instructions must match the complete original content",
     );
     config.background_fill.shutdown().await;
     // Release the shared archive after every consumer and content assertion.
