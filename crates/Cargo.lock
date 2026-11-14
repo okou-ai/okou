@@ -4418,7 +4418,7 @@ dependencies = [
  "ts_noise",
  "ts_overlay_router",
  "ts_packet",
- "ts_packetfilter",
+ "ts_packetfilter 0.7.1",
  "ts_packetfilter_state",
  "ts_tls_util",
  "ts_transport",
@@ -5988,7 +5988,7 @@ dependencies = [
  "ts_http_util",
  "ts_keys",
  "ts_packet",
- "ts_packetfilter",
+ "ts_packetfilter 0.6.1",
  "ts_packetfilter_state",
  "ts_tls_util",
  "url",
@@ -6050,7 +6050,7 @@ dependencies = [
  "ts_disco_protocol",
  "ts_overlay_router",
  "ts_packet",
- "ts_packetfilter",
+ "ts_packetfilter 0.6.1",
  "ts_time",
  "ts_transport",
  "ts_tunnel",
@@ -6234,6 +6234,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ts_packetfilter"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
+dependencies = [
+ "hashbrown 0.17.1",
+ "ipnet",
+ "static_assertions",
+ "tracing",
+]
+
+[[package]]
 name = "ts_packetfilter_serde"
 version = "0.6.1"
 source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
@@ -6251,7 +6262,7 @@ name = "ts_packetfilter_state"
 version = "0.6.1"
 source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
- "ts_packetfilter",
+ "ts_packetfilter 0.6.1",
  "ts_packetfilter_serde",
 ]
 
