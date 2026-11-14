@@ -886,11 +886,12 @@ feature; the catalog shows each one.
   controllers, and native Form/List row chrome retain platform interaction and
   material behavior. Product labels and supplied menu icons use the shared
   typography/assets where the public API permits it.
-- iOS can retain an empty composer's disabled Return key when automatic disabling
-  is turned off despite `reloadInputViews()`. The owning editor may restart its
-  active, empty input session without animation and return focus to the same
-  view. Defer this refresh until marked-text composition settles; preserve the
-  document and undo history rather than replacing text or overriding `hasText`.
+- iOS can retain a composer's disabled Return key after programmatic text insertion
+  or when automatic disabling is turned off, despite `reloadInputViews()`. The
+  owning editor may restart its active input session without animation and return
+  focus to the same view. Keep ordinary typing in its native session and defer this refresh until marked-text
+  composition settles; preserve the document, selection, and undo history rather
+  than replacing text or overriding `hasText`.
 - First-party authentication uses native provider, email, code, password, and
   required-profile steps, composed from shared controls. Provider availability,
   required fields, verification, transport, OAuth, and session authority come from

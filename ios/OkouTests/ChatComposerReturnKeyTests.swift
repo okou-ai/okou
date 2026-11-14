@@ -7,6 +7,40 @@ import XCTest
 
 @MainActor
 final class ChatComposerReturnKeyTests: XCTestCase {
+  func testRecommendedFollowupSendsFromAnInitiallyUnfocusedEmptyComposer() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
+    preferences.setReturnKey(.send)
+    let fixture = AttachmentFlowFixture()
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    let source = ComposerMentionSource(agentID: AttachmentFlowFixture.agentID, threads: [])
+    let host = UIHostingController(
+      rootView: MentionComposerHarness(conversation: conversation, source: source)
+        .environment(\.composerPreferences, preferences))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+    let prompt = "帮我提一个 issue 记录这个侧栏开关 bug"
+
+    conversation.composer.editor.selectOrAppendText(prompt)
+    try await waitForBusinessResult { conversation.draft == prompt && input.isFirstResponder }
+    // Selecting the same follow-up must keep one prompt and must not submit it.
+    conversation.composer.editor.selectOrAppendText(prompt)
+    XCTAssertEqual(conversation.draft, prompt)
+    XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
+    input.insertText("\n")
+    try await waitForBusinessResult {
+      conversation.pending.isEmpty && conversation.draft.isEmpty
+        && conversation.messages.contains { $0.text == prompt }
+    }
+    let sent = try fixture.state.value.withLock {
+      try $0.messages.map { try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0) }
+    }
+    XCTAssertEqual(sent.map { $0.userMessage.parts.compactMap(\.text).joined() }, [prompt])
+  }
+
   func testRepeatedKeyboardSendDoesNotStopTheExistingWorkAfterTheDraftClears() async throws {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
