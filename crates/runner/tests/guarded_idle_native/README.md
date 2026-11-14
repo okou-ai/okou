@@ -1157,6 +1157,6 @@ actual same-entry/generation bindings, private-directory removal and positive
 producer joins in addition to every C6/P1 guard. Ordinary Cargo runs its
 original-file and CLI refusal regressions. Native KVM/NBD execution remains
 opt-in. This phased sequence does not claim simultaneous promotion leases,
-permanent retention of two cache generations, an actual API claim-loss race,
+permanent retention of two cache generations,
 calibrated physical relief, full residency, bootstrap provenance or production
 activation. Parent aggregate acceptance remains separate.

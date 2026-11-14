@@ -115,7 +115,6 @@ impl AdmissionTasks {
             AdmissionTaskResult {
                 run_id,
                 outcome,
-
                 _permit: work.permit.take(),
             }
         }));
@@ -197,7 +196,6 @@ impl AdmissionTasks {
             AdmissionTaskResult {
                 run_id,
                 outcome,
-
                 _permit: Some(permit),
             }
         }));
@@ -235,8 +233,7 @@ impl AdmissionTasks {
             }
             AdmissionTaskOutcome::Deferred => Ok(JobActivationResult::completed(false)),
             AdmissionTaskOutcome::Failed(error) => Err(AdmissionConsumptionError::Ownership(error)),
-            // Activation used to run inline: retain its existing recovery and
-            // Reactor panic boundary rather than relabel it an admission error.
+            // Activation retains its own recovery and Reactor panic boundary.
             AdmissionTaskOutcome::Panicked(panic) => std::panic::resume_unwind(panic),
         }
     }
@@ -262,7 +259,6 @@ impl AdmissionConsumptionError {
 pub(super) struct AdmissionTaskResult {
     run_id: RunId,
     outcome: AdmissionTaskOutcome,
-
     _permit: Option<OwnedSemaphorePermit>,
 }
 

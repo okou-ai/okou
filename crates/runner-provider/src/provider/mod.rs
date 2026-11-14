@@ -39,7 +39,7 @@ pub enum CompletionReportTiming {
     AfterFinalization,
 }
 
-/// Independent local submission, carrying no remote acquisition protocol.
+/// Independent local submission discovered by its source.
 #[derive(Clone, Debug)]
 pub struct JobCandidate {
     run_id: RunId,

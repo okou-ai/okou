@@ -14,18 +14,18 @@ const template = {
   archiveBytes: 40 * 1024 * 1024,
 };
 
-describe("template guidance claim and retained context", () => {
-  it("accepts the dedicated envelope without defaulting fields for legacy claims", () => {
-    const legacy = executionContentBundlesSchema.parse({
+describe("template guidance execution and retained context", () => {
+  it("accepts template bundles while leaving optional fields absent when no template is selected", () => {
+    const withoutTemplates = executionContentBundlesSchema.parse({
       format: "tar-gzip-v1",
       skills: [],
     });
-    expect(legacy).not.toHaveProperty("templates");
-    const claimed = executionContentBundlesSchema.parse({
-      ...legacy,
+    expect(withoutTemplates).not.toHaveProperty("templates");
+    const execution = executionContentBundlesSchema.parse({
+      ...withoutTemplates,
       templates: [{ ...template, downloadUrl: "https://example.test/archive" }],
     });
-    expect(claimed.templates).toHaveLength(1);
+    expect(execution.templates).toHaveLength(1);
     expect(
       templateGuidanceBundleSchema.safeParse({
         sha256: template.sha256,
@@ -42,7 +42,7 @@ describe("template guidance claim and retained context", () => {
     }
   });
 
-  it("rejects writable or arbitrary-path template claims and credential-bearing URLs", () => {
+  it("rejects writable or arbitrary-path template bundles and credential-bearing URLs", () => {
     expect(
       storedTemplateGuidanceBundleSchema.safeParse({
         ...template,

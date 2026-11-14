@@ -12,7 +12,7 @@ const bdd = createBddApi(context);
 
 describe("Direct Run launch defaults", () => {
   it("pins the dispatch timezone and retains restrictions and identity with compact context", async () => {
-    mockEnv("APP_URL", "https://claim-defaults.example");
+    mockEnv("APP_URL", "https://execution-defaults.example");
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       await bdd.updateUserTimezone(owned.actor, "America/Los_Angeles");
@@ -28,7 +28,7 @@ describe("Direct Run launch defaults", () => {
         expect.arrayContaining(["CronCreate", "Skill(loop)"]),
       );
       expect(execution.platformEnvironment).toMatchObject({
-        OKOU_APP_URL: "https://claim-defaults.example",
+        OKOU_APP_URL: "https://execution-defaults.example",
         OKOU_AGENT_ID: owned.agentId,
         OKOU_CHAT_THREAD_ID: queued.threadId,
         OKOU_TOKEN: expect.any(String),
