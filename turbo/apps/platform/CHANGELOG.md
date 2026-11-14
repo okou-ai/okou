@@ -13,6 +13,23 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1132.0](https://github.com/okou-ai/okou/compare/app-v0.1131.1...app-v0.1132.0) (2026-11-14)
+
+
+### Features
+
+* **platform:** animate project folds within virtual chat windows ([#47172](https://github.com/okou-ai/okou/issues/47172)) ([3ebfc3c](https://github.com/okou-ai/okou/commit/3ebfc3ca70613d52bb1d432f7085d47f739ed86b))
+
+
+### Bug Fixes
+
+* **app:** preserve reading position across narrow sidebar reveals ([#47192](https://github.com/okou-ai/okou/issues/47192)) ([ff3b21b](https://github.com/okou-ai/okou/commit/ff3b21bd9fcc80758340cee0a3a048b9aaf85960))
+
+
+### Performance Improvements
+
+* **browser:** size screencast windows from sampled cdp latency ([#47191](https://github.com/okou-ai/okou/issues/47191)) ([8af86d9](https://github.com/okou-ai/okou/commit/8af86d99a0c521c2c43df969c901737b60a59ca2))
+
 ## [0.1131.1](https://github.com/okou-ai/okou/compare/app-v0.1131.0...app-v0.1131.1) (2026-11-14)
 
 

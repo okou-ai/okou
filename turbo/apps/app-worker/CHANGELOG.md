@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.189](https://github.com/okou-ai/okou/compare/app-worker-v1.10.188...app-worker-v1.10.189) (2026-11-14)
+
+
+### Bug Fixes
+
+* **app:** restore omby worker preview ingress ([#47222](https://github.com/okou-ai/okou/issues/47222)) ([fe51570](https://github.com/okou-ai/okou/commit/fe51570f9c71be958c5b070e70d720e7e5e83b36))
+
 ## [1.10.188](https://github.com/okou-ai/okou/compare/app-worker-v1.10.187...app-worker-v1.10.188) (2026-11-14)
 
 

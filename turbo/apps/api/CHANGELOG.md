@@ -10,6 +10,15 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.70.6](https://github.com/okou-ai/okou/compare/api-v2.70.5...api-v2.70.6) (2026-11-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.35.7
+
 ## [2.70.5](https://github.com/okou-ai/okou/compare/api-v2.70.4...api-v2.70.5) (2026-11-14)
 
 

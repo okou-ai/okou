@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.43.6](https://github.com/okou-ai/okou/compare/ios-v0.43.5...ios-v0.43.6) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** align list refresh triggers with web ([#47204](https://github.com/okou-ai/okou/issues/47204)) ([4aab60e](https://github.com/okou-ai/okou/commit/4aab60ea48ad722a76d781d9a637100206722abf))
+* **ios:** check collection publication after await ([#47208](https://github.com/okou-ai/okou/issues/47208)) ([b32c72b](https://github.com/okou-ai/okou/commit/b32c72b765f0127b998460407e951d07fa18cd22))
+
 ## [0.43.5](https://github.com/okou-ai/okou/compare/ios-v0.43.4...ios-v0.43.5) (2026-11-14)
 
 
