@@ -452,6 +452,317 @@ function installKeyboardChatGeometry(
   );
 }
 
+/** Model CSS hiding and the browser's native reveal reset, not application repair. */
+function installUtilitySidebarGeometry(container: HTMLElement, wide = false) {
+  const covered = () => {
+    return (
+      !wide &&
+      document.querySelector(
+        '[data-testid="chat-thread-sidebar-pane"][aria-hidden="false"]',
+      ) !== null
+    );
+  };
+  const geometry = installChatScrollGeometry(container, () => {
+    return covered() ? 0 : INITIAL_VIEWPORT_HEIGHT_PX;
+  });
+  Object.defineProperty(container, "clientWidth", {
+    configurable: true,
+    get: () => {
+      return wide ? 1280 : 390;
+    },
+  });
+  const descriptor = Object.getOwnPropertyDescriptor(container, "scrollTop");
+  if (!descriptor?.get || !descriptor.set) {
+    throw new Error("Expected controlled scroll geometry");
+  }
+  const read = descriptor.get;
+  const write = descriptor.set;
+  const writes: number[] = [];
+  Object.defineProperty(container, "scrollTop", {
+    configurable: true,
+    get: () => {
+      return read.call(container);
+    },
+    set: (top: number) => {
+      writes.push(top);
+      write.call(container, top);
+    },
+  });
+  Object.defineProperty(container, "scrollTo", {
+    configurable: true,
+    value: (options: ScrollToOptions | number, y?: number) => {
+      container.scrollTop =
+        typeof options === "number"
+          ? (y ?? container.scrollTop)
+          : (options.top ?? container.scrollTop);
+      fireEvent.scroll(container);
+      fireEvent(container, new Event("scrollend"));
+    },
+  });
+  let wasCovered = covered();
+  const observer = new MutationObserver(() => {
+    const isCovered = covered();
+    if (wasCovered && !isCovered) {
+      // Native layout updates do not go through JavaScript's scrollTop setter.
+      write.call(container, 0);
+      fireEvent.scroll(container);
+    }
+    wasCovered = isCovered;
+  });
+  observer.observe(document.body, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["aria-hidden"],
+    childList: true,
+  });
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      observer.disconnect();
+    },
+    { once: true },
+  );
+  return { ...geometry, writes };
+}
+
+function controlRevealFrames() {
+  let nextId = 0;
+  const callbacks = new Map<number, FrameRequestCallback>();
+  const request = vi
+    .spyOn(window, "requestAnimationFrame")
+    .mockImplementation((callback) => {
+      const id = ++nextId;
+      callbacks.set(id, callback);
+      return id;
+    });
+  const cancel = vi
+    .spyOn(window, "cancelAnimationFrame")
+    .mockImplementation((id) => {
+      callbacks.delete(id);
+    });
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      request.mockRestore();
+      cancel.mockRestore();
+    },
+    { once: true },
+  );
+  return {
+    paint: async () => {
+      await act(() => {
+        const frame = [...callbacks];
+        for (const [id, callback] of frame) {
+          if (callbacks.delete(id)) {
+            callback(performance.now());
+          }
+        }
+      });
+    },
+  };
+}
+
+async function openUtilityAutomations(): Promise<void> {
+  click(buttonByLabel("More actions"));
+  const menu = await screen.findByRole("menu");
+  const automations = queryAllByRoleFast("menuitem", menu).find((item) => {
+    return item.textContent?.trim() === "Automations";
+  });
+  if (!automations) {
+    throw new Error("Automations menu item not found");
+  }
+  click(automations);
+  await screen.findByRole("complementary", { name: "Automations" });
+}
+
+async function setupUtilitySidebarScroll(wide = false) {
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(min-width: 80rem)" && wide;
+  });
+  const conversation = mockMutableConversation(
+    THREAD_IDS.incomingHistory,
+    completedHistoryEvents(8),
+  );
+  const container = await openConversation(
+    THREAD_IDS.incomingHistory,
+    "History answer 8",
+  );
+  const geometry = installUtilitySidebarGeometry(container, wide);
+  scrollFromUser(container, 240);
+  await expectHistoryPositionHeld();
+  return { container, geometry, conversation };
+}
+
+test.each(["history", "tail", "history after tail"] as const)(
+  "Restore %s once after a narrow automation sidebar reveals the transcript",
+  async (position) => {
+    const { container, geometry } = await setupUtilitySidebarScroll();
+    if (position !== "history") {
+      scrollFromUser(container, geometry.bottomScrollTop());
+      fireEvent(container, new Event("scrollend"));
+    }
+    await waitFor(() => {
+      expect(queryButtonByLabel("Scroll to bottom") === null).toBe(
+        position !== "history",
+      );
+    });
+    // No scroll event: capture the latest rendered offset, not the last saved one.
+    if (position !== "tail") {
+      container.scrollTop = 275;
+    }
+    const readingId = anchorId(geometry.firstVisibleAnchor());
+    const anchorY = anchorById(container, readingId).getBoundingClientRect()
+      .top;
+    await openUtilityAutomations();
+    expect(container.clientWidth).toBe(390);
+    expect(container.clientHeight).toBe(0);
+    const frames = controlRevealFrames();
+    geometry.writes.length = 0;
+    click(buttonByLabel("Close automations"));
+    await waitFor(() => {
+      expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
+      expect(container.scrollTop).toBe(0);
+    });
+    await frames.paint();
+    expect(container.scrollTop).toBe(0);
+    expect(geometry.writes).toStrictEqual([]);
+    await frames.paint();
+    await waitFor(() => {
+      expect(anchorById(container, readingId).getBoundingClientRect().top).toBe(
+        anchorY,
+      );
+      expect(geometry.writes).toHaveLength(1);
+    });
+    await frames.paint();
+    expect(geometry.writes).toHaveLength(1);
+  },
+);
+
+test("Keep the wide transcript in place without reveal compensation", async () => {
+  const { container, geometry } = await setupUtilitySidebarScroll(true);
+  const initialTop = container.scrollTop;
+  const readingId = anchorId(geometry.firstVisibleAnchor());
+  const anchorY = anchorById(container, readingId).getBoundingClientRect().top;
+  await openUtilityAutomations();
+  expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
+  const frames = controlRevealFrames();
+  geometry.writes.length = 0;
+  click(buttonByLabel("Close automations"));
+  await frames.paint();
+  await frames.paint();
+  expect(container.scrollTop).toBe(initialTop);
+  expect(anchorById(container, readingId).getBoundingClientRect().top).toBe(
+    anchorY,
+  );
+  expect(geometry.writes).toStrictEqual([]);
+});
+
+test("Keep the pre-hide anchor when incoming messages arrive behind automations", async () => {
+  const { container, geometry, conversation } =
+    await setupUtilitySidebarScroll();
+  container.scrollTop = 275;
+  const readingId = anchorId(geometry.firstVisibleAnchor());
+  const anchorY = anchorById(container, readingId).getBoundingClientRect().top;
+  await openUtilityAutomations();
+  const frames = controlRevealFrames();
+  act(() => {
+    conversation.publish(completedTurn(9));
+  });
+  await screen.findByText("History answer 9");
+  geometry.writes.length = 0;
+  click(buttonByLabel("Close automations"));
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(0);
+  });
+  await frames.paint();
+  await frames.paint();
+  await waitFor(() => {
+    expect(anchorById(container, readingId).getBoundingClientRect().top).toBe(
+      anchorY,
+    );
+    expect(geometry.writes).toStrictEqual([container.scrollTop]);
+  });
+});
+
+test("Reopening automations cancels the first reveal and restores only the final close", async () => {
+  const { container, geometry } = await setupUtilitySidebarScroll();
+  container.scrollTop = 275;
+  const readingId = anchorId(geometry.firstVisibleAnchor());
+  const anchorY = anchorById(container, readingId).getBoundingClientRect().top;
+  await openUtilityAutomations();
+  const frames = controlRevealFrames();
+  geometry.writes.length = 0;
+  click(buttonByLabel("Close automations"));
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(0);
+  });
+  await frames.paint();
+  await openUtilityAutomations();
+  await frames.paint();
+  expect(container.clientHeight).toBe(0);
+  expect(geometry.writes).toStrictEqual([]);
+  click(buttonByLabel("Close automations"));
+  await waitFor(() => {
+    expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
+  });
+  await frames.paint();
+  expect(container.scrollTop).toBe(0);
+  await frames.paint();
+  await waitFor(() => {
+    expect(anchorById(container, readingId).getBoundingClientRect().top).toBe(
+      anchorY,
+    );
+    expect(geometry.writes).toStrictEqual([container.scrollTop]);
+  });
+});
+
+test.each(["wheel", "touchmove", "pointerdown", "keydown"] as const)(
+  "Reader %s input takes over before the narrow sidebar reveal finishes",
+  async (input) => {
+    const { container, geometry } = await setupUtilitySidebarScroll();
+    await openUtilityAutomations();
+    const frames = controlRevealFrames();
+    click(buttonByLabel("Close automations"));
+    await waitFor(() => {
+      expect(container.scrollTop).toBe(0);
+    });
+    await frames.paint();
+    if (input === "keydown") {
+      fireEvent.keyDown(container, { key: "PageDown" });
+    } else if (input === "wheel") {
+      fireEvent.wheel(container, { deltaY: 125 });
+    } else if (input === "pointerdown") {
+      fireEvent.pointerDown(container);
+    } else {
+      fireEvent.touchMove(container);
+    }
+    scrollFromUser(container, 125);
+    geometry.writes.length = 0;
+    await frames.paint();
+    expect(container.scrollTop).toBe(125);
+    expect(geometry.writes).toStrictEqual([]);
+  },
+);
+
+test("A reader jump to the latest message wins over pending sidebar restoration", async () => {
+  const { container, geometry } = await setupUtilitySidebarScroll();
+  await openUtilityAutomations();
+  const frames = controlRevealFrames();
+  click(buttonByLabel("Close automations"));
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(0);
+  });
+  await frames.paint();
+  click(buttonByLabel("Scroll to bottom"));
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  });
+  geometry.writes.length = 0;
+  await frames.paint();
+  expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  expect(geometry.writes).toStrictEqual([]);
+});
+
 test.each(["tail", "history"])(
   "Keep %s through PWA keyboard cycles",
   async (position) => {

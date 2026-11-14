@@ -3971,6 +3971,8 @@ function publicChatThreadScrollSignals(scroll: ChatThreadScrollSignals) {
     scrollToBottom$: scroll.scrollToBottom$,
     restoreScrollPosition$: scroll.restoreScrollPosition$,
     restoreScrollPositionForLayout$: scroll.restoreScrollPositionForLayout$,
+    preserveHiddenLayout$: scroll.preserveHiddenLayout$,
+    restoreHiddenLayout$: scroll.restoreHiddenLayout$,
   };
 }
 

@@ -13,7 +13,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   click,
@@ -256,6 +256,167 @@ async function openList() {
   return await screen.findByRole("dialog", { name: "Emails" });
 }
 
+function installNarrowMailScrollGeometry(container: HTMLElement) {
+  const anchors = () => {
+    return Array.from(
+      container.querySelectorAll<HTMLElement>(
+        "[data-chat-scroll-anchor-event-id]",
+      ),
+    );
+  };
+  const covered = () => {
+    return (
+      document.querySelector(
+        '[data-testid="chat-thread-sidebar-pane"][aria-hidden="false"]',
+      ) !== null
+    );
+  };
+  const rect = (top: number, height: number): DOMRect => {
+    return {
+      top,
+      bottom: top + height,
+      left: 0,
+      right: 390,
+      x: 0,
+      y: top,
+      width: 390,
+      height,
+      toJSON: () => {
+        return {};
+      },
+    };
+  };
+  let scrollTop = 0;
+  const writes: number[] = [];
+  Object.defineProperties(container, {
+    clientWidth: {
+      configurable: true,
+      get: () => {
+        return 390;
+      },
+    },
+    clientHeight: {
+      configurable: true,
+      get: () => {
+        return covered() ? 0 : 300;
+      },
+    },
+    scrollHeight: {
+      configurable: true,
+      get: () => {
+        return anchors().length * 400 + 100;
+      },
+    },
+    scrollTop: {
+      configurable: true,
+      get: () => {
+        return scrollTop;
+      },
+      set: (top: number) => {
+        writes.push(top);
+        scrollTop = top;
+      },
+    },
+    scrollTo: {
+      configurable: true,
+      value: (options: ScrollToOptions | number, y?: number) => {
+        container.scrollTop =
+          typeof options === "number"
+            ? (y ?? scrollTop)
+            : (options.top ?? scrollTop);
+        fireEvent.scroll(container);
+        fireEvent(container, new Event("scrollend"));
+      },
+    },
+  });
+  const originalRect = HTMLElement.prototype.getBoundingClientRect;
+  const bounds = vi
+    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+    .mockImplementation(function (this: HTMLElement) {
+      if (this === container) {
+        return rect(0, container.clientHeight);
+      }
+      const index = anchors().indexOf(this);
+      return index === -1
+        ? originalRect.call(this)
+        : rect(index * 400 - scrollTop, 380);
+    });
+  let wasCovered = covered();
+  const observer = new MutationObserver(() => {
+    const isCovered = covered();
+    if (wasCovered && !isCovered) {
+      // Native layout reset bypasses the JavaScript setter/application writes.
+      scrollTop = 0;
+      fireEvent.scroll(container);
+    }
+    wasCovered = isCovered;
+  });
+  observer.observe(document.body, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["aria-hidden"],
+    childList: true,
+  });
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      observer.disconnect();
+      bounds.mockRestore();
+    },
+    { once: true },
+  );
+  return {
+    writes,
+    readingAnchor: () => {
+      const anchor = anchors().find((candidate) => {
+        const bounds = candidate.getBoundingClientRect();
+        return bounds.bottom > 0 && bounds.top < container.clientHeight;
+      });
+      if (!anchor) {
+        throw new Error("Missing visible transcript anchor");
+      }
+      return anchor;
+    },
+  };
+}
+
+function controlMailRevealFrames() {
+  let nextId = 0;
+  const callbacks = new Map<number, FrameRequestCallback>();
+  const request = vi
+    .spyOn(window, "requestAnimationFrame")
+    .mockImplementation((callback) => {
+      const id = ++nextId;
+      callbacks.set(id, callback);
+      return id;
+    });
+  const cancel = vi
+    .spyOn(window, "cancelAnimationFrame")
+    .mockImplementation((id) => {
+      callbacks.delete(id);
+    });
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      request.mockRestore();
+      cancel.mockRestore();
+    },
+    { once: true },
+  );
+  return {
+    paint: async () => {
+      await act(() => {
+        const frame = [...callbacks];
+        for (const [id, callback] of frame) {
+          if (callbacks.delete(id)) {
+            callback(performance.now());
+          }
+        }
+      });
+    },
+  };
+}
+
 describe("thread email manager", () => {
   it("opens an empty state for a thread without email", async () => {
     installMails(0);
@@ -468,6 +629,73 @@ describe("thread email manager", () => {
     expect(
       within(returned).getByLabelText("Select email: Proposal 1"),
     ).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("restores the narrow transcript anchor once after two frames on each browser Back from mail detail", async () => {
+    context.mocks.browser.matchMedia(() => {
+      return false;
+    });
+    installMails(2);
+    await openChat();
+    const container = document.querySelector<HTMLElement>(
+      "[data-scroll-container]",
+    );
+    if (!container) {
+      throw new Error("Missing transcript scroll viewport");
+    }
+    const geometry = installNarrowMailScrollGeometry(container);
+    container.scrollTop = 240;
+    fireEvent.scroll(container);
+    click(await button("Manage emails"));
+    const list = await screen.findByRole("dialog", { name: "Emails" });
+    await link("Open email: Proposal 2", list);
+    // Capture the live semantic offset, not the last scroll-event snapshot.
+    container.scrollTop = 275;
+    let anchor = geometry.readingAnchor();
+    let anchorY = anchor.getBoundingClientRect().top;
+    click(await link("Open email: Proposal 2", list));
+    await screen.findByText("Proposal details 2");
+    expect(container.clientWidth).toBe(390);
+    expect(container.clientHeight).toBe(0);
+    const frames = controlMailRevealFrames();
+
+    for (const top of [275, 475]) {
+      geometry.writes.length = 0;
+      act(() => {
+        window.history.back();
+      });
+      await screen.findByRole("dialog", { name: "Emails" });
+      await waitFor(() => {
+        expect(container.clientHeight).toBe(300);
+        expect(container.scrollTop).toBe(0);
+      });
+      await frames.paint();
+      expect(container.scrollTop).toBe(0);
+      expect(geometry.writes).toStrictEqual([]);
+      await frames.paint();
+      await waitFor(() => {
+        expect(container.scrollTop).toBe(top);
+        expect(anchor).toBeInTheDocument();
+        expect(anchor.getBoundingClientRect().top).toBe(anchorY);
+        expect(geometry.writes).toStrictEqual([top]);
+      });
+      await frames.paint();
+      expect(geometry.writes).toStrictEqual([top]);
+
+      if (top === 275) {
+        // Forward must capture again, without stale protection from the reveal.
+        container.scrollTop = 475;
+        anchor = geometry.readingAnchor();
+        anchorY = anchor.getBoundingClientRect().top;
+        act(() => {
+          window.history.forward();
+        });
+        await screen.findByText("Proposal details 2");
+        await frames.paint();
+        await frames.paint();
+      }
+      expect(container.clientHeight).toBe(top === 275 ? 0 : 300);
+    }
   });
 
   it("leaves modified email-link activation to the browser", async () => {

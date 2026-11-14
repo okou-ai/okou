@@ -27,6 +27,10 @@ import { detach, Reason, resetSignal } from "../utils.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { refreshWorkspaceLayout$ } from "./workspace-layout.ts";
 import {
+  prepareNarrowSidebarScroll$,
+  restoreNarrowSidebarScroll$,
+} from "./chat-layout.ts";
+import {
   createMarkdownPreviewTree,
   type MarkdownPreviewTreeComputed,
 } from "../markdown-preview-tree.ts";
@@ -266,6 +270,15 @@ export interface ThreadSidebarSignals {
   readonly selectedArtifactMarkdownTree$: MarkdownPreviewTreeComputed;
 }
 
+const refreshClosedLayout$ = command(
+  async ({ set }, signal: AbortSignal): Promise<void> => {
+    await Promise.all([
+      set(restoreNarrowSidebarScroll$, signal),
+      set(refreshWorkspaceLayout$, signal),
+    ]);
+  },
+);
+
 function createThreadSidebarSessionSignals(dispose$: Command<void, []>) {
   const resetSidebarSessionSignal$ = resetSignal();
   const startSession$ = command(({ set }, signal: AbortSignal): AbortSignal => {
@@ -354,6 +367,7 @@ export function createThreadSidebarSignals(
 
   const publishTarget$ = command(
     ({ get, set }, target: NonMailThreadSidebarTarget): void => {
+      set(prepareNarrowSidebarScroll$);
       if (get(internalTarget$) === null) {
         set(internalAnimateEntry$, get(internalEntryAnimationsEnabled$));
       }
@@ -418,11 +432,7 @@ export function createThreadSidebarSignals(
     set(internalFullscreen$, false);
     set(automationEditor.setEditingAutomation$, null);
     set(imageCanvas.reset$);
-    detach(set(refreshWorkspaceLayout$, get(pageSignal$)), Reason.DomCallback);
-  });
-  const close$ = command(({ set }) => {
-    set(dismiss$);
-    set(closeThreadMailLocation$, threadId);
+    detach(set(refreshClosedLayout$, get(pageSignal$)), Reason.DomCallback);
   });
 
   return {
@@ -430,7 +440,10 @@ export function createThreadSidebarSignals(
     open$,
     openCatalogArtifact$,
     openAttachment$,
-    close$,
+    close$: command(({ set }) => {
+      set(dismiss$);
+      set(closeThreadMailLocation$, threadId);
+    }),
     dismiss$,
     animateEntry$: computed((get) => {
       const location = get(threadMailLocation$);
