@@ -18,10 +18,6 @@ export function PwaScrollDiagnostics() {
   const { t } = useTranslation();
   const ref = useSet(pwaScrollDiagnosticsOnRef$);
   const status = useGet(pwaScrollDiagnosticsStatus$);
-  const output = useGet(pwaScrollDiagnosticsOutput$);
-  const summary = useGet(pwaScrollDiagnosticsSummary$);
-  const page = useGet(pwaScrollDiagnosticsPage$);
-  const pages = useGet(pwaScrollDiagnosticsPageCount$);
   const start = useSet(startPwaScrollDiagnostics$);
   const mark = useSet(markPwaScrollDiagnostics$);
   const stop = useSet(stopPwaScrollDiagnostics$);
@@ -104,53 +100,66 @@ export function PwaScrollDiagnostics() {
           })}
         </button>
       </div>
-      {!recording && output && (
-        <div className="mt-2 flex max-h-[60dvh] w-80 max-w-full flex-col gap-1 overflow-y-auto">
-          <p>
-            {t(($) => {
-              return $.pwaScrollDiagnostics.notice;
-            })}
-          </p>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              disabled={page === 0}
-              onClick={() => {
-                return read(-1);
-              }}
-            >
-              {t(($) => {
-                return $.featureGuide.previous;
-              })}
-            </button>
-            <span>
-              {page + 1}/{pages}
-            </span>
-            <button
-              type="button"
-              disabled={page + 1 >= pages}
-              onClick={() => {
-                return read(1);
-              }}
-            >
-              {t(($) => {
-                return $.featureGuide.next;
-              })}
-            </button>
-          </div>
-          <pre className="whitespace-pre-wrap break-all font-mono text-[10px]">
-            {summary}
-          </pre>
-          <textarea
-            aria-label={t(($) => {
-              return $.pwaScrollDiagnostics.stoppedJson;
-            })}
-            readOnly
-            value={output}
-            className="h-24 w-full resize-none border border-border bg-background font-mono text-[10px]"
-          />
-        </div>
-      )}
+      {!recording && <PwaScrollReadout />}
     </section>
+  );
+}
+
+function PwaScrollReadout() {
+  const { t } = useTranslation();
+  const output = useGet(pwaScrollDiagnosticsOutput$);
+  const summary = useGet(pwaScrollDiagnosticsSummary$);
+  const page = useGet(pwaScrollDiagnosticsPage$);
+  const pages = useGet(pwaScrollDiagnosticsPageCount$);
+  const read = useSet(readPwaScrollDiagnostics$);
+  if (!output) {
+    return null;
+  }
+  return (
+    <div className="mt-2 flex max-h-[60dvh] w-80 max-w-full flex-col gap-1 overflow-y-auto">
+      <p>
+        {t(($) => {
+          return $.pwaScrollDiagnostics.notice;
+        })}
+      </p>
+      <div className="flex gap-3">
+        <button
+          type="button"
+          disabled={page === 0}
+          onClick={() => {
+            return read(-1);
+          }}
+        >
+          {t(($) => {
+            return $.featureGuide.previous;
+          })}
+        </button>
+        <span>
+          {page + 1}/{pages}
+        </span>
+        <button
+          type="button"
+          disabled={page + 1 >= pages}
+          onClick={() => {
+            return read(1);
+          }}
+        >
+          {t(($) => {
+            return $.featureGuide.next;
+          })}
+        </button>
+      </div>
+      <pre className="whitespace-pre-wrap break-all font-mono text-[10px]">
+        {summary}
+      </pre>
+      <textarea
+        aria-label={t(($) => {
+          return $.pwaScrollDiagnostics.stoppedJson;
+        })}
+        readOnly
+        value={output}
+        className="h-24 w-full resize-none border border-border bg-background font-mono text-[10px]"
+      />
+    </div>
   );
 }
