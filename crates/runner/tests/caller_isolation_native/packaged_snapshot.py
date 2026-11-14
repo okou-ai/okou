@@ -127,61 +127,64 @@ def run(out):
     def interrupted(number, _frame):
         raise InterruptedError(number)
 
-    previous = {s: signal.signal(s, interrupted) for s in SIGNALS}
-    first, second = out / "fresh.api", out / "restored.api"
-    state, memory = out / "snapshot.state", out / "snapshot.memory"
-    try:
-        with owned(
-            [
-                str(out / "firecracker"),
-                "--api-sock",
-                str(first),
-                "--config-file",
-                str(out / "vm.json"),
-            ],
-            receipt,
-        ) as child:
-            stream(child, barrier=True)
-            ready(first)
-            api(first, "/vm", {"state": "Paused"}, method="PATCH")
-            api(
-                first,
-                "/snapshot/create",
-                {
-                    "snapshot_type": "Full",
-                    "snapshot_path": str(state),
-                    "mem_file_path": str(memory),
-                },
-            )
-        receipt["snapshot"] = {"state": identity(state), "memory": identity(memory)}
-        with owned(
-            [str(out / "firecracker"), "--api-sock", str(second)], receipt
-        ) as child:
-            ready(second)
-            api(
-                second,
-                "/snapshot/load",
-                {
-                    "snapshot_path": str(state),
-                    "mem_backend": {
-                        "backend_type": "File",
-                        "backend_path": str(memory),
+    with contextlib.ExitStack() as signal_cleanup:
+        for number in SIGNALS:
+            signal_cleanup.callback(signal.signal, number, signal.getsignal(number))
+            signal.signal(number, interrupted)
+        first, second = out / "fresh.api", out / "restored.api"
+        state, memory = out / "snapshot.state", out / "snapshot.memory"
+        try:
+            with owned(
+                [
+                    str(out / "firecracker"),
+                    "--api-sock",
+                    str(first),
+                    "--config-file",
+                    str(out / "vm.json"),
+                ],
+                receipt,
+            ) as child:
+                stream(child, barrier=True)
+                ready(first)
+                api(first, "/vm", {"state": "Paused"}, method="PATCH")
+                api(
+                    first,
+                    "/snapshot/create",
+                    {
+                        "snapshot_type": "Full",
+                        "snapshot_path": str(state),
+                        "mem_file_path": str(memory),
                     },
-                    "resume_vm": False,
-                },
+                )
+            receipt["snapshot"] = {"state": identity(state), "memory": identity(memory)}
+            with owned(
+                [str(out / "firecracker"), "--api-sock", str(second)], receipt
+            ) as child:
+                ready(second)
+                api(
+                    second,
+                    "/snapshot/load",
+                    {
+                        "snapshot_path": str(state),
+                        "mem_backend": {
+                            "backend_type": "File",
+                            "backend_path": str(memory),
+                        },
+                        "resume_vm": False,
+                    },
+                )
+                api(second, "/vm", {"state": "Resumed"}, method="PATCH")
+                child.stdin.write(b"restored\n")
+                child.stdin.flush()
+                stream(child)
+            receipt["result"] = "restored_and_joined"
+        except BaseException as error:
+            receipt["error"] = str(error)
+            raise
+        finally:
+            (out / "snapshot-receipt.json").write_text(
+                json.dumps(receipt, indent=2) + "\n"
             )
-            api(second, "/vm", {"state": "Resumed"}, method="PATCH")
-            child.stdin.write(b"restored\n")
-            child.stdin.flush()
-            stream(child)
-        receipt["result"] = "restored_and_joined"
-    except BaseException as error:
-        receipt["error"] = str(error)
-        raise
-    finally:
-        (out / "snapshot-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
-        for number, handler in previous.items():
-            signal.signal(number, handler)
 
 
 if __name__ == "__main__":

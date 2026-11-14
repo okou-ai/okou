@@ -1,6 +1,7 @@
 import concurrent.futures
 import contextlib
 import copy
+import errno
 import http.client
 import io
 import json
@@ -22,6 +23,75 @@ import packaged_guest
 import packaged_run as fixture
 import packaged_snapshot
 import test_fixture as primitive_tests
+
+
+class ControllerResourceOwnershipTest(unittest.TestCase):
+    def test_selector_registration_failure_retires_selector_and_actual_child(self):
+        original_selector = fixture.selectors.DefaultSelector
+        observed = []
+        failure = OSError(errno.ENOSPC, "selector registration failed")
+
+        class FailingSelector(original_selector):
+            def __init__(self):
+                super().__init__()
+                observed.append((self, self.fileno()))
+
+            def register(self, *args, **kwargs):
+                super().register(*args, **kwargs)
+                raise failure
+
+        receipt = {}
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                with patch.object(
+                    fixture.selectors, "DefaultSelector", FailingSelector
+                ):
+                    with self.assertRaises(OSError) as raised:
+                        fixture.vm(
+                            [sys.executable, "-c", "import signal; signal.pause()"],
+                            Path(directory) / "console.log",
+                            receipt,
+                            timeout=5,
+                        )
+                self.assertIs(raised.exception, failure)
+                self.assertEqual(receipt["cleanup"], "vmm_joined")
+                with self.assertRaises(ChildProcessError):
+                    os.waitpid(receipt["vmmPid"], os.WNOHANG)
+                self.assertEqual(len(observed), 1)
+                with self.assertRaises(OSError) as closed:
+                    os.fstat(observed[0][1])
+                self.assertEqual(closed.exception.errno, errno.EBADF)
+        finally:
+            for selector, _ in observed:
+                selector.close()
+
+    def test_snapshot_receipt_failure_restores_original_signal_handlers(self):
+        previous = {sig: signal.getsignal(sig) for sig in packaged_snapshot.SIGNALS}
+        failure = OSError(errno.EIO, "snapshot receipt persistence failed")
+        original_write = Path.write_text
+
+        def write_receipt(path, *args, **kwargs):
+            if path.name == "snapshot-receipt.json":
+                raise failure
+            return original_write(path, *args, **kwargs)
+
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                with (
+                    io.BytesIO() as raw,
+                    io.TextIOWrapper(raw) as output,
+                    contextlib.redirect_stdout(output),
+                    patch.object(Path, "write_text", write_receipt),
+                ):
+                    with self.assertRaises(OSError) as raised:
+                        packaged_snapshot.run(Path(directory))
+                self.assertIs(raised.exception, failure)
+                self.assertEqual(
+                    {sig: signal.getsignal(sig) for sig in previous}, previous
+                )
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
 
 
 class GatewayHttpTest(unittest.TestCase):
