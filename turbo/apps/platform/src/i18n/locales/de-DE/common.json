@@ -1408,7 +1408,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "URL eingeben",
     "authorizationRequired": "Cloud-Browser ist für diesen Chat nicht aktiviert",
     "blankPage": {
       "description": "{{assistantName}} öffnet hier Seiten, während es arbeitet. Gib oben eine URL ein, um selbst zu surfen.",
@@ -1452,6 +1451,7 @@
     "address": "Adresse",
     "addressOpening": "Eine Seite wird noch geöffnet. Versuche es gleich noch einmal.",
     "addressPreparing": "Der Browser ist noch nicht bereit. Versuche es gleich noch einmal.",
+    "addressSearchPlaceholder": "Adresse oder Suchbegriff eingeben",
     "allTabs": "Alle Tabs",
     "automatic": "Automatisch",
     "back": "Zurück",
@@ -1476,6 +1476,7 @@
     "liveView": "Live-Browseransicht",
     "newTab": "Neuer Tab",
     "noTabs": "Keine Tabs geöffnet",
+    "openAddress": "Adresse öffnen",
     "operationFailed": "Die Browseraktion konnte nicht abgeschlossen werden. Prüfe den Browser, bevor du es erneut versuchst.",
     "paused": "Ansicht pausiert",
     "quality": "Bildqualität",
@@ -1490,6 +1491,7 @@
     "remoteInput": "Remote-Browsereingabe",
     "resolution": "Auflösung",
     "retryImage": "Live-Bild erneut versuchen",
+    "searchGoogle": "Mit Google suchen",
     "settings": "Browsereinstellungen",
     "sharedTransport": "Gemeinsame Verbindung",
     "sizeInitial": "Beim Verbinden",
@@ -2488,9 +2490,7 @@
       "copyFailed": "Der Link konnte nicht kopiert werden",
       "create": "Teilen",
       "createFailed": "Die geteilte Unterhaltung konnte nicht erstellt werden.",
-      "createLink": "Link erstellen",
       "deselectGroup": "Nachrichtengruppe abwählen",
-      "deselectMessage": "Nachricht abwählen",
       "everyone": "Alle",
       "linkCopied": "Link kopiert",
       "messageShareFailed": "Der geteilte Link konnte nicht erstellt werden.",
@@ -2498,8 +2498,6 @@
       "selectedCount_one": "{{count}} ausgewählt",
       "selectedCount_other": "{{count}} ausgewählt",
       "selectGroup": "Nachrichtengruppe auswählen",
-      "selectMessage": "Nachricht auswählen",
-      "selectMessages": "Nachrichten auswählen…",
       "shareLink": "Link zur geteilten Unterhaltung",
       "start": "Nachrichten teilen",
       "tooLarge": "Wähle weniger Nachrichten zum Teilen aus",
@@ -2770,6 +2768,11 @@
       "ideasLabel": "Ideen zum Einstieg",
       "label": "Aufgaben zum Einstieg",
       "more": "Mehr",
+      "presentationFormat": "Präsentationsformat",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "Präsentationsvorlagen",
       "removeTask": "{{task}} entfernen",
       "shelf": {

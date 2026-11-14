@@ -1,8 +1,3 @@
-import { chatShareSelectionContract } from "@okouai/api-contracts/contracts/chat-share-selection";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
-import { readChatShareSelection$ } from "../services/chat-share-selection.service";
 import { sharedThreadVisibilityContract } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import {
   readSharedThreadVisibility$,
@@ -65,7 +60,7 @@ const createSharedThreadResponse$ = command(
     { get, set },
     body: Pick<
       CreateSharedThreadArgs,
-      "threadId" | "eventIds" | "id" | "audience" | "strictSelection"
+      "threadId" | "eventIds" | "id" | "audience"
     >,
     signal: AbortSignal,
   ) => {
@@ -79,7 +74,6 @@ const createSharedThreadResponse$ = command(
         userId: auth.userId,
         threadId: body.threadId,
         eventIds: body.eventIds,
-        ...(body.strictSelection ? { strictSelection: true } : {}),
         ...(body.audience === undefined ? {} : { audience: body.audience }),
         ...(body.id === undefined ? {} : { id: body.id }),
         canReadAttachments:
@@ -104,11 +98,6 @@ const createSharedThreadResponse$ = command(
     if (result.kind === "artifact-unavailable") {
       return badRequestMessage(
         "A selected artifact or hosted dependency is unavailable for sharing",
-      );
-    }
-    if (result.kind === "selection-changed") {
-      return conflict(
-        "Selected messages changed. Review your selection and try again.",
       );
     }
     if (result.kind === "id-conflict") {
@@ -151,85 +140,6 @@ const createVisibleSharedThreadInner$ = command(
           signal,
         )
       : parsed.response;
-  },
-);
-
-const shareSelectionContext$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      auth.orgId,
-      auth.userId,
-      signal,
-    );
-    if (!isFeatureEnabled(FeatureSwitchKey.ChatSharingSelection, features)) {
-      return null;
-    }
-    return { orgId: auth.orgId, userId: auth.userId };
-  },
-);
-
-const getShareSelection$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    set(setResHeader$, "Cache-Control", "private, no-store");
-    const auth = await set(shareSelectionContext$, signal);
-    if (!auth) {
-      return notFound("Chat sharing selection not available");
-    }
-    const selection = await set(
-      readChatShareSelection$,
-      {
-        ...auth,
-        ...get(pathParamsOf(chatShareSelectionContract.get)),
-      },
-      signal,
-    );
-    return selection
-      ? { status: 200 as const, body: selection }
-      : notFound("Chat thread not found");
-  },
-);
-
-const createSelectedShare$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = await set(shareSelectionContext$, signal);
-    if (!auth) {
-      return notFound("Chat sharing selection not available");
-    }
-    const parsed = await get(bodyResultOf(chatShareSelectionContract.create));
-    signal.throwIfAborted();
-    if (!parsed.ok) {
-      return parsed.response;
-    }
-    const params = get(pathParamsOf(chatShareSelectionContract.create));
-    const selection = await set(
-      readChatShareSelection$,
-      { ...auth, ...params },
-      signal,
-    );
-    if (!selection) {
-      return notFound("Chat thread not found");
-    }
-    const valid = new Set(
-      selection.messages.map((message) => {
-        return message.eventId;
-      }),
-    );
-    if (
-      parsed.data.eventIds.some((id) => {
-        return !valid.has(id);
-      })
-    ) {
-      return conflict(
-        "Selected messages changed. Review your selection and try again.",
-      );
-    }
-    return await set(
-      createSharedThreadResponse$,
-      { ...params, ...parsed.data, strictSelection: true },
-      signal,
-    );
   },
 );
 
@@ -345,28 +255,6 @@ const visibilityOwnerAuth = {
 } as const;
 
 export const sharedThreadRoutes: readonly RouteEntry[] = [
-  {
-    route: chatShareSelectionContract.get,
-    handler: authRoute(
-      {
-        requireOrganization: true,
-        missingOrganizationStatus: 401,
-        requiredCapability: "chat-event:read",
-      },
-      getShareSelection$,
-    ),
-  },
-  {
-    route: chatShareSelectionContract.create,
-    handler: authRoute(
-      {
-        requireOrganization: true,
-        missingOrganizationStatus: 401,
-        requiredCapability: "chat-event:read",
-      },
-      createSelectedShare$,
-    ),
-  },
   {
     route: sharedThreadVisibilityContract.create,
     handler: authRoute(

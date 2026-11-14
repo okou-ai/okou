@@ -5,7 +5,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { browserOwnerProfiles } from "../src/schema/browser-owner";
 import { browserChatSessions } from "../src/schema/browser-chat-session";
-import { browserSessionScreenshotDeletions } from "../src/schema/browser-session";
+import { browserSessionScreenshotDeletions } from "../src/schema/browser-screenshot-deletion";
 
 /** Current schema integrity; caller-level concurrency lives in Runner route tests. */
 export async function validatePermanentBrowserOwnerStorage(

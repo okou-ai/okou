@@ -1,7 +1,7 @@
 use super::*;
 
 #[tokio::test]
-async fn supplied_publication_binds_api_controls_and_completion_without_claim_or_claim_timing() {
+async fn supplied_publication_binds_run_scoped_controls_and_completion() {
     let run_id = RunId::new_v4();
     let mut server = RawHttpTestServer::spawn(vec![
         RawHttpAction::Respond(json_response(
@@ -11,13 +11,9 @@ async fn supplied_publication_binds_api_controls_and_completion_without_claim_or
         RawHttpAction::Respond(http_response("204 No Content", b"")),
     ])
     .await;
-    let provider = api_provider_for_test(
-        server.url(),
-        CancellationToken::new(),
-        Arc::new(PollWakeups::new(false)),
-    );
+    let provider = api_provider_for_test(server.url(), CancellationToken::new());
     let registration = provider.cancel_tokens.register(run_id).await.unwrap();
-    let mut publication: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+    let mut publication: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
     publication["runId"] = serde_json::json!(run_id);
     publication["reuseKey"] = serde_json::json!("thread:supplied");
     publication["sandboxToken"] = serde_json::json!("supplied-run-token");
@@ -27,7 +23,6 @@ async fn supplied_publication_binds_api_controls_and_completion_without_claim_or
         "shared content normalization is required on supplied work"
     );
     let claimed = provider.bind_supplied(context).await.unwrap();
-    assert!(claimed.api_claim_timing().is_none());
     assert!(matches!(
         claimed.active_input_source(),
         Some(ActiveInputSource::Api(_))
@@ -67,4 +62,44 @@ async fn supplied_publication_binds_api_controls_and_completion_without_claim_or
     registration.unregister().await;
     provider.shutdown().await;
     server.assert_finished().await;
+}
+
+#[tokio::test]
+async fn supplied_runs_keep_distinct_completion_authority_when_settled_in_reverse_order() {
+    let server = MockServer::start_async().await;
+    let provider = api_provider_for_test(server.base_url(), CancellationToken::new());
+    assert!(provider.clone().local_source().is_none());
+    let mut jobs = Vec::new();
+    let mut mocks = Vec::new();
+    for token in ["first-publication-token", "second-publication-token"] {
+        let run_id = RunId::new_v4();
+        let mut publication: Value =
+            serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
+        publication["runId"] = serde_json::json!(run_id);
+        publication["sandboxToken"] = serde_json::json!(token);
+        let context =
+            decode_execution_publication(&serde_json::to_vec(&publication).unwrap()).unwrap();
+        let job = provider.bind_supplied(context).await.unwrap();
+        mocks.push(
+            server
+                .mock_async(|when, then| {
+                    when.method(POST)
+                        .path("/api/webhooks/agent/complete")
+                        .header("authorization", format!("Bearer {token}"))
+                        .body_includes(format!("\"runId\":\"{run_id}\""));
+                    then.status(204);
+                })
+                .await,
+        );
+        jobs.push((run_id, job));
+    }
+    for (run_id, job) in jobs.into_iter().rev() {
+        let (_, authority, source) = job.into_parts();
+        drop(source);
+        provider.complete(complete_request(run_id), authority).await;
+    }
+    for mock in mocks {
+        mock.assert_calls_async(1).await;
+    }
+    provider.shutdown().await;
 }

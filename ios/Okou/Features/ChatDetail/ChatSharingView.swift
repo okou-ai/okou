@@ -15,39 +15,73 @@ struct ChatSharingFooter: View {
         Text("Only selected messages are included").font(.okou(.caption))
           .foregroundStyle(OkouColor.mutedForeground)
         Spacer()
-        Button("Clear") { sharing.clear() }.disabled(sharing.isBusy)
-          .font(.okou(.footnote))
+        if sharing.visibility == nil {
+          Button {
+            sharing.clear()
+          } label: {
+            Text("Clear").font(.okou(.footnote))
+              .frame(minWidth: OkouControl.minimumTarget, minHeight: OkouControl.minimumTarget)
+              .contentShape(Rectangle())
+          }
+          .disabled(sharing.isBusy)
+        }
       }
       HStack {
-        Menu {
-          Button("Anyone with the link", okouSymbol: "globe") { sharing.audience = .public }
-          Button("People in this workspace", okouSymbol: "users") {
-            sharing.audience = .organization
+        if sharing.visibility != nil {
+          Button {
+            sharing.showsCreatedLink = true
+          } label: {
+            Text("Manage link").font(.okou(.callout))
+              .frame(minHeight: OkouControl.minimumTarget)
+              .contentShape(Rectangle())
           }
-          if sharing.audience == .private {
+          Spacer()
+          if let link = sharing.link {
+            Button {
+              UIPasteboard.general.url = link
+            } label: {
+              Label("Copy link", okouSymbol: "copy")
+                .frame(minHeight: OkouControl.minimumTarget)
+                .contentShape(Rectangle())
+            }
+            ShareLink(item: link) {
+              Label("Share…", okouSymbol: "share")
+                .frame(minHeight: OkouControl.minimumTarget)
+                .contentShape(Rectangle())
+            }
+          }
+        } else {
+          Menu {
+            Button("Anyone with the link", okouSymbol: "globe") { sharing.audience = .public }
+            Button("People in this workspace", okouSymbol: "users") {
+              sharing.audience = .organization
+            }
             Button("Only me", okouSymbol: "lock") { sharing.audience = .private }
+          } label: {
+            Label(audienceLabel, okouSymbol: audienceSymbol)
+              .font(.okou(.callout))
+              .frame(minHeight: OkouControl.minimumTarget)
           }
-        } label: {
-          Label(audienceLabel, okouSymbol: audienceSymbol)
-            .font(.okou(.callout))
-            .frame(minHeight: OkouControl.minimumTarget)
+          .disabled(sharing.isBusy)
+          .accessibilityIdentifier("chat-sharing-audience")
+          Spacer(minLength: OkouSpace.sm)
+          Button {
+            sharing.create()
+          } label: {
+            if sharing.isBusy { ProgressView() } else { Text("Share") }
+          }
+          .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
+          .disabled(sharing.isBusy || sharing.selectedIDs.isEmpty)
+          .accessibilityIdentifier("chat-sharing-create")
         }
-        .disabled(sharing.isBusy)
-        .accessibilityIdentifier("chat-sharing-audience")
-        Spacer(minLength: OkouSpace.sm)
-        Button {
-          sharing.create()
-        } label: {
-          if sharing.isBusy { ProgressView() } else { Text("Create link") }
-        }
-        .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
-        .disabled(sharing.isBusy || sharing.selectedIDs.isEmpty)
-        .accessibilityIdentifier("chat-sharing-create")
       }
     }
     .padding(.horizontal, OkouSpace.lg)
     .padding(.vertical, OkouSpace.sm)
     .background(OkouColor.background)
+    .onChange(of: sharing.link) { _, link in
+      if let link { UIPasteboard.general.url = link }
+    }
   }
 
   private var audienceLabel: String {
@@ -76,7 +110,7 @@ struct ChatSharingCreatedView: View {
       Form {
         Section {
           if let link = sharing.link {
-            LabeledContent("Link ready", value: "\(sharing.selectedIDs.count) messages")
+            LabeledContent("Link ready", value: "\(sharing.selectedCount) selected")
             Text(link.absoluteString).font(.okou(.footnote)).textSelection(.enabled)
             Menu {
               Button("Anyone with the link", okouSymbol: "globe") {

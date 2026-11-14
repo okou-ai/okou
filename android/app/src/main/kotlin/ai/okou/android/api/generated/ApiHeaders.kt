@@ -8,4 +8,5 @@ internal object ApiHeaders {
     const val VERSION_HEADER = "X-Client-Version"
     const val SESSION_HEADER = "X-Client-Session-Id"
     const val REQUEST_HEADER = "X-Client-Request-Id"
+    const val CHAT_EVENT_SCHEMA_VERSION = 8
 }

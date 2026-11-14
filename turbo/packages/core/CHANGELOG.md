@@ -1,5 +1,56 @@
 # Changelog
 
+## [8.839.2](https://github.com/okou-ai/okou/compare/core-v8.839.1...core-v8.839.2) (2026-11-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.63.2
+
+## [8.839.1](https://github.com/okou-ai/okou/compare/core-v8.839.0...core-v8.839.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** match existing web chat sharing behavior ([#47105](https://github.com/okou-ai/okou/issues/47105)) ([e25ad70](https://github.com/okou-ai/okou/commit/e25ad705a20e4cf55d75ade9c6dd7c0a9d45d0e5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.63.1
+
+## [8.839.0](https://github.com/okou-ai/okou/compare/core-v8.838.0...core-v8.839.0) (2026-11-14)
+
+
+### Features
+
+* **app:** add presentation output format preference ([#47056](https://github.com/okou-ai/okou/issues/47056)) ([0ade2b2](https://github.com/okou-ai/okou/commit/0ade2b212cae98fe96ece41f48f58e7d3b76005b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.63.0
+
+## [8.838.0](https://github.com/okou-ai/okou/compare/core-v8.837.0...core-v8.838.0) (2026-11-13)
+
+
+### Features
+
+* **app:** roll out the compact cloud browser header ([#47092](https://github.com/okou-ai/okou/issues/47092)) ([98ce97f](https://github.com/okou-ai/okou/commit/98ce97f96793753ad2276df83e96e8264d900d5c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.62.1
+
 ## [8.837.0](https://github.com/okou-ai/okou/compare/core-v8.836.2...core-v8.837.0) (2026-11-13)
 
 

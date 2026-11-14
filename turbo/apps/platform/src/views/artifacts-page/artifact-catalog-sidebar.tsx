@@ -2,10 +2,8 @@ import { useGet, useLoadable, useSet } from "ccstate-react";
 import { Button } from "@okouai/ui";
 import { Loader2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import {
-  artifactCatalogSidebar,
-  closeArtifactCatalogPreview$,
-} from "../../signals/artifacts-page/artifact-catalog-signals.ts";
+import { closeArtifactCatalogPreview$ } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
+import { artifactCatalogSidebar } from "../../signals/artifacts-page/artifact-catalog-instance.ts";
 import { artifactDetailPreview } from "../../signals/artifacts-page/artifact-catalog-preview.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ArtifactSidebarContent } from "../okou-page/artifact-sidebar.tsx";

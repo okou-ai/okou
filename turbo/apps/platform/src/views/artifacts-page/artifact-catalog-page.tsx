@@ -24,9 +24,9 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { surfaceVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
+import { artifactCatalogSidebar } from "../../signals/artifacts-page/artifact-catalog-instance.ts";
 import {
   artifactCatalog$,
-  artifactCatalogSidebar,
   loadMoreArtifactCatalog$,
   openArtifact$,
   scrollArtifactCardIntoViewRef$,
@@ -35,7 +35,6 @@ import {
 } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import { ChatThreadSidebarShell } from "../okou-page/chat-thread-sidebar-shell.tsx";
 import { ArtifactCatalogSidebar } from "./artifact-catalog-sidebar.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -700,9 +699,6 @@ export function ArtifactCatalogPage({
   const { t } = useTranslation();
   const viewportRef = useSet(artifactCatalogViewportRef$);
   const sidebarOpen = useGet(artifactCatalogSidebar.open$);
-  const syncImageLayout = useSet(
-    artifactCatalogSidebar.imageCanvas.syncLayout$,
-  );
   const selectedKind = useGet(selectedArtifactCatalogKind$);
   const setKind = useSet(setArtifactCatalogKind$);
   const openArtifact = useSet(openArtifact$);
@@ -730,10 +726,8 @@ export function ArtifactCatalogPage({
 
   return (
     <ChatThreadSidebarShell
-      layout={chatLayout}
       animateEntry
       open={sidebarOpen}
-      onSidebarLayoutCommit={syncImageLayout}
       sidebar={<ArtifactCatalogSidebar />}
     >
       <div className="flex min-h-0 flex-1 flex-col">

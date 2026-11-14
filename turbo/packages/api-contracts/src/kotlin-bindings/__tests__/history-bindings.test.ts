@@ -20,7 +20,7 @@ import {
 import { kotlinRouteBindings } from "../bindings";
 
 describe("canonical Kotlin history protocol proof", () => {
-  it("generates actual canonical history routes and payloads exclusively as test fixtures", () => {
+  it("proves canonical history routes and registers their installed consumers", () => {
     const files = renderKotlinTestFiles();
     const api = files.get(
       "android/app/src/test/kotlin/ai/okou/android/api/historyfixtures/CanonicalApi.kt",
@@ -56,7 +56,7 @@ describe("canonical Kotlin history protocol proof", () => {
           route === chatThreadMarkReadContract.markRead
         );
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("supports canonical unknown JSON leaves without accepting arbitrary unrepresented schemas", () => {
@@ -74,7 +74,7 @@ describe("canonical Kotlin history protocol proof", () => {
       "CanonicalOptionalJson.Present(input.decodeJsonElement())",
     );
     for (const schema of [
-      object({ value: literal(1) }),
+      object({ value: literal(1.5) }),
       object({ impossible: zNever().optional() }),
       union([object({ v: string() }), object({ v: number() })]),
     ]) {

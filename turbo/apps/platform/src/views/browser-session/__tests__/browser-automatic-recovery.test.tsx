@@ -1,6 +1,6 @@
 import {
   browserContract,
-  type BrowserSession,
+  type BrowserConnection,
 } from "@okouai/api-contracts/contracts/browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -68,7 +68,7 @@ function mockViewer(endpointAliases: readonly string[] = []) {
     ],
   });
   let windowId = 101;
-  function session(id = threadId): BrowserSession {
+  function session(id = threadId): BrowserConnection["browser"] {
     return {
       threadId: id,
       name: "automatic recovery",
@@ -160,7 +160,8 @@ async function insertText(text: string) {
   fireEvent.input(input, { target: { value: text }, inputType: "insertText" });
 }
 
-async function splitConnection() {
+async function splitConnection(browser: ReturnType<typeof mockBrowserCdp>) {
+  const sharedSession = browser.pageSession("example-page");
   click(screen.getByLabelText("Browser settings"));
   const settings = await screen.findByRole("menu", {
     name: "Browser settings",
@@ -168,6 +169,12 @@ async function splitConnection() {
   click(within(settings).getByText("Connection mode"));
   const mode = await screen.findByRole("menu", { name: "Connection mode" });
   click(within(mode).getByText("Separate image connection"));
+  // The old input can still look ready before the async transport rebuild.
+  // Observe the replacement transport before injecting any capture failure.
+  await waitFor(() => {
+    expect(browser.connections()).toBe(3);
+    expect(browser.pageSession("example-page")).not.toBe(sharedSession);
+  });
   await ready();
 }
 
@@ -250,7 +257,11 @@ async function revalidatePaintedRecovery(
       }
       if (outcome === "absent") {
         return respond(200, {
-          browser: { ...viewer.session(), status: "suspended" },
+          browser: {
+            ...viewer.session(),
+            status: "suspended",
+            window: undefined,
+          },
           viewer: null,
         });
       }
@@ -1322,7 +1333,7 @@ test.each(["shared", "split"] as const)(
     await viewer.start();
     await ready();
     if (transport === "split") {
-      await splitConnection();
+      await splitConnection(viewer.browser);
     }
     const canvas =
       screen.getByLabelText<HTMLCanvasElement>("Live browser view");
@@ -1417,7 +1428,7 @@ test.each(["shared", "split"] as const)(
     await viewer.start();
     await ready();
     if (transport === "split") {
-      await splitConnection();
+      await splitConnection(viewer.browser);
     }
     const canvas =
       screen.getByLabelText<HTMLCanvasElement>("Live browser view");
@@ -1535,7 +1546,7 @@ test.each(["shared", "split"] as const)(
     await viewer.start();
     await ready();
     if (transport === "split") {
-      await splitConnection();
+      await splitConnection(viewer.browser);
     }
     const canvas =
       screen.getByLabelText<HTMLCanvasElement>("Live browser view");
@@ -1816,7 +1827,7 @@ test("A split image socket is replaced without replacing its healthy control soc
   const viewer = mockViewer();
   await viewer.start();
   await ready();
-  await splitConnection();
+  await splitConnection(viewer.browser);
   const connections = viewer.browser.connections();
   await insertText("before image socket loss");
   await waitFor(() => {
@@ -1854,7 +1865,7 @@ test("The final split image failure retains its original connection observations
   const viewer = mockViewer();
   await viewer.start();
   await ready();
-  await splitConnection();
+  await splitConnection(viewer.browser);
   act(() => {
     viewer.browser.disconnect({ code: 1006, wasClean: false }, 1);
   });
@@ -2571,7 +2582,7 @@ test.each(["shared", "split"] as const)(
     await viewer.start();
     await ready();
     if (transport === "split") {
-      await splitConnection();
+      await splitConnection(viewer.browser);
     }
     await loseControlDuringImageRetry(viewer);
     await pendingRecovery();

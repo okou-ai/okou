@@ -28,7 +28,7 @@ final class WorkspaceResources {
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
   init(
-    client: APIClient, sleep: @escaping @Sendable (Duration) async throws -> Void,
+    client: APIClient, sync: ChatSync, sleep: @escaping @Sendable (Duration) async throws -> Void,
     modelBootstrap: WorkspaceModelBootstrap? = nil,
     lifecycleTasks: LifecycleTasks? = nil
   ) {
@@ -73,7 +73,7 @@ final class WorkspaceResources {
     reloadNavigation = agents.reload
     let projects = WorkspaceRead(
       "Projects", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      read: ChatProjects(client: client).list)
+      read: sync.projectList)
     self.projects = projects
     projectList = projects.value
     reloadProjects = projects.reload

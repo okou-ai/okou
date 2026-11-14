@@ -83,6 +83,20 @@ async function openViewer() {
   return browser;
 }
 
+async function switchToSplitFrames(browser: ReturnType<typeof mockViewer>) {
+  const sharedSession = browser.pageSession("example-page");
+  click(screen.getByLabelText("Browser settings"));
+  click(await screen.findByText("Connection mode"));
+  click(await screen.findByText("Separate image connection"));
+  // The old input can still look ready before the async transport rebuild.
+  // Wait for the split connections and their replacement page session first.
+  await waitFor(() => {
+    expect(browser.connections()).toBe(3);
+    expect(browser.pageSession("example-page")).not.toBe(sharedSession);
+  });
+  await ready();
+}
+
 async function unavailable() {
   await screen.findByText("Browser view unavailable");
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
@@ -103,10 +117,7 @@ test.each(["session", "target", "split frames"] as const)(
   async (notification) => {
     const browser = await openViewer();
     if (notification === "split frames") {
-      click(screen.getByLabelText("Browser settings"));
-      click(await screen.findByText("Connection mode"));
-      click(await screen.findByText("Separate image connection"));
-      await ready();
+      await switchToSplitFrames(browser);
     }
     const connections = browser.connections();
     const original = browser.pageSession("example-page");

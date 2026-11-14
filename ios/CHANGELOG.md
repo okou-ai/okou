@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.43.3](https://github.com/okou-ai/okou/compare/ios-v0.43.2...ios-v0.43.3) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** match existing web chat sharing behavior ([#47105](https://github.com/okou-ai/okou/issues/47105)) ([e25ad70](https://github.com/okou-ai/okou/commit/e25ad705a20e4cf55d75ade9c6dd7c0a9d45d0e5))
+
+## [0.43.2](https://github.com/okou-ai/okou/compare/ios-v0.43.1...ios-v0.43.2) (2026-11-14)
+
+
+### Performance Improvements
+
+* **ios:** sync projects incrementally ([#47111](https://github.com/okou-ai/okou/issues/47111)) ([ebe2e3d](https://github.com/okou-ai/okou/commit/ebe2e3dfd4be9b8c0593f9289cd17e80681bba37))
+
+## [0.43.1](https://github.com/okou-ai/okou/compare/ios-v0.43.0...ios-v0.43.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **ios:** allow native swipe back during chat scrolling ([#47081](https://github.com/okou-ai/okou/issues/47081)) ([5068feb](https://github.com/okou-ai/okou/commit/5068febc06c6f171186ed0cf4143e9b400a6867d))
+* **ios:** avoid quadratic chat list refreshes ([#47096](https://github.com/okou-ai/okou/issues/47096)) ([6711ba3](https://github.com/okou-ai/okou/commit/6711ba3a97144a99268929e4c1bdadd94f76626a))
+* **ios:** cache sidebar draft membership independently ([#47083](https://github.com/okou-ai/okou/issues/47083)) ([51d2a15](https://github.com/okou-ai/okou/commit/51d2a15501c9388fdd471a713352b1e15cd38e2c))
+
 ## [0.43.0](https://github.com/okou-ai/okou/compare/ios-v0.42.1...ios-v0.43.0) (2026-11-13)
 
 

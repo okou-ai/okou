@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.R
 import ai.okou.android.api.generated.IndicatorsThreadsValue
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,40 +12,132 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 
 @Composable
 fun ChatListRoute(model: ChatListModel) {
     val state by model.uiState.collectAsStateWithLifecycle()
-    ChatListScreen(
-        state,
-        model::refresh,
-        model::refreshList,
-        model::refreshMetadata,
-        model::refreshIndicators,
-        model::selectFilter,
-    )
+    var selected by rememberSaveable { mutableStateOf<String?>(null) }
+    var collapsed by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    val listPosition = rememberLazyListState()
+    val drawerPosition = rememberLazyListState()
+    val conversations = rememberSaveableStateHolder()
+    val drawer = rememberDrawerState(DrawerValue.Closed)
+    val drawerVisible = selected != null && (drawer.isOpen || drawer.isAnimationRunning)
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(selected, state.threads, state.listPhase) {
+        state.threads.firstOrNull { it.id == selected }?.let(model.history::open)
+        if (
+            selected != null &&
+                state.listPhase == ChatReadPhase.Ready &&
+                state.threads.none { it.id == selected }
+        )
+            selected = null
+    }
+    val open: (ConfirmedChat) -> Unit = { thread ->
+        selected = thread.id
+        model.history.open(thread)
+        scope.launch { drawer.close() }
+    }
+    val toggle: (String) -> Unit = { id ->
+        collapsed = if (id in collapsed) collapsed - id else collapsed + id
+    }
+    BackHandler(selected != null) {
+        if (drawer.isOpen || drawer.isAnimationRunning) scope.launch { drawer.close() }
+        else selected = null
+    }
+    ModalNavigationDrawer(
+        drawerState = drawer,
+        gesturesEnabled = selected != null,
+        drawerContent = {
+            ModalDrawerSheet(
+                Modifier.widthIn(max = 360.dp)
+                    .fillMaxWidth()
+                    .then(if (drawerVisible) Modifier else Modifier.clearAndSetSemantics {})
+            ) {
+                ChatListScreen(
+                    state,
+                    model::refresh,
+                    model::refreshList,
+                    model::refreshMetadata,
+                    model::refreshIndicators,
+                    model::selectFilter,
+                    open,
+                    collapsed,
+                    toggle,
+                    drawerPosition,
+                )
+            }
+        },
+    ) {
+        if (selected == null)
+            ChatListScreen(
+                state,
+                model::refresh,
+                model::refreshList,
+                model::refreshMetadata,
+                model::refreshIndicators,
+                model::selectFilter,
+                open,
+                collapsed,
+                toggle,
+                listPosition,
+            )
+        else
+            Column(
+                Modifier.fillMaxSize()
+                    .then(if (drawerVisible) Modifier.clearAndSetSemantics {} else Modifier)
+            ) {
+                FlowRow {
+                    ChatAction(R.string.back, { selected = null })
+                    ChatAction(R.string.history_sidebar, { scope.launch { drawer.open() } })
+                }
+                conversations.SaveableStateProvider(checkNotNull(selected)) {
+                    ConversationRoute(
+                        model.history,
+                        checkNotNull(selected),
+                        state,
+                        Modifier.weight(1f),
+                        visible = !drawer.isOpen && !drawer.isAnimationRunning,
+                    )
+                }
+            }
+    }
 }
 
 @Composable
@@ -55,6 +148,10 @@ private fun ChatListScreen(
     retryMetadata: () -> Unit,
     refreshIndicators: () -> Unit,
     selectFilter: (ChatListFilter) -> Unit,
+    open: (ConfirmedChat) -> Unit,
+    collapsed: List<String>,
+    toggleProject: (String) -> Unit,
+    listState: LazyListState,
 ) {
     val groups =
         remember(
@@ -88,6 +185,7 @@ private fun ChatListScreen(
             Modifier.widthIn(max = 760.dp).fillMaxWidth().testTag("chat_list"),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
+            state = listState,
         ) {
             item {
                 Text(
@@ -155,16 +253,34 @@ private fun ChatListScreen(
                 groups.forEach { group ->
                     if (group.project != null || group.threads.isNotEmpty()) {
                         item(key = "group_${group.project?.id}") {
-                            Text(
-                                group.project?.name
-                                    ?: stringResource(R.string.chat_outside_projects),
-                                style = MaterialTheme.typography.titleMedium,
-                                modifier = Modifier.semantics { heading() },
-                            )
+                            val project = group.project
+                            if (project != null)
+                                TextButton(
+                                    onClick = { toggleProject(project.id) },
+                                    colors =
+                                        ButtonDefaults.textButtonColors(
+                                            contentColor = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                ) {
+                                    Text(
+                                        project.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier.semantics { heading() },
+                                    )
+                                }
+                            else
+                                Text(
+                                    stringResource(R.string.chat_outside_projects),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.semantics { heading() },
+                                )
                             if (group.threads.isEmpty())
                                 Text(stringResource(R.string.chat_project_empty))
                         }
-                        items(group.threads, key = { it.id }) { thread -> ChatRow(thread, state) }
+                        if (group.project?.id !in collapsed)
+                            items(group.threads, key = { it.id }) { thread ->
+                                ChatRow(thread, state, { open(thread) })
+                            }
                     }
                 }
                 if (
@@ -184,10 +300,10 @@ private fun ChatListScreen(
 }
 
 @Composable
-private fun ChatRow(thread: ConfirmedChat, state: ChatListUiState) {
+private fun ChatRow(thread: ConfirmedChat, state: ChatListUiState, open: () -> Unit) {
     val agent = state.agents.firstOrNull { it.agentId == thread.agentId }
     val indicator = state.indicators?.threads?.get(thread.id)
-    OutlinedCard(Modifier.fillMaxWidth().testTag("chat_${thread.id}")) {
+    OutlinedCard(onClick = open, modifier = Modifier.fillMaxWidth().testTag("chat_${thread.id}")) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 thread.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),

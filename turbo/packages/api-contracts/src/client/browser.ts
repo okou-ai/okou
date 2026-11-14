@@ -175,18 +175,4 @@ export const browserContract: ClientDescriptor<typeof OriginalBrowserContract> =
         503: true,
       },
     },
-    viewerConnection: {
-      method: "GET",
-      path: "/api/chat-threads/:threadId/browser/viewer-connection",
-      statuses: {
-        200: true,
-        400: true,
-        401: true,
-        403: true,
-        404: true,
-        409: true,
-        502: true,
-        503: true,
-      },
-    },
   };

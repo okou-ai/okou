@@ -844,11 +844,13 @@ test("More exposes only overflowing tasks and hands the selected task to the com
   const editor = await setupChips();
   await fill(editor, "Keep my draft");
   const choices = screen.getByRole("group", { name: "Choose a task" });
-  expect(
-    queryAllByRoleFast("button", choices).map((item) => {
-      return item.textContent?.trim();
-    }),
-  ).toStrictEqual(["Workflow", "Presentation"]);
+  await waitFor(() => {
+    expect(
+      queryAllByRoleFast("button", choices).map((item) => {
+        return item.textContent?.trim();
+      }),
+    ).toStrictEqual(["Workflow", "Presentation"]);
+  });
   expect(button("More")).toHaveTextContent("+1");
   await user.hover(button("More"));
   await expect(
@@ -875,14 +877,16 @@ test("More exposes only overflowing tasks and hands the selected task to the com
   });
   expect(editor).toHaveTextContent("Keep my draft");
   click(selectedTask(editor, "Image"));
-  expect(
-    queryAllByRoleFast(
-      "button",
-      screen.getByRole("group", { name: "Choose a task" }),
-    ).map((item) => {
-      return item.textContent?.trim();
-    }),
-  ).toStrictEqual(["Workflow", "Presentation"]);
+  await waitFor(() => {
+    expect(
+      queryAllByRoleFast(
+        "button",
+        screen.getByRole("group", { name: "Choose a task" }),
+      ).map((item) => {
+        return item.textContent?.trim();
+      }),
+    ).toStrictEqual(["Workflow", "Presentation"]);
+  });
   expect(button("More")).toBeInTheDocument();
 });
 
@@ -891,7 +895,9 @@ test("More fits its changing stack width and adapts to window and font changes",
   mockTemplateChat();
   const user = userEvent.setup();
   await setupChips();
-  expect(button("More")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(button("More")).toBeInTheDocument();
+  });
   const choices = screen.getByRole("group", { name: "Choose a task" });
   // Five chips plus a one-icon trigger fit exactly. Reserving the previous
   // four-item stack's width would incorrectly leave Website inside More.
@@ -933,6 +939,9 @@ test("More fits its changing stack width and adapts to window and font changes",
   layout.setLabelWidth(150);
   act(() => {
     document.fonts.dispatchEvent(new Event("loadingdone"));
+  });
+  await waitFor(() => {
+    expect(button("More")).toBeInTheDocument();
   });
   await user.click(button("More"));
   const menu = await screen.findByRole("menu");

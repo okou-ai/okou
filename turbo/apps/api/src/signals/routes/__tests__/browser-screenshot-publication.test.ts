@@ -21,13 +21,13 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import {
-  createSharedBrowserFixtures,
+  createBrowserFixtures,
   MINUTE,
   START,
-} from "./helpers/browser-shared-fixture";
+} from "./helpers/browser-fixture";
 
 const context = testContext();
-const { fixture, open, view } = createSharedBrowserFixtures(context);
+const { fixture, open, view } = createBrowserFixtures(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 function client() {

@@ -14,6 +14,7 @@ import {
   Reason,
   resetSignal,
   setLoop,
+  waitForBrowserPaint,
   type DeferredPromise,
 } from "../utils.ts";
 import { detachBrowser } from "./reporting.ts";
@@ -29,7 +30,7 @@ import { monotonicNow } from "../../lib/time.ts";
 import { measureDisplay, observeDisplay } from "./display.ts";
 import { constrainDisplay, type DisplaySize } from "./display/geometry.ts";
 import { createToolbarFocus, type ToolbarNodes } from "./focus.ts";
-import { navigationAddress } from "./input/address.ts";
+import { addressSubmission } from "./navigation/submission.ts";
 import { createNativeInput } from "./input/native.ts";
 import {
   NavigationFault,
@@ -221,12 +222,19 @@ function createRuntimeState(
     const lease = get(installed$);
     return lease !== null && get(lease.controller.connected$);
   });
+  // Functions written directly to state are updaters, not stored callbacks.
+  const toolbarNotification$ = state<{ readonly changed: () => void } | null>(
+    null,
+  );
+  const toolbarChanged$ = command(({ get }) => {
+    get(toolbarNotification$)?.changed();
+  });
   const model = createViewerSignals(
     remoteNavigation$,
     remoteNavigationScope$,
     creationReadySource$,
     connectedSource$,
-    recoveryChanged$,
+    { changed$: recoveryChanged$, toolbarChanged$ },
   );
   const cancelAutomatic$ = command(({ get, set }) => {
     // Intent replacement and old-fault retirement are one publication.
@@ -291,6 +299,7 @@ function createRuntimeState(
     resetRecovery$,
     recoveryNotification$,
     recoveryChanged$,
+    toolbarNotification$,
     resetAutomatic$,
     recoveryTarget$,
     recoveryIntent$,
@@ -466,6 +475,34 @@ function createDOMFocus(
   });
 }
 
+function createToolbarRef(
+  context: RuntimeState,
+  toolbar: ReturnType<typeof createNodeRef<HTMLDivElement>>,
+  focus: ReturnType<typeof createDOMFocus>,
+) {
+  return onRef(
+    command(({ get, set }, node: HTMLDivElement, signal: AbortSignal) => {
+      set(toolbar.mount$, node, signal);
+      set(focus.listen$, node, signal);
+      const notification = {
+        changed: () => {
+          set(focus.reconcile$);
+        },
+      };
+      set(context.toolbarNotification$, notification);
+      signal.addEventListener(
+        "abort",
+        () => {
+          if (get(context.toolbarNotification$) === notification) {
+            set(context.toolbarNotification$, null);
+          }
+        },
+        { once: true },
+      );
+    }),
+  );
+}
+
 function createDOMGraph(
   context: RuntimeState,
   onPageInput$?: Command<void, []>,
@@ -532,12 +569,7 @@ function createDOMGraph(
     set(context.presentedFrame$, null);
   });
   const focus = createDOMFocus(context, toolbarNodes$);
-  const toolbarRef$ = onRef(
-    command(({ set }, node: HTMLDivElement, signal: AbortSignal) => {
-      set(toolbar.mount$, node, signal);
-      set(focus.listen$, node, signal);
-    }),
-  );
+  const toolbarRef$ = createToolbarRef(context, toolbar, focus);
   const identity$ = computed((get): BrowserIdentity | null => {
     const connection = get(liveConnection$);
     const nodes = get(nodes$);
@@ -674,6 +706,10 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
             nodes.input.node,
             owner,
           );
+          // Native activation measures the mounted canvas after its first paint,
+          // rather than asking a React layout effect to acknowledge the panel.
+          await waitForBrowserPaint(owner);
+          owner.throwIfAborted();
           observeDisplay(
             nodes.canvas.node,
             (size) => {
@@ -1115,6 +1151,15 @@ function createPauseObservation(
       const lease = get(context.installed$);
       if (lease) {
         await set(lease.controller.pause$, paused, signal);
+        if (!paused) {
+          await waitForBrowserPaint(signal);
+          if (get(context.installed$) === lease && !get(context.paused$)) {
+            set(
+              lease.controller.measure$,
+              measureDisplay(lease.identity.nodes.canvas.node),
+            );
+          }
+        }
       }
     },
   );
@@ -1290,6 +1335,9 @@ function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
       signal.throwIfAborted();
       if (selected.status === "rejected") {
         set(focus.cancel$, token);
+        // Completing this action re-enables its trigger even when a newer
+        // handoff owns focus; settle that surviving request after the paint.
+        set(focus.reconcile$);
         throw selected.reason;
       }
       set(focus.selected$, token);
@@ -1329,6 +1377,7 @@ function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
       signal.throwIfAborted();
       if (closed.status === "rejected") {
         set(focus.cancel$, token);
+        set(focus.reconcile$);
         throw closed.reason;
       }
       // Positive close/inventory receipt never waits for successor pixels.
@@ -1341,6 +1390,21 @@ function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
 function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
   const { model } = context;
   const { requireController$ } = graph;
+  const addressSubmissionKind$ = computed((get) => {
+    return addressSubmission(get(model.address$))?.kind ?? null;
+  });
+  const composingState$ = state(false);
+  const completionArmed$ = state(false);
+  const addressComposing$ = computed((get) => {
+    return get(composingState$);
+  });
+  const composeAddress$ = command(({ set }, composing: boolean) => {
+    set(composingState$, composing);
+    set(completionArmed$, false);
+  });
+  const armAddressCompletion$ = command(({ set }, armed: boolean) => {
+    set(completionArmed$, armed);
+  });
   const noticeState$ = state<AddressSubmitNotice | null>(null);
   const addressSubmitNotice$ = computed((get) => {
     return get(noticeState$);
@@ -1368,19 +1432,28 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
       action: BrowserNavigationAction,
       signal: AbortSignal,
     ): Promise<NavigationReceipt> => {
-      if (action !== "submit-address") {
+      if (action !== "submit-address" && action !== "complete-address") {
         return await set(lease.controller.navigate$, action, signal);
       }
       const scope = get(lease.controller.navigationScope$);
       if (!scope) {
         throw cancelled();
       }
-      const url = navigationAddress(get(model.address$));
-      if (!url) {
+      const submissionAction =
+        action === "complete-address" && !get(completionArmed$)
+          ? "submit-address"
+          : action;
+      set(completionArmed$, false);
+      const target = addressSubmission(get(model.address$), submissionAction);
+      if (!target) {
         throw new CdpFault("input", "Enter a valid page address.");
       }
       const submission = set(model.prepareAddress$, scope);
-      const receipt = await set(lease.controller.navigate$, { url }, signal);
+      const receipt = await set(
+        lease.controller.navigate$,
+        { url: target.url },
+        signal,
+      );
       set(model.acceptAddress$, submission, receipt);
       return receipt;
     },
@@ -1392,9 +1465,14 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
       signal: AbortSignal,
     ): Promise<NavigationReceipt> => {
       const lease = set(requireController$, signal);
-      if (action === "submit-address" && !get(canSubmitAddress$)) {
-        set(notifyAddressSubmit$, "preparing");
-        return { kind: "unavailable" };
+      if (action === "submit-address" || action === "complete-address") {
+        if (get(addressComposing$)) {
+          return { kind: "unavailable" };
+        }
+        if (!get(canSubmitAddress$)) {
+          set(notifyAddressSubmit$, "preparing");
+          return { kind: "unavailable" };
+        }
       }
       const scope = get(lease.controller.navigationScope$);
       const [result] = await Promise.allSettled([
@@ -1411,6 +1489,10 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
     },
   );
   return {
+    addressSubmissionKind$,
+    addressComposing$,
+    composeAddress$,
+    armAddressCompletion$,
     navigate$,
     canSubmitAddress$,
     addressSubmitNotice$,
@@ -1665,7 +1747,7 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
   };
 }
 
-/** Application layout commits name their change; no observer infers it later. */
+/** Application layout commands name their change; no observer infers it later. */
 function createLayoutSync(
   context: RuntimeState,
   syncTabs$: Command<void, [motion?: TabStripMotion | null]>,
@@ -1751,7 +1833,8 @@ export function createBrowserRuntime(
   const navigationActions = createNavigationActions(context, graph);
   const addressRef$ = onRef(
     command(({ set }, node: HTMLInputElement, signal: AbortSignal) => {
-      // A remounted field must not replay feedback from an earlier interaction.
+      // Composition and feedback belong to the mounted field.
+      set(navigationActions.composeAddress$, false);
       set(navigationActions.notifyAddressSubmit$, null);
       set(graph.address.mount$, node, signal);
     }),
@@ -1798,8 +1881,6 @@ export function createBrowserRuntime(
     clipboardRecovery$: graph.native.recovery$,
     proxyType$: graph.native.proxyType$,
     tabLayout$: model.tabLayout$,
-    focusHandoff$: graph.focus.handoff$,
-    acknowledgeFocusCommit$: graph.focus.acknowledge$,
     rejectFavicon$: model.rejectFavicon$,
     editAddress$: model.editAddress$,
     resetAddress$: model.resetAddress$,
@@ -1821,6 +1902,7 @@ export function createBrowserRuntime(
       canvas$: graph.canvas.ref$,
       input$: graph.inputNode.ref$,
       toolbar$: graph.toolbar.ref$,
+      toolbarActions$: tabStrip.actionsRef$,
       tabs$: graph.tabs.ref$,
       address$: addressRef$,
       surface$,

@@ -210,23 +210,13 @@ fn read_manifest_file(path: &str) -> io::Result<Vec<u8>> {
 #[cfg(unix)]
 fn open_manifest_file(path: &str) -> io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt;
-    use std::os::unix::io::AsRawFd;
 
     let file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)?;
 
-    let fd = file.as_raw_fd();
-    let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
-    // SAFETY: `stat` points to valid writable memory and `fd` comes from a live
-    // File. On success, fstat initializes the whole struct.
-    let result = unsafe { libc::fstat(fd, stat.as_mut_ptr()) };
-    if result != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: fstat succeeded and initialized `stat`.
-    let stat = unsafe { stat.assume_init() };
+    let stat = nix::sys::stat::fstat(&file)?;
     if stat.st_mode & libc::S_IFMT != libc::S_IFREG {
         return Err(io::Error::new(
             ErrorKind::InvalidInput,

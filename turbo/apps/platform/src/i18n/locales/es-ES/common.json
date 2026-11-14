@@ -1431,7 +1431,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Introduce una URL",
     "authorizationRequired": "El navegador en la nube no está habilitado para este chat",
     "blankPage": {
       "description": "{{assistantName}} abre páginas aquí mientras trabaja. Introduce una URL arriba para navegar por tu cuenta.",
@@ -1476,6 +1475,7 @@
     "address": "Dirección",
     "addressOpening": "Todavía se está abriendo una página. Inténtalo de nuevo en un momento.",
     "addressPreparing": "El navegador aún no está listo. Inténtalo de nuevo en un momento.",
+    "addressSearchPlaceholder": "Introduce una dirección o búsqueda",
     "allTabs": "Todas las pestañas",
     "automatic": "Automática",
     "back": "Atrás",
@@ -1500,6 +1500,7 @@
     "liveView": "Vista en directo del navegador",
     "newTab": "Nueva pestaña",
     "noTabs": "No hay pestañas abiertas",
+    "openAddress": "Abrir dirección",
     "operationFailed": "No se pudo completar la acción del navegador. Comprueba el navegador antes de volver a intentarlo.",
     "paused": "Vista en pausa",
     "quality": "Calidad de imagen",
@@ -1514,6 +1515,7 @@
     "remoteInput": "Entrada del navegador remoto",
     "resolution": "Resolución",
     "retryImage": "Reintentar imagen en directo",
+    "searchGoogle": "Buscar en Google",
     "settings": "Ajustes del navegador",
     "sharedTransport": "Conexión compartida",
     "sizeInitial": "Al conectar",
@@ -2532,9 +2534,7 @@
       "copyFailed": "No se pudo copiar el enlace",
       "create": "Compartir",
       "createFailed": "No se pudo crear la conversación compartida.",
-      "createLink": "Crear enlace",
       "deselectGroup": "Deseleccionar grupo de mensajes",
-      "deselectMessage": "Deseleccionar mensaje",
       "everyone": "Todos",
       "linkCopied": "Enlace copiado",
       "messageShareFailed": "No se pudo crear el enlace compartido.",
@@ -2543,8 +2543,6 @@
       "selectedCount_many": "{{count}} seleccionados",
       "selectedCount_other": "{{count}} seleccionados",
       "selectGroup": "Seleccionar grupo de mensajes",
-      "selectMessage": "Seleccionar mensaje",
-      "selectMessages": "Seleccionar mensajes…",
       "shareLink": "Enlace de conversación compartida",
       "start": "Compartir mensajes",
       "tooLarge": "Selecciona menos mensajes para compartir",
@@ -2817,6 +2815,11 @@
       "ideasLabel": "Ideas para empezar",
       "label": "Tareas para empezar",
       "more": "Más",
+      "presentationFormat": "Formato de presentación",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "Plantillas de presentación",
       "removeTask": "Quitar {{task}}",
       "shelf": {

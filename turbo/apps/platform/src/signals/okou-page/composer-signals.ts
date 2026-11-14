@@ -56,6 +56,10 @@ import {
   type ComposerUiSignalGroups,
 } from "./chat-composer.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
+import {
+  presentationOutputFormat$,
+  presentationOutputFormatEnabled$,
+} from "./presentation-output-format.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import type { ComposerProjectSignals } from "../projects/composer-project.ts";
 import {
@@ -672,7 +676,7 @@ export function createComposerSignals(
 }
 
 /**
- * Own capability commits and annotation uploads while this composer is mounted.
+ * Own capability geometry and annotation uploads while this composer is mounted.
  * The annotation editor lives in this subtree; losing it must cancel uploads
  * rather than leave the restored draft permanently pending.
  *
@@ -967,8 +971,11 @@ function createSubmitCurrentInput({
       const composerAdditionalInfo = buildComposerAdditionalInfo(
         mode,
         get(create.presentationSlideCount$),
-        get(taskChips.task$) === "visualization"
+        selectedTask === "visualization"
           ? get(taskChips.visualization.preferences$)
+          : undefined,
+        get(presentationOutputFormatEnabled$)
+          ? get(presentationOutputFormat$)
           : undefined,
       );
       const additionalInfo = joinAdditionalInfo(

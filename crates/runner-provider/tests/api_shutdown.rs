@@ -45,10 +45,7 @@ async fn provider() -> TestResult<(tempfile::TempDir, RawHttpTestServer, Arc<Api
         ApiProviderConfig {
             ably_side_message_handler: None,
             runner_identity: RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1)?,
-            runner_hostname: None,
             group: "test".into(),
-            supported_profiles: vec![],
-            installed_okou_cli: None,
         },
         BuiltinFirewallCatalogCachePaths {
             cache_path: directory.path().join("catalog.json"),

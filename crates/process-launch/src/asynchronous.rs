@@ -1,10 +1,12 @@
 //! Tokio ownership for direct children without a waiting thread per process.
 
 use std::io;
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
 use std::process::ExitStatus;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+
+use nix::fcntl::{FcntlArg, OFlag, fcntl};
 
 use tokio::io::unix::AsyncFd;
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout};
@@ -127,13 +129,8 @@ async fn acknowledge_exec(
     let reader = &pending.error_reader;
     // Only the parent's error-pipe reader becomes nonblocking. The child's
     // distinct writer retains the existing atomic errno write protocol.
-    // SAFETY: reader owns a live descriptor for both fcntl calls.
-    let flags = unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_GETFL) };
-    if flags < 0
-        || unsafe { libc::fcntl(reader.as_raw_fd(), libc::F_SETFL, flags | libc::O_NONBLOCK) } < 0
-    {
-        return Err(io::Error::last_os_error());
-    }
+    let flags = OFlag::from_bits_retain(fcntl(reader, FcntlArg::F_GETFL)?);
+    fcntl(reader, FcntlArg::F_SETFL(flags | OFlag::O_NONBLOCK))?;
     // SAFETY: reader borrows pending's live, unchanged pipe descriptor. The
     // registration is dropped before pending, including on cancellation.
     let pipe =

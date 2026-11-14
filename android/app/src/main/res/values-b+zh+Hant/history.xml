@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="history_sidebar">對話</string>
+    <string name="history_loading">正在載入對話…</string>
+    <string name="history_failed">無法重新整理對話，請重試。</string>
+    <string name="history_missing">此對話已刪除或無法使用。</string>
+    <string name="history_read_failed">無法確認已讀狀態，請重新整理再試。</string>
+    <string name="history_empty">尚無訊息。</string>
+    <string name="history_you">你</string>
+    <string name="history_work">工作記錄</string>
+    <string name="history_work_steps">回應步驟：%1$d</string>
+    <string name="history_queued">排隊中</string>
+    <string name="history_rejected">未傳送</string>
+    <string name="history_unsupported">此內容以原始形式顯示。</string>
+    <string name="history_reference">引用</string>
+    <string name="history_completed">已完成</string>
+    <string name="history_cancelled">已停止</string>
+    <string name="history_run_failed">失敗</string>
+    <string name="history_idle">歷史記錄</string>
+    <string name="history_running">執行中</string>
+</resources>

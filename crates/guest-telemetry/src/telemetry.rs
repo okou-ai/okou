@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[cfg(unix)]
-use std::os::fd::{AsRawFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
 
 static SANDBOX_OPS_APPEND_LOCK: Mutex<()> = Mutex::new(());
 static SANDBOX_OPS_LOG_OVERRIDE: Mutex<Option<Arc<SandboxOpsSink>>> = Mutex::new(None);
@@ -115,23 +115,23 @@ fn configured_sandbox_ops_log() -> Option<Arc<SandboxOpsSink>> {
 }
 
 #[cfg(unix)]
-struct FileLockGuard {
-    fd: RawFd,
+struct FileLockGuard<'a> {
+    fd: BorrowedFd<'a>,
 }
 
 #[cfg(unix)]
-impl FileLockGuard {
-    fn lock(file: &File) -> io::Result<Self> {
-        let fd = file.as_raw_fd();
-        flock_fd(fd, libc::LOCK_EX)?;
+impl<'a> FileLockGuard<'a> {
+    fn lock(file: &'a File) -> io::Result<Self> {
+        let fd = file.as_fd();
+        flock_fd(fd.as_raw_fd(), libc::LOCK_EX)?;
         Ok(Self { fd })
     }
 }
 
 #[cfg(unix)]
-impl Drop for FileLockGuard {
+impl Drop for FileLockGuard<'_> {
     fn drop(&mut self) {
-        let _ = flock_fd(self.fd, libc::LOCK_UN);
+        let _ = flock_fd(self.fd.as_raw_fd(), libc::LOCK_UN);
     }
 }
 
@@ -260,7 +260,7 @@ fn duration_ms(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
-fn append_sandbox_op_record(file: &mut File, record: &[u8]) -> io::Result<()> {
+fn append_sandbox_op_record(mut file: &File, record: &[u8]) -> io::Result<()> {
     let _append_guard = SANDBOX_OPS_APPEND_LOCK
         .lock()
         .unwrap_or_else(|e| e.into_inner());

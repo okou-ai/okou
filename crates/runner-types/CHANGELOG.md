@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/okou-ai/okou/compare/runner-types-v0.18.0...runner-types-v0.18.1) (2026-11-14)
+
+
+### Refactoring
+
+* **runner:** retire legacy run acquisition clients ([#47100](https://github.com/okou-ai/okou/issues/47100)) ([a9904bc](https://github.com/okou-ai/okou/commit/a9904bc0c2405516d10168768e09a410f10541eb))
+
 ## [0.18.0](https://github.com/okou-ai/okou/compare/runner-types-v0.17.0...runner-types-v0.18.0) (2026-11-13)
 
 

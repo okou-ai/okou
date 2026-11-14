@@ -90,6 +90,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.PresentationOutputFormat]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Presentation output format",
+    description:
+      "Choose HTML or PPTX for presentations and remember the preference on this device. Requires Home capabilities.",
+    enabled: false,
+  },
   [FeatureSwitchKey.PastedTextAttachments]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Long pasted text attachments",
@@ -193,13 +200,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
-  },
-  [FeatureSwitchKey.ChatSharingSelection]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "Chat message selection",
-    description:
-      "Share individual messages with the same selection rules on Web and iOS.",
-    enabled: false,
   },
   [FeatureSwitchKey.ChatReplyNameLine]: {
     maintainer: "tongx@okou.ai",

@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isNoBody } from "../contracts/trpc-contract";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../contracts/chat-event-schema-version";
 import {
   CLIENT_TYPE_ANDROID,
   CLIENT_TYPE_HEADER,
@@ -23,13 +24,19 @@ import {
   kotlinTypeName as typeName,
 } from "./syntax";
 import { renderKotlinModels } from "./models";
-import { pathBinding, queryBinding } from "./routes";
+import { pathBinding, queryBinding, successResponse } from "./routes";
 import {
   kotlinHistoryFixtureJson,
   kotlinHistoryFixtureRoutes,
   kotlinHistoryFixtureTypes,
 } from "./history-fixtures";
 import { kotlinTokens } from "./source-tokens";
+import { kotlinHistorySemanticsFixtureJson } from "./history-semantics-fixtures";
+import {
+  kotlinCommandFixtureJson,
+  kotlinCommandFixtureRoutes,
+  kotlinCommandFixtureTypes,
+} from "./command-fixtures";
 import {
   kotlinFixtureJson,
   kotlinFixtureRoutes,
@@ -44,8 +51,9 @@ const repositoryRoot = fileURLToPath(
 export function renderKotlinTypes(
   bindings: readonly KotlinTypeBinding[] = kotlinTypeBindings,
   packageName = defaultKotlinPackage,
+  requestTypes: ReadonlySet<string> = new Set(),
 ): string {
-  return renderKotlinModels(bindings, packageName);
+  return renderKotlinModels(bindings, packageName, requestTypes);
 }
 
 export function renderKotlinFiles(
@@ -81,9 +89,7 @@ export function renderKotlinFiles(
       throw new Error(`${name}: unsupported Retrofit route`);
     }
     if (
-      Boolean(request) !==
-        (route.body !== undefined && !isNoBody(route.body)) ||
-      !route.responses[200]
+      Boolean(request) !== (route.body !== undefined && !isNoBody(route.body))
     )
       throw new Error(`${name}: unsupported request/response binding`);
     const responseType = types.find((binding) => {
@@ -94,7 +100,7 @@ export function renderKotlinFiles(
     });
     if (
       !responseType ||
-      responseType.schema !== route.responses[200] ||
+      responseType.schema !== successResponse(route) ||
       responseType.direction !== "output" ||
       (request &&
         (!requestType ||
@@ -165,7 +171,18 @@ export function renderKotlinFiles(
     })
     .join("\n");
   return new Map([
-    ["ApiModels.kt", renderKotlinTypes(modelTypes, packageName)],
+    [
+      "ApiModels.kt",
+      renderKotlinTypes(
+        modelTypes,
+        packageName,
+        new Set(
+          routes.flatMap(({ request }) => {
+            return request ? [request] : [];
+          }),
+        ),
+      ),
+    ],
     [
       "CanonicalApi.kt",
       `${header}\n${routeImports}\n\ninternal interface CanonicalApi {\n${methods.join("\n\n")}\n}\n${helpers.length ? `\n${helpers.join("\n\n")}\n` : ""}`,
@@ -176,7 +193,9 @@ export function renderKotlinFiles(
         .map(([name, value]) => {
           return `    const val ${name} = ${quote(value)}`;
         })
-        .join("\n")}\n}\n`,
+        .join(
+          "\n",
+        )}\n    const val CHAT_EVENT_SCHEMA_VERSION = ${CURRENT_CHAT_EVENT_SCHEMA_VERSION}\n}\n`,
     ],
   ]);
 }
@@ -212,6 +231,28 @@ export function renderKotlinTestFiles(): ReadonlyMap<string, string> {
   files.set(
     "android/app/src/test/resources/api-bindings/chat-history.json",
     kotlinHistoryFixtureJson(),
+  );
+  files.set(
+    "android/app/src/test/resources/api-bindings/chat-history-semantics.json",
+    kotlinHistorySemanticsFixtureJson(),
+  );
+  for (const [file, source] of renderKotlinFiles({
+    routes: kotlinCommandFixtureRoutes,
+    types: kotlinCommandFixtureTypes,
+    packageName: "ai.okou.android.api.commandfixtures",
+  })) {
+    if (file !== "ApiHeaders.kt")
+      files.set(
+        join(
+          "android/app/src/test/kotlin/ai/okou/android/api/commandfixtures",
+          file,
+        ),
+        source,
+      );
+  }
+  files.set(
+    "android/app/src/test/resources/api-bindings/chat-commands.json",
+    kotlinCommandFixtureJson(),
   );
   return files;
 }

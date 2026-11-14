@@ -1,25 +1,17 @@
 import { command } from "ccstate";
-import { animationFrame } from "signal-timers";
 import { pwaChatThreadScrollSignals$ } from "../okou-page/pwa-chat-list.ts";
 import { rootSignal$ } from "../root-signal.ts";
-import { createDeferredPromise, detach, onRef, Reason } from "../utils.ts";
+import { detach, onRef, Reason, waitForBrowserPaint } from "../utils.ts";
 import { threeColumnSidebarChatThreadScrollSignals } from "./sidebar-chat-thread-scroll.ts";
 
 /**
  * Awaited by the operation that changes the space beside the chat list. The
- * next frame follows that change's render, so every chat list viewport reads
- * its new height then; an unmounted viewport has nothing to read.
+ * paint boundary follows that change, so every chat list viewport reads its
+ * new height then; an unmounted viewport has nothing to read.
  */
 export const refreshChatListLayout$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const frame = createDeferredPromise<void>(signal);
-    animationFrame(
-      () => {
-        frame.resolve();
-      },
-      { signal },
-    );
-    await frame.promise;
+    await waitForBrowserPaint(signal);
     signal.throwIfAborted();
     set(threeColumnSidebarChatThreadScrollSignals.measureViewport$);
     set(get(pwaChatThreadScrollSignals$).measureViewport$);

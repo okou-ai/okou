@@ -1,8 +1,6 @@
-import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
-import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import type { CSSProperties, ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
-import { cn, LayoutPanel, RequestCommit } from "@okouai/ui";
+import { cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -13,17 +11,8 @@ import {
   chatThreadSidebarResizeHandleRef$,
   chatThreadSidebarWidths$,
 } from "../../signals/chat-page/chat-thread-sidebar-layout.ts";
-import {
-  chatListWidth$,
-  chatListResizing$,
-} from "../../signals/okou-page/unified-chat-workspace.ts";
 import { ResizeSeam } from "./resize-seam.tsx";
-import { sidebarOff$ } from "../../signals/okou-page/nav.ts";
 import { workspaceResizing$ } from "../../signals/chat-page/workspace-resize.ts";
-import {
-  workspaceLayoutThreads$,
-  type WorkspaceLayoutThreads,
-} from "../../signals/chat-page/workspace-layout-commit.ts";
 
 function sidebarWidthValue(width: number | null): string {
   const preferred =
@@ -127,11 +116,7 @@ function sidebarPanelClassName({
 
 interface ChatThreadSidebarShellProps {
   readonly children: ReactNode;
-  readonly layout: ChatLayoutSignals;
   readonly animateEntry: boolean;
-  readonly onSidebarLayoutCommit?: () => void;
-  readonly onWorkspaceLayoutCommit?: (threads: WorkspaceLayoutThreads) => void;
-  readonly ownerKey?: string;
   readonly open: boolean;
   readonly sidebar: ReactNode;
   /** Which remembered width this panel takes. */
@@ -147,47 +132,22 @@ interface ChatThreadSidebarShellProps {
 
 export function ChatThreadSidebarShell({
   children,
-  layout,
   animateEntry,
-  onSidebarLayoutCommit,
-  onWorkspaceLayoutCommit,
-  ownerKey = "",
   open,
   sidebar,
   widthKey = "default",
   workspace,
 }: ChatThreadSidebarShellProps) {
-  const transitionRef = useSet(layout.transitionOnRef$);
   // The remembered panel width; each panel kind keeps its own.
   const width = useGet(chatThreadSidebarWidths$)[widthKey] ?? null;
   const resizing = useGet(chatThreadSidebarResizing$);
   const workspaceResizing = useGet(workspaceResizing$);
-  const workspaceThreads = useGet(workspaceLayoutThreads$);
-  // The chat list shares the workspace row, so its geometry sizes this panel.
-  const chatListWidth = useGet(chatListWidth$);
-  const chatListHidden = useGet(sidebarOff$);
-  const chatListResizing = useGet(chatListResizing$);
   const { style, transition } = chatThreadSidebarLayout(
     width,
     workspaceResizing,
     animateEntry,
     open,
   );
-
-  const sidebarLayoutKey = JSON.stringify([
-    open,
-    ownerKey,
-    widthKey,
-    width,
-    resizing,
-    animateEntry,
-    chatListWidth,
-    chatListHidden,
-    chatListResizing,
-    workspace?.beside,
-    workspace?.pwaNavigation,
-    workspace?.fullscreen,
-  ]);
 
   const handle = open ? (
     <ChatThreadSidebarResizeHandle
@@ -207,13 +167,9 @@ export function ChatThreadSidebarShell({
       >
         {children}
       </div>
-      <LayoutPanel
-        active={open}
-        layoutKey={sidebarLayoutKey}
-        onLayoutCommit={onSidebarLayoutCommit}
+      <div
         data-testid="chat-thread-sidebar-pane"
         data-sidebar-layout-owner="panel"
-        data-sidebar-layout-key={sidebarLayoutKey}
         data-sidebar-layout-resizing={workspaceResizing ? "true" : undefined}
         className={sidebarPanelClassName({
           open,
@@ -223,14 +179,13 @@ export function ChatThreadSidebarShell({
         aria-hidden={!open}
       >
         {sidebar}
-      </LayoutPanel>
+      </div>
       {handle}
     </>
   );
 
   const frame = (
     <div
-      ref={transitionRef}
       // The shell frame must not establish a stacking context or containing
       // block: its sidebar's fixed surface needs to compete inside #root.
       className={workspaceFrameClassName(workspace?.beside)}
@@ -247,15 +202,5 @@ export function ChatThreadSidebarShell({
       )}
     </div>
   );
-  return onWorkspaceLayoutCommit ? (
-    <RequestCommit
-      request={workspaceThreads}
-      commitKey={sidebarLayoutKey}
-      onCommit={onWorkspaceLayoutCommit}
-    >
-      {frame}
-    </RequestCommit>
-  ) : (
-    withChatScrollLayout(frame)
-  );
+  return frame;
 }

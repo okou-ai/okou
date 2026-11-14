@@ -656,7 +656,7 @@ pub(super) async fn exercise(request: Request<'_>) -> TestResult<()> {
     if !request.proof.owns(&id) {
         return Err(io::Error::other("fixed original changed").into());
     }
-    let home = claim_producer::home(request.directory, &id)?;
+    let home = fixture::retained_home(request.directory, &id)?;
     let mut owner = None;
     let mut cleanup = None;
     let mut task = None;
@@ -747,7 +747,7 @@ pub(super) async fn exercise(request: Request<'_>) -> TestResult<()> {
         return Err(io::Error::other("fixed loss released promotion identity").into());
     }
     live(&request).await?;
-    if home != claim_producer::home(request.directory, &id)? {
+    if home != fixture::retained_home(request.directory, &id)? {
         return Err(io::Error::other("fixed retained original home changed").into());
     }
     request.selection.witness(request.proof,"original_owners_retained",json!({"original_home":home,

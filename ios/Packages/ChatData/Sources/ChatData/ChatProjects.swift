@@ -13,11 +13,6 @@ public struct ChatProjects: Sendable {
 
   public init(client: APIClient) { self.client = client }
 
-  public func list() async throws -> [ChatProject] {
-    let response: ProjectList = try await client.request("/api/projects")
-    return response.projects
-  }
-
   public func create(name: String, eventID: String, fromThreadID: String? = nil) async throws
     -> ChatProject
   {
@@ -54,7 +49,6 @@ public struct ChatProjects: Sendable {
       "\(time.prefix(8))-\(time.suffix(4))-7\(random.dropFirst(15).prefix(3))-\(random.dropFirst(19))"
   }
 
-  private struct ProjectList: Decodable, Sendable { let projects: [ChatProject] }
   private struct CreateProject: Encodable {
     let id: String
     let eventId: String

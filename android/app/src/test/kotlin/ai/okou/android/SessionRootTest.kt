@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import org.junit.Rule
@@ -19,7 +20,7 @@ class SessionRootTest {
         compose.onNodeWithText("Welcome to Okou").assertExists()
         compose.onNodeWithText("Restoring your session…").assertExists()
         compose.onNodeWithTag("chat_list").assertDoesNotExist()
-        compose.onNodeWithText("Settings").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Settings").assertDoesNotExist()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Welcome to Okou").assertExists()
         compose.onNodeWithTag("chat_list").assertDoesNotExist()

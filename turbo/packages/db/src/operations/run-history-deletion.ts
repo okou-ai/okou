@@ -3,7 +3,6 @@ import { literal, number, object } from "zod";
 import { agentRuns } from "../runtime/agent-run";
 import { usageEvent } from "../runtime/usage-event";
 import { agentRunCallbacks } from "../schema/agent-run-callback";
-import { runnerJobQueue } from "../schema/runner-job-queue";
 import { blobs } from "../schema/blob";
 import { claimedWorkflowAttachments } from "../schema/claimed-workflow-attachment";
 
@@ -15,7 +14,7 @@ export const threadlessRunDeletionOutcomeSchema = object({
 });
 
 /**
- * Requires restrictive callback, job and usage Run FKs. A late pending child
+ * Requires restrictive callback and usage Run FKs. A late pending child
  * must reject the parent DELETE, never disappear through CASCADE or SET NULL.
  * The owning Run lock and final nonblocking blob lock retain their old order.
  */
@@ -52,10 +51,6 @@ export function deleteThreadlessRunHistorySql(input: {
           SELECT 1 FROM ${agentRunCallbacks}
           WHERE ${agentRunCallbacks.runId} = locked_run.id
             AND ${agentRunCallbacks.status} = 'pending'
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM ${runnerJobQueue}
-          WHERE ${runnerJobQueue.runId} = locked_run.id
         )
         AND NOT EXISTS (
           SELECT 1 FROM ${usageEvent}

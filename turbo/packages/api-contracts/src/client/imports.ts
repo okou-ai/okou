@@ -259,11 +259,6 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
-    module: "chat-share-selection",
-    contracts: ["chatShareSelectionContract"],
-    bindings: [],
-  },
-  {
     module: "chat-thread-activity-summary",
     contracts: ["chatThreadActivitySummaryContract"],
     bindings: [
@@ -1563,8 +1558,6 @@ export const clientContractImportManifest = [
       "runnersCancellationContract",
       "runnersConnectorRuntimeSyncContract",
       "runnersHeartbeatContract",
-      "runnersJobClaimContract",
-      "runnersPollContract",
       "runnersSteerContract",
     ],
     bindings: [

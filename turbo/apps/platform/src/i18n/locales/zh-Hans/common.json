@@ -1405,7 +1405,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "输入网址",
     "authorizationRequired": "此对话未启用云端浏览器",
     "blankPage": {
       "description": "{{assistantName}} 工作时会在这里打开网页。你也可以在上方输入网址自己浏览。",
@@ -1449,6 +1448,7 @@
     "address": "地址",
     "addressOpening": "页面仍在打开，请稍后重试。",
     "addressPreparing": "浏览器尚未就绪，请稍后重试。",
+    "addressSearchPlaceholder": "输入网址或搜索内容",
     "allTabs": "所有标签页",
     "automatic": "自动",
     "back": "后退",
@@ -1473,6 +1473,7 @@
     "liveView": "浏览器实时画面",
     "newTab": "新标签页",
     "noTabs": "没有打开的标签页",
+    "openAddress": "打开网址",
     "operationFailed": "浏览器操作未能完成。请检查浏览器当前状态后再试。",
     "paused": "画面已暂停",
     "quality": "图像质量",
@@ -1487,6 +1488,7 @@
     "remoteInput": "远程浏览器输入",
     "resolution": "分辨率",
     "retryImage": "重试实时画面",
+    "searchGoogle": "用 Google 搜索",
     "settings": "浏览器设置",
     "sharedTransport": "共用连接",
     "sizeInitial": "连接时调整",
@@ -2479,17 +2481,13 @@
       "copyFailed": "无法复制链接",
       "create": "分享",
       "createFailed": "无法创建分享对话。",
-      "createLink": "创建链接",
       "deselectGroup": "取消选择该组消息",
-      "deselectMessage": "取消选择消息",
       "everyone": "所有人",
       "linkCopied": "链接已复制",
       "messageShareFailed": "分享链接创建失败。",
       "organizationDescription": "仅限组织内成员",
       "selectedCount_other": "已选 {{count}} 条",
       "selectGroup": "选择该组消息",
-      "selectMessage": "选择消息",
-      "selectMessages": "选择消息…",
       "shareLink": "分享对话链接",
       "start": "分享消息",
       "tooLarge": "选择的消息过多，请减少后再分享",
@@ -2758,6 +2756,11 @@
       "ideasLabel": "上手灵感",
       "label": "上手任务",
       "more": "更多",
+      "presentationFormat": "演示文稿格式",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "演示文稿模板",
       "removeTask": "移除{{task}}",
       "shelf": {

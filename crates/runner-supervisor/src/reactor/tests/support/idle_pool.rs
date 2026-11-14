@@ -24,16 +24,6 @@ struct IdlePoolSeedSpec<'a> {
     timing: Option<std::time::Instant>,
 }
 
-pub(in super::super) struct SpeculativeIdleSeedSpec<'a> {
-    pub(in super::super) reuse_key: &'a str,
-    pub(in super::super) profile_name: &'a str,
-    pub(in super::super) vcpu: u32,
-    pub(in super::super) memory_mb: u32,
-    pub(in super::super) native_generation_run_id: RunId,
-    pub(in super::super) guest_timezone_intent: GuestTimezoneIntent,
-    pub(in super::super) timing: Option<std::time::Instant>,
-}
-
 /// Pre-populate idle pool with an entry and reserve its budget. Returns
 /// the entry's sandbox id so reuse tests can assert it propagates through
 /// to the completion payload.
@@ -87,38 +77,6 @@ pub(in super::super) async fn seed_idle_pool_with_history_generation(
             native_generation_run_id: Some(native_generation_run_id),
             guest_timezone_intent: GuestTimezoneIntent::Unknown,
             timing: None,
-        },
-    )
-    .await
-}
-
-pub(in super::super) async fn seed_idle_pool_with_speculative_timezone(
-    pool: &SharedIdlePool,
-    budget: &Arc<ResourceBudget>,
-    overrides: &Arc<sandbox_mock::MockSandboxOverrides>,
-    spec: SpeculativeIdleSeedSpec<'_>,
-) -> SandboxId {
-    let SpeculativeIdleSeedSpec {
-        reuse_key,
-        profile_name,
-        vcpu,
-        memory_mb,
-        native_generation_run_id,
-        guest_timezone_intent,
-        timing,
-    } = spec;
-    seed_idle_pool_with_overrides_and_generation(
-        pool,
-        budget,
-        overrides,
-        IdlePoolSeedSpec {
-            reuse_key,
-            profile_name,
-            vcpu,
-            memory_mb,
-            native_generation_run_id: Some(native_generation_run_id),
-            guest_timezone_intent,
-            timing,
         },
     )
     .await

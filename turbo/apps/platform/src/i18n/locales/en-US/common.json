@@ -1408,7 +1408,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "Enter a URL",
     "authorizationRequired": "Cloud browser is not enabled for this chat",
     "blankPage": {
       "description": "{{assistantName}} opens pages here as it works. Enter a URL above to browse yourself.",
@@ -1452,6 +1451,7 @@
     "address": "Address",
     "addressOpening": "A page is still opening. Try again shortly.",
     "addressPreparing": "The browser is not ready. Try again shortly.",
+    "addressSearchPlaceholder": "Enter an address or search",
     "allTabs": "All tabs",
     "automatic": "Automatic",
     "back": "Back",
@@ -1476,6 +1476,7 @@
     "liveView": "Live browser view",
     "newTab": "New tab",
     "noTabs": "No tabs open",
+    "openAddress": "Open address",
     "operationFailed": "The browser action could not be completed. Check the browser before trying again.",
     "paused": "Viewing paused",
     "quality": "Image quality",
@@ -1490,6 +1491,7 @@
     "remoteInput": "Remote browser input",
     "resolution": "Resolution",
     "retryImage": "Retry live image",
+    "searchGoogle": "Search Google",
     "settings": "Browser settings",
     "sharedTransport": "Shared connection",
     "sizeInitial": "On connection",
@@ -2488,9 +2490,7 @@
       "copyFailed": "Could not copy the link",
       "create": "Share",
       "createFailed": "Could not create the shared chat.",
-      "createLink": "Create link",
       "deselectGroup": "Deselect message group",
-      "deselectMessage": "Deselect message",
       "everyone": "Everyone",
       "linkCopied": "Link copied",
       "messageShareFailed": "The shared link could not be created.",
@@ -2498,8 +2498,6 @@
       "selectedCount_one": "{{count}} selected",
       "selectedCount_other": "{{count}} selected",
       "selectGroup": "Select message group",
-      "selectMessage": "Select message",
-      "selectMessages": "Select messages…",
       "shareLink": "Shared chat link",
       "start": "Share messages",
       "tooLarge": "Select fewer messages to share",
@@ -2770,6 +2768,11 @@
       "ideasLabel": "Ideas to get started",
       "label": "Tasks to get started",
       "more": "More",
+      "presentationFormat": "Presentation format",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "Presentation templates",
       "removeTask": "Remove {{task}}",
       "shelf": {

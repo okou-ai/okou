@@ -237,6 +237,29 @@ test("An open tray switches capabilities and types without going back to the car
   expect(editor).toHaveTextContent("Keep my launch brief");
 });
 
+test("Opening the tray from a card and closing it back each swap the home under one view transition", async () => {
+  mockTemplateChat();
+  const viewTransition = context.mocks.browser.viewTransition();
+  const editor = await setupHome();
+  await fill(editor, "Keep my launch brief");
+  click(capabilityAction("Research"));
+  await screen.findByRole("region", { name: "Research" });
+  expect(viewTransition.startedTypes).toStrictEqual([["capability-home"]]);
+  // Moving between capabilities is the open tray's own motion, not a swap.
+  click(capabilityTab("Find people"));
+  await screen.findByRole("region", { name: "Find people" });
+  expect(viewTransition.startedTypes).toStrictEqual([["capability-home"]]);
+  click(button("All capabilities"));
+  await waitFor(() => {
+    expect(capabilities()).toBeInTheDocument();
+  });
+  expect(viewTransition.startedTypes).toStrictEqual([
+    ["capability-home"],
+    ["capability-home"],
+  ]);
+  expect(editor).toHaveTextContent("Keep my launch brief");
+});
+
 test("The capability tabs move with the arrow keys and open on Enter", async () => {
   mockTemplateChat();
   await setupHome();

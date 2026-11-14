@@ -86,8 +86,8 @@ function mockChatAuthorization(enabled: boolean) {
 }
 
 function browserSession(
-  overrides: Partial<BrowserSession> = {},
-): BrowserSession {
+  overrides: Partial<BrowserViewerConnection["browser"]> = {},
+): BrowserViewerConnection["browser"] {
   return {
     threadId: THREAD_ID,
     name: "booking",
@@ -103,6 +103,21 @@ function browserSession(
     createdAt: "2026-09-01T10:00:00.000Z",
     updatedAt: "2026-09-01T10:00:00.000Z",
     ...overrides,
+  };
+}
+
+function suspendedBrowserSession(): Extract<
+  BrowserSession,
+  { status: "suspended" }
+> {
+  return {
+    ...browserSession(),
+    liveUrl: null,
+    idleExpiresAt: null,
+    suspendedAt: "2026-09-01T10:10:00.000Z",
+    suspensionReason: "idle",
+    status: "suspended",
+    window: undefined,
   };
 }
 
@@ -293,7 +308,7 @@ test("The Okou viewer shows its host blank page only while the blank tab is sele
       "Okou opens pages here as it works. Enter a URL above to browse yourself.",
     ),
   ).toBeInTheDocument();
-  expect(within(viewer).getByPlaceholderText("Enter a URL")).toBeEnabled();
+  expect(within(viewer).getByLabelText("Address")).toBeEnabled();
   const blankTab = within(viewer).getByLabelText("New tab", {
     selector: '[role="tab"]',
   });
@@ -651,7 +666,7 @@ test("A reclaimed connection shows an unavailable state", async () => {
 test.each(["url", "instance", "window"] as const)(
   "A replacement browser %s blocks input while its connection loads",
   async (identity) => {
-    let currentSession = browserSession(
+    let currentSession: BrowserSession = browserSession(
       identity !== "url"
         ? {
             liveUrl: null,
@@ -672,14 +687,7 @@ test.each(["url", "instance", "window"] as const)(
     });
     context.mocks.api(browserContract.get, async ({ respond }) => {
       if (!replacing) {
-        return respond(200, {
-          browser: currentSession,
-          viewer: {
-            browser: currentSession,
-            cdpUrl,
-            extension: TEST_BROWSER_EXTENSION,
-          },
-        });
+        return respond(200, browserAcquisition(currentSession, cdpUrl));
       }
       connectionStarted.resolve();
       await releaseConnection.promise;
@@ -740,7 +748,7 @@ test("Revealing a replacement viewer synchronizes the display measured while it 
       return this.closest("[hidden]") ? new DOMRect(0, 0, 0, 0) : canvasBox;
     },
   );
-  let currentSession = browserSession();
+  let currentSession: BrowserSession = browserSession();
   let replacing = false;
   const connectionStarted = context.mocks.deferred<void>();
   const releaseConnection = context.mocks.deferred<void>();
@@ -757,14 +765,7 @@ test("Revealing a replacement viewer synchronizes the display measured while it 
       connectionStarted.resolve();
       await releaseConnection.promise;
     }
-    return respond(200, {
-      browser: currentSession,
-      viewer: {
-        browser: currentSession,
-        cdpUrl,
-        extension: TEST_BROWSER_EXTENSION,
-      },
-    });
+    return respond(200, browserAcquisition(currentSession, cdpUrl));
   });
   await setupPage({ context, path: `/browsers/${THREAD_ID}` });
   await waitFor(() => {
@@ -1023,15 +1024,7 @@ test.each([
       });
     });
     let startCount = 0;
-    mockBrowserSession(
-      browserSession({
-        status: "suspended",
-        liveUrl: null,
-        idleExpiresAt: null,
-        suspendedAt: "2026-09-01T10:10:00.000Z",
-        suspensionReason: "idle",
-      }),
-    );
+    mockBrowserSession(suspendedBrowserSession());
     let requestDisplay: unknown;
     context.mocks.api(browserContract.open, ({ params, body, respond }) => {
       requestDisplay = body.initialDisplay;
@@ -1064,6 +1057,58 @@ async function expectStreamingViewer(): Promise<void> {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
 }
+
+test("A restarted Browser accepts searches after composition in the initial address field", async () => {
+  const activeSession = browserSession();
+  const pausedSession: BrowserSession = {
+    ...activeSession,
+    status: "suspended",
+    window: undefined,
+    liveUrl: null,
+    idleExpiresAt: null,
+    suspendedAt: "2026-09-01T10:10:00.000Z",
+    suspensionReason: "idle",
+  };
+  const cdpUrl = "wss://cdp.browser-use.com/composition-restart";
+  mockBrowserCdp(context, cdpUrl);
+  const requested = context.mocks.deferred<void>();
+  const acquisition = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.get, async ({ respond }) => {
+    requested.resolve();
+    await acquisition.promise;
+    return respond(200, browserAcquisition(pausedSession));
+  });
+  context.mocks.api(browserContract.open, ({ respond }) => {
+    return respond(200, browserAcquisition(activeSession, cdpUrl));
+  });
+  context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+    return respond(200, { browser: activeSession });
+  });
+
+  const page = await startPage({ context, path: `/browsers/${THREAD_ID}` });
+  await page.content;
+  await requested.promise;
+  const original = screen.getByLabelText<HTMLInputElement>("Address");
+  await fill(original, "季度报告");
+  fireEvent.compositionStart(original);
+  await act(acquisition.resolve);
+  await page.ready;
+  await screen.findByText("Browser not live");
+
+  click(getButton("Start browser"));
+  await expectStreamingViewer();
+  const address = screen.getByLabelText("Address");
+  await fill(address, "annual report");
+  expect(
+    screen.getByLabelText("Search Google", { selector: "button" }),
+  ).toBeEnabled();
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue(
+      "https://www.google.com/search?q=annual+report",
+    );
+  });
+});
 
 function mockSharedViewer(liveUrl: string | null = null) {
   const session = browserSession({
@@ -1344,15 +1389,7 @@ test("A denied renewal revokes a healthy viewer without waiting for native disco
 });
 
 test("Losing authorization while starting replaces the stopped state with the authorization placeholder", async () => {
-  mockBrowserSession(
-    browserSession({
-      status: "suspended",
-      liveUrl: null,
-      idleExpiresAt: null,
-      suspendedAt: "2026-09-01T10:10:00.000Z",
-      suspensionReason: "idle",
-    }),
-  );
+  mockBrowserSession(suspendedBrowserSession());
   context.mocks.api(browserContract.open, ({ respond }) => {
     return respond(403, {
       error: {
@@ -1377,13 +1414,7 @@ test("Losing authorization while starting replaces the stopped state with the au
 test("A renewed grant can start a stopped Browser while an older start is pending", async () => {
   const { authorize, cachedChatThreadEvents } = mockChatAuthorization(true);
   const { session } = mockSharedViewer();
-  let currentSession = browserSession({
-    status: "suspended",
-    liveUrl: null,
-    idleExpiresAt: null,
-    suspendedAt: "2026-09-01T10:10:00.000Z",
-    suspensionReason: "idle",
-  });
+  let currentSession: BrowserSession = suspendedBrowserSession();
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, browserAcquisition(currentSession));
   });
@@ -1439,15 +1470,7 @@ test.each(["active", "suspended"] as const)(
     const { authorize, cachedChatThreadEvents } = mockChatAuthorization(false);
     const { session } = mockSharedViewer();
     const currentSession =
-      status === "active"
-        ? session
-        : browserSession({
-            status: "suspended",
-            liveUrl: null,
-            idleExpiresAt: null,
-            suspendedAt: "2026-09-01T10:10:00.000Z",
-            suspensionReason: "idle",
-          });
+      status === "active" ? session : suspendedBrowserSession();
     let enabled = false;
     context.mocks.api(browserContract.get, ({ respond }) => {
       return enabled
@@ -1666,7 +1689,7 @@ test("A batched disable and re-enable clears a denied lease even when cached aut
 test("Confirmed expiry after a failed renewal displays the stopped state", async () => {
   const failures = recordHeartbeatFailures();
   const { session } = mockSharedViewer();
-  let currentSession = session;
+  let currentSession: BrowserSession = session;
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(200, browserAcquisition(currentSession));
   });
@@ -1693,13 +1716,7 @@ test("Confirmed expiry after a failed renewal displays the stopped state", async
     return expect(failures).toHaveLength(1);
   });
   expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-  currentSession = browserSession({
-    status: "suspended",
-    liveUrl: null,
-    idleExpiresAt: null,
-    suspendedAt: "2026-09-01T10:10:00.000Z",
-    suspensionReason: "idle",
-  });
+  currentSession = suspendedBrowserSession();
   expire.resolve();
   await screen.findByText("Browser not live");
   expect(getButton("Start browser")).toBeEnabled();
@@ -1833,7 +1850,7 @@ test.each([404, 409] as const)(
   async (status) => {
     const failures = recordHeartbeatFailures();
     const { session } = mockSharedViewer();
-    let currentSession = session;
+    let currentSession: BrowserSession = session;
     context.mocks.api(browserContract.get, ({ respond }) => {
       return respond(200, browserAcquisition(currentSession));
     });
@@ -1852,13 +1869,7 @@ test.each([404, 409] as const)(
           },
         });
       }
-      currentSession = browserSession({
-        status: "suspended",
-        liveUrl: null,
-        idleExpiresAt: null,
-        suspendedAt: "2026-09-01T10:10:00.000Z",
-        suspensionReason: "idle",
-      });
+      currentSession = suspendedBrowserSession();
       return respond(status, {
         error: { code: "BROWSER_NOT_FOUND", message: "Browser expired" },
       });
@@ -1972,19 +1983,12 @@ test.each([200, 404, 409] as const)(
   "A heartbeat response %s after reopening reloads its window and keeps renewing",
   async (status) => {
     const { session, cdpUrl } = mockSharedViewer();
-    let currentSession = session;
+    let currentSession: BrowserSession = session;
     context.mocks.api(browserContract.get, ({ respond }) => {
       return respond(200, browserAcquisition(currentSession, cdpUrl));
     });
     context.mocks.api(browserContract.get, ({ respond }) => {
-      return respond(200, {
-        browser: currentSession,
-        viewer: {
-          browser: currentSession,
-          cdpUrl,
-          extension: TEST_BROWSER_EXTENSION,
-        },
-      });
+      return respond(200, browserAcquisition(currentSession, cdpUrl));
     });
     const entered = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
@@ -2036,7 +2040,7 @@ test.each(["instance", "window"] as const)(
     const failures = recordHeartbeatFailures();
     const { session, cdpUrl } = mockSharedViewer();
     const initialSession = session;
-    let currentSession = initialSession;
+    let currentSession: BrowserSession = initialSession;
     let replacing = false;
     const connectionStarted = context.mocks.deferred<void>();
     const releaseConnection = context.mocks.deferred<void>();
@@ -2048,14 +2052,7 @@ test.each(["instance", "window"] as const)(
         connectionStarted.resolve();
         await releaseConnection.promise;
       }
-      return respond(200, {
-        browser: currentSession,
-        viewer: {
-          browser: currentSession,
-          cdpUrl,
-          extension: TEST_BROWSER_EXTENSION,
-        },
-      });
+      return respond(200, browserAcquisition(currentSession, cdpUrl));
     });
     const entered = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
@@ -2136,7 +2133,9 @@ test("Navigating after transient recovery cancels the old heartbeat and renews o
   const failures = recordHeartbeatFailures();
   const { session, cdpUrl } = mockSharedViewer();
   const nextThreadId = "44444444-4444-4444-8444-444444444444";
-  function sessionForThread(threadId: string): BrowserSession {
+  function sessionForThread(
+    threadId: string,
+  ): BrowserViewerConnection["browser"] {
     return {
       ...session,
       threadId,

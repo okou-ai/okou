@@ -5,6 +5,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -25,7 +26,7 @@ class MainActivityTest {
     @Test
     @Config(qualifiers = "en-rUS-notnight")
     fun pastelPaletteKeepsSettingsAndDialogActionsReadable() {
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Default").performScrollTo().performClick()
         compose.onNodeWithText("Cotton sky").performScrollTo().performClick()
         val colors =

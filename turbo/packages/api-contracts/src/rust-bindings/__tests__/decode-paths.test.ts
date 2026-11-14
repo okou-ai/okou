@@ -22,8 +22,7 @@ import {
 
 const expectedBindings = [
   "runners::builtin_firewalls::resolve::RESPONSE",
-  "runners::jobs::by_id::claim::RESPONSE",
-  "runners::poll::RESPONSE",
+  "runners::execution_publication::CONTEXT",
   "runners::realtime::token::RESPONSE",
   "runners::runs::by_run_id::cancellation::RESPONSE",
   "runners::runs::by_run_id::connector_runtime::sync::RESPONSE",
@@ -62,7 +61,7 @@ describe("Rust decode-path bindings", () => {
     expect(actual).toEqual(expectedBindings);
   });
 
-  it("renders deterministic metadata for current claim and non-claim fields", () => {
+  it("renders deterministic metadata for complete execution inputs and control responses", () => {
     const first = renderRustDecodePaths(rustDecodePathBindings);
     const second = renderRustDecodePaths(rustDecodePathBindings);
 

@@ -13,6 +13,7 @@ interface BrowserTarget {
   readonly targetId: string;
   title: string;
   url: string;
+  faviconUrl?: string;
   pendingUrl?: string;
   windowId?: number;
 }
@@ -50,6 +51,7 @@ export function mockBrowserCdp(
     readonly endpointAliases?: readonly string[];
   } = {},
 ) {
+  context.mocks.browser.nativeTextInsertion();
   const endpoints = new Set([cdpUrl, ...(options.endpointAliases ?? [])]);
   const connectionEndpoints = new Map<number, string>();
   context.mocks.browser.canvasRendering();
@@ -517,6 +519,14 @@ export function mockBrowserCdp(
         return options.extensionAvailable === false
           ? { result: { type: "undefined" } }
           : nativeResult(expression);
+      }
+      if (expression.includes("/* okou-browser favicon */")) {
+        const favicon = targetForSession(request.sessionId).faviconUrl;
+        return {
+          result: favicon
+            ? { type: "string", value: favicon }
+            : { type: "object", subtype: "null", value: null },
+        };
       }
       return {
         result:

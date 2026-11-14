@@ -111,8 +111,6 @@ import { chatRelationsContract as OriginalChatRelationsContract } from "../contr
 import { chatRelationsContract } from "./chat-relations";
 import { chatRemoteAccessContract as OriginalChatRemoteAccessContract } from "../contracts/chat-remote-access";
 import { chatRemoteAccessContract } from "./chat-remote-access";
-import { chatShareSelectionContract as OriginalChatShareSelectionContract } from "../contracts/chat-share-selection";
-import { chatShareSelectionContract } from "./chat-share-selection";
 import { chatThreadActivitySummaryContract as OriginalChatThreadActivitySummaryContract } from "../contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryContract } from "./chat-thread-activity-summary";
 import {
@@ -623,8 +621,6 @@ import {
   runnersCancellationContract as OriginalRunnersCancellationContract,
   runnersConnectorRuntimeSyncContract as OriginalRunnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract as OriginalRunnersHeartbeatContract,
-  runnersJobClaimContract as OriginalRunnersJobClaimContract,
-  runnersPollContract as OriginalRunnersPollContract,
   runnersSteerContract as OriginalRunnersSteerContract,
 } from "../contracts/runners";
 import {
@@ -632,8 +628,6 @@ import {
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
-  runnersJobClaimContract,
-  runnersPollContract,
   runnersSteerContract,
 } from "./runners";
 import { sharedThreadVisibilityContract as OriginalSharedThreadVisibilityContract } from "../contracts/shared-thread-visibility";
@@ -853,7 +847,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [chatInputStatusContract, OriginalChatInputStatusContract],
   [chatRelationsContract, OriginalChatRelationsContract],
   [chatRemoteAccessContract, OriginalChatRemoteAccessContract],
-  [chatShareSelectionContract, OriginalChatShareSelectionContract],
   [
     chatThreadActivitySummaryContract,
     OriginalChatThreadActivitySummaryContract,
@@ -1282,8 +1275,6 @@ export const clientDescriptorContracts: readonly (readonly [
     OriginalRunnersConnectorRuntimeSyncContract,
   ],
   [runnersHeartbeatContract, OriginalRunnersHeartbeatContract],
-  [runnersJobClaimContract, OriginalRunnersJobClaimContract],
-  [runnersPollContract, OriginalRunnersPollContract],
   [runnersSteerContract, OriginalRunnersSteerContract],
   [sharedThreadVisibilityContract, OriginalSharedThreadVisibilityContract],
   [sharedThreadsContract, OriginalSharedThreadsContract],

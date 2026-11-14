@@ -34,6 +34,24 @@ const MODULES = new Set(
 // #46270 explicitly permits exact-version Storage reconstruction in Claim.
 // Acknowledgment in the base inventory consumes this amendment permanently.
 const APPROVED_AMENDMENTS = new Map([
+  // #46806 moves the existing preparation owners without adding Storage uses.
+  [
+    "direct-execution-source-owner-rename",
+    [
+      {
+        file: "turbo/apps/api/src/signals/services/execution-context.ts",
+        dependency:
+          "module:turbo/apps/api/src/signals/services/execution-storage.service",
+        uses: 2,
+      },
+      {
+        file: "turbo/apps/api/src/signals/services/execution-runtime-context.ts",
+        dependency:
+          "module:turbo/apps/api/src/signals/services/execution-storage.service",
+        uses: 2,
+      },
+    ],
+  ],
   [
     "claim-source-reconstruction",
     [

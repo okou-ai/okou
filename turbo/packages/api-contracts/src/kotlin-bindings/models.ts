@@ -207,6 +207,53 @@ function unionSelectors(
       );
     }
   }
+  // Some contracts need multiple tags or required/forbidden fields jointly.
+  // Prove every pair disjoint before relying on these selectors.
+  if (
+    properties.every((fields, index) => {
+      return properties.every((other, otherIndex) => {
+        return (
+          index === otherIndex ||
+          Object.keys(fields).some((field) => {
+            if (!required[index]!.has(field)) return false;
+            if (isNever(other[field])) return true;
+            const values = stringValues(fields[field]);
+            const otherValues = required[otherIndex]!.has(field)
+              ? stringValues(other[field])
+              : undefined;
+            return (
+              values !== undefined &&
+              otherValues !== undefined &&
+              values.every((value) => {
+                return !otherValues.includes(value);
+              })
+            );
+          }) ||
+          Object.keys(other).some((field) => {
+            return required[otherIndex]!.has(field) && isNever(fields[field]);
+          })
+        );
+      });
+    })
+  )
+    return guarded(
+      properties.map((fields, index) => {
+        return (
+          Object.keys(fields)
+            .filter((field) => {
+              return required[index]!.has(field);
+            })
+            .map((field) => {
+              const values = stringValues(fields[field]);
+              if (values !== undefined)
+                return `(value[${kotlinQuote(field)}] as? JsonPrimitive)?.let { it.isString && it.content in setOf(${values.map(kotlinQuote).join(", ")}) } == true`;
+              return `value.containsKey(${kotlinQuote(field)})`;
+            })
+            .join(" && ") || "true"
+        );
+      }),
+      true,
+    );
   return guarded(
     properties.map((fields, index) => {
       const key = Object.keys(fields).find((field) => {
@@ -224,16 +271,38 @@ function unionSelectors(
   );
 }
 
+function objectUnionVariants(variants: readonly unknown[]): JsonObject[] {
+  return variants.flatMap((variant) => {
+    if (!schemaObject(variant)) throw new Error("Unsupported union variant");
+    const nested = variant.anyOf ?? variant.oneOf;
+    if (nested === undefined) return [variant];
+    if (
+      !Array.isArray(nested) ||
+      nested.length < 2 ||
+      Object.keys(variant).some((key) => {
+        return !["anyOf", "oneOf", "description", "title"].includes(key);
+      }) ||
+      (variant.anyOf !== undefined && variant.oneOf !== undefined)
+    )
+      throw new Error("Unsupported nested union composition");
+    return objectUnionVariants(nested);
+  });
+}
+
 /** Emits supported selected shapes; opaque JSON is limited to canonical unknown leaves. */
 export function renderKotlinModels(
   bindings: readonly KotlinTypeBinding[],
   packageName = defaultKotlinPackage,
+  requestTypes: ReadonlySet<string> = new Set(),
 ): string {
   const declarations: string[] = [];
   const names = new Set<string>();
   let hasEmptyArray = false;
   let hasZero = false;
   let hasOptionalJson = false;
+  let hasOptionalInput = false;
+  let requestBinding = false;
+  const integerLiterals = new Set<number>();
   const imports = new Set([
     "kotlinx.serialization.SerialName",
     "kotlinx.serialization.Serializable",
@@ -309,6 +378,57 @@ object CanonicalOptionalJsonSerializer : KSerializer<CanonicalOptionalJson> {
     }
 }`);
   };
+  const literalInteger = (value: number) => {
+    if (value === 0) return literalZero();
+    const name = `CanonicalInteger${value < 0 ? "Minus" : ""}${Math.abs(value)}`;
+    if (integerLiterals.has(value)) return name;
+    reserve(name);
+    reserve(`${name}Serializer`);
+    integerLiterals.add(value);
+    serializerImports();
+    imports.add("kotlinx.serialization.json.doubleOrNull");
+    declarations.push(`@Serializable(with = ${name}Serializer::class)
+data object ${name}
+
+object ${name}Serializer : KSerializer<${name}> {
+    override val descriptor = JsonPrimitive.serializer().descriptor
+    override fun deserialize(decoder: Decoder): ${name} {
+        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON integer literal")
+        val value = input.decodeJsonElement()
+        if (value !is JsonPrimitive || value.isString || value.doubleOrNull != ${value}.0) throw SerializationException("Unexpected integer literal")
+        return ${name}
+    }
+    override fun serialize(encoder: Encoder, value: ${name}) {
+        val output = encoder as? JsonEncoder ?: throw SerializationException("Expected JSON integer literal")
+        output.encodeJsonElement(JsonPrimitive(${value}L))
+    }
+}`);
+    return name;
+  };
+  const optionalInput = () => {
+    if (hasOptionalInput) return;
+    reserve("CanonicalOptional");
+    reserve("CanonicalOptionalSerializer");
+    hasOptionalInput = true;
+    serializerImports();
+    declarations.push(`@Serializable(with = CanonicalOptionalSerializer::class)
+sealed interface CanonicalOptional<out T> {
+    data object Absent : CanonicalOptional<Nothing>
+    data class Present<T>(val value: T) : CanonicalOptional<T>
+}
+
+class CanonicalOptionalSerializer<T>(private val serializer: KSerializer<T>) : KSerializer<CanonicalOptional<T>> {
+    override val descriptor = buildClassSerialDescriptor("CanonicalOptional", serializer.descriptor)
+    override fun deserialize(decoder: Decoder): CanonicalOptional<T> =
+        CanonicalOptional.Present(decoder.decodeSerializableValue(serializer))
+    override fun serialize(encoder: Encoder, value: CanonicalOptional<T>) {
+        when (value) {
+            CanonicalOptional.Absent -> throw SerializationException("Absent field must be omitted")
+            is CanonicalOptional.Present -> encoder.encodeSerializableValue(serializer, value.value)
+        }
+    }
+}`);
+  };
   const emptyArray = () => {
     if (hasEmptyArray) return "CanonicalEmptyArray";
     reserve("CanonicalEmptyArray");
@@ -376,16 +496,26 @@ object CanonicalEmptyArraySerializer : KSerializer<CanonicalEmptyArray> {
         const optional = !required.has(field);
         const opaque = optional && schemaObject(schema) && isJsonValue(schema);
         if (opaque) optionalJson();
+        const optionalNullable =
+          optional &&
+          requestBinding &&
+          schemaObject(schema) &&
+          nullableSchema(schema, `${name}${suffix(field)}`) !== undefined;
+        if (optionalNullable) optionalInput();
         const propertyType = opaque
           ? "CanonicalOptionalJson"
-          : optional && !wireType.endsWith("?")
-            ? `${wireType}?`
-            : wireType;
+          : optionalNullable
+            ? `CanonicalOptional<${wireType}>`
+            : optional && !wireType.endsWith("?")
+              ? `${wireType}?`
+              : wireType;
         const defaultValue = opaque
           ? " = CanonicalOptionalJson.Absent"
-          : optional
-            ? " = null"
-            : "";
+          : optionalNullable
+            ? " = CanonicalOptional.Absent"
+            : optional
+              ? " = null"
+              : "";
         return [
           `    val ${kotlinIdentifier(field)}: ${propertyType}${defaultValue},`,
         ];
@@ -457,16 +587,16 @@ object CanonicalEmptyArraySerializer : KSerializer<CanonicalEmptyArray> {
     if (value.const !== undefined) {
       if (
         ["number", "integer"].includes(String(value.type)) &&
-        value.const === 0
+        typeof value.const === "number" &&
+        Number.isSafeInteger(value.const)
       )
-        return literalZero();
+        return literalInteger(value.const);
       throw new Error(`${name}: unsupported literal`);
     }
     const union = value.anyOf ?? value.oneOf;
     if (Array.isArray(union)) {
-      const variants = union;
-      if (variants.length < 2 || !variants.every(schemaObject))
-        throw new Error(`${name}: unsupported union`);
+      const variants = objectUnionVariants(union);
+      if (variants.length < 2) throw new Error(`${name}: unsupported union`);
       const selectors = unionSelectors(variants, name);
       if (
         selectors.some((selector) => {
@@ -526,6 +656,7 @@ ${types
     return renderValue(value, name, parent);
   };
   for (const binding of bindings) {
+    requestBinding = requestTypes.has(binding.name);
     const name = kotlinTypeName(binding.name);
     const result = render(
       toJSONSchema(binding.schema, { io: binding.direction }),

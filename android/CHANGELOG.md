@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.0](https://github.com/okou-ai/okou/compare/android-v0.8.0...android-v0.9.0) (2026-11-14)
+
+
+### Features
+
+* **android:** add commit-addressed screenshot acceptance ([#47136](https://github.com/okou-ai/okou/issues/47136)) ([336d2a4](https://github.com/okou-ai/okou/commit/336d2a4ea9bf158919a5d7f932f50d29770a59d8))
+
+## [0.8.0](https://github.com/okou-ai/okou/compare/android-v0.7.0...android-v0.8.0) (2026-11-14)
+
+
+### Features
+
+* **android:** add native conversation history ([#47084](https://github.com/okou-ai/okou/issues/47084)) ([ceff05b](https://github.com/okou-ai/okou/commit/ceff05bf314bda810b8fd0203f50bba4ead15048))
+
 ## [0.7.0](https://github.com/okou-ai/okou/compare/android-v0.6.0...android-v0.7.0) (2026-11-13)
 
 

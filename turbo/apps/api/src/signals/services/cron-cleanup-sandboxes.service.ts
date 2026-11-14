@@ -39,7 +39,6 @@ import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-proc
 import { pickAllQueuedOrgs$ } from "./chat-thread-queue-drain.service";
 import { retryPendingFeishuConnectWelcomes$ } from "./feishu-welcome.service";
 import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
-import { cleanupExpiredRunnerJobs$ } from "./runner-job-queue-lifecycle.service";
 import {
   deleteThreadlessRunIfStillEligible$,
   type ThreadlessRunCandidate,
@@ -615,8 +614,6 @@ export const cleanupSandboxes$ = command(
     const threadlessRuns = await set(cleanupThreadlessRuns$, signal);
     signal.throwIfAborted();
 
-    await set(cleanupExpiredRunnerJobs$, signal);
-    signal.throwIfAborted();
     await (async (signal: AbortSignal): Promise<number> => {
       const candidates = db
         .select({ runId: agentRunConnectorDiagnosticRegistrations.runId })

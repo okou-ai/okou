@@ -385,8 +385,10 @@ private final class LifecycleHTTPFixture: Sendable {
           return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
         case "/api/chat-thread-drafts":
           return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
-        case "/api/projects":
-          return ChatHTTPResponse(body: #"{"projects":[]}"#)
+        case "/api/projects/events":
+          return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+        case "/api/projects/snapshot":
+          return ChatHTTPResponse(body: #"{"latestEventId":null,"latestSeqId":0,"projects":[]}"#)
         case "/api/agents/\(ConversationHistoryFixture.agentID)/draft",
           "/api/chat-threads/\(ConversationHistoryFixture.threadID)/draft":
           let key = try Self.workspace(request) + request.url!.path

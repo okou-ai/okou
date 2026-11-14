@@ -7,31 +7,30 @@ import XCTest
 
 @MainActor
 final class ChatSharingTests: XCTestCase {
-  func testSelectionCreationAndVisibilityUseCanonicalEventIdentities() async throws {
+  func testSharingUsesTheExistingWebVisibilityContract() async throws {
     let requests = Mutex<[URLRequest]>([])
     let fixture = ChatHTTPFixture { request in
-      requests.withLock { $0.append(request) }
-      if request.url?.path.hasSuffix("/selection") == true {
-        if request.httpMethod == "POST" {
-          return ChatHTTPResponse(status: 201, body: #"{"id":"share"}"#)
-        }
-        return ChatHTTPResponse(
-          body:
-            #"{"messages":[{"eventId":"answer","role":"assistant","turnEventIds":["question","answer"]}]}"#
-        )
+      let response: ChatHTTPResponse
+      switch (request.httpMethod, request.url?.path) {
+      case ("POST", "/api/chat-threads/thread/shared-threads/visibility"):
+        response = ChatHTTPResponse(status: 201, body: #"{"id":"share"}"#)
+      case ("PUT", "/api/shared-threads/share/visibility"):
+        response = ChatHTTPResponse(
+          body: #"{"id":"share","audience":"organization","revision":null}"#)
+      default:
+        throw URLError(.unsupportedURL)
       }
-      return ChatHTTPResponse(body: #"{"id":"share","audience":"organization","revision":null}"#)
+      requests.withLock { $0.append(request) }
+      return response
     }
-    let selection = try await fixture.client.chatShareSelection(threadID: "thread")
-    let answer = try XCTUnwrap(selection.messages.first)
-    XCTAssertEqual(answer.turnEventIds, ["question", "answer"])
-    let id = try await fixture.client.createSelectedChatShare(
-      threadID: "thread", eventIDs: [answer.eventId], audience: .organization, id: "share")
+    let id = try await fixture.client.shareThread(
+      threadID: "thread", eventIDs: ["answer"], audience: .organization, id: "share")
     let visibility = try await fixture.client.changeChatShareVisibility(
       id: id, audience: .organization, revision: nil)
     XCTAssertEqual(visibility.audience, .organization)
     let writes = requests.withLock { $0.filter { $0.httpMethod != "GET" } }
     let creation = try XCTUnwrap(writes.first)
+    XCTAssertEqual(creation.url?.path, "/api/chat-threads/thread/shared-threads/visibility")
     let creationBody = try XCTUnwrap(
       JSONSerialization.jsonObject(with: chatRequestBody(creation)) as? [String: Any])
     XCTAssertEqual(creationBody["eventIds"] as? [String], ["answer"])

@@ -163,7 +163,7 @@ import {
   type SendChatEventInput,
   type SendInputChatEvent,
 } from "./chat-event-signals.ts";
-import type { RunIndicatorState } from "./chat-event-state.ts";
+import type { RunIndicatorState } from "@okouai/api-contracts/contracts/chat-run-state";
 import type {
   ChatEventGroup,
   EnrichedChatEvent,
@@ -3958,6 +3958,22 @@ const createChatForwardComposerSignals: ChatForwardComposerFactory = (
  * Creates the complete signal graph of one chat panel. The graph carries no
  * AbortSignal, so a pane can derive it from the thread it shows.
  */
+function publicChatThreadScrollSignals(scroll: ChatThreadScrollSignals) {
+  return {
+    scrollContainerOnRef$: scroll.scrollContainerOnRef$,
+    scrollContentOnRef$: scroll.scrollContentOnRef$,
+    scrollCommitOnRef$: scroll.scrollCommitOnRef$,
+    scrollContainer$: scroll.scrollContainer$,
+    threadScrollPosition$: scroll.threadScrollPosition$,
+    awayFromBottom$: scroll.awayFromBottom$,
+    scrollTo$: scroll.scrollTo$,
+    scrollToTop$: scroll.scrollToTop$,
+    scrollToBottom$: scroll.scrollToBottom$,
+    restoreScrollPosition$: scroll.restoreScrollPosition$,
+    restoreScrollPositionForLayout$: scroll.restoreScrollPositionForLayout$,
+  };
+}
+
 export function createChatPanelSignals(
   threadId: string,
   agentId: string,
@@ -4046,20 +4062,11 @@ export function createChatPanelSignals(
     threadMeta$,
     optimisticCreateUnsettled$,
     ...threadMetadata,
-    scrollContainerOnRef$: messages.scroll.scrollContainerOnRef$,
-    scrollContentOnRef$: messages.scroll.scrollContentOnRef$,
+    ...publicChatThreadScrollSignals(messages.scroll),
     composerLayoutOnRef$: createChatComposerLayoutOnRef(
       composer.editor.editor,
       messages.scroll.restoreScrollPosition$,
     ),
-    scrollCommitOnRef$: messages.scroll.scrollCommitOnRef$,
-    scrollContainer$: messages.scroll.scrollContainer$,
-    threadScrollPosition$: messages.scroll.threadScrollPosition$,
-    awayFromBottom$: messages.scroll.awayFromBottom$,
-    scrollTo$: messages.scroll.scrollTo$,
-    scrollToTop$: messages.scroll.scrollToTop$,
-    scrollToBottom$: messages.scroll.scrollToBottom$,
-    restoreScrollPosition$: messages.scroll.restoreScrollPosition$,
     ...container,
     composer,
     feedback,

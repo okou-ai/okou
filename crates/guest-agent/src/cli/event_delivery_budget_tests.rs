@@ -147,6 +147,15 @@ fn owned_collaboration_fixture_preserves_canonical_bytes_and_receiver_order() {
 
 #[tokio::test]
 async fn sender_preserves_normal_bytes_and_accounts_for_exact_request_envelopes() {
+    let server = MockServer::start_async().await;
+    let http = HttpClient::with_api_config(
+        server.base_url(),
+        "test-token",
+        "",
+        "test-session",
+        Duration::ZERO,
+    )
+    .unwrap();
     for (framework, collaboration) in [
         (Framework::ClaudeCode, false),
         (Framework::Pi, false),
@@ -184,7 +193,6 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_request_envelopes(
                 expected["item"]["agents_states"]["status"]["message"] = Value::Null;
                 expected
             });
-            let server = MockServer::start_async().await;
             let request = server.mock(|when, then| {
                 when.method(POST)
                     .path("/api/webhooks/agent/events")
@@ -208,15 +216,7 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_request_envelopes(
                     });
                 then.status(200);
             });
-            let http = HttpClient::with_api_config(
-                server.base_url(),
-                "test-token",
-                "",
-                "test-session",
-                Duration::ZERO,
-            )
-            .unwrap();
-            let runtime = EventDeliveryRuntime::start(http, RUN_ID).unwrap();
+            let runtime = EventDeliveryRuntime::start(http.clone(), RUN_ID).unwrap();
             runtime
                 .sender()
                 .try_send_for_framework(19, event, framework, &SecretMasker::from_raw(""))
@@ -225,12 +225,22 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_request_envelopes(
             assert_eq!(report.last_acknowledged_sequence, Some(19));
             assert!(report.diagnostic.is_none());
             request.assert_calls_async(1).await;
+            server.reset_async().await;
         }
     }
 }
 
 #[tokio::test]
 async fn collaboration_fallback_preserves_structure_beyond_content_discovery_limits() {
+    let server = MockServer::start_async().await;
+    let http = HttpClient::with_api_config(
+        server.base_url(),
+        "test-token",
+        "",
+        "test-session",
+        Duration::ZERO,
+    )
+    .unwrap();
     for (child_count, key_bytes, message) in [
         (40, 0, Some("x".repeat(256 * 1024))),
         (300, 0, Some("x".repeat(32 * 1024))),
@@ -280,7 +290,6 @@ async fn collaboration_fallback_preserves_structure_beyond_content_discovery_lim
         let mut expected = collaboration_event(Value::Object(expected_states)).unwrap();
         expected["item"]["prompt"] = json!("[event content truncated for delivery]");
 
-        let server = MockServer::start_async().await;
         let request = server.mock(|when, then| {
             when.method(POST)
                 .path("/api/webhooks/agent/events")
@@ -308,15 +317,7 @@ async fn collaboration_fallback_preserves_structure_beyond_content_discovery_lim
                 });
             then.status(200);
         });
-        let http = HttpClient::with_api_config(
-            server.base_url(),
-            "test-token",
-            "",
-            "test-session",
-            Duration::ZERO,
-        )
-        .unwrap();
-        let runtime = EventDeliveryRuntime::start(http, RUN_ID).unwrap();
+        let runtime = EventDeliveryRuntime::start(http.clone(), RUN_ID).unwrap();
         runtime
             .sender()
             .try_send_for_framework(19, event, Framework::Codex, &SecretMasker::from_raw(""))
@@ -325,12 +326,21 @@ async fn collaboration_fallback_preserves_structure_beyond_content_discovery_lim
         assert_eq!(report.last_acknowledged_sequence, Some(19));
         assert!(report.diagnostic.is_none());
         request.assert_calls_async(1).await;
+        server.reset_async().await;
     }
 }
 
 #[tokio::test]
 async fn irreducible_events_are_skipped_and_later_uploads_advance_across_gaps() {
     let server = MockServer::start_async().await;
+    let http = HttpClient::with_api_config(
+        server.base_url(),
+        "test-token",
+        "",
+        "test-session",
+        Duration::ZERO,
+    )
+    .unwrap();
     let request = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/events")
@@ -378,15 +388,7 @@ async fn irreducible_events_are_skipped_and_later_uploads_advance_across_gaps() 
         }
         (framework, event)
     }) {
-        let http = HttpClient::with_api_config(
-            server.base_url(),
-            "test-token",
-            "",
-            "test-session",
-            Duration::ZERO,
-        )
-        .unwrap();
-        let runtime = EventDeliveryRuntime::start(http, RUN_ID).unwrap();
+        let runtime = EventDeliveryRuntime::start(http.clone(), RUN_ID).unwrap();
         runtime
             .sender()
             .try_send_for_framework(19, event.take(), framework, &SecretMasker::from_raw(""))

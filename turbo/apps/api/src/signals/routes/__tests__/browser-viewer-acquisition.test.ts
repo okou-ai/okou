@@ -10,14 +10,14 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import {
-  createSharedBrowserFixtures,
+  createBrowserFixtures,
   MINUTE,
   PROVIDER_URL,
   START,
-} from "./helpers/browser-shared-fixture";
+} from "./helpers/browser-fixture";
 
 const context = testContext();
-const { fixture, open, view, renew } = createSharedBrowserFixtures(context);
+const { fixture, open, view, renew } = createBrowserFixtures(context);
 const chatApi = createChatFilesBddApi(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const query = Object.freeze({ viewer: "native" as const });
@@ -183,13 +183,13 @@ test("only signed-in shared callers can opt into viewer credentials", async () =
     );
     expect(ordinary.body.browser.status).toBe("active");
     expect(
-      (await accept(client().viewerConnection({ headers, params }), [200])).body
-        .browser.window,
+      (await accept(client().get({ headers, params, query }), [200])).body
+        .viewer?.browser.window,
     ).toStrictEqual(ordinary.body.browser.window);
   });
 });
 
-test.each(["get", "open", "viewerConnection"] as const)(
+test.each(["get", "open"] as const)(
   "%s rechecks authorization after viewer discovery",
   async (entry) => {
     const f = await fixture();
@@ -210,9 +210,7 @@ test.each(["get", "open", "viewerConnection"] as const)(
       const response =
         entry === "get"
           ? await client().get({ headers, params, query })
-          : entry === "open"
-            ? await client().open({ headers, params, query, body: {} })
-            : await client().viewerConnection({ headers, params });
+          : await client().open({ headers, params, query, body: {} });
       expect(response).toMatchObject({
         status: 409,
         body: { error: { code: "BROWSER_RECLAIMING" } },

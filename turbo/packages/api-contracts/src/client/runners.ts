@@ -6,8 +6,6 @@ import type {
   runnersCancellationContract as OriginalRunnersCancellationContract,
   runnersConnectorRuntimeSyncContract as OriginalRunnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract as OriginalRunnersHeartbeatContract,
-  runnersJobClaimContract as OriginalRunnersJobClaimContract,
-  runnersPollContract as OriginalRunnersPollContract,
   runnersSteerContract as OriginalRunnersSteerContract,
 } from "../contracts/runners";
 import type { ClientDescriptor } from "./types";
@@ -66,38 +64,6 @@ export const runnersHeartbeatContract: ClientDescriptor<
   heartbeat: {
     method: "POST",
     path: "/api/runners/heartbeat",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      500: true,
-    },
-  },
-};
-
-export const runnersJobClaimContract: ClientDescriptor<
-  typeof OriginalRunnersJobClaimContract
-> = {
-  claim: {
-    method: "POST",
-    path: "/api/runners/jobs/:id/claim",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
-      500: true,
-    },
-  },
-};
-
-export const runnersPollContract: ClientDescriptor<
-  typeof OriginalRunnersPollContract
-> = {
-  poll: {
-    method: "POST",
-    path: "/api/runners/poll",
     statuses: {
       200: true,
       400: true,

@@ -84,6 +84,7 @@ import {
 } from "../../test/mocks/sentry-behavior.ts";
 import { createDeferredPromise } from "../utils.ts";
 import { mockDedicatedWorker } from "../../test/mocks/dedicated-worker.ts";
+import { mockNativeTextInsertion } from "../../test/mocks/native-text-insertion.ts";
 
 interface WindowOpenCall {
   url: string | null;
@@ -404,6 +405,9 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       },
     },
     browser: {
+      nativeTextInsertion: (): void => {
+        mockNativeTextInsertion(getSignal());
+      },
       webSocket: (
         respond: (
           data: string,

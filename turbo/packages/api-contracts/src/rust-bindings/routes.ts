@@ -7,8 +7,6 @@ import {
   runnersConnectorRuntimeSyncContract,
   runnersBuiltinFirewallsResolveContract,
   runnersHeartbeatContract,
-  runnersJobClaimContract,
-  runnersPollContract,
   runnersSteerContract,
 } from "../contracts/runners";
 import {
@@ -70,16 +68,6 @@ export const rustRouteBindings = [
     route: runnerSshContract.pin,
     rustModulePath: ["runners", "runs", "by_run_id", "ssh", "pin"],
     rustConstName: "PIN",
-  },
-  {
-    route: runnersPollContract.poll,
-    rustModulePath: ["runners", "poll"],
-    rustConstName: "POLL",
-  },
-  {
-    route: runnersJobClaimContract.claim,
-    rustModulePath: ["runners", "jobs", "by_id", "claim"],
-    rustConstName: "CLAIM",
   },
   {
     route: runnersSteerContract.next,

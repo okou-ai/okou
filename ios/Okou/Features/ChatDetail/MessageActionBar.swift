@@ -10,7 +10,6 @@ struct MessageActionBar: View {
   let chatURL: URL
   /// Creates a share link for this answer and the request that led to it.
   var shareLink: ((ChatShareAudience) async throws -> URL)? = nil
-  var selectMessages: (() -> Void)? = nil
   @State private var copied = false
   @State private var copyCount = 0
   @State private var sharing = false
@@ -40,10 +39,6 @@ struct MessageActionBar: View {
           Button("Copy public link", okouSymbol: "globe") {
             copyLink(shareLink, audience: .public)
           }
-        }
-        if let selectMessages {
-          Divider()
-          Button("Select messages…", okouSymbol: "check-check", action: selectMessages)
         }
         ShareLink(item: text) {
           Label("Share text…", okouSymbol: "share")

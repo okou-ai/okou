@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.17.102](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.101...runner-lifecycle-v0.17.102) (2026-11-14)
+
+## [0.17.101](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.100...runner-lifecycle-v0.17.101) (2026-11-14)
+
+
+### Refactoring
+
+* **runner:** retire legacy run acquisition clients ([#47100](https://github.com/okou-ai/okou/issues/47100)) ([a9904bc](https://github.com/okou-ai/okou/commit/a9904bc0c2405516d10168768e09a410f10541eb))
+
+## [0.17.100](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.99...runner-lifecycle-v0.17.100) (2026-11-13)
+
 ## [0.17.99](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.98...runner-lifecycle-v0.17.99) (2026-11-13)
 
 ## [0.17.98](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.97...runner-lifecycle-v0.17.98) (2026-11-13)

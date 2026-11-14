@@ -1405,7 +1405,6 @@
     }
   },
   "browserSession": {
-    "addressPlaceholder": "URL 입력",
     "authorizationRequired": "이 채팅에서는 클라우드 브라우저가 활성화되지 않았습니다",
     "blankPage": {
       "description": "{{assistantName}}이(가) 작업하는 동안 여기에서 페이지를 엽니다. 위에 URL을 입력해 직접 둘러볼 수도 있습니다.",
@@ -1449,6 +1448,7 @@
     "address": "주소",
     "addressOpening": "아직 페이지를 여는 중입니다. 잠시 후 다시 시도하세요.",
     "addressPreparing": "브라우저가 아직 준비되지 않았습니다. 잠시 후 다시 시도하세요.",
+    "addressSearchPlaceholder": "주소 또는 검색어 입력",
     "allTabs": "모든 탭",
     "automatic": "자동",
     "back": "뒤로",
@@ -1473,6 +1473,7 @@
     "liveView": "브라우저 실시간 화면",
     "newTab": "새 탭",
     "noTabs": "열린 탭 없음",
+    "openAddress": "주소 열기",
     "operationFailed": "브라우저 작업을 완료하지 못했습니다. 다시 시도하기 전에 브라우저를 확인하세요.",
     "paused": "화면 일시 중지됨",
     "quality": "이미지 품질",
@@ -1487,6 +1488,7 @@
     "remoteInput": "원격 브라우저 입력",
     "resolution": "해상도",
     "retryImage": "실시간 이미지 다시 시도",
+    "searchGoogle": "Google에서 검색",
     "settings": "브라우저 설정",
     "sharedTransport": "공유 연결",
     "sizeInitial": "연결 시",
@@ -2479,17 +2481,13 @@
       "copyFailed": "링크를 복사하지 못했습니다",
       "create": "공유",
       "createFailed": "공유된 대화를 만들지 못했습니다.",
-      "createLink": "링크 만들기",
       "deselectGroup": "메시지 그룹 선택 해제",
-      "deselectMessage": "메시지 선택 해제",
       "everyone": "모든 사용자",
       "linkCopied": "링크가 복사되었습니다",
       "messageShareFailed": "공유 링크를 만들지 못했습니다.",
       "organizationDescription": "조직 내 구성원만",
       "selectedCount_other": "{{count}}개 선택됨",
       "selectGroup": "메시지 그룹 선택",
-      "selectMessage": "메시지 선택",
-      "selectMessages": "메시지 선택…",
       "shareLink": "공유된 대화 링크",
       "start": "메시지 공유",
       "tooLarge": "공유할 메시지를 더 적게 선택하세요",
@@ -2758,6 +2756,11 @@
       "ideasLabel": "시작 아이디어",
       "label": "시작할 작업",
       "more": "더 보기",
+      "presentationFormat": "프레젠테이션 형식",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "프레젠테이션 템플릿",
       "removeTask": "{{task}} 제거",
       "shelf": {

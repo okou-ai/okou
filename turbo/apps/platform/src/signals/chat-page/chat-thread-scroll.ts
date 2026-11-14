@@ -83,6 +83,10 @@ export interface ChatThreadScrollSignals {
   readonly scrollToTop$: Command<Promise<void>, [AbortSignal]>;
   readonly scrollToBottom$: Command<Promise<void>, [AbortSignal]>;
   readonly restoreScrollPosition$: Command<Promise<void>, [AbortSignal]>;
+  readonly restoreScrollPositionForLayout$: Command<
+    Promise<void>,
+    [AbortSignal]
+  >;
 }
 
 const threadScrollPositions$ = state(new Map<string, ThreadScrollPosition>());
@@ -189,6 +193,11 @@ function applyScrollTop(
   scrollTop: number,
   behavior: ScrollBehavior = "instant",
 ): void {
+  // Hidden viewports cannot complete a requested position. Even a no-op at a
+  // real viewport size does, so acknowledge measurement before early returns.
+  if (container.clientHeight > 0) {
+    runtime.hasMeasuredPosition = true;
+  }
   const targetScrollTop = Math.max(
     0,
     Math.min(scrollTop, container.scrollHeight - container.clientHeight),
@@ -306,6 +315,7 @@ function sameScrollPosition(
 
 interface ScrollRuntime {
   initialized: boolean;
+  hasMeasuredPosition: boolean;
   latestRenderRequestRevision: number;
   // Offset this module last wrote to the container, cleared once the container
   // reports a different one. Scroll events are delivered asynchronously, so
@@ -550,11 +560,26 @@ function createScrollNavigationSignals(
     },
   );
 
+  const restoreScrollPositionForLayout$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      // Once a reading position was measured, native anchoring owns reflow.
+      // Otherwise finish the existing request when real geometry is available.
+      if (
+        get(scroll.threadScrollPosition$) !== null &&
+        runtime.hasMeasuredPosition
+      ) {
+        return;
+      }
+      await set(restoreScrollPosition$, signal);
+    },
+  );
+
   return {
     scrollTo$,
     scrollToBottom$,
     scrollToTop$,
     restoreScrollPosition$,
+    restoreScrollPositionForLayout$,
   };
 }
 
@@ -573,6 +598,7 @@ function createRequestScrollAfterRender(
     ): Promise<void> => {
       signal.throwIfAborted();
       runtime.latestRenderRequestRevision += 1;
+      runtime.hasMeasuredPosition = false;
       const request: ScrollAfterRenderRequest = {
         revision: runtime.latestRenderRequestRevision,
         position,
@@ -788,6 +814,11 @@ function createAttachScrollContainer(
         // many events describe it, and content growing every frame delivers
         // more of them than the restores that wrote them.
         runtime.programmaticScrollTop = null;
+        // A reader takeover with real geometry supersedes an initial hidden
+        // viewport attempt; a later layout must not replay its stale anchor.
+        if (container.clientHeight > 0) {
+          runtime.hasMeasuredPosition = true;
+        }
       }
       return set(
         scroll.syncThreadScrollPosition$,
@@ -796,8 +827,13 @@ function createAttachScrollContainer(
         signal,
       );
     });
-    const restoreLayout = onDomEventFn(() => {
-      return set(navigation.restoreScrollPosition$, signal);
+    const restoreLayout = onDomEventFn((event: Event) => {
+      return set(
+        event.type === "resize"
+          ? navigation.restoreScrollPositionForLayout$
+          : navigation.restoreScrollPosition$,
+        signal,
+      );
     });
     const handleScrollEnd = (event: Event) => {
       if (
@@ -840,6 +876,7 @@ function createAttachScrollContainer(
         container.removeEventListener("scrollend", handleScrollEnd);
         set(scroll.clearScrollContainer$, container);
         runtime.initialized = false;
+        runtime.hasMeasuredPosition = false;
         runtime.programmaticScrollTop = null;
         runtime.programmaticSmoothScrollTop = null;
         L.debug("container unbound", { threadId });
@@ -881,6 +918,7 @@ export function createChatThreadScrollSignals(
 ): ChatThreadScrollSignals {
   const runtime: ScrollRuntime = {
     initialized: false,
+    hasMeasuredPosition: false,
     latestRenderRequestRevision: 0,
     programmaticScrollTop: null,
     programmaticSmoothScrollTop: null,
@@ -980,5 +1018,6 @@ export function createChatThreadScrollSignals(
     scrollToTop$: navigation.scrollToTop$,
     scrollToBottom$: navigation.scrollToBottom$,
     restoreScrollPosition$: navigation.restoreScrollPosition$,
+    restoreScrollPositionForLayout$: navigation.restoreScrollPositionForLayout$,
   };
 }

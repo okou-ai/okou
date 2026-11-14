@@ -11,11 +11,18 @@ import type {
   ThreadSidebarTarget,
 } from "./thread-sidebar.ts";
 import { pageSignal$ } from "../page-signal.ts";
-import { onRef } from "../utils.ts";
+import { detach, onDomEventFn, onRef, Reason } from "../utils.ts";
+import {
+  mountWorkspaceLayout$,
+  refreshWorkspaceLayout$,
+} from "./workspace-layout.ts";
+import { restoreChatLayoutScroll$ } from "./chat-layout.ts";
+import { artifactCatalogSidebar } from "../artifacts-page/artifact-catalog-instance.ts";
+import { refreshComposerTaskOverflow$ } from "../okou-page/composer-task-overflow.ts";
 import { shellDocumentAttributesRef$ } from "../theme.ts";
 import type { TabStripMotion } from "../browser/tab-strip.ts";
 import { createThreadSidebarLayoutMotion } from "./thread-sidebar-layout-motion.ts";
-import { createWorkspaceLayoutCommit } from "./workspace-layout-commit.ts";
+import { workspaceResizing$ } from "./workspace-resize.ts";
 import { animationFrame } from "signal-timers";
 import { hash$, searchParams$, updateSearchParams$ } from "../route.ts";
 import {
@@ -85,29 +92,82 @@ const syncSidebarViewport$ = command(
   },
 );
 const sidebarMotion = createThreadSidebarLayoutMotion(syncSidebarViewport$);
-const workspaceLayout = createWorkspaceLayoutCommit(
-  sidebarMotion.commit$,
-  sidebarMotion.root$,
+const prepareChatListLayout$ = command(({ get, set }, targetWidth: number) => {
+  return set(
+    sidebarMotion.prepareChatList$,
+    targetWidth,
+    get(workspaceResizing$),
+  );
+});
+/** Synchronize workspace resources after the initiating command has awaited paint. */
+const synchronizeWorkspaceLayout$ = command(
+  async (
+    { get, set },
+    preparation: object | undefined,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    set(sidebarMotion.commit$, preparation);
+    set(refreshComposerTaskOverflow$);
+    if (get(artifactCatalogSidebar.open$)) {
+      set(artifactCatalogSidebar.imageCanvas.syncLayout$);
+    }
+    await set(restoreChatLayoutScroll$, signal);
+  },
 );
-export const commitWorkspaceLayout$ = workspaceLayout.commit$;
 
 /** The shared shell owns the sibling list and utility-panel transition listeners. */
 export const threadSidebarLayoutRootRef$ = onRef(
-  command(({ get, set }, root: HTMLDivElement, signal: AbortSignal): void => {
-    set(workspaceLayout.reset$);
-    const releaseAttributes = set(shellDocumentAttributesRef$, root);
-    signal.addEventListener(
-      "abort",
-      () => {
-        releaseAttributes?.();
-        if (get(sidebarMotion.root$) === root) {
-          set(workspaceLayout.reset$);
-        }
-      },
-      { once: true },
-    );
-    set(sidebarMotion.mount$, root, signal);
-  }),
+  command(
+    async (
+      { set },
+      root: HTMLDivElement,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const releaseAttributes = set(shellDocumentAttributesRef$, root);
+      signal.addEventListener(
+        "abort",
+        () => {
+          releaseAttributes?.();
+        },
+        {
+          once: true,
+        },
+      );
+      set(sidebarMotion.mount$, root, signal);
+      set(
+        mountWorkspaceLayout$,
+        root,
+        {
+          prepareChatList$: prepareChatListLayout$,
+          cancelChatList$: sidebarMotion.cancelChatList$,
+        },
+        synchronizeWorkspaceLayout$,
+        signal,
+      );
+      const refresh = onDomEventFn(async () => {
+        await set(refreshWorkspaceLayout$, signal);
+      });
+      for (const type of ["transitionend", "transitioncancel"] as const) {
+        root.addEventListener(
+          type,
+          (event) => {
+            if (
+              event.target instanceof HTMLElement &&
+              event.target.matches("[data-sidebar-layout-owner]") &&
+              (event.propertyName === "width" ||
+                event.propertyName === "flex-basis")
+            ) {
+              refresh(event);
+            }
+          },
+          { signal },
+        );
+      }
+      window.addEventListener("resize", refresh, { signal });
+      await set(refreshWorkspaceLayout$, signal);
+    },
+  ),
 );
 
 const closeOtherThreadSidebars$ = command(
@@ -225,6 +285,11 @@ export const navigateThreadMail$ = command(
       });
     }
     set(updateSearchParams$, params, {}, get(hash$));
+    detach(
+      set(refreshWorkspaceLayout$, signal),
+      Reason.DomCallback,
+      "mail workspace navigation",
+    );
   },
 );
 

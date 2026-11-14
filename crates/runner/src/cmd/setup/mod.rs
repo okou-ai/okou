@@ -9,7 +9,7 @@ mod artifacts;
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::os::fd::AsRawFd;
+use std::os::fd::AsFd;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::time::Duration;
@@ -418,19 +418,14 @@ fn file_sha256_open(file: &mut File, path: &Path) -> RunnerResult<String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-fn setup_file_stat<Fd: AsRawFd>(file: &Fd, path: &Path, context: &str) -> RunnerResult<libc::stat> {
-    let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
-    // SAFETY: `stat` points to writable memory and `file` owns a live fd.
-    let result = unsafe { libc::fstat(file.as_raw_fd(), stat.as_mut_ptr()) };
-    if result != 0 {
-        return Err(RunnerError::Internal(format!(
+fn setup_file_stat<Fd: AsFd>(file: &Fd, path: &Path, context: &str) -> RunnerResult<libc::stat> {
+    nix::sys::stat::fstat(file).map_err(|error| {
+        RunnerError::Internal(format!(
             "stat {context} {}: {}",
             path.display(),
-            std::io::Error::last_os_error()
-        )));
-    }
-    // SAFETY: successful `fstat` initialized the full struct.
-    Ok(unsafe { stat.assume_init() })
+            std::io::Error::from(error)
+        ))
+    })
 }
 
 fn setup_artifact_file_size(stat: &libc::stat, path: &Path, context: &str) -> RunnerResult<u64> {
@@ -502,18 +497,18 @@ fn validate_trusted_setup_owner(stat: &libc::stat, path: &Path, context: &str) -
     Ok(())
 }
 
-fn chmod_fd<Fd: AsRawFd>(file: &Fd, path: &Path, mode: u32, context: &str) -> RunnerResult<()> {
-    // SAFETY: `fchmod` operates on the live fd and does not affect Rust aliasing.
-    let result = unsafe { libc::fchmod(file.as_raw_fd(), mode as libc::mode_t) };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(RunnerError::Internal(format!(
+fn chmod_fd<Fd: AsFd>(file: &Fd, path: &Path, mode: u32, context: &str) -> RunnerResult<()> {
+    nix::sys::stat::fchmod(
+        file,
+        nix::sys::stat::Mode::from_bits_truncate(mode as libc::mode_t),
+    )
+    .map_err(|error| {
+        RunnerError::Internal(format!(
             "chmod {context} {}: {}",
             path.display(),
-            std::io::Error::last_os_error()
-        )))
-    }
+            std::io::Error::from(error)
+        ))
+    })
 }
 
 fn setup_file_open_flags() -> i32 {

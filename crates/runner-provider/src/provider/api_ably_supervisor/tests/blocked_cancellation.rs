@@ -17,7 +17,7 @@ struct ConnectedSupervisor {
     supervisor: AblySupervisor,
     messages: mpsc::UnboundedSender<Vec<AblyMessage>>,
     peer: AbortOnDropHandle<()>,
-    direct_candidates: Arc<DirectCandidateInbox>,
+    input_notifications: ActiveInputNotifications,
     connector_runtime_sync: ConnectorRuntimeSyncHandle,
     _tokens: MockServer,
 }
@@ -119,36 +119,38 @@ impl ConnectedSupervisor {
             .await
             .expect("loopback subscription should connect")
             .unwrap();
-        let direct_candidates = direct_candidate_inbox();
+        let input_notifications = ActiveInputNotifications::new();
+        let mut connected = input_notifications.subscribe(RunId::new_v4());
         let connector_runtime_sync = ConnectorRuntimeSyncHandle::new(api.clone());
         let supervisor = AblySupervisor::connected_for_test(
             AblySupervisorConfig {
                 ably_side_message_handler: None,
                 api,
                 group: "default".into(),
-                profiles: default_profiles(),
-                poll_wakeups: Arc::new(PollWakeups::new(true)),
-                direct_candidates: Arc::clone(&direct_candidates),
+
                 cancel_tokens,
                 connector_runtime_sync: connector_runtime_sync.clone(),
-                active_input_notifications: ActiveInputNotifications::new(),
+                active_input_notifications: input_notifications.clone(),
                 provider_cancel: CancellationToken::new(),
             },
             subscription,
         );
+        tokio::time::timeout(BOUND, connected.wait())
+            .await
+            .expect("initial reconnect wakeup must settle before observing a Run message");
         Self {
             supervisor,
             messages,
             peer,
-            direct_candidates,
+            input_notifications,
             connector_runtime_sync,
             _tokens: tokens,
         }
     }
 
-    async fn cancel_then_job(&self, run_id: RunId, job_run_id: RunId) {
-        // Both notifications traverse the real subscription FIFO. Receiving the
-        // following job proves the supervisor has consumed the cancel message.
+    async fn cancel_then_input(&self, run_id: RunId, input_run_id: RunId) {
+        // Observe control progress after a transfer-blocked cancellation.
+        let mut input = self.input_notifications.subscribe(input_run_id);
         self.messages
             .send(vec![
                 AblyMessage {
@@ -157,23 +159,17 @@ impl ConnectedSupervisor {
                     ..Default::default()
                 },
                 AblyMessage {
-                    name: Some("job".into()),
+                    name: Some("active-input".into()),
                     data: Some(serde_json::json!({
-                        "runId": job_run_id,
-                        "profile": crate::profile::DEFAULT_PROFILE,
+                        "runId": input_run_id,
                     })),
                     ..Default::default()
                 },
             ])
             .unwrap();
-        let candidate = tokio::time::timeout(
-            BOUND,
-            self.direct_candidates.wait_pop(&CancellationToken::new()),
-        )
-        .await
-        .expect("unrelated notification should make progress while cancellation is blocked")
-        .unwrap();
-        assert_eq!(candidate.run_id(), job_run_id);
+        tokio::time::timeout(BOUND, input.wait())
+            .await
+            .expect("active input must progress while cancellation is blocked");
     }
 
     async fn shutdown(&mut self) {
@@ -201,14 +197,14 @@ impl Drop for ConnectedSupervisor {
 #[tokio::test]
 async fn supervisor_shutdown_drops_transfer_blocked_cancel_after_unrelated_progress() {
     let run_id: RunId = "00000000-0000-0000-0000-000000000002".parse().unwrap();
-    let job_run_id: RunId = "00000000-0000-0000-0000-000000000001".parse().unwrap();
+    let input_run_id: RunId = "00000000-0000-0000-0000-000000000001".parse().unwrap();
     let tokens = RunCancellationRegistry::new();
     let registration = tokens.register(run_id).await.unwrap();
     let signals = registration.handle().signals();
     let transfer_guard = registration.handle().transfer_guard().await;
     let mut connected = ConnectedSupervisor::start(tokens).await;
 
-    connected.cancel_then_job(run_id, job_run_id).await;
+    connected.cancel_then_input(run_id, input_run_id).await;
     assert!(!signals.any().is_cancelled());
     connected.shutdown().await;
 
@@ -220,14 +216,14 @@ async fn supervisor_shutdown_drops_transfer_blocked_cancel_after_unrelated_progr
 #[tokio::test]
 async fn queued_cancel_preserves_registration_and_allows_unrelated_notification() {
     let run_id: RunId = "00000000-0000-0000-0000-000000000002".parse().unwrap();
-    let job_run_id: RunId = "00000000-0000-0000-0000-000000000001".parse().unwrap();
+    let input_run_id: RunId = "00000000-0000-0000-0000-000000000001".parse().unwrap();
     let tokens = RunCancellationRegistry::new();
     let registration = tokens.register(run_id).await.unwrap();
     let signals = registration.handle().signals();
     let transfer_guard = registration.handle().transfer_guard().await;
     let mut connected = ConnectedSupervisor::start(tokens.clone()).await;
 
-    connected.cancel_then_job(run_id, job_run_id).await;
+    connected.cancel_then_input(run_id, input_run_id).await;
     assert!(registration.unregister().await);
     let replacement = tokens.register(run_id).await.unwrap();
     assert!(!signals.any().is_cancelled());

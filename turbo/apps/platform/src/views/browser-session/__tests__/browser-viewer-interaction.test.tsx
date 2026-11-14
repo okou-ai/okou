@@ -299,9 +299,9 @@ test("Escape resets the address without surrendering its selected text to a docu
 
 test("An invalid local address remains a draft across membership reattachment", async () => {
   const browser = await setupViewer(0);
-  const address = screen.getByLabelText("Address");
-  await fill(address, "two words");
-  await userEvent.keyboard("{Enter}");
+  const address = screen.getByLabelText<HTMLInputElement>("Address");
+  await fill(address, "///invalid");
+  fireEvent.submit(address.form!);
   await screen.findByRole("alert");
   const proof = browser.holdNextMembership("example-page");
   act(() => {
@@ -314,7 +314,7 @@ test("An invalid local address remains a draft across membership reattachment", 
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
-  expect(address).toHaveValue("two words");
+  expect(address).toHaveValue("///invalid");
   expect(address).toHaveFocus();
   expect(browser.targets[0]?.url).toBe("https://example.com");
 });
@@ -1596,8 +1596,11 @@ test("A duplicate marker during creation never takes over the other caller's pag
 
 test.each([
   ["[::1]:8080/path", "http://[::1]:8080/path"],
-  ["例子.测试/你好", "http://xn--fsqu00a.xn--0zwm56d/%E4%BD%A0%E5%A5%BD"],
-  ["custom:payload", "custom:payload"],
+  [
+    "https://例子.测试/你好",
+    "https://xn--fsqu00a.xn--0zwm56d/%E4%BD%A0%E5%A5%BD",
+  ],
+  ["mailto:user@example.com", "mailto:user@example.com"],
 ])(
   "The address field normalizes %s for the remote page",
   async (address, expected) => {
@@ -2719,15 +2722,6 @@ test("Shared tab controls support keyboard selection and address Escape", async 
   );
   expect(screen.getByLabelText("Address")).toHaveFocus();
   expect(browser.targets[1]?.url).toBe("https://other.example.com");
-});
-
-test("A search-like address reports the failed action and retains the remote page", async () => {
-  const browser = await setupViewer(0);
-  await fill(screen.getByLabelText("Address"), "find some text");
-  await userEvent.keyboard("{Enter}");
-  await screen.findByRole("alert");
-  expect(screen.getByLabelText("Address")).toHaveValue("find some text");
-  expect(browser.targets[0]?.url).toBe("https://example.com");
 });
 
 test("A hidden page pauses input and resumes the selected tab when visible", async () => {
@@ -4852,18 +4846,36 @@ test("A held initial inventory cannot resurrect a target destroyed before its re
   );
 });
 
-test("The overflow menu keeps hidden tabs reachable through shared controls", async () => {
+test("The overflow menu shares favicons and keeps narrow tabs selectable and closable", async () => {
   const original = HTMLElement.prototype.getBoundingClientRect;
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
     function (this: HTMLElement) {
       return Object.hasOwn(this.dataset, "browserTabBudget")
-        ? new DOMRect(0, 0, 70, 36)
+        ? new DOMRect(0, 0, 100, 36)
         : original.call(this);
     },
   );
-  await setupMultiTabViewer();
+  const browser = mockViewer();
+  browser.move("other-page", 0);
+  const favicon = "https://example.com/favicon.ico";
+  browser.targets[0]!.faviconUrl = favicon;
+  await openViewer();
+  const selectedTab = screen.getByLabelText("Example", {
+    selector: '[role="tab"]',
+  });
+  await waitFor(() => {
+    expect(selectedTab.querySelector("img")).toHaveAttribute("src", favicon);
+  });
   await userEvent.click(screen.getByLabelText("All tabs"));
   const menu = await screen.findByRole("menu");
+  const menuFavicon = menu.querySelector("img");
+  expect(menuFavicon).toHaveAttribute("src", favicon);
+  if (!menuFavicon) {
+    throw new Error("Missing menu favicon");
+  }
+  fireEvent.error(menuFavicon);
+  expect(selectedTab.querySelector("svg")).toBeInTheDocument();
+  expect(menu.querySelector("img")).not.toBeInTheDocument();
   const other = queryAllByRoleFast("menuitem", menu).find((item) => {
     return item.textContent?.trim() === "Other";
   });
@@ -4876,7 +4888,17 @@ test("The overflow menu keeps hidden tabs reachable through shared controls", as
       "https://other.example.com",
     );
   });
+  expect(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
   expect(screen.getByLabelText("All tabs")).toHaveFocus();
+  click(screen.getByLabelText("Close Other"));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+  });
+  expect(
+    screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
 });
 
 test("Widening restores a removed focused picker only to the committed selected tab", async () => {

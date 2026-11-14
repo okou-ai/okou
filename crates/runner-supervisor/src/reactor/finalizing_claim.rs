@@ -1,59 +1,18 @@
-//! Runner composition of a claimed finalizing successor's selected resource.
+//! Complete-input continuation activation and executor handoff.
 //!
-//! `runner-supervisor::finalizing_admission` owns the predecessor wait, exact lookup,
-//! handoff and fallback arbitration; this module owns claim completion, activation,
-//! and executor handoff.
+//! Local predecessor proof selects a bounded handoff or a source-fenced fallback
+//! through `finalizing_admission`. This task owns accepted input and cancellation
+//! while waiting, preserves delivered resources across cancellation, and validates
+//! physical source identity before activation. The existing activation guard owns
+//! status publication, executor dispatch and panic recovery.
 //!
-//! A finalizing successor is claimed before the predecessor has finished finalizing and is
-//! allowed to wait for a direct handoff without reserving fresh capacity. The predecessor's
-//! `ActiveRunReuseState` drives the wait:
-//!
-//! - `Pending` means that execution or other pre-finalization work is still in progress.
-//! - `Finalizing { started_at }` means that sandbox finalization is active and publication or
-//!   handoff is possible.
-//! - `ExactSandboxPublished` means that the successor may reserve the exact idle entry.
-//! - `ExactSandboxHandedOff` means that the selected source's physical resource was handed off.
-//!   A live request for this successor receives its candidate before fallback; otherwise the
-//!   successor uses fallback resources. This state does not grant native-history authority.
-//! - `NoExactSandbox` and `Released` mean that no exact predecessor resource will be published,
-//!   so the successor must use fallback resources.
-//!
-//! The successor requests one physical handoff while the predecessor can still provide
-//! reuse, independently of native-history eligibility. Generic sources keep their original
-//! API preference deadline. Native-matching sources use that deadline before finalization;
-//! once finalization begins, acceptance uses `FINALIZING_HANDOFF_ACCEPTANCE_GRACE` after the later of
-//! the producer's finalization start and this successor's wait start. A late successor therefore
-//! has time to interrupt an ongoing park. An accepted handoff, including a candidate that was
-//! already delivered, wins a deadline race. Cancellation is checked with priority; if a candidate
-//! was delivered before the receiver was closed, the handoff request recovers it so the supervisor
-//! can destroy it rather than lose ownership.
-//!
-//! Every exact native resource is reserved for the claimed successor's reuse key, profile, device
-//! limits, producing source Run, and authoritative native generation. A handed-off candidate is
-//! checked against the actual producer and claimed successor before activation; physical transfer
-//! grants no native history authority and retains ordinary guest restoration. Reserved candidates are
-//! rolled back on cancellation, while identity mismatches, activation failures, preparation
-//! errors, and panics destroy or recover the candidate through the activation guards before the
-//! claimed job is completed without a sandbox. Finalizing handoff outcomes are recorded even
-//! when there is no executor to emit ordinary job telemetry.
-//!
-//! When no direct or published exact resource is available, fallback first retries matching idle
-//! reuse, including generationless non-success publication, then consumes retiring idle capacity,
-//! and finally uses fresh budget capacity. Generic reuse grants no exact-history authority. A
-//! fresh fallback still attempts home-cache checkout, but skips its transient-contention
-//! retry when the predecessor state proves that a live or transferred sandbox retains the entry.
-//! Retiring leases are retained while the loop waits for capacity. The wait observes both budget
-//! availability and idle-pool changes: either can make the next exact or fresh-resource attempt
-//! viable, while cancellation exits through the same no-sandbox completion path. The admission
-//! timing and ownership contract is exercised by `tests/main_loop/admission.rs`, including
-//! `pre_finalization_wait_ends_at_preference_deadline`,
-//! `finalizing_handoff_grace_starts_when_predecessor_enters_finalization`,
-//! `finalizing_immediate_handoff_reuses_matching_sandbox_past_preference_deadline`, and
-//! `competing_finalizing_successors_reserve_exact_generation_once`. The no-executor and
-//! activation-failure telemetry paths are covered by `tests/main_loop/telemetry.rs`, including
-//! `cancelled_finalizing_handoff_flushes_outcome_without_executor`,
-//! `finalizing_handoff_activation_failure_is_not_reported_as_accepted`, and
-//! `published_exact_activation_failure_is_reported_as_activation_failed`.
+//! Accepted handoff wins a deadline race; cancellation wins before activation.
+//! Preparation/activation failures complete the original Run without a sandbox,
+//! flushing execution diagnostics after resource recovery. Blank or fresh fallback checks
+//! the producer's home identity under its cache entry lock and uses the live
+//! predecessor state to avoid waiting for a home still held by another sandbox.
+//! Actual HTTP regressions live in `tests/main_loop/direct_dispatch/continuation`;
+//! selection and guarded physical ownership have their own owner tests.
 
 use std::panic::AssertUnwindSafe;
 use std::time::Instant;
@@ -89,6 +48,7 @@ use crate::finalizing_admission::{
 };
 use crate::home_image_cache::HomeImagePreparePolicy;
 use crate::idle_lifecycle::{ReservedIdleActivation, rollback_reserved_idle_for_spawn};
+use crate::idle_pool::IdleSandboxKind;
 use crate::resource_budget::BudgetLease;
 use crate::telemetry::JobTelemetry;
 use runner_provider::ClaimedJob;
@@ -161,11 +121,8 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
         factory,
     } = request;
     let run_id = claimed.context().run_id;
-    let mut pre_spawn_timing = RunnerPreSpawnTiming::start_at(
-        claim_returned_at,
-        claimed.api_claim_timing(),
-        &ctx.pre_spawn_concurrency,
-    );
+    let mut pre_spawn_timing =
+        RunnerPreSpawnTiming::start_at(claim_returned_at, &ctx.pre_spawn_concurrency);
     pre_spawn_timing.mark_task_enqueued();
     let started_at = Instant::now();
     let mut reserved_exact = None;
@@ -235,7 +192,6 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
         }
     };
 
-    let fresh_fallback = matches!(&resource, FinalizingResource::Fresh(_));
     let active_run_guard = ctx.active_runs.register(
         run_id,
         claimed.context().reuse_key().map(str::to_owned),
@@ -286,6 +242,7 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
     };
     let cancellation_handle = cancellation.handle();
     let mut activation_transfer_guard = None;
+    let mut selected_home_source_run_id = None;
     let ready = match activation {
         FinalizingActivation::Fresh(active_lease) => ReadyClaimedResource {
             reuse_entry: None,
@@ -323,11 +280,18 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
                 .await);
             }
             activation_transfer_guard = Some(transfer_guard);
+            selected_home_source_run_id = (reservation.kind() == IdleSandboxKind::Blank
+                && ctx.home_cache_snapshot.has_source_home_hint(
+                    &admission.reuse_key,
+                    &profile_name,
+                    admission.source_run_id,
+                ))
+            .then_some(admission.source_run_id);
             match activate_reserved_idle(
                 reservation,
                 ReservedActivationRequest {
                     run_id,
-                    required_home_source_run_id: None,
+                    required_home_source_run_id: selected_home_source_run_id,
                     profile_name: &profile_name,
                     device_rate_limits: &device_rate_limits,
                     home_disk_mb,
@@ -390,13 +354,21 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
             }
         }
     };
-    let required_home_source_run_id = (ready.reuse_entry.is_none()
-        && ctx.home_cache_snapshot.has_source_home_hint(
-            &admission.reuse_key,
-            &profile_name,
-            admission.source_run_id,
-        ))
-    .then_some(admission.source_run_id);
+    let home_fallback = ready
+        .reuse_entry
+        .as_ref()
+        .is_none_or(|entry| entry.kind() == IdleSandboxKind::Blank);
+    // Inventory can change while unpark awaits. Keep a source already selected
+    // before activation; checkout revalidates it under the cache entry lock.
+    let required_home_source_run_id = if home_fallback {
+        selected_home_source_run_id.or_else(|| {
+            ctx.home_cache_snapshot
+                .has_source_home_hint(&admission.reuse_key, &profile_name, admission.source_run_id)
+                .then_some(admission.source_run_id)
+        })
+    } else {
+        None
+    };
     let mut activation = ClaimedActivationGuard::new(
         ClaimedJobSetup {
             required_home_source_run_id,
@@ -436,8 +408,8 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
         }
     };
     drop(activation_transfer_guard);
-    if fresh_fallback {
-        let (predecessor_state, lock_policy) = admission.fresh_fallback_home_prepare_policy();
+    if home_fallback {
+        let (predecessor_state, lock_policy) = admission.fallback_home_prepare_policy();
         request.job_profile.home_image_prepare_policy = lock_policy;
         if lock_policy == HomeImagePreparePolicy::TryCacheWithoutLockWait {
             info!(
@@ -476,8 +448,8 @@ async fn prepare_finalizing_resource(
         return Err(ExecutionFailure::from_error(error).into());
     }
 
-    // The provider claim owns native intent; physical handoff does not grant
-    // exact native-generation classification from a discovery projection.
+    // Bound execution input owns native intent. Physical handoff alone grants
+    // no native-history authority.
     admission.native_generation_run_id = claimed
         .context()
         .native_continuation
@@ -511,8 +483,7 @@ async fn prepare_finalizing_resource(
     };
     #[cfg(test)]
     {
-        let observer = ctx.test_observer.clone();
-        let handoff_observer = observer.clone();
+        let handoff_observer = ctx.test_observer.clone();
         select_finalizing_resource_with_test_hooks(
             selection,
             pre_spawn_timing,
@@ -521,9 +492,7 @@ async fn prepare_finalizing_resource(
                 on_handoff_requested: Some(std::sync::Arc::new(move |predecessor, successor| {
                     handoff_observer.notify_finalizing_handoff_requested(predecessor, successor);
                 })),
-                on_capacity_wait: Some(std::sync::Arc::new(move |run_id| {
-                    observer.notify_finalizing_capacity_wait_entered(run_id);
-                })),
+                on_capacity_wait: None,
             },
         )
         .await

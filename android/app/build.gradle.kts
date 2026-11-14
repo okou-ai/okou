@@ -71,6 +71,15 @@ android {
     }
     sourceSets["test"].kotlin.directories.add("src/sharedTest/kotlin")
     sourceSets["androidTest"].kotlin.directories.add("src/sharedTest/kotlin")
+    providers.gradleProperty("okou.screenshotScenarioDir").orNull?.let { value ->
+        val directory = file(value).canonicalFile
+        val allowed = rootProject.file("screenshots").canonicalFile.toPath()
+        require(directory.toPath().startsWith(allowed) && directory.toPath() != allowed) {
+            "Screenshot scenario must be inside android/screenshots/"
+        }
+        require(directory.resolve("src").isDirectory) { "Screenshot scenario has no src directory" }
+        sourceSets["androidTest"].kotlin.directories.add(directory.resolve("src").absolutePath)
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -166,6 +175,7 @@ dependencies {
     implementation(libs.retrofit.serialization)
     implementation(libs.okhttp)
     implementation(libs.serialization.json)
+    implementation(libs.commonmark)
     implementation(libs.room.runtime)
     implementation(libs.sqlite.bundled)
     ksp(libs.room.compiler)

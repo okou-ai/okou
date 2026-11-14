@@ -19,9 +19,9 @@ a protection or widen a target.
 
 Before **either** write mode, independently verify and record in the Epic:
 
-- The claim reader release is serving and all outgoing API instances drained.
-- Every supported Runner has the claim-time Workflow document/attachment reader;
-  no legacy queued work, active Run, retained sandbox producer or other old
+- The direct-dispatch API release is serving and all outgoing acquisition-capable API instances drained.
+- Every supported Runner uses direct dispatch and the Workflow document/attachment reader;
+  no active Run, retained sandbox producer or other old
   consumer still needs generic Workflow Storage.
 - All ordinary Workflows have valid, owned attachment descriptors. An empty
   instruction may legitimately be SQL NULL.
@@ -35,7 +35,7 @@ Before **either** write mode, independently verify and record in the Epic:
   snapshot/backup policy has been checked.
 
 The acknowledgement flag records this operator decision; it does not establish
-these deployment facts. A terminal Run, an expired queue row, or elapsed time
+these deployment facts. A terminal Run or elapsed time
 alone is insufficient evidence of consumer retirement. Database checks protect
 known references at planning, metadata removal and immediately before object
 deletion. They cannot stop an incompatible old writer from returning later.
@@ -108,7 +108,7 @@ similarly named siblings and the new `workflow-attachments/` namespace.
 Plans block overlapping foreign Storage/version locations, Skills, official
 definition revisions, custom connector version references, lineage, export
 artifacts, claimed or current attachments, unfinished background consumers,
-queued contexts, and Runs with a live execution owner. Structured consumers are
+and Runs with a live execution owner. Structured consumers are
 checked for captured Storage/version IDs and exact Storage names; name-only
 references are scoped to the consumer's organization.
 Pending or running Pi resource indexing blocks retirement, including expired

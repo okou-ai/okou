@@ -2,6 +2,7 @@ import { selectDesktopHeaderAction } from "./chat-header-test-helpers.ts";
 import {
   browserContract,
   type BrowserSession,
+  type BrowserConnection,
 } from "@okouai/api-contracts/contracts/browser";
 import {
   chatThreadComputerUseHostContract,
@@ -56,7 +57,7 @@ const TAKE_OVER_MESSAGE =
   "I've taken over the browser. Don't use it until I hand it back.";
 const HAND_BACK_MESSAGE = "I'm done in the browser. Please continue.";
 
-function liveBrowserSession(): BrowserSession {
+function liveBrowserSession(): BrowserConnection["browser"] {
   return {
     threadId: THREAD_ID,
     name: "research",
@@ -279,7 +280,7 @@ test("A live Browser card resumes a window reclaimed after its summary was read"
     },
   };
   const { native } = mockBrowserApi(active);
-  let current = active;
+  let current: BrowserSession = active;
   context.mocks.api(browserContract.get, ({ query, respond }) => {
     return respond(200, browserReadResponse(current, query));
   });
@@ -1090,33 +1091,20 @@ async function selectLastBrowserTab(sidebar: HTMLElement): Promise<void> {
   ).toHaveAttribute("aria-selected", "true");
 }
 
-const FIRST_FIVE_TABS = [
-  "Example",
-  "Page 2",
-  "Page 3",
-  "Page 4",
-  "Page 5",
-] as const;
-const FOUR_WITH_LAST_SELECTED = [
-  "Example",
-  "Page 2",
-  "Page 3",
-  "Page 12",
-] as const;
+const FIRST_THREE_TABS = ["Example", "Page 2", "Page 3"] as const;
+const TWO_WITH_LAST_SELECTED = ["Example", "Page 12"] as const;
 
 // These regressions drive the real Router, host layout and CDP viewer together.
 test("Browser tab admission uses a stable picker-independent budget and protects the actual selection", async () => {
   mockWideScreen();
   const { geometry } = mockTabAdmissionGeometry(240);
   const { sidebar } = await openManyTabBrowser();
-  expect(admittedTabNames(sidebar)).toStrictEqual(FIRST_FIVE_TABS);
+  expect(admittedTabNames(sidebar)).toStrictEqual(FIRST_THREE_TABS);
   expect(buttonByName("All tabs", sidebar)).toBeEnabled();
   await selectLastBrowserTab(sidebar);
   expect(admittedTabNames(sidebar)).toStrictEqual([
     "Example",
     "Page 2",
-    "Page 3",
-    "Page 4",
     "Page 12",
   ]);
 
@@ -1124,11 +1112,9 @@ test("Browser tab admission uses a stable picker-independent budget and protects
   expect(admittedTabNames(sidebar)).toStrictEqual([
     "Example",
     "Page 2",
-    "Page 3",
-    "Page 4",
     "Page 12",
   ]);
-  Object.assign(geometry, { budget: 444, panel: 644 });
+  Object.assign(geometry, { budget: 800, panel: 1000 });
   fireEvent.resize(window);
   await waitFor(() => {
     expect(admittedTabNames(sidebar)).toHaveLength(12);
@@ -1146,7 +1132,7 @@ test("Browser tab admission keeps a zero first-open budget until the native pane
   expect(admittedTabNames(sidebar)).toStrictEqual([]);
   expect(buttonByName("All tabs", sidebar)).toBeEnabled();
 
-  Object.assign(native.geometry, { budget: 600, panel: 800 });
+  Object.assign(native.geometry, { budget: 800, panel: 1000 });
   panel.run();
   fireEvent.resize(window);
   expect(admittedTabNames(sidebar)).toStrictEqual([]);
@@ -1161,7 +1147,7 @@ test("Browser tab admission keeps a zero first-open budget until the native pane
 
 test("Browser tab admission narrows conservatively on the chat-list action before transitionrun", async () => {
   mockWideScreen();
-  const native = mockTabAdmissionGeometry(600, 800);
+  const native = mockTabAdmissionGeometry(800, 1000);
   const { sidebar } = await openManyTabBrowser();
   await selectLastBrowserTab(sidebar);
   click(buttonByName("Hide chat list"));
@@ -1171,8 +1157,10 @@ test("Browser tab admission narrows conservatively on the chat-list action befor
   native.geometry.widthTransitions = true;
   click(buttonByName("Show chat list"));
   // Base UI has staged the list at zero, before any native animation exists.
-  // This is still the pre-motion 800px panel: admission must use its 400px floor.
-  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  // This is still the pre-motion 1000px panel: admission must use its 400px floor.
+  await waitFor(() => {
+    expect(admittedTabNames(sidebar)).toStrictEqual(TWO_WITH_LAST_SELECTED);
+  });
 
   const panel = native.transition("panel", "flex-basis");
   const list = native.transition("chat-list", "width");
@@ -1180,11 +1168,75 @@ test("Browser tab admission narrows conservatively on the chat-list action befor
   list.run();
   Object.assign(native.geometry, { budget: 500, panel: 700 });
   fireEvent.resize(window);
-  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  expect(admittedTabNames(sidebar)).toStrictEqual(TWO_WITH_LAST_SELECTED);
   Object.assign(native.geometry, { budget: 200, panel: 400 });
   panel.end();
   list.end();
-  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  expect(admittedTabNames(sidebar)).toStrictEqual(TWO_WITH_LAST_SELECTED);
+});
+
+test("Browser tab admission settles surviving shell motion after navigation cancels visibility paint", async () => {
+  mockWideScreen();
+  const native = mockTabAdmissionGeometry(800, 1000);
+  const initial = await openManyTabBrowser();
+  await selectLastBrowserTab(initial.sidebar);
+  click(buttonByName("Hide chat list"));
+  await waitFor(() => {
+    expect(buttonByName("Show chat list")).toBeInTheDocument();
+  });
+  native.geometry.widthTransitions = true;
+  // Hold the action's first paint at the browser boundary, not its command.
+  vi.spyOn(window, "requestAnimationFrame").mockImplementationOnce(() => {
+    return 0;
+  });
+  click(buttonByName("Show chat list"));
+  await waitFor(() => {
+    expect(admittedTabNames(initial.sidebar)).toStrictEqual(
+      TWO_WITH_LAST_SELECTED,
+    );
+  });
+  const listOwner = sidebarWidthOwner("chat-list");
+  const panel = native.transition("panel", "flex-basis");
+  const list = native.transition("chat-list", "width");
+  panel.run();
+  list.run();
+  act(() => {
+    window.history.pushState(null, "", "/");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByRole("textbox", { name: "Message" }),
+    ).toBeInTheDocument();
+    expect(initial.sidebar).not.toBeInTheDocument();
+  });
+  expect(sidebarWidthOwner("chat-list")).toBe(listOwner);
+  act(() => {
+    window.history.pushState(null, "", `/chats/${THREAD_ID}`);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expectConversationReady();
+  await selectDesktopHeaderAction("Open browser");
+  const sidebar = liveBrowserSidebar();
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeEnabled();
+  });
+  await selectLastBrowserTab(sidebar);
+  expect(buttonByName("Hide chat list")).toBeInTheDocument();
+  Object.assign(native.geometry, { budget: 800, panel: 1000 });
+  fireEvent.resize(window);
+  expect(admittedTabNames(sidebar)).toStrictEqual(TWO_WITH_LAST_SELECTED);
+  panel.end();
+  expect(admittedTabNames(sidebar)).toStrictEqual(TWO_WITH_LAST_SELECTED);
+  list.end();
+  await waitFor(() => {
+    expect(admittedTabNames(sidebar)).toHaveLength(12);
+  });
+  expect(
+    within(sidebar).getByLabelText("Page 12", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
 });
 
 test.each(["panel", "chat-list"] as const)(
@@ -1197,18 +1249,18 @@ test.each(["panel", "chat-list"] as const)(
     const panel = native.transition("panel", "flex-basis");
     const list = native.transition("chat-list", "width");
     click(buttonByName("Hide chat list"));
-    expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+    expect(admittedTabNames(sidebar)).toStrictEqual(TWO_WITH_LAST_SELECTED);
     panel.run();
     list.run();
-    Object.assign(native.geometry, { budget: 600, panel: 800 });
+    Object.assign(native.geometry, { budget: 800, panel: 1000 });
     fireEvent.resize(window);
-    expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+    expect(admittedTabNames(sidebar)).toStrictEqual(TWO_WITH_LAST_SELECTED);
 
     const motions = { panel, "chat-list": list };
     motions[first].end();
-    expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+    expect(admittedTabNames(sidebar)).toStrictEqual(TWO_WITH_LAST_SELECTED);
     fireEvent.resize(window);
-    expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+    expect(admittedTabNames(sidebar)).toStrictEqual(TWO_WITH_LAST_SELECTED);
     motions[first === "panel" ? "chat-list" : "panel"].end();
     await waitFor(() => {
       expect(admittedTabNames(sidebar)).toHaveLength(12);
@@ -1221,7 +1273,7 @@ test.each(["panel", "chat-list"] as const)(
 
 test("Browser tab admission cannot unlock an old wide budget after native cancellation and reversal", async () => {
   mockWideScreen();
-  const native = mockTabAdmissionGeometry(600, 800);
+  const native = mockTabAdmissionGeometry(800, 1000);
   const { sidebar } = await openManyTabBrowser();
   await selectLastBrowserTab(sidebar);
   click(buttonByName("Hide chat list"));
@@ -1231,7 +1283,9 @@ test("Browser tab admission cannot unlock an old wide budget after native cancel
   const oldPanel = native.transition("panel", "flex-basis");
   const oldList = native.transition("chat-list", "width");
   click(buttonByName("Show chat list"));
-  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  await waitFor(() => {
+    expect(admittedTabNames(sidebar)).toStrictEqual(TWO_WITH_LAST_SELECTED);
+  });
   const newPanel = native.transition("panel", "flex-basis");
   const newList = native.transition("chat-list", "width");
   click(buttonByName("Hide chat list"));
@@ -1243,9 +1297,9 @@ test("Browser tab admission cannot unlock an old wide budget after native cancel
   nativeWidthEvent("panel", "transitionend", "flex-basis");
   nativeWidthEvent("chat-list", "transitionend", "width");
   fireEvent.resize(window);
-  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  expect(admittedTabNames(sidebar)).toStrictEqual(TWO_WITH_LAST_SELECTED);
   newPanel.end();
-  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  expect(admittedTabNames(sidebar)).toStrictEqual(TWO_WITH_LAST_SELECTED);
   newList.end();
   await waitFor(() => {
     expect(admittedTabNames(sidebar)).toHaveLength(12);
@@ -1256,16 +1310,16 @@ test("Browser tab admission commits direct, no-motion and reduced-motion geometr
   const media = mockWideScreen();
   const { geometry } = mockTabAdmissionGeometry(240);
   const { sidebar } = await openManyTabBrowser();
-  expect(admittedTabNames(sidebar)).toStrictEqual(FIRST_FIVE_TABS);
+  expect(admittedTabNames(sidebar)).toStrictEqual(FIRST_THREE_TABS);
   const handle = await screen.findByRole("separator", {
     name: "Resize chat list",
   });
   Object.assign(geometry, { budget: 340, panel: 540 });
   handle.focus();
   await userEvent.keyboard("{ArrowLeft}");
-  expect(admittedTabNames(sidebar)).toHaveLength(8);
+  expect(admittedTabNames(sidebar)).toHaveLength(5);
 
-  Object.assign(geometry, { budget: 600, panel: 800 });
+  Object.assign(geometry, { budget: 800, panel: 1000 });
   click(buttonByName("Hide chat list"));
   await waitFor(() => {
     expect(admittedTabNames(sidebar)).toHaveLength(12);
@@ -1282,19 +1336,14 @@ test("Browser tab admission commits direct, no-motion and reduced-motion geometr
   Object.assign(geometry, { budget: 200, panel: 400 });
   click(buttonByName("Show chat list"));
   await waitFor(() => {
-    expect(admittedTabNames(sidebar)).toStrictEqual([
-      "Example",
-      "Page 2",
-      "Page 3",
-      "Page 4",
-    ]);
+    expect(admittedTabNames(sidebar)).toStrictEqual(["Example", "Page 2"]);
   });
 });
 
 test("Browser tab admission uses native viewport changes made while disconnected on automatic recovery", async () => {
   const advanceRecovery = browserRecoveryClock(context.signal);
   mockWideScreen();
-  const { geometry } = mockTabAdmissionGeometry(600, 800);
+  const { geometry } = mockTabAdmissionGeometry(800, 1000);
   const { browser, sidebar } = await openManyTabBrowser();
   act(() => {
     browser.native.disconnect({ code: 1006, wasClean: false });
@@ -1311,8 +1360,8 @@ test("Browser tab admission uses native viewport changes made while disconnected
     ).toBeEnabled();
     expect(browser.native.viewport).toStrictEqual({ width: 916, height: 600 });
   });
-  expect(admittedTabNames(sidebar)).toStrictEqual(FIRST_FIVE_TABS);
-  Object.assign(geometry, { budget: 600, panel: 800 });
+  expect(admittedTabNames(sidebar)).toStrictEqual(FIRST_THREE_TABS);
+  Object.assign(geometry, { budget: 800, panel: 1000 });
   fireEvent.resize(window);
   await waitFor(() => {
     expect(admittedTabNames(sidebar)).toHaveLength(12);

@@ -561,13 +561,12 @@ export class ApiDispatchTimingCollector {
   }
 }
 
-/** Publish actual preparation intervals with their acquisition boundary. */
+/** Publish actual preparation intervals for direct dispatch. */
 export function recordExecutionPreparationTimings(args: {
   readonly runId: string;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly records: readonly ApiDispatchTimingRecord[];
-  readonly phase: "claim" | "dispatch";
 }): void {
   const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
   recordSandboxOperations(
@@ -583,7 +582,7 @@ export function recordExecutionPreparationTimings(args: {
           ...record.dimensions,
           runner_group: args.runnerGroup,
           profile: args.profile,
-          preparation_phase: args.phase,
+          preparation_phase: "dispatch",
           span_kind: record.spanKind,
           ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
         },

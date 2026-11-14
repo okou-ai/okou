@@ -3,7 +3,6 @@ use super::*;
 use crate::home_image_cache::{
     HomeCacheTerminalStatus, HomeImageLeaseIdentity, HomeImagePrepareRequest,
 };
-use crate::idle_pool::test_support::ParkedIdleCandidateBuilder;
 use crate::idle_pool::{ParkResult, ParkedIdleCandidate};
 use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxFactory, MockSandboxOverrides};
 
@@ -15,13 +14,6 @@ enum HomeCandidate {
     Ordinary,
     FirstRun,
     KnownLocal,
-    PredecessorLocation,
-    PredecessorAdvertised,
-    GenericAdvertised,
-    GenericAdvertisedExactDuringClaim,
-    OtherHostLocation,
-    OtherHostExpected,
-    UnknownOtherHostExpected,
 }
 
 #[tokio::test]
@@ -42,148 +34,6 @@ async fn first_run_without_a_home_hint_creates_a_fresh_home_without_a_seed() {
 #[tokio::test]
 async fn ordinary_admission_reuses_a_positively_known_local_home() {
     assert_home_selection(false, HomeCandidate::KnownLocal, true).await;
-}
-
-#[tokio::test]
-async fn predecessor_home_location_consumes_unadvertised_home() {
-    assert_home_selection(false, HomeCandidate::PredecessorLocation, true).await;
-}
-
-#[tokio::test]
-async fn selected_home_advertisement_consumes_home_missing_from_local_inventory() {
-    assert_home_selection(false, HomeCandidate::PredecessorAdvertised, true).await;
-}
-
-#[tokio::test]
-async fn selected_generic_home_advice_retains_verified_source_through_claim() {
-    assert_home_selection(false, HomeCandidate::GenericAdvertised, true).await;
-}
-
-#[tokio::test]
-async fn selected_home_source_cannot_be_displaced_by_exact_vm_that_parks_during_claim() {
-    for blank_available in [false, true] {
-        assert_home_selection(
-            false,
-            HomeCandidate::GenericAdvertisedExactDuringClaim,
-            blank_available,
-        )
-        .await;
-    }
-}
-
-#[tokio::test]
-async fn a_known_ready_home_preempts_another_hosts_location() {
-    assert_home_selection(false, HomeCandidate::OtherHostLocation, true).await;
-}
-
-#[tokio::test]
-async fn known_ready_predecessor_home_preempts_another_hosts_publication_expectation() {
-    assert_home_selection(false, HomeCandidate::OtherHostExpected, true).await;
-}
-
-#[tokio::test]
-async fn hidden_home_without_a_local_hint_does_not_preempt_another_host() {
-    assert_home_selection(false, HomeCandidate::UnknownOtherHostExpected, true).await;
-}
-
-#[tokio::test]
-async fn predecessor_home_location_with_no_home_uses_an_available_blank() {
-    let mut profiles = test_profiles();
-    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
-    let overrides = Arc::new(MockSandboxOverrides::new());
-    let execution = MockLifecycleGate::new();
-    overrides.set_wait_process_lifecycle_gate(execution.clone());
-    let (mut config, env) =
-        mock_run_config_with_overrides(profiles, 8, 32768, 2, overrides.clone());
-    config.capacity.max_idle = 0;
-    let cache = HomeImageCache::shared(
-        RunnerPaths::new(config.paths.base_dir.clone()),
-        &config.paths.home,
-        &config.runner.group,
-    );
-    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(cache);
-    let blank_id = park_blank(&config, &env, &overrides).await;
-    let runner = tokio::spawn(run(config));
-    wait_discover_entered(&env, WAIT).await;
-    let successor = RunId::new_v4();
-    let key = "thread:probe-absent-home";
-    env.provider
-        .set_claim_result(successor, Some(context_with_reuse_key(successor, key)));
-    env.handle
-        .discover_tx
-        .send(ranked_candidate(
-            successor,
-            Some(key),
-            runner_provider::RunnerPreferenceTarget::PredecessorHome(
-                RunId::new_v4(),
-                runner_provider::ActivePredecessorHomeEvidence::HostLocation,
-            ),
-            TEST_RUNNER_ID,
-            TEST_HEARTBEAT_GENERATION,
-        ))
-        .unwrap();
-    execution.wait_entered(1, WAIT).await.unwrap();
-    execution.release_one();
-    let completed = env.handle.wait_completion(successor, WAIT).await.unwrap();
-    assert_eq!(completed.exit_code, 0);
-    assert_eq!(completed.sandbox_id, Some(blank_id));
-    shutdown(&env, runner).await;
-}
-
-#[tokio::test]
-async fn a_busy_home_does_not_preempt_another_hosts_probe() {
-    let mut profiles = test_profiles();
-    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
-    let (mut config, env) = mock_run_config(profiles, 8, 32768, 2);
-    config.capacity.max_idle = 0;
-    let paths = RunnerPaths::new(config.paths.base_dir.clone());
-    let cache = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
-    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(cache);
-    let publisher = HomeImageCache::shared(paths, &config.paths.home, &config.runner.group);
-    let key = "thread:busy-home-cannot-preempt-probe";
-    let publishing = publisher
-        .prepare(HomeImagePrepareRequest {
-            identity: HomeImageLeaseIdentity {
-                run_id: RunId::new_v4(),
-                sandbox_id: SandboxId::new_v4(),
-                profile_name: "vm0/default",
-                rootfs_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                reuse_key: Some(key),
-                working_dir: "/home/user/workspace",
-                image_size_bytes: SIZE,
-            },
-            home_drive_required: true,
-        })
-        .await;
-    let runner = tokio::spawn(run(config));
-    wait_discover_entered(&env, WAIT).await;
-    let successor = RunId::new_v4();
-    env.provider
-        .set_claim_result(successor, Some(context_with_reuse_key(successor, key)));
-    env.handle
-        .discover_tx
-        .send(ranked_candidate(
-            successor,
-            Some(key),
-            runner_provider::RunnerPreferenceTarget::PredecessorHome(
-                RunId::new_v4(),
-                runner_provider::ActivePredecessorHomeEvidence::HostLocation,
-            ),
-            &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
-            1,
-        ))
-        .unwrap();
-    let deferred = tokio::select! {
-        deferred = env.handle.wait_deferred_poll_count(1, WAIT) => deferred,
-        _ = env.handle.wait_completion(successor, WAIT) => false,
-    };
-    drop(publishing);
-    shutdown(&env, runner).await;
-    assert!(
-        deferred,
-        "a busy entry is not a ready resource on this host"
-    );
-    assert!(env.handle.claim_candidates().is_empty());
 }
 
 pub(super) async fn publish_home(
@@ -281,16 +131,10 @@ async fn assert_home_selection(
     let key = "thread:evidenced-home-selection";
     let source = RunId::new_v4();
     let successor = RunId::new_v4();
-    let known_local = matches!(
-        candidate_kind,
-        HomeCandidate::KnownLocal
-            | HomeCandidate::OtherHostLocation
-            | HomeCandidate::OtherHostExpected
-    );
+    let known_local = matches!(candidate_kind, HomeCandidate::KnownLocal);
     if known_local {
         publish_home(&publisher, &paths, key, source).await;
     }
-    let rootfs_hash = config.runner.profiles["vm0/default"].rootfs_hash.clone();
     let runner = tokio::spawn(run(config));
     wait_discover_entered(&env, WAIT).await;
     // Remove general watcher progress through a real filesystem lifecycle;
@@ -306,113 +150,20 @@ async fn assert_home_selection(
         context.is_first_run = Some(true);
     }
     env.provider.set_claim_result(successor, Some(context));
-    let exact_during_claim = matches!(
-        candidate_kind,
-        HomeCandidate::GenericAdvertisedExactDuringClaim
-    );
-    if during_claim || exact_during_claim {
+    if during_claim {
         env.handle.block_claim(successor);
     }
-    let candidate = match candidate_kind {
-        HomeCandidate::GenericAdvertised | HomeCandidate::GenericAdvertisedExactDuringClaim => {
-            ranked_candidate(
-                successor,
-                Some(key),
-                runner_provider::RunnerPreferenceTarget::HomeCache,
-                TEST_RUNNER_ID,
-                TEST_HEARTBEAT_GENERATION,
-            )
-        }
-        HomeCandidate::PredecessorLocation | HomeCandidate::PredecessorAdvertised => {
-            ranked_candidate(
-                successor,
-                Some(key),
-                runner_provider::RunnerPreferenceTarget::PredecessorHome(
-                    source,
-                    if matches!(candidate_kind, HomeCandidate::PredecessorAdvertised) {
-                        runner_provider::ActivePredecessorHomeEvidence::Advertised
-                    } else {
-                        runner_provider::ActivePredecessorHomeEvidence::HostLocation
-                    },
-                ),
-                TEST_RUNNER_ID,
-                TEST_HEARTBEAT_GENERATION,
-            )
-        }
-        HomeCandidate::OtherHostLocation => ranked_candidate(
-            successor,
-            Some(key),
-            runner_provider::RunnerPreferenceTarget::PredecessorHome(
-                RunId::new_v4(),
-                runner_provider::ActivePredecessorHomeEvidence::HostLocation,
-            ),
-            &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
-            1,
-        ),
-        HomeCandidate::OtherHostExpected | HomeCandidate::UnknownOtherHostExpected => {
-            ranked_candidate_until(
-                successor,
-                Some(key),
-                runner_provider::RunnerPreferenceTarget::PredecessorHome(
-                    source,
-                    runner_provider::ActivePredecessorHomeEvidence::Expected {
-                        wait_deadline: Instant::now() + Duration::from_secs(30),
-                    },
-                ),
-                &uuid::Uuid::from_u128(NON_SELECTED_RUNNER_ID).to_string(),
-                1,
-                Instant::now() + Duration::from_secs(2),
-            )
-        }
-        HomeCandidate::Ordinary | HomeCandidate::FirstRun | HomeCandidate::KnownLocal => {
-            runner_provider::JobCandidate::new(successor, "vm0/default".into())
-                .with_reuse_key(Some(key.into()))
-        }
-    };
+    let candidate = runner_provider::JobCandidate::new(successor, "vm0/default".into())
+        .with_reuse_key(Some(key.into()));
     env.handle.discover_tx.send(candidate).unwrap();
-    if matches!(candidate_kind, HomeCandidate::UnknownOtherHostExpected) {
-        tokio::select! {
-            deferred = env.handle.wait_deferred_poll_count(1, WAIT) => assert!(deferred),
-            result = execution.wait_entered(1, WAIT) => {
-                result.unwrap();
-                panic!("an unknown hidden Home cannot preempt the selected Runner");
-            }
-        }
-        assert!(env.handle.claim_candidates().is_empty());
-        shutdown(&env, runner).await;
-        assert_eq!(budget.allocated(), (0, 0, 0));
-        return;
-    }
-    if during_claim || exact_during_claim {
+    if during_claim {
         assert!(env.handle.wait_run_claim_in_flight(successor, WAIT).await);
-        if during_claim {
-            publish_home(&publisher, &paths, key, source).await;
-        }
-        if exact_during_claim {
-            let candidate = ParkedIdleCandidateBuilder::new(
-                key,
-                ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap(),
-            )
-            .with_profile_name("vm0/default")
-            .with_rootfs_hash(rootfs_hash)
-            .with_sandbox(Box::new(MockSandbox::with_overrides(
-                SandboxId::new_v4().to_string(),
-                overrides.clone(),
-            )))
-            .build();
-            assert!(matches!(
-                env.idle_pool.lock().await.park(candidate),
-                ParkResult::Parked
-            ));
-        }
+        publish_home(&publisher, &paths, key, source).await;
         env.handle.unblock_claim(successor);
     }
     execution.wait_entered(1, WAIT).await.unwrap();
     let created = overrides.create_configs();
-    let restore = !matches!(
-        candidate_kind,
-        HomeCandidate::Ordinary | HomeCandidate::FirstRun | HomeCandidate::UnknownOtherHostExpected
-    );
+    let restore = known_local;
     let replacements = overrides.home_drive_replacements();
     if restore {
         let drive = if blank_available {

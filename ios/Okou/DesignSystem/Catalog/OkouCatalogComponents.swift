@@ -76,6 +76,8 @@
           HStack {
             OkouSelectionButton(isSelected: false) {}.accessibilityLabel("Unselected message")
             OkouSelectionButton(isSelected: true) {}.accessibilityLabel("Selected message")
+            OkouSelectionButton(isSelected: false, isIndeterminate: true) {}
+              .accessibilityLabel("Partially selected message group")
           }
         }
         OkouCatalogSection("Value picker") {

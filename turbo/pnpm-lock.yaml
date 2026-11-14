@@ -928,6 +928,9 @@ importers:
       signal-timers:
         specifier: ^1.0.5
         version: 1.0.5
+      tldts:
+        specifier: 7.0.28
+        version: 7.0.28
       unified:
         specifier: ^11.0.5
         version: 11.0.5

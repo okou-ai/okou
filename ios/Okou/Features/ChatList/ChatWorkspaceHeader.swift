@@ -13,7 +13,7 @@ struct ChatWorkspaceHeader: View {
     let hasUnread = store.list.hasUnreadThreads
     HStack(spacing: OkouSpace.sm) {
       if let sharing = store.selectedConversation?.sharing, sharing.isSelecting {
-        Text("\(sharing.selectedIDs.count) selected").font(.okou(.headline))
+        Text("\(sharing.selectedCount) selected").font(.okou(.headline))
           .accessibilityIdentifier("chat-sharing-count")
         Spacer()
         Button {

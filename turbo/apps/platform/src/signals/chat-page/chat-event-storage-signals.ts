@@ -18,7 +18,7 @@ import type { ChatEvent } from "./chat-event-types.ts";
 import {
   deriveServerRunStateFromChatEvents,
   type RunIndicatorState,
-} from "./chat-event-state.ts";
+} from "@okouai/api-contracts/contracts/chat-run-state";
 import {
   appendOptimisticChatEvent$,
   createOptimisticChatEventEntry,

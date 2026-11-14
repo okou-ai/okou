@@ -69,6 +69,7 @@ enum OkouIconAssets {
     "message-circle-warning",
     "messages-square",
     "mic",
+    "minus",
     "monitor",
     "music",
     "package",

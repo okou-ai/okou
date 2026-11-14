@@ -205,10 +205,8 @@ pub async fn exercise(
     outcome.map_err(io::Error::other)??;
     settled(&completed)?;
     let activation = context.tracker.take_retained_activation_owners()?;
-    let finalizing = context.tracker.take_retained_finalizing_owners()?;
-    if !activation.is_empty() || !finalizing.is_empty() {
+    if !activation.is_empty() {
         proof.retain(activation);
-        proof.retain(finalizing);
         return Err(io::Error::other("native observer loss left unresolved owners").into());
     }
     proof.observer_loss_witness(

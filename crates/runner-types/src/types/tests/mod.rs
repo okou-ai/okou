@@ -36,52 +36,6 @@ fn firewall_auth_base_allows_path_syntax_in_query() {
 }
 
 #[test]
-fn poll_response_with_job() {
-    let json = json!({
-        "job": {
-            "runId": "550e8400-e29b-41d4-a716-446655440000",
-            "experimentalProfile": "browser",
-            "cliAgentSessionId": "session-id",
-            "runnerPreference": {
-                "kind": "preference",
-                "runnerIdentity": {
-                    "runnerId": "b85bb257-21c1-4b8f-8676-a4051f35b7b0",
-                    "heartbeatGeneration": 7
-                },
-                "tier": "reusableSandbox",
-                "expiresAt": "2026-08-03T12:00:00.000Z"
-            }
-        }
-    });
-    let resp: PollResponse = serde_json::from_value(json).unwrap();
-    let job = resp.job.unwrap();
-    assert_eq!(
-        job.run_id,
-        "550e8400-e29b-41d4-a716-446655440000"
-            .parse::<RunId>()
-            .unwrap()
-    );
-    assert_eq!(job.experimental_profile, "browser");
-    assert!(job.runner_preference.is_some());
-    assert!(job.reuse_key().is_none());
-}
-
-#[test]
-fn poll_response_no_job() {
-    let json = json!({ "job": null });
-    let resp: PollResponse = serde_json::from_value(json).unwrap();
-    assert!(resp.job.is_none());
-}
-
-#[test]
-fn job_requires_profile() {
-    let json = json!({
-        "runId": "550e8400-e29b-41d4-a716-446655440000"
-    });
-    assert!(serde_json::from_value::<Job>(json).is_err());
-}
-
-#[test]
 fn execution_context_deserializes_pi_sandbox_resources() {
     let json = serde_json::json!({
         "runId": "11111111-1111-4111-8111-111111111111",

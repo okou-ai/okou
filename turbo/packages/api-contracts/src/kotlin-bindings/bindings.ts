@@ -7,7 +7,11 @@ import { androidUpgradeRequiredSchema } from "../contracts/android-client-compat
 import {
   chatThreadsContract,
   chatThreadSnapshotArchiveSchema,
+  chatThreadEventsContract,
+  chatThreadByIdContract,
+  chatThreadMarkReadContract,
 } from "../contracts/chat-threads";
+import { chatEventRowSchema } from "../contracts/chat-event-rows";
 import { agentsMainContract } from "../contracts/agents";
 import { projectsContract } from "../contracts/projects";
 import { projectSnapshotArchiveSchema } from "../validators/projects";
@@ -61,6 +65,29 @@ const chatReadBindings: readonly KotlinRouteBinding[] = [
   },
 ];
 
+const historyReadBindings: readonly KotlinRouteBinding[] = [
+  {
+    name: "historySnapshot",
+    response: "HistorySnapshot",
+    route: chatThreadEventsContract.snapshot,
+  },
+  {
+    name: "historyRows",
+    response: "HistoryRows",
+    route: chatThreadEventsContract.rows,
+  },
+  {
+    name: "threadDetail",
+    response: "ThreadDetail",
+    route: chatThreadByIdContract.get,
+  },
+  {
+    name: "markRead",
+    response: "ReadState",
+    route: chatThreadMarkReadContract.markRead,
+  },
+];
+
 /** Only routes used by the installed native client, not every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   { name: "organization", response: "Organization", route: orgContract.get },
@@ -82,6 +109,7 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: userPreferencesContract.update,
   },
   ...chatReadBindings,
+  ...historyReadBindings,
 ];
 
 export interface KotlinTypeBinding {
@@ -124,6 +152,14 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
       direction: "output" as const,
     };
   }),
+  ...historyReadBindings.map(({ response, route }) => {
+    return {
+      name: response,
+      schema: route.responses[200]!,
+      direction: "output" as const,
+    };
+  }),
+  { name: "RawHistoryRow", schema: chatEventRowSchema, direction: "output" },
   {
     name: "ChatArchive",
     schema: chatThreadSnapshotArchiveSchema,

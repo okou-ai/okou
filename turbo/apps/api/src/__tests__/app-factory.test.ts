@@ -571,7 +571,7 @@ describe("createApp", () => {
   });
 
   describe("web client compatibility", () => {
-    it.each(["0.1048.7", "0.1054.0", "0.1055.0", "0.1059.2"])(
+    it.each(["0.1098.0", "0.1099.1", "0.1122.1"])(
       "force-upgrades App %s before route matching",
       async (version) => {
         const app = createApp({

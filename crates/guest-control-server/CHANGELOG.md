@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.24.105](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.104...guest-control-server-v0.24.105) (2026-11-14)
+
+
+### Refactoring
+
+* **rust:** type owned blocking-mode updates ([#47120](https://github.com/okou-ai/okou/issues/47120)) ([5006b06](https://github.com/okou-ai/okou/commit/5006b0632614308a23d1368980b502aedfc11e29))
+
+## [0.24.104](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.103...guest-control-server-v0.24.104) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** use owned notification descriptor constructors ([#47098](https://github.com/okou-ai/okou/issues/47098)) ([bf69ae3](https://github.com/okou-ai/okou/commit/bf69ae388ed442b23479f99bbf78bebd2c1723af))
+
 ## [0.24.103](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.102...guest-control-server-v0.24.103) (2026-11-13)
 
 

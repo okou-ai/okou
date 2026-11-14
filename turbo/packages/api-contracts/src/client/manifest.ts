@@ -122,10 +122,6 @@ export const clientDescriptorManifest = [
     contracts: ["chatRemoteAccessContract"],
   },
   {
-    module: "chat-share-selection",
-    contracts: ["chatShareSelectionContract"],
-  },
-  {
     module: "chat-thread-activity-summary",
     contracts: ["chatThreadActivitySummaryContract"],
   },
@@ -651,8 +647,6 @@ export const clientDescriptorManifest = [
       "runnersCancellationContract",
       "runnersConnectorRuntimeSyncContract",
       "runnersHeartbeatContract",
-      "runnersJobClaimContract",
-      "runnersPollContract",
       "runnersSteerContract",
     ],
   },

@@ -1,0 +1,2609 @@
+{
+  "threadId": "11111111-1111-4111-8111-111111111111",
+  "histories": [
+    {
+      "name": "empty",
+      "rows": [],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "pending-manual-and-automation",
+      "rows": [
+        {
+          "id": "manual",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 1,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "manual"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "reply",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 8,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "content": "Reply 含中文 🐈"
+          },
+          "eventType": "output.message"
+        },
+        {
+          "id": "z-earlier",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 15,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "z-earlier"
+                }
+              ]
+            }
+          },
+          "eventType": "input.automation"
+        },
+        {
+          "id": "a-later",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 22,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "a-later"
+                }
+              ]
+            }
+          },
+          "eventType": "input.automation"
+        }
+      ],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 1,
+          "expected": {
+            "events": [
+              {
+                "id": "manual",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "queued",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 2,
+          "expected": {
+            "events": [
+              {
+                "id": "manual",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "reply",
+                "type": "output.message",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 3,
+          "expected": {
+            "events": [
+              {
+                "id": "manual",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "reply",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "z-earlier",
+                "type": "input.automation",
+                "queued": true
+              }
+            ],
+            "execution": "running",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 4,
+          "expected": {
+            "events": [
+              {
+                "id": "manual",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "reply",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "z-earlier",
+                "type": "input.automation",
+                "queued": true
+              },
+              {
+                "id": "a-later",
+                "type": "input.automation",
+                "queued": true
+              }
+            ],
+            "execution": "running",
+            "workSteps": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "automation-delivery-and-budget",
+      "rows": [
+        {
+          "id": "scheduled",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 1,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "scheduled"
+                }
+              ]
+            }
+          },
+          "eventType": "input.automation"
+        },
+        {
+          "id": "delivered",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": "scheduled",
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 8,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "Scheduled work"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "budget",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "agent_run",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 15,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "Internal warning"
+                }
+              ]
+            }
+          },
+          "eventType": "input.budget"
+        },
+        {
+          "id": "reply",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 22,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "content": "Reply 含中文 🐈"
+          },
+          "eventType": "output.message"
+        },
+        {
+          "id": "completed",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 29,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "run.completed"
+        }
+      ],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 1,
+          "expected": {
+            "events": [
+              {
+                "id": "scheduled",
+                "type": "input.automation",
+                "queued": true
+              }
+            ],
+            "execution": "queued",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 2,
+          "expected": {
+            "events": [
+              {
+                "id": "delivered",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 3,
+          "expected": {
+            "events": [
+              {
+                "id": "delivered",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 4,
+          "expected": {
+            "events": [
+              {
+                "id": "delivered",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "reply",
+                "type": "output.message",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 5,
+          "expected": {
+            "events": [
+              {
+                "id": "delivered",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "reply",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "completed",
+                "type": "run.completed",
+                "queued": false
+              }
+            ],
+            "execution": "completed",
+            "workSteps": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "manual-rejection",
+      "rows": [
+        {
+          "id": "pending",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 1,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "pending"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "rejected",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": "pending",
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 8,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "Request"
+                }
+              ]
+            },
+            "error": "Not admitted"
+          },
+          "eventType": "input.rejected"
+        }
+      ],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 1,
+          "expected": {
+            "events": [
+              {
+                "id": "pending",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "queued",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 2,
+          "expected": {
+            "events": [
+              {
+                "id": "rejected",
+                "type": "input.rejected",
+                "queued": false
+              }
+            ],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "automation-rejection",
+      "rows": [
+        {
+          "id": "scheduled",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 1,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "scheduled"
+                }
+              ]
+            }
+          },
+          "eventType": "input.automation"
+        },
+        {
+          "id": "rejected",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": "scheduled",
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 8,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "Scheduled work"
+                }
+              ]
+            },
+            "error": "Not admitted"
+          },
+          "eventType": "input.rejected"
+        },
+        {
+          "id": "public-error",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 15,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "error": "Automation unavailable"
+          },
+          "eventType": "output.error"
+        }
+      ],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 1,
+          "expected": {
+            "events": [
+              {
+                "id": "scheduled",
+                "type": "input.automation",
+                "queued": true
+              }
+            ],
+            "execution": "queued",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 2,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 3,
+          "expected": {
+            "events": [
+              {
+                "id": "public-error",
+                "type": "output.error",
+                "queued": false
+              }
+            ],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "recalled-input-and-followups",
+      "rows": [
+        {
+          "id": "pending",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 1,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "pending"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "recall",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": "pending",
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 8,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "control.revoke"
+        },
+        {
+          "id": "request",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 15,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "request"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "followups",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 22,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "content": "Next steps"
+          },
+          "eventType": "output.followups"
+        },
+        {
+          "id": "revoke-followups",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": "followups",
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 29,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "control.revoke"
+        },
+        {
+          "id": "completed",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 36,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "run.completed"
+        }
+      ],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 1,
+          "expected": {
+            "events": [
+              {
+                "id": "pending",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "queued",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 2,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 3,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 4,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "followups",
+                "type": "output.followups",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 5,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 6,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "completed",
+                "type": "run.completed",
+                "queued": false
+              }
+            ],
+            "execution": "completed",
+            "workSteps": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "replacement-chain",
+      "rows": [
+        {
+          "id": "scheduled",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 1,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "scheduled"
+                }
+              ]
+            }
+          },
+          "eventType": "input.automation"
+        },
+        {
+          "id": "delivered",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": "scheduled",
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 8,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "First delivery"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "redelivered",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "revokesEventId": "delivered",
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 15,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "Second delivery"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "reply",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 22,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "content": "Reply 含中文 🐈"
+          },
+          "eventType": "output.message"
+        },
+        {
+          "id": "completed",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 29,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "run.completed"
+        }
+      ],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 1,
+          "expected": {
+            "events": [
+              {
+                "id": "scheduled",
+                "type": "input.automation",
+                "queued": true
+              }
+            ],
+            "execution": "queued",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 2,
+          "expected": {
+            "events": [
+              {
+                "id": "delivered",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 3,
+          "expected": {
+            "events": [
+              {
+                "id": "redelivered",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 4,
+          "expected": {
+            "events": [
+              {
+                "id": "redelivered",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "reply",
+                "type": "output.message",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 5,
+          "expected": {
+            "events": [
+              {
+                "id": "redelivered",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "reply",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "completed",
+                "type": "run.completed",
+                "queued": false
+              }
+            ],
+            "execution": "completed",
+            "workSteps": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "interrupt-before-terminal",
+      "rows": [
+        {
+          "id": "request",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 1,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "request"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "partial",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 8,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "content": "Reply 含中文 🐈"
+          },
+          "eventType": "output.message"
+        },
+        {
+          "id": "interrupt",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 15,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "control.interrupt"
+        },
+        {
+          "id": "cancelled",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 22,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "error": "Original cancellation detail"
+          },
+          "eventType": "run.cancelled"
+        }
+      ],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 1,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 2,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "partial",
+                "type": "output.message",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 3,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "partial",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "interrupt",
+                "type": "run.cancelled",
+                "queued": false
+              }
+            ],
+            "execution": "cancelled",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 4,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "partial",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "interrupt",
+                "type": "run.cancelled",
+                "queued": false
+              }
+            ],
+            "execution": "cancelled",
+            "workSteps": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "terminal-before-interrupt",
+      "rows": [
+        {
+          "id": "request",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 1,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "request"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "reply",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 8,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "content": "Reply 含中文 🐈"
+          },
+          "eventType": "output.message"
+        },
+        {
+          "id": "completed",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 15,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "run.completed"
+        },
+        {
+          "id": "interrupt",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 22,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "control.interrupt"
+        }
+      ],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 1,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 2,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "reply",
+                "type": "output.message",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 3,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "reply",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "completed",
+                "type": "run.completed",
+                "queued": false
+              }
+            ],
+            "execution": "completed",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 4,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "reply",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "completed",
+                "type": "run.completed",
+                "queued": false
+              },
+              {
+                "id": "interrupt",
+                "type": "run.cancelled",
+                "queued": false
+              }
+            ],
+            "execution": "cancelled",
+            "workSteps": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "interrupt-late-output-and-terminal",
+      "rows": [
+        {
+          "id": "request",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 1,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "request"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "partial",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 8,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "content": "Reply 含中文 🐈"
+          },
+          "eventType": "output.message"
+        },
+        {
+          "id": "interrupt",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 15,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "control.interrupt"
+        },
+        {
+          "id": "late-output",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 22,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "content": "Reply 含中文 🐈"
+          },
+          "eventType": "output.message"
+        },
+        {
+          "id": "cancelled",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 29,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "error": "Original cancellation detail"
+          },
+          "eventType": "run.cancelled"
+        }
+      ],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 1,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 2,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "partial",
+                "type": "output.message",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 3,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "partial",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "interrupt",
+                "type": "run.cancelled",
+                "queued": false
+              }
+            ],
+            "execution": "cancelled",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 4,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "partial",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "interrupt",
+                "type": "run.cancelled",
+                "queued": false
+              },
+              {
+                "id": "late-output",
+                "type": "output.message",
+                "queued": false
+              }
+            ],
+            "execution": "cancelled",
+            "workSteps": 2
+          }
+        },
+        {
+          "length": 5,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "partial",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "interrupt",
+                "type": "run.cancelled",
+                "queued": false
+              },
+              {
+                "id": "late-output",
+                "type": "output.message",
+                "queued": false
+              }
+            ],
+            "execution": "cancelled",
+            "workSteps": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "newer-running-older-terminal",
+      "rows": [
+        {
+          "id": "older",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 1,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "older"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "newer",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 8,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "newer"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "older-completed",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 15,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "run.completed"
+        },
+        {
+          "id": "newer-reply",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 22,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "content": "Reply 含中文 🐈"
+          },
+          "eventType": "output.message"
+        },
+        {
+          "id": "newer-completed",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 29,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "run.completed"
+        }
+      ],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 1,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 2,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "newer",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 3,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "older-completed",
+                "type": "run.completed",
+                "queued": false
+              },
+              {
+                "id": "newer",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 4,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "older-completed",
+                "type": "run.completed",
+                "queued": false
+              },
+              {
+                "id": "newer",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "newer-reply",
+                "type": "output.message",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 5,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "older-completed",
+                "type": "run.completed",
+                "queued": false
+              },
+              {
+                "id": "newer",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "newer-reply",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "newer-completed",
+                "type": "run.completed",
+                "queued": false
+              }
+            ],
+            "execution": "completed",
+            "workSteps": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "newer-ended-older-activity",
+      "rows": [
+        {
+          "id": "older",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 1,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "older"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "newer",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 8,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "newer"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "newer-completed",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 15,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "run.completed"
+        },
+        {
+          "id": "older-late-reply",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 22,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "content": "Reply 含中文 🐈"
+          },
+          "eventType": "output.message"
+        },
+        {
+          "id": "usage",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 29,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "usage": {
+              "inputTokens": 42
+            }
+          },
+          "eventType": "usage.recorded"
+        },
+        {
+          "id": "older-completed",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 36,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "run.completed"
+        }
+      ],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 1,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 2,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "newer",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 3,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "newer",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "newer-completed",
+                "type": "run.completed",
+                "queued": false
+              }
+            ],
+            "execution": "completed",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 4,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "older-late-reply",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "newer",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "newer-completed",
+                "type": "run.completed",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 5,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "older-late-reply",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "newer",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "newer-completed",
+                "type": "run.completed",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 6,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "older-late-reply",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "older-completed",
+                "type": "run.completed",
+                "queued": false
+              },
+              {
+                "id": "newer",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "newer-completed",
+                "type": "run.completed",
+                "queued": false
+              }
+            ],
+            "execution": "completed",
+            "workSteps": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "newer-failed-older-late-terminal",
+      "rows": [
+        {
+          "id": "older",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 1,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "older"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "newer",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 8,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "newer"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "newer-failed",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 15,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "error": "Run failed"
+          },
+          "eventType": "run.failed"
+        },
+        {
+          "id": "older-completed",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 22,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "run.completed"
+        }
+      ],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 1,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 2,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "newer",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 3,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "newer",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "newer-failed",
+                "type": "run.failed",
+                "queued": false
+              }
+            ],
+            "execution": "failed",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 4,
+          "expected": {
+            "events": [
+              {
+                "id": "older",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "older-completed",
+                "type": "run.completed",
+                "queued": false
+              },
+              {
+                "id": "newer",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "newer-failed",
+                "type": "run.failed",
+                "queued": false
+              }
+            ],
+            "execution": "failed",
+            "workSteps": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "metadata-and-followups",
+      "rows": [
+        {
+          "id": "request",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 1,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "request"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "reply",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 8,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "content": "Reply 含中文 🐈"
+          },
+          "eventType": "output.message"
+        },
+        {
+          "id": "followups",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 15,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "content": "Next steps"
+          },
+          "eventType": "output.followups"
+        },
+        {
+          "id": "usage",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 22,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "usage": {
+              "inputTokens": 42
+            }
+          },
+          "eventType": "usage.recorded"
+        },
+        {
+          "id": "completed",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 29,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": null,
+          "eventType": "run.completed"
+        }
+      ],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 1,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 2,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "reply",
+                "type": "output.message",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 3,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "reply",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "followups",
+                "type": "output.followups",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 4,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "reply",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "followups",
+                "type": "output.followups",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 1
+          }
+        },
+        {
+          "length": 5,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "reply",
+                "type": "output.message",
+                "queued": false
+              },
+              {
+                "id": "followups",
+                "type": "output.followups",
+                "queued": false
+              },
+              {
+                "id": "completed",
+                "type": "run.completed",
+                "queued": false
+              }
+            ],
+            "execution": "completed",
+            "workSteps": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "runless-error-and-pending-input",
+      "rows": [
+        {
+          "id": "request",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": "99999999-9999-4999-8999-999999999999",
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 1,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "request"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        },
+        {
+          "id": "error",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 8,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "error": "Delivery failed"
+          },
+          "eventType": "output.error"
+        },
+        {
+          "id": "pending",
+          "chatThreadId": "11111111-1111-4111-8111-111111111111",
+          "runId": null,
+          "revokesEventId": null,
+          "contextType": "web",
+          "contextId": null,
+          "runEventSequenceNumber": null,
+          "runEventId": null,
+          "seqId": 15,
+          "createdAt": "2026-11-13T00:00:00.000Z",
+          "payload": {
+            "userMessage": {
+              "version": 1,
+              "parts": [
+                {
+                  "type": "text",
+                  "text": "pending"
+                }
+              ]
+            }
+          },
+          "eventType": "input.prompt"
+        }
+      ],
+      "checkpoints": [
+        {
+          "length": 0,
+          "expected": {
+            "events": [],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 1,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "running",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 2,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "error",
+                "type": "output.error",
+                "queued": false
+              }
+            ],
+            "execution": "idle",
+            "workSteps": 0
+          }
+        },
+        {
+          "length": 3,
+          "expected": {
+            "events": [
+              {
+                "id": "request",
+                "type": "input.prompt",
+                "queued": false
+              },
+              {
+                "id": "error",
+                "type": "output.error",
+                "queued": false
+              },
+              {
+                "id": "pending",
+                "type": "input.prompt",
+                "queued": false
+              }
+            ],
+            "execution": "queued",
+            "workSteps": 0
+          }
+        }
+      ]
+    }
+  ]
+}

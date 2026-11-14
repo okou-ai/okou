@@ -5,6 +5,7 @@ import ai.okou.android.auth.WorkspaceBootstrap
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import kotlinx.coroutines.CompletableDeferred
@@ -56,6 +57,6 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithTag("chat_list").assertDoesNotExist()
         releaseResponse()
         compose.onNodeWithTag("chat_list").assertExists()
-        compose.onNodeWithText("Settings").assertExists()
+        compose.onNodeWithContentDescription("Settings").assertExists()
     }
 }

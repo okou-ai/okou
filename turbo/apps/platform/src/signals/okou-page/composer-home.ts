@@ -7,7 +7,7 @@ import {
   type State,
 } from "ccstate";
 import { restoreChatLayoutScroll$ } from "../chat-page/chat-layout.ts";
-import { createDeferredPromise } from "../utils.ts";
+import { resetSignal, waitForBrowserPaint } from "../utils.ts";
 import type { ComposerTask } from "./composer-task-chips.ts";
 import type {
   WorkflowRecommendationActions,
@@ -18,25 +18,32 @@ export type HomeWorkflowKind = "scheduled" | "triggers" | "advanced";
 export type HomeExploreKind = "search" | "research";
 export type HomeCapability = HomeExploreKind | "create" | "workflow";
 
+/** What a capability card or the tray's close control swaps the home to. */
+export type HomeSwap =
+  | { readonly kind: "explore"; readonly explore: HomeExploreKind }
+  | { readonly kind: "task"; readonly task: ComposerTask }
+  | { readonly kind: "workflow"; readonly workflow: HomeWorkflowKind }
+  | { readonly kind: "close" };
+
+/** The view transition type the home's cards-to-tray swap runs under. */
+const HOME_SWAP_TRANSITION = "capability-home";
+
 /** A source action waits for its own mounted composer before restoring reading intent. */
 function createCapabilityLayoutSignals() {
-  const root$ = state<{ readonly element: HTMLElement } | null>(null);
-  const request$ = state<ReturnType<typeof createDeferredPromise<void>> | null>(
-    null,
-  );
+  const root$ = state<{
+    readonly element: HTMLElement;
+    readonly signal: AbortSignal;
+  } | null>(null);
+  const resetPaint$ = resetSignal();
   const mount$ = command(
     ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
-      const root = { element };
+      const root = { element, signal };
       set(root$, root);
       signal.addEventListener(
         "abort",
         () => {
           if (get(root$) === root) {
             set(root$, null);
-            const request = get(request$);
-            if (request && !request.settled()) {
-              request.resolve();
-            }
           }
         },
         { once: true },
@@ -49,30 +56,24 @@ function createCapabilityLayoutSignals() {
     if (!root?.element.isConnected) {
       return;
     }
-    const request = createDeferredPromise<void>(signal);
-    // A newer action supersedes an unpainted layout without stranding its caller.
-    const previous = get(request$);
-    if (previous && !previous.settled()) {
-      previous.resolve();
-    }
-    set(request$, request);
-    await request.promise;
+    const paintSignal = set(resetPaint$, signal, root.signal);
+    // Unmount and supersession release the initiating action normally; only
+    // that action's own cancellation must reject its continuation.
+    const [paint] = await Promise.allSettled([
+      waitForBrowserPaint(paintSignal),
+    ]);
     signal.throwIfAborted();
-    if (get(root$) === root && get(request$) === request) {
+    if (paint.status === "rejected") {
+      if (!paintSignal.aborted) {
+        throw paint.reason;
+      }
+      return;
+    }
+    if (get(root$) === root && !paintSignal.aborted) {
       await set(restoreChatLayoutScroll$, signal);
     }
   });
-  const commit$ = command(
-    (
-      { get },
-      request: NonNullable<ReturnType<typeof createDeferredPromise<void>>>,
-    ) => {
-      if (get(request$) === request && !request.settled()) {
-        request.resolve();
-      }
-    },
-  );
-  return { request$, mount$, sync$, commit$ };
+  return { mount$, sync$ };
 }
 
 function createPrepareWorkflowCommand(actions: WorkflowRecommendationActions) {
@@ -120,8 +121,80 @@ function createPrepareExploreCommand(
   });
 }
 
+/**
+ * The capability cards and the tray replace each other in one column, and the
+ * greeting moves between two rows when they do. Where the browser can, the
+ * swap runs as one view transition: the column cross-fades while the
+ * greeting, the one thing on both sides, glides to its new row instead of
+ * jumping there. Only the state change runs inside the transition; closing
+ * still finishes its layout and draft work after the new page is captured.
+ */
+function createHomeSwapCommand(
+  home: {
+    readonly openExplore$: Command<void, [HomeExploreKind]>;
+    readonly openWorkflow$: Command<void, [HomeWorkflowKind]>;
+    readonly close$: Command<Promise<void>, [AbortSignal]>;
+  },
+  openTask$: Command<void, [ComposerTask]>,
+) {
+  return command(async ({ set }, change: HomeSwap, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    let closing: Promise<void> | undefined;
+    const update = () => {
+      signal.throwIfAborted();
+      switch (change.kind) {
+        case "explore": {
+          set(home.openExplore$, change.explore);
+          break;
+        }
+        case "task": {
+          set(openTask$, change.task);
+          break;
+        }
+        case "workflow": {
+          set(home.openWorkflow$, change.workflow);
+          break;
+        }
+        case "close": {
+          closing = set(home.close$, signal);
+          break;
+        }
+      }
+    };
+    if (
+      "startViewTransition" in document &&
+      CSS.supports("selector(:active-view-transition-type(a))")
+    ) {
+      await document.startViewTransition({
+        update,
+        types: [HOME_SWAP_TRANSITION],
+      }).updateCallbackDone;
+    } else {
+      update();
+    }
+    await closing;
+  });
+}
+
 /** Discovery and its injected prompts are local to each composer. */
 export function createComposerHomeSignals(
+  selectedTask$: Computed<ComposerTask | null>,
+  openTask$: Command<void, [ComposerTask]>,
+  selectTask$: Command<void, [ComposerTask | null]>,
+  actions: WorkflowRecommendationActions,
+  closeWorkflow$: Command<void, []>,
+) {
+  const home = createHomeDiscoverySignals(
+    selectedTask$,
+    openTask$,
+    selectTask$,
+    actions,
+    closeWorkflow$,
+  );
+  return { ...home, swap$: createHomeSwapCommand(home, openTask$) };
+}
+
+function createHomeDiscoverySignals(
   selectedTask$: Computed<ComposerTask | null>,
   openTask$: Command<void, [ComposerTask]>,
   selectTask$: Command<void, [ComposerTask | null]>,

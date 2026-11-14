@@ -319,9 +319,10 @@ final class ComposerTextView: UITextView {
     needsReturnKeyReload = false
     needsReturnKeySessionRestart = false
     guard isFirstResponder else { return }
-    if restartInputSession && !hasText {
-      // iOS can retain the old disabled key after reloadInputViews. Refresh only
-      // this empty editor's input session, preserving its document and responder.
+    if restartInputSession {
+      // iOS can retain the disabled key after reloadInputViews, even when a
+      // follow-up has filled the editor. Refresh this editor's input session,
+      // preserving its document, selection, undo history, and responder.
       UIView.performWithoutAnimation {
         resignFirstResponder()
         if isCurrent() { becomeFirstResponder() }

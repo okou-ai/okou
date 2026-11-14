@@ -23,7 +23,6 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -134,18 +133,17 @@ class OkouAppTest {
     @Test
     fun workspaceLanguageChoicesRemainReachableWithLargeText() {
         render(fontScale = 2f, withWorkspacePreferences = true)
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("English").performScrollTo().performClick()
         compose.onNodeWithText("繁體中文").performScrollTo().assertIsDisplayed()
     }
 
     @Test
-    fun chatFilterSurvivesTabNavigationAndBack() {
+    fun chatFilterSurvivesAvatarNavigationAndBack() {
         render()
-        compose.onNodeWithTag("bottom_navigation").assertExists()
         compose.onNodeWithText("Chats").assertExists()
         compose.onNodeWithText("Archived").performClick()
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Archived").assertIsSelected()
@@ -156,7 +154,7 @@ class OkouAppTest {
         render(TestPreferencesStore().apply { initialRead = CompletableDeferred() })
         compose.onNodeWithText("Chats").assertExists()
         compose.onNodeWithText("Archived").performClick().assertIsSelected()
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Loading appearance…").assertExists()
         compose.onNodeWithText("Dark").assertIsNotEnabled()
     }
@@ -165,7 +163,7 @@ class OkouAppTest {
     fun preferenceFailuresAreVisibleAndRetryRestoresNativeSelection() {
         val storage = TestPreferencesStore().apply { readFailure = true }
         render(storage)
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Could not load appearance. Try again.").assertExists()
         compose.onNodeWithText("Light").assertIsNotEnabled()
         compose.runOnIdle { storage.readFailure = false }
@@ -187,7 +185,7 @@ class OkouAppTest {
     fun manualAppearanceAndLiveSystemChangesRetainTheActiveDestination() {
         render()
         val light = compose.runOnIdle { background }
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Dark").performClick()
         compose.onNodeWithText("Dark").assertIsSelected()
         compose.runOnIdle { org.junit.Assert.assertNotEquals(light, background) }
@@ -211,12 +209,11 @@ class OkouAppTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w900dp-h900dp")
-    fun expandedWindowUsesRailAndRetainsTheSameDestinations() {
+    fun expandedWindowRetainsAvatarAndConversationDestinations() {
         render()
-        compose.onNodeWithTag("navigation_rail").assertExists()
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Follow system").assertExists()
-        compose.onNodeWithText("Home").performClick()
+        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Chats").assertExists()
     }
 
@@ -224,11 +221,11 @@ class OkouAppTest {
     @Config(qualifiers = "de-rDE-w400dp-h800dp")
     fun longLocalizedLabelsRemainOperableAtLargeFontScale() {
         render(fontScale = 2f)
-        compose.onNodeWithText("Einstellungen").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Einstellungen").assertIsDisplayed().performClick()
         compose.onNodeWithText("Dunkel").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("Dunkel").assertIsSelected()
         compose.onNodeWithText("Auf diesem Gerät").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Start").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
         compose.onNodeWithText("Chats").assertIsDisplayed()
         compose.onNodeWithText("Chats aktualisieren").assertIsDisplayed().performClick()
     }

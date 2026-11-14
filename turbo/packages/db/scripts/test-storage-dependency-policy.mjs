@@ -280,9 +280,42 @@ await test("an approved amendment is bounded, consumed once, and cannot restore 
   f.write(baselinePath, JSON.stringify(f.inventory()));
   const approved = f.commit();
 
+  const executionConsumers = [
+    "turbo/apps/api/src/signals/services/execution-context.ts",
+    "turbo/apps/api/src/signals/services/execution-runtime-context.ts",
+  ];
+  for (const [index, file] of claimConsumers.entries()) {
+    rmSync(join(f.root, file));
+    f.write(executionConsumers[index], consumerCode);
+  }
+  f.git("add", "-u");
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(approved, false, /grew from 0 to 2/);
+  f.write(
+    baselinePath,
+    JSON.stringify({
+      ...f.inventory(),
+      amendments: [
+        "claim-source-reconstruction",
+        "direct-execution-source-owner-rename",
+      ],
+    }),
+  );
+  f.check(approved, true);
+  f.write(executionConsumers[0], consumerCode + "\nload();");
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(approved, false, /grew from 2 to 3/);
+  f.write(executionConsumers[0], consumerCode);
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  const renamed = f.commit();
+  f.write(claimConsumers[0], consumerCode);
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(renamed, false, /grew from 0 to 2/);
+  rmSync(join(f.root, claimConsumers[0]));
+
   f.write(claimOwner, ownerCode);
   f.write(baselinePath, JSON.stringify(f.inventory()));
-  f.check(approved, true);
+  f.check(renamed, true);
   const reduced = f.commit();
   f.write(claimOwner, approvedCode);
   f.write(baselinePath, JSON.stringify(f.inventory()));

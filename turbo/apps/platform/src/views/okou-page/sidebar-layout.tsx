@@ -4,11 +4,9 @@ import { UserNotificationsEntry } from "./user-notifications.tsx";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
-import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import {
   activeThreadSidebar$,
   activeThreadSidebarFullscreen$,
-  commitWorkspaceLayout$,
   threadSidebarLayoutRootRef$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { ChatThreadSidebarShell } from "./chat-thread-sidebar-shell.tsx";
@@ -395,15 +393,11 @@ function ChatWorkspace({
   // A route can change before its setup releases the previous thread graph.
   const active = route === "chat" ? threadSidebar : null;
   const fullscreen = active !== null && threadFullscreen;
-  const syncSidebarLayout = useSet(commitWorkspaceLayout$);
   const joinedToChatList = beside === "chat-list";
   return (
     <ChatThreadSidebarShell
-      layout={chatLayout}
       animateEntry={active?.animateEntry ?? true}
       open={active !== null}
-      onWorkspaceLayoutCommit={syncSidebarLayout}
-      ownerKey={active ? `${active.thread.threadId}:${active.target.type}` : ""}
       sidebar={active ? <ChatThreadSidebarPane /> : null}
       // The browser scales a 1440px screen into the panel and wants room;
       // every other panel shares one remembered width.
@@ -487,12 +481,17 @@ function SidebarWorkspace({
         !(agentChatPage && chatListVisible) && <MobileTopBar />}
     </>
   );
-  const workspaceContent = pwaNavigation ? (
-    <div className="flex min-h-0 flex-1 flex-col [--okou-safe-b:0px]">
+  // Keep the transcript mounted when rotation crosses the mobile breakpoint.
+  // Native scroll anchoring needs the same reading DOM on both sides.
+  const workspaceContent = (
+    <div
+      className={cn(
+        "flex min-h-0 flex-1 flex-col",
+        pwaNavigation && "[--okou-safe-b:0px]",
+      )}
+    >
       {children}
     </div>
-  ) : (
-    children
   );
   const workspaceFooter = pwaNavigation ? <PwaBottomNavigation /> : null;
   return (
@@ -538,8 +537,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <SkillImportDialogMount />
       <CreateAgentDialogContainer />
       <QueueDrawer />
-      {/* Workspace content remounts when mobile navigation adds its wrapper.
-          Keep in-flight remote permission actions outside that subtree. */}
+      {/* Keep in-flight remote permission actions with the workspace owner. */}
       <ThreadComposerDialogsMount />
       {pwaNavigation ? (
         <>
