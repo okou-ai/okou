@@ -88,6 +88,24 @@ if run_lint; then
 fi
 grep -F 'okou_discarded_throwing_task' "$test_root/lint.log" >/dev/null
 rm "$fixture/Okou/DiscardedTask.swift"
+cat > "$fixture/Okou/CollectionWrite.swift" <<'SWIFT'
+import CCState
+final class Owner {
+  var items: [String] = []
+  func reload() -> Task<Void, Never> {
+    Task {
+      await service.load()
+      items.append("loaded")
+    }
+  }
+}
+SWIFT
+if run_lint; then
+  echo 'An owner collection mutation after await passed the configured lint entry point.' >&2
+  exit 1
+fi
+grep -F 'okou_check_after_await' "$test_root/lint.log" >/dev/null
+rm "$fixture/Okou/CollectionWrite.swift"
 for path in "${test_paths[@]}"; do
   printf 'var fixtureState = 0\n' >> "$fixture/$path/Fixture.swift"
 done

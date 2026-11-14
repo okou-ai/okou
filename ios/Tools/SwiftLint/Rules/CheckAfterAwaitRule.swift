@@ -53,6 +53,7 @@ struct CheckAfterAwaitRule: NativeRule {
       let properties = nativeProperties(owner)
       let analysis = PublicationAnalysis(
         properties: properties, writers: writers, signals: signals,
+        collections: NativeCollectionMutation(owner: owner, publishing: properties),
         helpers: nativeCheckHelpers(owner, properties: properties))
       _ = analysis.block(node.statements, flow: .init(), locals: Set(closureParameters(node)))
       positions.append(contentsOf: analysis.positions)
@@ -69,12 +70,17 @@ private final class PublicationAnalysis {
   let properties: Set<String>
   let writers: Set<String>
   let signals: Set<String>
+  let collections: NativeCollectionMutation
   let helpers: Set<String>
   var positions: [AbsolutePosition] = []
-  init(properties: Set<String>, writers: Set<String>, signals: Set<String>, helpers: Set<String>) {
+  init(
+    properties: Set<String>, writers: Set<String>, signals: Set<String>,
+    collections: NativeCollectionMutation, helpers: Set<String>
+  ) {
     self.properties = properties
     self.writers = writers
     self.signals = signals
+    self.collections = collections
     self.helpers = helpers
   }
 
@@ -192,6 +198,7 @@ private final class PublicationAnalysis {
   private func inspect(_ node: some SyntaxProtocol, flow: inout Flow, locals: Set<String>) {
     let events = Events(
       properties: properties, writers: writers, locals: locals, signals: signals,
+      collections: collections,
       helpers: helpers.subtracting(locals))
     events.walk(node)
     for event in events.values {
@@ -213,15 +220,18 @@ private final class PublicationAnalysis {
     let writers: Set<String>
     let locals: Set<String>
     let signals: Set<String>
+    let collections: NativeCollectionMutation
     let helpers: Set<String>
     init(
       properties: Set<String>, writers: Set<String>, locals: Set<String>, signals: Set<String>,
+      collections: NativeCollectionMutation,
       helpers: Set<String>
     ) {
       self.properties = properties
       self.writers = writers
       self.locals = locals
       self.signals = signals
+      self.collections = collections
       self.helpers = helpers
       super.init(viewMode: .sourceAccurate)
     }
@@ -238,6 +248,9 @@ private final class PublicationAnalysis {
         values.append(.check)
       }
       guard let member else { return }
+      if collections.contains(member, locals: locals) {
+        values.append(.write(node.positionAfterSkippingLeadingTrivia))
+      }
       if member.declName.baseName.text == "set", let base = member.base,
         writers.contains(rootName(base))
       {
