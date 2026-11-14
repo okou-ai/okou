@@ -84,9 +84,9 @@ async fn wait_for_file_contains_event(path: &Path, needle: &[u8]) -> io::Result<
     let async_fd = async_inotify_fd(inotify)?;
 
     loop {
-        match tokio::fs::read(path).await {
-            Ok(contents) if matcher.find(&contents).is_some() => return Ok(()),
-            Ok(_) => {}
+        match file_contains(path, &matcher).await {
+            Ok(true) => return Ok(()),
+            Ok(false) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error),
         }
@@ -94,6 +94,43 @@ async fn wait_for_file_contains_event(path: &Path, needle: &[u8]) -> io::Result<
         let mut guard = async_fd.readable().await?;
         drain_inotify_fd(async_fd.get_ref().as_fd());
         guard.clear_ready();
+    }
+}
+
+async fn file_contains(path: &Path, matcher: &aho_corasick::AhoCorasick) -> io::Result<bool> {
+    let path = path.to_owned();
+    let matcher = matcher.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut file = ReadinessReader(std::fs::File::open(path)?);
+        let found = matcher
+            .try_stream_find_iter(&mut file)
+            .map_err(io::Error::other)?
+            .next()
+            .transpose()?
+            .is_some();
+        if found {
+            // Preserve the former read-to-EOF error boundary without retaining
+            // the unread tail. Stream matching already consumed any lookahead.
+            io::copy(&mut file, &mut io::sink())?;
+        }
+        Ok(found)
+    })
+    .await
+    .map_err(io::Error::other)?
+}
+
+struct ReadinessReader(std::fs::File);
+
+impl io::Read for ReadinessReader {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        loop {
+            // Like the former read-to-end operation, retry interrupted reads.
+            // The streaming matcher otherwise returns them to the caller.
+            match io::Read::read(&mut self.0, buffer) {
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                result => return result,
+            }
+        }
     }
 }
 
