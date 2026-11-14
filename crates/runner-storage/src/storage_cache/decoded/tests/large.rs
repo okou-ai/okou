@@ -33,7 +33,8 @@ pub(super) fn fixture_files(
 }
 
 pub(super) fn archive_files(files: &[StorageFile]) -> Vec<u8> {
-    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    // Use fast fixture compression while callers enforce the real admission bounds.
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
     let mut builder = tar::Builder::new(std::io::BufWriter::new(encoder));
     for file in files {
         let mut header = tar::Header::new_gnu();
