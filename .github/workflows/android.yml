@@ -7,11 +7,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      screenshot_commit:
-        type: string
-      screenshot_script:
-        type: string
 
 permissions:
   contents: read
@@ -24,12 +19,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  screenshot-proof:
-    if: github.event_name == 'workflow_dispatch' && inputs.screenshot_commit != ''
-    uses: ./.github/workflows/android-screenshots.yml
-    with:
-      commit_sha: ${{ inputs.screenshot_commit }}
-      script_path: ${{ inputs.screenshot_script }}
   detect:
     runs-on: ubuntu-latest
     timeout-minutes: 5
