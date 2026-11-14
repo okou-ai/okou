@@ -4405,7 +4405,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test-support",
  "ts_bart",
- "ts_capabilityversion",
+ "ts_capabilityversion 0.7.1",
  "ts_control",
  "ts_control_noise",
  "ts_control_serde",
@@ -5962,6 +5962,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "ts_capabilityversion"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
+
+[[package]]
 name = "ts_control"
 version = "0.6.1"
 source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
@@ -5980,7 +5985,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "ts_bitset",
- "ts_capabilityversion",
+ "ts_capabilityversion 0.6.1",
  "ts_control_noise",
  "ts_control_serde",
  "ts_derp",
@@ -6010,7 +6015,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "ts_capabilityversion",
+ "ts_capabilityversion 0.6.1",
  "ts_hexdump",
  "ts_keys",
  "ts_noise",
@@ -6029,7 +6034,7 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "serde_with",
- "ts_capabilityversion",
+ "ts_capabilityversion 0.6.1",
  "ts_keys",
  "ts_nodecapability",
  "ts_packetfilter_serde",
