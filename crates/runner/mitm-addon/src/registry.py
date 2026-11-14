@@ -180,9 +180,9 @@ def _state_for_path(path_key: str) -> _RegistryCacheState:
 
 def _compile_registry(
     new_registry: dict,
-    builtin_cache_keys: dict[
+    resolved_firewall_entries: dict[
         str,
-        tuple[registry_firewalls.BuiltinFirewallCoreCacheKey | None, ...],
+        tuple[registry_firewalls.ResolvedFirewallEntry, ...],
     ],
     builtin_firewall_core_cache: dict[
         registry_firewalls.BuiltinFirewallCoreCacheKey,
@@ -197,10 +197,8 @@ def _compile_registry(
     compiled_custom_firewall_registry: dict[str, matching.CompiledFirewallSet] = {}
     compiled_policy_registry: dict[str, matching.CompiledNetworkPolicies] = {}
     for client_ip, sandbox in new_registry.items():
-        firewalls = sandbox.get("firewalls")
         compiled_firewalls = _compile_firewalls_with_builtin_cache(
-            firewalls,
-            builtin_cache_keys.get(client_ip),
+            resolved_firewall_entries.get(client_ip),
             builtin_firewall_core_cache,
         )
         if compiled_firewalls is not None:
@@ -219,7 +217,9 @@ def _compile_registry(
                 )
         network_policies = sandbox.get("networkPolicies")
         compiled_policy_registry[client_ip] = matching.compile_network_policies(network_policies)
-    _prune_builtin_firewall_core_cache(builtin_firewall_core_cache, builtin_cache_keys.values())
+    _prune_builtin_firewall_core_cache(
+        builtin_firewall_core_cache, resolved_firewall_entries.values()
+    )
     return compiled_firewall_registry, compiled_custom_firewall_registry, compiled_policy_registry
 
 
@@ -228,13 +228,13 @@ def _prune_builtin_firewall_core_cache(
         registry_firewalls.BuiltinFirewallCoreCacheKey,
         matching.CompiledFirewallCore,
     ],
-    active_key_groups: Iterable[tuple[registry_firewalls.BuiltinFirewallCoreCacheKey | None, ...]],
+    active_entry_groups: Iterable[tuple[registry_firewalls.ResolvedFirewallEntry, ...]],
 ) -> None:
     active_keys = {
-        cache_key
-        for cache_keys in active_key_groups
-        for cache_key in cache_keys
-        if cache_key is not None
+        entry.cache_key
+        for entries in active_entry_groups
+        for entry in entries
+        if entry.cache_key is not None
     }
     stale_keys = set(builtin_firewall_core_cache) - active_keys
     for cache_key in stale_keys:
@@ -242,22 +242,18 @@ def _prune_builtin_firewall_core_cache(
 
 
 def _compile_firewalls_with_builtin_cache(
-    firewalls: object | None,
-    builtin_cache_keys: tuple[registry_firewalls.BuiltinFirewallCoreCacheKey | None, ...] | None,
+    entries: tuple[registry_firewalls.ResolvedFirewallEntry, ...] | None,
     builtin_firewall_core_cache: dict[
         registry_firewalls.BuiltinFirewallCoreCacheKey,
         matching.CompiledFirewallCore,
     ],
 ) -> matching.CompiledFirewallSet | None:
-    if not isinstance(firewalls, list) or not firewalls:
+    if not entries:
         return None
-    if builtin_cache_keys is None or len(builtin_cache_keys) != len(firewalls):
-        return matching.compile_firewalls(firewalls)
 
     compiled_firewalls = []
-    for firewall, cache_key in zip(firewalls, builtin_cache_keys, strict=False):
-        if not isinstance(firewall, dict):
-            continue
+    for entry in entries:
+        firewall, cache_key = entry.firewall, entry.cache_key
         if cache_key is None:
             inline_compiled = matching.compile_firewalls([firewall])
             if inline_compiled is not None:
@@ -373,16 +369,16 @@ def _classify_registry_sandboxes(
 ) -> tuple[
     dict,
     dict[str, InvalidSandboxEntry],
-    dict[str, tuple[registry_firewalls.BuiltinFirewallCoreCacheKey | None, ...]],
+    dict[str, tuple[registry_firewalls.ResolvedFirewallEntry, ...]],
     dict[str, frozenset[str]],
     dict[str, frozenset[str]],
     registry_firewalls.BuiltinFirewallCatalogSnapshot | None,
 ]:
     new_registry: dict = {}
     invalid_sandboxes: dict[str, InvalidSandboxEntry] = {}
-    builtin_cache_keys_by_client_ip: dict[
+    resolved_entries_by_client_ip: dict[
         str,
-        tuple[registry_firewalls.BuiltinFirewallCoreCacheKey | None, ...],
+        tuple[registry_firewalls.ResolvedFirewallEntry, ...],
     ] = {}
     omitted_builtin_firewalls: dict[str, frozenset[str]] = {}
     omitted_custom_connector_ids: dict[str, frozenset[str]] = {}
@@ -415,10 +411,9 @@ def _classify_registry_sandboxes(
 
         sandbox = _RegistrySandboxInfo(sandbox)
         sandbox.pop(FIREWALL_AUTH_REGISTRY_GENERATION_ATTRIBUTE, None)
-        if resolved_firewalls.firewalls is not None:
-            sandbox["firewalls"] = resolved_firewalls.firewalls
-            if resolved_firewalls.builtin_cache_keys is not None:
-                builtin_cache_keys_by_client_ip[client_ip] = resolved_firewalls.builtin_cache_keys
+        if resolved_firewalls.entries is not None:
+            sandbox["firewalls"] = [entry.firewall for entry in resolved_firewalls.entries]
+            resolved_entries_by_client_ip[client_ip] = resolved_firewalls.entries
             if resolved_firewalls.omitted_builtin_names:
                 explicit_omitted_builtins = (
                     explicit_omitted_builtins | resolved_firewalls.omitted_builtin_names
@@ -434,7 +429,7 @@ def _classify_registry_sandboxes(
     return (
         new_registry,
         invalid_sandboxes,
-        builtin_cache_keys_by_client_ip,
+        resolved_entries_by_client_ip,
         omitted_builtin_firewalls,
         omitted_custom_connector_ids,
         builtin_catalog_snapshot,
@@ -627,7 +622,7 @@ def _load_registry_state(registry_path: str) -> RegistryState:
     (
         new_registry,
         invalid_sandboxes,
-        builtin_cache_keys,
+        resolved_firewall_entries,
         omitted_builtin_firewalls,
         omitted_custom_connector_ids,
         builtin_catalog_snapshot,
@@ -646,7 +641,7 @@ def _load_registry_state(registry_path: str) -> RegistryState:
     new_compiled_registry, new_compiled_custom_registry, new_compiled_policy_registry = (
         _compile_registry(
             new_registry,
-            builtin_cache_keys,
+            resolved_firewall_entries,
             state.builtin_firewall_core_cache,
         )
     )
