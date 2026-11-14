@@ -8,21 +8,32 @@ struct OkouSelectionButton: View {
 
   var body: some View {
     Button(action: action) {
-      ZStack {
-        Circle().fill(isSelected || isIndeterminate ? OkouColor.primary : OkouColor.background)
-        Circle().strokeBorder(
-          isSelected || isIndeterminate ? OkouColor.primary : OkouColor.controlBorder)
-        if isSelected || isIndeterminate {
-          OkouIcon(isIndeterminate ? "minus" : "check", size: OkouIconSize.badge)
-            .foregroundStyle(OkouColor.primaryForeground)
-        }
-      }
-      .frame(width: OkouControl.selectionMark, height: OkouControl.selectionMark)
-      .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
-      .contentShape(Rectangle())
+      OkouSelectionIndicator(isSelected: isSelected, isIndeterminate: isIndeterminate)
+        .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+        .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .accessibilityValue(
       isIndeterminate ? "Partially selected" : isSelected ? "Selected" : "Not selected")
+  }
+}
+
+/// The same selection mark for a larger semantic control that owns its hit target.
+struct OkouSelectionIndicator: View {
+  let isSelected: Bool
+  var isIndeterminate = false
+
+  var body: some View {
+    ZStack {
+      Circle().fill(isSelected || isIndeterminate ? OkouColor.primary : OkouColor.background)
+      Circle().strokeBorder(
+        isSelected || isIndeterminate ? OkouColor.primary : OkouColor.controlBorder)
+      if isSelected || isIndeterminate {
+        OkouIcon(isIndeterminate ? "minus" : "check", size: OkouIconSize.badge)
+          .foregroundStyle(OkouColor.primaryForeground)
+      }
+    }
+    .frame(width: OkouControl.selectionMark, height: OkouControl.selectionMark)
+    .accessibilityHidden(true)
   }
 }

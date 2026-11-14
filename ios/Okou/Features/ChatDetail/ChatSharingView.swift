@@ -1,9 +1,51 @@
 import ChatData
+import ChatDomain
 import SwiftUI
 import UIKit
 
+/// Selection is observed inside the hosted row, independently of its measured content.
+struct ChatSharingRow<Content: View>: View {
+  let group: ChatShareGroup
+  let sharing: ConversationSharing
+  @ViewBuilder let content: () -> Content
+
+  var body: some View {
+    let ids = Set(group.eventIDs)
+    let selectedIDs = sharing.selectedIDs(in: group)
+    let selected = ids.isSubset(of: selectedIDs)
+    let partial = !selected && !ids.isDisjoint(with: selectedIDs)
+    Button {
+      sharing.toggle(group)
+    } label: {
+      content()
+        // In selection mode, links, cards, and text forward taps to the containing button.
+        .allowsHitTesting(false)
+        .overlay(alignment: .topLeading) {
+          OkouSelectionIndicator(isSelected: selected, isIndeterminate: partial)
+            .frame(width: OkouAvatarSize.message, height: OkouAvatarSize.message)
+        }
+        .frame(maxWidth: .infinity, minHeight: OkouControl.minimumTarget, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .disabled(sharing.isBusy || sharing.visibility != nil)
+    .background {
+      RoundedRectangle(cornerRadius: OkouRadius.chat)
+        .fill(selected ? OkouColor.stateSelected : .clear)
+        .padding(-OkouSpace.sm)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(group.messages.map(\.copyText).joined(separator: "\n"))
+    .accessibilityHint(group.messages.first?.role == .user ? "Select question" : "Select answer")
+    .accessibilityValue(partial ? "Partially selected" : selected ? "Selected" : "Not selected")
+    .accessibilityAddTraits(.isButton)
+    .accessibilityIdentifier("chat-sharing-select-\(group.id)")
+  }
+}
+
 struct ChatSharingFooter: View {
   @Bindable var sharing: ConversationSharing
+  @State private var copied = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
@@ -12,8 +54,14 @@ struct ChatSharingFooter: View {
           .accessibilityIdentifier("chat-sharing-error")
       }
       HStack {
-        Text("Only selected messages are included").font(.okou(.caption))
-          .foregroundStyle(OkouColor.mutedForeground)
+        if copied {
+          Label("Link copied", okouSymbol: "check")
+            .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+            .accessibilityIdentifier("chat-sharing-link-copied")
+        } else {
+          Text("Only selected messages are included").font(.okou(.caption))
+            .foregroundStyle(OkouColor.mutedForeground)
+        }
         Spacer()
         if sharing.visibility == nil {
           Button {
@@ -26,6 +74,7 @@ struct ChatSharingFooter: View {
           .disabled(sharing.isBusy)
         }
       }
+      .frame(minHeight: OkouControl.minimumTarget)
       HStack {
         if sharing.visibility != nil {
           Button {
@@ -39,6 +88,7 @@ struct ChatSharingFooter: View {
           if let link = sharing.link {
             Button {
               UIPasteboard.general.url = link
+              copied = true
             } label: {
               Label("Copy link", okouSymbol: "copy")
                 .frame(minHeight: OkouControl.minimumTarget)
@@ -68,7 +118,10 @@ struct ChatSharingFooter: View {
           Button {
             sharing.create()
           } label: {
-            if sharing.isBusy { ProgressView() } else { Text("Share") }
+            HStack(spacing: OkouSpace.sm) {
+              if sharing.isBusy { ProgressView() }
+              Text(sharing.isBusy ? "Creating link…" : "Share")
+            }
           }
           .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
           .disabled(sharing.isBusy || sharing.selectedIDs.isEmpty)
@@ -80,7 +133,12 @@ struct ChatSharingFooter: View {
     .padding(.vertical, OkouSpace.sm)
     .background(OkouColor.background)
     .onChange(of: sharing.link) { _, link in
-      if let link { UIPasteboard.general.url = link }
+      if let link {
+        UIPasteboard.general.url = link
+        copied = true
+      } else {
+        copied = false
+      }
     }
   }
 

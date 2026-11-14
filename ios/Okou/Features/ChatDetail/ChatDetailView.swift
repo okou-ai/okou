@@ -46,14 +46,11 @@ struct ChatDetailView: View {
     if conversation.sharing.isSelecting {
       let sharing = conversation.sharing
       let visibleIDs = Set(items.compactMap(\.message).map(\.id))
-      let selectedIDs = sharing.selectedIDs
-      let canSelect = !sharing.isBusy && sharing.visibility == nil
       var rows: [ConversationCollectionRow] = conversation.hasEarlierMessages ? [.earlier] : []
-      rows += sharing.groups.filter { !$0.eventIDs.allSatisfy { !visibleIDs.contains($0) } }.map {
-        .share(
-          $0, selected: Set($0.eventIDs).isSubset(of: selectedIDs), enabled: canSelect,
-          topSpacing: 16)
-      }
+      rows += sharing.groups.filter { !$0.eventIDs.allSatisfy { !visibleIDs.contains($0) } }
+        .enumerated().map { index, group in
+          .share(group, topSpacing: index == 0 ? 20 : 24)
+        }
       return rows
     }
     var result: [ConversationCollectionRow] = []
@@ -397,19 +394,9 @@ struct ChatDetailView: View {
     -> some View
   {
     switch row {
-    case .share(let group, let selected, let enabled, let topSpacing):
-      let partial =
-        !selected && !Set(group.eventIDs).isDisjoint(with: conversation.sharing.selectedIDs)
-      HStack(alignment: .top, spacing: OkouSpace.xs) {
-        OkouSelectionButton(isSelected: selected, isIndeterminate: partial) {
-          conversation.sharing.toggle(group)
-        }
-        .disabled(!enabled)
-        .accessibilityLabel(
-          group.messages.first?.role == .user ? "Select question" : "Select answer"
-        )
-        .accessibilityIdentifier("chat-sharing-select-\(group.id)")
-        VStack(alignment: .leading, spacing: OkouSpace.xs) {
+    case .share(let group, let topSpacing):
+      ChatSharingRow(group: group, sharing: conversation.sharing) {
+        VStack(alignment: .leading, spacing: OkouSpace.sm) {
           ForEach(Array(group.messages.enumerated()), id: \.element.id) { index, message in
             messageRow(
               message, showsAvatar: index == 0, pendingRetry: nil, isSending: false,
@@ -417,15 +404,10 @@ struct ChatDetailView: View {
           }
         }
       }
-      .padding(OkouSpace.sm)
-      .background(
-        selected ? OkouColor.stateSelected : .clear,
-        in: RoundedRectangle(cornerRadius: OkouRadius.chat)
-      )
       .background {
         if let anchor { ConversationRowAnchor(messageID: group.id, anchor: anchor) }
       }
-      .padding(.horizontal, OkouSpace.sm)
+      .padding(.horizontal, ConversationCollectionRow.messageHorizontalInset)
       .padding(.top, topSpacing)
     case .failure(let message, let state, let topSpacing, let providerMessage):
       AssistantFailureRecoveryCard(
@@ -545,7 +527,9 @@ struct ChatDetailView: View {
     isWorkHistory: Bool = false, showsActions: Bool = false, loadsAttachments: Bool = false
   ) -> some View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
-      if message.role == .assistant && showsAvatar { assistantAvatar }
+      if message.role == .assistant && showsAvatar {
+        assistantAvatar.opacity(conversation.sharing.isSelecting ? 0 : 1)
+      }
       if message.role == .system {
         Label(message.text, okouSymbol: message.isError ? "circle-alert" : "circle-stop")
           .font(.okou(.subheadline))
