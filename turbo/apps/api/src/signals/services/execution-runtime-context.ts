@@ -103,7 +103,7 @@ type InitialInput =
 type DisabledTools$ = Computed<Promise<readonly string[]>>;
 
 /** An expected source removal or cancellation, distinct from dependency failures. */
-export class ExecutionRuntimeUnavailableError extends Error {
+class ExecutionRuntimeUnavailableError extends Error {
   constructor() {
     super("Run execution sources are unavailable");
   }
