@@ -1909,9 +1909,11 @@ jobs:
           WORKER_PREVIEW_URL: ${{ steps.app-preview.outputs.worker-url }}
           WORKER_PREVIEW_ALIAS: ${{ steps.worker-alias.outputs.alias }}
         run: |
-          echo "App preview: ${APP_PREVIEW_URL}" >> "$GITHUB_STEP_SUMMARY"
-          echo "App Worker preview alias: ${WORKER_PREVIEW_ALIAS}" >> "$GITHUB_STEP_SUMMARY"
-          echo "App Worker upstream: ${WORKER_PREVIEW_URL}" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "App preview: ${APP_PREVIEW_URL}"
+            echo "App Worker preview alias: ${WORKER_PREVIEW_ALIAS}"
+            echo "App Worker upstream: ${WORKER_PREVIEW_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   deploy-stripe-listener:
     runs-on: ubuntu-latest
