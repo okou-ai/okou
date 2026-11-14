@@ -662,9 +662,8 @@ function OwnerThreadRemoteAccessDialog({
 }) {
   const { t } = useTranslation();
   const isDesktop = useMediaQuery("(min-width: 768px)");
-  const { remoteAccessDialogOpen: open, remoteAccessScopeId: scopeId } = useGet(
-    signals.connector.connectorUiState$,
-  );
+  const open = useGet(signals.connector.remoteAccessDialogOpen$);
+  const scopeId = useGet(signals.connector.remoteAccessScopeId$);
   const close = useSet(signals.connector.closeRemoteAccessDialog$);
   const triggerElement = useGet(signals.connector.triggerElement$);
   const signal = useGet(pageSignal$);
