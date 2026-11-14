@@ -598,7 +598,7 @@ pub async fn try_reuse_from_pool(
                     %error,
                     activation_phase = "preparing_commit",
                     recovery_outcome = "restore_parked",
-                    "failed to persist job idle sandbox activation ownership"
+                    "failed to persist idle sandbox activation ownership"
                 );
                 recover_failed_parked_activation_status(
                     ReservedIdleActivation::new(entry, idle_snapshot),

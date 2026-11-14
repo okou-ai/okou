@@ -229,7 +229,7 @@ async fn run_finalizing_activation(
                             job,
                             cancellation,
                             ExecutionFailure::from_error(
-                                "finalizing handoff identity did not match job successor",
+                                "finalizing handoff identity did not match the successor job",
                             ),
                             pre_spawn_timing.finalizing_diagnostics(),
                             &ctx,
@@ -471,7 +471,7 @@ async fn prepare_finalizing_resource(
         run_id = %run_id,
         predecessor_run_id = %handoff_context.source_run_id,
         native_generation_matches_source = handoff_context.native_generation_run_id.is_some(),
-        "finalizing successor job before sandbox publication"
+        "finalizing successor accepted before sandbox publication"
     );
     let selection = FinalizingSelectionRequest {
         run_id,

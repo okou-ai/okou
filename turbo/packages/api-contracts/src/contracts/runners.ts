@@ -23,7 +23,7 @@ import {
   type infer as zInfer,
 } from "zod";
 import { MIN_EPOCH_MS_TIMESTAMP } from "./api-start-time";
-import { DISABLED_PAID_TOOLS_ENV_VAR } from "./paid-tools";
+import type { DISABLED_PAID_TOOLS_ENV_VAR } from "./paid-tools";
 import {
   executionFirewallInlineEntrySchema,
   executionFirewallsSchema,
@@ -905,24 +905,6 @@ const preparedExecutionContextBaseSchema = object({
   piModelConfig: piModelConfigSchema.optional(),
 });
 
-/** In-memory admission input; current Run sources are reconstructed before dispatch. */
-export const executionInputSchema = preparedExecutionContextBaseSchema
-  .pick({
-    nativeContinuation: true,
-    customWorkflowSelection: true,
-    featureFlags: true,
-    realAgentInPreview: true,
-    apiStartTime: true,
-  })
-  .extend({
-    // Preview-only admission authorization; absence grants no bypass.
-    previewBypassAuthorized: boolean().optional(),
-    platformEnvironment: object({
-      OKOU_TOKEN: string().optional(),
-      [DISABLED_PAID_TOOLS_ENV_VAR]: string(),
-    }),
-  });
-
 /** Complete execution preparation also supplies diagnostics and the Runner response. */
 const preparedExecutionContextObjectSchema =
   preparedExecutionContextBaseSchema.extend({
@@ -1293,10 +1275,25 @@ export type ActiveReuseProducer = zInfer<typeof activeReuseProducerSchema>;
 export type HeldSandboxState = zInfer<typeof heldSandboxStateSchema>;
 export type HeldHomeState = zInfer<typeof heldHomeStateSchema>;
 export type ExecutionContext = zInfer<typeof executionContextSchema>;
-export type ExecutionInput = zInfer<typeof executionInputSchema>;
 export type PreparedExecutionContext = zInfer<
   typeof preparedExecutionContextSchema
 >;
+/** In-memory admission input; current Run sources are reconstructed before dispatch. */
+export type ExecutionInput = Pick<
+  PreparedExecutionContext,
+  | "nativeContinuation"
+  | "customWorkflowSelection"
+  | "featureFlags"
+  | "realAgentInPreview"
+  | "apiStartTime"
+> & {
+  // Preview-only admission authorization; absence grants no bypass.
+  previewBypassAuthorized?: boolean;
+  platformEnvironment: {
+    OKOU_TOKEN?: string;
+    [DISABLED_PAID_TOOLS_ENV_VAR]: string;
+  };
+};
 export type PiModelConfig = zInfer<typeof piModelConfigSchema>;
 export type PiModelConfigV2 = zInfer<typeof piModelConfigV2Schema>;
 export type PiModelConfigV3 = zInfer<typeof piModelConfigV3Schema>;

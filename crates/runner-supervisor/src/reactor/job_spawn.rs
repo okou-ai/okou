@@ -781,7 +781,7 @@ pub(super) async fn handle_job_result(result: Option<Result<JobResult, tokio::ta
             cancellation.unregister().await;
         }
         Some(Ok(Err(error))) => {
-            error!(%error, "job activation job failed");
+            error!(%error, "execution job failed");
         }
         Some(Err(e)) => {
             error!(error = %e, "job task panicked");
