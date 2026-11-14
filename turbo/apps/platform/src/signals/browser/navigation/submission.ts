@@ -55,28 +55,24 @@ interface ParsedAddress {
   readonly explicit: boolean;
 }
 
-function inputScheme(
-  value: string,
-  authority: string,
-  hostPort: boolean,
-): string | null {
+function inputScheme(value: string, hostPort: boolean): string | null {
   const match = /^([a-z][a-z\d+.-]*):/i.exec(value);
   if (!match || hostPort || match[1]!.includes(".")) {
     return null;
   }
-  const scheme = match[1]!.toLowerCase();
-  if (browserSchemes.includes(scheme)) {
-    return scheme;
-  }
-  const userInfo = authority.slice(0, authority.lastIndexOf("@"));
-  if (
-    authority.includes("@") &&
-    userInfo.includes(":") &&
-    !/\s/u.test(userInfo)
-  ) {
-    return null;
-  }
-  return scheme;
+  return match[1]!.toLowerCase();
+}
+
+function hasUserAndPassword(authority: string): boolean {
+  const userEnd = authority.lastIndexOf("@");
+  const userInfo = authority.slice(0, userEnd);
+  const separator = userInfo.indexOf(":");
+  return (
+    userEnd !== -1 &&
+    separator > 0 &&
+    separator < userInfo.length - 1 &&
+    !userInfo.includes(" ")
+  );
 }
 
 function parseAddress(
@@ -85,13 +81,18 @@ function parseAddress(
 ): ParsedAddress | null {
   const value = text.replace(/^(https?|wss?|file|about|chrome);/i, "$1:");
   const withoutPrefix = value.startsWith("//") ? value.slice(2) : value;
-  const authority = withoutPrefix.split(/[/?#\\]/, 1)[0]!;
-  const path = withoutPrefix.slice(authority.length).split(/[?#]/, 1)[0]!;
-  const port = /^[^:]+:(\d+)$/.exec(authority)?.[1];
+  const authorityHint = withoutPrefix.split(/[/?#\\]/, 1)[0]!;
+  const port = /^[^:]+:(\d+)$/.exec(authorityHint)?.[1];
   const hostPort = port !== undefined && Number(port) <= 65_535;
-  const scheme = inputScheme(value, authority, hostPort);
+  let scheme = inputScheme(value, hostPort);
+  let credentials = false;
   if (scheme && !browserSchemes.includes(scheme)) {
-    return null;
+    if (!hasUserAndPassword(authorityHint)) {
+      return null;
+    }
+    // Chromium retries unknown-scheme username:password input as explicit HTTP.
+    scheme = null;
+    credentials = true;
   }
   // Chrome searches JavaScript-prefixed text that does not look like code.
   if (scheme === "javascript" && /^javascript:[^;=()."]*$/i.test(value)) {
@@ -100,41 +101,39 @@ function parseAddress(
   const candidate = scheme
     ? value
     : "http:" + (value.startsWith("//") ? value : "//" + value);
-  let url: URL | null = null;
-  if (completeHost) {
-    url = completedURL(candidate);
+  const network = /^(https?|wss?):[/\\]*([^/\\?#]*)(.*)$/i.exec(candidate);
+  const authority = network ? network[2]! : authorityHint;
+  const path = network ? network[3]!.split(/[?#]/, 1)[0]! : "";
+  let url: URL | null;
+  if (network) {
+    url = fixedNetworkURL(network[1]!, authority, network[3]!, completeHost);
   } else if (URL.canParse(candidate)) {
     url = new URL(candidate);
+  } else {
+    url = null;
   }
   return url
     ? {
         url,
         authority,
         path,
-        hostPort,
-        explicit: scheme !== null || value.startsWith("//"),
+        hostPort: /:\d+$/.test(authority),
+        explicit: credentials || scheme !== null || value.startsWith("//"),
       }
     : null;
 }
 
 function normalizeHost(url: URL): string | null {
-  // FixupHost removes leading dots and retains at most one trailing dot.
-  const hostname = url.hostname;
-  const host = hostname.replace(/\.+/g, (dots, offset: number) => {
-    if (offset === 0) {
-      return "";
-    }
-    return offset + dots.length === hostname.length ? "." : dots;
-  });
+  const host = url.hostname.replace(/\.$/, "");
   if (
     !host ||
+    host.startsWith(".") ||
     host.includes("..") ||
     (!host.startsWith("[") && !/^[a-z\d_.-]+$/i.test(host))
   ) {
     return null;
   }
-  url.hostname = host;
-  return host.replace(/\.$/, "");
+  return host;
 }
 
 function originalHost(input: ParsedAddress): string {
@@ -150,15 +149,25 @@ function ipIntent(input: ParsedAddress, host: string): boolean | null {
   if (!/^\d+(?:\.\d+){3}$/.test(host)) {
     return null;
   }
-  // Chrome does not navigate source-only 0.x.x.x addresses, except 0.0.0.0.
-  if (host.startsWith("0.") && host !== "0.0.0.0") {
+  const source = originalHost(input)
+    .replace(/[\u3002\uff0e\uff61]/gu, ".")
+    .replace(/\.$/, "");
+  const parts = source.split(".");
+  const components = parts.every((part) => {
+    return part.length > 0;
+  })
+    ? parts.length
+    : 0;
+  // Source-only 0.x.x.x addresses are queries, except an explicit four-part zero.
+  if (host.startsWith("0.") && (host !== "0.0.0.0" || components !== 4)) {
     return false;
   }
-  return (
-    input.explicit ||
-    /[/\\]$/.test(input.path) ||
-    /^\d{1,3}(?:\.\d{1,3}){3}\.?$/.test(originalHost(input))
-  );
+  if (components === 4 || input.explicit || /[/\\]$/.test(input.path)) {
+    return true;
+  }
+  // Short dotted IPs imply a query. Single-component IPs still use port/component
+  // intent below, rather than becoming navigations merely through coercion.
+  return components > 1 ? false : null;
 }
 
 function nonHostComponents(input: ParsedAddress): number {
@@ -181,6 +190,18 @@ function navigationIntent(input: ParsedAddress, host: string): boolean {
   if (ip !== null) {
     return ip;
   }
+  if (host.length > 253) {
+    return false;
+  }
+  const labels = host.split(".");
+  if (
+    labels.some((label) => {
+      return label.length > 63;
+    }) ||
+    !/^[a-z\d]/i.test(labels[labels.length - 1]!)
+  ) {
+    return false;
+  }
   if (input.explicit) {
     return true;
   }
@@ -191,18 +212,19 @@ function navigationIntent(input: ParsedAddress, host: string): boolean {
   if (/[/\\]$/.test(input.path) || nonHostComponents(input) > 1) {
     return true;
   }
-  if (input.url.username || input.url.password) {
+  if (input.url.username) {
     return false;
   }
   return Boolean(input.url.port) || knownSuffix(host) || localHost(host);
 }
 
-function completedURL(candidate: string): URL | null {
-  const parts = /^(https?|wss?):[/\\]*([^/\\?#]*)(.*)$/i.exec(candidate);
-  if (!parts) {
-    return null;
-  }
-  const authority = parts[2]!;
+function fixedNetworkURL(
+  scheme: string,
+  authority: string,
+  rest: string,
+  completeHost: boolean,
+): URL | null {
+  const candidate = scheme + "://" + authority + rest;
   const userEnd = authority.lastIndexOf("@") + 1;
   const hostPort = authority.slice(userEnd);
   if (hostPort.startsWith("[")) {
@@ -213,31 +235,34 @@ function completedURL(candidate: string): URL | null {
   const domain = original.replace(
     /[.\u3002\uff0e\uff61]+/gu,
     (dots, offset: number) => {
-      return offset === 0 || offset + dots.length === original.length
-        ? ""
-        : dots;
+      if (offset === 0) {
+        return "";
+      }
+      return offset + dots.length === original.length ? "." : dots;
     },
   );
   if (!domain) {
     return null;
   }
-  // Qualify before URL canonicalization can coerce numeric text into an IP or
-  // reject it as an overflowing IP. URLFixer applies the desired TLD first too.
-  const qualified =
-    parts[1]! +
+  // Fix host dots and the desired TLD before native IP canonicalization, as
+  // URLFixer does. Keep raw authority components for the later intent checks.
+  const fixed =
+    scheme +
     "://" +
     authority.slice(0, userEnd) +
-    domain +
-    ".com" +
+    (completeHost ? domain.replace(/\.$/, "") + ".com" : domain) +
     (port?.[0] ?? "") +
-    parts[3]!;
-  if (!URL.canParse(qualified)) {
+    rest;
+  if (!URL.canParse(fixed)) {
     return null;
   }
-  const url = new URL(qualified);
+  const url = new URL(fixed);
+  if (!completeHost) {
+    return url;
+  }
   const host = url.hostname.slice(0, -".com".length);
   if (knownSuffix(host)) {
-    url.hostname = host + (/[.\u3002\uff0e\uff61]$/u.test(original) ? "." : "");
+    url.hostname = host + (domain.endsWith(".") ? "." : "");
   } else if (!url.hostname.startsWith("www.")) {
     url.hostname = "www." + url.hostname;
   }
@@ -256,6 +281,9 @@ function addressURL(text: string, completeHost: boolean): URL | null {
     !["http:", "https:", "ws:", "wss:"].includes(url.protocol)
   ) {
     return completeHost ? null : url;
+  }
+  if (!completeHost && ["ws:", "wss:"].includes(url.protocol)) {
+    return url;
   }
   const host = normalizeHost(url);
   if (!host) {
