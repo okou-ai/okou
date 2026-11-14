@@ -74,7 +74,7 @@ describe("canonical Kotlin history protocol proof", () => {
       "CanonicalOptionalJson.Present(input.decodeJsonElement())",
     );
     for (const schema of [
-      object({ value: literal(1) }),
+      object({ value: literal(1.5) }),
       object({ impossible: zNever().optional() }),
       union([object({ v: string() }), object({ v: number() })]),
     ]) {
