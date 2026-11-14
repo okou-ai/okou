@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.5](https://github.com/okou-ai/okou/compare/ios-v0.43.4...ios-v0.43.5) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** make chat sharing responsive and selectable by row ([#47166](https://github.com/okou-ai/okou/issues/47166)) ([e8fa864](https://github.com/okou-ai/okou/commit/e8fa86470cbf3d6adaf67c1ca47176b64d53e012))
+
 ## [0.43.4](https://github.com/okou-ai/okou/compare/ios-v0.43.3...ios-v0.43.4) (2026-11-14)
 
 
