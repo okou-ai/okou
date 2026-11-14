@@ -226,6 +226,16 @@ export function createWorkflowsBddApi(context: TestContext) {
         readonly instruction?: string;
       },
     ): Promise<string> {
+      if (!actor.orgId) {
+        throw new Error("Expected a retained Agent workspace");
+      }
+      // This helper creates named-Agent Workflows, including callers that
+      // prepare their Agent without setupWorkflowOrg or createAgent above.
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        { singleAgent: false },
+      );
       const client = setupApp({ context, routes: workflowsRoutes })(
         workflowsCollectionContract,
       );

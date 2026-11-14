@@ -6,6 +6,7 @@ import { env, mockEnv } from "../../../lib/env";
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 
@@ -195,6 +196,17 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
 describe("MISC-03: workflows lifecycle through public API", () => {
   it("chains create, list, read, update, delete, and post-delete read", async () => {
     const { api, base, admin, member } = testActors();
+    // Both members exercise retained named-Agent visibility and permissions.
+    for (const actor of [admin, member]) {
+      if (!actor.orgId) {
+        throw new Error("Expected a retained Agent workspace");
+      }
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        { singleAgent: false },
+      );
+    }
     const memberWorkflowName = `bdd-member-workflow-${randomUUID().slice(0, 8)}`;
     const workflowName = `bdd-workflow-${randomUUID().slice(0, 8)}`;
 
