@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.249.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.10...runner-rs-v0.249.11) (2026-11-14)
+
+
+### Refactoring
+
+* **python:** consolidate firewall auth cache ownership ([#47269](https://github.com/okou-ai/okou/issues/47269)) ([4827fe2](https://github.com/okou-ai/okou/commit/4827fe2cea2ae181d4f581e1f88d21295d47ae01))
+* **python:** unify jsonl path progress ownership ([#47301](https://github.com/okou-ai/okou/issues/47301)) ([b1b6826](https://github.com/okou-ai/okou/commit/b1b68262b5c029ea0715d181494a99e88c1f26b0))
+* **python:** unify metadata alias exit state ([#47256](https://github.com/okou-ai/okou/issues/47256)) ([9a6c3d0](https://github.com/okou-ai/okou/commit/9a6c3d00d438327184777f0228ba30dbcea6c898))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.9...runner-rs-v0.249.10) (2026-11-14)
 
 

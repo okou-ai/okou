@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0](https://github.com/okou-ai/okou/compare/android-v0.11.0...android-v0.12.0) (2026-11-14)
+
+
+### Features
+
+* **android:** add durable text drafts and sending ([#47239](https://github.com/okou-ai/okou/issues/47239)) ([23db870](https://github.com/okou-ai/okou/commit/23db8702960c836e9119fbeca27fad1cfe9283c3))
+
+
+### Refactoring
+
+* **api:** stop accepting the retired chat resources preference write ([#47299](https://github.com/okou-ai/okou/issues/47299)) ([c2fbb97](https://github.com/okou-ai/okou/commit/c2fbb97cd4c674b73720b375573bd592e7ee7f77))
+
 ## [0.11.0](https://github.com/okou-ai/okou/compare/android-v0.10.0...android-v0.11.0) (2026-11-14)
 
 
