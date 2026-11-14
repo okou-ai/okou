@@ -371,4 +371,72 @@ describe("Memory publication authorization", () => {
       expect(next.memory.versionId).toBe(winner?.versionId);
     });
   });
+
+  it("rejects a prepared Memory publication after its Run is cancelled", async () => {
+    const fixture = createPublicRunnerMemory(context);
+    await fixture.run(async () => {
+      const agentId = await fixture.initializeNative();
+      fixture.installObjects();
+      const initial = await fixture.claim(agentId, "publish the accepted fact");
+      const published = await fixture.publish(initial, [
+        { path: "notes.md", content: "Keep this accepted fact" },
+      ]);
+      const cancelled = await fixture.claim(agentId, "prepare a new fact");
+      const candidate = await fixture.prepare(cancelled, [
+        { path: "notes.md", content: "Unpublished cancelled fact" },
+      ]);
+
+      await fixture.cancel(cancelled);
+      await fixture.webhooks.requestAgentStorageCommit(
+        {
+          runId: cancelled.run.runId,
+          storageId: cancelled.memory.storageId,
+          parentVersionId: cancelled.memory.versionId,
+          ...candidate,
+        },
+        cancelled.headers,
+        [404],
+      );
+
+      const next = await fixture.claim(agentId, "read the accepted fact");
+      expect(next.memory.versionId).toBe(published);
+    });
+  });
+
+  it("acknowledges an exact completed Run retry without rewinding newer Memory", async () => {
+    const fixture = createPublicRunnerMemory(context);
+    await fixture.run(async () => {
+      const agentId = await fixture.initializeNative();
+      fixture.installObjects();
+      const original = await fixture.claim(agentId, "publish the first fact");
+      const files = [{ path: "notes.md", content: "First accepted fact" }];
+      const firstVersion = await fixture.publish(original, files);
+      const newer = await fixture.claim(agentId, "publish the newer fact");
+      const newestVersion = await fixture.publish(newer, [
+        { path: "notes.md", content: "Newer accepted fact" },
+      ]);
+
+      const retried = await fixture.webhooks.requestAgentStorageCommit(
+        {
+          runId: original.run.runId,
+          storageId: original.memory.storageId,
+          parentVersionId: original.memory.versionId,
+          versionId: firstVersion,
+          files: files.map((file) => {
+            return storageTextFile(file.path, file.content);
+          }),
+        },
+        original.headers,
+        [200],
+      );
+      expect(retried.body).toMatchObject({
+        success: true,
+        versionId: firstVersion,
+        deduplicated: true,
+      });
+
+      const next = await fixture.claim(agentId, "read the newest fact");
+      expect(next.memory.versionId).toBe(newestVersion);
+    });
+  });
 });
