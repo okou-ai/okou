@@ -170,7 +170,7 @@ impl AcceptanceTasks {
         let context = Arc::clone(&self.context);
         let (acceptance_ready, ready) = oneshot::channel();
         self.preparing = Some(ready);
-        // Dropping the observer detaches accepted acceptance/activation work. Its
+        // Dropping the observer detaches in-flight acceptance/activation work. Its
         // final guarded result owns recovery if Reactor disappears.
         self.tasks.push(tokio::spawn(async move {
             let resources = context.resources();
@@ -209,7 +209,7 @@ impl AcceptanceTasks {
         Some(result)
     }
 
-    // Acceptance and dispatch are synchronous; every fallible activation or
+    // Result consumption and dispatch are synchronous; every fallible activation or
     // recovery await remains owned by the bounded independently scheduled task.
     pub(super) fn consume(
         &self,
