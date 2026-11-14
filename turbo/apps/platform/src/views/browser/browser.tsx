@@ -1130,6 +1130,35 @@ function BrowserTabPicker({
   );
 }
 
+function BrowserNewTabButton({
+  signals,
+  creating,
+  onCreate,
+}: {
+  readonly signals: BrowserSignals;
+  readonly creating: boolean;
+  readonly onCreate: () => Promise<string>;
+}) {
+  const { t } = useTranslation();
+  const canCreateTab = useGet(signals.canCreateTab$);
+  return (
+    <IconButton
+      data-browser-new-tab
+      type="button"
+      aria-label={t(($) => {
+        return $.browserViewer.newTab;
+      })}
+      disabled={!canCreateTab || creating}
+      className="size-8"
+      onClick={() => {
+        detach(onCreate(), Reason.DomCallback);
+      }}
+    >
+      <Plus size={16} />
+    </IconButton>
+  );
+}
+
 function BrowserTabs({
   signals,
   actions,
@@ -1150,11 +1179,9 @@ function BrowserTabs({
   const selectedTabId = useGet(signals.selectedTabId$);
   const navigation = useGet(signals.navigation$);
   const layout = useGet(signals.tabLayout$);
-  const canCreateTab = useGet(signals.canCreateTab$);
   const toolbarRef = useSet(signals.refs.toolbar$);
   const tabsRef = useSet(signals.refs.tabs$);
   const actionsRef = useSet(signals.refs.toolbarActions$);
-  const newTabDisabled = !canCreateTab || creating;
   const title = (id: string, value: string) => {
     return (selectedTabId === id && navigation?.url === "about:blank") ||
       value === "about:blank"
@@ -1209,20 +1236,11 @@ function BrowserTabs({
           />
         )}
       </div>
-      <IconButton
-        data-browser-new-tab
-        type="button"
-        aria-label={t(($) => {
-          return $.browserViewer.newTab;
-        })}
-        disabled={newTabDisabled}
-        className="size-8"
-        onClick={() => {
-          detach(onCreate(), Reason.DomCallback);
-        }}
-      >
-        <Plus size={16} />
-      </IconButton>
+      <BrowserNewTabButton
+        signals={signals}
+        creating={creating}
+        onCreate={onCreate}
+      />
       {actions && (
         <div ref={actionsRef} className="flex shrink-0 items-center gap-1">
           {actions}
