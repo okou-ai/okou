@@ -13,6 +13,14 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1132.2](https://github.com/okou-ai/okou/compare/app-v0.1132.1...app-v0.1132.2) (2026-11-14)
+
+
+### Performance Improvements
+
+* **app:** isolate browser new-tab availability updates ([#47257](https://github.com/okou-ai/okou/issues/47257)) ([cf064b9](https://github.com/okou-ai/okou/commit/cf064b983e51cc646821453f7487970fab9387d3))
+* **app:** narrow remote-access dialog subscriptions ([#47262](https://github.com/okou-ai/okou/issues/47262)) ([d2318bb](https://github.com/okou-ai/okou/commit/d2318bb2f6022b91bc87fde4003d9f1504737fbb))
+
 ## [0.1132.1](https://github.com/okou-ai/okou/compare/app-v0.1132.0...app-v0.1132.1) (2026-11-14)
 
 

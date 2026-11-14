@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.249.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.10...runner-rs-v0.249.11) (2026-11-14)
+
+
+### Refactoring
+
+* **python:** unify metadata alias exit state ([#47256](https://github.com/okou-ai/okou/issues/47256)) ([9a6c3d0](https://github.com/okou-ai/okou/commit/9a6c3d00d438327184777f0228ba30dbcea6c898))
+
 ## [0.249.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.9...runner-rs-v0.249.10) (2026-11-14)
 
 
