@@ -297,6 +297,35 @@ class PersonalInstructionsModelTest {
         }
 
     @Test
+    fun aRejectedRetryDoesNotResolveTheEarlierUnknownSave() = check { service, store, create, _ ->
+        val model = create(false)
+        model.open()
+        runCurrent()
+        model.edit("Original uncertain intent")
+        service.write = { _, _ -> throw ApiFailure.Network(IOException("response lost")) }
+        model.save()
+        runCurrent()
+        service.write = { _, _ -> throw ApiFailure.Http(400, null, null, null) }
+        model.save()
+        runCurrent()
+        assertEquals(InstructionsPhase.Uncertain, model.uiState.value.phase)
+        assertTrue(checkNotNull(model.uiState.value.draft).attempted)
+        model.edit("Must not replace the earlier intent")
+        model.discard()
+        runCurrent()
+        assertEquals("Original uncertain intent", model.uiState.value.content)
+        assertEquals(2, service.writes.size)
+        assertTrue(checkNotNull(store.load(identity).draft).attempted)
+        service.saved = service.saved.copy(content = "Original uncertain intent", version = "v2")
+        model.refresh()
+        runCurrent()
+        assertEquals(InstructionsPhase.Ready, model.uiState.value.phase)
+        assertNull(model.uiState.value.draft)
+        assertNull(store.load(identity).draft)
+        assertEquals(2, service.writes.size)
+    }
+
+    @Test
     fun featureLocal403DoesNotRetireWorkspaceAndNulNeverBecomesASave() =
         check { service, _, create, failures ->
             val model = create(false)

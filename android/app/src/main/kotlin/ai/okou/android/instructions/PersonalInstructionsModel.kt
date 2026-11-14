@@ -288,7 +288,12 @@ class PersonalInstructionsModel(
                 throw cancelled
             } catch (error: Exception) {
                 if (!current()) return@launch
-                if (error is ApiFailure.Http && error.status in setOf(400, 409)) {
+                // Rejecting this retry does not resolve the earlier request's unknown outcome.
+                if (
+                    error is ApiFailure.Http &&
+                        (error.status == 409 ||
+                            error.status == 400 && state.phase == InstructionsPhase.Ready)
+                ) {
                     val rejected = attempt.copy(attempted = false)
                     replaceDraft(rejected)
                     requireCurrent()
