@@ -111,8 +111,6 @@ import { chatRelationsContract as OriginalChatRelationsContract } from "../contr
 import { chatRelationsContract } from "./chat-relations";
 import { chatRemoteAccessContract as OriginalChatRemoteAccessContract } from "../contracts/chat-remote-access";
 import { chatRemoteAccessContract } from "./chat-remote-access";
-import { chatShareSelectionContract as OriginalChatShareSelectionContract } from "../contracts/chat-share-selection";
-import { chatShareSelectionContract } from "./chat-share-selection";
 import { chatThreadActivitySummaryContract as OriginalChatThreadActivitySummaryContract } from "../contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryContract } from "./chat-thread-activity-summary";
 import {
@@ -853,7 +851,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [chatInputStatusContract, OriginalChatInputStatusContract],
   [chatRelationsContract, OriginalChatRelationsContract],
   [chatRemoteAccessContract, OriginalChatRemoteAccessContract],
-  [chatShareSelectionContract, OriginalChatShareSelectionContract],
   [
     chatThreadActivitySummaryContract,
     OriginalChatThreadActivitySummaryContract,
