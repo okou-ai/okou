@@ -10,17 +10,23 @@ final class ChatSharingTests: XCTestCase {
   func testSelectionCreationAndVisibilityUseCanonicalEventIdentities() async throws {
     let requests = Mutex<[URLRequest]>([])
     let fixture = ChatHTTPFixture { request in
-      requests.withLock { $0.append(request) }
-      if request.url?.path.hasSuffix("/selection") == true {
-        if request.httpMethod == "POST" {
-          return ChatHTTPResponse(status: 201, body: #"{"id":"share"}"#)
-        }
-        return ChatHTTPResponse(
+      let response: ChatHTTPResponse
+      switch (request.httpMethod, request.url?.path) {
+      case ("GET", "/api/chat-threads/thread/shared-threads/selection"):
+        response = ChatHTTPResponse(
           body:
             #"{"messages":[{"eventId":"answer","role":"assistant","turnEventIds":["question","answer"]}]}"#
         )
+      case ("POST", "/api/chat-threads/thread/shared-threads/selection"):
+        response = ChatHTTPResponse(status: 201, body: #"{"id":"share"}"#)
+      case ("PUT", "/api/shared-threads/share/visibility"):
+        response = ChatHTTPResponse(
+          body: #"{"id":"share","audience":"organization","revision":null}"#)
+      default:
+        throw URLError(.unsupportedURL)
       }
-      return ChatHTTPResponse(body: #"{"id":"share","audience":"organization","revision":null}"#)
+      requests.withLock { $0.append(request) }
+      return response
     }
     let selection = try await fixture.client.chatShareSelection(threadID: "thread")
     let answer = try XCTUnwrap(selection.messages.first)
