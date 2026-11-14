@@ -166,6 +166,12 @@ def execute(args):
     script = confined(ROOT / requested, RECIPES)
     if not script.is_file():
         raise ValueError("Recipe is not a file")
+    script_bytes = script.read_bytes()
+    committed = subprocess.run(
+        ["git", "cat-file", "blob", f"{actual}:{script.relative_to(ROOT).as_posix()}"],
+        cwd=ROOT, capture_output=True)
+    if committed.returncode or committed.stdout != script_bytes:
+        raise ValueError("Recipe must match a file stored in the requested commit")
     if OUTPUT.resolve() != OUTPUT:
         raise ValueError("Screenshot output directory must not be a symlink")
     if OUTPUT.exists():
@@ -173,7 +179,7 @@ def execute(args):
     OUTPUT.mkdir(parents=True)
     run_id = uuid.uuid4().hex
     metadata = {"commitSha": actual, "driverSha": args.driver, "scriptPath": args.script,
-                "scriptSha256": hashlib.sha256(script.read_bytes()).hexdigest(), "runId": run_id,
+                "scriptSha256": hashlib.sha256(script_bytes).hexdigest(), "runId": run_id,
                 "status": "failed"}
     env = {**os.environ, "OKOU_SCREENSHOT_RUN": run_id, "OKOU_SCREENSHOT_OUTPUT": str(OUTPUT)}
     process = None

@@ -103,6 +103,19 @@ python3 android/scripts/screenshots.py collect shot.png
         result = self.invoke(self.git("rev-parse", "HEAD"), str(link.relative_to(self.root)))
         self.assertIn("Path must be inside", result.stderr)
 
+    def test_ignored_recipe_cannot_claim_the_checked_out_commit(self):
+        self.commit("exit 0\n")
+        ignored = self.recipe.with_name("uncommitted.local.sh")
+        ignore = self.root / ".gitignore"
+        ignore.write_text(ignore.read_text() + "*.local.sh\n")
+        self.git("add", ".gitignore")
+        self.git("commit", "-qm", "ignore local recipes")
+        ignored.write_text("#!/usr/bin/env bash\nset -euo pipefail\n" + self.capture_recipe())
+        self.assertEqual("", self.git("status", "--porcelain"))
+        result = self.invoke(self.git("rev-parse", "HEAD"), str(ignored.relative_to(self.root)))
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Recipe must match a file stored in the requested commit", result.stderr)
+
     def test_recipe_failure_retains_exit_status_and_log(self):
         commit = self.commit("echo capture-failed\nexit 7\n")
         result = self.invoke(commit)
