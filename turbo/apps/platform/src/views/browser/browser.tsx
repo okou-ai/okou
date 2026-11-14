@@ -47,7 +47,10 @@ import {
   type BrowserFocusHandoff,
   type BrowserSignals,
 } from "../../signals/browser/browser.ts";
-import { NavigationFault } from "../../signals/browser/navigation/action.ts";
+import {
+  NavigationFault,
+  type BrowserAddressAction,
+} from "../../signals/browser/navigation/action.ts";
 import { addressPaste } from "../../signals/browser/input/address-paste.ts";
 import type { DisplayModeResult } from "../../signals/browser/display/sync.ts";
 import { captureResolutions } from "../../signals/browser/viewer/capture.ts";
@@ -690,10 +693,12 @@ function BrowserAddressInput({
   signals,
   canSubmit,
   navigating,
+  onComplete,
 }: {
   readonly signals: BrowserSignals;
   readonly canSubmit: boolean;
   readonly navigating: boolean;
+  readonly onComplete: () => void;
 }) {
   const { t } = useTranslation();
   const address = useGet(signals.address$);
@@ -706,7 +711,6 @@ function BrowserAddressInput({
   const kind = useGet(signals.addressSubmissionKind$);
   const compose = useSet(signals.composeAddress$);
   const composing = useGet(signals.addressComposing$);
-  const complete = useSet(signals.completeAddress$);
   const armCompletion = useSet(signals.armAddressCompletion$);
   return (
     <Input
@@ -781,12 +785,9 @@ function BrowserAddressInput({
           !event.metaKey &&
           !event.shiftKey
         ) {
-          // Complete the typed host, then use the same form/navigation owner as Enter.
+          // Submit explicit completion intent through the shared navigation owner.
           event.preventDefault();
-          flushSync(() => {
-            complete();
-          });
-          event.currentTarget.form?.requestSubmit();
+          onComplete();
           return;
         }
         if (event.key === "Escape") {
@@ -819,7 +820,7 @@ function BrowserAddress({
   readonly signals: BrowserSignals;
   readonly canSubmit: boolean;
   readonly navigating: boolean;
-  readonly onSubmit: () => void;
+  readonly onSubmit: (action: BrowserAddressAction) => void;
 }) {
   const { t } = useTranslation();
   const blockedSubmission = useGet(signals.addressSubmitNotice$);
@@ -831,27 +832,33 @@ function BrowserAddress({
       ? $.browserViewer.searchGoogle
       : $.browserViewer.openAddress;
   });
+  const submit = (action: BrowserAddressAction) => {
+    if (composing) {
+      return;
+    }
+    if (canSubmit && !navigating) {
+      notifySubmission(null);
+      onSubmit(action);
+    } else {
+      notifySubmission(navigating ? "opening" : "preparing");
+    }
+  };
   return (
     <>
       <form
         className="flex min-w-0 flex-1 items-center gap-1"
         onSubmit={(event) => {
           event.preventDefault();
-          if (composing) {
-            return;
-          }
-          if (canSubmit && !navigating) {
-            notifySubmission(null);
-            onSubmit();
-          } else {
-            notifySubmission(navigating ? "opening" : "preparing");
-          }
+          submit("submit-address");
         }}
       >
         <BrowserAddressInput
           signals={signals}
           canSubmit={canSubmit}
           navigating={navigating}
+          onComplete={() => {
+            submit("complete-address");
+          }}
         />
         <IconButton
           type="submit"
@@ -947,8 +954,8 @@ function BrowserNavigation({
         signals={signals}
         canSubmit={canSubmitAddress}
         navigating={navigating}
-        onSubmit={() => {
-          detach(navigate("submit-address", pageSignal), Reason.DomCallback);
+        onSubmit={(action) => {
+          detach(navigate(action, pageSignal), Reason.DomCallback);
         }}
       />
       <BrowserSettings signals={signals} disabled={settingsDisabled} />

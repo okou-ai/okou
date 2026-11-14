@@ -170,28 +170,55 @@ test("Composition confirmation does not submit a search", async () => {
   });
 });
 
-test("A Google search URL retains its original pending receipt across document replacement", async () => {
+test.each([
+  {
+    input: "quarterly sales",
+    keys: "{Enter}",
+    url: "https://www.google.com/search?q=quarterly+sales",
+  },
+  {
+    input: "acmeportal",
+    keys: "{Control>}{Enter}{/Control}",
+    url: "http://www.acmeportal.com/",
+  },
+])(
+  "Submission retains the original $input and receipt across document replacement",
+  async ({ input, keys, url }) => {
+    const { browser, viewer, address } = await openViewer();
+    const navigation = browser.holdNext("Page.navigate");
+    await fill(address, input);
+    await userEvent.keyboard(keys);
+    await navigation.received;
+    await expect(
+      within(viewer).findByLabelText(new URL(url).hostname, {
+        selector: '[role="tab"]',
+      }),
+    ).resolves.toBeInTheDocument();
+    expect(address).toHaveValue(input);
+    expect(address).toHaveAttribute("aria-busy", "true");
+    await act(async () => {
+      await navigation.release();
+    });
+    await waitFor(() => {
+      expect(address).toHaveAttribute("aria-busy", "false");
+      expect(address).toHaveValue(url);
+      expect(
+        within(viewer).getByLabelText("Remote browser input"),
+      ).toBeEnabled();
+    });
+  },
+);
+
+test("A failed domain completion retains the original text for an ordinary search", async () => {
   const { browser, viewer, address } = await openViewer();
-  const search = browser.holdNext("Page.navigate");
-  await fill(address, "quarterly sales");
+  browser.rejectNextNavigation("net::ERR_NAME_NOT_RESOLVED");
+  await fill(address, "acmeportal");
+  await userEvent.keyboard("{Control>}{Enter}{/Control}");
+  await expect(within(viewer).findByRole("alert")).resolves.toBeInTheDocument();
+  expect(address).toHaveValue("acmeportal");
   await userEvent.keyboard("{Enter}");
-  await search.received;
-  await expect(
-    within(viewer).findByLabelText("www.google.com", {
-      selector: '[role="tab"]',
-    }),
-  ).resolves.toBeInTheDocument();
-  expect(address).toHaveValue("quarterly sales");
-  expect(address).toHaveAttribute("aria-busy", "true");
-  await act(async () => {
-    await search.release();
-  });
   await waitFor(() => {
-    expect(address).toHaveAttribute("aria-busy", "false");
-    expect(address).toHaveValue(
-      "https://www.google.com/search?q=quarterly+sales",
-    );
-    expect(within(viewer).getByLabelText("Remote browser input")).toBeEnabled();
+    expect(address).toHaveValue("https://www.google.com/search?q=acmeportal");
   });
 });
 
@@ -303,8 +330,22 @@ test.each([
   ["https:65536", "https://www.65536.com/"],
   ["..example.com..", "http://example.com./"],
   ["例子.中国", "http://xn--fsqu00a.xn--fiqs8s/"],
+  ["a".repeat(64) + ".com", "http://" + "a".repeat(64) + ".com/"],
+  [
+    ("a".repeat(63) + ".").repeat(4) + "com",
+    "http://" + ("a".repeat(63) + ".").repeat(4) + "com/",
+  ],
+  [
+    "https://example.com/report?q=1#total",
+    "https://example.com/report?q=1#total",
+  ],
   ["annual report", "https://www.google.com/search?q=annual+report"],
   ["site:example.com", "https://www.google.com/search?q=site%3Aexample.com"],
+  [
+    "filetype:pdf annual report",
+    "https://www.google.com/search?q=filetype%3Apdf+annual+report",
+  ],
+  ["?example.com", "https://www.google.com/search?q=example.com"],
 ])(
   "Ctrl+Enter completes eligible Chromium host input %s",
   async (text, expected) => {

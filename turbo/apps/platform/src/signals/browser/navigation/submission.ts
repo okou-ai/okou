@@ -1,7 +1,7 @@
 import { parse as parseDomain } from "tldts";
+import type { BrowserAddressAction } from "./action.ts";
 
-// Chromium's desktop handled protocols, plus its explicit mailto allowance.
-// OS/profile-registered external handlers are not available to this web input.
+// Explicit schemes supported by this input. Unknown prefixes remain search text.
 const browserSchemes = Object.freeze([
   "http",
   "https",
@@ -90,14 +90,15 @@ function parseAddress(
     if (!hasUserAndPassword(authorityHint)) {
       return null;
     }
-    // Chromium retries unknown-scheme username:password input as explicit HTTP.
+    // A username:password authority can look like an unknown scheme.
     scheme = null;
     credentials = true;
   }
-  // Chrome searches JavaScript-prefixed text that does not look like code.
+  // JavaScript-prefixed text without code syntax is a search query.
   if (scheme === "javascript" && /^javascript:[^;=()."]*$/i.test(value)) {
     return null;
   }
+  // Fill missing schemes with HTTP and preserve explicitly entered protocols.
   const candidate = scheme
     ? value
     : "http:" + (value.startsWith("//") ? value : "//" + value);
@@ -244,8 +245,8 @@ function fixedNetworkURL(
   if (!domain) {
     return null;
   }
-  // Fix host dots and the desired TLD before native IP canonicalization, as
-  // URLFixer does. Keep raw authority components for the later intent checks.
+  // Fix dots and complete the domain before URL canonicalization can coerce a
+  // numeric host into an IP. Retain the raw authority for ordinary intent checks.
   const fixed =
     scheme +
     "://" +
@@ -269,7 +270,7 @@ function fixedNetworkURL(
   return url;
 }
 
-/** Mirror the profile-independent URL intent rules in Chromium AutocompleteInput. */
+/** Resolve a URL candidate using the original input and submission intent. */
 function addressURL(text: string, completeHost: boolean): URL | null {
   const input = parseAddress(text, completeHost);
   if (!input) {
@@ -313,8 +314,11 @@ function submittedText(input: string): string | null {
   return text;
 }
 
-/** Classify submission without querying history, DNS, or suggestion providers. */
-export function addressSubmission(input: string): {
+/** Generate the final destination locally, without mutating or reclassifying the editor. */
+export function addressSubmission(
+  input: string,
+  action: BrowserAddressAction = "submit-address",
+): {
   readonly kind: "navigate" | "search";
   readonly url: string;
 } | null {
@@ -323,9 +327,12 @@ export function addressSubmission(input: string): {
     return null;
   }
   const forceQuery = text.startsWith("?");
-  const url = forceQuery ? null : addressURL(text, false);
+  let url = forceQuery ? null : addressURL(text, action === "complete-address");
+  if (!forceQuery && !url && action === "complete-address") {
+    // Prose, operators and non-host URLs use ordinary submission of the original text.
+    url = addressURL(text, false);
+  }
   if (url) {
-    // HTTPS upgrading and fallback belong to Chrome's native navigation stack.
     return { kind: "navigate", url: url.href };
   }
   const query = forceQuery ? text.slice(1).trimStart() : text;
@@ -335,12 +342,4 @@ export function addressSubmission(input: string): {
   const searchUrl = new URL("https://www.google.com/search");
   searchUrl.searchParams.set("q", query);
   return { kind: "search", url: searchUrl.href };
-}
-
-/** Ctrl+Enter asks for a .com URL, without accepting a suggestion or changing tabs. */
-export function completeAddressHost(input: string): string | null {
-  const text = submittedText(input);
-  return text && !text.startsWith("?")
-    ? (addressURL(text, true)?.href ?? null)
-    : null;
 }

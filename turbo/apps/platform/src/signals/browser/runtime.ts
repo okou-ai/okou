@@ -29,10 +29,7 @@ import { monotonicNow } from "../../lib/time.ts";
 import { measureDisplay, observeDisplay } from "./display.ts";
 import { constrainDisplay, type DisplaySize } from "./display/geometry.ts";
 import { createToolbarFocus, type ToolbarNodes } from "./focus.ts";
-import {
-  addressSubmission,
-  completeAddressHost,
-} from "./navigation/submission.ts";
+import { addressSubmission } from "./navigation/submission.ts";
 import { createNativeInput } from "./input/native.ts";
 import {
   NavigationFault,
@@ -1344,12 +1341,8 @@ function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
 function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
   const { model } = context;
   const { requireController$ } = graph;
-  const submission$ = computed((get) => {
-    return addressSubmission(get(model.address$));
-  });
   const addressSubmissionKind$ = computed((get) => {
-    const submission = get(submission$);
-    return submission?.kind ?? null;
+    return addressSubmission(get(model.address$))?.kind ?? null;
   });
   const composingState$ = state(false);
   const completionArmed$ = state(false);
@@ -1362,17 +1355,6 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
   });
   const armAddressCompletion$ = command(({ set }, armed: boolean) => {
     set(completionArmed$, armed);
-  });
-  const completeAddress$ = command(({ get, set }) => {
-    const armed = get(completionArmed$);
-    set(completionArmed$, false);
-    if (!armed || get(composingState$)) {
-      return;
-    }
-    const url = completeAddressHost(get(model.address$));
-    if (url) {
-      set(model.editAddress$, url);
-    }
   });
   const noticeState$ = state<AddressSubmitNotice | null>(null);
   const addressSubmitNotice$ = computed((get) => {
@@ -1401,14 +1383,19 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
       action: BrowserNavigationAction,
       signal: AbortSignal,
     ): Promise<NavigationReceipt> => {
-      if (action !== "submit-address") {
+      if (action !== "submit-address" && action !== "complete-address") {
         return await set(lease.controller.navigate$, action, signal);
       }
       const scope = get(lease.controller.navigationScope$);
       if (!scope) {
         throw cancelled();
       }
-      const target = get(submission$);
+      const submissionAction =
+        action === "complete-address" && !get(completionArmed$)
+          ? "submit-address"
+          : action;
+      set(completionArmed$, false);
+      const target = addressSubmission(get(model.address$), submissionAction);
       if (!target) {
         throw new CdpFault("input", "Enter a valid page address.");
       }
@@ -1429,12 +1416,14 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
       signal: AbortSignal,
     ): Promise<NavigationReceipt> => {
       const lease = set(requireController$, signal);
-      if (action === "submit-address" && get(addressComposing$)) {
-        return { kind: "unavailable" };
-      }
-      if (action === "submit-address" && !get(canSubmitAddress$)) {
-        set(notifyAddressSubmit$, "preparing");
-        return { kind: "unavailable" };
+      if (action === "submit-address" || action === "complete-address") {
+        if (get(addressComposing$)) {
+          return { kind: "unavailable" };
+        }
+        if (!get(canSubmitAddress$)) {
+          set(notifyAddressSubmit$, "preparing");
+          return { kind: "unavailable" };
+        }
       }
       const scope = get(lease.controller.navigationScope$);
       const [result] = await Promise.allSettled([
@@ -1454,7 +1443,6 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
     addressSubmissionKind$,
     addressComposing$,
     composeAddress$,
-    completeAddress$,
     armAddressCompletion$,
     navigate$,
     canSubmitAddress$,
