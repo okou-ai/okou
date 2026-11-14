@@ -28,7 +28,7 @@ fn context_with_reuse_key(run_id: RunId, reuse_key: &str) -> runner_types::types
 
 /// TOCTOU regression: soft drain can arrive after the main loop has selected
 /// a discovered candidate but before claim. The candidate is still unowned at
-/// that point, so Draining must roll back local admission and skip claim.
+/// that point, so Draining must roll back local acceptance and skip claim.
 #[tokio::test]
 async fn claim_after_draining_sent_skips_unclaimed_job() {
     let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
@@ -943,7 +943,7 @@ async fn reserved_reuse_activation_panic_recovers_claim_and_sandbox() {
 }
 
 #[tokio::test]
-async fn reusable_active_run_discovery_does_not_bypass_ordinary_capacity_admission() {
+async fn reusable_active_run_discovery_does_not_bypass_ordinary_capacity_acceptance() {
     let (config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let budget = Arc::clone(&config.capacity.budget);
     let occupied = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
@@ -1272,7 +1272,7 @@ async fn duplicate_discovery_deduplicated() {
 
     // Push the same run_id again with a matching-reuse preference. The duplicate first
     // owns the idle reservation, then must restore it when the cancellation
-    // registry reports that the original run already owns local admission.
+    // registry reports that the original run already owns local acceptance.
     env.handle
         .discover_tx
         .send(local_reuse_candidate(run_id, session_id))

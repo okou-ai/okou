@@ -9,8 +9,8 @@ use runner_lifecycle::idle_pool::{
     IdleParkRequestParts,
 };
 use runner_provider::ExecutionJob;
-use runner_supervisor::finalizing_admission::{
-    GuardedFinalizingAdmission, GuardedFinalizingOffer, GuardedFinalizingOfferOutcome,
+use runner_supervisor::finalizing_handoff::{
+    GuardedFinalizingHandoff, GuardedFinalizingOffer, GuardedFinalizingOfferOutcome,
 };
 use sandbox::{Sandbox, SandboxFinalExecParkHandoffPoint};
 
@@ -147,7 +147,7 @@ pub async fn exercise(
     actual_context.reuse_key = Some(reuse_key.clone());
     let job = ExecutionJob::local_with_active_input_source(successor, actual_context, None)
         .map_err(|_| io::Error::other("native finalizing claim mismatch"))?;
-    let mut admission = GuardedFinalizingAdmission::new(job, request, run_id, tracker.clone());
+    let mut admission = GuardedFinalizingHandoff::new(job, request, run_id, tracker.clone());
     let cleanup: TestResult<()> = async {
         if producer.offer(&guard.reuse_publisher())? != GuardedFinalizingOfferOutcome::Delivered {
             return Err(io::Error::other("native finalizing delivery was refused").into());
@@ -177,7 +177,7 @@ pub async fn exercise(
     }
     drop(
         admission
-            .take_claim_for_completion()
+            .take_job_for_completion()
             .ok_or_else(|| io::Error::other("native finalizing original claim disappeared"))?,
     );
     drop(admission);

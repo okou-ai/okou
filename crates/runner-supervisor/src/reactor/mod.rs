@@ -8,7 +8,7 @@
 //!
 //! Local siblings own startup/rollback, factory lifecycle, claim/discovery, job
 //! dispatch, terminal logging, prune admission and signal consumption. Adjacent Supervisor modules
-//! retain their admission/finalization/heartbeat/orphan policies; Network owns
+//! retain their acceptance/finalization/heartbeat/orphan policies; Network owns
 //! MITM recovery. No executable types, upward dependencies, caller futures,
 //! copied provider fixtures or normal-feature test hooks are required.
 //!
@@ -70,7 +70,7 @@ use runner_provider::{JobProvider, RunCancellationRegistry};
 #[cfg(test)]
 use runner_types::ids::RunId;
 
-mod admission_tasks;
+mod acceptance_tasks;
 pub mod error;
 mod factory_lifecycle;
 mod finalizing_activation;
@@ -94,12 +94,12 @@ use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool}
 #[cfg(test)]
 use crate::orphan_reap::OrphanReapProcessDiscovery;
 use crate::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
-use admission_tasks::AdmissionTasks;
+use acceptance_tasks::AcceptanceTasks;
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime};
 use heartbeat::heartbeat_profiles;
 use home_cache_observation::HomeCacheObservationEvent;
 use idle_memory::IdleMemoryReclaimer;
-use job_activation::{AdmissionContext, LocalJob};
+use job_activation::{AcceptanceContext, LocalJob};
 use job_spawn::{JobResult, SpawnContext, handle_job_result};
 use maintenance::{MaintenanceCompletion, MaintenanceTasks};
 use runner_lifecycle::active_runs::ActiveRuns;
@@ -727,7 +727,7 @@ mod start_loop_observer_tests;
 #[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum OuterJobPanicPoint {
-    AdmittedWithoutSandbox,
+    AcceptedWithoutSandbox,
     JobActivation,
     ActiveOrUnknown,
     IdlePoolOwned,
@@ -1084,13 +1084,13 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         #[cfg(test)]
         test_observer: test_hooks.test_observer.clone(),
     };
-    let mut admission_tasks = AdmissionTasks::new(AdmissionContext {
+    let mut acceptance_tasks = AcceptanceTasks::new(AcceptanceContext {
         mode_rx: mode_rx.clone(),
         cancel_tokens: provider_state.cancel_tokens.clone(),
         spawn_ctx: spawn_ctx.clone(),
     });
     let (dispatch_intake, mut dispatch_rx) =
-        crate::ingress::dispatch::DispatchIntake::new(admission_tasks.slots());
+        crate::ingress::dispatch::DispatchIntake::new(acceptance_tasks.slots());
     if let Some(ingress) = &ingress {
         ingress.enable_dispatch(dispatch_intake);
     }
@@ -1176,15 +1176,15 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // to teardown.
             RunnerMode::Stopping => break,
             RunnerMode::Draining => {
-                if admission_tasks.is_empty() {
-                    // Settle admission before removing inventory that an
+                if acceptance_tasks.is_empty() {
+                    // Settle acceptance before removing inventory that an
                     // in-flight claim may return or need for activation. Then
                     // release idle budget and keep servicing running jobs.
                     soft_drain
                         .start_if_needed(&idle_destroy_tracker, &shared.idle_pool, &shared.status)
                         .await;
                 }
-                if soft_drain.batch_completed() && jobs.is_empty() && admission_tasks.is_empty() {
+                if soft_drain.batch_completed() && jobs.is_empty() && acceptance_tasks.is_empty() {
                     // Watch updates can coalesce a resume and renewed drain.
                     // Recheck inventory under the same exclusive access that
                     // commits natural stop so a prior batch cannot skip it.
@@ -1246,13 +1246,13 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         if local_source.is_some() && matches!(mode, RunnerMode::Running) && !can_discover {
             test_hooks.test_observer.notify_budget_exhausted_reactor();
         }
-        let can_discover = can_discover && admission_tasks.has_capacity();
+        let can_discover = can_discover && acceptance_tasks.has_capacity();
         let mitm_retry_deadline = mitm_recovery.retry_deadline();
         let heartbeat_sending = heartbeat.is_sending();
         let heartbeat_retry_deadline = heartbeat.retry_deadline().map(Into::into);
         tokio::select! {
-            Some(work) = dispatch_rx.recv(), if !admission_tasks.is_preparing() => {
-                admission_tasks.submit_supplied(work, &runner.profiles, &factories);
+            Some(work) = dispatch_rx.recv(), if !acceptance_tasks.is_preparing() => {
+                acceptance_tasks.submit_supplied(work, &runner.profiles, &factories);
             }
             result = soft_drain.join(), if soft_drain.is_in_flight() => {
                 if let Err(error) = soft_drain.complete(result, &lifecycle) {
@@ -1315,17 +1315,17 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 if let Some(source) = local_source.as_ref() {
                     let Some(candidate) = discovered else { break };
                     discover_fut = Some(source.discover());
-                    admission_tasks.submit(
+                    acceptance_tasks.submit(
                         LocalJob { candidate }, &runner.profiles, &factories,
                         source.clone(),
                     );
                 }
             }
-            result = admission_tasks.progress(),
-                if !admission_tasks.is_empty() || admission_tasks.is_preparing() =>
+            result = acceptance_tasks.progress(),
+                if !acceptance_tasks.is_empty() || acceptance_tasks.is_preparing() =>
             {
                 let Some(result) = result else { continue };
-                let result = match admission_tasks.consume(result, &mut jobs) {
+                let result = match acceptance_tasks.consume(result, &mut jobs) {
                     Ok(result) => result,
                     Err(failure) => {
                         let (reason, error) = failure.into_stopping_failure();
@@ -1606,7 +1606,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     }
     teardown.phase_complete("status_stopping", phase);
 
-    // Release retained discovery before settling claims. Admission/activation tasks run
+    // Release retained discovery before settling claims. Acceptance/activation tasks run
     // independently and must finish before idle or provider teardown; successful
     // outcomes still enter the existing activation/executor ownership path.
     drop(discover_fut);
@@ -1621,8 +1621,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     test_hooks
         .test_observer
         .record(StartLoopEvent::ClaimsDrainEntered);
-    while let Some(result) = admission_tasks.next().await {
-        if let Err(failure) = admission_tasks.consume(result, &mut jobs) {
+    while let Some(result) = acceptance_tasks.next().await {
+        if let Err(failure) = acceptance_tasks.consume(result, &mut jobs) {
             let (reason, error) = failure.into_stopping_failure();
             handle_stopping_signal(
                 reason,
@@ -1634,7 +1634,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             terminal_error.get_or_insert(error);
         }
     }
-    drop(admission_tasks);
+    drop(acceptance_tasks);
     teardown.phase_complete("claims_drain", phase);
 
     let phase = teardown.phase_start("blank_pool_shutdown");

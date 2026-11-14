@@ -32,7 +32,7 @@ async fn fresh_claim_does_not_wait_for_a_second_pool_lock_after_reservation() {
         BlankPoolReplenisher::new(&BTreeMap::new(), &BTreeMap::new(), &budget, 0, None)
             .diagnostics();
     let active_runs = runner_lifecycle::active_runs::ActiveRuns::new(Arc::clone(&notify));
-    let ctx = AdmissionResources {
+    let ctx = AcceptanceResources {
         active_runs: &active_runs,
         idle_pool: &pool,
         status: &status,
@@ -45,11 +45,11 @@ async fn fresh_claim_does_not_wait_for_a_second_pool_lock_after_reservation() {
         blank_pool_diagnostics: &diagnostics,
     };
     let first_holder = pool.lock().await;
-    let (ready, mut admission_ready) = oneshot::channel();
-    let admission = admit_and_claim(
+    let (ready, mut acceptance_ready) = oneshot::channel();
+    let acceptance = accept_and_claim(
         JobCandidate::new(run_id, "vm0/default".into())
             .with_reuse_key(Some("thread:fresh-claim".into())),
-        AdmissionRequest {
+        AcceptanceRequest {
             profile_name: "vm0/default",
             job_vcpu: 2,
             job_memory: 4096,
@@ -59,8 +59,8 @@ async fn fresh_claim_does_not_wait_for_a_second_pool_lock_after_reservation() {
         &ctx,
         ready,
     );
-    tokio::pin!(admission);
-    assert!(futures_util::poll!(admission.as_mut()).is_pending());
+    tokio::pin!(acceptance);
+    assert!(futures_util::poll!(acceptance.as_mut()).is_pending());
     assert_eq!(budget.allocated(), (0, 0, 0));
     assert!(handle.claim_candidates().is_empty());
     assert!(cancel_tokens.handle(run_id).await.is_none());
@@ -70,7 +70,7 @@ async fn fresh_claim_does_not_wait_for_a_second_pool_lock_after_reservation() {
     tokio::pin!(next_holder);
     assert!(futures_util::poll!(next_holder.as_mut()).is_pending());
     drop(first_holder);
-    assert!(futures_util::poll!(admission.as_mut()).is_pending());
+    assert!(futures_util::poll!(acceptance.as_mut()).is_pending());
     let next_holder = tokio::time::timeout(Duration::from_secs(2), next_holder)
         .await
         .expect("queued pool holder should follow initial reservation");
@@ -82,14 +82,14 @@ async fn fresh_claim_does_not_wait_for_a_second_pool_lock_after_reservation() {
         1,
         "owned fresh capacity must reach claim without another pool acquisition"
     );
-    admission_ready.try_recv().unwrap();
+    acceptance_ready.try_recv().unwrap();
     assert!(cancel_tokens.handle(run_id).await.is_some());
 
     handle.unblock_claim(run_id);
-    let outcome = tokio::time::timeout(Duration::from_secs(2), admission)
+    let outcome = tokio::time::timeout(Duration::from_secs(2), acceptance)
         .await
         .expect("fresh rejection must release its lease while the pool remains locked");
-    assert!(matches!(outcome, LocalAdmissionOutcome::Deferred));
+    assert!(matches!(outcome, LocalAcceptanceOutcome::Deferred));
     assert_eq!(budget.allocated(), (0, 0, 0));
     assert!(cancel_tokens.handle(run_id).await.is_none());
     assert!(handle.completions.lock().unwrap().is_empty());

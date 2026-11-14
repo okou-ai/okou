@@ -1,4 +1,4 @@
-//! Shared ordinary admission activation and guarded executor dispatch.
+//! Shared activation of accepted jobs and guarded executor dispatch.
 
 use std::collections::BTreeMap;
 use std::panic::AssertUnwindSafe;
@@ -24,13 +24,13 @@ use crate::executor::{
     BlankPoolSelection, RunnerPreSpawnPhase, RunnerPreSpawnTiming, validate_resume_session_id,
 };
 use crate::idle_lifecycle::SharedIdlePool;
+use crate::job_acceptance::{
+    AcceptanceResources, SandboxAcceptedResource, rollback_sandbox_accepted_resource,
+};
 use crate::lifecycle::RunnerMode;
 use crate::resource_activation::{
-    ActivationResources, ReservedActivation, ReservedActivationRequest, ReuseAdmissionRequest,
+    ActivationResources, ReservedActivation, ReservedActivationRequest, ReuseActivationRequest,
     ReuseFromPoolReady, activate_reserved_idle, try_reuse_from_pool,
-};
-use crate::resource_admission::{
-    AdmissionResources, SandboxAdmittedResource, rollback_sandbox_admitted_resource,
 };
 use crate::resource_budget::ResourceBudget;
 use crate::status::StatusTracker;
@@ -61,23 +61,23 @@ pub(super) struct PreparedLocalJob {
 }
 
 /// Ordinary job custody, excluding the specialized finalizing successor.
-pub(super) struct SandboxAdmittedJob {
+pub(super) struct SandboxAcceptedJob {
     pub(super) job: ExecutionJob,
-    pub(super) resource: SandboxAdmittedResource,
+    pub(super) resource: SandboxAcceptedResource,
     pub(super) cancellation: RunCancellationRegistration,
-    pub(super) admitted_at: Instant,
+    pub(super) accepted_at: Instant,
     pub(super) blank_pool_selection: Option<BlankPoolSelection>,
 }
 
-pub(super) struct AdmissionContext {
+pub(super) struct AcceptanceContext {
     pub(super) mode_rx: tokio::sync::watch::Receiver<RunnerMode>,
     pub(super) cancel_tokens: RunCancellationRegistry,
     pub(super) spawn_ctx: SpawnContext,
 }
 
-impl AdmissionContext {
-    pub(super) fn resources(&self) -> AdmissionResources<'_> {
-        AdmissionResources {
+impl AcceptanceContext {
+    pub(super) fn resources(&self) -> AcceptanceResources<'_> {
+        AcceptanceResources {
             active_runs: &self.spawn_ctx.active_runs,
             idle_pool: &self.spawn_ctx.idle_pool,
             status: &self.spawn_ctx.status,
@@ -156,8 +156,8 @@ pub(super) fn activation_resources(ctx: &SpawnContext) -> ActivationResources<'_
     }
 }
 
-fn admission_resources<'a>(ctx: &'a JobActivationContext<'_>) -> AdmissionResources<'a> {
-    AdmissionResources {
+fn acceptance_resources<'a>(ctx: &'a JobActivationContext<'_>) -> AcceptanceResources<'a> {
+    AcceptanceResources {
         active_runs: &ctx.spawn_ctx.active_runs,
         idle_pool: ctx.idle_pool,
         status: ctx.status,
@@ -206,12 +206,12 @@ pub(super) fn prepare_job_profile(
     })
 }
 
-pub(super) async fn prepare_admitted_job(
-    admission: SandboxAdmittedJob,
+pub(super) async fn prepare_accepted_job(
+    acceptance: SandboxAcceptedJob,
     profile: ExecutionProfile,
     mut ctx: JobActivationContext<'_>,
 ) -> ReactorResult<JobActivationResult> {
-    let run_id = admission.job.context().run_id;
+    let run_id = acceptance.job.context().run_id;
     let ExecutionProfile {
         profile_name,
         rootfs_hash: job_rootfs_hash,
@@ -224,15 +224,15 @@ pub(super) async fn prepare_admitted_job(
     let restore_guest_state = &restore_guest_state;
     let factory = &factory;
     let device_rate_limits = ctx.spawn_ctx.device_rate_limits.clone();
-    let SandboxAdmittedJob {
+    let SandboxAcceptedJob {
         job,
         resource,
         cancellation,
-        admitted_at,
+        accepted_at,
         blank_pool_selection,
-    } = admission;
+    } = acceptance;
     let mut pre_spawn_timing =
-        RunnerPreSpawnTiming::start_at(admitted_at, &ctx.spawn_ctx.pre_spawn_concurrency);
+        RunnerPreSpawnTiming::start_at(accepted_at, &ctx.spawn_ctx.pre_spawn_concurrency);
     if let Some(selection) = blank_pool_selection {
         pre_spawn_timing.record_blank_pool_selection(selection);
     }
@@ -240,7 +240,7 @@ pub(super) async fn prepare_admitted_job(
     let resume_session_error = validate_resume_session_id(job.context()).err();
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::ResumeSessionValidation, started_at);
     if let Some(error) = resume_session_error {
-        let needs_reuse_state_refresh = matches!(&resource, SandboxAdmittedResource::Reusable(_));
+        let needs_reuse_state_refresh = matches!(&resource, SandboxAcceptedResource::Reusable(_));
         complete_without_sandbox(
             job,
             cancellation,
@@ -252,7 +252,7 @@ pub(super) async fn prepare_admitted_job(
         .await;
         return Ok(JobActivationResult::completed(needs_reuse_state_refresh));
     }
-    info!(run_id = %run_id, profile = %profile_name, "admitted job, spawning executor");
+    info!(run_id = %run_id, profile = %profile_name, "accepted job, spawning executor");
     let started_at = Instant::now();
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::DeviceRateLimits, started_at);
 
@@ -274,7 +274,7 @@ pub(super) async fn prepare_admitted_job(
         needs_reuse_state_refresh,
         activation_transfer_guard,
     ) = match resource {
-        SandboxAdmittedResource::Fresh(job_lease) => {
+        SandboxAcceptedResource::Fresh(job_lease) => {
             let ReuseFromPoolReady {
                 reuse_entry,
                 active_lease,
@@ -284,7 +284,7 @@ pub(super) async fn prepare_admitted_job(
                 transfer_guard,
             } = match try_reuse_from_pool(
                 run_id,
-                ReuseAdmissionRequest {
+                ReuseActivationRequest {
                     profile_name: &profile_name,
                     device_rate_limits: &device_rate_limits,
                     home_disk_mb: job_home_disk_mb,
@@ -322,7 +322,7 @@ pub(super) async fn prepare_admitted_job(
                 transfer_guard,
             )
         }
-        SandboxAdmittedResource::Reusable(reservation) => {
+        SandboxAcceptedResource::Reusable(reservation) => {
             let transfer_guard = cancellation_handle.transfer_guard().await;
             if cancellation_handle.is_cancelled() {
                 drop(transfer_guard);
@@ -330,7 +330,7 @@ pub(super) async fn prepare_admitted_job(
                 complete_without_sandbox(
                     job,
                     cancellation,
-                    SandboxAdmittedResource::Reusable(reservation),
+                    SandboxAcceptedResource::Reusable(reservation),
                     ActivationFailureDiagnostics::from_timing(&pre_spawn_timing),
                     crate::executor::ExecutionFailure::cancelled(),
                     &mut ctx,
@@ -378,7 +378,7 @@ pub(super) async fn prepare_admitted_job(
                         complete_without_sandbox(
                             job,
                             cancellation,
-                            SandboxAdmittedResource::Fresh(budget_lease),
+                            SandboxAcceptedResource::Fresh(budget_lease),
                             ActivationFailureDiagnostics::from_timing(&pre_spawn_timing),
                             failure,
                             &mut ctx,
@@ -558,14 +558,14 @@ fn finish_spawn_job_request(
 async fn complete_without_sandbox(
     job: ExecutionJob,
     cancellation: RunCancellationRegistration,
-    resource: SandboxAdmittedResource,
+    resource: SandboxAcceptedResource,
     diagnostics: ActivationFailureDiagnostics,
     failure: crate::executor::ExecutionFailure,
     ctx: &mut JobActivationContext<'_>,
 ) {
     let completion =
         complete_execution_failure(job, cancellation, diagnostics, failure, ctx.spawn_ctx).await;
-    rollback_sandbox_admitted_resource(resource, &admission_resources(ctx)).await;
+    rollback_sandbox_accepted_resource(resource, &acceptance_resources(ctx)).await;
     completion.flush_telemetry().await;
 }
 
@@ -636,15 +636,15 @@ pub(super) async fn build_spawn_job_request(
 pub(super) async fn recover_unconsumed_finalizing_activation(
     request: FinalizingActivationRequest,
     blank_pool_selection: Option<BlankPoolSelection>,
-    ctx: &AdmissionContext,
+    ctx: &AcceptanceContext,
 ) {
     let FinalizingActivationRequest {
         job,
         cancellation,
-        admission,
+        handoff_context,
         ..
     } = request;
-    warn!(run_id = %job.context().run_id, "admitted job lost its reactor owner; completing without sandbox");
+    warn!(run_id = %job.context().run_id, "accepted job lost its reactor owner; completing without sandbox");
     let completion = complete_execution_failure(
         job,
         cancellation,
@@ -656,6 +656,6 @@ pub(super) async fn recover_unconsumed_finalizing_activation(
     )
     .await;
     // Keep the finalizing predecessor proof owned through provider completion.
-    drop(admission);
+    drop(handoff_context);
     completion.flush_telemetry().await;
 }

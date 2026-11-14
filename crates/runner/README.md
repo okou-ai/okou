@@ -15,7 +15,7 @@ HTTP dispatch. Ably carries cancellation, active input, connector sync and
 SSH/VNC control messages.
 
 Remote execution requires an official Runner configuration. Independent
-`runner start --local` submissions use the local filesystem queue, admission
+`runner start --local` submissions use the local filesystem queue, acceptance
 and executor.
 
 ## Direct Run Intake
@@ -35,7 +35,7 @@ Initial receipt must be before `notAfter` and at most 60 seconds ahead of the
 receiver's clock. The body limit is 4 MiB, with five seconds to read it.
 This is an explicit intake limit, not a bound inferred from the existing
 publication schema. The sender must check the final encoded size and fail an
-oversized admitted Run through its ordinary terminal lifecycle.
+oversized API-admitted Run through its ordinary terminal lifecycle.
 
 Responses contain the exact `runnerId`, `heartbeatGeneration`, `runId`, and
 `disposition`. HTTP 200 carries `accepted`, `rejected`, `pending`, `unknown`, or

@@ -351,15 +351,15 @@ impl super::LocalJobSource for LocalProvider {
             Ok(job) => {
                 self.cancel_scanner.mark_owned_claim(run_id).await;
                 self.cancel_scanner.scan_cancel_files().await;
-                info!(run_id = %run_id, "local: admitted job");
+                info!(run_id = %run_id, "local: accepted job");
                 Some(job)
             }
             Err(err) => {
                 let error = format!(
-                    "admitted job run_id mismatch: expected={}, context={}",
+                    "accepted job run_id mismatch: expected={}, context={}",
                     err.expected_run_id, err.context_run_id
                 );
-                warn!(run_id = %run_id, error = %error, "local: admitted job invariant violation");
+                warn!(run_id = %run_id, error = %error, "local: accepted job invariant violation");
                 let queue = self.queue.clone();
                 if let Err(e) = tokio::task::spawn_blocking(move || {
                     queue.fail_claimed_job_sync(run_id, error);

@@ -32,7 +32,7 @@ async fn first_run_without_a_home_hint_creates_a_fresh_home_without_a_seed() {
 }
 
 #[tokio::test]
-async fn ordinary_admission_reuses_a_positively_known_local_home() {
+async fn ordinary_acceptance_reuses_a_positively_known_local_home() {
     assert_home_selection(false, HomeCandidate::KnownLocal, true).await;
 }
 
@@ -193,7 +193,7 @@ async fn assert_home_selection(
     } else if blank_available {
         assert!(
             created.is_empty(),
-            "no-hint admission must retain the parked blank"
+            "no-hint acceptance must retain the parked blank"
         );
     } else {
         assert_eq!(created.len(), 1);

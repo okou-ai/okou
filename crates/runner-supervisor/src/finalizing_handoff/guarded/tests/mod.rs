@@ -77,7 +77,7 @@ impl Provider {
     async fn bind_execution(&self, run: RunId, key: Option<&str>) -> ExecutionJob {
         let mut context = execution_context_for_test(run);
         context.reuse_key = key.map(str::to_owned);
-        context.sandbox_token = format!("original-claim-{run}");
+        context.sandbox_token = format!("original-execution-{run}");
         self.bind_supplied(context).await.unwrap()
     }
 }
@@ -91,7 +91,7 @@ impl JobProvider for Provider {
     }
     async fn complete(&self, request: CompleteRequest, auth: CompletionAuth) {
         let token = auth.into_sandbox_token(request.run_id).unwrap();
-        assert_eq!(token, format!("original-claim-{}", request.run_id));
+        assert_eq!(token, format!("original-execution-{}", request.run_id));
         self.completed.lock().unwrap().push((request.run_id, token));
     }
     async fn heartbeat(&self, _: &HeartbeatState) -> runner_provider::ProviderResult<()> {
@@ -113,7 +113,7 @@ struct Fixture {
     predecessor: RunId,
     run: RunId,
     offer: Option<GuardedFinalizingOffer>,
-    admission: Option<GuardedFinalizingAdmission>,
+    guarded_handoff: Option<GuardedFinalizingHandoff>,
     provider: Provider,
 }
 
@@ -242,7 +242,7 @@ impl Fixture {
                 predecessor,
                 tracker.clone(),
             )),
-            admission: Some(GuardedFinalizingAdmission::new(
+            guarded_handoff: Some(GuardedFinalizingHandoff::new(
                 job,
                 request,
                 predecessor,
@@ -308,14 +308,14 @@ async fn finalizing_real_parked_and_running_delivery_transfers_actual_claim_and_
         let mut f = Fixture::new(running, Some(backing), 64).await;
         let expected_id = f.offer.as_ref().unwrap().owner().unwrap().sandbox_id();
         f.deliver();
-        let mut admission = f.admission.take().unwrap();
-        assert_eq!(admission.predecessor, f.predecessor);
-        admission.receive().await.unwrap();
+        let mut guarded_handoff = f.guarded_handoff.take().unwrap();
+        assert_eq!(guarded_handoff.predecessor, f.predecessor);
+        guarded_handoff.receive().await.unwrap();
         assert!(matches!(
-            admission.owner().unwrap().state(),
+            guarded_handoff.owner().unwrap().state(),
             FinalizingHandoffState::Parked | FinalizingHandoffState::Running(_)
         ));
-        let activated = admission.activate().await.unwrap();
+        let activated = guarded_handoff.activate().await.unwrap();
         assert_eq!(Some(activated.resource.sandbox.sandbox_id()), expected_id);
         assert_eq!(
             (
@@ -336,12 +336,12 @@ async fn finalizing_actual_claim_reuse_key_mismatch_never_unparks_original_resou
         let (_, backing) = MockBackingProcess::channel();
         let mut f = Fixture::with_claim_key(true, Some(backing), 64, key).await;
         f.deliver();
-        let mut admission = f.admission.take().unwrap();
-        admission.receive().await.unwrap();
-        assert!(admission.activate().await.is_err());
+        let mut guarded_handoff = f.guarded_handoff.take().unwrap();
+        guarded_handoff.receive().await.unwrap();
+        assert!(guarded_handoff.activate().await.is_err());
         assert_eq!(f.overrides.unpark_call_count(), 0);
         f.retained().await;
-        f.complete(admission.take_claim_for_completion().unwrap())
+        f.complete(guarded_handoff.take_job_for_completion().unwrap())
             .await;
     }
 }
@@ -366,7 +366,7 @@ async fn finalizing_wrong_producer_broker_retains_the_actual_original_candidate(
     );
     f.retained().await;
     f.deliver();
-    f.admission.as_mut().unwrap().receive().await.unwrap();
+    f.guarded_handoff.as_mut().unwrap().receive().await.unwrap();
 }
 
 #[tokio::test]
@@ -378,12 +378,12 @@ async fn finalizing_original_generation_survives_broker_and_unpark_waits() {
             )));
             let mut f = Fixture::new(running, Some(backing.clone()), 64).await;
             f.deliver();
-            let mut admission = f.admission.take().unwrap();
+            let mut guarded_handoff = f.guarded_handoff.take().unwrap();
             if activation_wait {
-                admission.receive().await.unwrap();
+                guarded_handoff.receive().await.unwrap();
                 let gate = MockLifecycleGate::new();
                 f.overrides.set_unpark_lifecycle_gate(gate.clone());
-                let mut pending = Box::pin(admission.activate());
+                let mut pending = Box::pin(guarded_handoff.activate());
                 assert!(futures_util::poll!(pending.as_mut()).is_pending());
                 gate.wait_entered(1, WAIT).await.unwrap();
                 *backing.0.lock().unwrap() = sandbox::BackingProcessIdentity::new_generation();
@@ -392,19 +392,19 @@ async fn finalizing_original_generation_survives_broker_and_unpark_waits() {
             } else {
                 *backing.0.lock().unwrap() = sandbox::BackingProcessIdentity::new_generation();
                 assert_eq!(
-                    admission.receive().await,
+                    guarded_handoff.receive().await,
                     Err(MemoryOperationError::OwnershipInvariant)
                 );
             }
             assert!(
-                admission
+                guarded_handoff
                     .cleanup(&f.operations, Fixture::envelope())
                     .await
                     .is_err()
             );
             assert_eq!(f.operations.snapshot().unwrap().started, 0);
             f.retained().await;
-            f.complete(admission.take_claim_for_completion().unwrap())
+            f.complete(guarded_handoff.take_job_for_completion().unwrap())
                 .await;
         }
     }
@@ -443,16 +443,16 @@ async fn finalizing_failed_initial_backing_capture_cannot_retry_with_a_replaceme
 }
 
 #[tokio::test]
-async fn finalizing_cancelled_receive_and_dropped_admission_recover_queued_real_delivery() {
+async fn finalizing_cancelled_receive_and_dropped_handoff_recover_queued_real_delivery() {
     for running in [false, true] {
         let (_, backing) = MockBackingProcess::channel();
         let mut f = Fixture::new(running, Some(backing), 64).await;
-        let mut admission = f.admission.take().unwrap();
-        let mut wait = Box::pin(admission.receive());
+        let mut guarded_handoff = f.guarded_handoff.take().unwrap();
+        let mut wait = Box::pin(guarded_handoff.receive());
         assert!(futures_util::poll!(wait.as_mut()).is_pending());
         drop(wait);
         f.deliver();
-        drop(admission);
+        drop(guarded_handoff);
         assert!(f.tracker.take_retained_finalizing_owners().is_err());
         f.tracker.close_and_wait().await;
         let mut owners = f.tracker.take_retained_finalizing_owners().unwrap();
@@ -473,19 +473,19 @@ async fn finalizing_mismatched_claim_and_predecessor_retain_resource_and_origina
         let (_, backing) = MockBackingProcess::channel();
         let mut f = Fixture::new(true, Some(backing), 64).await;
         f.deliver();
-        let mut admission = f.admission.take().unwrap();
-        admission.receive().await.unwrap();
+        let mut guarded_handoff = f.guarded_handoff.take().unwrap();
+        guarded_handoff.receive().await.unwrap();
         let original = if prior {
-            admission.predecessor = RunId::new_v4();
+            guarded_handoff.predecessor = RunId::new_v4();
             None
         } else {
             let other = f.provider.bind_execution(RunId::new_v4(), None).await;
-            admission.job.replace(other)
+            guarded_handoff.job.replace(other)
         };
-        assert!(admission.activate().await.is_err());
-        assert!(admission.owner().is_some());
+        assert!(guarded_handoff.activate().await.is_err());
+        assert!(guarded_handoff.owner().is_some());
         f.retained().await;
-        f.complete(admission.take_claim_for_completion().unwrap())
+        f.complete(guarded_handoff.take_job_for_completion().unwrap())
             .await;
         if let Some(original) = original {
             f.complete(original).await;
@@ -509,23 +509,23 @@ async fn finalizing_unpark_cancellation_failure_and_panic_preserve_claim() {
             _ => f.overrides.push_unpark_panic(fault),
         }
         f.deliver();
-        let mut admission = f.admission.take().unwrap();
-        admission.receive().await.unwrap();
+        let mut guarded_handoff = f.guarded_handoff.take().unwrap();
+        guarded_handoff.receive().await.unwrap();
         if fault == "cancel" {
-            let mut pending = Box::pin(admission.activate());
+            let mut pending = Box::pin(guarded_handoff.activate());
             assert!(futures_util::poll!(pending.as_mut()).is_pending());
             gate.wait_entered(1, WAIT).await.unwrap();
             drop(pending);
         } else {
-            assert!(admission.activate().await.is_err());
+            assert!(guarded_handoff.activate().await.is_err());
         }
         assert_eq!(
-            admission.owner().unwrap().state(),
+            guarded_handoff.owner().unwrap().state(),
             FinalizingHandoffState::Uncertain
         );
-        assert_eq!(admission.job().unwrap().context().run_id, f.run);
+        assert_eq!(guarded_handoff.job().unwrap().context().run_id, f.run);
         f.retained().await;
-        f.complete(admission.take_claim_for_completion().unwrap())
+        f.complete(guarded_handoff.take_job_for_completion().unwrap())
             .await;
     }
 }
@@ -535,8 +535,8 @@ async fn finalizing_receiver_loss_retains_producer_and_failed_grants_do_no_clean
     for running in [false, true] {
         let (_, backing) = MockBackingProcess::channel();
         let mut f = Fixture::new(running, Some(backing), 0).await;
-        let mut admission = f.admission.take().unwrap();
-        admission.cancel_delivery();
+        let mut guarded_handoff = f.guarded_handoff.take().unwrap();
+        guarded_handoff.cancel_delivery();
         let mut offer = f.offer.take().unwrap();
         assert_eq!(
             offer.offer(&f.guard.reuse_publisher()).unwrap(),
@@ -559,7 +559,7 @@ async fn finalizing_receiver_loss_retains_producer_and_failed_grants_do_no_clean
             owners[0].resource,
             Some(RetainedFinalizingResource::RequiredCleanup(_))
         ));
-        f.complete(admission.take_claim_for_completion().unwrap())
+        f.complete(guarded_handoff.take_job_for_completion().unwrap())
             .await;
     }
 }
@@ -569,18 +569,18 @@ async fn finalizing_lost_producer_is_sticky_uncertainty_and_missing_backing_is_r
     let (_, backing) = MockBackingProcess::channel();
     let mut f = Fixture::new(false, Some(backing), 64).await;
     assert!(f.guard.reuse_publisher().publish_no_exact_sandbox());
-    let mut admission = f.admission.take().unwrap();
+    let mut guarded_handoff = f.guarded_handoff.take().unwrap();
     for _ in 0..2 {
         assert_eq!(
-            admission.receive().await,
+            guarded_handoff.receive().await,
             Err(MemoryOperationError::ProducerLost)
         );
     }
-    assert_eq!(admission.job().unwrap().context().run_id, f.run);
+    assert_eq!(guarded_handoff.job().unwrap().context().run_id, f.run);
     f.retained().await;
-    f.complete(admission.take_claim_for_completion().unwrap())
+    f.complete(guarded_handoff.take_job_for_completion().unwrap())
         .await;
-    drop(admission);
+    drop(guarded_handoff);
     // Producer-loss uncertainty survives the observation owner, even when its
     // claim has already moved to the explicit completion owner.
     f.tracker.close_and_wait().await;
@@ -607,26 +607,28 @@ async fn finalizing_cancelled_admission_and_unknown_observation_retain_cleanup_a
         let (_, backing) = MockBackingProcess::channel();
         let mut f = Fixture::new(true, Some(backing), 64).await;
         f.deliver();
-        let mut admission = f.admission.take().unwrap();
-        admission.cancel_delivery();
+        let mut guarded_handoff = f.guarded_handoff.take().unwrap();
+        guarded_handoff.cancel_delivery();
         if unknown {
             tokio::fs::write(&f.source.path, "MemAvailable: broken kB\n")
                 .await
                 .unwrap();
             assert!(matches!(
-                admission.cleanup(&f.operations, Fixture::envelope()).await,
+                guarded_handoff
+                    .cleanup(&f.operations, Fixture::envelope())
+                    .await,
                 Err(MemoryOperationError::UnknownObservation(_))
             ));
         } else {
             let (observed, release) = f.source.gate_next_read();
-            let mut pending = Box::pin(admission.cleanup(&f.operations, Fixture::envelope()));
+            let mut pending = Box::pin(guarded_handoff.cleanup(&f.operations, Fixture::envelope()));
             tokio::select! { result = &mut pending => { assert!(result.is_err(), "unexpected acceptance"); panic!("coverage ended before gate"); }, result = observed => result.unwrap() }
             drop(pending);
             drop(release);
         }
         f.retained().await;
-        assert_eq!(admission.job().unwrap().context().run_id, f.run);
-        drop(admission);
+        assert_eq!(guarded_handoff.job().unwrap().context().run_id, f.run);
+        drop(guarded_handoff);
         f.tracker.close_and_wait().await;
         let mut owners = f.tracker.take_retained_finalizing_owners().unwrap();
         assert_eq!(owners.len(), 1);
@@ -640,11 +642,11 @@ async fn finalizing_dropped_cleanup_observer_shutdown_waits_for_required_tail_an
         let (exit, backing) = MockBackingProcess::channel();
         let mut f = Fixture::new(running, Some(backing), 64).await;
         f.deliver();
-        let mut admission = f.admission.take().unwrap();
-        admission.cancel_delivery();
+        let mut guarded_handoff = f.guarded_handoff.take().unwrap();
+        guarded_handoff.cancel_delivery();
         let gate = MockLifecycleGate::new();
         f.overrides.set_destroy_lifecycle_gate(gate.clone());
-        let task = admission
+        let task = guarded_handoff
             .cleanup(&f.operations, Fixture::envelope())
             .await
             .unwrap();
@@ -674,7 +676,7 @@ async fn finalizing_dropped_cleanup_observer_shutdown_waits_for_required_tail_an
             HomePromotionFixture::checkout_result(&f.cache, KEY).await,
             HomeCacheCheckoutResult::LockBusy
         );
-        f.complete(admission.take_claim_for_completion().unwrap())
+        f.complete(guarded_handoff.take_job_for_completion().unwrap())
             .await;
     }
 }
@@ -697,9 +699,9 @@ async fn finalizing_required_freeze_failures_and_lost_exit_retain_original_home_
             _ => {}
         }
         f.deliver();
-        let mut admission = f.admission.take().unwrap();
-        admission.cancel_delivery();
-        let mut task = admission
+        let mut guarded_handoff = f.guarded_handoff.take().unwrap();
+        guarded_handoff.cancel_delivery();
+        let mut task = guarded_handoff
             .cleanup(&f.operations, Fixture::envelope())
             .await
             .unwrap();
@@ -729,7 +731,7 @@ async fn finalizing_required_freeze_failures_and_lost_exit_retain_original_home_
             HomeCacheCheckoutResult::LockBusy
         );
         assert_eq!(f.operations.close_and_wait().await.unwrap().uncertain, 2);
-        f.complete(admission.take_claim_for_completion().unwrap())
+        f.complete(guarded_handoff.take_job_for_completion().unwrap())
             .await;
     }
 }

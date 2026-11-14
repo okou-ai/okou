@@ -1,4 +1,4 @@
-//! Admitted-resource ownership from active-status publication through executor handoff.
+//! Accepted-resource ownership from active-status publication through executor handoff.
 //!
 //! The Runner composition root builds the executor request. Until that request is ready, this
 //! guard owns the job, cancellation registration, sandbox lease and active-run registration.
@@ -30,7 +30,7 @@ use crate::idle_lifecycle::{
 use crate::orphan_reap::OrphanedActiveRuns;
 use crate::ownership::{OwnershipTransitions, RunSandbox};
 
-/// Resource selected for an admitted job, not yet transferred to its executor.
+/// Resource selected for an accepted job, not yet transferred to its executor.
 pub struct ReadyExecutionResource {
     pub reuse_entry: Option<ReusableIdleSandbox>,
     pub active_lease: BudgetLease,
@@ -91,7 +91,7 @@ impl JobActivationError {
     }
 }
 
-/// Owns an admitted job and sandbox through active-status publication and executor handoff.
+/// Owns an accepted job and sandbox through active-status publication and executor handoff.
 pub struct JobActivationGuard {
     setup: Option<JobActivationSetup>,
     status_published: bool,

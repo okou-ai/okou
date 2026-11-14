@@ -131,7 +131,7 @@ async fn supplied_http_activation_panic_uses_existing_terminal_recovery() {
 
 #[tokio::test]
 async fn supplied_http_finalizing_preparation_panic_completes_once_without_a_sandbox() {
-    assert_supplied_panic(OuterJobPanicPoint::AdmittedWithoutSandbox).await;
+    assert_supplied_panic(OuterJobPanicPoint::AcceptedWithoutSandbox).await;
 }
 
 async fn assert_supplied_panic(point: OuterJobPanicPoint) {
@@ -139,7 +139,7 @@ async fn assert_supplied_panic(point: OuterJobPanicPoint) {
     config.test_hooks.outer_job_panic = Some(point);
     config.provider.provider = Arc::new(SuppliedProvider(config.provider.provider.clone(), None));
     let source = RunId::new_v4();
-    let producer = (point == OuterJobPanicPoint::AdmittedWithoutSandbox).then(|| {
+    let producer = (point == OuterJobPanicPoint::AcceptedWithoutSandbox).then(|| {
         env.active_runs.register(
             source,
             Some("thread:finalizing-panic".into()),

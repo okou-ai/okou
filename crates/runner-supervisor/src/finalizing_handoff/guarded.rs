@@ -179,9 +179,9 @@ pub struct ActivatedGuardedFinalizing {
     pub resource: ActivatedFinalizingHandoff,
 }
 
-/// Actual claim/auth and receiver remain owned if any borrowed wait is cancelled.
+/// Execution input, reporting authority and receiver stay owned when a borrowed wait is cancelled.
 #[must_use]
-pub struct GuardedFinalizingAdmission {
+pub struct GuardedFinalizingHandoff {
     job: Option<ExecutionJob>,
     request: Option<ActiveRunHandoffRequest>,
     predecessor: RunId,
@@ -190,7 +190,7 @@ pub struct GuardedFinalizingAdmission {
     tracker: IdleDestroyTracker,
 }
 
-impl GuardedFinalizingAdmission {
+impl GuardedFinalizingHandoff {
     pub fn new(
         job: ExecutionJob,
         request: ActiveRunHandoffRequest,
@@ -279,7 +279,7 @@ impl GuardedFinalizingAdmission {
             .and_then(|job| job.context().reuse_key.as_deref())
             != owner.reuse_key()
         {
-            return Err("finalizing handoff reuse key does not match the actual claim".into());
+            return Err("finalizing handoff reuse key does not match the execution input".into());
         }
         owner
             .prepare_activation(successor, self.predecessor)
@@ -310,7 +310,7 @@ impl GuardedFinalizingAdmission {
     }
 
     /// Explicit fallback/terminal owner takes the original provider authorization.
-    pub fn take_claim_for_completion(&mut self) -> Option<ExecutionJob> {
+    pub fn take_job_for_completion(&mut self) -> Option<ExecutionJob> {
         self.job.take()
     }
 
@@ -331,7 +331,7 @@ impl GuardedFinalizingAdmission {
     }
 }
 
-impl Drop for GuardedFinalizingAdmission {
+impl Drop for GuardedFinalizingHandoff {
     fn drop(&mut self) {
         self.cancel_delivery();
         self.tracker

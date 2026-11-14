@@ -12,7 +12,7 @@
 
 mod guarded;
 pub use guarded::{
-    ActivatedGuardedFinalizing, GuardedFinalizingAdmission, GuardedFinalizingOffer,
+    ActivatedGuardedFinalizing, GuardedFinalizingHandoff, GuardedFinalizingOffer,
     GuardedFinalizingOfferOutcome, GuardedFinalizingRecovery, RetainedFinalizingResource,
 };
 
@@ -51,7 +51,7 @@ pub const FINALIZING_HANDOFF_ACCEPTANCE_GRACE: Duration = Duration::from_millis(
 );
 
 /// Local producer proof retained after complete-input acceptance.
-pub struct FinalizingAdmission {
+pub struct FinalizingHandoffContext {
     pub predecessor: ActiveRunReuseProof,
     pub deadline: Instant,
     pub reuse_key: String,
@@ -60,7 +60,7 @@ pub struct FinalizingAdmission {
     pub native_generation_run_id: Option<RunId>,
 }
 
-impl FinalizingAdmission {
+impl FinalizingHandoffContext {
     /// Read the live predecessor state when a blank or fresh fallback is ready to start,
     /// not when its resource was first selected. Return the same snapshot for logging.
     pub fn fallback_home_prepare_policy(&self) -> (ActiveRunReuseState, HomeImagePreparePolicy) {
@@ -95,7 +95,7 @@ pub struct FinalizingSelectionResources<'a> {
 pub struct FinalizingSelectionRequest<'a> {
     pub run_id: RunId,
     pub cancellation: &'a RunCancellationRegistration,
-    pub admission: &'a mut FinalizingAdmission,
+    pub handoff_context: &'a mut FinalizingHandoffContext,
     pub profile_name: &'a str,
     pub vcpu: u32,
     pub memory_mb: u32,
@@ -144,7 +144,7 @@ enum FallbackIdleLookup {
 struct FinalizingWait<'a> {
     run_id: RunId,
     cancellation: &'a RunCancellationRegistration,
-    admission: &'a mut FinalizingAdmission,
+    handoff_context: &'a mut FinalizingHandoffContext,
     profile_name: &'a str,
     device_rate_limits: &'a Option<DeviceRateLimits>,
     ctx: FinalizingSelectionResources<'a>,
@@ -225,7 +225,7 @@ async fn select_finalizing_resource_inner(
     let FinalizingSelectionRequest {
         run_id,
         cancellation,
-        admission,
+        handoff_context,
         profile_name,
         vcpu,
         memory_mb,
@@ -236,7 +236,7 @@ async fn select_finalizing_resource_inner(
         FinalizingWait {
             run_id,
             cancellation,
-            admission,
+            handoff_context,
             profile_name,
             device_rate_limits,
             ctx: resources,
@@ -267,11 +267,11 @@ async fn select_finalizing_resource_inner(
             info!(run_id = %run_id, finalizing_fallback_reason = reason.as_str(), "finalizing successor entering home or cold fallback");
             acquire_fallback_resource(
                 FinalizingFallback {
-                    source_run_id: admission.source_run_id,
+                    source_run_id: handoff_context.source_run_id,
                     run_id,
                     cancellation,
-                    reuse_key: &admission.reuse_key,
-                    native_generation_run_id: admission.native_generation_run_id,
+                    reuse_key: &handoff_context.reuse_key,
+                    native_generation_run_id: handoff_context.native_generation_run_id,
                     profile_name,
                     vcpu,
                     memory_mb,
@@ -305,7 +305,7 @@ async fn select_finalizing_resource_inner(
 ///
 /// The handoff request is one-shot and is created before observing the predecessor state so a
 /// successor that was job early can race publication safely. Generic sources retain their
-/// local admission deadline, including during finalization. A native-matching source
+/// Runner acceptance deadline, including during finalization. A native-matching source
 /// uses that deadline before finalization, then a separate acceptance grace starting when both
 /// finalization and this successor's wait have begun. A late request cannot arrive expired. Only an
 /// unaccepted request expires at either boundary, while an accepted handoff is still received.
@@ -320,23 +320,23 @@ async fn wait_for_finalizing_resource(
     let FinalizingWait {
         run_id,
         cancellation,
-        admission,
+        handoff_context,
         profile_name,
         device_rate_limits,
         ctx,
     } = request;
     let cancel = cancellation.token();
     let wait_started_at = tokio::time::Instant::now();
-    let mut handoff = admission.predecessor.request_handoff(run_id);
+    let mut handoff = handoff_context.predecessor.request_handoff(run_id);
     #[cfg(any(test, feature = "test-support"))]
     if handoff.is_some() {
-        test_hooks.notify_handoff_requested(admission.source_run_id, run_id);
+        test_hooks.notify_handoff_requested(handoff_context.source_run_id, run_id);
     }
     loop {
         if cancel.is_cancelled() {
             return FinalizingWaitOutcome::cancelled(handoff.as_mut());
         }
-        let state = admission.predecessor.state();
+        let state = handoff_context.predecessor.state();
         if !state.can_publish_exact()
             && let Some(request) = handoff.as_mut()
         {
@@ -344,7 +344,7 @@ async fn wait_for_finalizing_resource(
                 return receive_finalizing_handoff(
                     request,
                     run_id,
-                    admission.source_run_id,
+                    handoff_context.source_run_id,
                     cancellation,
                 )
                 .await;
@@ -371,14 +371,14 @@ async fn wait_for_finalizing_resource(
             ActiveRunReuseState::Pending | ActiveRunReuseState::Finalizing { .. } => None,
         };
         if let Some(missing_exact_reason) = missing_exact_reason {
-            let Some(native_generation_run_id) = admission.native_generation_run_id else {
+            let Some(native_generation_run_id) = handoff_context.native_generation_run_id else {
                 // A ready physical source is selected by the existing generic
                 // fallback, without granting exact native-history authority.
                 return FinalizingWaitOutcome::no_exact(missing_exact_reason);
             };
             let exact_lookup = reserve_exact_idle_for_spawn(
                 ctx.idle_pool,
-                &admission.reuse_key,
+                &handoff_context.reuse_key,
                 profile_name,
                 device_rate_limits,
                 native_generation_run_id,
@@ -408,7 +408,7 @@ async fn wait_for_finalizing_resource(
             if let Some(reservation) = reserved_exact.take() {
                 info!(
                     run_id = %run_id,
-                    predecessor_run_id = %admission.source_run_id,
+                    predecessor_run_id = %handoff_context.source_run_id,
                     "finalizing successor reserved exact published sandbox"
                 );
                 return FinalizingWaitOutcome::Exact(reservation);
@@ -422,7 +422,7 @@ async fn wait_for_finalizing_resource(
 
         let (deadline, timeout_reason, timeout_outcome) = match state {
             ActiveRunReuseState::Finalizing { started_at }
-                if admission.native_generation_run_id.is_some() =>
+                if handoff_context.native_generation_run_id.is_some() =>
             {
                 (
                     tokio::time::Instant::from_std(started_at).max(wait_started_at)
@@ -432,7 +432,7 @@ async fn wait_for_finalizing_resource(
                 )
             }
             ActiveRunReuseState::Pending | ActiveRunReuseState::Finalizing { .. } => (
-                tokio::time::Instant::from_std(admission.deadline),
+                tokio::time::Instant::from_std(handoff_context.deadline),
                 FinalizingHandoffReason::PreFinalizationDeadline,
                 FinalizingHandoffOutcome::PreFinalizationDeadline,
             ),
@@ -452,16 +452,16 @@ async fn wait_for_finalizing_resource(
                         return receive_finalizing_handoff(
                             request,
                             run_id,
-                            admission.source_run_id,
+                            handoff_context.source_run_id,
                             cancellation,
                         )
                         .await;
                     }
                     handoff = None;
                 }
-                _ = admission.predecessor.changed() => {}
+                _ = handoff_context.predecessor.changed() => {}
                 _ = tokio::time::sleep_until(deadline) => {
-                    if admission.predecessor.state() != state {
+                    if handoff_context.predecessor.state() != state {
                         continue;
                     }
                     if cancel.is_cancelled() {
@@ -471,7 +471,7 @@ async fn wait_for_finalizing_resource(
                         return receive_finalizing_handoff(
                             request,
                             run_id,
-                            admission.source_run_id,
+                            handoff_context.source_run_id,
                             cancellation,
                         )
                         .await;
@@ -489,13 +489,13 @@ async fn wait_for_finalizing_resource(
                 () = cancel.cancelled() => {
                     return FinalizingWaitOutcome::cancelled(None);
                 }
-                _ = admission.predecessor.changed() => {}
+                _ = handoff_context.predecessor.changed() => {}
                 _ = tokio::time::sleep_until(deadline) => {
-                    if admission.predecessor.state() != state {
+                    if handoff_context.predecessor.state() != state {
                         continue;
                     }
                     if matches!(state, ActiveRunReuseState::Finalizing { .. })
-                        && admission.native_generation_run_id.is_some()
+                        && handoff_context.native_generation_run_id.is_some()
                     {
                         return FinalizingWaitOutcome::no_exact(
                             FinalizingHandoffReason::HandoffRequestUnavailable,

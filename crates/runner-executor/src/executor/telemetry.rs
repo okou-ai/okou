@@ -21,10 +21,10 @@ use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
 static INVALID_API_START_TIME_WARNED: AtomicBool = AtomicBool::new(false);
 
-/// Tracks post-admission Runner startup work through Agent readiness.
+/// Tracks post-acceptance Runner startup work through Agent readiness.
 ///
 /// Membership ends when startup timing is consumed after readiness or dropped
-/// on early exit. Each admission captures a fixed concurrency cohort including
+/// on early exit. Each accepted job captures a fixed concurrency cohort including
 /// the new job, rather than a continuously updated gauge.
 #[derive(Clone, Default)]
 pub struct RunnerPreSpawnConcurrency {
@@ -62,7 +62,7 @@ impl RunnerPreSpawnConcurrencyGuard {
 
     fn preserve_attribution_after_spawn(&mut self) {
         // Live membership ends when startup timing is consumed after Agent readiness.
-        // Keep the admission-time cohort for the following api_to_spawn and
+        // Keep the acceptance-time cohort for the following api_to_spawn and
         // api_to_agent_ready rows after this guard drops.
         self.preserve_attribution_on_drop = true;
     }
@@ -339,7 +339,7 @@ impl RunnerPreSpawnPhaseDurations {
 }
 
 pub struct RunnerPreSpawnTiming {
-    admitted_at: Instant,
+    accepted_at: Instant,
     concurrency: RunnerPreSpawnConcurrencyGuard,
     phase_durations: RunnerPreSpawnPhaseDurations,
     task_enqueued_at: Option<Instant>,
@@ -355,13 +355,13 @@ pub(super) struct RunnerSpawnTiming {
 
 impl RunnerPreSpawnTiming {
     #[cfg(test)]
-    pub(crate) fn start_after_admission() -> Self {
+    pub(crate) fn start_after_acceptance() -> Self {
         Self::start_at(Instant::now(), &RunnerPreSpawnConcurrency::default())
     }
 
-    pub fn start_at(admitted_at: Instant, concurrency: &RunnerPreSpawnConcurrency) -> Self {
+    pub fn start_at(accepted_at: Instant, concurrency: &RunnerPreSpawnConcurrency) -> Self {
         Self {
-            admitted_at,
+            accepted_at,
             concurrency: concurrency.enter(),
             phase_durations: RunnerPreSpawnPhaseDurations::default(),
             task_enqueued_at: None,
@@ -398,9 +398,9 @@ impl RunnerPreSpawnTiming {
     }
 
     pub fn record_blank_pool_selection(&mut self, selection: BlankPoolSelection) {
-        // A fresh admission can probe before claim and again after authoritative
-        // claim metadata is available. Retain only the latest decision so one
-        // run emits one terminal blank-selection operation.
+        // A job can probe during acceptance and again during activation.
+        // Retain the latest decision so each Run emits one terminal
+        // blank-selection operation.
         self.blank_pool_selection = Some(selection);
     }
 
@@ -425,7 +425,7 @@ impl RunnerPreSpawnTiming {
     }
 
     fn elapsed_at(&self, at: Instant) -> Duration {
-        at.saturating_duration_since(self.admitted_at)
+        at.saturating_duration_since(self.accepted_at)
     }
 
     fn concurrency_attribution(&self) -> RunnerPreSpawnAttribution {
@@ -470,12 +470,12 @@ impl RunnerSpawnTiming {
         }
     }
 
-    pub(super) fn record_admission_to_executor_start(&self, telemetry: &mut JobTelemetry) {
+    pub(super) fn record_acceptance_to_executor_start(&self, telemetry: &mut JobTelemetry) {
         if let Some(pre_spawn_timing) = self.pre_spawn_timing.as_ref() {
             telemetry
                 .start_runner_pre_spawn_attribution(pre_spawn_timing.concurrency_attribution());
             telemetry.record(
-                "runner_admission_to_executor_start",
+                "runner_accepted_to_executor_start",
                 pre_spawn_timing.elapsed_at(self.executor_started_at),
                 true,
                 None,
@@ -498,7 +498,7 @@ impl RunnerSpawnTiming {
         );
         if let Some(pre_spawn_timing) = self.pre_spawn_timing.as_ref() {
             telemetry.record(
-                "runner_admission_to_spawn",
+                "runner_accepted_to_spawn",
                 pre_spawn_timing.elapsed_at(spawned_at),
                 true,
                 None,
@@ -512,7 +512,7 @@ impl RunnerSpawnTiming {
         );
         if let Some(pre_spawn_timing) = self.pre_spawn_timing.as_ref() {
             telemetry.record(
-                "runner_admission_to_agent_ready",
+                "runner_accepted_to_agent_ready",
                 pre_spawn_timing.elapsed_at(ready_at),
                 true,
                 None,

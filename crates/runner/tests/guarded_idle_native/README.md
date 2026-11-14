@@ -751,7 +751,7 @@ Finalizing saving uses the real `IdleParkRequest` transition and exact
 requests handoff before balloon submission and requires the provider's fenced
 running result. Both carry the original backing proof through
 `GuardedFinalizingOffer` and recover queued delivery on successor cancellation
-in `GuardedFinalizingAdmission`. Required covered preparation, freeze, exact
+in `GuardedFinalizingHandoff`. Required covered preparation, freeze, exact
 exit, publication and factory tail must complete before release of the full
 logical lease. Fresh and snapshot restores verify ordinary bytes and absence of
 the predecessor private runtime. The native seam carries local fixture input;

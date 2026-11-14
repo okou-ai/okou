@@ -20,7 +20,7 @@ use runner_lifecycle::idle_reuse_preparation::add_healthy_reuse_preparation_matc
 use runner_lifecycle::resource_budget::ResourceBudget;
 use runner_storage::storage_fingerprints::StorageFingerprints;
 
-fn admitted_idle_pool(
+fn accepted_idle_pool(
     gate: ParkingGate,
     native_generation_run_id: RunId,
 ) -> (SharedIdlePool, Arc<ResourceBudget>, SandboxId) {
@@ -44,7 +44,7 @@ fn admitted_idle_pool(
 #[tokio::test]
 async fn claimed_idle_reservation_rollback_restores_pool_and_status() {
     let generation = RunId::new_v4();
-    let (idle_pool, budget, sandbox_id) = admitted_idle_pool(ParkingGate::new_open(), generation);
+    let (idle_pool, budget, sandbox_id) = accepted_idle_pool(ParkingGate::new_open(), generation);
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("status.json");
     let status = StatusTracker::new(path.clone(), 4, None, None);
@@ -97,7 +97,7 @@ async fn claimed_idle_reservation_rollback_restores_pool_and_status() {
 #[tokio::test]
 async fn claimed_exact_reservation_classifies_miss_without_mutation() {
     let generation = RunId::new_v4();
-    let (idle_pool, budget, sandbox_id) = admitted_idle_pool(ParkingGate::new_open(), generation);
+    let (idle_pool, budget, sandbox_id) = accepted_idle_pool(ParkingGate::new_open(), generation);
     let initial_revision = idle_pool.lock().await.revision();
     let other_limits = sandbox::DeviceRateLimits {
         block: sandbox::BlockRateLimits {
@@ -185,7 +185,7 @@ async fn claimed_exact_reservation_classifies_miss_without_mutation() {
 #[tokio::test]
 async fn rejected_claimed_idle_rollback_destroys_and_notifies() {
     let gate = ParkingGate::new_open();
-    let (idle_pool, budget, _) = admitted_idle_pool(gate.clone(), RunId::new_v4());
+    let (idle_pool, budget, _) = accepted_idle_pool(gate.clone(), RunId::new_v4());
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("status.json");
     let status = StatusTracker::new(path.clone(), 4, None, None);

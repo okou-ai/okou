@@ -62,7 +62,7 @@ fn fallback_home_lock_policy_reads_live_predecessor() {
     let predecessor = active_runs
         .finalizing_predecessor(predecessor_run_id, "thread:finalizing-owner", "vm0/default")
         .expect("predecessor should be registered");
-    let admission = FinalizingAdmission {
+    let handoff_context = FinalizingHandoffContext {
         predecessor,
         deadline: Instant::now(),
         reuse_key: "thread:finalizing-owner".into(),
@@ -70,7 +70,7 @@ fn fallback_home_lock_policy_reads_live_predecessor() {
         native_generation_run_id: Some(predecessor_run_id),
     };
     assert_eq!(
-        admission.fallback_home_prepare_policy(),
+        handoff_context.fallback_home_prepare_policy(),
         (
             ActiveRunReuseState::Pending,
             HomeImagePreparePolicy::TryCacheWithoutLockWait
@@ -80,7 +80,7 @@ fn fallback_home_lock_policy_reads_live_predecessor() {
     let started_at = Instant::now();
     assert!(publisher.mark_finalizing(started_at));
     assert_eq!(
-        admission.fallback_home_prepare_policy(),
+        handoff_context.fallback_home_prepare_policy(),
         (
             ActiveRunReuseState::Finalizing { started_at },
             HomeImagePreparePolicy::TryCacheWithLockWait,
@@ -88,7 +88,7 @@ fn fallback_home_lock_policy_reads_live_predecessor() {
     );
     assert!(publisher.publish_exact_sandbox());
     assert_eq!(
-        admission.fallback_home_prepare_policy(),
+        handoff_context.fallback_home_prepare_policy(),
         (
             ActiveRunReuseState::ExactSandboxPublished,
             HomeImagePreparePolicy::TryCacheWithoutLockWait
@@ -96,7 +96,7 @@ fn fallback_home_lock_policy_reads_live_predecessor() {
     );
     drop(guard);
     assert_eq!(
-        admission.fallback_home_prepare_policy(),
+        handoff_context.fallback_home_prepare_policy(),
         (
             ActiveRunReuseState::Released,
             HomeImagePreparePolicy::TryCacheWithLockWait
@@ -104,7 +104,7 @@ fn fallback_home_lock_policy_reads_live_predecessor() {
     );
 }
 
-fn released_admission() -> FinalizingAdmission {
+fn released_admission() -> FinalizingHandoffContext {
     let active_runs = ActiveRuns::new(Arc::new(Notify::new()));
     let predecessor_run_id = RunId::new_v4();
     let guard = active_runs.register(
@@ -117,7 +117,7 @@ fn released_admission() -> FinalizingAdmission {
         .expect("predecessor should be registered");
     drop(guard);
     assert_eq!(predecessor.state(), ActiveRunReuseState::Released);
-    FinalizingAdmission {
+    FinalizingHandoffContext {
         predecessor,
         deadline: Instant::now(),
         reuse_key: "thread:finalizing-owner".into(),
@@ -128,7 +128,7 @@ fn released_admission() -> FinalizingAdmission {
 
 #[tokio::test]
 async fn released_predecessor_selects_fresh_capacity_without_double_ownership() {
-    let mut admission = released_admission();
+    let mut handoff_context = released_admission();
     let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(
         IdlePoolConfig::default(),
     )));
@@ -150,7 +150,7 @@ async fn released_predecessor_selects_fresh_capacity_without_double_ownership() 
         FinalizingSelectionRequest {
             run_id,
             cancellation: &cancellation,
-            admission: &mut admission,
+            handoff_context: &mut handoff_context,
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 2048,
@@ -191,7 +191,7 @@ async fn expired_pre_finalization_deadline_uses_fallback_without_releasing_prede
     let predecessor = active_runs
         .finalizing_predecessor(predecessor_run_id, "thread:finalizing-owner", "vm0/default")
         .unwrap();
-    let mut admission = FinalizingAdmission {
+    let mut handoff_context = FinalizingHandoffContext {
         predecessor,
         deadline: Instant::now() - Duration::from_secs(1),
         reuse_key: "thread:finalizing-owner".into(),
@@ -219,7 +219,7 @@ async fn expired_pre_finalization_deadline_uses_fallback_without_releasing_prede
         FinalizingSelectionRequest {
             run_id,
             cancellation: &cancellation,
-            admission: &mut admission,
+            handoff_context: &mut handoff_context,
             profile_name: "vm0/default",
             vcpu: 2,
             memory_mb: 2048,
@@ -240,7 +240,10 @@ async fn expired_pre_finalization_deadline_uses_fallback_without_releasing_prede
     let FinalizingResource::Fresh(lease) = selected else {
         panic!("expired pending wait should use fallback capacity");
     };
-    assert_eq!(admission.predecessor.state(), ActiveRunReuseState::Pending);
+    assert_eq!(
+        handoff_context.predecessor.state(),
+        ActiveRunReuseState::Pending
+    );
     assert!(reserved_exact.is_none());
     drop(lease);
     assert_eq!(budget.allocated(), (0, 0, 0));
@@ -260,7 +263,7 @@ async fn cancelled_successor_does_not_reserve_fallback_capacity() {
     let predecessor = active_runs
         .finalizing_predecessor(predecessor_run_id, "thread:finalizing-owner", "vm0/default")
         .unwrap();
-    let mut admission = FinalizingAdmission {
+    let mut handoff_context = FinalizingHandoffContext {
         predecessor,
         deadline: Instant::now() + Duration::from_secs(60),
         reuse_key: "thread:finalizing-owner".into(),
@@ -290,7 +293,7 @@ async fn cancelled_successor_does_not_reserve_fallback_capacity() {
             FinalizingSelectionRequest {
                 run_id,
                 cancellation: &cancellation,
-                admission: &mut admission,
+                handoff_context: &mut handoff_context,
                 profile_name: "vm0/default",
                 vcpu: 2,
                 memory_mb: 2048,
@@ -324,7 +327,7 @@ async fn fallback_capacity_wait_wakes_when_budget_is_released() {
     let budget_for_task = Arc::clone(&budget);
     let entered_for_task = Arc::clone(&entered);
     let task = tokio::spawn(async move {
-        let mut admission = released_admission();
+        let mut handoff_context = released_admission();
         let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(
             IdlePoolConfig::default(),
         )));
@@ -345,7 +348,7 @@ async fn fallback_capacity_wait_wakes_when_budget_is_released() {
             FinalizingSelectionRequest {
                 run_id,
                 cancellation: &cancellation,
-                admission: &mut admission,
+                handoff_context: &mut handoff_context,
                 profile_name: "vm0/default",
                 vcpu: 2,
                 memory_mb: 2048,
@@ -417,9 +420,9 @@ async fn assert_fallback_budget_wakeup_reuses_published(
     publication: FallbackPublication,
     native_history: bool,
 ) {
-    let mut admission = released_admission();
+    let mut handoff_context = released_admission();
     if !native_history {
-        admission.native_generation_run_id = None;
+        handoff_context.native_generation_run_id = None;
     }
     let budget = Arc::new(ResourceBudget::new(5, 4096, 1.0, 0));
     let held = ResourceBudget::try_reserve_lease(&budget, 2, 2048).unwrap();
@@ -436,12 +439,13 @@ async fn assert_fallback_budget_wakeup_reuses_published(
             None,
         ),
         FallbackPublication::Exact | FallbackPublication::Generic => {
-            let builder = ParkedIdleCandidateBuilder::new(&admission.reuse_key, published_lease)
-                .with_source_run_id(admission.source_run_id)
-                .with_sandbox_id(published_id);
+            let builder =
+                ParkedIdleCandidateBuilder::new(&handoff_context.reuse_key, published_lease)
+                    .with_source_run_id(handoff_context.source_run_id)
+                    .with_sandbox_id(published_id);
             if matches!(publication, FallbackPublication::Exact) {
                 builder
-                    .with_native_generation_run_id(admission.source_run_id)
+                    .with_native_generation_run_id(handoff_context.source_run_id)
                     .build()
             } else {
                 builder.build()
@@ -473,7 +477,7 @@ async fn assert_fallback_budget_wakeup_reuses_published(
             FinalizingSelectionRequest {
                 run_id,
                 cancellation: &cancellation,
-                admission: &mut admission,
+                handoff_context: &mut handoff_context,
                 profile_name: "vm0/default",
                 vcpu: 2,
                 memory_mb: 2048,

@@ -1,7 +1,7 @@
 //! Complete-input continuation activation and executor handoff.
 //!
 //! Local predecessor proof selects a bounded handoff or a source-fenced fallback
-//! through `finalizing_admission`. This task owns accepted input and cancellation
+//! through `finalizing_handoff`. This task owns accepted input and cancellation
 //! while waiting, preserves delivered resources across cancellation, and validates
 //! physical source identity before activation. The existing activation guard owns
 //! status publication, executor dispatch and panic recovery.
@@ -34,13 +34,13 @@ use crate::executor::{
     RunnerPreSpawnPhase, RunnerPreSpawnTiming, validate_resume_session_id,
 };
 #[cfg(not(test))]
-use crate::finalizing_admission::select_finalizing_resource;
-use crate::finalizing_admission::{
-    FinalizingAdmission, FinalizingResource, FinalizingSelectionRequest,
+use crate::finalizing_handoff::select_finalizing_resource;
+use crate::finalizing_handoff::{
+    FinalizingHandoffContext, FinalizingResource, FinalizingSelectionRequest,
     FinalizingSelectionResources,
 };
 #[cfg(test)]
-use crate::finalizing_admission::{
+use crate::finalizing_handoff::{
     FinalizingSelectionTestHooks, select_finalizing_resource_with_test_hooks,
 };
 use crate::home_image_cache::HomeImagePreparePolicy;
@@ -58,8 +58,8 @@ use runner_types::types::{CompleteRequest, SandboxReuseResult};
 pub(super) struct FinalizingActivationRequest {
     pub(super) job: ExecutionJob,
     pub(super) cancellation: RunCancellationRegistration,
-    pub(super) admission: FinalizingAdmission,
-    pub(super) admitted_at: Instant,
+    pub(super) handoff_context: FinalizingHandoffContext,
+    pub(super) accepted_at: Instant,
     pub(super) profile_name: String,
     pub(super) rootfs_hash: String,
     pub(super) vcpu: u32,
@@ -88,7 +88,7 @@ enum FinalizingActivation {
 struct FinalizingPreparation<'a> {
     job: &'a ExecutionJob,
     cancellation: &'a RunCancellationRegistration,
-    admission: &'a mut FinalizingAdmission,
+    handoff_context: &'a mut FinalizingHandoffContext,
     profile_name: &'a str,
     vcpu: u32,
     memory_mb: u32,
@@ -112,8 +112,8 @@ async fn run_finalizing_activation(
     let FinalizingActivationRequest {
         job,
         cancellation,
-        mut admission,
-        admitted_at,
+        mut handoff_context,
+        accepted_at,
         profile_name,
         rootfs_hash,
         vcpu,
@@ -125,7 +125,7 @@ async fn run_finalizing_activation(
     } = request;
     let run_id = job.context().run_id;
     let mut pre_spawn_timing =
-        RunnerPreSpawnTiming::start_at(admitted_at, &ctx.pre_spawn_concurrency);
+        RunnerPreSpawnTiming::start_at(accepted_at, &ctx.pre_spawn_concurrency);
     pre_spawn_timing.mark_task_enqueued();
     let started_at = Instant::now();
     let mut reserved_exact = None;
@@ -133,7 +133,7 @@ async fn run_finalizing_activation(
         FinalizingPreparation {
             job: &job,
             cancellation: &cancellation,
-            admission: &mut admission,
+            handoff_context: &mut handoff_context,
             profile_name: &profile_name,
             vcpu,
             memory_mb,
@@ -211,31 +211,32 @@ async fn run_finalizing_activation(
             origin: FinalizingActivationOrigin::GenericIdlePool,
         },
         FinalizingResource::Handoff(candidate) => {
-            let reservation = match candidate.into_reservation(run_id, admission.source_run_id) {
-                Ok(reservation) => reservation,
-                Err(candidate) => {
-                    drop(active_run_guard);
-                    candidate
-                        .into_destroy_job()
-                        .run_with_context("finalizing_handoff_identity_mismatch")
-                        .await;
-                    ctx.reuse_state_notify.notify_one();
-                    pre_spawn_timing.record_finalizing_handoff(
-                        FinalizingHandoffOutcome::ActivationFailed,
-                        Some(FinalizingHandoffReason::HandoffIdentityMismatch),
-                    );
-                    return Ok(complete_without_sandbox(
-                        job,
-                        cancellation,
-                        ExecutionFailure::from_error(
-                            "finalizing handoff identity did not match job successor",
-                        ),
-                        pre_spawn_timing.finalizing_diagnostics(),
-                        &ctx,
-                    )
-                    .await);
-                }
-            };
+            let reservation =
+                match candidate.into_reservation(run_id, handoff_context.source_run_id) {
+                    Ok(reservation) => reservation,
+                    Err(candidate) => {
+                        drop(active_run_guard);
+                        candidate
+                            .into_destroy_job()
+                            .run_with_context("finalizing_handoff_identity_mismatch")
+                            .await;
+                        ctx.reuse_state_notify.notify_one();
+                        pre_spawn_timing.record_finalizing_handoff(
+                            FinalizingHandoffOutcome::ActivationFailed,
+                            Some(FinalizingHandoffReason::HandoffIdentityMismatch),
+                        );
+                        return Ok(complete_without_sandbox(
+                            job,
+                            cancellation,
+                            ExecutionFailure::from_error(
+                                "finalizing handoff identity did not match job successor",
+                            ),
+                            pre_spawn_timing.finalizing_diagnostics(),
+                            &ctx,
+                        )
+                        .await);
+                    }
+                };
             let idle_snapshot = ctx.idle_pool.lock().await.status_snapshot();
             FinalizingActivation::Reserved {
                 reservation: ReservedIdleActivation::new(reservation, idle_snapshot),
@@ -285,11 +286,11 @@ async fn run_finalizing_activation(
             activation_transfer_guard = Some(transfer_guard);
             selected_home_source_run_id = (reservation.kind() == IdleSandboxKind::Blank
                 && ctx.home_cache_snapshot.has_source_home_hint(
-                    &admission.reuse_key,
+                    &handoff_context.reuse_key,
                     &profile_name,
-                    admission.source_run_id,
+                    handoff_context.source_run_id,
                 ))
-            .then_some(admission.source_run_id);
+            .then_some(handoff_context.source_run_id);
             match activate_reserved_idle(
                 reservation,
                 ReservedActivationRequest {
@@ -366,8 +367,12 @@ async fn run_finalizing_activation(
     let required_home_source_run_id = if home_fallback {
         selected_home_source_run_id.or_else(|| {
             ctx.home_cache_snapshot
-                .has_source_home_hint(&admission.reuse_key, &profile_name, admission.source_run_id)
-                .then_some(admission.source_run_id)
+                .has_source_home_hint(
+                    &handoff_context.reuse_key,
+                    &profile_name,
+                    handoff_context.source_run_id,
+                )
+                .then_some(handoff_context.source_run_id)
         })
     } else {
         None
@@ -412,7 +417,7 @@ async fn run_finalizing_activation(
     };
     drop(activation_transfer_guard);
     if home_fallback {
-        let (predecessor_state, lock_policy) = admission.fallback_home_prepare_policy();
+        let (predecessor_state, lock_policy) = handoff_context.fallback_home_prepare_policy();
         request.job_profile.home_image_prepare_policy = lock_policy;
         if lock_policy == HomeImagePreparePolicy::TryCacheWithoutLockWait {
             info!(
@@ -432,7 +437,7 @@ async fn prepare_finalizing_resource(
     let FinalizingPreparation {
         job,
         cancellation,
-        admission,
+        handoff_context,
         profile_name,
         vcpu,
         memory_mb,
@@ -444,7 +449,7 @@ async fn prepare_finalizing_resource(
     #[cfg(test)]
     maybe_panic_outer_job(
         ctx.outer_job_panic,
-        OuterJobPanicPoint::AdmittedWithoutSandbox,
+        OuterJobPanicPoint::AcceptedWithoutSandbox,
         run_id,
     );
     if let Err(error) = validate_resume_session_id(job.context()) {
@@ -453,25 +458,25 @@ async fn prepare_finalizing_resource(
 
     // Bound execution input owns native intent. Physical handoff alone grants
     // no native-history authority.
-    admission.native_generation_run_id = job
+    handoff_context.native_generation_run_id = job
         .context()
         .native_continuation
         .as_ref()
         .filter(|native| native.session_id.is_some())
         .and_then(|native| native.generation_run_id.as_deref())
-        .filter(|generation| *generation == admission.source_run_id.to_string())
-        .map(|_| admission.source_run_id);
+        .filter(|generation| *generation == handoff_context.source_run_id.to_string())
+        .map(|_| handoff_context.source_run_id);
 
     info!(
         run_id = %run_id,
-        predecessor_run_id = %admission.source_run_id,
-        native_generation_matches_source = admission.native_generation_run_id.is_some(),
+        predecessor_run_id = %handoff_context.source_run_id,
+        native_generation_matches_source = handoff_context.native_generation_run_id.is_some(),
         "finalizing successor job before sandbox publication"
     );
     let selection = FinalizingSelectionRequest {
         run_id,
         cancellation,
-        admission,
+        handoff_context,
         profile_name,
         vcpu,
         memory_mb,

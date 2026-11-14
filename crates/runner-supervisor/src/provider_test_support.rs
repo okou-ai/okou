@@ -777,7 +777,7 @@ impl runner_provider::LocalJobSource for MockJobProvider {
                 warn!(
                     run_id = %err.expected_run_id,
                     context_run_id = %err.context_run_id,
-                    "mock: admitted job run_id mismatch"
+                    "mock: accepted job run_id mismatch"
                 );
                 None
             }

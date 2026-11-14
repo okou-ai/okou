@@ -375,15 +375,22 @@ For historical comparisons, sum that old interval and the old
 compare the old two-file interval alone against the new three-file interval or
 infer independent per-file wall-clock durations from the batch.
 
+API Run admission, execution-data preparation and dispatch precede Runner
+acceptance. Runner acceptance completes after local resource checks and execution
+input binding; activation and executor dispatch follow. The `runner_accepted_to_*`
+intervals start at that acceptance-completion point, excluding receiver intake and
+the checks before it. `api_to_spawn` and `api_to_agent_ready` keep the original API
+start time and cover the complete path to their respective endpoints.
+
 `runner_agent_start_process`, `runner_executor_start_to_spawn`,
-`runner_admission_to_spawn`, and `api_to_spawn` retain their process-launch boundary,
+`runner_accepted_to_spawn`, and `api_to_spawn` retain their process-launch boundary,
 observed through `exec_started`. The historical `shell_started_at`, `shell_spawn`,
 and `shell_spawn_us` field names and the `runner_agent_shell_spawn` series remain
 for compatibility; they refer to controlled Agent launch even though no shell
 is executed.
 
 Agent readiness is recorded separately by `runner_agent_start_to_ready`,
-`runner_executor_start_to_agent_ready`, `runner_admission_to_agent_ready`, and
+`runner_executor_start_to_agent_ready`, `runner_accepted_to_agent_ready`, and
 `api_to_agent_ready`. The bounded component series are
 `runner_agent_containment_create`, `runner_agent_placement_broker_setup`,
 `runner_agent_shell_spawn`, and `runner_agent_bootstrap_ready_wait`. The latter

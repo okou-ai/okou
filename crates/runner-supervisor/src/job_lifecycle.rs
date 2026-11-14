@@ -134,7 +134,7 @@ impl RunCleanupState {
     }
 }
 
-/// Budget ownership while a admitted job is active in the outer task.
+/// Budget ownership while an accepted job is active in the outer task.
 pub struct ActiveBudgetLease(BudgetLease);
 
 impl ActiveBudgetLease {

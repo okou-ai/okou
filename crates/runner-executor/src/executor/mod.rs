@@ -724,7 +724,7 @@ fn initialize_execution_telemetry(
         config.runner_hostname.clone(),
     );
     telemetry.set_first_run(context.is_first_run);
-    spawn_timing.record_admission_to_executor_start(&mut telemetry);
+    spawn_timing.record_acceptance_to_executor_start(&mut telemetry);
     record_api_latency("api_to_sandbox_start", context, &mut telemetry);
 
     (spawn_timing, telemetry)

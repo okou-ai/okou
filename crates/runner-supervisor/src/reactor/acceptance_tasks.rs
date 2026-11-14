@@ -1,4 +1,4 @@
-//! Bounded independently scheduled admission, activation and guarded dispatch.
+//! Bounded independently scheduled acceptance, activation and guarded dispatch.
 
 use std::any::Any;
 use std::collections::{BTreeMap, HashSet};
@@ -16,39 +16,39 @@ use super::error::ReactorError;
 use super::finalizing_activation::{FinalizingActivationRequest, spawn_finalizing_activation};
 use super::job_activation::recover_unconsumed_finalizing_activation;
 use super::job_activation::{
-    AdmissionContext, ExecutionProfile, JobActivationContext, JobActivationResult, LocalJob,
-    SandboxAdmittedJob, prepare_admitted_job, prepare_job_profile, prepare_local_job,
+    AcceptanceContext, ExecutionProfile, JobActivationContext, JobActivationResult, LocalJob,
+    SandboxAcceptedJob, prepare_accepted_job, prepare_job_profile, prepare_local_job,
 };
 use super::job_spawn::JobResult;
 use crate::SharedFactory;
 use crate::executor::BlankPoolSelection;
-use crate::resource_admission::{
-    AdmissionRequest, AdmittedJob, AdmittedResource, LocalAdmissionOutcome,
-    SandboxAdmittedResource, admit_and_claim,
+use crate::job_acceptance::{
+    AcceptanceRequest, AcceptedJob, AcceptedResource, LocalAcceptanceOutcome,
+    SandboxAcceptedResource, accept_and_claim,
 };
 use runner_provider::LocalJobSource;
 use runner_types::ids::RunId;
 
 // A conservative pressure bound, independent of stricter local resources.
 // Activation/recovery and completed unconsumed results retain their original slot.
-pub(super) const MAX_IN_FLIGHT_ADMISSIONS: usize = 4;
+pub(super) const MAX_IN_FLIGHT_ACCEPTANCES: usize = 4;
 
-pub(super) struct AdmissionTasks {
-    context: Arc<AdmissionContext>,
-    tasks: FuturesUnordered<JoinHandle<AdmissionTaskResult>>,
+pub(super) struct AcceptanceTasks {
+    context: Arc<AcceptanceContext>,
+    tasks: FuturesUnordered<JoinHandle<AcceptanceTaskResult>>,
     in_flight: HashSet<RunId>,
     preparing: Option<oneshot::Receiver<()>>,
     slots: Arc<Semaphore>,
 }
 
-impl AdmissionTasks {
-    pub(super) fn new(context: AdmissionContext) -> Self {
+impl AcceptanceTasks {
+    pub(super) fn new(context: AcceptanceContext) -> Self {
         Self {
             context: Arc::new(context),
             tasks: FuturesUnordered::new(),
             in_flight: HashSet::new(),
             preparing: None,
-            slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_ADMISSIONS)),
+            slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_ACCEPTANCES)),
         }
     }
 
@@ -71,7 +71,7 @@ impl AdmissionTasks {
         factories: &BTreeMap<String, (SharedFactory, bool)>,
     ) {
         use crate::ingress::dispatch::Disposition;
-        use crate::resource_admission::{SuppliedAdmission, admit_supplied};
+        use crate::job_acceptance::{SuppliedAcceptance, accept_supplied};
         let Some(supplied) = work.context.take() else {
             return;
         };
@@ -85,12 +85,12 @@ impl AdmissionTasks {
         };
         self.in_flight.insert(run_id);
         let context = self.context.clone();
-        let (admission_ready, ready) = oneshot::channel();
+        let (acceptance_ready, ready) = oneshot::channel();
         self.preparing = Some(ready);
         self.tasks.push(tokio::spawn(async move {
-            let admission = admit_supplied(
+            let acceptance = accept_supplied(
                 supplied,
-                AdmissionRequest {
+                AcceptanceRequest {
                     profile_name: &profile.profile_name,
                     job_vcpu: profile.vcpu,
                     job_memory: profile.memory_mb,
@@ -98,21 +98,21 @@ impl AdmissionTasks {
                 },
                 work.deadline,
                 &context.resources(),
-                admission_ready,
+                acceptance_ready,
             )
             .await;
-            let outcome = match admission {
-                SuppliedAdmission::Admitted(admission) => {
+            let outcome = match acceptance {
+                SuppliedAcceptance::Accepted(acceptance) => {
                     work.settle(Disposition::Accepted);
-                    prepare_admitted(*admission, profile, context).await
+                    prepare_accepted(*acceptance, profile, context).await
                 }
-                SuppliedAdmission::Rejected => {
+                SuppliedAcceptance::Rejected => {
                     work.settle(Disposition::Rejected);
-                    AdmissionTaskOutcome::Deferred
+                    AcceptanceTaskOutcome::Deferred
                 }
-                SuppliedAdmission::Unknown => AdmissionTaskOutcome::Deferred,
+                SuppliedAcceptance::Unknown => AcceptanceTaskOutcome::Deferred,
             };
-            AdmissionTaskResult {
+            AcceptanceTaskResult {
                 run_id,
                 outcome,
                 _permit: work.permit.take(),
@@ -120,7 +120,7 @@ impl AdmissionTasks {
         }));
     }
 
-    pub(super) async fn progress(&mut self) -> Option<Result<AdmissionTaskResult, JoinError>> {
+    pub(super) async fn progress(&mut self) -> Option<Result<AcceptanceTaskResult, JoinError>> {
         let preparing = self.is_preparing();
         tokio::select! {
             result = self.tasks.next(), if !self.tasks.is_empty() => {
@@ -157,7 +157,7 @@ impl AdmissionTasks {
         }
         let run_id = job.candidate.run_id();
         if self.in_flight.contains(&run_id) {
-            info!(%run_id, "duplicate candidate already has an in-flight admission");
+            info!(%run_id, "duplicate candidate already has an in-flight acceptance");
             return;
         }
         let Some(job) = prepare_local_job(job, profiles, factories) else {
@@ -168,15 +168,15 @@ impl AdmissionTasks {
         };
         self.in_flight.insert(run_id);
         let context = Arc::clone(&self.context);
-        let (admission_ready, ready) = oneshot::channel();
+        let (acceptance_ready, ready) = oneshot::channel();
         self.preparing = Some(ready);
-        // Dropping the observer detaches accepted admission/activation work. Its
+        // Dropping the observer detaches accepted acceptance/activation work. Its
         // final guarded result owns recovery if Reactor disappears.
         self.tasks.push(tokio::spawn(async move {
             let resources = context.resources();
-            let outcome = admit_and_claim(
+            let outcome = accept_and_claim(
                 job.candidate,
-                AdmissionRequest {
+                AcceptanceRequest {
                     profile_name: &job.profile.profile_name,
                     job_vcpu: job.profile.vcpu,
                     job_memory: job.profile.memory_mb,
@@ -184,16 +184,16 @@ impl AdmissionTasks {
                 },
                 source.as_ref(),
                 &resources,
-                admission_ready,
+                acceptance_ready,
             )
             .await;
             let outcome = match outcome {
-                LocalAdmissionOutcome::Admitted(admission) => {
-                    prepare_admitted(*admission, job.profile, context).await
+                LocalAcceptanceOutcome::Accepted(acceptance) => {
+                    prepare_accepted(*acceptance, job.profile, context).await
                 }
-                LocalAdmissionOutcome::Deferred => AdmissionTaskOutcome::Deferred,
+                LocalAcceptanceOutcome::Deferred => AcceptanceTaskOutcome::Deferred,
             };
-            AdmissionTaskResult {
+            AcceptanceTaskResult {
                 run_id,
                 outcome,
                 _permit: Some(permit),
@@ -201,7 +201,7 @@ impl AdmissionTasks {
         }));
     }
 
-    pub(super) async fn next(&mut self) -> Option<Result<AdmissionTaskResult, JoinError>> {
+    pub(super) async fn next(&mut self) -> Option<Result<AcceptanceTaskResult, JoinError>> {
         let result = self.tasks.next().await?;
         if let Ok(result) = &result {
             self.in_flight.remove(&result.run_id);
@@ -213,56 +213,58 @@ impl AdmissionTasks {
     // recovery await remains owned by the bounded independently scheduled task.
     pub(super) fn consume(
         &self,
-        result: Result<AdmissionTaskResult, JoinError>,
+        result: Result<AcceptanceTaskResult, JoinError>,
         jobs: &mut JoinSet<JobResult>,
-    ) -> Result<JobActivationResult, AdmissionConsumptionError> {
-        let result = result.map_err(|_| AdmissionConsumptionError::AdmissionTask)?;
+    ) -> Result<JobActivationResult, AcceptanceConsumptionError> {
+        let result = result.map_err(|_| AcceptanceConsumptionError::AcceptanceTask)?;
         match result.outcome {
-            AdmissionTaskOutcome::Prepared(result) => (*result)
+            AcceptanceTaskOutcome::Prepared(result) => (*result)
                 .dispatch(&self.context.spawn_ctx, jobs)
-                .map_err(AdmissionConsumptionError::Ownership),
-            AdmissionTaskOutcome::Finalizing(admission) => {
+                .map_err(AcceptanceConsumptionError::Ownership),
+            AcceptanceTaskOutcome::Finalizing(acceptance) => {
                 spawn_finalizing_activation(
-                    (*admission)
+                    (*acceptance)
                         .into_request()
-                        .map_err(AdmissionConsumptionError::Ownership)?,
+                        .map_err(AcceptanceConsumptionError::Ownership)?,
                     &self.context.spawn_ctx,
                     jobs,
                 );
                 Ok(JobActivationResult::completed(false))
             }
-            AdmissionTaskOutcome::Deferred => Ok(JobActivationResult::completed(false)),
-            AdmissionTaskOutcome::Failed(error) => Err(AdmissionConsumptionError::Ownership(error)),
+            AcceptanceTaskOutcome::Deferred => Ok(JobActivationResult::completed(false)),
+            AcceptanceTaskOutcome::Failed(error) => {
+                Err(AcceptanceConsumptionError::Ownership(error))
+            }
             // Activation retains its own recovery and Reactor panic boundary.
-            AdmissionTaskOutcome::Panicked(panic) => std::panic::resume_unwind(panic),
+            AcceptanceTaskOutcome::Panicked(panic) => std::panic::resume_unwind(panic),
         }
     }
 }
 
-pub(super) enum AdmissionConsumptionError {
-    AdmissionTask,
+pub(super) enum AcceptanceConsumptionError {
+    AcceptanceTask,
     Ownership(ReactorError),
 }
 
-impl AdmissionConsumptionError {
+impl AcceptanceConsumptionError {
     pub(super) fn into_stopping_failure(self) -> (&'static str, ReactorError) {
         match self {
-            Self::AdmissionTask => (
-                "job admission task failure",
-                ReactorError::Internal("job admission task failed".to_owned()),
+            Self::AcceptanceTask => (
+                "job acceptance task failure",
+                ReactorError::Internal("job acceptance task failed".to_owned()),
             ),
-            Self::Ownership(error) => ("admission result ownership failure", error),
+            Self::Ownership(error) => ("acceptance result ownership failure", error),
         }
     }
 }
 
-pub(super) struct AdmissionTaskResult {
+pub(super) struct AcceptanceTaskResult {
     run_id: RunId,
-    outcome: AdmissionTaskOutcome,
+    outcome: AcceptanceTaskOutcome,
     _permit: Option<OwnedSemaphorePermit>,
 }
 
-enum AdmissionTaskOutcome {
+enum AcceptanceTaskOutcome {
     Finalizing(Box<UnconsumedFinalizingActivation>),
     Prepared(Box<JobActivationResult>),
     Deferred,
@@ -270,20 +272,20 @@ enum AdmissionTaskOutcome {
     Panicked(Box<dyn Any + Send>),
 }
 
-async fn prepare_admitted(
-    admission: AdmittedJob,
+async fn prepare_accepted(
+    acceptance: AcceptedJob,
     profile: ExecutionProfile,
-    context: Arc<AdmissionContext>,
-) -> AdmissionTaskOutcome {
-    let AdmittedJob {
+    context: Arc<AcceptanceContext>,
+) -> AcceptanceTaskOutcome {
+    let AcceptedJob {
         job,
         resource,
         cancellation,
-        admitted_at,
+        accepted_at,
         blank_pool_selection,
-    } = admission;
+    } = acceptance;
     let resource = match resource {
-        AdmittedResource::Finalizing(admission) => {
+        AcceptedResource::Finalizing(handoff_context) => {
             let ExecutionProfile {
                 profile_name,
                 rootfs_hash,
@@ -293,12 +295,12 @@ async fn prepare_admitted(
                 restore_guest_state,
                 factory,
             } = profile;
-            return AdmissionTaskOutcome::Finalizing(Box::new(UnconsumedFinalizingActivation {
+            return AcceptanceTaskOutcome::Finalizing(Box::new(UnconsumedFinalizingActivation {
                 request: Some(FinalizingActivationRequest {
                     job,
                     cancellation,
-                    admission,
-                    admitted_at,
+                    handoff_context,
+                    accepted_at,
                     profile_name,
                     rootfs_hash,
                     vcpu,
@@ -312,16 +314,16 @@ async fn prepare_admitted(
                 context,
             }));
         }
-        AdmittedResource::Fresh(lease) => SandboxAdmittedResource::Fresh(lease),
-        AdmittedResource::Reusable(reservation) => SandboxAdmittedResource::Reusable(reservation),
+        AcceptedResource::Fresh(lease) => SandboxAcceptedResource::Fresh(lease),
+        AcceptedResource::Reusable(reservation) => SandboxAcceptedResource::Reusable(reservation),
     };
     let spawn_ctx = &context.spawn_ctx;
-    let prepared = prepare_admitted_job(
-        SandboxAdmittedJob {
+    let prepared = prepare_accepted_job(
+        SandboxAcceptedJob {
             job,
             resource,
             cancellation,
-            admitted_at,
+            accepted_at,
             blank_pool_selection,
         },
         profile,
@@ -335,22 +337,24 @@ async fn prepare_admitted(
         },
     );
     match AssertUnwindSafe(prepared).catch_unwind().await {
-        Ok(Ok(result)) => AdmissionTaskOutcome::Prepared(Box::new(result)),
-        Ok(Err(error)) => AdmissionTaskOutcome::Failed(error),
-        Err(panic) => AdmissionTaskOutcome::Panicked(panic),
+        Ok(Ok(result)) => AcceptanceTaskOutcome::Prepared(Box::new(result)),
+        Ok(Err(error)) => AcceptanceTaskOutcome::Failed(error),
+        Err(panic) => AcceptanceTaskOutcome::Panicked(panic),
     }
 }
 
 struct UnconsumedFinalizingActivation {
     request: Option<FinalizingActivationRequest>,
     blank_pool_selection: Option<BlankPoolSelection>,
-    context: Arc<AdmissionContext>,
+    context: Arc<AcceptanceContext>,
 }
 
 impl UnconsumedFinalizingActivation {
     fn into_request(mut self) -> Result<FinalizingActivationRequest, ReactorError> {
         self.request.take().ok_or_else(|| {
-            ReactorError::Internal("finalizing result lost its admission before handoff".to_owned())
+            ReactorError::Internal(
+                "finalizing result lost its acceptance before handoff".to_owned(),
+            )
         })
     }
 }

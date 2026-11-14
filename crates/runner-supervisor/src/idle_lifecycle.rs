@@ -79,7 +79,7 @@ pub struct IdleDestroyTracker {
     reuse_state_notify: Arc<Notify>,
     activation_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
     finalizing_owners:
-        Arc<std::sync::Mutex<Vec<crate::finalizing_admission::GuardedFinalizingRecovery>>>,
+        Arc<std::sync::Mutex<Vec<crate::finalizing_handoff::GuardedFinalizingRecovery>>>,
     pressure_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
     #[cfg(any(test, feature = "test-support"))]
     pressure_pool_waits: tokio::sync::watch::Sender<u64>,
@@ -253,7 +253,7 @@ impl IdleDestroyTracker {
 
     pub(crate) fn retain_finalizing_recovery(
         &self,
-        recovery: crate::finalizing_admission::GuardedFinalizingRecovery,
+        recovery: crate::finalizing_handoff::GuardedFinalizingRecovery,
     ) {
         if recovery.job.is_some() || recovery.resource.is_some() || recovery.delivery_uncertain {
             // Preserve actual custody on an advisory poisoned lock. Recovery
@@ -270,7 +270,7 @@ impl IdleDestroyTracker {
     /// Taking custody supplies neither physical credit nor completion proof.
     pub fn take_retained_finalizing_owners(
         &self,
-    ) -> Result<Vec<crate::finalizing_admission::GuardedFinalizingRecovery>, MemoryOperationError>
+    ) -> Result<Vec<crate::finalizing_handoff::GuardedFinalizingRecovery>, MemoryOperationError>
     {
         if !self.tasks.is_closed() || !self.tasks.is_empty() {
             return Err(MemoryOperationError::OwnershipInvariant);

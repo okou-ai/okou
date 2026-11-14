@@ -32,7 +32,7 @@ async fn existing_run_registration_guards_supplied_work_without_http_history() {
         BlankPoolReplenisher::new(&BTreeMap::new(), &BTreeMap::new(), &budget, 0, None)
             .diagnostics();
     let active_runs = runner_lifecycle::active_runs::ActiveRuns::new(Arc::clone(&notify));
-    let ctx = AdmissionResources {
+    let ctx = AcceptanceResources {
         active_runs: &active_runs,
         idle_pool: &pool,
         status: &status,
@@ -53,9 +53,9 @@ async fn existing_run_registration_guards_supplied_work_without_http_history() {
     let (ready, _) = oneshot::channel();
     let outcome = tokio::time::timeout(
         Duration::from_secs(1),
-        admit_supplied(
+        accept_supplied(
             context,
-            AdmissionRequest {
+            AcceptanceRequest {
                 profile_name: "vm0/default",
                 job_vcpu: 2,
                 job_memory: 4096,
@@ -67,8 +67,8 @@ async fn existing_run_registration_guards_supplied_work_without_http_history() {
         ),
     )
     .await
-    .expect("a registered Run must not wait for resource admission again");
-    assert!(matches!(outcome, SuppliedAdmission::Unknown));
+    .expect("a registered Run must not wait for resource acceptance again");
+    assert!(matches!(outcome, SuppliedAcceptance::Unknown));
     assert!(cancel_tokens.handle(run_id).await.is_some());
     assert!(!existing.handle().is_cancelled());
     assert_eq!(budget.allocated(), (0, 0, 0));

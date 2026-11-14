@@ -54,7 +54,7 @@ impl ActivationResources<'_> {
     }
 }
 
-pub struct ReuseAdmissionRequest<'a> {
+pub struct ReuseActivationRequest<'a> {
     pub profile_name: &'a str,
     pub rootfs_hash: &'a str,
     pub device_rate_limits: &'a Option<DeviceRateLimits>,
@@ -68,7 +68,7 @@ pub struct ReuseFromPoolFailure {
     pub error: String,
 }
 
-/// Fully selected resource and transfer gate for a job fresh admission.
+/// Fully selected resource and transfer gate for fresh job activation.
 pub struct ReuseFromPoolReady {
     pub reuse_entry: Option<ReusableIdleSandbox>,
     pub active_lease: BudgetLease,
@@ -228,7 +228,7 @@ pub async fn activate_reserved_idle(
             reuse_key_fingerprint,
             reuse_key_kind = reserved_reuse_key.as_deref().map(reuse_key_kind),
             profile = %profile_name,
-            "reserved idle sandbox configuration does not match admitted job, destroying before fresh fallback"
+            "reserved idle sandbox configuration does not match accepted job, destroying before fresh fallback"
         );
         return cleanup_reserved_for_fresh_fallback(
             reservation.into_destroy_job(),
@@ -425,12 +425,12 @@ async fn cleanup_reserved_for_fresh_fallback(
 
 pub async fn try_reuse_from_pool(
     run_id: RunId,
-    request: ReuseAdmissionRequest<'_>,
+    request: ReuseActivationRequest<'_>,
     ctx: &ActivationResources<'_>,
     pre_spawn_timing: &mut RunnerPreSpawnTiming,
     cancellation: &RunCancellationHandle,
 ) -> Result<ReuseFromPoolReady, ReuseFromPoolFailure> {
-    let ReuseAdmissionRequest {
+    let ReuseActivationRequest {
         profile_name,
         rootfs_hash,
         device_rate_limits,

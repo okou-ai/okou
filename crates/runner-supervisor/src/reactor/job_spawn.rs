@@ -1,6 +1,6 @@
 //! Claimed job task spawning, completion, and panic cleanup.
 //!
-//! Discovery and idle reuse decide when a admitted job should start. This module
+//! Discovery and idle reuse decide when an accepted job should start. This module
 //! owns the spawned task body: concrete executor invocation and request wiring,
 //! deferred telemetry/network-log uploads, and the outer panic boundary.
 //! The supervisor owns post-executor finalizing, completion and settlement policy.
