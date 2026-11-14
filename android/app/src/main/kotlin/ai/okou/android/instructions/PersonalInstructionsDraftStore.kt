@@ -137,11 +137,15 @@ class PersonalInstructionsDraftStore(
         val stream = file.startWrite()
         try {
             json.encodeToStream(InstructionsDocument(1, value), stream)
+            // AtomicFile logs some sync/commit failures instead of throwing them.
+            stream.fd.sync()
             file.finishWrite(stream)
         } catch (error: Exception) {
             file.failWrite(stream)
             throw error
         }
+        // Verify the committed value outside rollback: finishWrite has closed the transaction.
+        if (read(key) != value) throw IOException("Instructions draft was not committed")
     }
 
     suspend fun close() {

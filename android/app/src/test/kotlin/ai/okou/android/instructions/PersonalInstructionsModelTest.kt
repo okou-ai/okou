@@ -392,6 +392,43 @@ class PersonalInstructionsModelTest {
         }
 
     @Test
+    fun aFailedAtomicCommitCannotAuthorizeARemoteSave() = check { service, store, create, _ ->
+        val model = create(false)
+        model.open()
+        runCurrent()
+        model.edit("Must be durable before save")
+        runCurrent()
+        val directory = temporary.root.listFiles()!!.single()
+        val document = directory.listFiles()!!.single()
+        val retained = temporary.root.resolve("retained-instructions.json")
+        assertTrue(document.renameTo(retained))
+        assertTrue(document.mkdir())
+        val obstruction = document.resolve("blocked")
+        obstruction.writeText("The atomic destination cannot be replaced")
+
+        model.save()
+        runCurrent()
+        assertTrue(service.writes.isEmpty())
+        assertEquals("Original", service.saved.content)
+        assertTrue(model.uiState.value.localFailure)
+        assertEquals("Must be durable before save", model.uiState.value.content)
+        assertEquals("Must be durable before save", store.load(identity).draft?.content)
+        assertFalse(store.load(identity).durable)
+
+        assertTrue(obstruction.delete())
+        assertTrue(document.delete())
+        assertTrue(retained.renameTo(document))
+        model.retryLocalDraft()
+        runCurrent()
+        assertFalse(model.uiState.value.localFailure)
+        model.save()
+        runCurrent()
+        assertEquals(listOf("Must be durable before save" to "v1"), service.writes)
+        assertEquals("Must be durable before save", service.saved.content)
+        assertNull(store.load(identity).draft)
+    }
+
+    @Test
     fun persistenceFailureKeepsTheOnlyIntentAndPreventsRemoteMutation() =
         check(true) { service, store, create, _ ->
             val model = create(false)
