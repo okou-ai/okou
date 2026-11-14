@@ -94,7 +94,7 @@ class PersonalInstructionsModel(
         if (!current() || !state.canEdit || content == state.content) return
         val base = state.draft?.base ?: state.saved ?: return
         val draft =
-            if (content == base.content && state.phase != InstructionsPhase.Conflict) null
+            if (content == base.content && state.phase == InstructionsPhase.Ready) null
             else InstructionsDraft(content, base)
         mutable.value = state.copy(draft = draft, saveRejected = false)
         persistEdit(draft)
@@ -199,7 +199,13 @@ class PersonalInstructionsModel(
             draft?.attempted == true &&
                 saved.version != draft.base.version &&
                 saved.content == draft.content
-        if (discard || fulfilled) {
+        // An offline undo remains provisional until its original version is confirmed.
+        val unchanged =
+            draft != null &&
+                !draft.attempted &&
+                saved.version == draft.base.version &&
+                saved.content == draft.content
+        if (discard || fulfilled || unchanged) {
             replaceDraft(null)
             requireCurrent()
             mutable.value =
@@ -265,12 +271,7 @@ class PersonalInstructionsModel(
             } catch (_: Exception) {
                 if (current())
                     mutable.value =
-                        mutable.value.copy(
-                            draft = attempt.copy(attempted = false),
-                            phase = InstructionsPhase.Ready,
-                            persisting = false,
-                            localFailure = true,
-                        )
+                        state.copy(persisting = false, localFailure = true, saveRejected = false)
                 return@launch
             }
             try {
