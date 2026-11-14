@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.43.4](https://github.com/okou-ai/okou/compare/ios-v0.43.3...ios-v0.43.4) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** enable keyboard send after selecting a follow-up ([#47143](https://github.com/okou-ai/okou/issues/47143)) ([d2c090f](https://github.com/okou-ai/okou/commit/d2c090fd685bae44dc9ccfb79675a74092e15e7f))
+* **ios:** return to the chat list after archiving ([#47169](https://github.com/okou-ai/okou/issues/47169)) ([8374e88](https://github.com/okou-ai/okou/commit/8374e8835c8a4ae4ab12ec9a887bddf15c3f8094))
+
 ## [0.43.3](https://github.com/okou-ai/okou/compare/ios-v0.43.2...ios-v0.43.3) (2026-11-14)
 
 

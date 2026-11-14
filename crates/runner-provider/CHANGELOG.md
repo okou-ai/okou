@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.6...runner-provider-v0.20.7) (2026-11-14)
+
+
+### Refactoring
+
+* **api:** remove legacy runner acquisition and queue readers ([#47138](https://github.com/okou-ai/okou/issues/47138)) ([50c5853](https://github.com/okou-ai/okou/commit/50c5853b53188770b588d3f8a3df267830d295a3))
+* **runner-provider:** centralize local claim marker release ([#47170](https://github.com/okou-ai/okou/issues/47170)) ([583e0e9](https://github.com/okou-ai/okou/commit/583e0e9e5fc4ecbc6a8001bfe9a9444abf30fbba))
+
 ## [0.20.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.5...runner-provider-v0.20.6) (2026-11-14)
 
 
