@@ -5,8 +5,6 @@ import ai.okou.android.MainActivity
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.auth.SessionModel
 import android.content.Intent
-import android.os.Bundle
-import android.os.Parcel
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
@@ -22,7 +20,6 @@ import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
-import androidx.test.platform.app.InstrumentationRegistry
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.Job
@@ -200,21 +197,7 @@ class PersonalInstructionsSettingsTest {
         val large = "Personal instructions 👋 ".repeat(5_000)
         input.performScrollTo().performTextReplacement(large)
         input.performTextInputSelection(TextRange(13))
-        compose.runOnIdle {
-            val saved = Bundle()
-            InstrumentationRegistry.getInstrumentation()
-                .callActivityOnSaveInstanceState(compose.activity, saved)
-            val parcel = Parcel.obtain()
-            try {
-                parcel.writeBundle(saved)
-                assertTrue(
-                    "Instructions text must not fill the Activity/Binder bundle",
-                    parcel.dataSize() < 64 * 1024,
-                )
-            } finally {
-                parcel.recycle()
-            }
-        }
+        // Recreation also verifies the shared whole-Activity saved-state budget.
         compose.activityRule.scenario.recreate()
         compose.waitUntil(10_000) {
             compose.runOnIdle { model.uiState.value.phase == InstructionsPhase.Ready }

@@ -2,8 +2,6 @@ package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
-import android.os.Bundle
-import android.os.Parcel
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -20,14 +18,12 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -97,21 +93,7 @@ class ChatComposerRootTest {
         // Native focus loss collapses an active selection; preserve the cursor on recreation.
         input.performTextInputSelection(TextRange(13))
         captureOwners()
-        compose.runOnIdle {
-            val saved = Bundle()
-            InstrumentationRegistry.getInstrumentation()
-                .callActivityOnSaveInstanceState(compose.activity, saved)
-            val parcel = Parcel.obtain()
-            try {
-                parcel.writeBundle(saved)
-                assertTrue(
-                    "Chat drafts must not fill the Activity/Binder bundle",
-                    parcel.dataSize() < 64 * 1024,
-                )
-            } finally {
-                parcel.recycle()
-            }
-        }
+        // Recreation runs the same complete Activity budget check as every Debug save.
         compose.activityRule.scenario.recreate()
         assertEquals(
             large,

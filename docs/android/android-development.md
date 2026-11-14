@@ -112,6 +112,40 @@ resources, independently of the phone's mode. Keep the Activity context and its
 owners intact; a configuration-specific Resources instance is sufficient for
 token lookup. Native system-bar presentation follows the resolved app mode.
 
+### Saved Instance State
+
+`rememberSaveable`, `rememberSerializable`, `SavedStateHandle` and registered
+saved-state providers share the Activity's Bundle. Supported types do not imply
+bounded size. Keep only restoration metadata, such as IDs, flags, selection and
+scroll positions, there. Documents and pending business operations retain their
+own private persistent owner; a Bundle budget must not become a document limit.
+
+First-party saveable APIs belong in
+[`SavedUiState.kt`](../../android/app/src/main/kotlin/ai/okou/android/state/SavedUiState.kt).
+Use its native metadata/editor adapters and explicit collection retention policy.
+The source audit rejects direct saved-state API imports, aliases, wildcard imports,
+qualified references and provider registration outside that boundary. This is an
+architectural source boundary, not a general Kotlin data-flow or third-party SDK audit.
+Framework controls such as lazy lists can also contribute saved state indirectly.
+
+Journal-backed editors save native selection only and wait for the body to load
+before consuming that selection. Keep text, IME and selection with the native
+editing value while the data owner receives semantic text edits. Bound both the
+size of a saved value and the number of retained presentation targets.
+
+Measure the complete app-owned Activity state after the superclass save returns;
+ComponentActivity writes Jetpack providers after the ordinary lifecycle callback.
+The platform post-save callback requires API 29, while this app supports API 24.
+The shared budget is checked on every Debug save, including CI. An excess fails
+with byte counts only; it must never clear the Bundle, truncate input or spill
+arbitrary Parcel bytes to disk. Release does not add a second serialization pass.
+
+The Binder buffer is shared with other process transactions, so an Activity
+budget is headroom and a regression check, not a guarantee for every IPC. Follow
+the [official Bundle guidance](https://developer.android.com/guide/components/activities/parcelables-and-bundles)
+and verify the actual save boundary through the
+[Android testing guide](android-testing.md).
+
 ## Service and Release Boundaries
 
 ### Local Storage

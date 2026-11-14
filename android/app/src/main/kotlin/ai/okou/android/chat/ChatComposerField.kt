@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import ai.okou.android.state.rememberJournalEditor
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,16 +17,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.listSaver
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -42,24 +37,7 @@ fun ChatComposerField(
     val state by model.uiState.collectAsStateWithLifecycle()
     val focus = LocalFocusManager.current
     val entry = state.entry(target)
-    var input by
-        rememberSaveable(
-            target.key,
-            stateSaver =
-                listSaver<TextFieldValue, Int>(
-                    // Draft text belongs to the journal, not the size-limited Activity bundle.
-                    save = {
-                        val selection = if (it.text == entry.text) it.selection else TextRange.Zero
-                        listOf(selection.start, selection.end)
-                    },
-                    restore = { TextFieldValue(entry.text, TextRange(it[0], it[1])) },
-                ),
-        ) {
-            mutableStateOf(TextFieldValue(entry.text, TextRange(entry.text.length)))
-        }
-    val presented =
-        if (input.text == entry.text) input
-        else TextFieldValue(entry.text, TextRange(entry.text.length))
+    val input = rememberJournalEditor(state.journal?.let { entry.text }, target.key)
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(model, target, lifecycle) {
         fun open() {
@@ -128,9 +106,9 @@ fun ChatComposerField(
         if (target.key in state.unobserved) Text(stringResource(R.string.composer_not_observed))
         if (target.key in state.failed) Text(stringResource(R.string.composer_request_failed))
         OutlinedTextField(
-            value = presented,
+            value = input.value,
             onValueChange = {
-                input = it
+                input.edit(it)
                 model.edit(target, it.text)
             },
             modifier = Modifier.fillMaxWidth().testTag("message_input"),

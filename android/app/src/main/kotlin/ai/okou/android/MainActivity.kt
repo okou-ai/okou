@@ -4,6 +4,7 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.auth.SessionRoot
 import ai.okou.android.auth.WorkspaceSessionFactory
 import ai.okou.android.preferences.applyApplicationLocale
+import ai.okou.android.state.SavedStatePolicy
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -106,6 +107,13 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        // ComponentActivity writes Jetpack providers after the ordinary lifecycle callback.
+        // Checking here also covers API 24-28, without the API 29-only post-save callback.
+        if (BuildConfig.DEBUG) SavedStatePolicy.verify(outState)
     }
 
     override fun onResume() {

@@ -53,8 +53,8 @@ The workspace presentation owner retains chat-list state across navigation and
 configuration changes. Switching account/workspace or signing out retires that owner.
 Authentication and canonical preferences/member-memory bootstrap use production
 by default; see [native authentication](AUTHENTICATION.md)
-for public staging overrides, provider setup and verification boundaries. Chat
-Send, push registration and store publication remain later delivery. Debug uses
+for public staging overrides, provider setup and verification boundaries.
+Push registration and store publication remain later delivery. Debug uses
 `ai.okou.android.debug`; the application namespace is `ai.okou.android`.
 
 Confirmed chat and Project navigation follows Web's snapshot/event-log model using an
@@ -221,7 +221,36 @@ until native navigation opens the authoritative thread. Parallel targets cannot
 replace each other's handoff; late text before that handoff follows its created
 thread instead of becoming an unrelated new-chat draft.
 
-Other focused commands, from `android/`:
+### Saved-state policy
+
+`state/SavedUiState.kt` owns first-party Bundle metadata and both journal-backed
+editor adapters. Text stays in its existing private journal; native selection is
+restored only after that body is available. Raw saveable APIs and provider writes
+outside this boundary fail `scripts/check-saved-state.py`, including aliases and
+qualified references. This source-policy check does not infer arbitrary Kotlin
+data flow or inspect dependencies' internal providers.
+
+`MainActivity` checks the entire app-owned saved Bundle after its superclass
+collects Jetpack providers on every Debug save. The shared budget is **less than
+50,000 bytes**, following Android's below-50-KB guidance, with room below the
+process-shared Binder buffer. This is not a platform success guarantee or a
+document-size limit. Release performs no additional serialization; excess Debug
+state reports byte counts and never discards data.
+
+Presentation restoration retains the **32 most recently opened conversations'**
+native scroll states and the **64 most recently collapsed Projects**. Reopening
+a retained target refreshes its recency. Older scroll/expansion choices return
+to their native defaults; draft text, pending sends and confirmed history are
+independent and are not evicted by this policy.
+
+`SavedStateBudgetTest` covers provider collection/restoration on host APIs 24 and 35. `SavedUiStateTest` covers delayed journal hydration, recent/evicted scroll
+restoration and thousands of Project presentation choices. Existing long-text
+Activity recreation cases run the same Debug budget check; there is no separate
+64-KiB assertion per feature.
+
+### Other focused commands
+
+From `android/`:
 
 ```bash
 ./gradlew spotlessApply

@@ -2,6 +2,10 @@ package ai.okou.android.chat
 
 import ai.okou.android.R
 import ai.okou.android.api.generated.IndicatorsThreadsValue
+import ai.okou.android.state.rememberCollapsedProjects
+import ai.okou.android.state.rememberConversationUiState
+import ai.okou.android.state.rememberUiFlag
+import ai.okou.android.state.rememberUiTargetId
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,11 +33,8 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,13 +54,13 @@ import kotlinx.coroutines.launch
 fun ChatListRoute(model: ChatListModel, composer: ChatComposerModel) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val inputState by composer.uiState.collectAsStateWithLifecycle()
-    var selected by rememberSaveable { mutableStateOf<String?>(null) }
-    var composing by rememberSaveable { mutableStateOf(false) }
-    var newProject by rememberSaveable { mutableStateOf<String?>(null) }
-    var collapsed by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    var selected by rememberUiTargetId()
+    var composing by rememberUiFlag()
+    var newProject by rememberUiTargetId()
+    val collapsed = rememberCollapsedProjects()
     val listPosition = rememberLazyListState()
     val drawerPosition = rememberLazyListState()
-    val conversations = rememberSaveableStateHolder()
+    val conversations = rememberConversationUiState()
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val drawerVisible = selected != null && (drawer.isOpen || drawer.isAnimationRunning)
     val scope = rememberCoroutineScope()
@@ -73,15 +74,14 @@ fun ChatListRoute(model: ChatListModel, composer: ChatComposerModel) {
             selected = null
     }
     val open: (ConfirmedChat) -> Unit = { thread ->
+        conversations.open(thread.id)
         composing = false
         selected = thread.id
         composer.acknowledge(thread.id)
         model.history.open(thread)
         scope.launch { drawer.close() }
     }
-    val toggle: (String) -> Unit = { id ->
-        collapsed = if (id in collapsed) collapsed - id else collapsed + id
-    }
+    val toggle: (String) -> Unit = collapsed::toggle
     val newChat: (String?) -> Unit = { projectId ->
         composer.beginNew(projectId)
         selected = null
@@ -118,7 +118,7 @@ fun ChatListRoute(model: ChatListModel, composer: ChatComposerModel) {
                     model::refreshIndicators,
                     model::selectFilter,
                     open,
-                    collapsed,
+                    collapsed.values,
                     toggle,
                     drawerPosition,
                     newChat,
@@ -150,7 +150,7 @@ fun ChatListRoute(model: ChatListModel, composer: ChatComposerModel) {
                 model::refreshIndicators,
                 model::selectFilter,
                 open,
-                collapsed,
+                collapsed.values,
                 toggle,
                 listPosition,
                 newChat,
@@ -164,7 +164,7 @@ fun ChatListRoute(model: ChatListModel, composer: ChatComposerModel) {
                     ChatAction(R.string.back, { selected = null })
                     ChatAction(R.string.history_sidebar, { scope.launch { drawer.open() } })
                 }
-                conversations.SaveableStateProvider(checkNotNull(selected)) {
+                conversations.Content(checkNotNull(selected)) {
                     ConversationRoute(
                         model.history,
                         checkNotNull(selected),
