@@ -206,6 +206,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private var preparedRows: PreparedRows?
   private var appliesRows = false
   private var pendingScroll: (String, UnitPoint, Bool)?
+  private var sharingBottomInset: CGFloat = 0
   private var lastMetrics: ConversationCollectionMetrics?
   private var publishesMetrics = false
   private var lastViewportSize = CGSize.zero
@@ -588,7 +589,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private func updateContentInsets() {
     let insets = UIEdgeInsets(
       top: source.contentInsets.top, left: source.contentInsets.leading,
-      bottom: source.contentInsets.bottom, right: source.contentInsets.trailing)
+      bottom: source.contentInsets.bottom + sharingBottomInset,
+      right: source.contentInsets.trailing)
     guard collection.contentInset != insets else { return }
     collection.contentInset = insets
     collection.verticalScrollIndicatorInsets = insets
@@ -1021,6 +1023,10 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       appliesRows = false
       displayedRows = displayedRows.filter { ids.contains($0.key) }
       measurements = measurements.filter { ids.contains($0.key) }
+      if sharingBottomInset > 0, !rows.contains(where: \.isShareSelection) {
+        sharingBottomInset = 0
+        updateContentInsets()
+      }
       collection.layoutIfNeeded()
       updateLoading()
       let firstItemID = rows.first(where: { $0.readingContentTopSpacing != nil })?.id
@@ -1091,18 +1097,36 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       let spacing = displayedRows[position.messageID]?.readingContentTopSpacing,
       let frame = layout.layoutAttributesForItem(at: index)?.frame
     else { return }
-    let insets = collection.adjustedContentInset
+    var insets = collection.adjustedContentInset
+    let requested = frame.minY + spacing - insets.top - position.offset
+    if displayedRows[position.messageID]?.isShareSelection == true {
+      // Hidden work/usage/follow-up rows can shorten the transcript below the
+      // reader. Retain only the trailing room needed to avoid clamping them away.
+      let maximum = max(
+        -insets.top, collection.contentSize.height - collection.bounds.height + insets.bottom)
+      if requested > maximum {
+        sharingBottomInset += requested - maximum
+        updateContentInsets()
+        insets = collection.adjustedContentInset
+      }
+    }
     let minimum = -insets.top
     let maximum = max(
       minimum, collection.contentSize.height - collection.bounds.height + insets.bottom)
-    let y = min(maximum, max(minimum, frame.minY + spacing - insets.top - position.offset))
+    let y = min(maximum, max(minimum, requested))
     guard abs(y - collection.contentOffset.y) > 0.5 else { return }
     collection.setContentOffset(CGPoint(x: collection.contentOffset.x, y: y), animated: false)
   }
 
   func scrollTo(_ id: String, anchor: UnitPoint, animated: Bool) {
     guard source.sendTransition?.isActive != true else { return }
-    guard isViewLoaded, let index = dataSource.indexPath(for: id) else {
+    let lastShareID = source.rows.last.flatMap { $0.isShareSelection ? $0.id : nil }
+    let targetID = id == "conversation-bottom" ? lastShareID ?? id : id
+    if isViewLoaded, id == "conversation-bottom", sharingBottomInset > 0 {
+      sharingBottomInset = 0
+      updateContentInsets()
+    }
+    guard isViewLoaded, let index = dataSource.indexPath(for: targetID) else {
       pendingScroll = (id, anchor, animated)
       return
     }
