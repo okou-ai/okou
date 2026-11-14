@@ -114,6 +114,7 @@ async fn buffered_local_candidates_claim_in_parallel() {
             .send(runner_provider::JobCandidate::new(
                 run_id,
                 "vm0/default".to_owned(),
+                format!("{run_id}.job").into(),
             ))
             .unwrap();
     }

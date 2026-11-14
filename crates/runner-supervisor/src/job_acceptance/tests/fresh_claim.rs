@@ -47,8 +47,12 @@ async fn fresh_claim_does_not_wait_for_a_second_pool_lock_after_reservation() {
     let first_holder = pool.lock().await;
     let (ready, mut acceptance_ready) = oneshot::channel();
     let acceptance = accept_and_claim(
-        JobCandidate::new(run_id, "vm0/default".into())
-            .with_reuse_key(Some("thread:fresh-claim".into())),
+        JobCandidate::new(
+            run_id,
+            "vm0/default".into(),
+            dir.path().join(format!("{run_id}.job")),
+        )
+        .with_reuse_key(Some("thread:fresh-claim".into())),
         AcceptanceRequest {
             profile_name: "vm0/default",
             job_vcpu: 2,

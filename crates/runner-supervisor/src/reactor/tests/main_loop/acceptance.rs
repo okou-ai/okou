@@ -1,5 +1,5 @@
 fn local_reuse_candidate(run_id: RunId, reuse_key: &str) -> runner_provider::JobCandidate {
-    runner_provider::JobCandidate::new(run_id, "vm0/default".into())
+    runner_provider::JobCandidate::new(run_id, "vm0/default".into(), format!("{run_id}.job").into())
         .with_reuse_key(Some(reuse_key.to_owned()))
 }
 
@@ -152,6 +152,7 @@ async fn claim_failure_rolls_back_budget() {
         .send(runner_provider::JobCandidate::new(
             run_id_1,
             "vm0/default".into(),
+            format!("{run_id_1}.job").into(),
         ))
         .unwrap();
 

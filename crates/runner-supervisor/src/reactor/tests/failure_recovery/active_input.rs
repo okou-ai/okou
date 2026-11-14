@@ -76,7 +76,11 @@ async fn assert_active_input_completion(path: CompletionPath) {
     );
     env.handle
         .discover_tx
-        .send(JobCandidate::new(run_id, profile.into()))
+        .send(JobCandidate::new(
+            run_id,
+            profile.into(),
+            format!("{run_id}.job").into(),
+        ))
         .unwrap();
     let run_task = tokio::spawn(run(config));
 

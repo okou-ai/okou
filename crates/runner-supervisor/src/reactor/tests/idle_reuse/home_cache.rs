@@ -17,8 +17,12 @@ fn reusable_candidate(
     profile_name: &str,
     reuse_key: &str,
 ) -> runner_provider::JobCandidate {
-    runner_provider::JobCandidate::new(run_id, profile_name.to_string())
-        .with_reuse_key(Some(reuse_key.to_string()))
+    runner_provider::JobCandidate::new(
+        run_id,
+        profile_name.to_string(),
+        format!("{run_id}.job").into(),
+    )
+    .with_reuse_key(Some(reuse_key.to_string()))
 }
 
 #[tokio::test(start_paused = true)]

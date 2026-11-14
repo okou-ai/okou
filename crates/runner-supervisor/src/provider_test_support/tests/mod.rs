@@ -27,6 +27,7 @@ async fn claim_rejects_mismatched_context() {
         .claim(JobCandidate::new(
             candidate_run_id,
             runner_types::profile_name::DEFAULT_PROFILE.to_owned(),
+            format!("{candidate_run_id}.job").into(),
         ))
         .await;
 
@@ -43,6 +44,7 @@ async fn claim_accepts_matching_context() {
         .claim(JobCandidate::new(
             run_id,
             runner_types::profile_name::DEFAULT_PROFILE.to_owned(),
+            format!("{run_id}.job").into(),
         ))
         .await
         .expect("matching context should be claimed");

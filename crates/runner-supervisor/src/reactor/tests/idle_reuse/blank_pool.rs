@@ -864,7 +864,11 @@ async fn claimed_home_cache_metadata_combines_with_reserved_blank() {
     env.provider.set_claim_result(run_id, Some(context));
     env.handle
         .discover_tx
-        .send(JobCandidate::new(run_id, "vm0/default".into()))
+        .send(JobCandidate::new(
+            run_id,
+            "vm0/default".into(),
+            format!("{run_id}.job").into(),
+        ))
         .unwrap();
     let completion = env
         .handle

@@ -107,8 +107,12 @@ async fn invalid_reserved_resume_session_fails_before_reuse() {
     env.handle
         .discover_tx
         .send(
-            runner_provider::JobCandidate::new(run_id, "vm0/default".into())
-                .with_reuse_key(Some(reuse_key.to_string())),
+            runner_provider::JobCandidate::new(
+                run_id,
+                "vm0/default".into(),
+                format!("{run_id}.job").into(),
+            )
+            .with_reuse_key(Some(reuse_key.to_string())),
         )
         .unwrap();
 

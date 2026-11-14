@@ -67,7 +67,7 @@ async fn claim_reconciles_without_waiting_for_unrelated_gate_and_wakes_watcher()
     let blocked = insert_cancel_registration(&tokens, blocked_id).await;
     let guard = blocked.handle().transfer_guard().await;
     let cancellation = insert_cancel_registration(&tokens, claimed_id).await;
-    let candidate = JobCandidate::local(
+    let candidate = JobCandidate::new(
         claimed_id,
         crate::profile::DEFAULT_PROFILE.to_owned(),
         local_queue::job_path(dir.path(), crate::profile::DEFAULT_PROFILE, claimed_id).unwrap(),

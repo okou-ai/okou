@@ -145,7 +145,7 @@ describe("workflow skill storage presigned URL cache", () => {
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
     const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(custom.slug, custom.id)}`;
     mockUniquePresignedUrls();
-    const createAndExecution = async (prompt: string) => {
+    const createExecution = async (prompt: string) => {
       const run = await api.createThreadRun(actor, {
         agentId,
         prompt,
@@ -170,15 +170,13 @@ describe("workflow skill storage presigned URL cache", () => {
       return { runId: run.runId, archiveUrl: mount.downloadUrl };
     };
 
-    const first = await createAndExecution(
-      "request the readonly skill archive",
-    );
+    const first = await createExecution("request the readonly skill archive");
     expect(new URL(first.archiveUrl).searchParams.get("X-Amz-Expires")).toBe(
       "172800",
     );
     await flushWaitUntilForTest();
     await api.requestCancelRun(actor, first.runId, [200]);
-    const second = await createAndExecution("reuse the readonly skill archive");
+    const second = await createExecution("reuse the readonly skill archive");
     expect(second.archiveUrl).toBe(first.archiveUrl);
     await api.requestCancelRun(actor, second.runId, [200]);
   });

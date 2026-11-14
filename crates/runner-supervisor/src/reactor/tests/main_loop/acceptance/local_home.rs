@@ -153,8 +153,12 @@ async fn assert_home_selection(
     if during_claim {
         env.handle.block_claim(successor);
     }
-    let candidate = runner_provider::JobCandidate::new(successor, "vm0/default".into())
-        .with_reuse_key(Some(key.into()));
+    let candidate = runner_provider::JobCandidate::new(
+        successor,
+        "vm0/default".into(),
+        format!("{successor}.job").into(),
+    )
+    .with_reuse_key(Some(key.into()));
     env.handle.discover_tx.send(candidate).unwrap();
     if during_claim {
         assert!(env.handle.wait_run_claim_in_flight(successor, WAIT).await);

@@ -85,7 +85,7 @@ async fn claim_releases_claim_when_result_already_exists() {
 
     let job_id = RunId::new_v4();
     write_job(dir.path(), job_id, "already done");
-    let candidate = JobCandidate::local(
+    let candidate = JobCandidate::new(
         job_id,
         crate::profile::DEFAULT_PROFILE.to_owned(),
         local_queue::job_path(dir.path(), crate::profile::DEFAULT_PROFILE, job_id).unwrap(),
@@ -111,8 +111,7 @@ async fn claim_cleans_up_on_missing_job_file() {
     let claim_path = local_queue::claim_path(dir.path(), run_id);
     let job_path =
         local_queue::job_path(dir.path(), crate::profile::DEFAULT_PROFILE, run_id).unwrap();
-    let candidate =
-        JobCandidate::local(run_id, crate::profile::DEFAULT_PROFILE.to_owned(), job_path);
+    let candidate = JobCandidate::new(run_id, crate::profile::DEFAULT_PROFILE.to_owned(), job_path);
 
     // No .job file — claim() should fail at the read step.
     assert!(provider.claim(candidate).await.is_none());
@@ -133,7 +132,7 @@ async fn claim_marks_unreadable_job_path_failed() {
         local_queue::job_path(dir.path(), crate::profile::DEFAULT_PROFILE, run_id).unwrap();
     let result_path = local_queue::result_path(dir.path(), run_id);
     std::fs::create_dir_all(&job_path).unwrap();
-    let candidate = JobCandidate::local(
+    let candidate = JobCandidate::new(
         run_id,
         crate::profile::DEFAULT_PROFILE.to_owned(),
         job_path.clone(),
@@ -177,7 +176,7 @@ async fn claim_handles_poison_job_json() {
     let result_path = local_queue::result_path(dir.path(), run_id);
     std::fs::create_dir_all(job_path.parent().unwrap()).unwrap();
     std::fs::write(&job_path, b"not json").unwrap();
-    let candidate = JobCandidate::local(
+    let candidate = JobCandidate::new(
         run_id,
         crate::profile::DEFAULT_PROFILE.to_owned(),
         job_path.clone(),

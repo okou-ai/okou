@@ -272,7 +272,7 @@ describe("system storage presigned URL cache", () => {
       });
     const signedCount = mockUniquePresignedUrls();
     const api = createRunsApi(context);
-    const createAndExecution = async (prompt: string) => {
+    const createExecution = async (prompt: string) => {
       const run = await api.createThreadRun(actor, {
         agentId: runFixture.agentId,
         prompt,
@@ -295,7 +295,7 @@ describe("system storage presigned URL cache", () => {
       });
     };
 
-    const expected = await createAndExecution(
+    const expected = await createExecution(
       "request all connector skill bundles",
     );
     expect(
@@ -343,7 +343,7 @@ describe("system storage presigned URL cache", () => {
       "use the mixed-scope storage URL cache",
       "reuse the mixed-scope storage URL cache",
     ]) {
-      await expect(createAndExecution(prompt)).resolves.toStrictEqual(expected);
+      await expect(createExecution(prompt)).resolves.toStrictEqual(expected);
     }
     expect(
       objectKeys.map((objectKey) => {

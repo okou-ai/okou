@@ -7,7 +7,7 @@ use super::super::support::{
 };
 
 fn reusable_candidate(run_id: RunId, session_id: &str) -> runner_provider::JobCandidate {
-    runner_provider::JobCandidate::new(run_id, "vm0/default".into())
+    runner_provider::JobCandidate::new(run_id, "vm0/default".into(), format!("{run_id}.job").into())
         .with_reuse_key(Some(session_id.to_string()))
 }
 

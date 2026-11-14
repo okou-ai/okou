@@ -201,7 +201,7 @@ impl LocalProvider {
 }
 
 fn job_candidate_from_discovered(discovered: LocalDiscoveredJob) -> JobCandidate {
-    JobCandidate::local(
+    JobCandidate::new(
         discovered.run_id,
         discovered.profile_name,
         discovered.job_path,
@@ -282,13 +282,8 @@ impl super::LocalJobSource for LocalProvider {
     async fn claim(&self, candidate: JobCandidate) -> Option<ExecutionJob> {
         let run_id = candidate.run_id();
         let partition_profile = candidate.profile_name().to_owned();
-        let Some(job_file) = candidate.local_job_path().map(std::path::Path::to_path_buf) else {
-            warn!(run_id = %run_id, "local: claim candidate missing job path");
-            return None;
-        };
-
         let queue = self.queue.clone();
-        let job_file_for_claim = job_file.clone();
+        let job_file_for_claim = candidate.local_job_path().to_path_buf();
         let claim_result = tokio::task::spawn_blocking(move || {
             queue.claim_job_sync(run_id, &partition_profile, &job_file_for_claim)
         })

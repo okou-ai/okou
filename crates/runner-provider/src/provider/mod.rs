@@ -44,23 +44,17 @@ pub enum CompletionReportTiming {
 pub struct JobCandidate {
     run_id: RunId,
     profile_name: String,
-    local_job_path: Option<PathBuf>,
+    local_job_path: PathBuf,
     reuse_key: Option<String>,
 }
 
 impl JobCandidate {
-    pub fn new(run_id: RunId, profile_name: String) -> Self {
+    pub fn new(run_id: RunId, profile_name: String, job_path: PathBuf) -> Self {
         Self {
             run_id,
             profile_name,
-            local_job_path: None,
+            local_job_path: job_path,
             reuse_key: None,
-        }
-    }
-    pub fn local(run_id: RunId, profile_name: String, job_path: PathBuf) -> Self {
-        Self {
-            local_job_path: Some(job_path),
-            ..Self::new(run_id, profile_name)
         }
     }
     pub fn run_id(&self) -> RunId {
@@ -69,8 +63,8 @@ impl JobCandidate {
     pub fn profile_name(&self) -> &str {
         &self.profile_name
     }
-    pub fn local_job_path(&self) -> Option<&Path> {
-        self.local_job_path.as_deref()
+    pub fn local_job_path(&self) -> &Path {
+        &self.local_job_path
     }
     pub fn reuse_key(&self) -> Option<&str> {
         self.reuse_key.as_deref()

@@ -1563,8 +1563,8 @@ describe("Axiom ingest HTTP error diagnostics", () => {
 });
 
 // Logger-owned transport exception: verify the selected-eager operation payload
-// at the existing external SDK ingest boundary, using real connect/send/claim
-// endpoints. Ordinary API route tests must not inspect incidental diagnostics.
+// at the existing external SDK ingest boundary, using the real connect/send/dispatch
+// flow. Ordinary API route tests must not inspect incidental diagnostics.
 describe("selected eager Axiom operation payload", () => {
   it.each([0, 1, 2])(
     "reports %i selected decrypts with both completed intervals",
