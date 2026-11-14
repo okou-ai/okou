@@ -2770,6 +2770,11 @@
       "ideasLabel": "शुरुआती सुझाव",
       "label": "शुरू करने के लिए काम",
       "more": "और",
+      "presentationFormat": "प्रस्तुति का प्रारूप",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "प्रस्तुति टेम्पलेट",
       "removeTask": "{{task}} हटाएँ",
       "shelf": {
