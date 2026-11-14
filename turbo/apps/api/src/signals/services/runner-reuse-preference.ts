@@ -1,9 +1,8 @@
-import { boolean, int, object, uuid, enum as zEnum, type output } from "zod";
+import { enum as zEnum, type output } from "zod";
 import {
   RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
   type RunnerPreference,
 } from "@okouai/api-contracts/contracts/runners";
-import { runStatusSchema } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
@@ -35,7 +34,6 @@ import {
   zodEnumDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import { pgTimestampWithoutTimezoneToDateSchema } from "../../lib/db-raw-rows";
 import {
   withPgPoolAcquisitionCapture,
   withPgQueryExecutionCapture,
@@ -295,36 +293,25 @@ type PositiveRunnerPreference = Extract<
   { kind: "preference" }
 >;
 
-const runnerReuseCandidateSchema = object({
-  runnerIdentity: object({
-    runnerId: uuid(),
-    heartbeatGeneration: int().positive(),
-  }).strict(),
-  heartbeatSequence: int().nonnegative(),
-  hasAdvertisedPredecessorSandbox: boolean(),
-  hasLocalFinalizingPredecessor: boolean(),
-  predecessorHomeEvidence: predecessorHomeEvidenceKindSchema.nullable(),
-  predecessorRunnerHasActiveProducer: boolean(),
-  candidateRunnerHasActiveProducer: boolean(),
-  hasReusableSandbox: boolean(),
-  hasHomeCache: boolean(),
-  hasPredecessorHostLocation: boolean(),
-  predecessorCompletedAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
-  predecessorRunId: uuid().nullable(),
-  predecessorStatus: runStatusSchema.nullable(),
-  predecessorRunnerId: uuid().nullable(),
-  predecessorHeartbeatGeneration: int().nullable(),
-  predecessorHeartbeatSequence: int().nullable(),
-}).strict();
+interface RunnerReuseCandidate {
+  readonly runnerIdentity: PositiveRunnerPreference["runnerIdentity"];
+  readonly hasAdvertisedPredecessorSandbox: boolean;
+  readonly hasLocalFinalizingPredecessor: boolean;
+  readonly predecessorHomeEvidence: output<
+    typeof predecessorHomeEvidenceKindSchema
+  > | null;
+  readonly predecessorRunnerHasActiveProducer: boolean;
+  readonly candidateRunnerHasActiveProducer: boolean;
+  readonly hasReusableSandbox: boolean;
+  readonly hasHomeCache: boolean;
+  readonly hasPredecessorHostLocation: boolean;
+  readonly predecessorCompletedAt: Date | null;
+  readonly predecessorRunId: string | null;
+}
 
 const homeEvidenceDecoder = nullableDriverValueDecoder(
   zodEnumDriverValueDecoder(predecessorHomeEvidenceKindSchema),
 );
-const runStatusDecoder = nullableDriverValueDecoder(
-  zodEnumDriverValueDecoder(runStatusSchema),
-);
-
-type RunnerReuseCandidate = output<typeof runnerReuseCandidateSchema>;
 
 function advertisedReuseConditions(
   args: {
@@ -434,7 +421,6 @@ function runnerReuseCandidatePlan(args: {
     fields: {
       runnerId: runnerState.runnerId,
       heartbeatGeneration: runnerState.heartbeatGeneration,
-      heartbeatSequence: runnerState.heartbeatSequence,
       hasAdvertisedPredecessorSandbox: sql`${exactSandboxCondition}`.mapWith(
         pgBooleanDecoder,
       ),
@@ -457,13 +443,6 @@ function runnerReuseCandidatePlan(args: {
         pgBooleanDecoder,
       ),
       predecessorCompletedAt: predecessorRun.completedAt,
-      predecessorStatus: sql`${predecessorRun.status}`.mapWith(
-        runStatusDecoder,
-      ),
-      predecessorRunnerId: predecessorRunnerState.runnerId,
-      predecessorHeartbeatGeneration:
-        predecessorRunnerState.heartbeatGeneration,
-      predecessorHeartbeatSequence: predecessorRunnerState.heartbeatSequence,
       // Ready sandbox/home provenance survives deletion of the settled Run.
       predecessorRunId,
     },
@@ -493,10 +472,7 @@ export interface RunnerReusePreparation {
   readonly selection:
     | {
         readonly ok: true;
-        readonly value: {
-          readonly thread: PendingRunnerThread;
-          readonly candidate: RunnerReuseCandidate | null;
-        };
+        readonly value: RunnerReuseCandidate | null;
       }
     | { readonly ok: false; readonly error: unknown };
   readonly operations: ReturnType<RunnerReusePreferenceTiming["operations"]>;
@@ -585,7 +561,6 @@ const findRunnerReuseCandidate$ = command(
             runnerId: row.runnerId,
             heartbeatGeneration: row.heartbeatGeneration,
           },
-          heartbeatSequence: row.heartbeatSequence,
           hasAdvertisedPredecessorSandbox: row.hasAdvertisedPredecessorSandbox,
           hasLocalFinalizingPredecessor: row.hasLocalFinalizingPredecessor,
           predecessorHomeEvidence: row.predecessorHomeEvidence,
@@ -598,10 +573,6 @@ const findRunnerReuseCandidate$ = command(
           hasPredecessorHostLocation: row.hasPredecessorHostLocation,
           predecessorCompletedAt: row.predecessorCompletedAt,
           predecessorRunId: row.predecessorRunId,
-          predecessorStatus: row.predecessorStatus,
-          predecessorRunnerId: row.predecessorRunnerId,
-          predecessorHeartbeatGeneration: row.predecessorHeartbeatGeneration,
-          predecessorHeartbeatSequence: row.predecessorHeartbeatSequence,
         }
       : null;
   },
@@ -654,19 +625,16 @@ export const prepareRunnerReusePreference$ = command(
     const timing = new RunnerReusePreferenceTiming();
     const currentDate = nowDate();
     const selection = await settleIncludingAbort(async () => {
-      return {
-        thread: args.thread,
-        candidate: await set(
-          selectRunnerReuseCandidate$,
-          {
-            ...args,
-            pendingThread: args.thread,
-            ...runnerReuseLookupStages({ admittedAt: null }, currentDate),
-          },
-          timing,
-          "holder_select",
-        ),
-      };
+      return await set(
+        selectRunnerReuseCandidate$,
+        {
+          ...args,
+          pendingThread: args.thread,
+          ...runnerReuseLookupStages({ admittedAt: null }, currentDate),
+        },
+        timing,
+        "holder_select",
+      );
     });
     return {
       selection,
@@ -788,7 +756,7 @@ export function preparedRunnerReusePreference(
     throw preparation.selection.error;
   }
   return runnerReusePreferenceResult({
-    candidate: preparation.selection.value.candidate,
+    candidate: preparation.selection.value,
     admittedAt,
   });
 }
