@@ -80,6 +80,13 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   `URLError.code == .cancelled`. Check the proven side of `if` and `guard`, not
   every return in the handler. Throwing transport recovery and cleanup followed
   by rethrowing the original error remain valid.
+  Immutable local aliases of the caught error or a known cancellation condition
+  preserve that meaning at their initializer. Explicit `switch` cases for the
+  caught cancellation error, its URL cancellation code, or a known Boolean
+  cancellation value cannot return successful data either. Mutable aliases,
+  shadowed bindings, unrelated subjects and deferred callbacks are separate
+  contracts. Rethrowing an immutable alias still preserves the original error
+  when cleanup can fail.
   Request phases belong to CCStateSwiftUI loadables; drafts, confirmed snapshots,
   and protocol phases follow their own business contracts.
 - Explicit `_ = Task { ... }` assignments and wildcard declarations such as
@@ -237,8 +244,11 @@ Cancellation checks track direct local statement paths, recognized owner guards,
 and same-file helpers rather than proving every control-flow path, dynamic
 dispatch target, or cross-file teardown contract.
 Resource-failure checks recognize explicit caught-error tests, native cancellation
-flags and direct URL-error comparisons. Error aliases, arbitrary helper predicates,
-switch-based cancellation handling and indirect recovery still require review.
+flags, visible immutable local aliases and direct URL-error comparisons. Switch
+checks require recognizable cancellation labels throughout the selected case;
+default/fallthrough inference, mixed labels, arbitrary helper predicates, casts
+stored as aliases, switch-expression results and indirect recovery still require
+review. Alias lookup is bounded and does not prove arbitrary mutation or effects.
 Allowing a throwing recovery expression does not prove its cancellation ownership.
 Discarded-Task checks inspect only direct native Task construction with an inline
 operation closure and an explicit discard. They separate nested closures, local
