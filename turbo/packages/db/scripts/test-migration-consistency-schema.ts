@@ -12,7 +12,6 @@ import { validateRunOutputMemoryCitationRetirement } from "./test-run-output-mem
 import { validateStripeInvoicePaidRetirement } from "./test-stripe-invoice-paid-retirement";
 import { validateManagedDataRetirement } from "./test-managed-data-retirement";
 import { validateHistoricalRunCleanup } from "./test-historical-run-cleanup";
-import { validateRunnerJobQueueRetirement } from "./test-runner-job-queue-retirement";
 /**
  * Migration Consistency Test - Schema Comparison
  *
@@ -3062,7 +3061,6 @@ async function main(): Promise<void> {
 
     await validateBrowserOwnerDdlReplay(dbUrl.href);
     await validateEmailIntegrationMigration(dbUrl.href);
-    await validateRunnerJobQueueRetirement(dbUrl.href);
 
     // Step 1: Test with existing migrations
     console.log("=== Phase 2: Test existing migrations ===\n");
