@@ -6,6 +6,8 @@ export ANDROID_HOME=${ANDROID_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/android
 python3 scripts/release-signing.test.py
 python3 scripts/check-auth-manifest.test.py
 python3 scripts/screenshots.test.py
+python3 scripts/check-saved-state.test.py
+python3 scripts/check-saved-state.py
 python3 ../.github/scripts/checks/android_launcher.py ..
 python3 scripts/sync-design-tokens.py --check
 ./gradlew spotlessCheck :app:testDebugUnitTest \

@@ -17,6 +17,9 @@ import { projectsContract } from "../contracts/projects";
 import { projectSnapshotArchiveSchema } from "../validators/projects";
 import { featureSwitchesContract } from "../contracts/feature-switches";
 import { instructionsContract } from "../contracts/instructions";
+import { chatEventsContract } from "../contracts/chat-event-send";
+import { chatInputStatusContract } from "../contracts/chat-input-status";
+import { onboardingStatusContract } from "../contracts/onboarding";
 
 export interface KotlinRouteBinding {
   readonly name: string;
@@ -92,6 +95,28 @@ const historyReadBindings: readonly KotlinRouteBinding[] = [
 /** Only routes used by the installed native client, not every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   {
+    name: "createThread",
+    request: "CreateThreadRequest",
+    response: "CreatedThread",
+    route: chatThreadsContract.create,
+  },
+  {
+    name: "sendInput",
+    request: "SendRequest",
+    response: "AcceptedInput",
+    route: chatEventsContract.send,
+  },
+  {
+    name: "inputStatus",
+    response: "InputStatus",
+    route: chatInputStatusContract.get,
+  },
+  {
+    name: "onboardingStatus",
+    response: "OnboardingStatus",
+    route: onboardingStatusContract.getStatus,
+  },
+  {
     name: "personalInstructions",
     response: "PersonalInstructions",
     route: instructionsContract.get,
@@ -131,6 +156,36 @@ export interface KotlinTypeBinding {
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
+  {
+    name: "CreateThreadRequest",
+    schema: chatThreadsContract.create.body,
+    direction: "input",
+  },
+  {
+    name: "CreatedThread",
+    schema: chatThreadsContract.create.responses[201],
+    direction: "output",
+  },
+  {
+    name: "SendRequest",
+    schema: chatEventsContract.send.body,
+    direction: "input",
+  },
+  {
+    name: "AcceptedInput",
+    schema: chatEventsContract.send.responses[201],
+    direction: "output",
+  },
+  {
+    name: "InputStatus",
+    schema: chatInputStatusContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "OnboardingStatus",
+    schema: onboardingStatusContract.getStatus.responses[200],
+    direction: "output",
+  },
   {
     name: "PersonalInstructions",
     schema: instructionsContract.get.responses[200],

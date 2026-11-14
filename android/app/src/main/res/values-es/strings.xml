@@ -77,4 +77,20 @@
     <string name="instructions_reload">Cargar última versión y descartar cambios</string>
     <string name="instructions_discard">Descartar cambios</string>
     <string name="instructions_retry_save">Reintentar el mismo guardado</string>
+    <string name="composer_new">Nuevo chat</string>
+    <string name="composer_new_project">Nuevo chat en este Proyecto</string>
+    <string name="composer_message">Mensaje</string>
+    <string name="composer_send">Enviar</string>
+    <string name="composer_local_failed">No se pudieron guardar los cambios del borrador en este dispositivo.</string>
+    <string name="composer_target_loading">Cargando disponibilidad del chat…</string>
+    <string name="composer_target_unavailable">No hay un nuevo chat disponible para esta cuenta.</string>
+    <string name="composer_unconfirmed">La entrega del mensaje no está confirmada.</string>
+    <string name="composer_check">Comprobar entrega</string>
+    <string name="composer_retry">Reintentar el mismo mensaje</string>
+    <string name="composer_not_observed">El mensaje aún no es visible. La entrega sigue sin confirmar.</string>
+    <string name="composer_request_failed">La solicitud falló. El borrador y el mensaje pendiente se conservan.</string>
+    <string name="composer_saving">Guardando borrador en este dispositivo…</string>
+    <string name="composer_accepted">Mensaje aceptado; en espera de procesamiento.</string>
+    <string name="composer_consumed">La entrada se ha recogido; se desconoce el estado actual de ejecución.</string>
+    <string name="composer_revoked">Mensaje revocado</string>
 </resources>

@@ -183,6 +183,14 @@ class ConversationHistoryModel(
             }
     }
 
+    fun refreshAfterSend(threadId: String) {
+        val ticket = generation
+        scope.launch {
+            job?.join()
+            if (current(ticket) && mutable.value.thread?.id == threadId) refresh()
+        }
+    }
+
     private fun reportAuthorization(error: Exception) {
         if (
             error is ApiFailure.Unauthenticated ||

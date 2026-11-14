@@ -14,7 +14,9 @@ import ai.okou.android.auth.WorkspaceBootstrap
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceMembership
 import ai.okou.android.auth.WorkspaceSession
+import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
+import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsService
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +25,11 @@ import kotlinx.serialization.json.Json
 /** Compiled only into host/device tests. Production has no authentication bypass switch. */
 open class TestOkouApplication : OkouApplication() {
     var chatService: ChatListService = TestChatService()
+    var composerService: ChatComposerService = TestChatComposerService()
+    var journalStore: ComposerJournalStore? = null
+    override val composerJournal
+        get() = journalStore ?: super.composerJournal
+
     var instructionsService: PersonalInstructionsService? = null
     var instructionsStore: PersonalInstructionsDraftStore? = null
     override val instructionsDrafts
@@ -46,7 +53,10 @@ open class TestOkouApplication : OkouApplication() {
     ): WorkspaceSession {
         val key = Triple(identity.apiOrigin, identity.userId, identity.workspaceId)
         fun stored() = preferences.getOrPut(key) { testBootstrap(identity.workspaceId).preferences }
-        return object : WorkspaceSession, ChatListService by chatService {
+        return object :
+            WorkspaceSession,
+            ChatListService by chatService,
+            ChatComposerService by composerService {
 
             override suspend fun personalInstructionsEnabled() =
                 instructionsService?.personalInstructionsEnabled() == true

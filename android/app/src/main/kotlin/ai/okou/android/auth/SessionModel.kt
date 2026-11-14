@@ -4,7 +4,9 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.chat.ChatCacheStore
+import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
+import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.chatScopeHash
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsModel
@@ -43,6 +45,7 @@ data class ReadyWorkspace(
     val preferences: MemberPreferencesModel,
     val chats: ChatListModel,
     val instructions: PersonalInstructionsModel,
+    val composer: ChatComposerModel,
 )
 
 data class SessionUiState(
@@ -60,6 +63,7 @@ class SessionModel(
     private val apiOrigin: String,
     private val chatCache: ChatCacheStore,
     private val instructionsDrafts: PersonalInstructionsDraftStore,
+    private val composerJournal: ComposerJournalStore,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     @Volatile private var generation = 0L
@@ -217,6 +221,23 @@ class SessionModel(
                                         }
                                     },
                                 )[PersonalInstructionsModel::class.java],
+                                ViewModelProvider(
+                                    store,
+                                    viewModelFactory {
+                                        initializer {
+                                            ChatComposerModel(
+                                                owner,
+                                                composerJournal,
+                                                identity,
+                                                { current(ticket, snapshot) },
+                                                { error ->
+                                                    workspaceFailure(ticket, snapshot, error)
+                                                },
+                                                chats::refreshAfterSend,
+                                            )
+                                        }
+                                    },
+                                )[ChatComposerModel::class.java],
                             ),
                         )
                     chats.refresh()

@@ -1,6 +1,7 @@
 package ai.okou.android.instructions
 
 import ai.okou.android.R
+import ai.okou.android.state.rememberJournalEditor
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -16,10 +17,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.listSaver
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -28,7 +25,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -58,30 +54,13 @@ fun PersonalInstructionsSettings(model: PersonalInstructionsModel) {
             modifier = Modifier.semantics { heading() },
         )
         if (state.saved != null || state.draft != null) {
-            var editing by
-                rememberSaveable(
-                    stateSaver =
-                        listSaver<TextFieldValue, Int>(
-                            // Text belongs to the draft owner, never the size-limited Activity
-                            // bundle.
-                            save = {
-                                val selection =
-                                    if (it.text == state.content) it.selection else TextRange.Zero
-                                listOf(selection.start, selection.end)
-                            },
-                            restore = { TextFieldValue(state.content, TextRange(it[0], it[1])) },
-                        )
-                ) {
-                    mutableStateOf(TextFieldValue(state.content))
-                }
-            // Only a deliberate authoritative replacement changes native editing text.
-            val presented =
-                if (editing.text == state.content) editing else TextFieldValue(state.content)
+            val editing =
+                rememberJournalEditor(state.content, replacementSelection = TextRange.Zero)
             if (state.phase != InstructionsPhase.Unavailable)
                 OutlinedTextField(
-                    value = presented,
+                    value = editing.value,
                     onValueChange = { value ->
-                        editing = value
+                        editing.edit(value)
                         model.edit(value.text)
                     },
                     label = { Text(stringResource(R.string.instructions_title)) },

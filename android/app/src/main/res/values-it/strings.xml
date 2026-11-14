@@ -77,4 +77,20 @@
     <string name="instructions_reload">Carica ultima versione e scarta modifiche</string>
     <string name="instructions_discard">Scarta modifiche</string>
     <string name="instructions_retry_save">Riprova lo stesso salvataggio</string>
+    <string name="composer_new">Nuova chat</string>
+    <string name="composer_new_project">Nuova chat in questo Progetto</string>
+    <string name="composer_message">Messaggio</string>
+    <string name="composer_send">Invia</string>
+    <string name="composer_local_failed">Impossibile salvare le modifiche alla bozza su questo dispositivo.</string>
+    <string name="composer_target_loading">Caricamento disponibilità della chat…</string>
+    <string name="composer_target_unavailable">Una nuova chat non è disponibile per questo account.</string>
+    <string name="composer_unconfirmed">La consegna del messaggio non è confermata.</string>
+    <string name="composer_check">Verifica consegna</string>
+    <string name="composer_retry">Riprova lo stesso messaggio</string>
+    <string name="composer_not_observed">Il messaggio non è ancora visibile. La consegna resta non confermata.</string>
+    <string name="composer_request_failed">Richiesta non riuscita. La bozza e il messaggio in attesa vengono conservati.</string>
+    <string name="composer_saving">Salvataggio bozza su questo dispositivo…</string>
+    <string name="composer_accepted">Messaggio accettato; elaborazione in attesa.</string>
+    <string name="composer_consumed">Il messaggio è stato prelevato; lo stato attuale è sconosciuto.</string>
+    <string name="composer_revoked">Messaggio revocato</string>
 </resources>

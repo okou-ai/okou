@@ -77,4 +77,20 @@
     <string name="instructions_reload">Neueste Version laden und Änderungen verwerfen</string>
     <string name="instructions_discard">Änderungen verwerfen</string>
     <string name="instructions_retry_save">Dasselbe Speichern erneut versuchen</string>
+    <string name="composer_new">Neuer Chat</string>
+    <string name="composer_new_project">Neuer Chat in diesem Projekt</string>
+    <string name="composer_message">Nachricht</string>
+    <string name="composer_send">Senden</string>
+    <string name="composer_local_failed">Änderungen am Entwurf konnten auf diesem Gerät nicht gespeichert werden.</string>
+    <string name="composer_target_loading">Chat-Verfügbarkeit wird geladen…</string>
+    <string name="composer_target_unavailable">Für dieses Konto ist kein neuer Chat verfügbar.</string>
+    <string name="composer_unconfirmed">Die Zustellung der Nachricht ist unbestätigt.</string>
+    <string name="composer_check">Zustellung prüfen</string>
+    <string name="composer_retry">Dieselbe Nachricht erneut senden</string>
+    <string name="composer_not_observed">Die Nachricht ist noch nicht sichtbar. Ihre Zustellung bleibt unbestätigt.</string>
+    <string name="composer_request_failed">Die Anfrage ist fehlgeschlagen. Entwurf und ausstehende Nachricht bleiben erhalten.</string>
+    <string name="composer_saving">Entwurf wird auf diesem Gerät gespeichert…</string>
+    <string name="composer_accepted">Nachricht angenommen; Verarbeitung steht aus.</string>
+    <string name="composer_consumed">Die Eingabe wurde übernommen; der aktuelle Ausführungsstatus ist unbekannt.</string>
+    <string name="composer_revoked">Nachricht zurückgenommen</string>
 </resources>
