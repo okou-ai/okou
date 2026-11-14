@@ -37,10 +37,9 @@ import {
   projectDialog$,
 } from "../../signals/projects/project-ui.ts";
 import {
-  collapseProject$,
-  expandProject$,
-  toggleProject$,
-} from "../../signals/projects/project-expansion.ts";
+  setProjectExpandedWithMotion$,
+  toggleProjectWithMotion$,
+} from "../../signals/projects/project-fold.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { ChatThreadMenuShortcut } from "../okou-page/chat-thread-menu-shortcut.tsx";
 import type {
@@ -74,8 +73,8 @@ function ProjectFoldMenuItem({
   expanded: boolean;
 }) {
   const { t } = useTranslation();
-  const collapse = useSet(collapseProject$);
-  const expand = useSet(expandProject$);
+  const fold = useSet(setProjectExpandedWithMotion$);
+  const signal = useGet(pageSignal$);
   const shortcut = expanded
     ? GLOBAL_KEYBOARD_SHORTCUTS.collapseProject
     : GLOBAL_KEYBOARD_SHORTCUTS.expandProject;
@@ -92,11 +91,7 @@ function ProjectFoldMenuItem({
       aria-label={label}
       aria-keyshortcuts={shortcut.ariaKeyShortcuts}
       onClick={() => {
-        if (expanded) {
-          collapse(project.id);
-        } else {
-          expand(project.id);
-        }
+        detach(fold(project.id, !expanded, signal), Reason.DomCallback);
       }}
     >
       <Icon size={16} />
@@ -280,7 +275,8 @@ function ProjectTrigger({
   readonly indicator: ProjectIndicatorState | null;
 }) {
   const { t } = useTranslation();
-  const toggle = useSet(toggleProject$);
+  const toggle = useSet(toggleProjectWithMotion$);
+  const signal = useGet(pageSignal$);
   const Chevron = expanded ? ChevronDown : ChevronRight;
   const stateId = `project-state-${layout}-${project.id}`;
   const shortcut = expanded
@@ -300,7 +296,7 @@ function ProjectTrigger({
       aria-describedby={indicator !== null ? stateId : undefined}
       aria-keyshortcuts={shortcut.ariaKeyShortcuts}
       onClick={() => {
-        toggle(project.id);
+        detach(toggle(project.id, signal), Reason.DomCallback);
       }}
       className={cn(
         "group/project-fold flex min-w-0 flex-1 items-center rounded-lg pr-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
