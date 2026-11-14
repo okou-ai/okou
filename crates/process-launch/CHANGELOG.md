@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/okou-ai/okou/compare/process-launch-v0.1.6...process-launch-v0.1.7) (2026-11-14)
+
+
+### Refactoring
+
+* **rust:** type owned blocking-mode updates ([#47120](https://github.com/okou-ai/okou/issues/47120)) ([5006b06](https://github.com/okou-ai/okou/commit/5006b0632614308a23d1368980b502aedfc11e29))
+
 ## [0.1.6](https://github.com/okou-ai/okou/compare/process-launch-v0.1.5...process-launch-v0.1.6) (2026-11-13)
 
 

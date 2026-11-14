@@ -10,6 +10,24 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.70.2](https://github.com/okou-ai/okou/compare/api-v2.70.1...api-v2.70.2) (2026-11-14)
+
+
+### Refactoring
+
+* **browser:** enforce native connections and retire viewer endpoint ([#47114](https://github.com/okou-ai/okou/issues/47114)) ([78e6915](https://github.com/okou-ai/okou/commit/78e6915a86aad95ad10b91b3552adc49328a2c42))
+* **browser:** remove obsolete mode boundaries ([#47103](https://github.com/okou-ai/okou/issues/47103)) ([a3f1c8f](https://github.com/okou-ai/okou/commit/a3f1c8fe3916e1751339b0e7b23ab602e2670dfd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.63.0
+    * @okouai/core bumped to 8.839.0
+    * @okouai/db bumped to 2.35.3
+    * @okouai/pi-agent-runtime bumped to 1.51.122
+
 ## [2.70.1](https://github.com/okou-ai/okou/compare/api-v2.70.0...api-v2.70.1) (2026-11-13)
 
 

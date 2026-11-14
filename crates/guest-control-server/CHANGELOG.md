@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.105](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.104...guest-control-server-v0.24.105) (2026-11-14)
+
+
+### Refactoring
+
+* **rust:** type owned blocking-mode updates ([#47120](https://github.com/okou-ai/okou/issues/47120)) ([5006b06](https://github.com/okou-ai/okou/commit/5006b0632614308a23d1368980b502aedfc11e29))
+
 ## [0.24.104](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.103...guest-control-server-v0.24.104) (2026-11-13)
 
 
