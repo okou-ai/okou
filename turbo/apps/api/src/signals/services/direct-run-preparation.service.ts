@@ -1,8 +1,5 @@
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
-import {
-  preparedExecutionContextSchema,
-  type ExecutionInput,
-} from "@okouai/api-contracts/contracts/runners";
+import type { ExecutionInput } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { command, computed, type Computed } from "ccstate";
@@ -73,7 +70,7 @@ export function createDirectRunPreparation(
     }
     return {
       materialized,
-      context: preparedExecutionContextSchema.parse(materialized.result.data),
+      context: materialized.result.data,
     };
   });
   const packages$ = computed(async (get) => {
