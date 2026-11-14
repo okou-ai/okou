@@ -4852,18 +4852,36 @@ test("A held initial inventory cannot resurrect a target destroyed before its re
   );
 });
 
-test("The overflow menu keeps hidden tabs reachable through shared controls", async () => {
+test("The overflow menu shares favicons and keeps narrow tabs selectable and closable", async () => {
   const original = HTMLElement.prototype.getBoundingClientRect;
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
     function (this: HTMLElement) {
       return Object.hasOwn(this.dataset, "browserTabBudget")
-        ? new DOMRect(0, 0, 70, 36)
+        ? new DOMRect(0, 0, 100, 36)
         : original.call(this);
     },
   );
-  await setupMultiTabViewer();
+  const browser = mockViewer();
+  browser.move("other-page", 0);
+  const favicon = "https://example.com/favicon.ico";
+  browser.targets[0]!.faviconUrl = favicon;
+  await openViewer();
+  const selectedTab = screen.getByLabelText("Example", {
+    selector: '[role="tab"]',
+  });
+  await waitFor(() => {
+    expect(selectedTab.querySelector("img")).toHaveAttribute("src", favicon);
+  });
   await userEvent.click(screen.getByLabelText("All tabs"));
   const menu = await screen.findByRole("menu");
+  const menuFavicon = menu.querySelector("img");
+  expect(menuFavicon).toHaveAttribute("src", favicon);
+  if (!menuFavicon) {
+    throw new Error("Missing menu favicon");
+  }
+  fireEvent.error(menuFavicon);
+  expect(selectedTab.querySelector("svg")).toBeInTheDocument();
+  expect(menu.querySelector("img")).not.toBeInTheDocument();
   const other = queryAllByRoleFast("menuitem", menu).find((item) => {
     return item.textContent?.trim() === "Other";
   });
@@ -4876,7 +4894,17 @@ test("The overflow menu keeps hidden tabs reachable through shared controls", as
       "https://other.example.com",
     );
   });
+  expect(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
   expect(screen.getByLabelText("All tabs")).toHaveFocus();
+  click(screen.getByLabelText("Close Other"));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+  });
+  expect(
+    screen.getByLabelText("Example", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
 });
 
 test("Widening restores a removed focused picker only to the committed selected tab", async () => {

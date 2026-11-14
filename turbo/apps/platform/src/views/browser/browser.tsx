@@ -38,10 +38,15 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@okouai/ui";
 import {
   isBrowserOperationFailure,
   type BrowserSignals,
+  type BrowserTab as BrowserTabTarget,
 } from "../../signals/browser/browser.ts";
 import { NavigationFault } from "../../signals/browser/navigation/action.ts";
 import type { DisplayModeResult } from "../../signals/browser/display/sync.ts";
@@ -847,6 +852,34 @@ function BrowserNavigation({
   );
 }
 
+function BrowserTabIcon({
+  signals,
+  target,
+}: {
+  readonly signals: BrowserSignals;
+  readonly target: BrowserTabTarget;
+}) {
+  const rejectFavicon = useSet(signals.rejectFavicon$);
+  return (
+    <span className="flex size-4 shrink-0 items-center justify-center">
+      {target.faviconUrl ? (
+        <img
+          src={target.faviconUrl}
+          alt=""
+          className="size-4 object-contain"
+          onError={() => {
+            if (target.faviconUrl) {
+              rejectFavicon(target.id, target.faviconUrl);
+            }
+          }}
+        />
+      ) : (
+        <Globe size={16} />
+      )}
+    </span>
+  );
+}
+
 function BrowserTab({
   signals,
   target,
@@ -855,11 +888,7 @@ function BrowserTab({
   selecting,
 }: {
   readonly signals: BrowserSignals;
-  readonly target: {
-    readonly id: string;
-    readonly title: string;
-    readonly faviconUrl?: string;
-  };
+  readonly target: BrowserTabTarget;
   readonly name: string;
   readonly selected: boolean;
   readonly selecting: boolean;
@@ -868,39 +897,34 @@ function BrowserTab({
   const controls = useGet(signals.controls$);
   const pageSignal = useGet(pageSignal$);
   const [closeOperation, closeTab] = useLoadableSet(signals.closeTab$);
-  const rejectFavicon = useSet(signals.rejectFavicon$);
   const closing = closeOperation.state === "loading";
   const triggerDisabled = controls.tabsDisabled || selecting || closing;
   return (
     <div
       className={cn(
-        "group relative h-9 min-w-[32px] max-w-56 flex-1 basis-0",
-        selected && "min-w-[48px]",
+        "@container/browser-tab relative flex h-9 min-w-14 max-w-56 flex-1 basis-0 items-center rounded-lg pr-1",
+        selected && "bg-state-selected",
       )}
     >
-      <TabsTrigger
-        value={target.id}
-        data-browser-tab-id={target.id}
-        aria-label={name}
-        disabled={triggerDisabled}
-        className="w-full justify-start rounded-lg px-2 pr-7 text-xs data-active:bg-state-selected data-active:shadow-none"
-      >
-        {target.faviconUrl ? (
-          <img
-            src={target.faviconUrl}
-            alt=""
-            className="size-3.5 shrink-0"
-            onError={() => {
-              if (target.faviconUrl) {
-                rejectFavicon(target.id, target.faviconUrl);
-              }
-            }}
-          />
-        ) : (
-          <Globe size={14} className="shrink-0" />
-        )}
-        <span className="truncate">{name}</span>
-      </TabsTrigger>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <TabsTrigger
+              value={target.id}
+              data-browser-tab-id={target.id}
+              aria-label={name}
+              disabled={triggerDisabled}
+              className="min-w-0 flex-1 justify-start rounded-lg px-1.5 text-xs data-active:bg-transparent data-active:shadow-none"
+            />
+          }
+        >
+          <BrowserTabIcon signals={signals} target={target} />
+          <span className="hidden truncate @min-[5rem]/browser-tab:block">
+            {name}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{name}</TooltipContent>
+      </Tooltip>
       <IconButton
         type="button"
         data-close-target={target.id}
@@ -911,9 +935,8 @@ function BrowserTab({
           { title: name },
         )}
         disabled={!controls.canMutateTabs || closing || selecting}
-        className="absolute right-0.5 top-1.5 size-6 rounded-md opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-        onClick={(event) => {
-          event.stopPropagation();
+        className="size-6 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+        onClick={() => {
           detach(closeTab(target.id, pageSignal), Reason.DomCallback);
         }}
       >
@@ -962,7 +985,10 @@ function BrowserTabPicker({
       >
         <ChevronDown size={15} />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent
+        align="end"
+        className="w-72 max-w-[calc(100vw-1.5rem)]"
+      >
         {tabs.map((target) => {
           return (
             <DropdownMenuItem
@@ -972,7 +998,8 @@ function BrowserTabPicker({
                 detach(onSelect(target.id), Reason.DomCallback);
               }}
             >
-              <span className="max-w-60 flex-1 truncate">
+              <BrowserTabIcon signals={signals} target={target} />
+              <span className="min-w-0 flex-1 truncate">
                 {title(target.id, target.title)}
               </span>
               {selectedTabId === target.id && <Check size={14} />}
@@ -1030,28 +1057,30 @@ function BrowserTabs({
         data-browser-tab-budget
         className="flex min-w-0 flex-1 items-center gap-1"
       >
-        <TabsList
-          ref={tabsRef}
-          className="h-9 min-w-0 flex-1 justify-start gap-1 rounded-none bg-transparent p-0"
-        >
-          {layout.items.map(({ target }) => {
-            const name = title(target.id, target.title);
-            return (
-              <BrowserTab
-                key={target.id}
-                signals={signals}
-                target={
-                  tabs.find((tab) => {
-                    return tab.id === target.id;
-                  }) ?? target
-                }
-                name={name}
-                selected={selectedTabId === target.id}
-                selecting={selecting}
-              />
-            );
-          })}
-        </TabsList>
+        <TooltipProvider delay={200}>
+          <TabsList
+            ref={tabsRef}
+            className="h-9 min-w-0 flex-1 justify-start gap-1 rounded-none bg-transparent p-0"
+          >
+            {layout.items.map(({ target }) => {
+              const name = title(target.id, target.title);
+              return (
+                <BrowserTab
+                  key={target.id}
+                  signals={signals}
+                  target={
+                    tabs.find((tab) => {
+                      return tab.id === target.id;
+                    }) ?? target
+                  }
+                  name={name}
+                  selected={selectedTabId === target.id}
+                  selecting={selecting}
+                />
+              );
+            })}
+          </TabsList>
+        </TooltipProvider>
         {layout.overflow && (
           <BrowserTabPicker
             signals={signals}

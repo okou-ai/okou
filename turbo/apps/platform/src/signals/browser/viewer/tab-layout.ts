@@ -10,19 +10,17 @@ export interface TabSpace {
 export function layoutTabs(
   targets: readonly ViewerTarget[],
   selectedId: string | null,
-  interactive: boolean,
   space: TabSpace | null,
 ) {
-  const minimum = 32;
-  const selectedMinimum = interactive ? 48 : minimum;
+  // Matches BrowserTab's min-w-14: favicon, close button and their padding.
+  const minimum = 56;
   const selected = targets.findIndex((target) => {
     return target.id === selectedId;
   });
-  const extra = selected === -1 ? 0 : selectedMinimum - minimum;
   const gap = Math.max(0, space?.gap ?? 0);
   const available = Math.max(0, space?.width ?? 0);
   const needed =
-    targets.length * minimum + Math.max(0, targets.length - 1) * gap + extra;
+    targets.length * minimum + Math.max(0, targets.length - 1) * gap;
   const overflow = needed > available;
   const budget = Math.max(
     0,
@@ -31,7 +29,7 @@ export function layoutTabs(
   const count = overflow
     ? Math.min(
         targets.length,
-        Math.max(0, Math.floor((budget + gap - extra) / (minimum + gap))),
+        Math.max(0, Math.floor((budget + gap) / (minimum + gap))),
       )
     : targets.length;
   const visible = targets.slice(0, count);
