@@ -1,5 +1,8 @@
 import { command, computed, state } from "ccstate";
-import { refreshWorkspaceLayout$ } from "../chat-page/workspace-layout.ts";
+import {
+  refreshChatListLayout$,
+  refreshWorkspaceLayout$,
+} from "../chat-page/workspace-layout.ts";
 
 import { localStorageSignals } from "../external/local-storage.ts";
 import { pageSignal$ } from "../page-signal.ts";
@@ -44,7 +47,11 @@ export const setStoredChatListHidden$ = command(
       set(chatListHiddenStorage.set$, String(hidden));
       // Preserve synchronous callers while the page or gesture owns geometry work.
       detach(
-        set(refreshWorkspaceLayout$, signal ?? get(pageSignal$)),
+        set(
+          refreshChatListLayout$,
+          hidden ? 0 : get(chatListWidth$),
+          signal ?? get(pageSignal$),
+        ),
         Reason.DomCallback,
         "chat list visibility layout",
       );

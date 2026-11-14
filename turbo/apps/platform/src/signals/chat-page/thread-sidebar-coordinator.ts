@@ -22,6 +22,7 @@ import { refreshComposerTaskOverflow$ } from "../okou-page/composer-task-overflo
 import { shellDocumentAttributesRef$ } from "../theme.ts";
 import type { TabStripMotion } from "../browser/tab-strip.ts";
 import { createThreadSidebarLayoutMotion } from "./thread-sidebar-layout-motion.ts";
+import { workspaceResizing$ } from "./workspace-resize.ts";
 import { animationFrame } from "signal-timers";
 import { hash$, searchParams$, updateSearchParams$ } from "../route.ts";
 import {
@@ -91,11 +92,22 @@ const syncSidebarViewport$ = command(
   },
 );
 const sidebarMotion = createThreadSidebarLayoutMotion(syncSidebarViewport$);
+const prepareChatListLayout$ = command(({ get, set }, targetWidth: number) => {
+  return set(
+    sidebarMotion.prepareChatList$,
+    targetWidth,
+    get(workspaceResizing$),
+  );
+});
 /** Synchronize workspace resources after the initiating command has awaited paint. */
 const synchronizeWorkspaceLayout$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+  async (
+    { get, set },
+    preparation: object | undefined,
+    signal: AbortSignal,
+  ): Promise<void> => {
     signal.throwIfAborted();
-    set(sidebarMotion.commit$);
+    set(sidebarMotion.commit$, preparation);
     set(refreshComposerTaskOverflow$);
     if (get(artifactCatalogSidebar.open$)) {
       set(artifactCatalogSidebar.imageCanvas.syncLayout$);
@@ -123,7 +135,16 @@ export const threadSidebarLayoutRootRef$ = onRef(
         },
       );
       set(sidebarMotion.mount$, root, signal);
-      set(mountWorkspaceLayout$, root, synchronizeWorkspaceLayout$, signal);
+      set(
+        mountWorkspaceLayout$,
+        root,
+        {
+          prepareChatList$: prepareChatListLayout$,
+          cancelChatList$: sidebarMotion.cancelChatList$,
+        },
+        synchronizeWorkspaceLayout$,
+        signal,
+      );
       const refresh = onDomEventFn(async () => {
         await set(refreshWorkspaceLayout$, signal);
       });
