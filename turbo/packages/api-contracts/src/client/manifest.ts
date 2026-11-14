@@ -651,8 +651,6 @@ export const clientDescriptorManifest = [
       "runnersCancellationContract",
       "runnersConnectorRuntimeSyncContract",
       "runnersHeartbeatContract",
-      "runnersJobClaimContract",
-      "runnersPollContract",
       "runnersSteerContract",
     ],
   },

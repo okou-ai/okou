@@ -10,7 +10,7 @@ import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
   type PreparedExecutionContext,
-  type StoredExecutionContext,
+  type ExecutionInput,
   type ConnectorRuntimeTargetRegistration,
 } from "@okouai/api-contracts/contracts/runners";
 import {
@@ -5129,7 +5129,7 @@ function prepareRunnerLaunchInput(input: {
       "Thread Run is missing captured native continuation intent",
     );
   }
-  const context: StoredExecutionContext = {
+  const context: ExecutionInput = {
     nativeContinuation,
     ...(input.previewBypassAuthorized ? { previewBypassAuthorized: true } : {}),
     ...(args.resolved.agentId !== null
@@ -5571,7 +5571,7 @@ interface RunnerLaunchInput {
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string | null;
-  readonly executionContext: StoredExecutionContext;
+  readonly executionContext: ExecutionInput;
 }
 
 function isOfficialRunnerGroup(group: string): boolean {

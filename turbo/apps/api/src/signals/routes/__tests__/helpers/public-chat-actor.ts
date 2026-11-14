@@ -208,19 +208,6 @@ export async function publicChatActor(
         return claim;
       });
     },
-    claimPatRun: (
-      ...parameters: Parameters<typeof fixture.api.requestClaimRunnerJobAs>
-    ) => {
-      return run(async () => {
-        const response = await fixture.api.requestClaimRunnerJobAs(
-          ...parameters,
-        );
-        if (response.status === 200) {
-          owner.rememberClaim(parameters[1], response.body.sandboxToken);
-        }
-        return response;
-      });
-    },
     claimChatRun: (...parameters: Parameters<typeof fixture.claimChatRun>) => {
       return run(async () => {
         const claimed = await fixture.claimChatRun(...parameters);

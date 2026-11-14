@@ -1157,8 +1157,6 @@ export function createChatEventsFixture(context: TestContext) {
       readRun: api.readRun,
       readRunQueue: api.readRunQueue,
       requestCancelRun: api.requestCancelRun,
-      requestClaimRunnerJob: api.requestClaimRunnerJob,
-      requestClaimRunnerJobAs: api.requestClaimRunnerJobAs,
       requestDeclareSteeredInputAs: api.requestDeclareSteeredInputAs,
       requestNextSteerableInputAs: api.requestNextSteerableInputAs,
       updateUserModelPreference: api.updateUserModelPreference,

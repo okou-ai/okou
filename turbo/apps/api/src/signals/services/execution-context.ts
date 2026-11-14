@@ -1,6 +1,6 @@
 import {
-  storedExecutionContextSchema,
-  claimPreparedExecutionContextSchema,
+  executionInputSchema,
+  preparedExecutionContextSchema,
 } from "@okouai/api-contracts/contracts/runners";
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
 import { computed, type Computed } from "ccstate";
@@ -8,11 +8,11 @@ import { monotonicNow } from "../../lib/time";
 import { settle } from "../utils";
 import { ExecutionStorageUnavailableError } from "./execution-storage.service";
 import {
-  ClaimRuntimeUnavailableError,
-  createClaimRuntimeContext,
-} from "./claim-runtime-context";
+  ExecutionRuntimeUnavailableError,
+  createExecutionRuntimeContext,
+} from "./execution-runtime-context";
 
-export type ClaimExecutionContextRun = Pick<
+export type ExecutionContextRun = Pick<
   typeof agentRuns.$inferSelect,
   | "id"
   | "orgId"
@@ -37,11 +37,11 @@ export type ClaimExecutionContextRun = Pick<
   | "officialWorkflowProvenance"
 >;
 
-/** Read minimum queue intent, then assemble the Run from its authoritative sources. */
-export function createClaimExecutionContext(
+/** Read admitted execution input, then assemble the Run from its authoritative sources. */
+export function createExecutionContext(
   input$: Computed<
     Promise<{
-      readonly run: ClaimExecutionContextRun;
+      readonly run: ExecutionContextRun;
       readonly executionContext: unknown;
     }>
   >,
@@ -50,17 +50,17 @@ export function createClaimExecutionContext(
     const input = await get(input$);
     return {
       input,
-      parsed: storedExecutionContextSchema.safeParse(input.executionContext),
+      parsed: executionInputSchema.safeParse(input.executionContext),
     };
   });
   const runtimeInput$ = computed(async (get) => {
     const { input, parsed } = await get(decoded$);
     if (!parsed.success) {
-      throw new Error("Runtime sources require valid Claim inputs");
+      throw new Error("Runtime sources require valid execution inputs");
     }
     return { run: input.run, context: parsed.data };
   });
-  const runtime$ = createClaimRuntimeContext(runtimeInput$);
+  const runtime$ = createExecutionRuntimeContext(runtimeInput$);
   return computed(async (get) => {
     const { parsed } = await get(decoded$);
     if (!parsed.success) {
@@ -78,7 +78,7 @@ export function createClaimExecutionContext(
     const runtime = await settle(get(runtime$));
     if (!runtime.ok) {
       if (
-        runtime.error instanceof ClaimRuntimeUnavailableError ||
+        runtime.error instanceof ExecutionRuntimeUnavailableError ||
         runtime.error instanceof ExecutionStorageUnavailableError
       ) {
         return { status: "unavailable" as const };
@@ -87,9 +87,7 @@ export function createClaimExecutionContext(
     }
     return {
       status: "ready" as const,
-      result: claimPreparedExecutionContextSchema.safeParse(
-        runtime.value.context,
-      ),
+      result: preparedExecutionContextSchema.safeParse(runtime.value.context),
       hydrationMs: monotonicNow() - startedAt,
       secrets: runtime.value.secrets,
       storageCacheWrites: runtime.value.storageCacheWrites,

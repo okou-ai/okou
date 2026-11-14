@@ -5,7 +5,7 @@ import {
 } from "@okouai/api-contracts/contracts/paid-tools";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
-  type StoredExecutionContext,
+  type ExecutionInput as AdmittedExecutionInput,
   type PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import { AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
@@ -29,7 +29,7 @@ import { createExecutionConnectorSources } from "./agent-run-context.signals";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
-import type { ClaimExecutionContextRun } from "./claim-execution-context";
+import type { ExecutionContextRun } from "./execution-context";
 import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
 import { createConnectorsContext } from "./connectors-context.service";
 import { dataRouterEnvironment } from "./data-router-environment";
@@ -76,52 +76,53 @@ import {
 } from "./thread-environment.signals";
 import type { ResolvedPermissionGrant } from "./user-permission-grants.service";
 
-/** Internal to one Claim; never part of its persisted or Runner context. */
-export interface ClaimNetworkPolicyInputs {
+/** Internal to one execution; never part of its persisted or Runner context. */
+export interface ExecutionNetworkPolicyInputs {
   readonly catalog: ConnectorServerFirewallMetadataCatalog;
   readonly grants: readonly ResolvedPermissionGrant[];
   readonly permissionSource: "member" | "agent";
 }
 
-type ClaimInput = {
-  readonly run: ClaimExecutionContextRun;
-  readonly context: StoredExecutionContext;
+type ExecutionInput = {
+  readonly run: ExecutionContextRun;
+  readonly context: AdmittedExecutionInput;
 };
 
 const variablesSchema = record(string(), string()).nullable();
-type ClaimInput$ = Computed<Promise<ClaimInput>>;
-type ClaimRun$ = Computed<Promise<ClaimExecutionContextRun>>;
-type ClaimIdentities = ReturnType<typeof createClaimIdentities>;
-type ClaimSources = ReturnType<typeof createExecutionConnectorSources>;
+type ExecutionInput$ = Computed<Promise<ExecutionInput>>;
+type ExecutionRun$ = Computed<Promise<ExecutionContextRun>>;
+type ExecutionIdentities = ReturnType<typeof createExecutionIdentities>;
+type ExecutionSources = ReturnType<typeof createExecutionConnectorSources>;
 type GlobalModels = ReturnType<typeof createGlobalModelContext>;
-type ClaimModel$ = ReturnType<typeof createClaimModel>;
-type ClaimModel = ClaimModel$ extends Computed<infer T> ? Awaited<T> : never;
-type InitialInput$ = ReturnType<typeof createClaimInitialInput>;
+type ExecutionModel$ = ReturnType<typeof createExecutionModel>;
+type ExecutionModel =
+  ExecutionModel$ extends Computed<infer T> ? Awaited<T> : never;
+type InitialInput$ = ReturnType<typeof createExecutionInitialInput>;
 type InitialInput =
   InitialInput$ extends Computed<infer T> ? Awaited<T> : never;
 type DisabledTools$ = Computed<Promise<readonly string[]>>;
 
 /** An expected source removal or cancellation, distinct from dependency failures. */
-export class ClaimRuntimeUnavailableError extends Error {
+export class ExecutionRuntimeUnavailableError extends Error {
   constructor() {
     super("Run execution sources are unavailable");
   }
 }
 
-/** All dependencies belong to this Claim; no captured runtime snapshot participates. */
-export function createClaimRuntimeContext(input$: ClaimInput$) {
-  const identities = createClaimIdentities(input$);
+/** All dependencies belong to this execution; no captured runtime snapshot participates. */
+export function createExecutionRuntimeContext(input$: ExecutionInput$) {
+  const identities = createExecutionIdentities(input$);
   const { run$, identity$, features$ } = identities;
   const sources = createExecutionConnectorSources(identity$, features$);
   const networkPolicyInputs$ = computed(
-    async (get): Promise<ClaimNetworkPolicyInputs> => {
+    async (get): Promise<ExecutionNetworkPolicyInputs> => {
       const [catalog, grants, features] = await Promise.all([
         get(sources.signals.catalog$),
         get(sources.signals.permissionGrants$),
         get(features$),
       ]);
       if (!catalog) {
-        throw new Error("Claim builtin targets require a scoped catalog");
+        throw new Error("Execution builtin targets require a scoped catalog");
       }
       return {
         catalog: catalog.serverFirewalls,
@@ -136,10 +137,14 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
     },
   );
   const global = createGlobalModelContext();
-  const preferences$ = createClaimPreferences(run$);
-  const disabledTools$ = createClaimDisabledTools(input$);
-  const connectors = createClaimConnectorContext(input$, identities, sources);
-  const model$ = createClaimModel(run$, global);
+  const preferences$ = createExecutionPreferences(run$);
+  const disabledTools$ = createExecutionDisabledTools(input$);
+  const connectors = createExecutionConnectorContext(
+    input$,
+    identities,
+    sources,
+  );
+  const model$ = createExecutionModel(run$, global);
   const modelRoute$ = computed(async (get) => {
     return (await get(model$))?.provider ?? null;
   });
@@ -147,28 +152,28 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
     { bodyEnvironment$: connectors.bodyEnvironment$ },
     { modelRoute$ },
   );
-  const initialInput$ = createClaimInitialInput(run$);
-  const storage$ = createClaimStorage(input$);
-  const packages$ = createClaimPackages(
+  const initialInput$ = createExecutionInitialInput(run$);
+  const storage$ = createExecutionStorage(input$);
+  const packages$ = createExecutionPackages(
     input$,
     initialInput$,
     disabledTools$,
     sources,
     { global, storage$ },
   );
-  const platform$ = createClaimPlatform(
+  const platform$ = createExecutionPlatform(
     input$,
     model$,
     initialInput$,
     disabledTools$,
   );
-  const environment$ = createClaimEnvironment(
+  const environment$ = createExecutionEnvironment(
     input$,
     connectors.connectorEnvironment$,
     modelEnvironment$,
     platform$,
   );
-  return createClaimPreparedContext(input$, {
+  return createExecutionPreparedContext(input$, {
     model$,
     initialInput$,
     preferences$,
@@ -180,7 +185,7 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
   });
 }
 
-function createClaimStorage(input$: ClaimInput$) {
+function createExecutionStorage(input$: ExecutionInput$) {
   const mounts$ = computed(async (get) => {
     const { run } = await get(input$);
     if (run.storageMounts === null) {
@@ -219,7 +224,7 @@ function createClaimStorage(input$: ClaimInput$) {
   });
 }
 
-function createClaimIdentities(input$: ClaimInput$) {
+function createExecutionIdentities(input$: ExecutionInput$) {
   const run$ = computed(async (get) => {
     return (await get(input$)).run;
   });
@@ -260,7 +265,7 @@ function createClaimIdentities(input$: ClaimInput$) {
   return { run$, identity$, features$ };
 }
 
-function createClaimPreferences(run$: ClaimRun$) {
+function createExecutionPreferences(run$: ExecutionRun$) {
   return computed(async (get) => {
     const run = await get(run$);
     const [row] = await get(db$)
@@ -276,10 +281,10 @@ function createClaimPreferences(run$: ClaimRun$) {
   });
 }
 
-function createClaimDisabledTools(input$: ClaimInput$) {
+function createExecutionDisabledTools(input$: ExecutionInput$) {
   return computed(async (get) => {
     // The emitted prompt already embodies this Run's tool choices. Current
-    // preferences cannot reconstruct that decision after a queued edit.
+    // preferences cannot reconstruct that decision after a later edit.
     const { context } = await get(input$);
     return array(paidToolIdSchema).parse(
       safeJsonParse(context.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR]),
@@ -287,10 +292,10 @@ function createClaimDisabledTools(input$: ClaimInput$) {
   });
 }
 
-function createClaimConnectorContext(
-  input$: ClaimInput$,
-  identities: ClaimIdentities,
-  sources: ClaimSources,
+function createExecutionConnectorContext(
+  input$: ExecutionInput$,
+  identities: ExecutionIdentities,
+  sources: ExecutionSources,
 ) {
   const { run$, identity$, features$ } = identities;
   const targets$ = computed(async (get) => {
@@ -300,7 +305,7 @@ function createClaimConnectorContext(
       .from(agentRunConnectorDiagnosticRegistrations)
       .where(eq(agentRunConnectorDiagnosticRegistrations.runId, run.id));
     if (!row) {
-      throw new ClaimRuntimeUnavailableError();
+      throw new ExecutionRuntimeUnavailableError();
     }
     return agentRunConnectorDiagnosticRegistrationPayloadSchema.parse(
       row.payload,
@@ -353,7 +358,7 @@ function createClaimConnectorContext(
   return { bodyEnvironment$, connectorEnvironment$, timing$ };
 }
 
-function createClaimModel(run$: ClaimRun$, global: GlobalModels) {
+function createExecutionModel(run$: ExecutionRun$, global: GlobalModels) {
   const memberIdentity$ = computed(async (get) => {
     const run = await get(run$);
     return { orgId: run.orgId, userId: run.userId, runId: run.id };
@@ -395,7 +400,7 @@ function createClaimModel(run$: ClaimRun$, global: GlobalModels) {
       });
       const source = managedSourceFromSnapshot(key);
       if (!source) {
-        throw new ClaimRuntimeUnavailableError();
+        throw new ExecutionRuntimeUnavailableError();
       }
       provider = await prepareManagedModelEnvironment(source, {
         catalog,
@@ -420,11 +425,11 @@ function createClaimModel(run$: ClaimRun$, global: GlobalModels) {
           personalSubscriptionAccountIdentity(account) !==
             run.modelProviderAccountIdentity)
       ) {
-        throw new ClaimRuntimeUnavailableError();
+        throw new ExecutionRuntimeUnavailableError();
       }
       const source = memberAccountSourceFromSnapshot(members, account.id);
       if (!source) {
-        throw new ClaimRuntimeUnavailableError();
+        throw new ExecutionRuntimeUnavailableError();
       }
       provider = prepareSubscriptionModelEnvironment(
         source,
@@ -438,7 +443,7 @@ function createClaimModel(run$: ClaimRun$, global: GlobalModels) {
       );
     }
     if (!provider) {
-      throw new ClaimRuntimeUnavailableError();
+      throw new ExecutionRuntimeUnavailableError();
     }
     const resolved = materializePreparedPiProvider(preparation, provider);
     return {
@@ -451,7 +456,7 @@ function createClaimModel(run$: ClaimRun$, global: GlobalModels) {
   });
 }
 
-function createClaimInitialInput(run$: ClaimRun$) {
+function createExecutionInitialInput(run$: ExecutionRun$) {
   return computed(async (get) => {
     const run = await get(run$);
     const [row] = await get(db$)
@@ -505,17 +510,17 @@ function createClaimInitialInput(run$: ClaimRun$) {
   });
 }
 
-function createClaimPackages(
-  input$: ClaimInput$,
+function createExecutionPackages(
+  input$: ExecutionInput$,
   initialInput$: InitialInput$,
   disabledTools$: DisabledTools$,
-  sources: ClaimSources,
+  sources: ExecutionSources,
   {
     global,
     storage$,
   }: {
     readonly global: GlobalModels;
-    readonly storage$: ReturnType<typeof createClaimStorage>;
+    readonly storage$: ReturnType<typeof createExecutionStorage>;
   },
 ) {
   const templateInput$ = computed(async (get) => {
@@ -542,7 +547,7 @@ function createClaimPackages(
   );
   return computed(async (get) => {
     const { run } = await get(input$);
-    const framework = claimFramework(run);
+    const framework = executionFramework(run);
     const skillRoot =
       framework === "pi"
         ? "/home/user/.pi/agent/skills"
@@ -558,7 +563,7 @@ function createClaimPackages(
             get(templates$),
           ]);
     if (templates && "error" in templates) {
-      throw new ClaimRuntimeUnavailableError();
+      throw new ExecutionRuntimeUnavailableError();
     }
     const parts = [connectors, seedSkills, templates].filter((part) => {
       return part !== undefined;
@@ -592,7 +597,7 @@ function createClaimPackages(
   });
 }
 
-function claimFramework(run: ClaimExecutionContextRun) {
+function executionFramework(run: ExecutionContextRun) {
   const framework = run.launchSnapshot?.framework;
   if (!framework) {
     throw new Error("Admitted Run is missing its execution framework");
@@ -600,7 +605,7 @@ function claimFramework(run: ClaimExecutionContextRun) {
   return framework;
 }
 
-function claimIntegration(input: InitialInput) {
+function executionIntegration(input: InitialInput) {
   switch (input?.contextType) {
     case "web":
     case "agent_run": {
@@ -621,9 +626,9 @@ function claimIntegration(input: InitialInput) {
   }
 }
 
-function createClaimPlatform(
-  input$: ClaimInput$,
-  model$: ClaimModel$,
+function createExecutionPlatform(
+  input$: ExecutionInput$,
+  model$: ExecutionModel$,
   initialInput$: InitialInput$,
   disabledTools$: DisabledTools$,
 ) {
@@ -635,8 +640,8 @@ function createClaimPlatform(
         get(initialInput$),
         get(disabledTools$),
       ]);
-    const framework = claimFramework(run);
-    const integration = claimIntegration(originalInput);
+    const framework = executionFramework(run);
+    const integration = executionIntegration(originalInput);
     const bypass = context.previewBypassAuthorized
       ? previewAutomationBypassSecret()
       : undefined;
@@ -664,13 +669,13 @@ function createClaimPlatform(
   });
 }
 
-function createClaimEnvironment(
-  input$: ClaimInput$,
+function createExecutionEnvironment(
+  input$: ExecutionInput$,
   connectorEnvironment$: ReturnType<
-    typeof createClaimConnectorContext
+    typeof createExecutionConnectorContext
   >["connectorEnvironment$"],
   modelEnvironment$: ReturnType<typeof createModelProviderEnvironmentSignals>,
-  platform$: ReturnType<typeof createClaimPlatform>,
+  platform$: ReturnType<typeof createExecutionPlatform>,
 ) {
   return computed(async (get) => {
     const { run, context } = await get(input$);
@@ -681,7 +686,7 @@ function createClaimEnvironment(
         run.agentId === null ? emptyEnvironment() : get(connectorEnvironment$),
       ]);
     if ("status" in connectorEnvironment || "status" in modelEnvironment) {
-      throw new ClaimRuntimeUnavailableError();
+      throw new ExecutionRuntimeUnavailableError();
     }
     const data = dataRouterEnvironment();
     const token = context.platformEnvironment.OKOU_TOKEN;
@@ -735,19 +740,21 @@ function createClaimEnvironment(
   });
 }
 
-function createClaimPreparedContext(
-  input$: ClaimInput$,
+function createExecutionPreparedContext(
+  input$: ExecutionInput$,
   dependencies: {
-    readonly model$: ClaimModel$;
+    readonly model$: ExecutionModel$;
     readonly initialInput$: InitialInput$;
-    readonly preferences$: ReturnType<typeof createClaimPreferences>;
-    readonly packages$: ReturnType<typeof createClaimPackages>;
-    readonly environment$: ReturnType<typeof createClaimEnvironment>;
-    readonly storage$: ReturnType<typeof createClaimStorage>;
+    readonly preferences$: ReturnType<typeof createExecutionPreferences>;
+    readonly packages$: ReturnType<typeof createExecutionPackages>;
+    readonly environment$: ReturnType<typeof createExecutionEnvironment>;
+    readonly storage$: ReturnType<typeof createExecutionStorage>;
     readonly connectorTiming$: ReturnType<
-      typeof createClaimConnectorContext
+      typeof createExecutionConnectorContext
     >["timing$"];
-    readonly networkPolicyInputs$: Computed<Promise<ClaimNetworkPolicyInputs>>;
+    readonly networkPolicyInputs$: Computed<
+      Promise<ExecutionNetworkPolicyInputs>
+    >;
   },
 ) {
   return computed(async (get) => {
@@ -764,7 +771,7 @@ function createClaimPreparedContext(
     const { environment, untrustedEnvironment, secretKeys } = resolved;
     const prepared: PreparedExecutionContext = {
       ...context,
-      ...claimModelConfiguration(run, model),
+      ...executionModelConfiguration(run, model),
       storageMounts: storage.storageMounts,
       nativeContinuation: {
         ...context.nativeContinuation,
@@ -795,7 +802,10 @@ function createClaimPreparedContext(
       userTimezone: preferences.timezone,
       captureNetworkBodies: originalInput?.captureId ? true : undefined,
       seedSkillBundles: packages.seedSkillBundles,
-      officialWorkflowBundles: claimOfficialBundles(run, packages.skillRoot),
+      officialWorkflowBundles: executionOfficialBundles(
+        run,
+        packages.skillRoot,
+      ),
       templateGuidanceBundles: packages.templateGuidanceBundles,
     };
     return {
@@ -812,9 +822,9 @@ function createClaimPreparedContext(
   });
 }
 
-function claimModelConfiguration(
-  run: ClaimExecutionContextRun,
-  model: ClaimModel,
+function executionModelConfiguration(
+  run: ExecutionContextRun,
+  model: ExecutionModel,
 ): Pick<
   PreparedExecutionContext,
   | "cliAgentType"
@@ -825,7 +835,7 @@ function claimModelConfiguration(
   | "piLaunchConfig"
   | "piSessionId"
 > {
-  const framework = claimFramework(run);
+  const framework = executionFramework(run);
   return {
     cliAgentType: framework,
     modelUsageProvider:
@@ -848,10 +858,7 @@ function claimModelConfiguration(
   };
 }
 
-function claimOfficialBundles(
-  run: ClaimExecutionContextRun,
-  skillRoot: string,
-) {
+function executionOfficialBundles(run: ExecutionContextRun, skillRoot: string) {
   return run.officialWorkflowProvenance?.schemaVersion === 2
     ? run.officialWorkflowProvenance.definitions.map((definition) => {
         return {

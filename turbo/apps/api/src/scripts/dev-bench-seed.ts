@@ -12,7 +12,6 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { usageEvent } from "@okouai/db/runtime/usage-event";
 import {
   chatEvents,
@@ -547,7 +546,7 @@ async function cleanupExistingBenchThreads(
   });
   if (runIds.length > 0) {
     // The winning parent set owns the cleanup; NO ACTION FKs are checked only
-    // after all three child streams complete. No extra transaction or lock.
+    // after both child streams complete. No extra transaction or lock.
     await database.execute(sql`WITH removed_runs AS (
         DELETE FROM ${agentRuns}
         WHERE ${agentRuns.id} = ANY(${sql.param(runIds)}::uuid[])
@@ -556,16 +555,11 @@ async function cleanupExistingBenchThreads(
         DELETE FROM ${agentRunCallbacks}
         WHERE ${agentRunCallbacks.runId} IN (SELECT id FROM removed_runs)
         RETURNING ${agentRunCallbacks.id}
-      ), removed_jobs AS (
-        DELETE FROM ${runnerJobQueue}
-        WHERE ${runnerJobQueue.runId} IN (SELECT id FROM removed_runs)
-        RETURNING ${runnerJobQueue.runId}
       ), detached_usage AS (
         UPDATE ${usageEvent} SET ${sql.identifier(usageEvent.runId.name)} = NULL
         WHERE ${usageEvent.runId} IN (SELECT id FROM removed_runs)
         RETURNING ${usageEvent.id}
       ) SELECT (SELECT count(*) FROM removed_callbacks) +
-        (SELECT count(*) FROM removed_jobs) +
         (SELECT count(*) FROM detached_usage) AS cleaned`);
   }
   const detachedBindings = database

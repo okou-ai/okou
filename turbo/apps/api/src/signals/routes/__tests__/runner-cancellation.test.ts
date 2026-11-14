@@ -139,7 +139,6 @@ async function directFixture(runCounts: readonly number[]) {
       description: "Exercises cancellation after direct process selection.",
       visibility: "private",
     });
-    const pat = await runs.createCliToken(actor);
     for (let index = 0; index < runCounts[actorIndex]!; index++) {
       const run = await runs.createThreadRun(actor, {
         agentId: agent.agentId,
@@ -151,11 +150,6 @@ async function directFixture(runCounts: readonly number[]) {
         acknowledged: false,
       };
       ownedRuns.push(owned);
-      await runs.requestClaimRunnerJobAs(
-        `Bearer ${pat.token}`,
-        run.runId,
-        [404],
-      );
       const claim = await runs.executionInput(run.runId);
       owned.sandboxToken = claim.sandboxToken;
       const runner = await runs.requestRunRunner(actor, run.runId, [200]);

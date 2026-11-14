@@ -623,8 +623,6 @@ import {
   runnersCancellationContract as OriginalRunnersCancellationContract,
   runnersConnectorRuntimeSyncContract as OriginalRunnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract as OriginalRunnersHeartbeatContract,
-  runnersJobClaimContract as OriginalRunnersJobClaimContract,
-  runnersPollContract as OriginalRunnersPollContract,
   runnersSteerContract as OriginalRunnersSteerContract,
 } from "../contracts/runners";
 import {
@@ -632,8 +630,6 @@ import {
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
-  runnersJobClaimContract,
-  runnersPollContract,
   runnersSteerContract,
 } from "./runners";
 import { sharedThreadVisibilityContract as OriginalSharedThreadVisibilityContract } from "../contracts/shared-thread-visibility";
@@ -1282,8 +1278,6 @@ export const clientDescriptorContracts: readonly (readonly [
     OriginalRunnersConnectorRuntimeSyncContract,
   ],
   [runnersHeartbeatContract, OriginalRunnersHeartbeatContract],
-  [runnersJobClaimContract, OriginalRunnersJobClaimContract],
-  [runnersPollContract, OriginalRunnersPollContract],
   [runnersSteerContract, OriginalRunnersSteerContract],
   [sharedThreadVisibilityContract, OriginalSharedThreadVisibilityContract],
   [sharedThreadsContract, OriginalSharedThreadsContract],

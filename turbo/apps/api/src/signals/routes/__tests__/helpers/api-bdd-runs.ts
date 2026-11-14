@@ -8,7 +8,6 @@ import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { mockClerkUsers } from "./clerk-users";
-
 import {
   billingStatusContract,
   billingUsagePackCreditsContract,
@@ -37,8 +36,6 @@ import {
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
-  runnersJobClaimContract,
-  runnersPollContract,
   runnersSteerContract,
   type CanonicalStorageManifest,
   type StorageManifest,
@@ -54,7 +51,6 @@ import {
 import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
 import type StripeSDK from "stripe";
 import type { input, infer as zInfer } from "zod";
-
 import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -83,16 +79,6 @@ import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 
 type AuthHeaders = { readonly authorization?: string };
-type RunnerJobClaimRequestBody = zInfer<
-  (typeof runnersJobClaimContract.claim)["body"]
->;
-/** Test claims advertise every current Pi model-config generation unless a scenario narrows them. */
-function defaultClaimCapabilities(): RunnerJobClaimRequestBody["capabilities"] {
-  return { piModelConfigGenerations: [2, 3, 5] };
-}
-type RunnerJobClaimRequest = Omit<RunnerJobClaimRequestBody, "capabilities"> & {
-  readonly capabilities?: RunnerJobClaimRequestBody["capabilities"];
-};
 type RunnerConnectorRuntimeSyncRequest = input<
   (typeof runnersConnectorRuntimeSyncContract.sync)["body"]
 >;
@@ -105,7 +91,6 @@ export type RunModel = zInfer<
 type RunnerHeartbeatBody = zInfer<
   (typeof runnersHeartbeatContract.heartbeat)["body"]
 >;
-type RunnerPollBody = zInfer<(typeof runnersPollContract.poll)["body"]>;
 type RunnerRealtimeTokenBody = zInfer<
   (typeof runnerRealtimeTokenContract.create)["body"]
 >;
@@ -1066,61 +1051,6 @@ export function createRunsApi(context: TestContext) {
       return { token: token.body.access_token };
     },
 
-    async requestPollRunnerAs(
-      authorization: string | undefined,
-      body: RunnerPollBody,
-      statuses: readonly (200 | 400 | 401 | 500)[],
-    ) {
-      return await accept(
-        runApp(context)(runnersPollContract).poll({
-          headers: authorization === undefined ? {} : { authorization },
-          body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestClaimRunnerJobAs(
-      authorization: string | undefined,
-      runId: string,
-      statuses: readonly (200 | 400 | 401 | 403 | 404 | 500)[],
-      body: RunnerJobClaimRequest = {},
-      extraHeaders?: Readonly<Record<string, string>>,
-    ) {
-      return await accept(
-        runApp(context)(runnersJobClaimContract).claim({
-          query: { workflowSkills: "2" },
-          headers: authorization === undefined ? {} : { authorization },
-          extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
-          params: { id: runId },
-          body: {
-            capabilities: defaultClaimCapabilities(),
-            ...body,
-          },
-        }),
-        statuses,
-      );
-    },
-
-    async requestRawClaimRunnerJobAs(
-      authorization: string | undefined,
-      runId: string,
-      statuses: readonly (200 | 400 | 401 | 403 | 404 | 500)[],
-      body: unknown,
-      extraHeaders?: Readonly<Record<string, string>>,
-    ) {
-      return await accept(
-        runApp(context)(runnersJobClaimContract).claim({
-          query: { workflowSkills: "2" },
-          headers: authorization === undefined ? {} : { authorization },
-          ...(extraHeaders ? { extraHeaders } : {}),
-          params: { id: runId },
-          body: body as RunnerJobClaimRequestBody,
-        }),
-        statuses,
-      );
-    },
-
     async requestRunnerRealtimeTokenAs(
       authorization: string | undefined,
       body: RunnerRealtimeTokenBody,
@@ -1476,95 +1406,6 @@ export function createRunsApi(context: TestContext) {
         runApp(context)(runnersHeartbeatContract).heartbeat({
           headers: runnerHeaders(validAuth),
           body: body as RunnerHeartbeatBody,
-        }),
-        statuses,
-      );
-    },
-
-    async pollRunner(
-      group?: string,
-      extraHeaders?: Readonly<Record<string, string>>,
-    ) {
-      return await accept(
-        runApp(context)(runnersPollContract).poll({
-          headers: runnerHeaders(true),
-          ...(extraHeaders ? { extraHeaders } : {}),
-          body: {
-            group: group ?? "vm0/test",
-            supportedProfiles: ["vm0/default"],
-          },
-        }),
-        [200],
-      );
-    },
-
-    async requestPollRunner(
-      validAuth: boolean,
-      body: RunnerPollBody,
-      statuses: readonly (200 | 400 | 401 | 500)[],
-      extraHeaders?: Readonly<Record<string, string>>,
-    ) {
-      return await accept(
-        runApp(context)(runnersPollContract).poll({
-          headers: runnerHeaders(validAuth),
-          ...(extraHeaders ? { extraHeaders } : {}),
-          body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestRawPollRunner(
-      validAuth: boolean,
-      body: unknown,
-      statuses: readonly (200 | 400 | 401 | 500)[],
-    ) {
-      return await accept(
-        runApp(context)(runnersPollContract).poll({
-          headers: runnerHeaders(validAuth),
-          body: body as RunnerPollBody,
-        }),
-        statuses,
-      );
-    },
-
-    async requestClaimRunnerJob(
-      validAuth: boolean,
-      runId: string,
-      statuses: readonly (200 | 400 | 401 | 403 | 404 | 500)[],
-      body: RunnerJobClaimRequest = {},
-      extraHeaders?: Readonly<Record<string, string>>,
-    ) {
-      return await accept(
-        runApp(context)(runnersJobClaimContract).claim({
-          query: { workflowSkills: "2" },
-          headers: runnerHeaders(validAuth),
-          extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
-          params: { id: runId },
-          body: {
-            runnerIdentity: defaultRunnerIdentity,
-            capabilities: defaultClaimCapabilities(),
-            ...body,
-          },
-        }),
-        statuses,
-      );
-    },
-
-    async requestRawClaimRunnerJob(
-      validAuth: boolean,
-      runId: string,
-      statuses: readonly (200 | 400 | 401 | 403 | 404 | 500)[],
-      body: unknown,
-      extraHeaders?: Readonly<Record<string, string>>,
-    ) {
-      return await accept(
-        runApp(context)(runnersJobClaimContract).claim({
-          query: { workflowSkills: "2" },
-          headers: runnerHeaders(validAuth),
-          ...(extraHeaders ? { extraHeaders } : {}),
-          params: { id: runId },
-          body: body as RunnerJobClaimRequestBody,
         }),
         statuses,
       );

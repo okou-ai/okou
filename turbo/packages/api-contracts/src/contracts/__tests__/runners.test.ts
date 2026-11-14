@@ -6,30 +6,23 @@ import {
   AGENT_EXECUTION_TIMEOUT_SECONDS,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
-  storedExecutionContextSchema,
+  executionInputSchema,
   connectorRuntimeSyncResultSchema,
   elapsedSinceApiStartMs,
   executionContextSchema,
   nativeContinuationSchema,
   heartbeatBodySchema,
   heldHomeStateSchema,
-  jobSchema,
-  piModelConfigSchema,
-  piModelConfigV2Schema,
-  piModelConfigV3Schema,
-  piModelConfigV5Schema,
   RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
   RUNNER_BUILTIN_FIREWALL_RESOLVE_NAMES_MAX,
-  RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
   runnersBuiltinFirewallsResolveContract,
   runnersConnectorRuntimeSyncContract,
-  runnersJobClaimContract,
-  runnersPollContract,
   sandboxReuseResultSchema as runnersSandboxReuseResultSchema,
   storageMountEntrySchema,
   storageManifestSchema,
   preparedExecutionContextSchema,
   homeReuseResultSchema as runnersHomeReuseResultSchema,
+  runnerPreferenceSchema,
 } from "../runners";
 import {
   runnerHeartbeatGenerationSchema,
@@ -58,34 +51,6 @@ describe("cancellation recovery timing contract", () => {
       CANCELLATION_RECOVERY_STALE_AFTER_MS -
         RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
     ).toBe(30_000);
-  });
-});
-
-/** Every claim body must advertise capabilities; the tests below vary the other fields. */
-const claimCapabilities = { piModelConfigGenerations: [1, 2, 3] };
-
-describe("runner claim attribution contract", () => {
-  it("accepts an optional bounded runner hostname", () => {
-    const previousRequest = runnersJobClaimContract.claim.body.parse({
-      capabilities: claimCapabilities,
-    });
-    expect(previousRequest).not.toHaveProperty("runnerHostname");
-
-    expect(
-      runnersJobClaimContract.claim.body.parse({
-        capabilities: claimCapabilities,
-        runnerHostname: "prod-1.aws.vm3.ai",
-      }),
-    ).toMatchObject({ runnerHostname: "prod-1.aws.vm3.ai" });
-
-    for (const runnerHostname of ["", "x".repeat(256)]) {
-      expect(
-        runnersJobClaimContract.claim.body.safeParse({
-          capabilities: claimCapabilities,
-          runnerHostname,
-        }).success,
-      ).toBe(false);
-    }
   });
 });
 
@@ -139,16 +104,19 @@ describe("runner lifecycle schema ownership", () => {
   });
 });
 
-function loadRunnerClaimResponseFixture(): unknown {
+function loadRunnerExecutionContextFixture(): unknown {
   return JSON.parse(
     fs.readFileSync(
-      path.resolve(import.meta.dirname, "fixtures/runner-claim-response.json"),
+      path.resolve(
+        import.meta.dirname,
+        "fixtures/runner-execution-context.json",
+      ),
       "utf-8",
     ),
   );
 }
 
-describe("runner claim response contract", () => {
+describe("runner execution context contract", () => {
   it.each([true, false, undefined])(
     "round-trips minimum intent with preview authorization %s",
     (previewBypassAuthorized) => {
@@ -169,7 +137,7 @@ describe("runner claim response contract", () => {
         featureFlags: { connectorChatAccountAccess: true },
       };
       expect(
-        storedExecutionContextSchema.parse(JSON.parse(JSON.stringify(input))),
+        executionInputSchema.parse(JSON.parse(JSON.stringify(input))),
       ).toStrictEqual(input);
     },
   );
@@ -179,9 +147,9 @@ describe("runner claim response contract", () => {
     { field: "nativeContinuation", value: undefined },
     { field: "platformEnvironment", value: {} },
     { field: "platformEnvironment", value: { OKOU_DISABLED_PAID_TOOLS: null } },
-  ])("requires captured queue input $field", ({ field, value }) => {
+  ])("requires captured admission input $field", ({ field, value }) => {
     expect(
-      storedExecutionContextSchema.safeParse({
+      executionInputSchema.safeParse({
         previewBypassAuthorized: false,
         nativeContinuation: {
           sessionId: null,
@@ -194,10 +162,10 @@ describe("runner claim response contract", () => {
     ).toBe(false);
   });
   it.each([".claude", ".codex", ".pi/agent"])(
-    "accepts the X Connector Skill in the %s claim response",
+    "accepts the X Connector Skill in the %s execution context",
     (root) => {
       const context = executionContextSchema.parse(
-        loadRunnerClaimResponseFixture(),
+        loadRunnerExecutionContextFixture(),
       );
       const mountPath = `/home/user/${root}/skills/x`;
       const bundle = { ...context.contentBundles.skills[0]!, mountPath };
@@ -211,7 +179,7 @@ describe("runner claim response contract", () => {
 
   it("accepts the shared current response fixture", () => {
     const context = executionContextSchema.parse(
-      loadRunnerClaimResponseFixture(),
+      loadRunnerExecutionContextFixture(),
     );
 
     expect(context).toMatchObject({
@@ -342,7 +310,7 @@ describe("prepared Seed Skill bundle contract", () => {
   });
 });
 
-describe("stored Workflow selection contract", () => {
+describe("admitted Workflow selection contract", () => {
   it("preserves explicit claim-time invocation and mount-precedence intent", () => {
     const context = {
       previewBypassAuthorized: false,
@@ -368,358 +336,9 @@ describe("stored Workflow selection contract", () => {
     ]) {
       const queued = { ...context, customWorkflowSelection: selection };
       expect(
-        storedExecutionContextSchema.parse(queued).customWorkflowSelection,
+        executionInputSchema.parse(queued).customWorkflowSelection,
       ).toStrictEqual(selection);
     }
-  });
-});
-
-describe("Pi sandbox execution contract", () => {
-  const piSessionId = "22222222-2222-4222-8222-222222222222";
-  const preparedContext = {
-    storageMounts: [],
-    seedSkillBundles: [],
-    connectorRuntimeTargets: [],
-    environment: null,
-    platformEnvironment: {},
-    secretValueEnvironmentKeys: null,
-    nativeContinuation: {
-      sessionId: null,
-      generationRunId: null,
-      recoveryPrompt: null,
-    },
-    encryptedSecrets: null,
-    cliAgentType: "pi",
-  };
-  const piPreparedContext = {
-    piSessionId,
-    piLaunchConfig: { schemaVersion: 2 as const },
-    piModelConfig: {
-      provider: "openrouter",
-      baseUrl: "https://openrouter.ai/api/v1",
-      model: "openai/gpt-6-luna",
-      schemaVersion: 5,
-      dialect: "openai-completions",
-      transport: "sse",
-      credentialBindings: [
-        {
-          kind: "api-key",
-          environment: "OPENAI_API_KEY",
-          secretName: "OPENROUTER_API_KEY",
-        },
-      ],
-    },
-  };
-  const piRunnerContext = {
-    piSessionId: piPreparedContext.piSessionId,
-    piLaunchConfig: piPreparedContext.piLaunchConfig,
-    piModelConfig: piPreparedContext.piModelConfig,
-  };
-  const pollJob = {
-    runId: "22222222-2222-4222-8222-222222222222",
-    prompt: "continue",
-    appendSystemPrompt: null,
-    vars: null,
-    experimentalProfile: "vm0/large",
-    runnerPreference: {
-      kind: "noPreference" as const,
-      reason: "noReuseKey" as const,
-    },
-  };
-
-  it("accepts only the exact generation 5 Chat Completions route", () => {
-    const chatCompletions = {
-      schemaVersion: 5,
-      dialect: "openai-completions",
-      transport: "sse",
-      provider: "openrouter",
-      baseUrl: "https://openrouter.ai/api/v1",
-      model: "@preset/okou-1-0",
-      catalogModel: "okou-1.0",
-      credentialBindings: [
-        {
-          kind: "api-key",
-          environment: "OPENAI_API_KEY",
-          secretName: "OPENROUTER_API_KEY",
-        },
-      ],
-    } as const;
-    expect(piModelConfigV5Schema.parse(chatCompletions)).toEqual(
-      chatCompletions,
-    );
-    expect(piModelConfigSchema.parse(chatCompletions)).toEqual(chatCompletions);
-    for (const candidate of [
-      { ...chatCompletions, serviceTier: "priority" },
-      { ...chatCompletions, provider: "openai-codex" },
-      { ...chatCompletions, dialect: "openai-responses" },
-      { ...chatCompletions, schemaVersion: 3 },
-      { ...chatCompletions, schemaVersion: 4 },
-      { ...chatCompletions, credentialBindings: [] },
-      {
-        ...chatCompletions,
-        credentialBindings: [
-          {
-            kind: "access-token",
-            environment: "CHATGPT_ACCESS_TOKEN",
-            secretName: "CHATGPT_ACCESS_TOKEN",
-          },
-        ],
-      },
-    ]) {
-      expect(piModelConfigSchema.safeParse(candidate).success).toBe(false);
-    }
-    for (const schemaVersion of [2, 3] as const) {
-      expect(
-        piModelConfigSchema.safeParse({ ...chatCompletions, schemaVersion })
-          .success,
-      ).toBe(false);
-    }
-  });
-
-  it.each([2, 3] as const)(
-    "accepts only exact generation %s dialect-aware credential binding sets",
-    (schemaVersion) => {
-      const schema =
-        schemaVersion === 2 ? piModelConfigV2Schema : piModelConfigV3Schema;
-      const publicResponses = {
-        schemaVersion,
-        dialect: "openai-responses",
-        transport: "sse",
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        model: "openai/gpt-6-luna",
-        thinkingLevel: "low",
-        credentialBindings: [
-          {
-            kind: "api-key",
-            environment: "OPENAI_API_KEY",
-            secretName: "OPENROUTER_API_KEY",
-          },
-        ],
-      } as const;
-      const codexResponses = {
-        schemaVersion,
-        dialect: "openai-codex-responses",
-        transport: "sse",
-        provider: "openai-codex",
-        baseUrl: "https://chatgpt.com/backend-api",
-        model: "gpt-6-luna",
-        thinkingLevel: "low",
-        credentialBindings: [
-          {
-            kind: "account-id",
-            environment: "CHATGPT_ACCOUNT_ID",
-            secretName: "CHATGPT_ACCOUNT_ID",
-          },
-          {
-            kind: "access-token",
-            environment: "CHATGPT_ACCESS_TOKEN",
-            secretName: "CHATGPT_ACCESS_TOKEN",
-          },
-        ],
-      } as const;
-
-      expect(schema.parse(publicResponses)).toEqual(publicResponses);
-      expect(schema.parse(codexResponses)).toEqual(codexResponses);
-      expect(piModelConfigSchema.parse(publicResponses)).toEqual(
-        publicResponses,
-      );
-      expect(piModelConfigSchema.parse(codexResponses)).toEqual(codexResponses);
-
-      for (const serviceTier of [
-        undefined,
-        "priority",
-        "fast",
-        "default",
-        "unknown",
-        null,
-      ]) {
-        for (const config of [publicResponses, codexResponses]) {
-          const candidate = {
-            ...config,
-            ...(serviceTier === undefined ? {} : { serviceTier }),
-          };
-          const expected =
-            serviceTier === undefined ||
-            (config.dialect === "openai-responses"
-              ? serviceTier === "priority"
-              : schemaVersion === 3 && serviceTier === "fast");
-          expect(piModelConfigSchema.safeParse(candidate).success).toBe(
-            expected,
-          );
-          expect(schema.safeParse(candidate).success).toBe(expected);
-          if (schemaVersion === 3) {
-            expect(piModelConfigV2Schema.safeParse(candidate).success).toBe(
-              false,
-            );
-          }
-        }
-      }
-
-      for (const invalid of [
-        { ...publicResponses, transport: "auto" },
-        { ...publicResponses, extra: true },
-        { ...publicResponses, thinkingLevel: "future" },
-        { ...publicResponses, catalogModel: "x".repeat(513) },
-        { ...codexResponses, catalogModel: "gpt-6-luna" },
-        { ...codexResponses, provider: "openrouter" },
-        { ...publicResponses, provider: "openai" },
-        {
-          ...codexResponses,
-          credentialBindings: [
-            codexResponses.credentialBindings[0],
-            codexResponses.credentialBindings[0],
-          ],
-        },
-        { ...publicResponses, provider: "openai-codex" },
-        { ...publicResponses, credentialBindings: [] },
-        {
-          ...publicResponses,
-          credentialBindings: [
-            publicResponses.credentialBindings[0],
-            publicResponses.credentialBindings[0],
-          ],
-        },
-        {
-          ...publicResponses,
-          credentialBindings: [
-            {
-              kind: "api-key",
-              environment: "CHATGPT_ACCESS_TOKEN",
-              secretName: "OPENAI_API_KEY",
-            },
-          ],
-        },
-        {
-          ...publicResponses,
-          credentialBindings: [
-            {
-              kind: "api-key",
-              environment: "OPENAI_API_KEY",
-              secretName: "CHATGPT_REFRESH_TOKEN",
-            },
-          ],
-        },
-        {
-          ...codexResponses,
-          credentialBindings: [codexResponses.credentialBindings[1]],
-        },
-        {
-          ...codexResponses,
-          serviceTier: "priority",
-        },
-        {
-          ...codexResponses,
-          credentialBindings: [
-            ...codexResponses.credentialBindings,
-            {
-              kind: "id-token",
-              environment: "CHATGPT_ID_TOKEN",
-              secretName: "CHATGPT_ID_TOKEN",
-            },
-          ],
-        },
-      ]) {
-        expect(schema.safeParse(invalid).success).toBe(false);
-      }
-    },
-  );
-
-  it("preserves the Chat Thread session across prepared and Runner-facing contexts", () => {
-    const stored = preparedExecutionContextSchema.parse({
-      ...preparedContext,
-      ...piPreparedContext,
-    });
-    const claimed = executionContextSchema.parse({
-      ...executionContextSchema.parse(loadRunnerClaimResponseFixture()),
-      cliAgentType: "pi",
-      ...piRunnerContext,
-    });
-
-    expect(stored.piSessionId).toBe(piPreparedContext.piSessionId);
-    expect(claimed.piSessionId).toBe(piPreparedContext.piSessionId);
-    expect(jobSchema.parse(pollJob)).not.toHaveProperty("piExecutionMode");
-  });
-
-  it.each([
-    {
-      name: "old launch config",
-      launchConfig: { schemaVersion: 1 },
-    },
-  ])("rejects $name without a Sandbox compatibility path", (fixture) => {
-    expect(
-      preparedExecutionContextSchema.safeParse({
-        ...preparedContext,
-        ...piPreparedContext,
-        piLaunchConfig: fixture.launchConfig,
-      }).success,
-    ).toBe(false);
-  });
-
-  it.each(["piSessionId", "piLaunchConfig", "piModelConfig"])(
-    "rejects a prepared Pi context without %s",
-    (missingField) => {
-      const incompleteContext: Record<string, unknown> = {
-        ...piPreparedContext,
-      };
-      Reflect.deleteProperty(incompleteContext, missingField);
-
-      expect(
-        preparedExecutionContextSchema.safeParse({
-          ...preparedContext,
-          ...incompleteContext,
-        }).success,
-      ).toBe(false);
-    },
-  );
-
-  it("rejects a prepared Pi framework without the entire hard-cut bundle", () => {
-    expect(
-      preparedExecutionContextSchema.safeParse(preparedContext).success,
-    ).toBe(false);
-  });
-
-  it.each(["piLaunchConfig", "piModelConfig"] as const)(
-    "rejects prepared %s for another framework",
-    (field) => {
-      const invalidStoredContext = {
-        ...preparedContext,
-        cliAgentType: "claude-code",
-        [field]: piPreparedContext[field],
-      };
-
-      expect(
-        preparedExecutionContextSchema.safeParse(invalidStoredContext).success,
-      ).toBe(false);
-    },
-  );
-
-  it("requires all Pi fields on a claimed Pi context", () => {
-    const fixture = executionContextSchema.parse(
-      loadRunnerClaimResponseFixture(),
-    );
-    for (const field of [
-      "piSessionId",
-      "piLaunchConfig",
-      "piModelConfig",
-    ] as const) {
-      const incomplete: Record<string, unknown> = {
-        ...fixture,
-        cliAgentType: "pi",
-        ...piRunnerContext,
-      };
-      Reflect.deleteProperty(incomplete, field);
-      expect(executionContextSchema.safeParse(incomplete).success).toBe(false);
-    }
-  });
-
-  it("rejects Pi fields for non-Pi claimed frameworks", () => {
-    expect(
-      executionContextSchema.safeParse({
-        ...executionContextSchema.parse(loadRunnerClaimResponseFixture()),
-        ...piRunnerContext,
-      }).success,
-    ).toBe(false);
   });
 });
 
@@ -728,7 +347,7 @@ describe("connector runtime synchronization contract", () => {
 
   it("limits sync batches without limiting run targets", () => {
     const fixture = executionContextSchema.parse(
-      loadRunnerClaimResponseFixture(),
+      loadRunnerExecutionContextFixture(),
     );
     const targets = Array.from(
       { length: CONNECTOR_RUNTIME_SYNC_TARGETS_MAX + 1 },
@@ -775,7 +394,7 @@ describe("connector runtime synchronization contract", () => {
 
   it("requires custom routing values in target registrations", () => {
     const fixture = executionContextSchema.parse(
-      loadRunnerClaimResponseFixture(),
+      loadRunnerExecutionContextFixture(),
     );
     const target = {
       kind: "custom" as const,
@@ -808,7 +427,7 @@ describe("connector runtime synchronization contract", () => {
 
   it("preserves canonical built-in targets and pinned routing values", () => {
     const fixture = executionContextSchema.parse(
-      loadRunnerClaimResponseFixture(),
+      loadRunnerExecutionContextFixture(),
     );
     const target = {
       kind: "builtin" as const,
@@ -1026,55 +645,6 @@ describe("connector runtime synchronization contract", () => {
   });
 });
 
-describe("runner poll response contract", () => {
-  const job = {
-    runId: "22222222-2222-4222-8222-222222222222",
-    prompt: "continue",
-    appendSystemPrompt: null,
-    vars: null,
-    runnerPreference: {
-      kind: "noPreference" as const,
-      reason: "noReuseKey" as const,
-    },
-  };
-
-  it.each(["vm0/default", "vm0/large"])(
-    "requires and preserves profile %s",
-    (experimentalProfile) => {
-      expect(jobSchema.parse({ ...job, experimentalProfile })).toMatchObject({
-        experimentalProfile,
-      });
-    },
-  );
-
-  it("rejects a missing profile", () => {
-    expect(jobSchema.safeParse(job).success).toBe(false);
-  });
-
-  it("accepts current and pre-reuse-key jobs", () => {
-    expect(
-      jobSchema.parse({
-        ...job,
-        experimentalProfile: "vm0/default",
-        reuseKey: "thread:22222222-2222-4222-8222-222222222223",
-      }).reuseKey,
-    ).toBe("thread:22222222-2222-4222-8222-222222222223");
-    expect(
-      jobSchema.parse({
-        ...job,
-        experimentalProfile: "vm0/default",
-        reuseKey: null,
-      }).reuseKey,
-    ).toBeNull();
-    expect(
-      jobSchema.parse({
-        ...job,
-        experimentalProfile: "vm0/default",
-      }).reuseKey,
-    ).toBeUndefined();
-  });
-});
-
 describe("runner storage manifest contract", () => {
   it("accepts canonical read-only and writeback mounts", () => {
     expect(
@@ -1176,30 +746,6 @@ describe("runner storage manifest contract", () => {
 });
 
 describe("runner reuse preference contract", () => {
-  it("requires a canonical runner preference", () => {
-    const jobInput = {
-      runId: "22222222-2222-4222-8222-222222222222",
-      prompt: "continue",
-      appendSystemPrompt: null,
-      vars: null,
-      experimentalProfile: "vm0/default",
-    };
-
-    expect(jobSchema.safeParse(jobInput).success).toBe(false);
-    const runnerPreference = {
-      kind: "noPreference" as const,
-      reason: "noReuseKey" as const,
-    };
-    expect(
-      jobSchema.parse({
-        ...jobInput,
-        runnerPreference,
-      }),
-    ).toMatchObject({
-      runnerPreference,
-    });
-  });
-
   it("accepts every strict positive runner preference tier", () => {
     const runnerPreference = {
       kind: "preference" as const,
@@ -1208,13 +754,6 @@ describe("runner reuse preference contract", () => {
         heartbeatGeneration: 7,
       },
       expiresAt: "2026-08-03T00:00:01.000Z",
-    };
-    const jobInput = {
-      runId: "33333333-3333-4333-8333-333333333333",
-      prompt: "continue",
-      appendSystemPrompt: null,
-      vars: null,
-      experimentalProfile: "vm0/default",
     };
 
     for (const tier of [
@@ -1230,67 +769,44 @@ describe("runner reuse preference contract", () => {
           ? { predecessorRunId: "11111111-1111-4111-8111-111111111111" }
           : {}),
       };
-      expect(
-        jobSchema.parse({
-          ...jobInput,
-          runnerPreference: preference,
-        }).runnerPreference,
-      ).toStrictEqual(preference);
+      expect(runnerPreferenceSchema.parse(preference)).toStrictEqual(
+        preference,
+      );
     }
     expect(
-      jobSchema.safeParse({
-        ...jobInput,
-        runnerPreference: {
-          ...runnerPreference,
-          tier: "reusableSandbox",
-          reason: "noReuseKey",
-        },
+      runnerPreferenceSchema.safeParse({
+        ...runnerPreference,
+        tier: "reusableSandbox",
+        reason: "noReuseKey",
       }).success,
     ).toBe(false);
     expect(
-      jobSchema.safeParse({
-        ...jobInput,
-        runnerPreference: {
-          ...runnerPreference,
-          tier: "reusableSandbox",
-          expiresAt: undefined,
-        },
+      runnerPreferenceSchema.safeParse({
+        ...runnerPreference,
+        tier: "reusableSandbox",
+        expiresAt: undefined,
       }).success,
     ).toBe(false);
     expect(
-      jobSchema.safeParse({
-        ...jobInput,
-        runnerPreference: {
-          ...runnerPreference,
-          runnerIdentity: {
-            ...runnerPreference.runnerIdentity,
-            runnerId: "not-a-uuid",
-          },
-          tier: "reusableSandbox",
+      runnerPreferenceSchema.safeParse({
+        ...runnerPreference,
+        runnerIdentity: {
+          ...runnerPreference.runnerIdentity,
+          runnerId: "not-a-uuid",
         },
+        tier: "reusableSandbox",
       }).success,
     ).toBe(false);
     expect(
-      jobSchema.safeParse({
-        ...jobInput,
-        runnerPreference: {
-          ...runnerPreference,
-          tier: "reusableSandbox",
-          expiresAt: "not-a-date",
-        },
+      runnerPreferenceSchema.safeParse({
+        ...runnerPreference,
+        tier: "reusableSandbox",
+        expiresAt: "not-a-date",
       }).success,
     ).toBe(false);
   });
 
   it("accepts every strict no-preference reason", () => {
-    const jobInput = {
-      runId: "33333333-3333-4333-8333-333333333333",
-      prompt: "continue",
-      appendSystemPrompt: null,
-      vars: null,
-      experimentalProfile: "vm0/default",
-    };
-
     for (const reason of [
       "noReuseKey",
       "expired",
@@ -1298,20 +814,14 @@ describe("runner reuse preference contract", () => {
       "lookupError",
     ] as const) {
       expect(
-        jobSchema.parse({
-          ...jobInput,
-          runnerPreference: { kind: "noPreference", reason },
-        }).runnerPreference,
+        runnerPreferenceSchema.parse({ kind: "noPreference", reason }),
       ).toStrictEqual({ kind: "noPreference", reason });
     }
     expect(
-      jobSchema.safeParse({
-        ...jobInput,
-        runnerPreference: {
-          kind: "noPreference",
-          reason: "noReuseKey",
-          tier: "homeCache",
-        },
+      runnerPreferenceSchema.safeParse({
+        kind: "noPreference",
+        reason: "noReuseKey",
+        tier: "homeCache",
       }).success,
     ).toBe(false);
   });
@@ -1554,230 +1064,6 @@ describe("runner reuse preference contract", () => {
   });
 });
 
-describe("runner claim request contract", () => {
-  it("accepts omitted or complete runner identity", () => {
-    expect(
-      runnersJobClaimContract.claim.body.parse({
-        capabilities: claimCapabilities,
-      }),
-    ).toEqual({ capabilities: claimCapabilities });
-    expect(
-      runnersJobClaimContract.claim.body.parse({
-        capabilities: claimCapabilities,
-        runnerIdentity: {
-          runnerId: "11111111-1111-4111-8111-111111111111",
-          heartbeatGeneration: Number.MAX_SAFE_INTEGER,
-        },
-      }),
-    ).toStrictEqual({
-      capabilities: claimCapabilities,
-      runnerIdentity: {
-        runnerId: "11111111-1111-4111-8111-111111111111",
-        heartbeatGeneration: Number.MAX_SAFE_INTEGER,
-      },
-    });
-  });
-
-  it("accepts a bounded forward-compatible Pi model-config capability", () => {
-    expect(
-      runnersJobClaimContract.claim.body.parse({
-        capabilities: { piModelConfigGenerations: [1, 2, 7] },
-      }),
-    ).toStrictEqual({
-      capabilities: { piModelConfigGenerations: [1, 2, 7] },
-    });
-
-    for (const piModelConfigGenerations of [
-      [],
-      [1, 1],
-      [0],
-      [256],
-      [1, 2, 3, 4, 5, 6, 7, 8, 9],
-    ]) {
-      expect(
-        runnersJobClaimContract.claim.body.safeParse({
-          capabilities: { piModelConfigGenerations },
-        }).success,
-      ).toBe(false);
-    }
-  });
-
-  it("requires a strict all-or-nothing runner identity", () => {
-    const runnerId = "11111111-1111-4111-8111-111111111111";
-    for (const runnerIdentity of [
-      { runnerId },
-      { heartbeatGeneration: 1 },
-      { runnerId: "not-a-uuid", heartbeatGeneration: 1 },
-      { runnerId, heartbeatGeneration: 0 },
-      { runnerId, heartbeatGeneration: -1 },
-      { runnerId, heartbeatGeneration: 1.5 },
-      { runnerId, heartbeatGeneration: Number.MAX_SAFE_INTEGER + 1 },
-      { runnerId, heartbeatGeneration: 1, unexpected: true },
-    ]) {
-      expect(
-        runnersJobClaimContract.claim.body.safeParse({
-          capabilities: claimCapabilities,
-          runnerIdentity,
-        }).success,
-      ).toBe(false);
-    }
-  });
-
-  it("accepts optional direct candidate timing telemetry", () => {
-    const result = runnersJobClaimContract.claim.body.safeParse({
-      capabilities: claimCapabilities,
-      telemetry: {
-        discoverySource: "ably",
-        jobDiscoveredToClaimRequestMs: 123,
-        localAdmissionToClaimRequestMs: 4,
-        directCandidateNotificationToEnqueueMs: 1,
-        directCandidateInboxWaitMs: 2,
-        providerDiscoveryToMainLoopMs: 3,
-        mainLoopToLocalAdmissionMs: 4,
-      },
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts every positive runner preference claim state", () => {
-    const runnerPreference = {
-      kind: "preference" as const,
-      runnerIdentity: {
-        runnerId: "22222222-2222-4222-8222-222222222222",
-        heartbeatGeneration: 7,
-      },
-      tier: "homeCache" as const,
-      expiresAt: "2026-08-03T00:00:01.000Z",
-    };
-
-    for (const runnerPreferenceClaimState of [
-      "active",
-      "expired",
-      "cleared",
-    ] as const) {
-      expect(
-        runnersJobClaimContract.claim.body.parse({
-          capabilities: claimCapabilities,
-          telemetry: {
-            runnerPreference,
-            runnerPreferenceClaimState,
-          },
-        }).telemetry,
-      ).toStrictEqual({
-        runnerPreference,
-        runnerPreferenceClaimState,
-      });
-    }
-  });
-
-  it("accepts canonical no-preference claim telemetry", () => {
-    const runnerPreference = {
-      kind: "noPreference" as const,
-      reason: "noViableHolder" as const,
-    };
-
-    expect(
-      runnersJobClaimContract.claim.body.parse({
-        capabilities: claimCapabilities,
-        telemetry: {
-          runnerPreference,
-        },
-      }).telemetry,
-    ).toStrictEqual({
-      runnerPreference,
-    });
-  });
-
-  it("keeps other claim telemetry when canonical preference is malformed", () => {
-    expect(
-      runnersJobClaimContract.claim.body.parse({
-        capabilities: claimCapabilities,
-        telemetry: {
-          discoverySource: "poll",
-          runnerPreference: { kind: "futurePreference" },
-          runnerPreferenceClaimState: "active",
-        },
-      }).telemetry,
-    ).toStrictEqual({
-      discoverySource: "poll",
-      runnerPreference: undefined,
-      runnerPreferenceClaimState: "active",
-    });
-  });
-
-  it("discards malformed diagnostic telemetry", () => {
-    const body = runnersJobClaimContract.claim.body.parse({
-      capabilities: claimCapabilities,
-      telemetry: {
-        pollReason: "future-reason",
-        jobDiscoveredToClaimRequestMs: -1,
-      },
-    });
-
-    expect(body.telemetry).toEqual({});
-  });
-});
-
-describe("runner poll request contract", () => {
-  const group = "vm0/test";
-  const supportedProfiles = ["vm0/default"];
-  const runId = "550e8400-e29b-41d4-a716-446655440000";
-
-  it("accepts bounded optional run exclusions", () => {
-    expect(
-      runnersPollContract.poll.body.parse({
-        group,
-        supportedProfiles,
-        excludedRunIds: [runId],
-      }),
-    ).toEqual({
-      group,
-      supportedProfiles,
-      excludedRunIds: [runId],
-    });
-
-    expect(
-      runnersPollContract.poll.body.safeParse({
-        group,
-        supportedProfiles,
-        excludedRunIds: Array.from(
-          { length: RUNNER_POLL_EXCLUDED_RUN_IDS_MAX + 1 },
-          () => {
-            return runId;
-          },
-        ),
-      }).success,
-    ).toBe(false);
-  });
-
-  it("rejects malformed exclusions and behavior-bearing routing fields", () => {
-    expect(
-      runnersPollContract.poll.body.safeParse({
-        group,
-        supportedProfiles,
-        excludedRunIds: ["not-a-run-id"],
-      }).success,
-    ).toBe(false);
-    expect(
-      runnersPollContract.poll.body.safeParse({
-        group,
-        supportedProfiles: [],
-      }).success,
-    ).toBe(false);
-  });
-
-  it("discards malformed diagnostic telemetry", () => {
-    const body = runnersPollContract.poll.body.parse({
-      group,
-      supportedProfiles,
-      telemetry: { pollReason: "future-reason" },
-    });
-
-    expect(body.telemetry).toEqual({});
-  });
-});
-
 describe("runner builtin firewall resolve contract", () => {
   it("accepts omitted names for full catalog resolution", () => {
     const result =
@@ -1960,8 +1246,7 @@ describe("runner apiStartTime contract", () => {
     const timestamp = 1_700_000_000_000;
 
     expect(
-      storedExecutionContextSchema.shape.apiStartTime.safeParse(timestamp)
-        .success,
+      executionInputSchema.shape.apiStartTime.safeParse(timestamp).success,
     ).toBe(true);
     expect(
       executionContextSchema.shape.apiStartTime.safeParse(timestamp).success,
@@ -1972,8 +1257,7 @@ describe("runner apiStartTime contract", () => {
     const timestamp = 1_700_000_000_000.5;
 
     expect(
-      storedExecutionContextSchema.shape.apiStartTime.safeParse(timestamp)
-        .success,
+      executionInputSchema.shape.apiStartTime.safeParse(timestamp).success,
     ).toBe(false);
     expect(
       executionContextSchema.shape.apiStartTime.safeParse(timestamp).success,
@@ -1981,9 +1265,9 @@ describe("runner apiStartTime contract", () => {
   });
 
   it("rejects negative timestamps", () => {
-    expect(
-      storedExecutionContextSchema.shape.apiStartTime.safeParse(-1).success,
-    ).toBe(false);
+    expect(executionInputSchema.shape.apiStartTime.safeParse(-1).success).toBe(
+      false,
+    );
     expect(
       executionContextSchema.shape.apiStartTime.safeParse(-1).success,
     ).toBe(false);
@@ -1993,8 +1277,7 @@ describe("runner apiStartTime contract", () => {
     const timestamp = 1_700_000_000;
 
     expect(
-      storedExecutionContextSchema.shape.apiStartTime.safeParse(timestamp)
-        .success,
+      executionInputSchema.shape.apiStartTime.safeParse(timestamp).success,
     ).toBe(false);
     expect(
       executionContextSchema.shape.apiStartTime.safeParse(timestamp).success,

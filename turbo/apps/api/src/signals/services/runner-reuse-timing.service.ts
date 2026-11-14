@@ -6,7 +6,7 @@ import type {
 import { nowDate } from "../../lib/time";
 import { safeSync } from "../utils";
 
-type ReusePhase = "holder_select" | "delivery_finalize";
+type ReusePhase = "holder_select";
 type ObservationFields = Readonly<Record<string, string | number>>;
 
 interface ReusePhaseObservation {
@@ -28,7 +28,7 @@ function captureKind(count: number): "missing" | "single" | "multiple" {
   return count === 0 ? "missing" : count === 1 ? "single" : "multiple";
 }
 
-/** Notification-owned observations; poll does not allocate or emit them. */
+/** Preparation-owned locality observations. */
 export class RunnerReusePreferenceTiming {
   private readonly observations: ReusePhaseObservation[] = [];
 
@@ -84,8 +84,7 @@ export class RunnerReusePreferenceTiming {
     readonly runId: string;
     readonly dimensions: Readonly<Record<string, string>>;
   }) {
-    // Overlapped preparation and one atomic delivery finalization. Keep
-    // registration in the caller's existing post-publication batch.
+    // Keep captured preparation in the caller's post-publication batch.
     return this.observations.map((observation) => {
       return {
         sandboxType: "runner" as const,

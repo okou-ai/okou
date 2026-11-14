@@ -9,11 +9,10 @@ import {
 } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { command } from "ccstate";
 import { record, string } from "zod";
-import { monotonicNow, now, nowDate } from "../../lib/time";
+import { nowDate } from "../../lib/time";
 import { generateSandboxToken } from "../auth/tokens";
-import { settle } from "../utils";
-import type { ClaimExecutionContextRun } from "./claim-execution-context";
-import type { ClaimNetworkPolicyInputs } from "./claim-runtime-context";
+import type { ExecutionContextRun } from "./execution-context";
+import type { ExecutionNetworkPolicyInputs } from "./execution-runtime-context";
 import {
   signClaimedContentBundle$,
   type ClaimedContentBundleSignature,
@@ -30,7 +29,7 @@ import {
   networkPolicyRefreshesRecord,
 } from "./user-permission-grants.service";
 
-export interface ExecutionPublicationRun extends ClaimExecutionContextRun {
+export interface ExecutionPublicationRun extends ExecutionContextRun {
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
   readonly vars: unknown;
@@ -48,29 +47,9 @@ export interface ExecutionPackageSelection {
 }
 
 const runVarsSchema = record(string(), string()).nullable();
-type BaseClaimResponse = Omit<ExecutionContext, "contentBundles">;
-type ExecutionPolicyRefreshPath = "claim_inputs" | "no_builtin_targets";
+type BaseExecutionResponse = Omit<ExecutionContext, "contentBundles">;
 
-/** Only the legacy Claim transport supplies its own attribution collector. */
-interface ExecutionPublicationTiming {
-  recordDuration(
-    action: string,
-    durationMs: number,
-    dimensions?: Readonly<Record<string, string>>,
-  ): void;
-  recordPolicyRefreshPhases(args: {
-    readonly permissionSource: "member" | "agent";
-    readonly policyEvaluateMs: number;
-    readonly mergeMs: number;
-  }): void;
-  recordNetworkPolicyRefresh(
-    startedAt: number,
-    finishedAt: number,
-    path: ExecutionPolicyRefreshPath | undefined,
-  ): void;
-}
-
-function mergeClaimVars(args: {
+function mergeExecutionVars(args: {
   readonly runVars: Record<string, string> | null;
   readonly connectorVars: Record<string, string> | null | undefined;
 }): Record<string, string> | null {
@@ -85,7 +64,7 @@ function mergeClaimVars(args: {
 }
 
 function withContentBundleMounts(
-  responseBody: BaseClaimResponse,
+  responseBody: BaseExecutionResponse,
   contentBundles: ExecutionContext["contentBundles"],
 ): ExecutionContext {
   const bundledMountPaths = new Set([
@@ -111,14 +90,13 @@ function withContentBundleMounts(
 }
 
 interface ClaimedContentBundlesInput {
-  readonly responseBody: BaseClaimResponse;
+  readonly responseBody: BaseExecutionResponse;
   readonly claim: ExecutionPackageSelection;
   readonly workflowInput: WorkflowClaimInput;
   readonly officialWorkflowBundles: PreparedExecutionContext["officialWorkflowBundles"];
   readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
   readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
   readonly bundleUrlCache: ContentBundleUrlCacheContext;
-  readonly timing?: ExecutionPublicationTiming;
 }
 
 const signClaimedContentBundles$ = command(
@@ -129,7 +107,6 @@ const signClaimedContentBundles$ = command(
   ): Promise<{
     readonly contentBundles: ExecutionContext["contentBundles"];
     readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
-    readonly uniqueBundleCount: number;
   }> => {
     const cachedUrls = new Map(
       args.claim.cachedBundleUrls.map((row) => {
@@ -160,20 +137,11 @@ const signClaimedContentBundles$ = command(
       signatures.set(identity, signed);
       return signed;
     };
-    const instructionsStartedAt = monotonicNow();
     const signedInstructions =
       args.claim.instructionsBundle === null
         ? undefined
         : await signBundle(args.claim.instructionsBundle);
     const instructions = signedInstructions?.bundle;
-    if (instructions !== undefined) {
-      args.timing?.recordDuration(
-        "claim_route_content_bundle_instructions_sign",
-        monotonicNow() - instructionsStartedAt,
-      );
-    }
-    // One wall interval for the concurrent group, not a sum of per-URL timers.
-    const skillsStartedAt = monotonicNow();
     const workflowMountPaths = new Set(
       args.claim.workflows.map((workflow) => {
         return `${args.workflowInput.skillRoot}/${workflow.name}`;
@@ -208,11 +176,6 @@ const signClaimedContentBundles$ = command(
       }),
     );
     signal.throwIfAborted();
-    args.timing?.recordDuration(
-      "claim_route_content_bundle_skills_sign",
-      monotonicNow() - skillsStartedAt,
-    );
-    const templatesStartedAt = monotonicNow();
     const templates = await Promise.all(
       (args.templateGuidanceBundles ?? []).map(async (reference) => {
         const { ownerKind, templateId, beforeMountPaths, ...bundle } =
@@ -226,12 +189,6 @@ const signClaimedContentBundles$ = command(
       }),
     );
     signal.throwIfAborted();
-    if (templates.length) {
-      args.timing?.recordDuration(
-        "claim_route_content_bundle_templates_sign",
-        monotonicNow() - templatesStartedAt,
-      );
-    }
     const signingResults = await Promise.all(signatures.values());
     signal.throwIfAborted();
     const cacheWrites = signingResults.flatMap((result) => {
@@ -245,48 +202,17 @@ const signClaimedContentBundles$ = command(
         ...(templates.length ? { templates } : {}),
       },
       cacheWrites,
-      uniqueBundleCount: signatures.size,
     };
   },
 );
 
 export const withExecutionContentBundles$ = command(
   async ({ set }, args: ClaimedContentBundlesInput, signal: AbortSignal) => {
-    const startedAt = monotonicNow();
     const signed = await set(signClaimedContentBundles$, args, signal);
     signal.throwIfAborted();
-    const assemblyStartedAt = monotonicNow();
     const responseBody = withContentBundleMounts(
       args.responseBody,
       signed.contentBundles,
-    );
-    args.timing?.recordDuration(
-      "claim_route_content_bundle_response_assembly",
-      monotonicNow() - assemblyStartedAt,
-    );
-    const { skills, instructions, templates = [] } = signed.contentBundles;
-    // Only aggregate counts escape this request; no hash, mount or URL is logged.
-    args.timing?.recordDuration(
-      "claim_route_content_bundles",
-      monotonicNow() - startedAt,
-      {
-        bundle_count: String(
-          skills.length + templates.length + (instructions ? 1 : 0),
-        ),
-        template_guidance_bundle_count: String(templates.length),
-        unique_bundle_count: String(signed.uniqueBundleCount),
-        instruction_bundle_count: instructions ? "1" : "0",
-        workflow_bundle_count: String(args.claim.workflows.length),
-        official_workflow_bundle_count: String(
-          args.officialWorkflowBundles?.length ?? 0,
-        ),
-        seed_skill_bundle_count: String(args.seedSkillBundles.length),
-        cache_hit_count: String(
-          signed.uniqueBundleCount - signed.cacheWrites.length,
-        ),
-        cache_miss_count: String(signed.cacheWrites.length),
-        cache_write_path: "background",
-      },
     );
     return { responseBody, cacheWrites: signed.cacheWrites };
   },
@@ -309,28 +235,25 @@ function secretValuesForRunner(
     const value = environment[key];
     if (!Object.hasOwn(environment, key) || typeof value !== "string") {
       throw new Error(
-        "Claim secret index references an absent environment key",
+        "Execution secret index references an absent environment key",
       );
     }
     secretValues.push(value);
   }
   return secretValues;
 }
-
-const prepareClaimNetworkPolicyRefreshes$ = command(
+const prepareExecutionNetworkPolicyRefreshes$ = command(
   async (
     _context,
     args: {
       readonly run: ExecutionPublicationRun;
       readonly storedContext: PreparedExecutionContext;
-      readonly networkPolicyInputs: ClaimNetworkPolicyInputs | null;
-      readonly timing?: ExecutionPublicationTiming;
+      readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
     },
   ): Promise<
     Pick<ExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
   > => {
-    const storedNetworkPolicies = args.storedContext.networkPolicies ?? {};
-    assertClaimConnectorIdentity(args.run, args.storedContext);
+    assertExecutionConnectorIdentity(args.run, args.storedContext);
     const builtinConnectorSlugs = [
       ...new Set(
         args.storedContext.connectorRuntimeTargets.flatMap((target) => {
@@ -338,82 +261,35 @@ const prepareClaimNetworkPolicyRefreshes$ = command(
         }),
       ),
     ];
-
-    if (
-      builtinConnectorSlugs.length === 0 &&
-      Object.keys(storedNetworkPolicies).length === 0
-    ) {
+    if (builtinConnectorSlugs.length === 0) {
       return {
         networkPolicies: args.storedContext.networkPolicies,
         networkPolicyRefreshes: undefined,
       };
     }
-
-    const startedAt = now();
-    // Finish evaluation before the durable transition and retain its elapsed
-    // timing even if a captured input cannot be evaluated.
-    const result = await settle(
-      (async (): Promise<{
-        readonly value: Pick<
-          ExecutionContext,
-          "networkPolicies" | "networkPolicyRefreshes"
-        >;
-        readonly path: ExecutionPolicyRefreshPath;
-      }> => {
-        if (builtinConnectorSlugs.length === 0) {
-          return {
-            value: {
-              networkPolicies: args.storedContext.networkPolicies,
-              networkPolicyRefreshes: undefined,
-            },
-            path: "no_builtin_targets",
-          };
-        }
-        if (args.run.agentId === null || args.networkPolicyInputs === null) {
-          throw new Error(
-            "Connector network policy refresh requires Claim inputs and an Agent identity",
-          );
-        }
-        const policyEvaluateStartedAt = monotonicNow();
-        const refreshes = await activeNetworkPolicyRefreshesFromGrants(
-          {
-            ...args.networkPolicyInputs,
-            connectorSlugs: builtinConnectorSlugs,
-          },
-          nowDate(),
-        );
-        const policyEvaluateMs = monotonicNow() - policyEvaluateStartedAt;
-        const mergeStartedAt = monotonicNow();
-        const networkPolicies = mergeNetworkPolicyRefreshes(
-          args.storedContext.networkPolicies,
-          refreshes,
-        );
-        const networkPolicyRefreshes = networkPolicyRefreshesRecord(refreshes);
-        args.timing?.recordPolicyRefreshPhases({
-          permissionSource: args.networkPolicyInputs.permissionSource,
-          policyEvaluateMs,
-          mergeMs: monotonicNow() - mergeStartedAt,
-        });
-        return {
-          value: { networkPolicies, networkPolicyRefreshes },
-          path: "claim_inputs",
-        };
-      })(),
-    );
-    const finishedAt = now();
-    args.timing?.recordNetworkPolicyRefresh(
-      startedAt,
-      finishedAt,
-      result.ok ? result.value.path : undefined,
-    );
-    if (!result.ok) {
-      throw result.error;
+    if (args.run.agentId === null || args.networkPolicyInputs === null) {
+      throw new Error(
+        "Connector network policy refresh requires execution inputs and an Agent identity",
+      );
     }
-    return result.value.value;
+    const refreshes = await activeNetworkPolicyRefreshesFromGrants(
+      {
+        ...args.networkPolicyInputs,
+        connectorSlugs: builtinConnectorSlugs,
+      },
+      nowDate(),
+    );
+    return {
+      networkPolicies: mergeNetworkPolicyRefreshes(
+        args.storedContext.networkPolicies,
+        refreshes,
+      ),
+      networkPolicyRefreshes: networkPolicyRefreshesRecord(refreshes),
+    };
   },
 );
 
-function assertClaimConnectorIdentity(
+function assertExecutionConnectorIdentity(
   run: ExecutionPublicationRun,
   storedContext: PreparedExecutionContext,
 ): void {
@@ -436,7 +312,7 @@ export function executionResponseBody(args: {
     ExecutionContext,
     "networkPolicies" | "networkPolicyRefreshes"
   >;
-}): BaseClaimResponse {
+}): BaseExecutionResponse {
   const {
     secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
     customWorkflowSelection: _customWorkflowSelection,
@@ -456,7 +332,7 @@ export function executionResponseBody(args: {
     reuseKey: args.reuseKey,
     prompt: args.run.prompt,
     appendSystemPrompt: args.run.appendSystemPrompt,
-    vars: mergeClaimVars({
+    vars: mergeExecutionVars({
       runVars: runVarsSchema.parse(args.run.vars),
       connectorVars: args.storedContext.vars,
     }),
@@ -484,8 +360,7 @@ export const prepareExecutionResponse$ = command(
     args: {
       readonly run: ExecutionPublicationRun;
       readonly storedContext: PreparedExecutionContext;
-      readonly networkPolicyInputs: ClaimNetworkPolicyInputs | null;
-      readonly timing?: ExecutionPublicationTiming;
+      readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
     },
     signal: AbortSignal,
   ): Promise<{
@@ -495,15 +370,17 @@ export const prepareExecutionResponse$ = command(
       "networkPolicies" | "networkPolicyRefreshes"
     >;
   }> => {
-    // Fallible preparation must finish before durable claim ownership.
+    // Fallible preparation must finish before durable direct dispatch ownership.
     const secretValues = secretValuesForRunner(args.storedContext);
     signal.throwIfAborted();
-    const refreshedPolicies = await set(prepareClaimNetworkPolicyRefreshes$, {
-      run: args.run,
-      storedContext: args.storedContext,
-      networkPolicyInputs: args.networkPolicyInputs,
-      timing: args.timing,
-    });
+    const refreshedPolicies = await set(
+      prepareExecutionNetworkPolicyRefreshes$,
+      {
+        run: args.run,
+        storedContext: args.storedContext,
+        networkPolicyInputs: args.networkPolicyInputs,
+      },
+    );
     signal.throwIfAborted();
     return { secretValues, refreshedPolicies };
   },

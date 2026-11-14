@@ -2124,35 +2124,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
       });
 
-      it("rejects an official runner claim without process identity", async () => {
-        const api = createRunsApi(context);
-        const { actor, agentId } = await entitledRunActor();
-        const run = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "claim without rollout identity",
-        });
-
-        const selected = (await api.requestRunRunner(actor, run.runId, [200]))
-          .body;
-        const rejected = await api.requestRawClaimRunnerJob(
-          true,
-          run.runId,
-          [400],
-          {
-            capabilities: { piModelConfigGenerations: [1, 2, 3] },
-          },
-        );
-        expectApiError(rejected.body);
-        await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-          status: "running",
-        });
-
-        await api.executionInput(run.runId);
-        const runner = await api.requestRunRunner(actor, run.runId, [200]);
-        expect(runner.body).toStrictEqual(selected);
-        await api.requestCancelRun(actor, run.runId, [200]);
-      });
-
       it("resumes the previous session when a run continues the same thread", async () => {
         const bdd = createBddApi(context);
         const api = createRunsApi(context);
@@ -10153,10 +10124,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("rejects runner calls with malformed or wrong runner credentials", async () => {
         const api = createRunsApi(context);
-        const pollBody = {
-          group: "vm0/bdd-auth",
-          supportedProfiles: ["vm0/default"],
-        };
 
         const rejectedAuthorizations = [
           "Basic vm0_official_credentials",
@@ -10166,13 +10133,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           `Bearer vm0_official_${"f".repeat(64)}`,
         ];
         for (const authorization of rejectedAuthorizations) {
-          const poll = await api.requestPollRunnerAs(
+          const heartbeat = await api.requestHeartbeatRunnerAs(
             authorization,
-            pollBody,
             [401],
           );
-          expectApiError(poll.body);
-          expect(poll.body.error.message).toBe("Authentication required");
+          expectApiError(heartbeat.body);
+          expect(heartbeat.body.error.message).toBe("Authentication required");
         }
       });
     });

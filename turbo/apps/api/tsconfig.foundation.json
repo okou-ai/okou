@@ -62,7 +62,6 @@
     "src/signals/services/pending-launch-sql.ts",
     "src/signals/services/pending-launch-tail-plan.ts",
     "src/signals/services/run-thread-remote-access.service.ts",
-    "src/signals/services/runner-job-queue-lifecycle.service.ts",
     "src/signals/services/slack-installation-reward.ts",
     "src/signals/services/slack-workspace-write-plan.ts",
     "src/signals/services/storage-s3-prefix.utils.ts",

@@ -4,8 +4,6 @@ import {
   runnersBuiltinFirewallsResolveContract,
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
-  runnersJobClaimContract,
-  runnersPollContract,
 } from "../contracts/runners";
 import {
   webhookCompleteContract,
@@ -55,16 +53,6 @@ const runtimeServiceRouteBindings = [
     id: "runners.runs.startup",
     owner: "runner",
     route: runnersRunStartupContract.setStartup,
-  },
-  {
-    id: "runners.poll",
-    owner: "runner",
-    route: runnersPollContract.poll,
-  },
-  {
-    id: "runners.jobs.claim",
-    owner: "runner",
-    route: runnersJobClaimContract.claim,
   },
   {
     id: "runners.heartbeat",
