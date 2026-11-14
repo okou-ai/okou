@@ -210,7 +210,8 @@ impl CompletionAuth {
 /// Remote work never implements this capability or fetches execution input here.
 #[async_trait::async_trait]
 pub trait LocalJobSource: Send + Sync {
-    /// Side-effect-free wait; Reactor retains this future across maintenance ticks.
+    /// Wait for a local candidate without claiming it. Discovery may prune
+    /// completed local job files. Reactor retains this future across maintenance ticks.
     async fn discover(&self) -> Option<JobCandidate>;
     /// Atomic local claim. Accepted admission tasks retain this future until
     /// ownership transfers to execution or explicit completion/rollback.
