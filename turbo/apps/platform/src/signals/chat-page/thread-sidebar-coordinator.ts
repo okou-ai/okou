@@ -16,7 +16,11 @@ import {
   mountWorkspaceLayout$,
   refreshWorkspaceLayout$,
 } from "./workspace-layout.ts";
-import { restoreChatLayoutScroll$ } from "./chat-layout.ts";
+import {
+  prepareNarrowSidebarScroll$,
+  restoreChatLayoutScroll$,
+  restoreNarrowSidebarScroll$,
+} from "./chat-layout.ts";
 import { artifactCatalogSidebar } from "../artifacts-page/artifact-catalog-instance.ts";
 import { refreshComposerTaskOverflow$ } from "../okou-page/composer-task-overflow.ts";
 import { shellDocumentAttributesRef$ } from "../theme.ts";
@@ -24,7 +28,12 @@ import type { TabStripMotion } from "../browser/tab-strip.ts";
 import { createThreadSidebarLayoutMotion } from "./thread-sidebar-layout-motion.ts";
 import { workspaceResizing$ } from "./workspace-resize.ts";
 import { animationFrame } from "signal-timers";
-import { hash$, searchParams$, updateSearchParams$ } from "../route.ts";
+import {
+  hash$,
+  pathname$,
+  searchParams$,
+  updateSearchParams$,
+} from "../route.ts";
 import {
   threadMailLocation$,
   threadMailParams,
@@ -116,11 +125,30 @@ const synchronizeWorkspaceLayout$ = command(
   },
 );
 
+// Capture before the route's bubble-phase popstate handler publishes the mail
+// destination. History is a navigation command, not a render/layout receipt.
+const restoreSidebarHistory$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    const next = new URLSearchParams(window.location.search);
+    const previous = get(searchParams$);
+    if (
+      window.location.pathname !== get(pathname$) ||
+      ["mailThread", "mailView", "mailId"].every((key) => {
+        return next.get(key) === previous.get(key);
+      })
+    ) {
+      return;
+    }
+    set(prepareNarrowSidebarScroll$);
+    await set(restoreNarrowSidebarScroll$, signal);
+  },
+);
+
 /** The shared shell owns the sibling list and utility-panel transition listeners. */
 export const threadSidebarLayoutRootRef$ = onRef(
   command(
     async (
-      { set },
+      { get, set },
       root: HTMLDivElement,
       signal: AbortSignal,
     ): Promise<void> => {
@@ -165,6 +193,13 @@ export const threadSidebarLayoutRootRef$ = onRef(
         );
       }
       window.addEventListener("resize", refresh, { signal });
+      window.addEventListener(
+        "popstate",
+        onDomEventFn(async () => {
+          await set(restoreSidebarHistory$, get(pageSignal$));
+        }),
+        { capture: true, signal },
+      );
       await set(refreshWorkspaceLayout$, signal);
     },
   ),
@@ -277,6 +312,7 @@ export const navigateThreadMail$ = command(
       }
     }
     if (destination.view === "detail") {
+      set(prepareNarrowSidebarScroll$);
       const href = `/mail/drafts/${destination.mailDraftId}`;
       set(thread.mail.register$, {
         mailDraftId: destination.mailDraftId,

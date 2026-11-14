@@ -1,10 +1,89 @@
 import type { Editor, EditorEvents } from "@tiptap/core";
 import { command, type Command } from "ccstate";
-import { onDomEventFn, onRef } from "../utils.ts";
+import {
+  onDomEventFn,
+  onRef,
+  resetSignal,
+  waitForBrowserPaint,
+} from "../utils.ts";
 import {
   currentLeftThread$,
   currentRightThread$,
 } from "./chat-thread-pane-state.ts";
+
+// Keep aligned with the shell's `hidden xl:flex` transcript visibility.
+const THREAD_SIDEBAR_SPLIT_MEDIA_QUERY = "(min-width: 80rem)";
+const resetHiddenLayoutRestore$ = resetSignal();
+
+/** Preserve before publication, while the narrow transcript still has geometry. */
+export const prepareNarrowSidebarScroll$ = command(({ get, set }) => {
+  set(resetHiddenLayoutRestore$);
+  if (window.matchMedia(THREAD_SIDEBAR_SPLIT_MEDIA_QUERY).matches) {
+    return;
+  }
+  for (const thread of new Set([
+    get(currentLeftThread$),
+    get(currentRightThread$),
+  ])) {
+    if (thread) {
+      set(thread.preserveHiddenLayout$);
+    }
+  }
+});
+
+/** The closing command owns the reveal; a reopen cancels only this await. */
+export const restoreNarrowSidebarScroll$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    signal.throwIfAborted();
+    const restoreSignal = set(resetHiddenLayoutRestore$, signal);
+    const threads = new Set([
+      get(currentLeftThread$),
+      get(currentRightThread$),
+    ]);
+    if (
+      !Array.from(threads).some((thread) => {
+        return thread !== null && set(thread.hasPreservedHiddenLayout$);
+      })
+    ) {
+      return;
+    }
+    const [paint] = await Promise.allSettled([
+      waitForBrowserPaint(restoreSignal),
+    ]);
+    signal.throwIfAborted();
+    if (paint.status === "rejected") {
+      // Reopen cancels this layout step without ending its adopting page.
+      if (restoreSignal.aborted && paint.reason === restoreSignal.reason) {
+        return;
+      }
+      throw paint.reason;
+    }
+    if (restoreSignal.aborted) {
+      return;
+    }
+    const currentThreads = new Set([
+      get(currentLeftThread$),
+      get(currentRightThread$),
+    ]);
+    const restorations = await Promise.allSettled(
+      Array.from(threads, async (thread) => {
+        if (thread && currentThreads.has(thread)) {
+          await set(thread.restoreHiddenLayout$, restoreSignal);
+        }
+      }),
+    );
+    signal.throwIfAborted();
+    for (const restoration of restorations) {
+      // Reopen supersedes only layout work, not the navigation that adopted it.
+      if (
+        restoration.status === "rejected" &&
+        (!restoreSignal.aborted || restoration.reason !== restoreSignal.reason)
+      ) {
+        throw restoration.reason;
+      }
+    }
+  },
+);
 
 /** Reflow keeps measured reading anchors and completes hidden initial requests. */
 export const restoreChatLayoutScroll$ = command(
