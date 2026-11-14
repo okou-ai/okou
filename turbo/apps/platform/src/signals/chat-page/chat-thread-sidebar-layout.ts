@@ -204,13 +204,14 @@ const resetChatThreadSidebarResize$ = resetSignal();
 
 const finishChatThreadSidebarResize$ = command(
   async ({ set }, signal: AbortSignal, ownerSignal: AbortSignal) => {
-    // Paint the final live coordinate while this gesture still owns transitions.
+    // Persist the terminal sample before page cancellation can interrupt paint.
+    set(commitLiveSidebarWidth$);
+    set(commitChatListWidth$);
+    // Paint the final coordinate while this gesture still owns transitions.
     await waitForBrowserPaint(signal);
     signal.throwIfAborted();
     // Capture and the mask are already released; now relinquish transitions.
     set(resetChatThreadSidebarResize$);
-    set(commitLiveSidebarWidth$);
-    set(commitChatListWidth$);
     await set(refreshWorkspaceLayout$, ownerSignal);
   },
 );

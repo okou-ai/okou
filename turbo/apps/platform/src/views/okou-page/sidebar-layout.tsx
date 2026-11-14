@@ -481,12 +481,17 @@ function SidebarWorkspace({
         !(agentChatPage && chatListVisible) && <MobileTopBar />}
     </>
   );
-  const workspaceContent = pwaNavigation ? (
-    <div className="flex min-h-0 flex-1 flex-col [--okou-safe-b:0px]">
+  // Keep the transcript mounted when rotation crosses the mobile breakpoint.
+  // Native scroll anchoring needs the same reading DOM on both sides.
+  const workspaceContent = (
+    <div
+      className={cn(
+        "flex min-h-0 flex-1 flex-col",
+        pwaNavigation && "[--okou-safe-b:0px]",
+      )}
+    >
       {children}
     </div>
-  ) : (
-    children
   );
   const workspaceFooter = pwaNavigation ? <PwaBottomNavigation /> : null;
   return (
@@ -532,8 +537,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <SkillImportDialogMount />
       <CreateAgentDialogContainer />
       <QueueDrawer />
-      {/* Workspace content remounts when mobile navigation adds its wrapper.
-          Keep in-flight remote permission actions outside that subtree. */}
+      {/* Keep in-flight remote permission actions with the workspace owner. */}
       <ThreadComposerDialogsMount />
       {pwaNavigation ? (
         <>
