@@ -42,6 +42,6 @@ where
     )
     .await?;
     Ok(Authenticated {
-        stream: AuthenticatedStream::apple_vnc_password_raw(stream),
+        stream: AuthenticatedStream::raw(stream),
     })
 }
