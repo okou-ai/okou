@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.202](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.201...guest-telemetry-v0.3.202) (2026-11-14)
+
+
+### Refactoring
+
+* **guest-telemetry:** borrow append lock descriptor for cleanup ([#47139](https://github.com/okou-ai/okou/issues/47139)) ([60a5e84](https://github.com/okou-ai/okou/commit/60a5e844f4da9ccdbb4fbd7fc04c172bff886335))
+
 ## [0.3.201](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.200...guest-telemetry-v0.3.201) (2026-11-14)
 
 ## [0.3.200](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.199...guest-telemetry-v0.3.200) (2026-11-13)

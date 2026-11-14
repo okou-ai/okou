@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.839.1](https://github.com/okou-ai/okou/compare/core-v8.839.0...core-v8.839.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** match existing web chat sharing behavior ([#47105](https://github.com/okou-ai/okou/issues/47105)) ([e25ad70](https://github.com/okou-ai/okou/commit/e25ad705a20e4cf55d75ade9c6dd7c0a9d45d0e5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.63.1
+
 ## [8.839.0](https://github.com/okou-ai/okou/compare/core-v8.838.0...core-v8.839.0) (2026-11-14)
 
 
