@@ -32,7 +32,6 @@
 
 use std::fs::{File, OpenOptions};
 use std::io;
-use std::os::fd::AsRawFd;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
@@ -229,17 +228,17 @@ fn validate_lock_file(file: &File, path: &Path) -> io::Result<()> {
 }
 
 fn chmod_lock_file(file: &File, path: &Path) -> io::Result<()> {
-    // SAFETY: `fchmod` operates on the live fd and does not affect Rust aliasing.
-    let result = unsafe { libc::fchmod(file.as_raw_fd(), PRIVATE_FILE_MODE as libc::mode_t) };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::other(format!(
+    nix::sys::stat::fchmod(
+        file,
+        nix::sys::stat::Mode::from_bits_truncate(PRIVATE_FILE_MODE as libc::mode_t),
+    )
+    .map_err(|error| {
+        io::Error::other(format!(
             "chmod lock file {}: {}",
             path.display(),
-            io::Error::last_os_error()
-        )))
-    }
+            io::Error::from(error)
+        ))
+    })
 }
 
 fn permission_denied(message: String) -> io::Error {

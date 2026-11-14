@@ -316,16 +316,16 @@ fn validate_dir_fd(fd: &OwnedFd, path: &Path) -> io::Result<()> {
 
 #[cfg(unix)]
 fn chmod_dir_fd(fd: &OwnedFd, path: &Path) -> io::Result<()> {
-    // SAFETY: `fd` owns a live directory descriptor.
-    let result = unsafe { libc::fchmod(fd.as_raw_fd(), PRIVATE_DIR_MODE) };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(wrap_last_os_error(format!(
-            "chmod runtime directory {}",
-            path.display()
-        )))
-    }
+    nix::sys::stat::fchmod(
+        fd,
+        nix::sys::stat::Mode::from_bits_truncate(PRIVATE_DIR_MODE),
+    )
+    .map_err(|error| {
+        wrap_io_error(
+            error.into(),
+            format!("chmod runtime directory {}", path.display()),
+        )
+    })
 }
 
 #[cfg(target_os = "linux")]
@@ -695,13 +695,11 @@ fn private_file_options() -> OpenOptions {
 
 #[cfg(unix)]
 fn set_file_private(file: &File) -> io::Result<()> {
-    // SAFETY: `file` owns a live descriptor.
-    let result = unsafe { libc::fchmod(file.as_raw_fd(), PRIVATE_FILE_MODE) };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(wrap_last_os_error("chmod runtime file".to_string()))
-    }
+    nix::sys::stat::fchmod(
+        file,
+        nix::sys::stat::Mode::from_bits_truncate(PRIVATE_FILE_MODE),
+    )
+    .map_err(|error| wrap_io_error(error.into(), "chmod runtime file".to_string()))
 }
 
 #[cfg(not(unix))]
