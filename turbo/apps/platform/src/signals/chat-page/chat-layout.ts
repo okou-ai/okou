@@ -6,7 +6,7 @@ import {
   currentRightThread$,
 } from "./chat-thread-pane-state.ts";
 
-/** Both panes share the composer/sidebar layout, but keep separate reading anchors. */
+/** Reflow keeps native reading anchors; only bottom-follow needs a layout write. */
 export const restoreChatLayoutScroll$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     signal.throwIfAborted();
@@ -16,7 +16,7 @@ export const restoreChatLayoutScroll$ = command(
     ]);
     await Promise.all(
       Array.from(threads, async (thread) => {
-        if (thread) {
+        if (thread && get(thread.threadScrollPosition$) === null) {
           await set(thread.restoreScrollPosition$, signal);
         }
       }),
