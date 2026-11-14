@@ -8,6 +8,17 @@ before changing host tuning or promotion behavior.
 For control-plane URL and authentication options, use `runner config --help`
 and `runner start --help`.
 
+## Execution transports
+
+Official remote Runners receive complete execution publications through direct
+HTTP dispatch. Remote Claim, HTTP polling and Ably job notifications no longer
+acquire work. Ably still carries cancellation, active input, connector sync and
+SSH/VNC control messages.
+
+Non-official remote/PAT execution is retired and fails startup with a clear
+configuration error. Independent runner start --local submissions still use
+the local filesystem queue, admission and executor.
+
 ## Direct Run Intake
 
 Official Runner ingress uses Caddy on HTTPS 443 and the process-owned
@@ -34,7 +45,7 @@ later activation/execution failure uses ordinary Run completion. Rejection
 releases local reservations and cannot later become acceptance for that input.
 Pending/unknown/conflict never prove an earlier attempt was rejected.
 
-Four preparation transactions are shared with existing acquisition. These slots
+Four preparation transactions are shared by direct intake and local filesystem work. These slots
 release at executor handoff rather than Run completion. When full, intake returns
 HTTP 429 and `busy` immediately, before reading the body. The sender owns waiting
 and bounded same-process retries for a preferred Runner. No fixed `Retry-After`

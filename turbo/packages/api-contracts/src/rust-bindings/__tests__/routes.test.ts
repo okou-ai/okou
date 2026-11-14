@@ -47,18 +47,6 @@ const expectedBindings = [
     rustConstName: "PIN",
   },
   {
-    method: "POST",
-    path: "/api/runners/poll",
-    rustModulePath: ["runners", "poll"],
-    rustConstName: "POLL",
-  },
-  {
-    method: "POST",
-    path: "/api/runners/jobs/:id/claim",
-    rustModulePath: ["runners", "jobs", "by_id", "claim"],
-    rustConstName: "CLAIM",
-  },
-  {
     method: "GET",
     path: "/api/runners/runs/:runId/steerable-inputs/next",
     rustModulePath: [
@@ -213,13 +201,15 @@ describe("Rust route bindings", () => {
     const rendered = renderRustRoutes(rustRouteBindings);
 
     expect(rendered).toContain(
-      "pub const CLAIM: crate::RouteTemplate = crate::RouteTemplate {",
+      "pub const GET: crate::RouteTemplate = crate::RouteTemplate {",
     );
     expect(rendered).toContain("pub struct Params<'a> {");
-    expect(rendered).toContain("pub id: &'a str,");
+    expect(rendered).toContain("pub run_id: &'a str,");
     expect(rendered).toContain("pub fn route(params: Params<'_>)");
-    expect(rendered).toContain("crate::ResolvedRoute::new(CLAIM.method");
-    expect(rendered).toContain("crate::route::encode_path_segment(params.id)");
+    expect(rendered).toContain("crate::ResolvedRoute::new(GET.method");
+    expect(rendered).toContain(
+      "crate::route::encode_path_segment(params.run_id)",
+    );
   });
 
   it("renders Rust docs for route modules, constants, params, and helpers", () => {
@@ -229,24 +219,26 @@ describe("Rust route bindings", () => {
       "//! Generated Rust route bindings for selected `@okouai/api-contracts` routes.",
     );
     expect(rendered).toContain(
-      "/// Generated route bindings under `runners::jobs::by_id::claim`.",
-    );
-    expect(rendered).toContain("/// Claim a pending job for execution.");
-    expect(rendered).toContain(
-      "/// Route contract: `POST /api/runners/jobs/:id/claim`.",
+      "/// Generated route bindings under `runners::runs::by_run_id::cancellation`.",
     );
     expect(rendered).toContain(
-      "/// Path parameters for `POST /api/runners/jobs/:id/claim`.",
+      "/// Read the stop intent or confirmed absence of a claimed Run.",
     );
-    expect(rendered).toContain("/// Value for the `:id` path parameter.");
     expect(rendered).toContain(
-      "/// Build the concrete path for `POST /api/runners/jobs/:id/claim`.",
+      "/// Route contract: `GET /api/runners/runs/:runId/cancellation`.",
+    );
+    expect(rendered).toContain(
+      "/// Path parameters for `GET /api/runners/runs/:runId/cancellation`.",
+    );
+    expect(rendered).toContain("/// Value for the `:runId` path parameter.");
+    expect(rendered).toContain(
+      "/// Build the concrete path for `GET /api/runners/runs/:runId/cancellation`.",
     );
     expect(rendered).toContain(
       "/// Percent-encodes each path parameter as a URL path segment.",
     );
     expect(rendered).toContain(
-      "/// Build a resolved route for `POST /api/runners/jobs/:id/claim`.",
+      "/// Build a resolved route for `GET /api/runners/runs/:runId/cancellation`.",
     );
   });
 

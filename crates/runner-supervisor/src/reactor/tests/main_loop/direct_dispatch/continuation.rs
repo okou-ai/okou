@@ -41,6 +41,7 @@ async fn assert_finalizing_home(successor: Successor) {
         mock_run_config_with_overrides(profiles, 8, 16384, 2, overrides.clone());
     // The two-slot capacity rounds the blank refill target down to zero;
     // offer one explicit blank after the producer enters finalization.
+    config.provider.provider = Arc::new(SuppliedProvider(config.provider.provider.clone(), None));
     let budget = config.capacity.budget.clone();
     let paths = RunnerPaths::new(config.paths.base_dir.clone());
     Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(HomeImageCache::shared(
@@ -185,6 +186,7 @@ async fn assert_finalizing_home(successor: Successor) {
             .count(),
         1
     );
+    assert_eq!(env.handle.discover_started_count(), 0);
     peer.shutdown().await;
     shutdown(&env, runner).await;
     wait_cancel_token_removed(&env.cancel_tokens, run_id, WAIT).await;

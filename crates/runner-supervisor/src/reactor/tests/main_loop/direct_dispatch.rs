@@ -1,3 +1,7 @@
+mod continuation;
+mod fallback;
+mod finalizing_failures;
+
 use super::super::super::*;
 use super::super::support::{
     minimal_context, mock_run_config, mock_run_config_with_overrides, push_job, seed_idle_pool,
@@ -8,8 +12,48 @@ use serde_json::{Value, json};
 use std::path::Path;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-mod continuation;
-mod fallback;
+/// A reporting/control provider with no local discovery capability.
+struct SuppliedProvider(Arc<dyn JobProvider>, Option<StartLoopTestGate>);
+
+#[async_trait::async_trait]
+impl JobProvider for SuppliedProvider {
+    async fn prepare_startup_readiness(&self) -> runner_provider::ProviderResult<()> {
+        self.0.prepare_startup_readiness().await
+    }
+
+    async fn bind_supplied(
+        &self,
+        context: runner_types::types::ExecutionContext,
+    ) -> runner_provider::ProviderResult<runner_provider::ClaimedJob> {
+        if let Some(gate) = &self.1 {
+            gate.enter_and_wait().await;
+        }
+        self.0.bind_supplied(context).await
+    }
+
+    fn completion_report_timing(&self) -> runner_provider::CompletionReportTiming {
+        self.0.completion_report_timing()
+    }
+
+    async fn complete(
+        &self,
+        request: runner_types::types::CompleteRequest,
+        auth: runner_provider::CompletionAuth,
+    ) {
+        self.0.complete(request, auth).await;
+    }
+
+    async fn heartbeat(
+        &self,
+        state: &runner_types::types::HeartbeatState,
+    ) -> runner_provider::ProviderResult<()> {
+        self.0.heartbeat(state).await
+    }
+
+    async fn shutdown(&self) {
+        self.0.shutdown().await;
+    }
+}
 
 fn envelope(identity: RunnerProcessIdentity, run_id: RunId) -> Value {
     json!({
@@ -29,6 +73,7 @@ async fn supplied_http_caller_disconnect_does_not_cancel_accepted_execution() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     overrides.set_wait_process_lifecycle_gate(gate.clone());
     let (mut config, env) = mock_run_config_with_overrides(test_profiles(), 8, 32768, 4, overrides);
+    config.provider.provider = Arc::new(SuppliedProvider(config.provider.provider.clone(), None));
     let peer = super::startup::configure_public_ingress(&mut config).await;
     let identity = config.runner.identity;
     let socket = config
@@ -74,14 +119,33 @@ async fn supplied_http_caller_disconnect_does_not_cancel_accepted_execution() {
     );
     assert_eq!(env.handle.completions.lock().unwrap().len(), 1);
     assert!(env.handle.claim_candidates().is_empty());
+    assert_eq!(env.handle.discover_started_count(), 0);
     peer.shutdown().await;
     shutdown(&env, runner).await;
 }
 
 #[tokio::test]
 async fn supplied_http_activation_panic_uses_existing_terminal_recovery() {
+    assert_supplied_panic(OuterJobPanicPoint::ClaimedActivation).await;
+}
+
+#[tokio::test]
+async fn supplied_http_finalizing_preparation_panic_completes_once_without_a_sandbox() {
+    assert_supplied_panic(OuterJobPanicPoint::ClaimedWithoutSandbox).await;
+}
+
+async fn assert_supplied_panic(point: OuterJobPanicPoint) {
     let (mut config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
-    config.test_hooks.outer_job_panic = Some(OuterJobPanicPoint::ClaimedActivation);
+    config.test_hooks.outer_job_panic = Some(point);
+    config.provider.provider = Arc::new(SuppliedProvider(config.provider.provider.clone(), None));
+    let source = RunId::new_v4();
+    let producer = (point == OuterJobPanicPoint::ClaimedWithoutSandbox).then(|| {
+        env.active_runs.register(
+            source,
+            Some("thread:finalizing-panic".into()),
+            "vm0/default".into(),
+        )
+    });
     let budget = config.capacity.budget.clone();
     let peer = super::startup::configure_public_ingress(&mut config).await;
     let identity = config.runner.identity;
@@ -100,16 +164,30 @@ async fn supplied_http_activation_panic_uses_existing_terminal_recovery() {
     )
     .await;
     let run_id = RunId::new_v4();
-    let body = envelope(identity, run_id).to_string();
+    let mut supplied = envelope(identity, run_id);
+    if producer.is_some() {
+        supplied["executionContext"]["reuseKey"] = json!("thread:finalizing-panic");
+        supplied["executionContext"]["nativeContinuation"] = json!({
+            "sessionId": RunId::new_v4(), "generationRunId": source, "recoveryPrompt": null
+        });
+    }
+    let body = supplied.to_string();
     let mut stream = tokio::net::UnixStream::connect(&socket).await.unwrap();
     stream.write_all(format!("POST /runners/{}/control/runs/{run_id}/dispatch HTTP/1.1\r\nHost: {HOST}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}", identity.runner_id(), body.len()).as_bytes()).await.unwrap();
-    assert!(
-        tokio::time::timeout(Duration::from_secs(10), runner)
-            .await
-            .unwrap()
-            .unwrap_err()
-            .is_panic()
-    );
+    let live_runner = if producer.is_some() {
+        // Finalizing preparation runs in its own task. Its panic must settle
+        // the original Run while the reactor keeps serving other work.
+        Some(runner)
+    } else {
+        assert!(
+            tokio::time::timeout(Duration::from_secs(10), runner)
+                .await
+                .unwrap()
+                .unwrap_err()
+                .is_panic()
+        );
+        None
+    };
     let completion = env
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
@@ -117,14 +195,25 @@ async fn supplied_http_activation_panic_uses_existing_terminal_recovery() {
         .unwrap();
     assert_eq!(
         completion.error.as_deref(),
-        Some("claimed activation setup panicked")
+        Some(if producer.is_some() {
+            "runner panicked while preparing a claimed finalizing successor"
+        } else {
+            "claimed activation setup panicked"
+        })
     );
     assert_eq!(completion.sandbox_id, None);
+    assert_eq!(env.handle.completions.lock().unwrap().len(), 1);
     wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
     assert!(env.handle.claim_candidates().is_empty());
+    assert_eq!(env.handle.discover_started_count(), 0);
     peer.shutdown().await;
-    env.shutdown_startup_api().await;
+    if let Some(runner) = live_runner {
+        assert!(!runner.is_finished());
+        shutdown(&env, runner).await;
+    } else {
+        env.shutdown_startup_api().await;
+    }
 }
 
 #[tokio::test]

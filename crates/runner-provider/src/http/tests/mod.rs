@@ -120,9 +120,9 @@ fn request_resolved_route_builds_request_from_generated_route() {
 
     let request = http
         .request_resolved_route(
-            routes::runners::jobs::by_id::claim::route(
-                routes::runners::jobs::by_id::claim::Params {
-                    id: "550e8400-e29b-41d4-a716-446655440000",
+            routes::runners::runs::by_run_id::cancellation::route(
+                routes::runners::runs::by_run_id::cancellation::Params {
+                    run_id: "550e8400-e29b-41d4-a716-446655440000",
                 },
             ),
             "runner-token",
@@ -130,10 +130,10 @@ fn request_resolved_route_builds_request_from_generated_route() {
         .build()
         .unwrap();
 
-    assert_eq!(request.method(), reqwest::Method::POST);
+    assert_eq!(request.method(), reqwest::Method::GET);
     assert_eq!(
         request.url().as_str(),
-        "https://api.vm0.dev/api/runners/jobs/550e8400-e29b-41d4-a716-446655440000/claim"
+        "https://api.vm0.dev/api/runners/runs/550e8400-e29b-41d4-a716-446655440000/cancellation"
     );
 }
 

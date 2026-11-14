@@ -65,6 +65,77 @@ fn set_reuse_and_session_identity(
 }
 
 #[tokio::test]
+async fn finalizing_home_source_fences_the_seed_used_by_a_fresh_executor() {
+    for matching_source in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunnerPaths::new(dir.path().join("runner"));
+        let cache = HomeImageCache::new(paths.clone());
+        let mut config = test_executor_config(dir.path()).await;
+        config.home_cache = Some(cache.clone());
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        let factory = MockSandboxFactory::with_overrides(overrides.clone());
+        let mut context = minimal_context();
+        let session = "finalizing-source-fence";
+        context.reuse_key = Some(format!("thread:home-cache-{session}"));
+        let seed = seed_home_image_cache(&cache, &paths, session, 16).await;
+        let generation: RunId = seed
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .strip_prefix("image-")
+            .unwrap()
+            .parse()
+            .unwrap();
+        let metadata = seed.parent().unwrap().join("metadata.json");
+        let original_metadata = tokio::fs::read(&metadata).await.unwrap();
+        let params = JobParams {
+            required_home_source_run_id: Some(if matching_source {
+                generation
+            } else {
+                RunId::new_v4()
+            }),
+            home_disk_mb: 16,
+            ..default_params()
+        };
+        let mut telemetry = test_telemetry(&config, &context);
+        let outcome = execute_new_sandbox(
+            &factory,
+            &context,
+            NewSandboxDispatch {
+                id: SandboxId::new_v4(),
+                reuse_result: SandboxReuseResult::PoolMiss,
+            },
+            &config,
+            &params,
+            &mut telemetry,
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome.exit_code(), 0);
+        let created = overrides.create_configs();
+        assert_eq!(created.len(), 1);
+        let expected_seed =
+            matching_source.then(|| sandbox::HomeDriveSeedImage::Move(seed.clone()));
+        assert_eq!(
+            created[0].home_drive.as_ref().unwrap().seed_image,
+            expected_seed
+        );
+        if !matching_source {
+            assert!(
+                seed.is_file(),
+                "a different producer's committed home must survive"
+            );
+            assert_eq!(tokio::fs::read(&metadata).await.unwrap(), original_metadata);
+        }
+        drop(outcome);
+        config.background_fill.shutdown().await;
+        config.decoded_cache.shutdown().await;
+    }
+}
+
+#[tokio::test]
 async fn invalid_storage_preparation_preserves_the_selected_home_for_the_next_run() {
     let dir = tempfile::tempdir().unwrap();
     let paths = RunnerPaths::new(dir.path().join("runner"));

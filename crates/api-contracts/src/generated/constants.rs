@@ -203,9 +203,6 @@ pub mod runners {
     /// The API stale barrier remains longer than this runner-owned deadline so delivery latency cannot release a healthy recovery early.
     pub const RUNNER_CANCELLATION_RECOVERY_GRACE_MS: u64 = 90000;
 
-    /// Maximum Pi model configuration generations advertised by one Runner claim.
-    pub const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX: u64 = 8;
-
     /// Handoff acceptance grace after both predecessor finalization and successor waiting begin.
     pub const RUNNER_FINALIZING_HANDOFF_ACCEPTANCE_GRACE_MS: u64 = 1500;
 
@@ -221,10 +218,6 @@ pub mod runners {
 
     /// Host scheduling, observation, and terminal proof delivery allowance.
     pub const RUNNER_JOB_TERMINAL_HOST_SLACK_MS: u64 = 3250;
-
-    /// Maximum runner-local claim cooldown exclusions accepted by the poll endpoint.
-    /// Rust runners use this shared contract value to bound local cooldown state and poll request size.
-    pub const RUNNER_POLL_EXCLUDED_RUN_IDS_MAX: u64 = 128;
 
     /// Wire and blob metadata value for gzip-compressed resume session history.
     /// Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.

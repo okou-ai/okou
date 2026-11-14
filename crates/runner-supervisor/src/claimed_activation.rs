@@ -78,15 +78,12 @@ pub enum ClaimedActivationError {
     StatusNotPublished,
     #[error("persist active runner ownership: {0}")]
     StatusPersistence(#[from] StatusPersistenceError),
-    #[error("committed home observation closed during claimed startup: {0}")]
-    HomeObservationClosed(#[from] tokio::sync::watch::error::RecvError),
 }
 
 impl ClaimedActivationError {
     pub fn recovery_reason(&self) -> &'static str {
         match self {
             Self::StatusPersistence(_) => "active_status_persistence_failed",
-            Self::HomeObservationClosed(_) => "home_observation_closed",
             Self::SetupAlreadyTransferred
             | Self::StatusAlreadyPublished
             | Self::StatusNotPublished => "activation_ownership_failed",
@@ -120,7 +117,7 @@ impl ClaimedActivationGuard {
         self.sandbox_id
     }
 
-    /// Borrow the still-owned setup to build a session restore plan.
+    /// Borrow the still-owned execution setup before transfer.
     pub fn setup(&mut self) -> Result<&mut ClaimedJobSetup, ClaimedActivationError> {
         self.setup
             .as_mut()
@@ -192,14 +189,6 @@ impl ClaimedActivationGuard {
         .finish()
         .await;
         Ok(())
-    }
-
-    /// Settle cancellation before executor ownership without relabeling it a failure.
-    pub async fn recover_cancelled(
-        self,
-    ) -> Result<ClaimedActivationRecovery, ClaimedActivationError> {
-        self.recover_failure("activation_cancelled", ExecutionFailure::cancelled())
-            .await
     }
 
     async fn recover_failure(

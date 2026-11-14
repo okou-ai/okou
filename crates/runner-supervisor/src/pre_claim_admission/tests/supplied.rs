@@ -5,6 +5,7 @@ use super::super::*;
 use crate::blank_pool::BlankPoolReplenisher;
 use crate::provider_test_support::MockJobProvider;
 use runner_lifecycle::idle_pool::{IdlePool, IdlePoolConfig};
+use runner_types::ids::RunId;
 use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
@@ -27,23 +28,18 @@ async fn existing_run_registration_guards_supplied_work_without_http_history() {
     let existing = cancel_tokens.register(run_id).await.unwrap();
     let notify = Arc::new(Notify::new());
     let tracker = IdleDestroyTracker::new(Arc::clone(&notify));
-    let active_runs = ActiveRuns::new(Arc::clone(&notify));
-    let home = HomeCacheStateSnapshot::new();
     let diagnostics =
         BlankPoolReplenisher::new(&BTreeMap::new(), &BTreeMap::new(), &budget, 0, None)
             .diagnostics();
+    let active_runs = runner_lifecycle::active_runs::ActiveRuns::new(Arc::clone(&notify));
     let ctx = PreClaimResources {
-        runner_identity: RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 1).unwrap(),
+        active_runs: &active_runs,
         idle_pool: &pool,
         status: &status,
         mode_rx: &mode_rx,
         cancel_tokens: &cancel_tokens,
         provider: provider.as_ref(),
         budget: &budget,
-        active_runs: &active_runs,
-        home_cache_snapshot: &home,
-        sandbox_op_reporter: None,
-        home_cache: None,
         idle_destroy_tracker: &tracker,
         reuse_state_notify: &notify,
         blank_pool_diagnostics: &diagnostics,
@@ -64,7 +60,6 @@ async fn existing_run_registration_guards_supplied_work_without_http_history() {
                 profile_name: "vm0/default",
                 job_vcpu: 2,
                 job_memory: 4096,
-                home_disk_mb: 1,
                 device_rate_limits: &None,
             },
             tokio::time::Instant::now() + Duration::from_secs(5),

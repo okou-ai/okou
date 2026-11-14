@@ -437,10 +437,8 @@ pub(super) async fn exercise(
     let operations = operations?;
     settled(&operations)?;
     let activation = context.tracker.take_retained_activation_owners()?;
-    let finalizing = context.tracker.take_retained_finalizing_owners()?;
-    if !activation.is_empty() || !finalizing.is_empty() {
+    if !activation.is_empty() {
         proof.retain(activation);
-        proof.retain(finalizing);
         return Err(io::Error::other("speculative callback retained unresolved owners").into());
     }
     witness(

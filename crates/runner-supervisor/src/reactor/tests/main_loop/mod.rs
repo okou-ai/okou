@@ -5,7 +5,6 @@ mod blank_preemption;
 mod blank_status_publication;
 mod direct_dispatch;
 mod drain_resume;
-mod exact_reuse_speculation;
 mod heartbeat;
 mod host_memory;
 mod idle_pressure;

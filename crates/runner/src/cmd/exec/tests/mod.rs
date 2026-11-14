@@ -520,9 +520,12 @@ fn terminal_warning_follows_diagnostic_without_extra_blank_line() {
 #[tokio::test]
 async fn safe_ascii_args_are_quoted() {
     let control = MockSandboxControl::new("/tmp");
-    run_exec(make_args_vec(vec!["ls", "-la", "/var/log"]), &control)
-        .await
-        .unwrap();
+    assert_eq!(
+        run_exec(make_args_vec(vec!["ls", "-la", "/var/log"]), &control)
+            .await
+            .unwrap(),
+        ExitCode::SUCCESS
+    );
 
     assert_recorded_command(&control, "'ls' '-la' '/var/log'");
 }
@@ -530,12 +533,15 @@ async fn safe_ascii_args_are_quoted() {
 #[tokio::test]
 async fn arg_with_space_is_quoted_as_single_token() {
     let control = MockSandboxControl::new("/tmp");
-    run_exec(
-        make_args_vec(vec!["cat", "/var/log/some file.log"]),
-        &control,
-    )
-    .await
-    .unwrap();
+    assert_eq!(
+        run_exec(
+            make_args_vec(vec!["cat", "/var/log/some file.log"]),
+            &control,
+        )
+        .await
+        .unwrap(),
+        ExitCode::SUCCESS
+    );
 
     assert_recorded_command(&control, "'cat' '/var/log/some file.log'");
 }
@@ -543,9 +549,12 @@ async fn arg_with_space_is_quoted_as_single_token() {
 #[tokio::test]
 async fn arg_with_single_quote_is_escaped() {
     let control = MockSandboxControl::new("/tmp");
-    run_exec(make_args_vec(vec!["echo", "it's"]), &control)
-        .await
-        .unwrap();
+    assert_eq!(
+        run_exec(make_args_vec(vec!["echo", "it's"]), &control)
+            .await
+            .unwrap(),
+        ExitCode::SUCCESS
+    );
 
     assert_recorded_command(&control, "'echo' 'it'\\''s'");
 }
@@ -553,12 +562,15 @@ async fn arg_with_single_quote_is_escaped() {
 #[tokio::test]
 async fn pipeline_inside_quoted_arg_is_preserved() {
     let control = MockSandboxControl::new("/tmp");
-    run_exec(
-        make_args_vec(vec!["bash", "-c", "echo a | tr a b"]),
-        &control,
-    )
-    .await
-    .unwrap();
+    assert_eq!(
+        run_exec(
+            make_args_vec(vec!["bash", "-c", "echo a | tr a b"]),
+            &control,
+        )
+        .await
+        .unwrap(),
+        ExitCode::SUCCESS
+    );
 
     assert_recorded_command(&control, "'bash' '-c' 'echo a | tr a b'");
 }
@@ -566,9 +578,12 @@ async fn pipeline_inside_quoted_arg_is_preserved() {
 #[tokio::test]
 async fn shell_metachar_in_arg_is_quoted() {
     let control = MockSandboxControl::new("/tmp");
-    run_exec(make_args_vec(vec!["echo", "$HOME"]), &control)
-        .await
-        .unwrap();
+    assert_eq!(
+        run_exec(make_args_vec(vec!["echo", "$HOME"]), &control)
+            .await
+            .unwrap(),
+        ExitCode::SUCCESS
+    );
 
     // `$` must be quoted so the guest shell does not expand it.
     assert_recorded_command(&control, "'echo' '$HOME'");
@@ -577,9 +592,12 @@ async fn shell_metachar_in_arg_is_quoted() {
 #[tokio::test]
 async fn command_separator_in_arg_is_quoted() {
     let control = MockSandboxControl::new("/tmp");
-    run_exec(make_args_vec(vec!["echo", "ok; uname -a"]), &control)
-        .await
-        .unwrap();
+    assert_eq!(
+        run_exec(make_args_vec(vec!["echo", "ok; uname -a"]), &control)
+            .await
+            .unwrap(),
+        ExitCode::SUCCESS
+    );
 
     assert_recorded_command(&control, "'echo' 'ok; uname -a'");
 }
@@ -587,12 +605,15 @@ async fn command_separator_in_arg_is_quoted() {
 #[tokio::test]
 async fn expansion_and_redirection_syntax_in_args_is_quoted() {
     let control = MockSandboxControl::new("/tmp");
-    run_exec(
-        make_args_vec(vec!["printf", "$(id)", "`id`", "*", "x > out"]),
-        &control,
-    )
-    .await
-    .unwrap();
+    assert_eq!(
+        run_exec(
+            make_args_vec(vec!["printf", "$(id)", "`id`", "*", "x > out"]),
+            &control,
+        )
+        .await
+        .unwrap(),
+        ExitCode::SUCCESS
+    );
 
     assert_recorded_command(&control, "'printf' '$(id)' '`id`' '*' 'x > out'");
 }
@@ -600,9 +621,12 @@ async fn expansion_and_redirection_syntax_in_args_is_quoted() {
 #[tokio::test]
 async fn empty_arg_is_quoted() {
     let control = MockSandboxControl::new("/tmp");
-    run_exec(make_args_vec(vec!["echo", ""]), &control)
-        .await
-        .unwrap();
+    assert_eq!(
+        run_exec(make_args_vec(vec!["echo", ""]), &control)
+            .await
+            .unwrap(),
+        ExitCode::SUCCESS
+    );
 
     assert_recorded_command(&control, "'echo' ''");
 }
@@ -610,9 +634,12 @@ async fn empty_arg_is_quoted() {
 #[tokio::test]
 async fn assignment_syntax_arg_is_quoted() {
     let control = MockSandboxControl::new("/tmp");
-    run_exec(make_args_vec(vec!["FOO=bar", "env"]), &control)
-        .await
-        .unwrap();
+    assert_eq!(
+        run_exec(make_args_vec(vec!["FOO=bar", "env"]), &control)
+            .await
+            .unwrap(),
+        ExitCode::SUCCESS
+    );
 
     // `FOO=bar` must be quoted so the guest shell treats it as a command
     // name instead of a variable assignment.
@@ -622,7 +649,10 @@ async fn assignment_syntax_arg_is_quoted() {
 #[tokio::test]
 async fn reserved_word_command_name_is_quoted() {
     let control = MockSandboxControl::new("/tmp");
-    run_exec(make_args_vec(vec!["if"]), &control).await.unwrap();
+    assert_eq!(
+        run_exec(make_args_vec(vec!["if"]), &control).await.unwrap(),
+        ExitCode::SUCCESS
+    );
 
     assert_recorded_command(&control, "'if'");
 }
