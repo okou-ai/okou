@@ -25,6 +25,11 @@ import {
   createChatLifecycleHelpers,
 } from "./chat-lifecycle-test-helpers.ts";
 
+import {
+  createThread,
+  mockChatThreadSnapshot,
+} from "./sidebar-test-helpers.tsx";
+
 const context = testContext();
 const { mockChatLifecycleWithoutBrowserSession } =
   createChatLifecycleHelpers(context);
@@ -316,15 +321,20 @@ function mockMutableConversation(
         };
       });
   };
-  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
-    return respond(
-      200,
-      chatEventRowsResponse(
-        rowsSince(query.sinceSeqId).slice(0, query.limit ?? 50),
-        query,
-      ),
-    );
-  });
+  context.mocks.api(
+    chatThreadEventsContract.rows,
+    ({ params, query, respond }) => {
+      return respond(
+        200,
+        chatEventRowsResponse(
+          params.threadId === threadId
+            ? rowsSince(query.sinceSeqId).slice(0, query.limit ?? 50)
+            : [],
+          query,
+        ),
+      );
+    },
+  );
   // The Worker may warm its cache through the batched endpoint before the
   // page fetches rows. Both endpoints must describe the same persisted events.
   context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
@@ -682,6 +692,234 @@ test("Keep the pre-hide anchor when incoming messages arrive behind automations"
     );
     expect(geometry.writes).toStrictEqual([container.scrollTop]);
   });
+});
+
+test("Hand the retained primary transcript restore to the new Router page when the chat list opens a side conversation", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(min-width: 48rem)";
+  });
+  const primaryId = THREAD_IDS.incomingHistory;
+  const secondaryId = THREAD_IDS.incomingLatest;
+  const conversation = mockMutableConversation(
+    primaryId,
+    historyWithLateImage(8),
+  );
+  mockChatThreadSnapshot(context, () => {
+    return [
+      createThread(primaryId, "Primary reading conversation"),
+      createThread(secondaryId, "Side conversation"),
+    ];
+  });
+  const container = await openConversation(primaryId, "History answer 8");
+  const geometry = installUtilitySidebarGeometry(container);
+  scrollFromUser(container, 275);
+  await expectHistoryPositionHeld();
+  const readingAnchor = geometry.firstVisibleAnchor();
+  const readingId = anchorId(readingAnchor);
+  const anchorY = readingAnchor.getBoundingClientRect().top;
+  const sideLink = await waitFor(() => {
+    const link = document.querySelector(
+      `[data-sidebar-chat-thread-id="${secondaryId}"]`,
+    );
+    if (!(link instanceof HTMLElement)) {
+      throw new Error("Side conversation link not rendered in the chat list");
+    }
+    return link;
+  });
+  await openUtilityAutomations();
+  expect(container.clientHeight).toBe(0);
+  const frames = controlRevealFrames();
+  // This is the production chat-list selection command: Alt-click requests
+  // loadRightThread, dismisses the covering utility pane and navigates Router.
+  fireEvent.click(sideLink, { altKey: true });
+  await waitFor(() => {
+    expect(window.location.pathname).toBe(`/chats/${primaryId}`);
+    expect(new URLSearchParams(window.location.search).get("sidebar")).toBe(
+      secondaryId,
+    );
+    expect(document.querySelectorAll("[data-scroll-container]")).toHaveLength(
+      2,
+    );
+    expect(document.querySelector("[data-chat-skeleton]")).toBeNull();
+    expect(container.clientHeight).toBe(INITIAL_VIEWPORT_HEIGHT_PX);
+    expect(container.scrollTop).toBe(0);
+  });
+  await frames.paint();
+  await frames.paint();
+  await waitFor(() => {
+    expect(chatScrollContainer()).toBe(container);
+    expect(anchorById(container, readingId)).toBe(readingAnchor);
+    expect(readingAnchor.getBoundingClientRect().top).toBe(anchorY);
+    expect(container.scrollTop).toBe(275);
+  });
+  // No pointer/wheel takeover or second sidebar cycle may be needed to
+  // release the old page's snapshot. Normal reading and layout repair work.
+  await act(() => {
+    scrollFromUser(container, 475);
+  });
+  const nextReadingId = anchorId(geometry.firstVisibleAnchor());
+  const nextAnchorY = anchorById(
+    container,
+    nextReadingId,
+  ).getBoundingClientRect().top;
+  geometry.growBeforeMessages(75);
+  act(() => {
+    fireEvent.load(screen.getByAltText("Late history image"));
+  });
+  await waitFor(() => {
+    expect(
+      anchorById(container, nextReadingId).getBoundingClientRect().top,
+    ).toBe(nextAnchorY);
+    expect(container.scrollTop).toBe(550);
+  });
+  act(() => {
+    conversation.publish(completedTurn(9));
+  });
+  await screen.findByText("History answer 9");
+  await frames.paint();
+  await waitFor(() => {
+    expect(
+      anchorById(container, nextReadingId).getBoundingClientRect().top,
+    ).toBe(nextAnchorY);
+    // The render window may trim preceding rows; reader position is the
+    // message's screen offset, not an absolute scrollTop across batches.
+    expect(container.scrollTop).toBeLessThan(geometry.bottomScrollTop());
+  });
+});
+
+test("Keep a fresh live history capture after tail when incoming messages arrive while hidden", async () => {
+  const { container, geometry, conversation } =
+    await setupUtilitySidebarScroll();
+  scrollFromUser(container, geometry.bottomScrollTop());
+  fireEvent(container, new Event("scrollend"));
+  await waitFor(() => {
+    expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
+  });
+  // Native scrolling can precede its scroll event. The held intent is still
+  // tail, but opening the utility pane must capture this live history offset.
+  container.scrollTop = 275;
+  const readingId = anchorId(geometry.firstVisibleAnchor());
+  const anchorY = anchorById(container, readingId).getBoundingClientRect().top;
+  await openUtilityAutomations();
+  expect(container.clientHeight).toBe(0);
+  const frames = controlRevealFrames();
+  act(() => {
+    conversation.publish(completedTurn(9));
+  });
+  await screen.findByText("History answer 9");
+  click(buttonByLabel("Close automations"));
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(0);
+  });
+  await frames.paint();
+  await frames.paint();
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(275);
+    expect(anchorById(container, readingId).getBoundingClientRect().top).toBe(
+      anchorY,
+    );
+  });
+});
+
+test("A pointer press on the rendered scrollbar thumb takes over before the final reveal frame", async () => {
+  const { container, geometry } = await setupUtilitySidebarScroll();
+  // Base UI only mounts an overflowing scrollbar after both scroll extents
+  // are nonzero. happy-dom otherwise reports scrollWidth = 0.
+  Object.defineProperty(container, "scrollWidth", {
+    configurable: true,
+    value: container.clientWidth,
+  });
+  act(() => {
+    fireEvent.scroll(container);
+  });
+  const scrollbar = await screen.findByTestId("chat-message-scrollbar");
+  const thumb = scrollbar.querySelector('[data-slot="scroll-area-thumb"]');
+  if (!(thumb instanceof HTMLElement)) {
+    throw new Error("Rendered chat scrollbar thumb not found");
+  }
+  scrollbar.style.paddingBlockStart = "0px";
+  scrollbar.style.paddingBlockEnd = "0px";
+  thumb.style.marginBlockStart = "0px";
+  thumb.style.marginBlockEnd = "0px";
+  Object.defineProperty(scrollbar, "offsetHeight", {
+    configurable: true,
+    value: INITIAL_VIEWPORT_HEIGHT_PX,
+  });
+  Object.defineProperty(thumb, "offsetHeight", {
+    configurable: true,
+    value: 30,
+  });
+  let capturedPointer: number | null = null;
+  Object.defineProperties(thumb, {
+    setPointerCapture: {
+      configurable: true,
+      value: (id: number) => {
+        capturedPointer = id;
+      },
+    },
+    hasPointerCapture: {
+      configurable: true,
+      value: (id: number) => {
+        return capturedPointer === id;
+      },
+    },
+    releasePointerCapture: {
+      configurable: true,
+      value: () => {
+        capturedPointer = null;
+      },
+    },
+  });
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      for (const property of [
+        "setPointerCapture",
+        "hasPointerCapture",
+        "releasePointerCapture",
+        "offsetHeight",
+      ]) {
+        Reflect.deleteProperty(thumb, property);
+      }
+      Reflect.deleteProperty(scrollbar, "offsetHeight");
+      Reflect.deleteProperty(container, "scrollWidth");
+    },
+    { once: true },
+  );
+  expect(container.contains(scrollbar)).toBeFalsy();
+  expect(scrollbar.parentElement).toBe(container.parentElement);
+  await openUtilityAutomations();
+  const frames = controlRevealFrames();
+  click(buttonByLabel("Close automations"));
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(0);
+  });
+  await frames.paint();
+  // Use Base UI's real drag handler with browser-capability geometry and
+  // pointer capture, not a viewport pointer event or application command.
+  fireEvent.pointerDown(thumb, {
+    pointerId: 1,
+    pointerType: "mouse",
+    button: 0,
+    buttons: 1,
+    clientY: 20,
+  });
+  expect(capturedPointer).toBe(1);
+  fireEvent.pointerMove(thumb, {
+    pointerId: 1,
+    pointerType: "mouse",
+    buttons: 1,
+    clientY: 20 + (INITIAL_VIEWPORT_HEIGHT_PX - 30) / 10,
+  });
+  fireEvent.scroll(container);
+  fireEvent.pointerUp(thumb, { pointerId: 1, pointerType: "mouse", button: 0 });
+  expect(capturedPointer).toBeNull();
+  const chosenTop = geometry.bottomScrollTop() / 10;
+  expect(container.scrollTop).toBe(chosenTop);
+  geometry.writes.length = 0;
+  await frames.paint();
+  expect(container.scrollTop).toBe(chosenTop);
+  expect(geometry.writes).toStrictEqual([]);
 });
 
 test("Reopening automations cancels the first reveal and restores only the final close", async () => {

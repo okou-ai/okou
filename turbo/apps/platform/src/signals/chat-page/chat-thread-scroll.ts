@@ -67,6 +67,10 @@ export interface ChatThreadScrollSignals {
   readonly threadScrollPosition$: Computed<ThreadScrollPosition | null>;
   readonly awayFromBottom$: Computed<boolean>;
   readonly isProgrammaticScrollEvent$: Command<boolean, [EventTarget | null]>;
+  readonly readCapturedThreadScrollPosition$: Command<
+    ThreadScrollPosition | null,
+    []
+  >;
   readonly readRenderedThreadScrollPosition$: Command<
     ThreadScrollPosition | null,
     [excludedAnchorAncestors?: string]
@@ -87,6 +91,7 @@ export interface ChatThreadScrollSignals {
     Promise<void>,
     [AbortSignal]
   >;
+  readonly hasPreservedHiddenLayout$: Command<boolean, []>;
   readonly preserveHiddenLayout$: Command<void, []>;
   readonly restoreHiddenLayout$: Command<Promise<void>, [AbortSignal]>;
 }
@@ -430,6 +435,13 @@ function createInternalScrollSignals(
       }
     },
   );
+  // Background batches may run against empty/stale DOM. Read captured intent,
+  // including the live pre-hide anchor, without measuring that DOM again.
+  const readCapturedThreadScrollPosition$ = command(({ get }) => {
+    return runtime.hiddenLayout
+      ? runtime.hiddenLayout.position
+      : get(threadScrollPosition$);
+  });
   const readRenderedThreadScrollPosition$ = command(
     ({ get }, excludedAnchorAncestors?: string) => {
       if (runtime.hiddenLayout) {
@@ -474,6 +486,7 @@ function createInternalScrollSignals(
     scrollContainer$,
     threadScrollPosition$,
     awayFromBottom$,
+    readCapturedThreadScrollPosition$,
     readRenderedThreadScrollPosition$,
     syncThreadScrollPosition$,
     setThreadScrollPosition$,
@@ -969,6 +982,11 @@ function createHiddenScrollLayoutSignals(
     const position = isAtBottom(container)
       ? null
       : captureScrollPosition(container);
+    // The viewport and Base UI's track/thumb share this interaction root.
+    const inputRoot = container.parentElement;
+    if (!inputRoot) {
+      throw new Error("Chat scroll viewport has no interaction root");
+    }
     const cancel = () => {
       if (runtime.hiddenLayout === snapshot) {
         releaseHiddenLayout(runtime);
@@ -1000,19 +1018,22 @@ function createHiddenScrollLayoutSignals(
       container,
       position,
       release: () => {
-        container.removeEventListener("wheel", cancel);
-        container.removeEventListener("touchmove", cancel);
-        container.removeEventListener("pointerdown", cancel);
-        container.removeEventListener("keydown", onKeyDown);
+        inputRoot.removeEventListener("wheel", cancel);
+        inputRoot.removeEventListener("touchmove", cancel);
+        inputRoot.removeEventListener("pointerdown", cancel, true);
+        inputRoot.removeEventListener("keydown", onKeyDown);
       },
     };
     runtime.hiddenLayout = snapshot;
     // Reader input after reveal wins over the pending one-shot restore. These
     // listeners never prevent native scrolling or change focus behavior.
-    container.addEventListener("wheel", cancel, { passive: true });
-    container.addEventListener("touchmove", cancel, { passive: true });
-    container.addEventListener("pointerdown", cancel, { passive: true });
-    container.addEventListener("keydown", onKeyDown);
+    inputRoot.addEventListener("wheel", cancel, { passive: true });
+    inputRoot.addEventListener("touchmove", cancel, { passive: true });
+    inputRoot.addEventListener("pointerdown", cancel, {
+      passive: true,
+      capture: true,
+    });
+    inputRoot.addEventListener("keydown", onKeyDown);
   });
   const restoreHiddenLayout$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
@@ -1039,7 +1060,13 @@ function createHiddenScrollLayoutSignals(
       }
     },
   );
-  return { preserveHiddenLayout$, restoreHiddenLayout$ };
+  return {
+    hasPreservedHiddenLayout$: command(() => {
+      return runtime.hiddenLayout !== null;
+    }),
+    preserveHiddenLayout$,
+    restoreHiddenLayout$,
+  };
 }
 
 export function createChatThreadScrollSignals(
@@ -1155,6 +1182,7 @@ export function createChatThreadScrollSignals(
     threadScrollPosition$: scroll.threadScrollPosition$,
     awayFromBottom$: scroll.awayFromBottom$,
     isProgrammaticScrollEvent$,
+    readCapturedThreadScrollPosition$: scroll.readCapturedThreadScrollPosition$,
     readRenderedThreadScrollPosition$: scroll.readRenderedThreadScrollPosition$,
     autoScroll$: render.autoScroll$,
     scrollToEvent$,

@@ -2321,11 +2321,16 @@ function createEventChangeEffects({
   const updateEventPresentation$ = command(
     async (
       { set },
-      scrollPosition: ThreadScrollPosition | null,
+      followLatest: boolean,
       signal: AbortSignal,
     ): Promise<void> => {
       await set(syncVisibleEventTrees$, true, signal);
       signal.throwIfAborted();
+      // Presentation can span reader input. Use its latest captured intent,
+      // not the stale atom or hidden DOM from the start of this batch.
+      const scrollPosition = followLatest
+        ? null
+        : set(scroll.readCapturedThreadScrollPosition$);
       await set(scroll.autoScroll$, scrollPosition, signal);
     },
   );
@@ -2339,15 +2344,11 @@ function createEventChangeEffects({
       const hasOptimisticUserMessage = get(
         chatEvents.hasOptimisticUserMessage$,
       );
-      // Scroll events own the DOM-aware decision: reaching the tail clears the
-      // held position there. An event batch can run while this thread's DOM is
-      // empty or stale, so restoration must read only the position already
-      // captured for the reader.
-      const scrollPosition = hasOptimisticUserMessage
-        ? null
-        : get(scroll.threadScrollPosition$);
+      // Only a local optimistic send explicitly requests the tail. Ordinary
+      // batches use current captured intent after presentation, without reading
+      // the empty or hidden DOM or assuming an older saved atom is still current.
       await Promise.all([
-        set(updateEventPresentation$, scrollPosition, signal),
+        set(updateEventPresentation$, hasOptimisticUserMessage, signal),
         set(markThreadReadIfNeeded$, signal),
       ]);
       signal.throwIfAborted();
@@ -3971,6 +3972,7 @@ function publicChatThreadScrollSignals(scroll: ChatThreadScrollSignals) {
     scrollToBottom$: scroll.scrollToBottom$,
     restoreScrollPosition$: scroll.restoreScrollPosition$,
     restoreScrollPositionForLayout$: scroll.restoreScrollPositionForLayout$,
+    hasPreservedHiddenLayout$: scroll.hasPreservedHiddenLayout$,
     preserveHiddenLayout$: scroll.preserveHiddenLayout$,
     restoreHiddenLayout$: scroll.restoreHiddenLayout$,
   };

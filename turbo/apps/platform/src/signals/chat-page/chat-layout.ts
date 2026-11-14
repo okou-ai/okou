@@ -40,14 +40,23 @@ export const restoreNarrowSidebarScroll$ = command(
       get(currentLeftThread$),
       get(currentRightThread$),
     ]);
+    if (
+      !Array.from(threads).some((thread) => {
+        return thread !== null && set(thread.hasPreservedHiddenLayout$);
+      })
+    ) {
+      return;
+    }
     await waitForBrowserPaint(restoreSignal);
     signal.throwIfAborted();
-    restoreSignal.throwIfAborted();
+    if (restoreSignal.aborted) {
+      return;
+    }
     const currentThreads = new Set([
       get(currentLeftThread$),
       get(currentRightThread$),
     ]);
-    await Promise.all(
+    const restorations = await Promise.allSettled(
       Array.from(threads, async (thread) => {
         if (thread && currentThreads.has(thread)) {
           await set(thread.restoreHiddenLayout$, restoreSignal);
@@ -55,7 +64,15 @@ export const restoreNarrowSidebarScroll$ = command(
       }),
     );
     signal.throwIfAborted();
-    restoreSignal.throwIfAborted();
+    for (const restoration of restorations) {
+      // Reopen supersedes only layout work, not the navigation that adopted it.
+      if (
+        restoration.status === "rejected" &&
+        (!restoreSignal.aborted || restoration.reason !== restoreSignal.reason)
+      ) {
+        throw restoration.reason;
+      }
+    }
   },
 );
 
