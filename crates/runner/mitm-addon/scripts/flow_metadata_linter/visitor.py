@@ -72,43 +72,42 @@ _METADATA_METHODS_WITH_DICT_ARGUMENTS = {
 
 
 @dataclass
-class _ExceptionAliasState:
-    """Whether exception paths exist and aliases that may hold on those paths."""
+class _AliasExitState:
+    """None is unreachable; an existing set also represents reachable-empty exits."""
 
-    may_raise: bool = False
-    aliases: set[str] = field(default_factory=set)
+    aliases: set[str] | None = None
 
     def record(self, aliases: set[str]) -> None:
-        self.may_raise = True
+        if self.aliases is None:
+            self.aliases = set()
         self.aliases.update(aliases)
 
-    def merge(self, other: _ExceptionAliasState) -> None:
-        if other.may_raise:
+    def merge(self, other: _AliasExitState) -> None:
+        if other.aliases is not None:
             self.record(other.aliases)
+
+    def collected_aliases(self) -> set[str]:
+        """An unreachable exit contributes the empty identity to conservative joins."""
+        return set() if self.aliases is None else self.aliases
+
+    def discard(self, name: str) -> None:
+        if self.aliases is not None:
+            self.aliases.discard(name)
+
+    def snapshot(self) -> frozenset[str] | None:
+        return None if self.aliases is None else frozenset(self.aliases)
 
 
 @dataclass
 class _LoopControlAliasState:
     """Reachable break and continue exits owned by one loop."""
 
-    may_break: bool = False
-    break_aliases: set[str] = field(default_factory=set)
-    may_continue: bool = False
-    continue_aliases: set[str] = field(default_factory=set)
-
-    def record_break(self, aliases: set[str]) -> None:
-        self.may_break = True
-        self.break_aliases.update(aliases)
-
-    def record_continue(self, aliases: set[str]) -> None:
-        self.may_continue = True
-        self.continue_aliases.update(aliases)
+    breaks: _AliasExitState = field(default_factory=_AliasExitState)
+    continues: _AliasExitState = field(default_factory=_AliasExitState)
 
     def merge(self, other: _LoopControlAliasState) -> None:
-        if other.may_break:
-            self.record_break(other.break_aliases)
-        if other.may_continue:
-            self.record_continue(other.continue_aliases)
+        self.breaks.merge(other.breaks)
+        self.continues.merge(other.continues)
 
 
 @dataclass(frozen=True)
@@ -124,12 +123,9 @@ class _FinallyTransferKey:
 class _FinallyTransfer:
     aliases: frozenset[str]
     falls_through: bool
-    may_raise: bool
-    exception_aliases: frozenset[str]
-    may_break: bool
-    break_aliases: frozenset[str]
-    may_continue: bool
-    continue_aliases: frozenset[str]
+    exceptions: frozenset[str] | None
+    breaks: frozenset[str] | None
+    continues: frozenset[str] | None
 
 
 def _metadata_match_pattern_alias_names(pattern: ast.pattern) -> set[str]:
@@ -206,10 +202,11 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
       visitors push independent sets, then explicitly join or discard their exits.
     * ``_exception_alias_scopes`` contains collectors for modeled exceptional exits
       from active constructs, or ``None`` boundaries whose exceptions are discarded
-      rather than propagated to an enclosing collector. ``may_raise`` is stored
-      separately from the alias set
-      so an exceptional path with no aliases is not confused with no exceptional
-      path. Nested ``try`` and handler states merge into the nearest collector, and
+      rather than propagated to an enclosing collector. Each collector's None
+      payload is unreachable, while an existing empty set is a reachable exit
+      with no aliases. The same rule owns exception, break and continue recording,
+      merging and immutable finally snapshots. Nested ``try`` and handler states
+      merge into the nearest collector, and
       a failing class body projects away class-bound names before propagating.
       Function and lambda bodies install boundaries, context managers retain paths
       they may suppress, and ``finally`` transfers normal and exceptional states.
@@ -263,7 +260,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self.violations: list[str] = []
         self._violation_messages: set[str] = set()
         self._metadata_alias_scopes: list[set[str]] = [set()]
-        self._exception_alias_scopes: list[_ExceptionAliasState | None] = []
+        self._exception_alias_scopes: list[_AliasExitState | None] = []
         self._class_nested_scope_alias_scopes: list[set[str]] = []
         self._metadata_key_checked_node_ids: set[int] = set()
         self._named_expr_target_scope_indexes: list[int] = []
@@ -450,8 +447,8 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         if collector is not None:
             collector.record(self._metadata_aliases if aliases is None else aliases)
 
-    def _record_exception_state(self, state: _ExceptionAliasState) -> None:
-        if state.may_raise:
+    def _record_exception_state(self, state: _AliasExitState) -> None:
+        if state.aliases is not None:
             self._record_exception_aliases(state.aliases)
 
     def _project_implicit_exception_aliases(self, aliases: set[str]) -> set[str]:
@@ -522,8 +519,8 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
 
     def _visit_branch_body_capturing_exceptions(
         self, body: list[ast.stmt], aliases: set[str]
-    ) -> tuple[set[str], bool, _ExceptionAliasState]:
-        exception_state = _ExceptionAliasState()
+    ) -> tuple[set[str], bool, _AliasExitState]:
+        exception_state = _AliasExitState()
         self._exception_alias_scopes.append(exception_state)
         result_aliases, falls_through = self._visit_branch_body(body, aliases)
         self._exception_alias_scopes.pop()
@@ -549,7 +546,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         )
         transfer = self._finally_transfers.get(key)
         if transfer is None:
-            exception_state = _ExceptionAliasState()
+            exception_state = _AliasExitState()
             loop_control_state = _LoopControlAliasState()
             self._exception_alias_scopes.append(exception_state)
             if key.in_loop:
@@ -562,24 +559,21 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
                 self._loop_control_alias_scopes.pop()
             self._exception_alias_scopes.pop()
             transfer = _FinallyTransfer(
-                frozenset(result_aliases),
-                falls_through,
-                exception_state.may_raise,
-                frozenset(exception_state.aliases),
-                loop_control_state.may_break,
-                frozenset(loop_control_state.break_aliases),
-                loop_control_state.may_continue,
-                frozenset(loop_control_state.continue_aliases),
+                aliases=frozenset(result_aliases),
+                falls_through=falls_through,
+                exceptions=exception_state.snapshot(),
+                breaks=loop_control_state.breaks.snapshot(),
+                continues=loop_control_state.continues.snapshot(),
             )
             self._finally_transfers[key] = transfer
-        if transfer.may_raise:
-            self._record_exception_aliases(set(transfer.exception_aliases))
+        if transfer.exceptions is not None:
+            self._record_exception_aliases(set(transfer.exceptions))
         if self._loop_control_alias_scopes:
             loop_control_state = self._loop_control_alias_scopes[-1]
-            if transfer.may_break:
-                loop_control_state.record_break(set(transfer.break_aliases))
-            if transfer.may_continue:
-                loop_control_state.record_continue(set(transfer.continue_aliases))
+            if transfer.breaks is not None:
+                loop_control_state.breaks.record(set(transfer.breaks))
+            if transfer.continues is not None:
+                loop_control_state.continues.record(set(transfer.continues))
         return set(transfer.aliases), transfer.falls_through
 
     def _visit_except_handler_branch(
@@ -597,13 +591,13 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
 
     def _visit_except_handler_branch_capturing_exceptions(
         self, handler: ast.ExceptHandler, aliases: set[str]
-    ) -> tuple[set[str], bool, _ExceptionAliasState]:
-        exception_state = _ExceptionAliasState()
+    ) -> tuple[set[str], bool, _AliasExitState]:
+        exception_state = _AliasExitState()
         self._exception_alias_scopes.append(exception_state)
         result_aliases, falls_through = self._visit_except_handler_branch(handler, aliases)
         self._exception_alias_scopes.pop()
         if handler.name is not None:
-            exception_state.aliases.discard(handler.name)
+            exception_state.discard(handler.name)
         return result_aliases, falls_through, exception_state
 
     @contextmanager
@@ -728,13 +722,13 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             self._metadata_alias_scopes[0] & (class_body_bound_names | class_body_global_names)
         )
         class_failure_aliases = set(self._metadata_aliases)
-        class_exception_state = _ExceptionAliasState()
+        class_exception_state = _AliasExitState()
         self._exception_alias_scopes.append(class_exception_state)
         self._class_nested_scope_alias_scopes.append(outer_aliases)
         body_falls_through = self._visit_scoped_body(node.body, base_aliases=class_body_aliases)
         self._class_nested_scope_alias_scopes.pop()
         self._exception_alias_scopes.pop()
-        if class_exception_state.may_raise:
+        if class_exception_state.aliases is not None:
             outer_visible_names = (
                 (class_failure_aliases | class_exception_state.aliases)
                 - class_body_bound_names
@@ -1065,12 +1059,12 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
 
     def visit_Break(self, node: ast.Break) -> bool:
         if self._loop_control_alias_scopes:
-            self._loop_control_alias_scopes[-1].record_break(self._metadata_aliases)
+            self._loop_control_alias_scopes[-1].breaks.record(self._metadata_aliases)
         return False
 
     def visit_Continue(self, node: ast.Continue) -> bool:
         if self._loop_control_alias_scopes:
-            self._loop_control_alias_scopes[-1].record_continue(self._metadata_aliases)
+            self._loop_control_alias_scopes[-1].continues.record(self._metadata_aliases)
         return False
 
     def _visit_delete_target(self, target: ast.AST) -> None:
@@ -1113,10 +1107,10 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self._loop_control_alias_scopes.append(loop_control_state)
         body_aliases, body_falls_through = self._visit_branch_body(body, aliases)
         self._loop_control_alias_scopes.pop()
-        backedge_aliases = set(loop_control_state.continue_aliases)
+        backedge_aliases = set(loop_control_state.continues.collected_aliases())
         if body_falls_through:
             backedge_aliases.update(body_aliases)
-        may_repeat = body_falls_through or loop_control_state.may_continue
+        may_repeat = body_falls_through or loop_control_state.continues.aliases is not None
         return backedge_aliases, may_repeat, loop_control_state
 
     def _visit_loop_else_and_join_exits(
@@ -1126,11 +1120,11 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         loop_control_state: _LoopControlAliasState,
     ) -> bool:
         orelse_aliases, orelse_falls_through = self._visit_branch_body(orelse, exhaustion_aliases)
-        loop_exit_aliases = set(loop_control_state.break_aliases)
+        loop_exit_aliases = set(loop_control_state.breaks.collected_aliases())
         if orelse_falls_through:
             loop_exit_aliases.update(orelse_aliases)
         self._replace_current_aliases(loop_exit_aliases)
-        return loop_control_state.may_break or orelse_falls_through
+        return loop_control_state.breaks.aliases is not None or orelse_falls_through
 
     def _visit_for_statement(self, node: ast.For | ast.AsyncFor) -> bool:
         self.visit(node.iter)
@@ -1208,7 +1202,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self.visit(item.context_expr)
         body_aliases = set(self._metadata_aliases)
         self._metadata_alias_scopes.append(body_aliases)
-        exception_state = _ExceptionAliasState()
+        exception_state = _AliasExitState()
         self._exception_alias_scopes.append(exception_state)
         if item.optional_vars is not None:
             if _target_requires_unpacking(item.optional_vars):
@@ -1223,10 +1217,10 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         body_result_aliases = set(self._metadata_aliases)
         self._metadata_alias_scopes.pop()
         exit_aliases = body_result_aliases if protected_region_falls_through else set()
-        exit_aliases.update(exception_state.aliases)
+        exit_aliases.update(exception_state.collected_aliases())
         self._replace_current_aliases(exit_aliases)
         self._record_exception_state(exception_state)
-        return protected_region_falls_through or exception_state.may_raise
+        return protected_region_falls_through or exception_state.aliases is not None
 
     def _visit_with_statement(self, node: ast.With | ast.AsyncWith) -> bool:
         return self._visit_with_items(node.items, node.body)
@@ -1268,8 +1262,10 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         if body_loop_control_state is not None and try_loop_control_state is not None:
             self._loop_control_alias_scopes.pop()
             try_loop_control_state.merge(body_loop_control_state)
-        handler_start_aliases = base_aliases | body_aliases | body_exception_state.aliases
-        handler_results: list[tuple[set[str], bool, _ExceptionAliasState]] = []
+        handler_start_aliases = (
+            base_aliases | body_aliases | body_exception_state.collected_aliases()
+        )
+        handler_results: list[tuple[set[str], bool, _AliasExitState]] = []
         for handler in node.handlers:
             handler_loop_control_state = (
                 _LoopControlAliasState() if try_loop_control_state is not None else None
@@ -1283,11 +1279,11 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             )
             if handler_loop_control_state is not None and try_loop_control_state is not None:
                 self._loop_control_alias_scopes.pop()
-                if body_exception_state.may_raise:
+                if body_exception_state.aliases is not None:
                     try_loop_control_state.merge(handler_loop_control_state)
         exit_aliases: set[str] = set()
         has_normal_exit = False
-        exception_state = _ExceptionAliasState()
+        exception_state = _AliasExitState()
         if not any(handler.type is None for handler in node.handlers):
             exception_state.merge(body_exception_state)
         if body_falls_through:
@@ -1311,7 +1307,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
                 exit_aliases.update(body_aliases)
                 has_normal_exit = True
         for aliases, falls_through, handler_exception_state in handler_results:
-            if body_exception_state.may_raise:
+            if body_exception_state.aliases is not None:
                 exception_state.merge(handler_exception_state)
             if falls_through:
                 exit_aliases.update(aliases)
@@ -1321,17 +1317,17 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             finalbody_scan_aliases = (
                 base_aliases
                 | body_aliases
-                | body_exception_state.aliases
+                | body_exception_state.collected_aliases()
                 | exit_aliases
-                | exception_state.aliases
+                | exception_state.collected_aliases()
             )
             for aliases, _falls_through, handler_exception_state in handler_results:
                 finalbody_scan_aliases.update(aliases)
-                finalbody_scan_aliases.update(handler_exception_state.aliases)
+                finalbody_scan_aliases.update(handler_exception_state.collected_aliases())
             if try_loop_control_state is not None:
-                finalbody_scan_aliases.update(try_loop_control_state.break_aliases)
-                finalbody_scan_aliases.update(try_loop_control_state.continue_aliases)
-            finalbody_exception_state = _ExceptionAliasState()
+                finalbody_scan_aliases.update(try_loop_control_state.breaks.collected_aliases())
+                finalbody_scan_aliases.update(try_loop_control_state.continues.collected_aliases())
+            finalbody_exception_state = _AliasExitState()
             self._exception_alias_scopes.append(finalbody_exception_state)
             if self._state_only:
                 finalbody_scan_result, finalbody_falls_through = (
@@ -1346,7 +1342,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
                 exit_aliases = finalbody_scan_result
             elif has_normal_exit:
                 exit_aliases = self._visit_finally_body_state_only(node.finalbody, exit_aliases)[0]
-            if exception_state.may_raise and finalbody_falls_through:
+            if exception_state.aliases is not None and finalbody_falls_through:
                 exception_state.aliases = (
                     finalbody_scan_result
                     if finalbody_scan_aliases == exception_state.aliases
@@ -1355,7 +1351,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
                     )[0]
                 )
             else:
-                exception_state = _ExceptionAliasState()
+                exception_state = _AliasExitState()
             self._exception_alias_scopes.pop()
             if not finalbody_falls_through:
                 exit_aliases = set()
@@ -1363,23 +1359,23 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
             if (
                 outer_loop_control_state is not None
                 and try_loop_control_state is not None
-                and try_loop_control_state.may_break
+                and try_loop_control_state.breaks.aliases is not None
             ):
                 break_aliases, break_falls_through = self._visit_finally_body_state_only(
-                    node.finalbody, try_loop_control_state.break_aliases
+                    node.finalbody, try_loop_control_state.breaks.collected_aliases()
                 )
                 if break_falls_through:
-                    outer_loop_control_state.record_break(break_aliases)
+                    outer_loop_control_state.breaks.record(break_aliases)
             if (
                 outer_loop_control_state is not None
                 and try_loop_control_state is not None
-                and try_loop_control_state.may_continue
+                and try_loop_control_state.continues.aliases is not None
             ):
                 continued_aliases, continued_falls_through = self._visit_finally_body_state_only(
-                    node.finalbody, try_loop_control_state.continue_aliases
+                    node.finalbody, try_loop_control_state.continues.collected_aliases()
                 )
                 if continued_falls_through:
-                    outer_loop_control_state.record_continue(continued_aliases)
+                    outer_loop_control_state.continues.record(continued_aliases)
         elif outer_loop_control_state is not None and try_loop_control_state is not None:
             outer_loop_control_state.merge(try_loop_control_state)
         self._replace_current_aliases(exit_aliases)
