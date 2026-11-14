@@ -1,7 +1,7 @@
 import type { ClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import { Field } from "@base-ui/react/field";
 import { flushSync } from "react-dom";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -897,7 +897,7 @@ function BrowserNavigation({
   const { t } = useTranslation();
   const history = useLoadable(signals.history$);
   const scope = useGet(signals.navigationScope$);
-  const controls = useGet(signals.controls$);
+  const streaming = useGet(signals.streaming$);
   const canSubmitAddress = useGet(signals.canSubmitAddress$);
   const pageSignal = useGet(pageSignal$);
   const [operation, navigate] = useLoadableSet(signals.navigate$);
@@ -919,7 +919,7 @@ function BrowserNavigation({
         aria-label={t(($) => {
           return $.browserViewer.back;
         })}
-        disabled={!controls.streaming || !entries?.canGoBack || navigating}
+        disabled={!streaming || !entries?.canGoBack || navigating}
         onClick={() => {
           detach(navigate("back", pageSignal), Reason.DomCallback);
         }}
@@ -932,7 +932,7 @@ function BrowserNavigation({
         aria-label={t(($) => {
           return $.browserViewer.forward;
         })}
-        disabled={!controls.streaming || !entries?.canGoForward || navigating}
+        disabled={!streaming || !entries?.canGoForward || navigating}
         onClick={() => {
           detach(navigate("forward", pageSignal), Reason.DomCallback);
         }}
@@ -945,7 +945,7 @@ function BrowserNavigation({
         aria-label={t(($) => {
           return $.browserViewer.reload;
         })}
-        disabled={!controls.streaming || navigating}
+        disabled={!streaming || navigating}
         onClick={() => {
           detach(navigate("reload", pageSignal), Reason.DomCallback);
         }}
@@ -1012,11 +1012,12 @@ function BrowserTab({
   readonly selecting: boolean;
 }) {
   const { t } = useTranslation();
-  const controls = useGet(signals.controls$);
+  const tabsDisabled = useGet(signals.tabsDisabled$);
+  const canMutateTabs = useGet(signals.canMutateTabs$);
   const pageSignal = useGet(pageSignal$);
   const [closeOperation, closeTab] = useLoadableSet(signals.closeTab$);
   const closing = closeOperation.state === "loading";
-  const triggerDisabled = controls.tabsDisabled || selecting || closing;
+  const triggerDisabled = tabsDisabled || selecting || closing;
   return (
     <div
       className={cn(
@@ -1052,7 +1053,7 @@ function BrowserTab({
           },
           { title: name },
         )}
-        disabled={!controls.canMutateTabs || closing || selecting}
+        disabled={!canMutateTabs || closing || selecting}
         className="size-6 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
         onClick={() => {
           detach(closeTab(target.id, pageSignal), Reason.DomCallback);
@@ -1086,7 +1087,7 @@ function BrowserTabPicker({
   const { t } = useTranslation();
   const tabs = useGet(signals.tabs$);
   const selectedTabId = useGet(signals.selectedTabId$);
-  const controls = useGet(signals.controls$);
+  const tabsDisabled = useGet(signals.tabsDisabled$);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -1111,7 +1112,7 @@ function BrowserTabPicker({
           return (
             <DropdownMenuItem
               key={target.id}
-              disabled={controls.tabsDisabled || selecting}
+              disabled={tabsDisabled || selecting}
               onClick={() => {
                 detach(onSelect(target.id), Reason.DomCallback);
               }}
@@ -1149,11 +1150,11 @@ function BrowserTabs({
   const selectedTabId = useGet(signals.selectedTabId$);
   const navigation = useGet(signals.navigation$);
   const layout = useGet(signals.tabLayout$);
-  const controls = useGet(signals.controls$);
+  const canCreateTab = useGet(signals.canCreateTab$);
   const toolbarRef = useSet(signals.refs.toolbar$);
   const tabsRef = useSet(signals.refs.tabs$);
   const actionsRef = useSet(signals.refs.toolbarActions$);
-  const newTabDisabled = !controls.canCreate || creating;
+  const newTabDisabled = !canCreateTab || creating;
   const title = (id: string, value: string) => {
     return (selectedTabId === id && navigation?.url === "about:blank") ||
       value === "about:blank"
@@ -1573,6 +1574,92 @@ function BrowserInput({ signals }: { readonly signals: BrowserSignals }) {
   );
 }
 
+function BrowserContent({
+  signals,
+  selectedTabId,
+  operations,
+  creating,
+  onCreate,
+  presence,
+  placeholder,
+}: {
+  readonly signals: BrowserSignals;
+  readonly selectedTabId: string | null;
+  readonly operations: readonly (
+    Loadable<unknown> | { readonly state: "idle" }
+  )[];
+  readonly creating: boolean;
+  readonly onCreate: () => Promise<string>;
+  readonly presence: ReactNode;
+  readonly placeholder?: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const canvasVisible = useGet(signals.canvasVisible$);
+  const contentVisible = useGet(signals.contentVisible$);
+  const showBlankPage = useGet(signals.showBlankPage$);
+  const streaming = useGet(signals.streaming$);
+  const imageRecovery = useGet(signals.imageRecovery$);
+  const surfaceRef = useSet(signals.refs.surface$);
+  const canvasRef = useSet(signals.refs.canvas$);
+  return (
+    <TabsContent
+      keepMounted
+      value={selectedTabId}
+      tabIndex={-1}
+      className="relative min-h-0 flex-1"
+    >
+      <BrowserOperationError
+        occurrences={operations.filter((operation) => {
+          return (
+            operation.state === "hasError" &&
+            isBrowserOperationFailure(
+              operation.error,
+              imageRecovery !== null || streaming,
+            )
+          );
+        })}
+        className="absolute inset-x-3 top-3 z-20 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
+      />
+      <div
+        ref={surfaceRef}
+        data-browser-surface
+        tabIndex={-1}
+        className="relative h-full w-full touch-none overflow-hidden"
+      >
+        <canvas
+          ref={canvasRef}
+          data-browser-canvas
+          role="img"
+          aria-label={t(($) => {
+            return $.browserViewer.liveView;
+          })}
+          aria-hidden={!canvasVisible}
+          className="block h-full w-full object-contain"
+        />
+        <BrowserInput signals={signals} />
+        <BrowserFrameRate signals={signals.frameRate} />
+      </div>
+      {placeholder ?? (
+        <BrowserStatus
+          signals={signals}
+          creating={creating}
+          contentVisible={contentVisible}
+          onCreate={onCreate}
+        />
+      )}
+      {showBlankPage && (
+        <div className="absolute inset-0 bg-background">
+          <BrowserBlankPage />
+        </div>
+      )}
+      <div className="pointer-events-none absolute inset-0 z-10">
+        {presence}
+      </div>
+      <BrowserClipboard signals={signals} />
+    </TabsContent>
+  );
+}
+
 export function Browser({
   signals,
   actions,
@@ -1587,13 +1674,8 @@ export function Browser({
 }) {
   const { t } = useTranslation();
   const selectedTabId = useGet(signals.selectedTabId$);
-  const presentation = useGet(signals.presentation$);
-  const streaming = useGet(signals.streaming$);
   const pageSignal = useGet(pageSignal$);
-  const imageRecovery = useGet(signals.imageRecovery$);
   const rootRef = useSet(signals.refs.root$);
-  const surfaceRef = useSet(signals.refs.surface$);
-  const canvasRef = useSet(signals.refs.canvas$);
   const [selectOperation, selectTab] = useLoadableSet(signals.selectTab$);
   // Both New tab entry points share one request owner to prevent duplicate creation.
   const [createOperation, createTab] = useLoadableSet(signals.createTab$);
@@ -1629,73 +1711,17 @@ export function Browser({
         signals={signals}
         settingsDisabled={placeholder !== undefined}
       />
-      <TabsContent
-        keepMounted
-        value={selectedTabId}
-        tabIndex={-1}
-        className="relative min-h-0 flex-1"
-      >
-        <BrowserOperationError
-          occurrences={[selectOperation, createOperation].filter(
-            (operation) => {
-              return (
-                operation.state === "hasError" &&
-                isBrowserOperationFailure(
-                  operation.error,
-                  imageRecovery !== null || streaming,
-                )
-              );
-            },
-          )}
-          className="absolute inset-x-3 top-3 z-20 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
-        />
-        <div
-          ref={surfaceRef}
-          data-browser-surface
-          tabIndex={-1}
-          className="relative h-full w-full touch-none overflow-hidden"
-        >
-          <canvas
-            ref={canvasRef}
-            data-browser-canvas
-            role="img"
-            aria-label={t(($) => {
-              return $.browserViewer.liveView;
-            })}
-            aria-hidden={
-              presentation.status !== "streaming" &&
-              !presentation.retainedFrame &&
-              !presentation.loadingPreview
-            }
-            className="block h-full w-full object-contain"
-          />
-          <BrowserInput signals={signals} />
-          <BrowserFrameRate signals={signals.frameRate} />
-        </div>
-        {placeholder ?? (
-          <BrowserStatus
-            signals={signals}
-            creating={createOperation.state === "loading"}
-            contentVisible={
-              presentation.status === "streaming" ||
-              presentation.loadingPreview ||
-              presentation.blank
-            }
-            onCreate={() => {
-              return createTab(pageSignal);
-            }}
-          />
-        )}
-        {presentation.blank && (
-          <div className="absolute inset-0 bg-background">
-            <BrowserBlankPage />
-          </div>
-        )}
-        <div className="pointer-events-none absolute inset-0 z-10">
-          {presence}
-        </div>
-        <BrowserClipboard signals={signals} />
-      </TabsContent>
+      <BrowserContent
+        signals={signals}
+        selectedTabId={selectedTabId}
+        operations={[selectOperation, createOperation]}
+        creating={createOperation.state === "loading"}
+        onCreate={() => {
+          return createTab(pageSignal);
+        }}
+        presence={presence}
+        placeholder={placeholder}
+      />
     </Tabs>
   );
 }
