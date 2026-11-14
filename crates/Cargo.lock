@@ -4405,14 +4405,14 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test-support",
  "ts_bart",
- "ts_capabilityversion",
+ "ts_capabilityversion 0.6.1",
  "ts_control",
  "ts_control_noise",
- "ts_control_serde",
+ "ts_control_serde 0.7.1",
  "ts_dataplane",
  "ts_derp",
  "ts_http_util",
- "ts_keys",
+ "ts_keys 0.6.1",
  "ts_netstack_smoltcp_core",
  "ts_netstack_smoltcp_socket",
  "ts_noise",
@@ -5962,6 +5962,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ts_capabilityversion"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "ts_control"
 version = "0.6.1"
 source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
@@ -5980,13 +5988,13 @@ dependencies = [
  "tokio-util",
  "tracing",
  "ts_bitset",
- "ts_capabilityversion",
+ "ts_capabilityversion 0.6.1",
  "ts_control_noise",
- "ts_control_serde",
+ "ts_control_serde 0.6.1",
  "ts_derp",
  "ts_dynbitset",
  "ts_http_util",
- "ts_keys",
+ "ts_keys 0.6.1",
  "ts_packet",
  "ts_packetfilter",
  "ts_packetfilter_state",
@@ -6010,9 +6018,9 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "ts_capabilityversion",
+ "ts_capabilityversion 0.6.1",
  "ts_hexdump",
- "ts_keys",
+ "ts_keys 0.6.1",
  "ts_noise",
  "zerocopy",
 ]
@@ -6029,10 +6037,29 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "serde_with",
- "ts_capabilityversion",
- "ts_keys",
- "ts_nodecapability",
- "ts_packetfilter_serde",
+ "ts_capabilityversion 0.6.1",
+ "ts_keys 0.6.1",
+ "ts_nodecapability 0.6.1",
+ "ts_packetfilter_serde 0.6.1",
+ "url",
+]
+
+[[package]]
+name = "ts_control_serde"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "ipnet",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "serde_with",
+ "ts_capabilityversion 0.7.1",
+ "ts_keys 0.7.1",
+ "ts_nodecapability 0.7.1",
+ "ts_packetfilter_serde 0.7.1",
  "url",
 ]
 
@@ -6074,7 +6101,7 @@ dependencies = [
  "tracing",
  "ts_hexdump",
  "ts_http_util",
- "ts_keys",
+ "ts_keys 0.6.1",
  "ts_packet",
  "ts_tls_util",
  "ts_transport",
@@ -6094,7 +6121,7 @@ dependencies = [
  "num-traits",
  "thiserror",
  "ts_hexdump",
- "ts_keys",
+ "ts_keys 0.6.1",
  "zerocopy",
 ]
 
@@ -6149,6 +6176,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ts_keys"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
+dependencies = [
+ "crypto_box",
+ "serde",
+ "thiserror",
+ "x25519-dalek",
+ "zerocopy",
+ "zeroize",
+]
+
+[[package]]
 name = "ts_netstack_smoltcp_core"
 version = "0.6.1"
 source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
@@ -6183,6 +6223,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ts_nodecapability"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
+dependencies = [
+ "cfg-if",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ts_noise"
 version = "0.6.1"
 source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
@@ -6192,7 +6242,7 @@ dependencies = [
  "chacha20poly1305",
  "hkdf 0.12.4",
  "itertools",
- "ts_keys",
+ "ts_keys 0.6.1",
  "x25519-dalek",
  "zerocopy",
  "zeroize",
@@ -6242,8 +6292,21 @@ dependencies = [
  "nom 8.0.0",
  "serde",
  "serde_json",
- "ts_nodecapability",
- "ts_peercapability",
+ "ts_nodecapability 0.6.1",
+ "ts_peercapability 0.6.1",
+]
+
+[[package]]
+name = "ts_packetfilter_serde"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
+dependencies = [
+ "ipnet",
+ "nom 8.0.0",
+ "serde",
+ "serde_json",
+ "ts_nodecapability 0.7.1",
+ "ts_peercapability 0.7.1",
 ]
 
 [[package]]
@@ -6252,13 +6315,22 @@ version = "0.6.1"
 source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
 dependencies = [
  "ts_packetfilter",
- "ts_packetfilter_serde",
+ "ts_packetfilter_serde 0.6.1",
 ]
 
 [[package]]
 name = "ts_peercapability"
 version = "0.6.1"
 source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
+dependencies = [
+ "serde",
+ "url",
+]
+
+[[package]]
+name = "ts_peercapability"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
 dependencies = [
  "serde",
  "url",
@@ -6290,7 +6362,7 @@ dependencies = [
  "dyn-hash",
  "smallbox",
  "ts_hexdump",
- "ts_keys",
+ "ts_keys 0.6.1",
  "ts_packet",
  "zerocopy",
 ]
@@ -6306,7 +6378,7 @@ dependencies = [
  "itertools",
  "rand 0.10.3",
  "tracing",
- "ts_keys",
+ "ts_keys 0.6.1",
  "ts_noise",
  "ts_packet",
  "ts_time",
