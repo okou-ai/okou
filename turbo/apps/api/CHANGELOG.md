@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.70.8](https://github.com/okou-ai/okou/compare/api-v2.70.7...api-v2.70.8) (2026-11-14)
+
+
+### Refactoring
+
+* **api:** stop accepting the retired chat resources preference write ([#47299](https://github.com/okou-ai/okou/issues/47299)) ([c2fbb97](https://github.com/okou-ai/okou/commit/c2fbb97cd4c674b73720b375573bd592e7ee7f77))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.66.0
+    * @okouai/core bumped to 8.839.5
+    * @okouai/db bumped to 2.35.9
+    * @okouai/pi-agent-runtime bumped to 1.51.127
+
 ## [2.70.7](https://github.com/okou-ai/okou/compare/api-v2.70.6...api-v2.70.7) (2026-11-14)
 
 

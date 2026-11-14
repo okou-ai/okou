@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.83](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.82...guest-agent-v0.109.83) (2026-11-14)
+
+
+### Refactoring
+
+* **guest-agent:** derive termination reasons from control failures ([#47259](https://github.com/okou-ai/okou/issues/47259)) ([fb752b2](https://github.com/okou-ai/okou/commit/fb752b2083439127da7928b1f8726b43022a3f93))
+
 ## [0.109.82](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.81...guest-agent-v0.109.82) (2026-11-14)
 
 ## [0.109.81](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.80...guest-agent-v0.109.81) (2026-11-14)
