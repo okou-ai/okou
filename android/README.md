@@ -396,13 +396,20 @@ fail generation; do not replace them with untyped JSON or parallel handwritten D
 
 The selected emitter supports string-keyed records, root array/map aliases and
 typed object unions with disjoint string tags, unique required wire keys,
-required null/non-null selectors or forbidden/required key pairs.
+required null/non-null selectors, compound tags or forbidden/required key pairs.
+Nested object unions are flattened only when no extra schema constraint is lost;
+joint selectors require every variant pair to be provably disjoint.
 Union selection rejects unknown or ambiguous variants and preserves the original
 wire object without inserting a discriminator wrapper. Nullable/optional fields,
 combined string-enum vocabularies, explicit nulls and empty tuples retain their
 wire representation. Unsupported mixed/ambiguous unions, arbitrary tuples and
-unrepresented values still fail generation. Canonical numeric literal zero has
-an explicit wire representation. Optional never fields are omitted and rejected
+unrepresented values still fail generation. Canonical safe-integer literals have
+an exact singleton wire representation, including history's literal zero and
+structured messages' version one. Optional nullable outbound request fields preserve omitted,
+explicit-null and concrete values through typed `CanonicalOptional` values.
+Request ownership comes from the selected route, so archive input decoding keeps
+its existing normalized representation.
+Optional never fields are omitted and rejected
 when present. Only deliberately unconstrained canonical JSON leaves become
 `JsonElement`; optional leaves preserve absence separately from explicit JSON null.
 This is a typed reader boundary,
@@ -413,8 +420,9 @@ values stay absent from the URL. Server-defaulted scalars use explicit arguments
 Required string path parameters retain Retrofit's normal segment escaping.
 Supported scalar object-union queries generate typed alternatives and an extension
 method that validates the canonical branch constraints before invoking the wire
-method. Unsupported or ambiguous compositions still fail generation. Non-200
-success bindings require a future actual consumer before expansion.
+method. Unsupported or ambiguous compositions still fail generation. A route must
+have exactly one supported body-bearing 2xx success schema, bound to its exact DTO;
+Retrofit retains the actual HTTP status separately from the decoded body.
 
 Regenerate from the repository root with the Turbo workspace dependencies installed:
 
@@ -451,6 +459,13 @@ fields, path escaping and query validation. The production `historySnapshot`,
 `historyRows`, `threadDetail` and `markRead` bindings are installed consumers used
 by the native reader. Their canonical raw event model and event schema version
 are generated alongside the existing list bindings.
+
+The test-only `commandfixtures` namespace and `ChatCommandBindingsTest` prove
+canonical thread creation and input submission, including their 201 receipts,
+stable client identities, full command variants, structured multilingual content,
+compound source tags and optional/null model choices. A 201 receipt means accepted
+input, not a running or completed task. These fixtures do not register installed
+write consumers or provide a native composer; those belong to their actual feature.
 
 `HistoryProjectionContractTest` also consumes generated semantic histories.
 Their expected visibility, ordering, queue flags and run state are computed by

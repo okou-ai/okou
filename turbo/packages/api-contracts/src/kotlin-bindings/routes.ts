@@ -1,4 +1,4 @@
-import { toJSONSchema } from "zod";
+import { toJSONSchema, type ZodType } from "zod";
 import type { KotlinRouteBinding, KotlinTypeBinding } from "./bindings";
 import {
   kotlinIdentifier as identifier,
@@ -6,6 +6,17 @@ import {
   schemaObject,
 } from "./syntax";
 import { isNever, scalarPredicate } from "./schema-shapes";
+
+/** Current bindings represent one body-bearing success, never an arbitrary status default. */
+export function successResponse(route: KotlinRouteBinding["route"]): ZodType {
+  const successes = Object.entries(route.responses).filter(([status]) => {
+    const code = Number(status);
+    return Number.isInteger(code) && code >= 200 && code < 300;
+  });
+  if (successes.length !== 1)
+    throw new Error("Expected one canonical success response");
+  return successes[0]![1];
+}
 
 export function pathBinding(route: KotlinRouteBinding["route"]): {
   path: string;
