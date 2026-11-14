@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/okou-ai/okou/compare/android-v0.10.0...android-v0.11.0) (2026-11-14)
+
+
+### Features
+
+* **android:** add personal instructions editing and recovery ([#47183](https://github.com/okou-ai/okou/issues/47183)) ([e0e425a](https://github.com/okou-ai/okou/commit/e0e425a3aaa6ba7ea21ccddcdba51f88ba922e83))
+
 ## [0.10.0](https://github.com/okou-ai/okou/compare/android-v0.9.0...android-v0.10.0) (2026-11-14)
 
 
