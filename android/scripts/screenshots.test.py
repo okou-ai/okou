@@ -123,6 +123,22 @@ python3 android/scripts/screenshots.py collect shot.png
         commit = self.commit(self.capture_recipe(payload=pixel_png()[:-4]))
         self.assertNotEqual(0, self.invoke(commit).returncode)
 
+    def test_bundle_device_metadata_cannot_be_replaced_with_an_earlier_run(self):
+        recipe = self.capture_recipe() + """python3 - <<'PY'
+import json
+from pathlib import Path
+p=Path('android/build/screenshots/screenshots.json')
+bundle=json.loads(p.read_text())
+bundle['images'][0]['device']['runId']='earlier-run'
+p.write_text(json.dumps(bundle))
+PY
+"""
+        commit = self.commit(recipe)
+        self.assertNotEqual(0, self.invoke(commit).returncode)
+        record = json.loads((self.root / "android/build/screenshots/run.json").read_text())
+        self.assertEqual("failed", record["status"])
+        self.assertIn("device metadata", record["error"])
+
     def test_cancelling_the_runner_reaps_its_recipe_and_retains_failure_evidence(self):
         commit = self.commit("echo ready:$BASHPID\nexec python3 -c 'import signal; signal.pause()'\n")
         process = subprocess.Popen(

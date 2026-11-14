@@ -96,7 +96,7 @@ class ScreenshotScenario {
             reveal("Research")
             device.waitForIdle()
             ScreenshotCapture.capture("03-sidebar.png")
-            assertTrue(device.pressBack())
+            click("Project chat")
             assertTrue(
                 device.wait(Until.gone(By.text(app.getString(R.string.chat_list_title))), 10_000)
             )

@@ -144,7 +144,10 @@ def verify_bundle(run_id):
         raise ValueError("Recipe produced no current screenshot bundle")
     for image in bundle["images"]:
         path = confined(OUTPUT / image["file"], OUTPUT / "images")
-        png_size(path)
+        width, height = png_size(path)
+        device = image["device"]
+        if device.get("runId") != run_id or (device.get("width"), device.get("height")) != (width, height):
+            raise ValueError("Screenshot device metadata differs from this capture")
         if hashlib.sha256(path.read_bytes()).hexdigest() != image["sha256"]:
             raise ValueError("Screenshot changed after collection")
 
@@ -188,12 +191,15 @@ def execute(args):
                 sys.stdout.buffer.write(line)
                 sys.stdout.buffer.flush()
             code = process.wait()
-        metadata["exitCode"] = code
+        metadata["recipeExitCode"] = code
         if code:
             return code if code > 0 else 128 - code
         verify_bundle(run_id)
         metadata["status"] = "success"
         return 0
+    except (ValueError, OSError, KeyError, zlib.error) as error:
+        metadata["error"] = str(error)
+        raise
     finally:
         signal.signal(signal.SIGTERM, previous)
         if process is not None:
