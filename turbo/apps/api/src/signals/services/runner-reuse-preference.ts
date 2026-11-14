@@ -22,11 +22,7 @@ import {
   type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
-import {
-  alias,
-  QueryBuilder,
-  type SubqueryWithSelection,
-} from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { command } from "ccstate";
 import {
   nullableDriverValueDecoder,
@@ -55,63 +51,11 @@ const RUNNER_REUSE_STATE_FRESH_MS = 180_000;
 
 const predecessorRun = alias(agentRuns, "reuse_predecessor_run");
 const predecessorRunnerState = alias(runnerState, "predecessor_runner");
-const currentRun = alias(agentRuns, "reuse_current_run");
 const predecessorHomeEvidenceKindSchema = zEnum([
   "advertised",
   "expected",
   "location",
 ]);
-
-type RunnerThreadPredecessor = SubqueryWithSelection<
-  { id: typeof chatThreads.frameworkSessionRunId },
-  "reuse_pred"
->;
-
-/**
- * Direct preparation reads the owned Thread's durable predecessor, independently
- * of its native readiness or a retained producer row. Acceptance advances
- * the Thread to this Run; preparation must retain the original predecessor.
- * Native intent is already frozen in the admitted execution input.
- *
- * Callers left-join the result laterally `ON true` and every reuse condition
- * reads its `id` column. Primary-key joins yield at most one row, so a missing
- * predecessor is NULL, as with a scalar subquery, while PostgreSQL plans the
- * lookup once instead of once per referencing condition.
- */
-function runnerThreadPredecessor(args: {
-  readonly runId: SQLWrapper;
-  readonly reuseKey: SQLWrapper;
-}): RunnerThreadPredecessor {
-  return new QueryBuilder()
-    .select({ id: chatThreads.frameworkSessionRunId })
-    .from(currentRun)
-    .innerJoin(
-      chatThreads,
-      and(
-        eq(chatThreads.id, currentRun.chatThreadId),
-        eq(chatThreads.userId, currentRun.userId),
-      ),
-    )
-    .innerJoin(
-      agents,
-      and(
-        eq(agents.id, chatThreads.agentId),
-        eq(agents.orgId, currentRun.orgId),
-      ),
-    )
-    .where(
-      and(
-        eq(currentRun.id, args.runId),
-        eq(currentRun.status, "pending"),
-        ne(chatThreads.frameworkSessionRunId, currentRun.id),
-        eq(
-          args.reuseKey,
-          sql`'thread:' || cast(${currentRun.chatThreadId} as text)`,
-        ),
-      ),
-    )
-    .as("reuse_pred");
-}
 
 interface PendingRunnerThread {
   readonly threadId: string;
@@ -120,7 +64,11 @@ interface PendingRunnerThread {
   readonly predecessorRunId: string | null;
 }
 
-/** Final publication independently fences this captured owned Thread binding. */
+/**
+ * Read the captured owned Thread binding; final publication fences it again.
+ * The primary-key lateral lookup yields at most one row and shares its
+ * predecessor ID across all reuse conditions. A missing binding leaves it NULL.
+ */
 function pendingRunnerThreadPredecessor(args: PendingRunnerThread) {
   return new QueryBuilder()
     .select({ id: chatThreads.frameworkSessionRunId })
@@ -212,8 +160,8 @@ function finalizingPredecessorCondition(args: {
   // producer-bearing heartbeat has not reached the API yet. The process
   // generation and short completion deadline bound that advisory preference.
   // admittableProfiles is remaining capacity, so it may be empty while this
-  // process is still finalizing. Poll and Ably recipients enforce static
-  // profile support before admitting the advisory preference.
+  // process is still finalizing. Direct dispatch checks profile eligibility
+  // before using this advisory preference.
   return and(
     inArray(predecessorRun.status, ["completed", "cancelled", "failed"]),
     or(
@@ -346,7 +294,6 @@ function advertisedReuseConditions(
 }
 
 function runnerReuseCandidatePlan(args: {
-  readonly runId: string;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
@@ -355,14 +302,9 @@ function runnerReuseCandidatePlan(args: {
   readonly shouldLookUpGenericReuse: boolean;
   readonly finalizingCompletedAfter: Date;
   readonly shouldLookUpFinalizingProducer: boolean;
-  readonly pendingThread?: PendingRunnerThread;
+  readonly thread: PendingRunnerThread;
 }) {
-  const predecessor = args.pendingThread
-    ? pendingRunnerThreadPredecessor(args.pendingThread)
-    : runnerThreadPredecessor({
-        runId: sql.param(args.runId),
-        reuseKey: sql.param(args.reuseKey),
-      });
+  const predecessor = pendingRunnerThreadPredecessor(args.thread);
   const predecessorRunId = predecessor.id;
   const {
     reusableCondition,
@@ -525,14 +467,13 @@ const findRunnerReuseCandidate$ = command(
   async (
     { get },
     args: {
-      readonly runId: string;
       readonly runnerGroup: string;
       readonly profile: string;
       readonly reuseKey: string;
       readonly shouldLookUpGenericReuse: boolean;
       readonly shouldLookUpExactSandbox: boolean;
       readonly shouldLookUpFinalizingProducer: boolean;
-      readonly pendingThread?: PendingRunnerThread;
+      readonly thread: PendingRunnerThread;
     },
   ): Promise<RunnerReuseCandidate | null> => {
     const currentDate = nowDate();
@@ -628,8 +569,10 @@ export const prepareRunnerReusePreference$ = command(
       return await set(
         selectRunnerReuseCandidate$,
         {
-          ...args,
-          pendingThread: args.thread,
+          runnerGroup: args.runnerGroup,
+          profile: args.profile,
+          reuseKey: args.reuseKey,
+          thread: args.thread,
           ...runnerReuseLookupStages({ admittedAt: null }, currentDate),
         },
         timing,
