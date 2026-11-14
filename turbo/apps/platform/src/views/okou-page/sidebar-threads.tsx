@@ -20,7 +20,12 @@ import {
   projectDialog$,
   projectThreadMenuOpenChanged$,
 } from "../../signals/projects/project-ui.ts";
-import type { ComponentProps, ReactNode, RefCallback } from "react";
+import type {
+  CSSProperties,
+  ComponentProps,
+  ReactNode,
+  RefCallback,
+} from "react";
 import {
   useGet,
   useLastLoadable,
@@ -1977,18 +1982,12 @@ function ChatThreadListRowGroup({
       inert={active?.geometry.toHeight === 0}
       aria-hidden={active?.geometry.toHeight === 0 ? true : undefined}
       className={cn(
-        "w-full",
-        active && "overflow-hidden",
-        active?.running
-          ? "motion-safe:transition-[height] motion-safe:duration-200 motion-safe:ease-out"
-          : "transition-none",
+        "w-full transition-none",
+        active && "h-(--okou-project-fold-height) overflow-hidden",
       )}
       style={
         active
           ? {
-              height: active.running
-                ? active.geometry.toHeight
-                : active.geometry.fromHeight,
               paddingTop: active.range.childStart * (rowHeight ?? 0),
             }
           : undefined
@@ -2032,6 +2031,16 @@ function ChatThreadListRowsView({
   function moveHere(projectId: string | null) {
     detach(move(projectId, signal), Reason.DomCallback);
   }
+  const listStyle:
+    (CSSProperties & { "--okou-project-fold-height"?: string }) | undefined =
+    height === undefined
+      ? undefined
+      : motion
+        ? {
+            height: `calc(${height - motion.geometry.toHeight}px + var(--okou-project-fold-height))`,
+            "--okou-project-fold-height": `${motion.running ? motion.geometry.toHeight : motion.geometry.fromHeight}px`,
+          }
+        : { height };
 
   return (
     <>
@@ -2041,7 +2050,7 @@ function ChatThreadListRowsView({
           "w-full [overflow-anchor:none]",
           rowHeight !== null && "relative",
           motion?.running
-            ? "motion-safe:transition-[height] motion-safe:duration-200 motion-safe:ease-out"
+            ? "motion-safe:transition-[--okou-project-fold-height] motion-safe:duration-200 motion-safe:ease-out"
             : "transition-none",
         )}
         data-testid={
@@ -2051,19 +2060,7 @@ function ChatThreadListRowsView({
         data-project-fold-state={
           motion ? (motion.running ? "running" : "prepared") : undefined
         }
-        style={
-          height === undefined
-            ? undefined
-            : {
-                // Desktop's trailing action is outside this host; mobile's is inside.
-                // Apply only the shared child-height delta to the caller-owned extent.
-                height:
-                  height +
-                  (motion && !motion.running
-                    ? motion.geometry.fromHeight - motion.geometry.toHeight
-                    : 0),
-              }
-        }
+        style={listStyle}
       >
         <div
           ref={motionHostRef && !touch ? dragEventsRef : undefined}

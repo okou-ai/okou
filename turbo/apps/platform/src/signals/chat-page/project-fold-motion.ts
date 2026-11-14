@@ -254,7 +254,9 @@ function matchesFoldDom(
   const matchesHeight =
     motion.running ||
     Math.abs(
-      Number.parseFloat(block.style.height) - motion.geometry.fromHeight,
+      Number.parseFloat(
+        host.style.getPropertyValue("--okou-project-fold-height"),
+      ) - motion.geometry.fromHeight,
     ) <= 0.02;
   return (
     matchesHeight &&
@@ -333,32 +335,24 @@ function createRunFoldCommand(dom: FoldDomSignals) {
         return;
       }
       host.getBoundingClientRect();
-      // Native CSS receipts identify these exact height owners. Disabled styles
-      // yield no animations; stale events cannot settle a successor. No polling.
-      const animations = [host, block].flatMap((element) => {
-        return typeof element.getAnimations === "function"
-          ? element.getAnimations().filter((animation) => {
+      // The host's inherited CSS length drives both extents on one native clock.
+      const animation =
+        typeof host.getAnimations === "function"
+          ? host.getAnimations().find((candidate) => {
               return (
-                "transitionProperty" in animation &&
-                animation.transitionProperty === "height"
+                "transitionProperty" in candidate &&
+                candidate.transitionProperty === "--okou-project-fold-height"
               );
             })
-          : [];
-      });
-      const receipts = await waitForToken(
-        Promise.allSettled(
-          animations.map((animation) => {
-            return animation.finished;
-          }),
-        ),
+          : undefined;
+      const [receipt] = await waitForToken(
+        Promise.allSettled(animation ? [animation.finished] : []),
         signal,
       );
       signal.throwIfAborted();
       finish();
-      for (const receipt of receipts) {
-        if (receipt.status === "rejected" && !isAbortError(receipt.reason)) {
-          throw receipt.reason;
-        }
+      if (receipt?.status === "rejected" && !isAbortError(receipt.reason)) {
+        throw receipt.reason;
       }
     },
   );

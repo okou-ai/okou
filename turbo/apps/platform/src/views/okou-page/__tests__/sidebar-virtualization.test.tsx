@@ -424,15 +424,10 @@ function holdFoldFrame() {
   };
 }
 
-function holdFoldReceipts() {
-  const blockFinished = context.mocks.deferred<Animation>();
+function holdFoldAnimation() {
   const listFinished = context.mocks.deferred<Animation>();
-  const blockAnimation = {
-    transitionProperty: "height",
-    finished: blockFinished.promise,
-  } as CSSTransition;
   const listAnimation = {
-    transitionProperty: "height",
+    transitionProperty: "--okou-project-fold-height",
     finished: listFinished.promise,
   } as CSSTransition;
   const original = Object.getOwnPropertyDescriptor(
@@ -445,11 +440,6 @@ function holdFoldReceipts() {
   Object.defineProperty(HTMLElement.prototype, "getAnimations", {
     configurable: true,
     get(this: HTMLElement) {
-      if (this.dataset.projectChildrenId === FOLD_PROJECT_ID) {
-        return () => {
-          return [blockAnimation];
-        };
-      }
       if (this.dataset.testid === "sidebar-chat-threads-virtual-list") {
         return () => {
           return [listAnimation];
@@ -466,13 +456,7 @@ function holdFoldReceipts() {
     { once: true },
   );
   return {
-    finishBlock: async () => {
-      await act(() => {
-        blockFinished.resolve(blockAnimation);
-        return Promise.resolve();
-      });
-    },
-    finishList: async () => {
+    finish: async () => {
       await act(() => {
         listFinished.resolve(listAnimation);
         return Promise.resolve();
@@ -482,25 +466,31 @@ function holdFoldReceipts() {
 }
 
 test.each([false, true])(
-  "Project fold commits intent immediately and awaits both height owners (mobile: %s)",
+  "Project fold shares one CSS reveal length and completion (mobile: %s)",
   async (mobile) => {
     const { viewport, toggle, children, list, rowHeight } = await openFoldList({
       mobile,
     });
-    const receipts = holdFoldReceipts();
+    const animation = holdFoldAnimation();
     const expandFrame = holdFoldFrame();
     click(toggle());
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
     expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
-    expect(children().style.height).toBe("0px");
-    expect(list.style.height).toBe(`${25 * rowHeight}px`);
+    expect(list.style.getPropertyValue("--okou-project-fold-height")).toBe(
+      "0px",
+    );
+    expect(list.style.height).toBe(
+      `calc(${25 * rowHeight}px + var(--okou-project-fold-height))`,
+    );
     await expandFrame();
     expect(children()).toHaveAttribute("data-project-fold-state", "running");
-    expect(children().style.height).toBe(`${2 * rowHeight}px`);
-    expect(list.style.height).toBe(`${27 * rowHeight}px`);
-    await receipts.finishBlock();
-    expect(children()).toHaveAttribute("data-project-fold-state", "running");
-    await receipts.finishList();
+    expect(list.style.getPropertyValue("--okou-project-fold-height")).toBe(
+      `${2 * rowHeight}px`,
+    );
+    expect(list.style.height).toBe(
+      `calc(${25 * rowHeight}px + var(--okou-project-fold-height))`,
+    );
+    await animation.finish();
     await waitFor(() => {
       return expect(children()).not.toHaveAttribute("data-project-fold-state");
     });
@@ -514,8 +504,12 @@ test.each([false, true])(
     expect(within(block).getByText("History 1").closest("a")).toBe(member);
     expect(block).toHaveAttribute("inert");
     expect(block).toHaveAttribute("aria-hidden", "true");
-    expect(block.style.height).toBe(`${2 * rowHeight}px`);
-    expect(list.style.height).toBe(`${27 * rowHeight}px`);
+    expect(list.style.getPropertyValue("--okou-project-fold-height")).toBe(
+      `${2 * rowHeight}px`,
+    );
+    expect(list.style.height).toBe(
+      `calc(${25 * rowHeight}px + var(--okou-project-fold-height))`,
+    );
     expect(within(viewport).getByText("History 3")).toBeInTheDocument();
     await collapseFrame();
     await waitFor(() => {
@@ -556,6 +550,52 @@ test.each([false, true])(
       return expect(children()).not.toHaveAttribute("data-project-fold-state");
     });
     click(within(viewport).getByText("History 1"));
+    await screen.findByRole("textbox", { name: "Message" });
+    expect(pathname()).toBe(`/chats/${threadId(0)}`);
+  },
+);
+
+test.each([false, true])(
+  "A running fold reverses from its displayed CSS length (mobile: %s)",
+  async (mobile) => {
+    const { toggle, children, list, rowHeight } = await openFoldList({
+      mobile,
+    });
+    click(toggle());
+    await waitFor(() => {
+      expect(list.style.height).toBe(`${27 * rowHeight}px`);
+    });
+    const block = children();
+    const member = queryAllByRoleFast("link", block).find((link) => {
+      return link.getAttribute("href") === `/chats/${threadId(0)}`;
+    });
+    if (!member) {
+      throw new Error("Expected the first Project conversation link");
+    }
+    const animation = holdFoldAnimation();
+    const frame = holdFoldFrame();
+    click(toggle());
+    await frame();
+    expect(block).toHaveAttribute("data-project-fold-state", "running");
+    const displayedHeight = rowHeight + 0.25;
+    vi.spyOn(block, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 300, displayedHeight),
+    );
+    click(toggle());
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    expect(children()).toBe(block);
+    expect(block).toHaveAttribute("data-project-fold-state", "prepared");
+    expect(list.style.getPropertyValue("--okou-project-fold-height")).toBe(
+      `${displayedHeight}px`,
+    );
+    expect(queryAllByRoleFast("link", block)).toContain(member);
+    await animation.finish();
+    expect(block).toHaveAttribute("data-project-fold-state", "prepared");
+    await frame();
+    await waitFor(() => {
+      expect(list.style.height).toBe(`${27 * rowHeight}px`);
+    });
+    click(member);
     await screen.findByRole("textbox", { name: "Message" });
     expect(pathname()).toBe(`/chats/${threadId(0)}`);
   },
@@ -625,7 +665,9 @@ test("A 10,000-chat Project stays bounded while opening and cancelling its revea
   expect(
     within(viewport).getAllByTestId("sidebar-chat-thread-virtual-row").length,
   ).toBeLessThanOrEqual(68);
-  expect(list.style.height).toBe(`${25 * ROW_HEIGHT}px`);
+  expect(list.style.height).toBe(
+    `calc(${25 * ROW_HEIGHT}px + var(--okou-project-fold-height))`,
+  );
   fireEvent.wheel(viewport);
   await waitFor(() => {
     return expect(children()).not.toHaveAttribute("data-project-fold-state");
@@ -687,7 +729,9 @@ test("A filtered desktop list excludes its external footer from the reveal heigh
   click(toggle());
   expect(toggle()).toHaveAttribute("aria-expanded", "true");
   expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
-  expect(list.style.height).toBe(`${3 * rowHeight}px`);
+  expect(list.style.height).toBe(
+    `calc(${3 * rowHeight}px + var(--okou-project-fold-height))`,
+  );
   await frame();
   await waitFor(() => {
     expect(children()).not.toHaveAttribute("data-project-fold-state");
@@ -697,7 +741,9 @@ test("A filtered desktop list excludes its external footer from the reveal heigh
   click(toggle());
   expect(toggle()).toHaveAttribute("aria-expanded", "false");
   expect(children()).toHaveAttribute("inert");
-  expect(list.style.height).toBe(`${5 * rowHeight}px`);
+  expect(list.style.height).toBe(
+    `calc(${3 * rowHeight}px + var(--okou-project-fold-height))`,
+  );
   fireEvent.wheel(viewport);
   await waitFor(() => {
     expect(list.style.height).toBe(`${3 * rowHeight}px`);
@@ -748,7 +794,9 @@ test("The mobile unread footer shares the Project reveal's list height", async (
   click(toggle());
   expect(toggle()).toHaveAttribute("aria-expanded", "true");
   expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
-  expect(list.style.height).toBe(`${4 * rowHeight}px`);
+  expect(list.style.height).toBe(
+    `calc(${4 * rowHeight}px + var(--okou-project-fold-height))`,
+  );
   expect(within(list).getByText("Show all chats")).toBeInTheDocument();
   fireEvent.touchMove(viewport);
   await waitFor(() => {
