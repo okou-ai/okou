@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.7](https://github.com/okou-ai/okou/compare/ios-v0.43.6...ios-v0.43.7) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** keep avatars beside share selection indicators ([#47225](https://github.com/okou-ai/okou/issues/47225)) ([dab0641](https://github.com/okou-ai/okou/commit/dab0641360d957a7615bf7e9c6c33c9cc3f0f8d7))
+
 ## [0.43.6](https://github.com/okou-ai/okou/compare/ios-v0.43.5...ios-v0.43.6) (2026-11-14)
 
 
