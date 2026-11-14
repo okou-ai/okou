@@ -7,7 +7,13 @@ import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
@@ -33,7 +39,12 @@ function threadId(index: number): string {
   return `b3200000-0000-4000-a000-${String(index).padStart(12, "0")}`;
 }
 
-function mockThreads(count: number, projectId?: string): void {
+function mockThreads(
+  count: number,
+  projectId?: string,
+  projectMemberCount = 2,
+  archived = false,
+): void {
   context.mocks.data.agents([
     {
       agentId: AGENT_ID,
@@ -60,12 +71,12 @@ function mockThreads(count: number, projectId?: string): void {
             createdAt: "2026-03-10T00:00:00Z",
             updatedAt: "2026-03-10T00:00:00Z",
             pinnedAt: null,
-            archived: false,
+            archived,
             renamedAt: null,
             selectedModel: null,
             serviceTier: null,
             computerUseHostId: null,
-            ...(projectId && index < 2 ? { projectId } : {}),
+            ...(projectId && index < projectMemberCount ? { projectId } : {}),
           };
         }),
         latestEventId: null,
@@ -137,7 +148,10 @@ function resizeWindow(): void {
   fireEvent(window, new Event("resize"));
 }
 
-function selectChatListFilter(sidebar: HTMLElement, filter: "Unread"): void {
+function selectChatListFilter(
+  sidebar: HTMLElement,
+  filter: "Unread" | "Archived",
+): void {
   click(within(sidebar).getByLabelText("Open chat list menu"));
   const item = queryAllByRoleFast("menuitem").find((candidate) => {
     return candidate.textContent?.trim().startsWith(filter);
@@ -270,6 +284,597 @@ test("Collapse and expand a Project inside a scrolled virtual window", async () 
     expect(pathname()).toBe(`/chats/${threadId(0)}`);
   });
   await screen.findByRole("textbox", { name: "Message" });
+});
+
+const FOLD_PROJECT_ID = "30000000-0000-4000-8000-000000000101";
+
+function mockFoldProjects(count = 1): void {
+  context.mocks.api(projectsContract.snapshot, ({ respond }) => {
+    return respond(200, {
+      projects: Array.from({ length: count }, (_, index) => {
+        return {
+          id:
+            index === count - 1
+              ? FOLD_PROJECT_ID
+              : `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+          name: index === count - 1 ? "Motion project" : `Earlier ${index + 1}`,
+          createdAt: "2026-03-10T00:00:00Z",
+          updatedAt: "2026-03-10T00:00:00Z",
+        };
+      }),
+      latestEventId: null,
+      latestSeqId: 1,
+    });
+  });
+  context.mocks.api(projectsContract.events, ({ respond }) => {
+    return respond(200, { events: [], hasMore: false });
+  });
+}
+
+async function openFoldList({
+  mobile,
+  members = 2,
+  outside = 24,
+  projects = 1,
+  viewportRows = 5,
+  reducedMotion = false,
+  unread = false,
+  activeChat = false,
+  archived = false,
+}: {
+  mobile: boolean;
+  members?: number;
+  outside?: number;
+  projects?: number;
+  viewportRows?: number;
+  reducedMotion?: boolean;
+  unread?: boolean;
+  activeChat?: boolean;
+  archived?: boolean;
+}) {
+  context.mocks.browser.matchMedia((query) => {
+    return (
+      (query === "(min-width: 48rem)" && !mobile) ||
+      (query === "(prefers-reduced-motion: reduce)" && reducedMotion)
+    );
+  });
+  mockThreads(members + outside, FOLD_PROJECT_ID, members, archived);
+  if (unread) {
+    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+      return respond(200, {
+        agents: { [AGENT_ID]: "unread" },
+        threads: Object.fromEntries(
+          Array.from({ length: members + outside }, (_, index) => {
+            return [threadId(index), "unread" as const];
+          }),
+        ),
+        unreadAt: {},
+      });
+    });
+  }
+  mockFoldProjects(projects);
+  const rowHeight = mobile ? PWA_ROW_HEIGHT : ROW_HEIGHT;
+  const mockHeight = mobile ? mockPwaViewportHeight : mockViewportHeight;
+  mockHeight(
+    () => {
+      return viewportRows * rowHeight;
+    },
+    members + outside + projects,
+  );
+  await setupPage({
+    context,
+    path: activeChat ? `/chats/${threadId(0)}` : `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  if (unread || archived) {
+    await screen.findByLabelText("Open chat list menu");
+    selectChatListFilter(document.body, archived ? "Archived" : "Unread");
+    await screen.findByText("Show all chats");
+  }
+  const viewport = mobile
+    ? await screen.findByRole("region", { name: "Chat threads" })
+    : await screen.findByTestId("sidebar-scroll-area");
+  await within(viewport).findByLabelText(
+    projects === 1
+      ? "Show or hide chats in Motion project"
+      : "Show or hide chats in Earlier 1",
+  );
+  return {
+    viewport,
+    rowHeight,
+    toggle: () => {
+      return within(viewport).getByLabelText(
+        "Show or hide chats in Motion project",
+      );
+    },
+    children: () => {
+      const block = viewport.querySelector<HTMLElement>(
+        `[data-project-children-id="${FOLD_PROJECT_ID}"]`,
+      );
+      if (!block) {
+        throw new Error("Expected the rendered Project children");
+      }
+      return block;
+    },
+    list: within(viewport).getByTestId("sidebar-chat-threads-virtual-list"),
+  };
+}
+
+/** Deliver the two command-owned startup frames without replaying cancellation. */
+function holdFoldFrame() {
+  let frames = new Map<number, FrameRequestCallback>();
+  let nextId = 1_000_000;
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    const id = nextId++;
+    frames.set(id, callback);
+    return id;
+  });
+  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+    frames.delete(id);
+  });
+  return async () => {
+    for (let frame = 0; frame < 2; frame++) {
+      const pending = [...frames.values()];
+      frames = new Map();
+      await act(() => {
+        for (const callback of pending) {
+          callback(0);
+        }
+        return Promise.resolve();
+      });
+    }
+  };
+}
+
+function holdFoldAnimation() {
+  const listFinished = context.mocks.deferred<Animation>();
+  const listAnimation = {
+    transitionProperty: "--okou-project-fold-height",
+    finished: listFinished.promise,
+  } as CSSTransition;
+  const original = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    "getAnimations",
+  );
+  if (!original) {
+    throw new Error("Expected the shared Web Animations boundary");
+  }
+  Object.defineProperty(HTMLElement.prototype, "getAnimations", {
+    configurable: true,
+    get(this: HTMLElement) {
+      if (this.dataset.testid === "sidebar-chat-threads-virtual-list") {
+        return () => {
+          return [listAnimation];
+        };
+      }
+      return original.get?.call(this);
+    },
+  });
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      Object.defineProperty(HTMLElement.prototype, "getAnimations", original);
+    },
+    { once: true },
+  );
+  return {
+    finish: async () => {
+      await act(() => {
+        listFinished.resolve(listAnimation);
+        return Promise.resolve();
+      });
+    },
+  };
+}
+
+test.each([false, true])(
+  "Project fold shares one CSS reveal length and completion (mobile: %s)",
+  async (mobile) => {
+    const { viewport, toggle, children, list, rowHeight } = await openFoldList({
+      mobile,
+    });
+    const animation = holdFoldAnimation();
+    const expandFrame = holdFoldFrame();
+    click(toggle());
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
+    expect(list.style.getPropertyValue("--okou-project-fold-height")).toBe(
+      "0px",
+    );
+    expect(list.style.height).toBe(
+      `calc(${25 * rowHeight}px + var(--okou-project-fold-height))`,
+    );
+    await expandFrame();
+    expect(children()).toHaveAttribute("data-project-fold-state", "running");
+    expect(list.style.getPropertyValue("--okou-project-fold-height")).toBe(
+      `${2 * rowHeight}px`,
+    );
+    expect(list.style.height).toBe(
+      `calc(${25 * rowHeight}px + var(--okou-project-fold-height))`,
+    );
+    await animation.finish();
+    await waitFor(() => {
+      return expect(children()).not.toHaveAttribute("data-project-fold-state");
+    });
+
+    const collapseFrame = holdFoldFrame();
+    click(toggle());
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    expect(children()).toHaveAttribute("inert");
+    expect(children()).toHaveAttribute("aria-hidden", "true");
+    expect(list.style.getPropertyValue("--okou-project-fold-height")).toBe(
+      `${2 * rowHeight}px`,
+    );
+    expect(list.style.height).toBe(
+      `calc(${25 * rowHeight}px + var(--okou-project-fold-height))`,
+    );
+    expect(within(viewport).getByText("History 3")).toBeInTheDocument();
+    await collapseFrame();
+    await waitFor(() => {
+      return expect(
+        within(viewport).queryByText("History 1"),
+      ).not.toBeInTheDocument();
+    });
+    expect(list.style.height).toBe(`${25 * rowHeight}px`);
+    click(within(viewport).getByText("History 3"));
+    await screen.findByRole("textbox", { name: "Message" });
+    expect(pathname()).toBe(`/chats/${threadId(2)}`);
+  },
+);
+
+test.each([false, true])(
+  "A pointer reversal before the fold frame keeps children usable (mobile: %s)",
+  async (mobile) => {
+    const { toggle, children, viewport } = await openFoldList({ mobile });
+    click(toggle());
+    await waitFor(() => {
+      return expect(children()).not.toHaveAttribute("data-project-fold-state");
+    });
+    const reverseFrame = holdFoldFrame();
+    click(toggle());
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    expect(children()).toHaveAttribute("inert");
+    click(toggle());
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
+    expect(
+      queryAllByRoleFast("link", children()).find((link) => {
+        return link.textContent?.trim() === "History 1";
+      }),
+    ).toHaveAttribute("href", `/chats/${threadId(0)}`);
+    await reverseFrame();
+    await waitFor(() => {
+      return expect(children()).not.toHaveAttribute("data-project-fold-state");
+    });
+    click(within(viewport).getByText("History 1"));
+    await screen.findByRole("textbox", { name: "Message" });
+    expect(pathname()).toBe(`/chats/${threadId(0)}`);
+  },
+);
+
+test.each([false, true])(
+  "A running fold reverses from its displayed CSS length (mobile: %s)",
+  async (mobile) => {
+    const { toggle, children, list, rowHeight } = await openFoldList({
+      mobile,
+    });
+    click(toggle());
+    await waitFor(() => {
+      expect(list.style.height).toBe(`${27 * rowHeight}px`);
+    });
+    const block = children();
+    const animation = holdFoldAnimation();
+    const frame = holdFoldFrame();
+    click(toggle());
+    await frame();
+    expect(block).toHaveAttribute("data-project-fold-state", "running");
+    const displayedHeight = rowHeight + 0.25;
+    vi.spyOn(block, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 0, 300, displayedHeight),
+    );
+    click(toggle());
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
+    expect(list.style.getPropertyValue("--okou-project-fold-height")).toBe(
+      `${displayedHeight}px`,
+    );
+    expect(
+      queryAllByRoleFast("link", children()).find((link) => {
+        return link.textContent?.trim() === "History 1";
+      }),
+    ).toHaveAttribute("href", `/chats/${threadId(0)}`);
+    await animation.finish();
+    expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
+    await frame();
+    await waitFor(() => {
+      expect(list.style.height).toBe(`${27 * rowHeight}px`);
+    });
+    click(within(children()).getByText("History 1"));
+    await screen.findByRole("textbox", { name: "Message" });
+    expect(pathname()).toBe(`/chats/${threadId(0)}`);
+  },
+);
+
+test.each([
+  { mobile: false, event: "wheel" },
+  { mobile: true, event: "touchmove" },
+  { mobile: false, event: "scroll" },
+  { mobile: false, event: "dragstart" },
+])(
+  "List $event cancels Project motion without undoing the click (mobile: $mobile)",
+  async ({ mobile, event }) => {
+    const { toggle, children, viewport, list, rowHeight } = await openFoldList({
+      mobile,
+    });
+    const frame = holdFoldFrame();
+    click(toggle());
+    expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
+    if (event === "scroll") {
+      fireEvent.scroll(viewport, { target: { scrollTop: rowHeight } });
+    } else {
+      fireEvent(viewport, new Event(event, { bubbles: true }));
+    }
+    await waitFor(() => {
+      return expect(children()).not.toHaveAttribute("data-project-fold-state");
+    });
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    expect(list.style.height).toBe(`${27 * rowHeight}px`);
+    await frame();
+    expect(children()).not.toHaveAttribute("data-project-fold-state");
+    click(within(viewport).getByText("History 1"));
+    await screen.findByRole("textbox", { name: "Message" });
+    expect(pathname()).toBe(`/chats/${threadId(0)}`);
+  },
+);
+
+test.each([false, true])(
+  "Reduced motion folds immediately without retaining hidden children (mobile: %s)",
+  async (mobile) => {
+    const { toggle, children, viewport, list, rowHeight } = await openFoldList({
+      mobile,
+      reducedMotion: true,
+    });
+    click(toggle());
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    expect(children()).not.toHaveAttribute("data-project-fold-state");
+    expect(within(viewport).getByText("History 1")).toBeInTheDocument();
+    expect(list.style.height).toBe(`${27 * rowHeight}px`);
+    click(toggle());
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    expect(within(viewport).queryByText("History 1")).not.toBeInTheDocument();
+    expect(list.style.height).toBe(`${25 * rowHeight}px`);
+    expect(within(viewport).getByText("History 3")).toBeInTheDocument();
+  },
+);
+
+test.each([false, true])(
+  "Folding a partially visible Project keeps newly exposed chats reachable (mobile: %s)",
+  async (mobile) => {
+    const { toggle, viewport, list, rowHeight } = await openFoldList({
+      mobile,
+      projects: 17,
+      viewportRows: 5.5,
+    });
+    const scrollTop = 16 * rowHeight + 0.25;
+    fireEvent.scroll(viewport, { target: { scrollTop } });
+    await within(viewport).findByLabelText(
+      "Show or hide chats in Motion project",
+    );
+    const animation = holdFoldAnimation();
+    const frame = holdFoldFrame();
+    click(toggle());
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    await frame();
+    expect(within(viewport).getByText("History 1")).toBeInTheDocument();
+    expect(within(viewport).getByText("History 3")).toBeInTheDocument();
+    expect(
+      within(viewport).getAllByTestId("sidebar-chat-thread-virtual-row").length,
+    ).toBeLessThanOrEqual(68);
+    await animation.finish();
+    await waitFor(() => {
+      expect(list.style.height).toBe(`${43 * rowHeight}px`);
+    });
+    expect(viewport.scrollTop).toBe(scrollTop);
+    click(toggle());
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    await frame();
+    await waitFor(() => {
+      expect(list.style.height).toBe(`${41 * rowHeight}px`);
+    });
+    expect(viewport.scrollTop).toBe(scrollTop);
+    const exposedChat = within(viewport).getByText("History 7");
+    expect(exposedChat).toBeInTheDocument();
+    click(exposedChat);
+    await screen.findByRole("textbox", { name: "Message" });
+    expect(pathname()).toBe(`/chats/${threadId(6)}`);
+  },
+);
+
+test("A 10,000-chat Project stays bounded while opening and cancelling its reveal", async () => {
+  const { toggle, viewport, children, list } = await openFoldList({
+    mobile: false,
+    members: 10_000,
+  });
+  const frame = holdFoldFrame();
+  click(toggle());
+  expect(toggle()).toHaveAttribute("aria-expanded", "true");
+  expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
+  expect(
+    within(viewport).getAllByTestId("sidebar-chat-thread-virtual-row").length,
+  ).toBeLessThanOrEqual(68);
+  expect(list.style.height).toBe(
+    `calc(${25 * ROW_HEIGHT}px + var(--okou-project-fold-height))`,
+  );
+  fireEvent.wheel(viewport);
+  await waitFor(() => {
+    return expect(children()).not.toHaveAttribute("data-project-fold-state");
+  });
+  expect(list.style.height).toBe(`${10_025 * ROW_HEIGHT}px`);
+  expect(
+    within(viewport).getAllByTestId("sidebar-chat-thread-virtual-row").length,
+  ).toBeLessThanOrEqual(68);
+  await frame();
+  fireEvent.scroll(viewport, { target: { scrollTop: 9998 * ROW_HEIGHT } });
+  await within(viewport).findByText("History 10000");
+  fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
+  await within(viewport).findByLabelText(
+    "Show or hide chats in Motion project",
+  );
+  click(toggle());
+  expect(toggle()).toHaveAttribute("aria-expanded", "false");
+  expect(children()).toHaveAttribute("inert");
+  expect(
+    within(viewport).getAllByTestId("sidebar-chat-thread-virtual-row").length,
+  ).toBeLessThanOrEqual(68);
+  fireEvent.wheel(viewport);
+  await waitFor(() => {
+    expect(within(viewport).queryByText("History 1")).not.toBeInTheDocument();
+  });
+});
+
+test("Navigating away from a mobile reveal cancels its viewport lifetime", async () => {
+  const { toggle, viewport, children } = await openFoldList({ mobile: true });
+  const frame = holdFoldFrame();
+  click(toggle());
+  expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
+  click(within(viewport).getByText("History 3"));
+  await screen.findByRole("textbox", { name: "Message" });
+  expect(viewport).not.toBeInTheDocument();
+  await frame();
+  click(screen.getByLabelText("Back to chats"));
+  const restored = await screen.findByRole("region", { name: "Chat threads" });
+  expect(
+    within(restored).getByLabelText("Show or hide chats in Motion project"),
+  ).toHaveAttribute("aria-expanded", "true");
+  const block = restored.querySelector(
+    `[data-project-children-id="${FOLD_PROJECT_ID}"]`,
+  );
+  expect(block).toBeInTheDocument();
+  expect(block).not.toHaveAttribute("data-project-fold-state");
+});
+
+test("A filtered desktop list excludes its external footer from the reveal height", async () => {
+  const { toggle, viewport, children, list, rowHeight } = await openFoldList({
+    mobile: false,
+    outside: 2,
+    archived: true,
+  });
+  expect(list.style.height).toBe(`${3 * rowHeight}px`);
+  const footer = within(viewport).getByText("Show all chats");
+  expect(list).not.toContainElement(footer);
+  const frame = holdFoldFrame();
+  click(toggle());
+  expect(toggle()).toHaveAttribute("aria-expanded", "true");
+  expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
+  expect(list.style.height).toBe(
+    `calc(${3 * rowHeight}px + var(--okou-project-fold-height))`,
+  );
+  await frame();
+  await waitFor(() => {
+    expect(children()).not.toHaveAttribute("data-project-fold-state");
+  });
+  expect(list.style.height).toBe(`${5 * rowHeight}px`);
+  expect(footer).toBeInTheDocument();
+  click(toggle());
+  expect(toggle()).toHaveAttribute("aria-expanded", "false");
+  expect(children()).toHaveAttribute("inert");
+  expect(list.style.height).toBe(
+    `calc(${3 * rowHeight}px + var(--okou-project-fold-height))`,
+  );
+  fireEvent.wheel(viewport);
+  await waitFor(() => {
+    expect(list.style.height).toBe(`${3 * rowHeight}px`);
+  });
+  click(buttonByText("Show all chats", viewport));
+  await waitFor(() => {
+    expect(footer).not.toBeInTheDocument();
+  });
+});
+
+test("Expanding an already-visible current conversation does not cancel its reveal", async () => {
+  const { toggle, viewport, children } = await openFoldList({
+    mobile: false,
+    activeChat: true,
+  });
+  await screen.findByRole("textbox", { name: "Message" });
+  if (toggle().getAttribute("aria-expanded") === "true") {
+    click(toggle());
+    fireEvent.wheel(viewport);
+  }
+  await waitFor(() => {
+    expect(within(viewport).queryByText("History 1")).not.toBeInTheDocument();
+  });
+  fireEvent.scroll(viewport, { target: { scrollTop: 0 } });
+  const frame = holdFoldFrame();
+  click(toggle());
+  expect(toggle()).toHaveAttribute("aria-expanded", "true");
+  expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
+  const current = within(children()).getByText("History 1").closest("a");
+  expect(current).toHaveAttribute("aria-current", "page");
+  expect(viewport.scrollTop).toBe(0);
+  await frame();
+  await waitFor(() => {
+    expect(children()).not.toHaveAttribute("data-project-fold-state");
+  });
+  expect(current).toHaveAttribute("aria-current", "page");
+  expect(viewport.scrollTop).toBe(0);
+});
+
+test("The mobile unread footer shares the Project reveal's list height", async () => {
+  const { toggle, viewport, children, list, rowHeight } = await openFoldList({
+    mobile: true,
+    outside: 2,
+    unread: true,
+  });
+  expect(list.style.height).toBe(`${4 * rowHeight}px`);
+  const frame = holdFoldFrame();
+  click(toggle());
+  expect(toggle()).toHaveAttribute("aria-expanded", "true");
+  expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
+  expect(list.style.height).toBe(
+    `calc(${4 * rowHeight}px + var(--okou-project-fold-height))`,
+  );
+  expect(within(list).getByText("Show all chats")).toBeInTheDocument();
+  fireEvent.touchMove(viewport);
+  await waitFor(() => {
+    return expect(children()).not.toHaveAttribute("data-project-fold-state");
+  });
+  expect(list.style.height).toBe(`${6 * rowHeight}px`);
+  await frame();
+  click(toggle());
+  expect(toggle()).toHaveAttribute("aria-expanded", "false");
+  fireEvent.touchMove(viewport);
+  await waitFor(() => {
+    return expect(list.style.height).toBe(`${4 * rowHeight}px`);
+  });
+  click(buttonByText("Show all chats", list));
+  await within(viewport).findByText("History 3");
+  expect(
+    within(viewport).queryByText("Show all chats"),
+  ).not.toBeInTheDocument();
+});
+
+test("A bottom-clamping Project collapse commits its smaller list immediately", async () => {
+  const { toggle, viewport, list } = await openFoldList({
+    mobile: false,
+    projects: 17,
+    outside: 2,
+  });
+  // Expand while the Project is in the overscan, then place its header at the
+  // bottom scroll position of the expanded list. The smaller list cannot keep it.
+  fireEvent.scroll(viewport, { target: { scrollTop: 12 * ROW_HEIGHT } });
+  await within(viewport).findByLabelText(
+    "Show or hide chats in Motion project",
+  );
+  click(toggle());
+  await within(viewport).findByText("History 1");
+  fireEvent.scroll(viewport, { target: { scrollTop: 16 * ROW_HEIGHT } });
+  await within(viewport).findByText("History 4");
+  click(toggle());
+  expect(toggle()).toHaveAttribute("aria-expanded", "false");
+  expect(within(viewport).queryByText("History 1")).not.toBeInTheDocument();
+  expect(list.style.height).toBe(`${19 * ROW_HEIGHT}px`);
+  expect(within(viewport).getByText("History 3")).toBeInTheDocument();
 });
 
 test("Resize and navigate a loaded virtual viewport", async () => {
