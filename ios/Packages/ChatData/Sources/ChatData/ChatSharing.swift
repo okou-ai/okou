@@ -4,6 +4,12 @@ public struct ChatShareVisibility: Decodable, Sendable {
   public let id: String
   public let audience: ChatShareAudience
   public let revision: String?
+
+  public init(id: String, audience: ChatShareAudience, revision: String?) {
+    self.id = id
+    self.audience = audience
+    self.revision = revision
+  }
 }
 
 extension APIClient {
