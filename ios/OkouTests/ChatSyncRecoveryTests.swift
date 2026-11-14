@@ -8,6 +8,125 @@ import XCTest
 
 @MainActor
 final class ChatSyncRecoveryTests: XCTestCase {
+  func testStartupAndHealthyForegroundKeepTheListUntilAnActualChange() async {
+    let fixture = SyncRecoveryFixture()
+    let store = fixture.workspace { _ in }
+    defer { store.close() }
+    store.setPhase(.active)
+    await store.refresh([.startup])
+    XCTAssertEqual(store.list.threads.first?.title, "Saved chat")
+
+    fixture.state.value.withLock { $0.title = "Changed after startup" }
+    await store.refresh([.initialSubscriptions])
+    store.setPhase(.background)
+    store.setPhase(.active)
+    await store.resumePendingRefresh()?.value
+    XCTAssertEqual(fixture.state.value.withLock { $0.listReads }, 1)
+    XCTAssertEqual(store.list.threads.first?.title, "Saved chat")
+
+    store.requestRefresh(.threadList)
+    await store.resumePendingRefresh()?.value
+    XCTAssertEqual(store.list.threads.first?.title, "Changed after startup")
+    XCTAssertEqual(fixture.state.value.withLock { $0.listReads }, 2)
+  }
+
+  func testListChangeReceivedInBackgroundIsReadOnReturn() async {
+    let fixture = SyncRecoveryFixture()
+    let store = fixture.workspace { _ in }
+    defer { store.close() }
+    store.setPhase(.active)
+    await store.refresh([.threadList])
+    store.setPhase(.background)
+    fixture.state.value.withLock { $0.title = "Changed on another device" }
+    store.requestRefresh(.threadList)
+
+    store.setPhase(.active)
+    await store.resumePendingRefresh()?.value
+
+    XCTAssertEqual(store.list.threads.first?.title, "Changed on another device")
+    XCTAssertEqual(fixture.state.value.withLock { $0.listReads }, 2)
+  }
+
+  func testStartupDeferredByBackgroundStillReadsTheListOnReturn() async {
+    let fixture = SyncRecoveryFixture()
+    let store = fixture.workspace { _ in }
+    defer { store.close() }
+    store.setPhase(.background)
+    await store.refresh([.startup])
+    fixture.state.value.withLock { $0.title = "Startup completed on return" }
+
+    store.setPhase(.active)
+    await store.resumePendingRefresh()?.value
+
+    XCTAssertEqual(store.list.threads.first?.title, "Startup completed on return")
+    XCTAssertEqual(fixture.state.value.withLock { $0.listReads }, 1)
+  }
+
+  func testAnInterruptedListReadResumesWithoutAnotherNotification() async throws {
+    let fixture = SyncRecoveryFixture()
+    let store = fixture.workspace { _ in }
+    let response = SyncRecoveryGate()
+    let started = expectation(description: "The list HTTP read started")
+    let cancelled = expectation(description: "Background cancelled the list HTTP read")
+    store.setPhase(.active)
+    await store.refresh([.threadList])
+    fixture.state.value.withLock {
+      $0.blockedPath = "/api/chat-threads/snapshot"
+      $0.beforeResponse = {
+        started.fulfill()
+        await withTaskCancellationHandler {
+          await response.wait()
+        } onCancel: {
+          cancelled.fulfill()
+        }
+        throw URLError(.networkConnectionLost)
+      }
+    }
+    let reading = Task { await store.refresh([.threadList]) }
+    addTeardownBlock {
+      reading.cancel()
+      let closing = await store.close()
+      response.open()
+      await reading.value
+      await closing.value
+    }
+    await fulfillment(of: [started], timeout: 3)
+    store.setPhase(.background)
+    await fulfillment(of: [cancelled], timeout: 3)
+    await reading.value
+    fixture.state.value.withLock {
+      $0.blockedPath = nil
+      $0.beforeResponse = nil
+      $0.title = "Interrupted read recovered"
+    }
+
+    store.setPhase(.active)
+    await store.resumePendingRefresh()?.value
+
+    XCTAssertEqual(store.list.threads.first?.title, "Interrupted read recovered")
+    XCTAssertNil(store.list.error)
+    response.open()
+  }
+
+  func testContinuityGapAndManualRefreshReadChangesAfterAPreservedResume() async {
+    let fixture = SyncRecoveryFixture()
+    let store = fixture.workspace { _ in }
+    defer { store.close() }
+    store.setPhase(.active)
+    await store.refresh([.startup])
+    fixture.state.value.withLock { $0.title = "Recovered after a continuity gap" }
+    await store.refresh([.realtimeResume])
+    XCTAssertEqual(fixture.state.value.withLock { $0.listReads }, 1)
+
+    store.requestRefresh(.realtimeGap)
+    await store.resumePendingRefresh()?.value
+    XCTAssertEqual(store.list.threads.first?.title, "Recovered after a continuity gap")
+    fixture.state.value.withLock { $0.title = "Manually refreshed" }
+    await store.refresh()
+    XCTAssertEqual(store.list.threads.first?.title, "Manually refreshed")
+    XCTAssertEqual(fixture.state.value.withLock { $0.listReads }, 3)
+  }
+
   func testTransientListFailureKeepsSavedChatsAndRecoversWithoutAnActionError() async {
     let fixture = SyncRecoveryFixture()
     let retryStarted = expectation(description: "Read is waiting to retry")
@@ -323,6 +442,8 @@ private final class SyncRecoveryFixture: Sendable {
             """)
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      case "/api/chat/events/catch-up":
+        return ChatHTTPResponse(body: #"{"events":{},"notFoundThreads":[]}"#)
       case "/api/indicators":
         return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
       case "/api/chat-threads/\(Self.threadID)/event-snapshot":

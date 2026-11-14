@@ -22,6 +22,11 @@ enum ChatInvalidation: Hashable, Sendable {
       || self == .foregroundResume || self == .realtimeGap
   }
 
+  /// Match Web's list baseline: startup, explicit changes, manual retry, and lost continuity.
+  var refreshesThreadList: Bool {
+    self == .startup || self == .threadList || self == .reconnected || self == .realtimeGap
+  }
+
   var coordinatesModelRecovery: Bool {
     self == .foregroundResume || self == .realtimeResume || self == .realtimeGap
   }

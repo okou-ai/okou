@@ -384,9 +384,9 @@ final class WorkspaceStore {
       refreshTask = nil
       warmingTask?.cancel()
       warmingTask = nil
-      list.cancelRefresh()
+      if list.cancelRefresh() { invalidations.insert(.threadList) }
       for conversation in conversations.values { conversation.cancelRefresh() }
-      // Reconnect with a complete catch-up, including invalidations received while suspended.
+      // Other resources revalidate on return; list reads retain only unfinished or new work.
       invalidations.insert(.foregroundResume)
     } else if active {
       refreshSuspended = false
@@ -457,7 +457,11 @@ final class WorkspaceStore {
 
   /// Awaitable refresh boundary used by manual refresh and deterministic HTTP tests.
   func refresh(_ batch: Set<ChatInvalidation> = [.reconnected]) async {
-    guard !closed, !needsUpgrade, !refreshSuspended, !Task.isCancelled else { return }
+    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    if refreshSuspended {
+      invalidations.formUnion(batch.filter(\.refreshesThreadList))
+      return
+    }
     let generation = refreshGeneration
     let full = batch.contains(where: \.requiresFullRefresh)
     let selectedBeforeRefresh = selectedThreadID
@@ -469,7 +473,7 @@ final class WorkspaceStore {
     async let projectRefresh: Void = refreshProjects(batch)
     async let indicatorsRefresh: Void = refreshIndicators(batch)
     guard refreshGeneration == generation, !Task.isCancelled else { return }
-    if full || batch.contains(.threadList) {
+    if batch.contains(where: \.refreshesThreadList) {
       await list.refresh(includingIndicators: false)
     }
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
