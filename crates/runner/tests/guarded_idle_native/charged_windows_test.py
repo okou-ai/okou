@@ -736,5 +736,95 @@ finally:
             self.assertEqual(sentinel.read_text(), "previous evidence")
 
 
+class CollectorResourceOwnershipTests(unittest.TestCase):
+    def test_setup_and_publication_failures_retire_original_resources(self):
+        script = r"""
+import contextlib, errno, os, pathlib, resource, signal, sys
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+import charged_windows_probe as probe
+
+output, case = pathlib.Path(sys.argv[2]), sys.argv[3]
+previous = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
+original_signal = signal.signal
+mask = signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM})
+limit = resource.getrlimit(resource.RLIMIT_NOFILE)
+fillers = []
+failure = None
+publication_error = OSError(errno.EIO, "capture persistence failed")
+baseline = set(os.listdir("/proc/self/fd"))
+try:
+    with contextlib.ExitStack() as patches:
+        if case == "descriptors":
+            resource.setrlimit(resource.RLIMIT_NOFILE, (32, limit[1]))
+            while True:
+                try:
+                    fillers.append(os.open(os.devnull, os.O_RDONLY))
+                except OSError as error:
+                    assert error.errno == errno.EMFILE
+                    break
+            for _ in range(2):
+                os.close(fillers.pop())
+        elif case == "signal":
+            def install(number, handler):
+                old = original_signal(number, handler)
+                if number == signal.SIGTERM and handler is probe.stop:
+                    signal.raise_signal(number)
+                return old
+            patches.enter_context(patch.object(signal, "signal", install))
+        else:
+            original_open = pathlib.Path.open
+            def open_file(path, *args, **kwargs):
+                if path == output / "capture.json":
+                    raise publication_error
+                return original_open(path, *args, **kwargs)
+            patches.enter_context(patch.object(pathlib.Path, "open", open_file))
+        try:
+            probe.run(output, output.parent)
+        except (OSError, probe.QualificationCancelled) as error:
+            failure = error
+        assert failure is not None
+        if case == "descriptors":
+            assert failure.errno == errno.EMFILE
+            assert pathlib.Path(failure.filename).name == "worker.stderr"
+        elif case == "signal":
+            assert isinstance(failure, probe.QualificationCancelled)
+        else:
+            assert failure is publication_error
+    while fillers:
+        os.close(fillers.pop())
+    resource.setrlimit(resource.RLIMIT_NOFILE, limit)
+    # Keep the original exception/traceback live: GC is not owner retirement.
+    current = set(os.listdir("/proc/self/fd"))
+    assert current == baseline, (case, baseline, current)
+    assert all(signal.getsignal(sig) == handler for sig, handler in previous.items()), case
+finally:
+    while fillers:
+        os.close(fillers.pop())
+    resource.setrlimit(resource.RLIMIT_NOFILE, limit)
+    for sig, handler in previous.items():
+        original_signal(sig, handler)
+    signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+"""
+        for case in ("descriptors", "signal", "publication"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        "-B",
+                        "-c",
+                        script,
+                        str(OWNER),
+                        str(Path(directory) / "capture"),
+                        case,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

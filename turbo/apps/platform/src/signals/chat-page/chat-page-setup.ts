@@ -14,6 +14,7 @@ import {
 import { SIDEBAR_PARAM } from "./chat-thread-pane-navigation.ts";
 import { createThreadMetaLookup } from "./chat-thread-event-sourcing.ts";
 import { recordBootstrapThreadMetadataTiming$ } from "../../lib/posthog.ts";
+import { restoreNarrowSidebarScroll$ } from "./chat-layout.ts";
 
 const resolveLeftThreadMeta$ = createThreadMetaLookup();
 const resolveRightThreadMeta$ = createThreadMetaLookup();
@@ -92,6 +93,9 @@ const internalSetupChatPage$ = command(
         : set(unloadRightThread$),
     ]);
     signal.throwIfAborted();
+    // Same-thread navigation retains the viewport but ends the old page's
+    // closing await. The new page explicitly adopts its preserved reading.
+    await set(restoreNarrowSidebarScroll$, signal);
   },
 );
 

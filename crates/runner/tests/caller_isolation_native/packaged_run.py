@@ -297,10 +297,9 @@ def vm(command, log_path, receipt, timeout=240, max_bytes=131072):
             receipt["cleanup"] = "running"
             signal.pthread_sigmask(signal.SIG_SETMASK, mask)
             deadline = time.monotonic() + timeout
-            selector = selectors.DefaultSelector()
-            selector.register(child.stdout, selectors.EVENT_READ)
-            size = 0
-            try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(child.stdout, selectors.EVENT_READ)
+                size = 0
                 while True:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
@@ -319,8 +318,6 @@ def vm(command, log_path, receipt, timeout=240, max_bytes=131072):
                 child.wait(timeout=5)
                 if child.returncode:
                     raise ValueError(f"VMM exit {child.returncode}")
-            finally:
-                selector.close()
     finally:
         signal.pthread_sigmask(signal.SIG_BLOCK, signals)
         try:

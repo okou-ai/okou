@@ -29,7 +29,6 @@ import * as systemStoragePresignedUrlCacheSchema from "./runtime/system-storage-
 import * as blobSchema from "./schema/blob";
 
 import * as sandboxTelemetrySchema from "./schema/sandbox-telemetry";
-import * as runnerSchema from "./schema/runner-job-queue";
 import * as runnerStateSchema from "./runtime/runner-state";
 import * as chatAgentRunContextSchema from "./schema/chat-agent-run-context";
 import * as chatRelationSchema from "./schema/chat-relation";
@@ -209,7 +208,6 @@ export const schema = {
   ...blobSchema,
 
   ...sandboxTelemetrySchema,
-  ...runnerSchema,
   ...runnerStateSchema,
   ...chatAgentRunContextSchema,
   ...chatRelationSchema,

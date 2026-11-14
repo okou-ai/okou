@@ -13,6 +13,40 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1131.1](https://github.com/okou-ai/okou/compare/app-v0.1131.0...app-v0.1131.1) (2026-11-14)
+
+
+### Performance Improvements
+
+* **app:** narrow browser view subscriptions ([#47184](https://github.com/okou-ai/okou/issues/47184)) ([f2520eb](https://github.com/okou-ai/okou/commit/f2520eb57a3dc0407bd54014e87b96d6ebe8e632))
+
+## [0.1131.0](https://github.com/okou-ai/okou/compare/app-v0.1130.2...app-v0.1131.0) (2026-11-14)
+
+
+### Features
+
+* **browser:** generate address and google search urls locally ([#47099](https://github.com/okou-ai/okou/issues/47099)) ([6be0c8e](https://github.com/okou-ai/okou/commit/6be0c8e4347ab15140b293b702d7029e742aa77d))
+* **browser:** guide saved-password filling in native forms ([#47165](https://github.com/okou-ai/okou/issues/47165)) ([a32a809](https://github.com/okou-ai/okou/commit/a32a809515a18986dd6c172e70e549d244521636))
+
+
+### Bug Fixes
+
+* **app:** keep browser tab icons and close controls usable ([#47162](https://github.com/okou-ai/okou/issues/47162)) ([87c637e](https://github.com/okou-ai/okou/commit/87c637e61d7b8523da4b930cb5591279939f2a8c))
+
+
+### Refactoring
+
+* **platform:** stack virtual chat rows in a positioned window ([#47160](https://github.com/okou-ai/okou/issues/47160)) ([b64cc19](https://github.com/okou-ai/okou/commit/b64cc199ba7676cd6c351336f5d1ae9d27ed75d4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.64.0
+    * @okouai/core bumped to 8.839.3
+    * @okouai/ui bumped to 1.21.19
+
 ## [0.1130.2](https://github.com/okou-ai/okou/compare/app-v0.1130.1...app-v0.1130.2) (2026-11-14)
 
 

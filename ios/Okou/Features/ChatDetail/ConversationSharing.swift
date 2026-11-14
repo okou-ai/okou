@@ -50,6 +50,11 @@ final class ConversationSharing {
   var selectedCount: Int { currentSelection.count }
   var link: URL? { visibility.map { webURL.appending(path: "share/threads/\($0.id)") } }
 
+  func selectedIDs(in group: ChatShareGroup) -> Set<String> {
+    let storedIDs = Set(selectedGroups.values.flatMap(\.eventIDs))
+    return Set(group.eventIDs).intersection(storedIDs)
+  }
+
   func start() {
     guard !closed else { return }
     cancel()
@@ -88,11 +93,12 @@ final class ConversationSharing {
     let ids = selectedIDs
     let ordered = groups.flatMap(\.eventIDs).filter { ids.contains($0) }
     let audience = audience
-    let id = attemptID ?? UUID().uuidString.lowercased()
+    let previousAttempt = attemptID
+    let id = previousAttempt ?? UUID().uuidString.lowercased()
     attemptID = id
     return run {
       // A previous request can have committed even if its response was lost.
-      if let existing = try await self.existingShare(id) {
+      if previousAttempt != nil, let existing = try await self.existingShare(id) {
         try Task.checkCancellation()
         let confirmed: ChatShareVisibility
         if existing.audience == audience {
@@ -103,15 +109,13 @@ final class ConversationSharing {
         }
         try Task.checkCancellation()
         self.visibility = confirmed
-        self.showsCreatedLink = true
         return
       }
       let created = try await self.client.shareThread(
         threadID: self.threadID, eventIDs: ordered, audience: audience, id: id)
-      let visibility = try await self.client.chatShareVisibility(id: created)
       try Task.checkCancellation()
-      self.visibility = visibility
-      self.showsCreatedLink = true
+      // Creation confirms this audience. Fetch the current revision only when changing it.
+      self.visibility = ChatShareVisibility(id: created, audience: audience, revision: nil)
     }
   }
 
@@ -119,8 +123,10 @@ final class ConversationSharing {
   func changeAudience(_ audience: ChatShareAudience) -> Task<Void, Never>? {
     guard !isBusy, let visibility else { return nil }
     return run {
+      let current = try await self.client.chatShareVisibility(id: visibility.id)
+      try Task.checkCancellation()
       let updated = try await self.client.changeChatShareVisibility(
-        id: visibility.id, audience: audience, revision: visibility.revision)
+        id: visibility.id, audience: audience, revision: current.revision)
       try Task.checkCancellation()
       self.visibility = updated
       self.audience = updated.audience

@@ -1,5 +1,5 @@
 {
-  "id": "e775a5c4-1dca-49fc-9925-02b5893446d5",
+  "id": "bdab5670-220e-4262-bfe5-361c1b8b29e3",
   "prevId": "97f1b179-d62e-4f0e-a477-af7c4e2ea117",
   "version": "7",
   "dialect": "postgresql",
@@ -19810,18 +19810,6 @@
           "notNull": true,
           "default": true
         },
-        "widget_push_token": {
-          "name": "widget_push_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "widget_pushed_at": {
-          "name": "widget_pushed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp",
@@ -26619,126 +26607,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.runner_job_queue": {
-      "name": "runner_job_queue",
-      "schema": "",
-      "columns": {
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "runner_group": {
-          "name": "runner_group",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "profile": {
-          "name": "profile",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'vm0/default'"
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reuse_key": {
-          "name": "reuse_key",
-          "type": "varchar(263)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "execution_context": {
-          "name": "execution_context",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "discovery_started_at": {
-          "name": "discovery_started_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "runner_job_queue_group_profile_idx": {
-          "name": "runner_job_queue_group_profile_idx",
-          "columns": [
-            {
-              "expression": "runner_group",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "profile",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "runner_job_queue_expires_at_idx": {
-          "name": "runner_job_queue_expires_at_idx",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "runner_job_queue_run_id_agent_runs_id_fk": {
-          "name": "runner_job_queue_run_id_agent_runs_id_fk",
-          "tableFrom": "runner_job_queue",
-          "tableTo": "agent_runs",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },

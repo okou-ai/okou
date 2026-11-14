@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 from cancellation_cases import CANCELLATION_CASES
+from collection_publication_cases import COLLECTION_PUBLICATION_CASES
 from global_state_cases import GLOBAL_STATE_CASES
 from import_cases import IMPORT_CASES
 from resource_failure_cases import RESOURCE_FAILURE_CASES
@@ -29,6 +30,7 @@ BINARY = (
 )
 
 CASES = [
+    *COLLECTION_PUBLICATION_CASES,
     *THROWING_TASK_CASES,
     *CANCELLATION_CASES,
     *RESOURCE_FAILURE_CASES,

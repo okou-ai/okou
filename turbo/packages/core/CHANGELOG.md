@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.839.3](https://github.com/okou-ai/okou/compare/core-v8.839.2...core-v8.839.3) (2026-11-14)
+
+
+### Refactoring
+
+* **api:** remove legacy runner acquisition and queue readers ([#47138](https://github.com/okou-ai/okou/issues/47138)) ([50c5853](https://github.com/okou-ai/okou/commit/50c5853b53188770b588d3f8a3df267830d295a3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.64.0
+
 ## [8.839.2](https://github.com/okou-ai/okou/compare/core-v8.839.1...core-v8.839.2) (2026-11-14)
 
 

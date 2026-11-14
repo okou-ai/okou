@@ -365,6 +365,54 @@ function PendingFormDestination({
   );
 }
 
+function BrowserSavedPasswordHelp({
+  action,
+}: {
+  readonly action: PendingBrowserInputAction;
+}) {
+  const { t } = useTranslation();
+  if (
+    !action.fields.some((field) => {
+      return field.fieldKind === "username" || field.fieldKind === "password";
+    })
+  ) {
+    return null;
+  }
+  return (
+    <div className="flex min-w-0 flex-col gap-1 break-words text-xs leading-5 text-muted-foreground">
+      <p>
+        {t(($) => {
+          return $.chat.browserInput.savedPasswordsHint;
+        })}
+      </p>
+      <details>
+        <summary className="w-fit cursor-default rounded-md py-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          {t(($) => {
+            return $.chat.browserInput.savedPasswordsHelp;
+          })}
+        </summary>
+        <div className="flex flex-col gap-2 pt-2">
+          <p>
+            {t(($) => {
+              return $.chat.browserInput.savedPasswordsChrome;
+            })}
+          </p>
+          <p>
+            {t(($) => {
+              return $.chat.browserInput.savedPasswordsSafari;
+            })}
+          </p>
+          <p>
+            {t(($) => {
+              return $.chat.browserInput.savedPasswordsSite;
+            })}
+          </p>
+        </div>
+      </details>
+    </div>
+  );
+}
+
 function DraftClearingState({
   signals,
   children,
@@ -1669,6 +1717,7 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
       onSubmit={submitForm}
     >
       <PendingFormDestination action={activeAction} showTitle={showTitle} />
+      <BrowserSavedPasswordHelp action={activeAction} />
       <BrowserInputFields
         action={activeAction}
         draft={draft}

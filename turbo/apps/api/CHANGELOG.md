@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.70.5](https://github.com/okou-ai/okou/compare/api-v2.70.4...api-v2.70.5) (2026-11-14)
+
+
+### Refactoring
+
+* **api:** remove legacy runner acquisition and queue readers ([#47138](https://github.com/okou-ai/okou/issues/47138)) ([50c5853](https://github.com/okou-ai/okou/commit/50c5853b53188770b588d3f8a3df267830d295a3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.64.0
+    * @okouai/core bumped to 8.839.3
+    * @okouai/db bumped to 2.35.6
+    * @okouai/pi-agent-runtime bumped to 1.51.125
+
 ## [2.70.4](https://github.com/okou-ai/okou/compare/api-v2.70.3...api-v2.70.4) (2026-11-14)
 
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.249.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.7...runner-rs-v0.249.8) (2026-11-14)
+
+
+### Refactoring
+
+* **python:** own native controller resources through failures ([#47188](https://github.com/okou-ai/okou/issues/47188)) ([5ef9174](https://github.com/okou-ai/okou/commit/5ef9174db8deca6ee59cc15605ac303dcb34e851))
+
+## [0.249.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.6...runner-rs-v0.249.7) (2026-11-14)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.5...runner-rs-v0.249.6) (2026-11-14)
 
 ### Release Dependencies

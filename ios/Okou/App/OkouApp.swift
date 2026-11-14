@@ -203,7 +203,7 @@ private struct WorkspaceRootView: View {
   let notifications: NotificationService
   let lifecycle: WorkspaceLifecycle
   private var store: WorkspaceStore { lifecycle.store }
-  @State private var sidebar = SidebarInteraction()
+  private var sidebar: SidebarInteraction { store.sidebarInteraction }
   @State private var topContentHeight: CGFloat = 0
   @State private var taglineIndex = Int.random(in: 0..<64)
   @Binding private var accountError: String?

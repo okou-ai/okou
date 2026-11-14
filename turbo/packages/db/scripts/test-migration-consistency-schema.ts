@@ -195,11 +195,10 @@ async function validateHistoricalRunCleanupBeforeGuard(
   }
 }
 
-/** Late callback, job and usage publication must reject Run deletion. */
+/** Late callback and usage publication must reject Run deletion. */
 async function validateRestrictiveRunReferences(dbUrl: string): Promise<void> {
   const names = [
     "agent_run_callbacks_run_id_agent_runs_id_fk",
-    "runner_job_queue_run_id_agent_runs_id_fk",
     "usage_event_run_id_agent_runs_id_fk",
   ];
   const client = new Client({ connectionString: dbUrl });

@@ -433,6 +433,11 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
     let fixture = try ModelRecoveryFixture(bootstrap: WorkspaceModelBootstrap())
     addTeardownBlock { await fixture.close() }
     try await fixture.start()
+    await fixture.workspace.resumePendingRefresh()?.value
+    let listReads = fixture.http.history.requests.values.withLock {
+      $0.filter { $0 == "GET /api/chat-threads/events" }.count
+    }
+    XCTAssertEqual(listReads, 1)
     fixture.workspace.setPhase(.background)
     fixture.http.setRemoteModel("claude-model")
 
@@ -442,6 +447,10 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
     XCTAssertEqual(fixture.workspace.newModelSelection.selection.model, "claude-model")
     XCTAssertTrue(fixture.workspace.newModelSelection.canSend)
     XCTAssertEqual(fixture.http.modelRequests, fixture.http.expectedModelRequests(rounds: 2))
+    XCTAssertEqual(
+      fixture.http.history.requests.values.withLock {
+        $0.filter { $0 == "GET /api/chat-threads/events" }.count
+      }, listReads)
   }
 
   func testResumedChannelPreservesTheBaselineAndStillAppliesPreferenceNotifications() async throws {

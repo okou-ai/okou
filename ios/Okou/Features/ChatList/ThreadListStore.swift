@@ -873,7 +873,10 @@ final class ThreadListStore {
     didFail(failure)
   }
 
-  func cancelRefresh() {
+  /// Return unfinished list demand so a suspended workspace can resume it explicitly.
+  @discardableResult
+  func cancelRefresh() -> Bool {
+    let interruptedList = listTask != nil
     refreshGeneration = UUID()
     listTask?.cancel()
     indicatorsTask?.cancel()
@@ -884,6 +887,7 @@ final class ThreadListStore {
     refreshAgain = false
     indicatorsAgain = false
     indicatorsError = nil
+    return interruptedList
   }
 
   isolated deinit { listTask?.cancel() }

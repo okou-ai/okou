@@ -49,6 +49,7 @@ export function mockBrowserCdp(
     readonly extensionRuntimeId?: string;
     readonly nativeBase64?: boolean;
     readonly endpointAliases?: readonly string[];
+    readonly enforceFrameWindow?: boolean;
   } = {},
 ) {
   context.mocks.browser.nativeTextInsertion();
@@ -93,6 +94,11 @@ export function mockBrowserCdp(
   const sessionPeers = new Map<string, BrowserWebSocketPeer>();
   const discoveryPeers = new Set<BrowserWebSocketPeer>();
   const capturing = new Set<string>();
+  const frameWindows = new Map<
+    string,
+    { limit: number; outstanding: number }
+  >();
+  let frameAcksHeld = false;
   const crashedTargets = new Set(options.crashedTargets);
   const captures: unknown[] = [];
   const heldReplies = new Map<string, (response: ProtocolReply) => void>();
@@ -169,6 +175,13 @@ export function mockBrowserCdp(
     }
     if (target && windowStates.get(target.windowId ?? 0) === "minimized") {
       return;
+    }
+    const window = frameWindows.get(sessionId);
+    if (options.enforceFrameWindow && window) {
+      if (window.outstanding >= window.limit) {
+        return;
+      }
+      window.outstanding++;
     }
     event(
       "Page.screencastFrame",
@@ -579,6 +592,13 @@ export function mockBrowserCdp(
       case "Page.startScreencast": {
         captures.push(request.params);
         capturing.add(request.sessionId!);
+        const { maxFramesInFlight } = object({
+          maxFramesInFlight: number().optional(),
+        }).parse(request.params);
+        frameWindows.set(request.sessionId!, {
+          limit: maxFramesInFlight ?? 3,
+          outstanding: 0,
+        });
         if (options.streaming !== false) {
           queueMicrotask(() => {
             const sessionId = request.sessionId ?? "example-page-session";
@@ -599,6 +619,14 @@ export function mockBrowserCdp(
       }
       case "Page.stopScreencast": {
         capturing.delete(request.sessionId!);
+        frameWindows.delete(request.sessionId!);
+        return {};
+      }
+      case "Page.screencastFrameAck": {
+        const window = frameWindows.get(request.sessionId!);
+        if (window && !frameAcksHeld) {
+          window.outstanding = Math.max(0, window.outstanding - 1);
+        }
         return {};
       }
       case "Page.getFrameTree": {
@@ -812,6 +840,9 @@ export function mockBrowserCdp(
       }
     },
     frame,
+    holdFrameAcks() {
+      frameAcksHeld = true;
+    },
     targets,
     input,
     detached,

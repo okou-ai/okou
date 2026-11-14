@@ -1620,6 +1620,48 @@ function createConfigurationActions(
   };
 }
 
+function createViewPredicates(
+  controls$: BrowserSignals["controls$"],
+  presentation$: BrowserSignals["presentation$"],
+) {
+  const tabsDisabled$ = computed((get) => {
+    return get(controls$).tabsDisabled;
+  });
+  const canMutateTabs$ = computed((get) => {
+    return get(controls$).canMutateTabs;
+  });
+  const canCreateTab$ = computed((get) => {
+    return get(controls$).canCreate;
+  });
+  const canvasVisible$ = computed((get) => {
+    const presentation = get(presentation$);
+    return (
+      presentation.status === "streaming" ||
+      presentation.retainedFrame ||
+      presentation.loadingPreview
+    );
+  });
+  const contentVisible$ = computed((get) => {
+    const presentation = get(presentation$);
+    return (
+      presentation.status === "streaming" ||
+      presentation.loadingPreview ||
+      presentation.blank
+    );
+  });
+  const showBlankPage$ = computed((get) => {
+    return get(presentation$).blank;
+  });
+  return {
+    tabsDisabled$,
+    canMutateTabs$,
+    canCreateTab$,
+    canvasVisible$,
+    contentVisible$,
+    showBlankPage$,
+  };
+}
+
 function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
   const { installed$, authority$, pending$, model } = context;
   const retainedFrame$ = computed((get) => {
@@ -1740,6 +1782,7 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
     recovering$,
     streaming$,
     presentation$,
+    ...createViewPredicates(controls$, presentation$),
     navigation$,
     history$,
     navigationScope$,
