@@ -1567,7 +1567,7 @@ function BrowserClipboard({ signals }: { readonly signals: BrowserSignals }) {
 // React restores input properties after events, so render the applied native type.
 function BrowserInput({ signals }: { readonly signals: BrowserSignals }) {
   const { t } = useTranslation();
-  const controls = useGet(signals.controls$);
+  const streaming = useGet(signals.streaming$);
   const type = useGet(signals.proxyType$);
   const inputRef = useSet(signals.refs.input$);
   return (
@@ -1578,7 +1578,7 @@ function BrowserInput({ signals }: { readonly signals: BrowserSignals }) {
         aria-label={t(($) => {
           return $.browserViewer.remoteInput;
         })}
-        disabled={!controls.streaming}
+        disabled={!streaming}
         type={type}
         inputMode="text"
         enterKeyHint="enter"
