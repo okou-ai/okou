@@ -3195,7 +3195,7 @@ function formatCompactDuration(totalSeconds: number): string {
 const RUN_SECTION_LABEL_CLASS =
   "min-w-0 max-w-full shrink-0 break-words font-serif text-sm leading-5 italic text-muted-foreground/50";
 const RUN_SECTION_ROW_CLASS =
-  "@[900px]:grid @[900px]:grid-cols-[36px_1fr] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
+  "grid grid-cols-1 @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
 
 function ChatThreadDateDivider({ divider }: { divider: ChatDateDivider }) {
   if (divider.label === null) {
@@ -3988,7 +3988,7 @@ function ChatEventSkeletonPair({ compact = false }: { compact?: boolean }) {
         className={
           nameLine
             ? CHAT_THREAD_NAME_LINE_ASSISTANT_MESSAGE_ROW_CLASS
-            : "flex flex-col gap-2 @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start"
+            : CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS
         }
       >
         {nameLine ? (
