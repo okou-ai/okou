@@ -13,7 +13,7 @@ async fn supplied_publication_binds_run_scoped_controls_and_completion() {
     .await;
     let provider = api_provider_for_test(server.url(), CancellationToken::new());
     let registration = provider.cancel_tokens.register(run_id).await.unwrap();
-    let mut publication: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+    let mut publication: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
     publication["runId"] = serde_json::json!(run_id);
     publication["reuseKey"] = serde_json::json!("thread:supplied");
     publication["sandboxToken"] = serde_json::json!("supplied-run-token");
@@ -73,7 +73,8 @@ async fn supplied_runs_keep_distinct_completion_authority_when_settled_in_revers
     let mut mocks = Vec::new();
     for token in ["first-publication-token", "second-publication-token"] {
         let run_id = RunId::new_v4();
-        let mut publication: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+        let mut publication: Value =
+            serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
         publication["runId"] = serde_json::json!(run_id);
         publication["sandboxToken"] = serde_json::json!(token);
         let context =

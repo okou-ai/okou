@@ -1,8 +1,5 @@
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
-import {
-  preparedExecutionContextSchema,
-  type StoredExecutionContext,
-} from "@okouai/api-contracts/contracts/runners";
+import type { ExecutionInput } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { command, computed, type Computed } from "ccstate";
@@ -11,7 +8,7 @@ import { array, boolean, object } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { rawSqlReadDb$ } from "../external/db";
 import { agentInstructionsSelectionSql } from "./agent-instructions-claim.service";
-import { createClaimExecutionContext } from "./claim-execution-context";
+import { createExecutionContext } from "./execution-context";
 import { contentBundleAvailableCondition } from "./content-bundle-claim";
 import {
   cachedContentBundleUrlSchema,
@@ -38,7 +35,7 @@ import {
 /** Retained result of this graph's own durable admission, never a stored payload. */
 export interface AdmittedRunLaunch {
   readonly run: ExecutionPublicationRun;
-  readonly executionContext: StoredExecutionContext;
+  readonly executionContext: ExecutionInput;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string | null;
@@ -62,7 +59,7 @@ export function createDirectRunPreparation(
     const input = await get(input$);
     return { run: input.run, executionContext: input.executionContext };
   });
-  const materialized$ = createClaimExecutionContext(executionInput$);
+  const materialized$ = createExecutionContext(executionInput$);
   const prepared$ = computed(async (get) => {
     const materialized = await get(materialized$);
     if (materialized.status === "unavailable") {
@@ -73,7 +70,7 @@ export function createDirectRunPreparation(
     }
     return {
       materialized,
-      context: preparedExecutionContextSchema.parse(materialized.result.data),
+      context: materialized.result.data,
     };
   });
   const packages$ = computed(async (get) => {
@@ -178,7 +175,6 @@ export const prepareDirectRun$ = command(
       runnerGroup: input.runnerGroup,
       profile: input.profile,
       records: prepared.materialized.connectorOperationTimings,
-      phase: "dispatch",
     });
     return {
       executionContext: publication.responseBody,

@@ -18,10 +18,10 @@ use crate::test_fixtures::raw_http::{
     read_http_request,
 };
 
-const RUNNER_CLAIM_RESPONSE_FIXTURE: &str = include_str!(
-    "../../../../../../turbo/packages/api-contracts/src/contracts/__tests__/fixtures/runner-claim-response.json"
+const RUNNER_EXECUTION_CONTEXT_FIXTURE: &str = include_str!(
+    "../../../../../../turbo/packages/api-contracts/src/contracts/__tests__/fixtures/runner-execution-context.json"
 );
-const RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID: &str = "00000000-0000-4000-8000-000000020985";
+const RUNNER_EXECUTION_CONTEXT_FIXTURE_RUN_ID: &str = "00000000-0000-4000-8000-000000020985";
 const TEST_RUNNER_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
 
 const TEST_HEARTBEAT_GENERATION: u64 = 7;

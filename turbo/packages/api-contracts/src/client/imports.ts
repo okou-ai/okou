@@ -1558,8 +1558,6 @@ export const clientContractImportManifest = [
       "runnersCancellationContract",
       "runnersConnectorRuntimeSyncContract",
       "runnersHeartbeatContract",
-      "runnersJobClaimContract",
-      "runnersPollContract",
       "runnersSteerContract",
     ],
     bindings: [

@@ -2,8 +2,9 @@ use super::*;
 
 #[test]
 fn complete_publication_preserves_canonical_execution_inputs() {
-    let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
-    let context = decode_execution_publication(RUNNER_CLAIM_RESPONSE_FIXTURE.as_bytes()).unwrap();
+    let run_id: RunId = RUNNER_EXECUTION_CONTEXT_FIXTURE_RUN_ID.parse().unwrap();
+    let context =
+        decode_execution_publication(RUNNER_EXECUTION_CONTEXT_FIXTURE.as_bytes()).unwrap();
     assert_eq!(context.run_id, run_id);
     assert_eq!(context.prompt, "Inspect the fixture repository");
     let storages = &context.storage_manifest.as_ref().unwrap().storages;
@@ -98,7 +99,7 @@ fn complete_publication_rejects_invalid_bundles_and_conflicting_mounts() {
         "storage-conflict",
         "instruction-conflict",
     ] {
-        let mut body: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+        let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
         match kind {
             "missing" => {
                 body.as_object_mut().unwrap().remove("contentBundles");
@@ -149,7 +150,7 @@ fn complete_publication_rejects_invalid_bundles_and_conflicting_mounts() {
 
 #[test]
 fn publication_normalizes_framework_paths_and_ignores_forged_application_metadata() {
-    let mut body: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+    let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
     body["instructionFile"] = serde_json::json!({"storageMount":"/home/user/.ssh"});
     body["localResumeSessionId"] = serde_json::json!("forged-local-session");
     body["localSecretEnvKeys"] = serde_json::json!(["FORGED_SECRET"]);
@@ -180,7 +181,7 @@ fn malformed_publication_diagnostics_do_not_expose_dynamic_keys_or_secret_values
         serde_json::json!({"networkPolicies":{"private-key":{"unknownPolicy":42}}}),
         serde_json::json!({"sandboxToken":{"private-token":true}}),
     ] {
-        let mut body: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+        let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
         for (key, value) in malformed.as_object().unwrap() {
             body[key] = value.clone();
         }

@@ -1,55 +1,40 @@
-import { boolean, int, object, uuid, enum as zEnum, type output } from "zod";
+import { enum as zEnum, type output } from "zod";
 import {
   RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
   type RunnerPreference,
 } from "@okouai/api-contracts/contracts/runners";
-import { runStatusSchema } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runnerState } from "@okouai/db/runtime/runner-state";
 import {
   and,
   arrayContains,
   asc,
-  count,
   desc,
   eq,
-  exists,
   gt,
   inArray,
   isNotNull,
-  isNull,
   ne,
   or,
   sql,
   type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
-import {
-  alias,
-  QueryBuilder,
-  type SubqueryWithSelection,
-} from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { command } from "ccstate";
-
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
-  zodDriverValueDecoder,
   zodEnumDriverValueDecoder,
 } from "../../lib/db-structured-result";
-import { nowDate, nowDateSql, timestampWithoutTimeZone } from "../../lib/time";
-import {
-  parseRawRows,
-  pgTimestampWithoutTimezoneToDateSchema,
-} from "../../lib/db-raw-rows";
+import { nowDate } from "../../lib/time";
 import {
   withPgPoolAcquisitionCapture,
   withPgQueryExecutionCapture,
 } from "../../lib/db-instrumentation";
-import { db$, writeDb$ } from "../external/db";
+import { db$ } from "../external/db";
 import { settleIncludingAbort } from "../utils";
 import { RunnerReusePreferenceTiming } from "./runner-reuse-timing.service";
 
@@ -66,63 +51,11 @@ const RUNNER_REUSE_STATE_FRESH_MS = 180_000;
 
 const predecessorRun = alias(agentRuns, "reuse_predecessor_run");
 const predecessorRunnerState = alias(runnerState, "predecessor_runner");
-const currentRun = alias(agentRuns, "reuse_current_run");
 const predecessorHomeEvidenceKindSchema = zEnum([
   "advertised",
   "expected",
   "location",
 ]);
-
-type RunnerThreadPredecessor = SubqueryWithSelection<
-  { id: typeof chatThreads.frameworkSessionRunId },
-  "reuse_pred"
->;
-
-/**
- * Pending discovery reads the owned Thread's durable predecessor, independently
- * of its native readiness or a retained producer row. The first claim advances
- * the Thread to this Run; discovery must stop treating it as the predecessor.
- * Native intent is already frozen in the job's execution context before claim.
- *
- * Callers left-join the result laterally `ON true` and every reuse condition
- * reads its `id` column. Primary-key joins yield at most one row, so a missing
- * predecessor is NULL, as with a scalar subquery, while PostgreSQL plans the
- * lookup once instead of once per referencing condition.
- */
-function runnerThreadPredecessor(args: {
-  readonly runId: SQLWrapper;
-  readonly reuseKey: SQLWrapper;
-}): RunnerThreadPredecessor {
-  return new QueryBuilder()
-    .select({ id: chatThreads.frameworkSessionRunId })
-    .from(currentRun)
-    .innerJoin(
-      chatThreads,
-      and(
-        eq(chatThreads.id, currentRun.chatThreadId),
-        eq(chatThreads.userId, currentRun.userId),
-      ),
-    )
-    .innerJoin(
-      agents,
-      and(
-        eq(agents.id, chatThreads.agentId),
-        eq(agents.orgId, currentRun.orgId),
-      ),
-    )
-    .where(
-      and(
-        eq(currentRun.id, args.runId),
-        eq(currentRun.status, "pending"),
-        ne(chatThreads.frameworkSessionRunId, currentRun.id),
-        eq(
-          args.reuseKey,
-          sql`'thread:' || cast(${currentRun.chatThreadId} as text)`,
-        ),
-      ),
-    )
-    .as("reuse_pred");
-}
 
 interface PendingRunnerThread {
   readonly threadId: string;
@@ -131,7 +64,11 @@ interface PendingRunnerThread {
   readonly predecessorRunId: string | null;
 }
 
-/** Final publication independently fences this captured owned Thread binding. */
+/**
+ * Read the captured owned Thread binding; final publication fences it again.
+ * The primary-key lateral lookup yields at most one row and shares its
+ * predecessor ID across all reuse conditions. A missing binding leaves it NULL.
+ */
 function pendingRunnerThreadPredecessor(args: PendingRunnerThread) {
   return new QueryBuilder()
     .select({ id: chatThreads.frameworkSessionRunId })
@@ -191,23 +128,6 @@ function activeProducerCondition(args: {
   );
 }
 
-function pendingFinalizingProducerCondition(args: {
-  readonly inventory:
-    | typeof runnerState.activeReuseProducers
-    | typeof predecessorRunnerState.activeReuseProducers;
-  readonly reuseKey: SQLWrapper;
-  readonly profile: SQLWrapper;
-  readonly sourceRunId: SQLWrapper;
-  readonly protectedAfter: Date;
-}): SQL {
-  return (
-    and(
-      discoveryWindowCondition(args.protectedAfter),
-      activeProducerCondition(args),
-    ) ?? sql`false`
-  );
-}
-
 function advertisedHomeCondition(args: {
   readonly reuseKey: SQLWrapper;
   readonly profile: SQLWrapper;
@@ -228,29 +148,6 @@ function advertisedHomeCondition(args: {
   )`;
 }
 
-function runnerStateHas(args: {
-  readonly runnerId?: string;
-  readonly runnerGroup: string;
-  readonly freshAfter: Date;
-  readonly resourceCondition: SQL;
-}): SQL {
-  return exists(
-    new QueryBuilder()
-      .select({ runnerId: runnerState.runnerId })
-      .from(runnerState)
-      .where(
-        and(
-          eq(runnerState.runnerGroup, args.runnerGroup),
-          ...(args.runnerId ? [eq(runnerState.runnerId, args.runnerId)] : []),
-          eq(runnerState.mode, "running"),
-          gt(runnerState.lastSeenAt, args.freshAfter),
-          gt(runnerState.heartbeatGeneration, 0),
-          args.resourceCondition,
-        ),
-      ),
-  );
-}
-
 function finalizingPredecessorCondition(args: {
   readonly runnerId: SQLWrapper;
   readonly heartbeatGeneration: SQLWrapper;
@@ -263,8 +160,8 @@ function finalizingPredecessorCondition(args: {
   // producer-bearing heartbeat has not reached the API yet. The process
   // generation and short completion deadline bound that advisory preference.
   // admittableProfiles is remaining capacity, so it may be empty while this
-  // process is still finalizing. Poll and Ably recipients enforce static
-  // profile support before admitting the advisory preference.
+  // process is still finalizing. Direct dispatch checks profile eligibility
+  // before using this advisory preference.
   return and(
     inArray(predecessorRun.status, ["completed", "cancelled", "failed"]),
     or(
@@ -339,412 +236,30 @@ function predecessorHomeEvidenceConditions(args: {
   };
 }
 
-function predecessorHomeRunnerExists(args: {
-  readonly runnerId?: string;
-  readonly runnerGroup: string;
-  readonly predecessorRunId: SQLWrapper;
-  readonly reuseKey: SQLWrapper;
-  readonly profile: SQLWrapper;
-  readonly freshAfter: Date;
-  readonly completedAfter: Date;
-  readonly evidence: "expectedPublication" | "hostLocation";
-}): SQL {
-  const home = predecessorHomeEvidenceConditions(args);
-  return exists(
-    new QueryBuilder()
-      .select({ runnerId: runnerState.runnerId })
-      .from(runnerState)
-      .innerJoin(predecessorRun, eq(predecessorRun.id, args.predecessorRunId))
-      .leftJoin(
-        predecessorRunnerState,
-        eq(predecessorRunnerState.runnerId, predecessorRun.runnerId),
-      )
-      .where(
-        and(
-          eq(runnerState.runnerGroup, args.runnerGroup),
-          ...(args.runnerId ? [eq(runnerState.runnerId, args.runnerId)] : []),
-          eq(runnerState.mode, "running"),
-          gt(runnerState.lastSeenAt, args.freshAfter),
-          gt(runnerState.heartbeatGeneration, 0),
-          home[args.evidence],
-        ),
-      ),
-  );
-}
-
-function predecessorHomePollCandidates(args: {
-  readonly runnerId: string;
-  readonly runnerGroup: string;
-  readonly predecessorRunId: SQLWrapper;
-  readonly reuseKey: SQLWrapper;
-  readonly profile: SQLWrapper;
-  readonly freshAfter: Date;
-  readonly completedAfter: Date;
-}) {
-  const { runnerId, ...conditions } = args;
-  const candidates = (evidence: "expectedPublication" | "hostLocation") => {
-    return {
-      global: predecessorHomeRunnerExists({ ...conditions, evidence }),
-      local: predecessorHomeRunnerExists({ ...conditions, evidence, runnerId }),
-    };
-  };
-  return {
-    expectedPublication: candidates("expectedPublication"),
-    hostLocation: candidates("hostLocation"),
-  };
-}
-
-function runnerStateHasFinalizingPredecessor(args: {
-  readonly runnerId?: string;
-  readonly runnerGroup: string;
-  readonly predecessorRunId: SQLWrapper;
-  readonly profile: SQLWrapper;
-  readonly freshAfter: Date;
-  readonly completedAfter: Date;
-  readonly activeProducer: SQL;
-}): SQL {
-  return exists(
-    new QueryBuilder()
-      .select({ runnerId: runnerState.runnerId })
-      .from(runnerState)
-      .innerJoin(predecessorRun, eq(predecessorRun.id, args.predecessorRunId))
-      .where(
-        and(
-          eq(runnerState.runnerGroup, args.runnerGroup),
-          ...(args.runnerId ? [eq(runnerState.runnerId, args.runnerId)] : []),
-          eq(runnerState.mode, "running"),
-          gt(runnerState.lastSeenAt, args.freshAfter),
-          gt(runnerState.heartbeatGeneration, 0),
-          finalizingPredecessorCondition({
-            ...args,
-            runnerId: runnerState.runnerId,
-            heartbeatGeneration: runnerState.heartbeatGeneration,
-          }),
-        ),
-      ),
-  );
-}
-
-function discoveryWindowCondition(after: Date): SQL | undefined {
-  return or(
-    isNull(runnerJobQueue.discoveryStartedAt),
-    gt(runnerJobQueue.discoveryStartedAt, after),
-  );
-}
-
-function finalizingPollCandidates(args: {
-  readonly runnerId: string;
-  readonly runnerGroup: string;
-  readonly predecessorRunId: SQLWrapper;
-  readonly reuseKey: SQLWrapper;
-  readonly profile: SQLWrapper;
-  readonly freshAfter: Date;
-  readonly completedAfter: Date;
-  readonly protectedAfter: Date;
-}) {
-  const producer = {
-    reuseKey: args.reuseKey,
-    profile: args.profile,
-    sourceRunId: predecessorRun.id,
-    protectedAfter: args.protectedAfter,
-  };
-  const conditions = {
-    runnerGroup: args.runnerGroup,
-    predecessorRunId: args.predecessorRunId,
-    profile: args.profile,
-    freshAfter: args.freshAfter,
-    completedAfter: args.completedAfter,
-    activeProducer: pendingFinalizingProducerCondition({
-      ...producer,
-      inventory: runnerState.activeReuseProducers,
-    }),
-  };
-  return {
-    global: runnerStateHasFinalizingPredecessor(conditions),
-    local: runnerStateHasFinalizingPredecessor({
-      ...conditions,
-      runnerId: args.runnerId,
-    }),
-  };
-}
-
-function advertisedReusePollCandidates(args: {
-  readonly runnerId: string;
-  readonly runnerGroup: string;
-  readonly predecessorRunId: SQLWrapper;
-  readonly reuseKey: SQLWrapper;
-  readonly profile: SQLWrapper;
-  readonly freshAfter: Date;
-}) {
-  const identity = { reuseKey: args.reuseKey, profile: args.profile };
-  const candidates = (resourceCondition: SQL) => {
-    return {
-      global: runnerStateHas({
-        runnerGroup: args.runnerGroup,
-        freshAfter: args.freshAfter,
-        resourceCondition,
-      }),
-      local: runnerStateHas({
-        runnerId: args.runnerId,
-        runnerGroup: args.runnerGroup,
-        freshAfter: args.freshAfter,
-        resourceCondition,
-      }),
-    };
-  };
-  return {
-    exactSandbox: candidates(
-      advertisedSandboxCondition({
-        ...identity,
-        sourceRunId: args.predecessorRunId,
-      }),
-    ),
-    predecessorHome: candidates(
-      advertisedHomeCondition({
-        ...identity,
-        sourceRunId: args.predecessorRunId,
-      }),
-    ),
-    reusable: candidates(advertisedSandboxCondition(identity)),
-    home: candidates(advertisedHomeCondition(identity)),
-  };
-}
-
-/**
- * Poll ordering runs before a job is selected, so any runner with qualifying
- * local reuse may prioritize the job independently of the globally selected
- * preference identity. `priority` reads each job's Thread predecessor from
- * `predecessor`, which the caller left-joins laterally after the job queue.
- */
-export function runnerReusePreferencePollPriority(args: {
-  readonly runnerId: string;
-  readonly runnerGroup: string;
-  readonly currentDate: Date;
-}): {
-  readonly predecessor: RunnerThreadPredecessor;
-  readonly priority: SQL;
-} {
-  const reuseRoutingAfter = new Date(
-    args.currentDate.getTime() - RUNNER_REUSE_ROUTING_WINDOW_MS,
-  );
-  const exactSandboxRoutingAfter = new Date(
-    args.currentDate.getTime() - RUNNER_EXACT_SANDBOX_ROUTING_WINDOW_MS,
-  );
-  const finalizingCompletedAfter = new Date(
-    args.currentDate.getTime() - RUNNER_FINALIZING_COMPLETION_BRIDGE_MS,
-  );
-  const finalizingWaitAfter = new Date(
-    args.currentDate.getTime() - RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
-  );
-  const freshAfter = runnerReuseStateFreshAfter(args.currentDate);
-  const { reuseKey, profile } = runnerJobQueue;
-  const predecessor = runnerThreadPredecessor({
-    runId: runnerJobQueue.runId,
-    reuseKey,
-  });
-  const predecessorRunId = predecessor.id;
-  const advertised = advertisedReusePollCandidates({
-    runnerId: args.runnerId,
-    runnerGroup: args.runnerGroup,
-    predecessorRunId,
-    reuseKey,
-    profile,
-    freshAfter,
-  });
-  const predecessorHome = predecessorHomePollCandidates({
-    runnerId: args.runnerId,
-    runnerGroup: args.runnerGroup,
-    reuseKey,
-    profile,
-    predecessorRunId,
-    freshAfter,
-    completedAfter: finalizingCompletedAfter,
-  });
-  const finalizing = finalizingPollCandidates({
-    runnerId: args.runnerId,
-    runnerGroup: args.runnerGroup,
-    reuseKey,
-    profile,
-    predecessorRunId,
-    freshAfter,
-    completedAfter: finalizingCompletedAfter,
-    protectedAfter: finalizingWaitAfter,
-  });
-  const priority = sql`CASE
-    WHEN ${and(
-      discoveryWindowCondition(exactSandboxRoutingAfter),
-      isNotNull(runnerJobQueue.reuseKey),
-      isNotNull(predecessorRunId),
-      advertised.exactSandbox.global,
-    )}
-    THEN CASE WHEN ${advertised.exactSandbox.local} THEN 7 ELSE 0 END
-    WHEN ${and(
-      isNotNull(runnerJobQueue.reuseKey),
-      discoveryWindowCondition(finalizingWaitAfter),
-      finalizing.global,
-    )}
-    THEN CASE
-      WHEN ${advertised.exactSandbox.local} THEN 7
-      WHEN ${finalizing.local} THEN 6
-      ELSE 0
-    END
-    WHEN ${and(
-      discoveryWindowCondition(reuseRoutingAfter),
-      isNotNull(runnerJobQueue.reuseKey),
-      advertised.predecessorHome.global,
-    )}
-    THEN CASE
-      WHEN ${advertised.exactSandbox.local} THEN 7
-      WHEN ${advertised.predecessorHome.local} THEN 5
-      ELSE 0
-    END
-    WHEN ${and(
-      discoveryWindowCondition(reuseRoutingAfter),
-      isNotNull(runnerJobQueue.reuseKey),
-      predecessorHome.expectedPublication.global,
-    )}
-    THEN CASE
-      WHEN ${advertised.exactSandbox.local} THEN 7
-      WHEN ${advertised.predecessorHome.local} THEN 5
-      WHEN ${predecessorHome.expectedPublication.local} THEN 4
-      ELSE 0
-    END
-    WHEN ${and(
-      discoveryWindowCondition(reuseRoutingAfter),
-      isNotNull(runnerJobQueue.reuseKey),
-      advertised.reusable.global,
-    )}
-    THEN CASE WHEN ${advertised.reusable.local} THEN 3 ELSE 0 END
-    WHEN ${and(
-      discoveryWindowCondition(reuseRoutingAfter),
-      isNotNull(runnerJobQueue.reuseKey),
-      advertised.home.global,
-    )}
-    THEN CASE
-      WHEN ${advertised.reusable.local} THEN 3
-      WHEN ${advertised.home.local} THEN 2
-      ELSE 0
-    END
-    WHEN ${and(
-      discoveryWindowCondition(reuseRoutingAfter),
-      isNotNull(runnerJobQueue.reuseKey),
-      predecessorHome.hostLocation.global,
-    )}
-    THEN CASE WHEN ${predecessorHome.hostLocation.local} THEN 1 ELSE 0 END
-    ELSE 0
-  END`;
-  return { predecessor, priority };
-}
-
 type PositiveRunnerPreference = Extract<
   RunnerPreference,
   { kind: "preference" }
 >;
-type NoRunnerPreference = Extract<RunnerPreference, { kind: "noPreference" }>;
 
-const preferenceResolutionByTier = {
-  exactSandbox: "exact_source_run",
-  finalizingPredecessor: "finalizing_predecessor",
-  reusableSandbox: "matching_reusable_sandbox",
-  homeCache: "matching_home_cache",
-  predecessorHome: "source_home",
-} as const satisfies Record<PositiveRunnerPreference["tier"], string>;
-
-const noPreferenceResolutionByReason = {
-  noReuseKey: "no_reuse_key",
-  expired: "expired",
-  noViableHolder: "no_viable_holder",
-  lookupError: "lookup_error",
-} as const satisfies Record<NoRunnerPreference["reason"], string>;
-
-type RunnerPreferenceTelemetryResolution =
-  | (typeof preferenceResolutionByTier)[keyof typeof preferenceResolutionByTier]
-  | (typeof noPreferenceResolutionByReason)[keyof typeof noPreferenceResolutionByReason];
-
-export function runnerReusePreferenceLookupError(): RunnerPreference {
-  return {
-    kind: "noPreference",
-    reason: "lookupError",
-  };
+interface RunnerReuseCandidate {
+  readonly runnerIdentity: PositiveRunnerPreference["runnerIdentity"];
+  readonly hasAdvertisedPredecessorSandbox: boolean;
+  readonly hasLocalFinalizingPredecessor: boolean;
+  readonly predecessorHomeEvidence: output<
+    typeof predecessorHomeEvidenceKindSchema
+  > | null;
+  readonly predecessorRunnerHasActiveProducer: boolean;
+  readonly candidateRunnerHasActiveProducer: boolean;
+  readonly hasReusableSandbox: boolean;
+  readonly hasHomeCache: boolean;
+  readonly hasPredecessorHostLocation: boolean;
+  readonly predecessorCompletedAt: Date | null;
+  readonly predecessorRunId: string | null;
 }
-
-function runnerPreferenceTelemetryResolution(
-  preference: RunnerPreference,
-): RunnerPreferenceTelemetryResolution {
-  if (preference.kind === "noPreference") {
-    return noPreferenceResolutionByReason[preference.reason];
-  }
-  return preferenceResolutionByTier[preference.tier];
-}
-
-export function runnerPreferenceTelemetryDimensions(
-  preference: RunnerPreference,
-): Record<string, string> & {
-  readonly runner_preference_resolution: RunnerPreferenceTelemetryResolution;
-} {
-  return {
-    runner_preference_resolution:
-      runnerPreferenceTelemetryResolution(preference),
-    runner_preference_decision_kind: preference.kind,
-    ...(preference.kind === "preference"
-      ? {
-          runner_preference_tier: preference.tier,
-          runner_preference_runner_id: preference.runnerIdentity.runnerId,
-          runner_preference_heartbeat_generation: String(
-            preference.runnerIdentity.heartbeatGeneration,
-          ),
-          runner_preference_expires_at: preference.expiresAt,
-          ...(preference.tier === "predecessorHome"
-            ? {
-                runner_preference_home_evidence: preference.home.evidence,
-                ...(preference.home.evidence === "expected"
-                  ? {
-                      runner_preference_home_wait_until:
-                        preference.home.homeWaitUntil,
-                    }
-                  : {}),
-              }
-            : {}),
-        }
-      : { runner_preference_no_preference_reason: preference.reason }),
-  };
-}
-
-const runnerReuseCandidateSchema = object({
-  runnerIdentity: object({
-    runnerId: uuid(),
-    heartbeatGeneration: int().positive(),
-  }).strict(),
-  heartbeatSequence: int().nonnegative(),
-  hasAdvertisedPredecessorSandbox: boolean(),
-  hasLocalFinalizingPredecessor: boolean(),
-  predecessorHomeEvidence: predecessorHomeEvidenceKindSchema.nullable(),
-  predecessorRunnerHasActiveProducer: boolean(),
-  candidateRunnerHasActiveProducer: boolean(),
-  hasReusableSandbox: boolean(),
-  hasHomeCache: boolean(),
-  hasPredecessorHostLocation: boolean(),
-  predecessorCompletedAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
-  predecessorRunId: uuid().nullable(),
-  predecessorStatus: runStatusSchema.nullable(),
-  predecessorRunnerId: uuid().nullable(),
-  predecessorHeartbeatGeneration: int().nullable(),
-  predecessorHeartbeatSequence: int().nullable(),
-}).strict();
 
 const homeEvidenceDecoder = nullableDriverValueDecoder(
   zodEnumDriverValueDecoder(predecessorHomeEvidenceKindSchema),
 );
-const runStatusDecoder = nullableDriverValueDecoder(
-  zodEnumDriverValueDecoder(runStatusSchema),
-);
-
-type RunnerReuseCandidate = output<typeof runnerReuseCandidateSchema>;
-
-const runnerReuseDiscoverySchema = object({
-  discoveryStartedAt: pgTimestampWithoutTimezoneToDateSchema,
-  candidate: runnerReuseCandidateSchema.nullable(),
-}).strict();
 
 function advertisedReuseConditions(
   args: {
@@ -779,7 +294,6 @@ function advertisedReuseConditions(
 }
 
 function runnerReuseCandidatePlan(args: {
-  readonly runId: string;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
@@ -788,14 +302,9 @@ function runnerReuseCandidatePlan(args: {
   readonly shouldLookUpGenericReuse: boolean;
   readonly finalizingCompletedAfter: Date;
   readonly shouldLookUpFinalizingProducer: boolean;
-  readonly pendingThread?: PendingRunnerThread;
+  readonly thread: PendingRunnerThread;
 }) {
-  const predecessor = args.pendingThread
-    ? pendingRunnerThreadPredecessor(args.pendingThread)
-    : runnerThreadPredecessor({
-        runId: sql.param(args.runId),
-        reuseKey: sql.param(args.reuseKey),
-      });
+  const predecessor = pendingRunnerThreadPredecessor(args.thread);
   const predecessorRunId = predecessor.id;
   const {
     reusableCondition,
@@ -854,7 +363,6 @@ function runnerReuseCandidatePlan(args: {
     fields: {
       runnerId: runnerState.runnerId,
       heartbeatGeneration: runnerState.heartbeatGeneration,
-      heartbeatSequence: runnerState.heartbeatSequence,
       hasAdvertisedPredecessorSandbox: sql`${exactSandboxCondition}`.mapWith(
         pgBooleanDecoder,
       ),
@@ -877,13 +385,6 @@ function runnerReuseCandidatePlan(args: {
         pgBooleanDecoder,
       ),
       predecessorCompletedAt: predecessorRun.completedAt,
-      predecessorStatus: sql`${predecessorRun.status}`.mapWith(
-        runStatusDecoder,
-      ),
-      predecessorRunnerId: predecessorRunnerState.runnerId,
-      predecessorHeartbeatGeneration:
-        predecessorRunnerState.heartbeatGeneration,
-      predecessorHeartbeatSequence: predecessorRunnerState.heartbeatSequence,
       // Ready sandbox/home provenance survives deletion of the settled Run.
       predecessorRunId,
     },
@@ -909,125 +410,14 @@ function runnerReuseCandidatePlan(args: {
   };
 }
 
-interface RunnerReusePreferenceArgs {
-  readonly runId: string;
-  readonly runnerGroup: string;
-  readonly profile: string;
-  readonly reuseKey: string | null;
-  readonly discoveryStartedAt: Date | null;
-}
-
-interface RunnerReusePreferenceResolution {
-  readonly preference: RunnerPreference;
-  readonly waitBudgetSource?: "active_producer" | "completion_bridge";
-}
-
 export interface RunnerReusePreparation {
   readonly selection:
     | {
         readonly ok: true;
-        readonly value: {
-          readonly thread: PendingRunnerThread;
-          readonly candidate: RunnerReuseCandidate | null;
-        };
+        readonly value: RunnerReuseCandidate | null;
       }
     | { readonly ok: false; readonly error: unknown };
   readonly operations: ReturnType<RunnerReusePreferenceTiming["operations"]>;
-}
-
-function preparedReuseUnchanged(
-  args: RunnerReusePreferenceArgs,
-  prepared: Extract<RunnerReusePreparation["selection"], { ok: true }>["value"],
-): SQL {
-  const predecessor = runnerThreadPredecessor({
-    runId: sql.param(args.runId),
-    reuseKey: sql.param(args.reuseKey),
-  });
-  const predecessorUnchanged = sql`(SELECT ${predecessor.id} FROM ${predecessor}) IS NOT DISTINCT FROM ${prepared.thread.predecessorRunId}::uuid`;
-  const conditions: SQL[] = [predecessorUnchanged];
-  const candidate = prepared.candidate;
-  if (!candidate) {
-    return predecessorUnchanged;
-  }
-  conditions.push(
-    exists(
-      new QueryBuilder()
-        .select({ id: runnerState.runnerId })
-        .from(runnerState)
-        .where(
-          and(
-            eq(runnerState.runnerId, candidate.runnerIdentity.runnerId),
-            eq(runnerState.runnerGroup, args.runnerGroup),
-            eq(runnerState.mode, "running"),
-            gt(runnerState.lastSeenAt, runnerReuseStateFreshAfter(nowDate())),
-            eq(
-              runnerState.heartbeatGeneration,
-              candidate.runnerIdentity.heartbeatGeneration,
-            ),
-            eq(runnerState.heartbeatSequence, candidate.heartbeatSequence),
-          ),
-        ),
-    ),
-  );
-  // A competing discovery may expire the strongest tier before delivery.
-  // Validate every captured predecessor fact that weaker advice could use.
-  if (
-    (candidate.hasLocalFinalizingPredecessor ||
-      candidate.predecessorHomeEvidence !== null) &&
-    candidate.predecessorStatus !== null &&
-    candidate.predecessorRunId
-  ) {
-    conditions.push(
-      exists(
-        new QueryBuilder()
-          .select({ id: predecessorRun.id })
-          .from(predecessorRun)
-          .where(
-            and(
-              eq(predecessorRun.id, candidate.predecessorRunId),
-              eq(predecessorRun.status, candidate.predecessorStatus),
-              sql`${predecessorRun.completedAt} IS NOT DISTINCT FROM ${sql.param(candidate.predecessorCompletedAt, predecessorRun.completedAt)}`,
-            ),
-          ),
-      ),
-    );
-  }
-  if (
-    candidate.predecessorHomeEvidence === "expected" &&
-    candidate.predecessorRunnerHasActiveProducer &&
-    candidate.predecessorRunnerId !== null &&
-    candidate.predecessorHeartbeatGeneration !== null &&
-    candidate.predecessorHeartbeatSequence !== null
-  ) {
-    conditions.push(
-      exists(
-        new QueryBuilder()
-          .select({ id: predecessorRunnerState.runnerId })
-          .from(predecessorRunnerState)
-          .where(
-            and(
-              eq(
-                predecessorRunnerState.runnerId,
-                candidate.predecessorRunnerId,
-              ),
-              eq(
-                predecessorRunnerState.heartbeatGeneration,
-                candidate.predecessorHeartbeatGeneration,
-              ),
-              eq(
-                predecessorRunnerState.heartbeatSequence,
-                candidate.predecessorHeartbeatSequence,
-              ),
-              gt(
-                predecessorRunnerState.lastSeenAt,
-                runnerReuseStateFreshAfter(nowDate()),
-              ),
-            ),
-          ),
-      ),
-    );
-  }
-  return sql`(${and(...conditions)})`;
 }
 
 function predecessorCompletionBridgeActive(
@@ -1042,132 +432,14 @@ function predecessorCompletionBridgeActive(
   );
 }
 
-function preparedCompletionBridgeExpired(
-  candidate: RunnerReuseCandidate | null,
-): boolean {
-  if (
-    !candidate ||
-    candidate.hasAdvertisedPredecessorSandbox ||
-    candidate.predecessorCompletedAt === null
-  ) {
-    return false;
-  }
-  const requiresBridge = candidate.hasLocalFinalizingPredecessor
-    ? !candidate.candidateRunnerHasActiveProducer
-    : candidate.predecessorHomeEvidence === "expected" &&
-      !candidate.predecessorRunnerHasActiveProducer;
-  return (
-    requiresBridge && !predecessorCompletionBridgeActive(candidate, nowDate())
-  );
-}
-
-const finalizeRunnerJobDiscovery$ = command(
-  async (
-    { set },
-    args: RunnerReusePreferenceArgs & { readonly reuseKey: string },
-    prepared?: Extract<
-      RunnerReusePreparation["selection"],
-      { ok: true }
-    >["value"],
-  ) => {
-    const currentDate = nowDate();
-    const plan = runnerReuseCandidatePlan({
-      ...args,
-      ...runnerReuseLookupStages(args, currentDate),
-      freshAfter: runnerReuseStateFreshAfter(currentDate),
-      finalizingCompletedAfter: new Date(
-        currentDate.getTime() - RUNNER_FINALIZING_COMPLETION_BRIDGE_MS,
-      ),
-    });
-    const { runnerId, heartbeatGeneration, ...candidateFields } = plan.fields;
-    const jsonFields = {
-      ...candidateFields,
-      runnerIdentity: sql`jsonb_build_object(
-        'runnerId', ${runnerId}, 'heartbeatGeneration', ${heartbeatGeneration}
-      )`,
-      predecessorCompletedAt: sql`${plan.fields.predecessorCompletedAt}::text`,
-    };
-    const candidateJson = sql`jsonb_build_object(${sql.join(
-      Object.entries(jsonFields).flatMap(([key, value]) => {
-        return [sql`${key}::text`, sql`${value}`];
-      }),
-      sql`, `,
-    )})`;
-    const candidateQuery = new QueryBuilder()
-      .select({
-        candidate: candidateJson.mapWith(
-          zodDriverValueDecoder(runnerReuseCandidateSchema),
-        ),
-      })
-      .from(runnerState)
-      .leftJoinLateral(plan.predecessor, sql`true`)
-      .leftJoin(predecessorRun, plan.joinCondition)
-      .leftJoin(
-        predecessorRunnerState,
-        eq(predecessorRunnerState.runnerId, predecessorRun.runnerId),
-      )
-      .where(
-        and(plan.where, sql`NOT (SELECT valid FROM runner_reuse_prepared)`),
-      )
-      .orderBy(...plan.orderBy)
-      .limit(1);
-    const captured = prepared?.candidate;
-    const preparedJson = captured
-      ? sql`${JSON.stringify({
-          ...captured,
-          predecessorCompletedAt: captured.predecessorCompletedAt
-            ? timestampWithoutTimeZone(captured.predecessorCompletedAt)
-            : null,
-        })}::jsonb`
-      : sql`NULL::jsonb`;
-    const preparedValid =
-      prepared && !preparedCompletionBridgeExpired(prepared.candidate)
-        ? preparedReuseUnchanged(args, prepared)
-        : sql`false`;
-
-    // Fully consume validation and any fresh selection before sampling time.
-    // COALESCE also keeps a concurrent poll/notification winner's original time.
-    // The count dependency handles an empty candidate without starting early.
-    const statement = sql`
-      WITH runner_reuse_prepared AS MATERIALIZED (
-        SELECT ${preparedValid} AS valid
-      ), runner_reuse_candidate AS MATERIALIZED (
-        SELECT ${preparedJson} AS candidate
-        WHERE (SELECT valid FROM runner_reuse_prepared)
-        UNION ALL
-        (${candidateQuery})
-      )
-      UPDATE ${runnerJobQueue}
-      SET discovery_started_at = COALESCE(
-        ${runnerJobQueue.discoveryStartedAt},
-        (SELECT ${nowDateSql()} FROM
-          (SELECT ${count()} AS candidates FROM runner_reuse_candidate) AS ready
-          WHERE ready.candidates >= 0)
-      )
-      WHERE ${and(
-        eq(runnerJobQueue.runId, args.runId),
-        eq(runnerJobQueue.runnerGroup, args.runnerGroup),
-        gt(runnerJobQueue.expiresAt, sql`now()`),
-      )}
-      RETURNING ${runnerJobQueue.discoveryStartedAt}::text AS "discoveryStartedAt",
-        (SELECT candidate FROM runner_reuse_candidate) AS candidate
-    `;
-    const [row] = parseRawRows(
-      runnerReuseDiscoverySchema,
-      await set(writeDb$).execute(statement),
-    );
-    return row ?? null;
-  },
-);
-
 function runnerReuseLookupStages(
   args: {
-    readonly discoveryStartedAt: Date | null;
+    readonly admittedAt: Date | null;
   },
   currentDate: Date,
 ) {
   const currentTime = currentDate.getTime();
-  const startedAt = args.discoveryStartedAt?.getTime();
+  const startedAt = args.admittedAt?.getTime();
   return {
     shouldLookUpGenericReuse:
       startedAt === undefined ||
@@ -1195,14 +467,13 @@ const findRunnerReuseCandidate$ = command(
   async (
     { get },
     args: {
-      readonly runId: string;
       readonly runnerGroup: string;
       readonly profile: string;
       readonly reuseKey: string;
       readonly shouldLookUpGenericReuse: boolean;
       readonly shouldLookUpExactSandbox: boolean;
       readonly shouldLookUpFinalizingProducer: boolean;
-      readonly pendingThread?: PendingRunnerThread;
+      readonly thread: PendingRunnerThread;
     },
   ): Promise<RunnerReuseCandidate | null> => {
     const currentDate = nowDate();
@@ -1231,7 +502,6 @@ const findRunnerReuseCandidate$ = command(
             runnerId: row.runnerId,
             heartbeatGeneration: row.heartbeatGeneration,
           },
-          heartbeatSequence: row.heartbeatSequence,
           hasAdvertisedPredecessorSandbox: row.hasAdvertisedPredecessorSandbox,
           hasLocalFinalizingPredecessor: row.hasLocalFinalizingPredecessor,
           predecessorHomeEvidence: row.predecessorHomeEvidence,
@@ -1244,10 +514,6 @@ const findRunnerReuseCandidate$ = command(
           hasPredecessorHostLocation: row.hasPredecessorHostLocation,
           predecessorCompletedAt: row.predecessorCompletedAt,
           predecessorRunId: row.predecessorRunId,
-          predecessorStatus: row.predecessorStatus,
-          predecessorRunnerId: row.predecessorRunnerId,
-          predecessorHeartbeatGeneration: row.predecessorHeartbeatGeneration,
-          predecessorHeartbeatSequence: row.predecessorHeartbeatSequence,
         }
       : null;
   },
@@ -1300,22 +566,18 @@ export const prepareRunnerReusePreference$ = command(
     const timing = new RunnerReusePreferenceTiming();
     const currentDate = nowDate();
     const selection = await settleIncludingAbort(async () => {
-      return {
-        thread: args.thread,
-        candidate: await set(
-          selectRunnerReuseCandidate$,
-          {
-            ...args,
-            pendingThread: args.thread,
-            ...runnerReuseLookupStages(
-              { discoveryStartedAt: null },
-              currentDate,
-            ),
-          },
-          timing,
-          "holder_select",
-        ),
-      };
+      return await set(
+        selectRunnerReuseCandidate$,
+        {
+          runnerGroup: args.runnerGroup,
+          profile: args.profile,
+          reuseKey: args.reuseKey,
+          thread: args.thread,
+          ...runnerReuseLookupStages({ admittedAt: null }, currentDate),
+        },
+        timing,
+        "holder_select",
+      );
     });
     return {
       selection,
@@ -1324,101 +586,30 @@ export const prepareRunnerReusePreference$ = command(
   },
 );
 
-export const resolveRunnerReusePreference$ = command(
-  async (
-    { set },
-    args: RunnerReusePreferenceArgs,
-    timing?: RunnerReusePreferenceTiming,
-    prepared?: RunnerReusePreparation,
-  ): Promise<RunnerReusePreferenceResolution> => {
-    if (!args.reuseKey) {
-      return {
-        preference: { kind: "noPreference", reason: "noReuseKey" },
-      };
-    }
-    if (prepared && !prepared.selection.ok) {
-      throw prepared.selection.error;
-    }
-    const preparedSelection = prepared?.selection.ok
-      ? prepared.selection.value
-      : undefined;
-    const lookupStages = runnerReuseLookupStages(
-      preparedSelection ? { discoveryStartedAt: null } : args,
-      nowDate(),
-    );
-    if (runnerReuseLookupExpired(lookupStages)) {
-      return {
-        preference: { kind: "noPreference", reason: "expired" },
-      };
-    }
-    if (args.discoveryStartedAt !== null) {
-      // A later poll only reads evidence; it must not rewrite the queue row.
-      const candidate = await set(findRunnerReuseCandidate$, {
-        runId: args.runId,
-        runnerGroup: args.runnerGroup,
-        profile: args.profile,
-        reuseKey: args.reuseKey,
-        ...lookupStages,
-      });
-      return runnerReusePreferenceResult({
-        candidate,
-        discoveryStartedAt: args.discoveryStartedAt,
-      });
-    }
-    const discoveryArgs = { ...args, reuseKey: args.reuseKey };
-    const finalizeDiscovery = () => {
-      return set(finalizeRunnerJobDiscovery$, discoveryArgs, preparedSelection);
-    };
-    const discoveryCapture = timing?.start();
-    const discovery = await (discoveryCapture
-      ? withPgPoolAcquisitionCapture(discoveryCapture.pool, async () => {
-          const result = await withPgQueryExecutionCapture(
-            discoveryCapture.queries,
-            finalizeDiscovery,
-          );
-          discoveryCapture.success = true;
-          return result;
-        }).finally(() => {
-          timing?.record("delivery_finalize", discoveryCapture);
-        })
-      : finalizeDiscovery());
-    if (discovery === null) {
-      return {
-        preference: { kind: "noPreference", reason: "noViableHolder" },
-      };
-    }
-    return runnerReusePreferenceResult(discovery);
-  },
-);
-
 function runnerReusePreferenceResult(args: {
   readonly candidate: RunnerReuseCandidate | null;
-  readonly discoveryStartedAt: Date;
-}): RunnerReusePreferenceResolution {
-  const { candidate, discoveryStartedAt } = args;
+  readonly admittedAt: Date;
+}): RunnerPreference {
+  const { candidate, admittedAt } = args;
   const currentDate = nowDate();
-  const stages = runnerReuseLookupStages({ discoveryStartedAt }, currentDate);
+  const stages = runnerReuseLookupStages({ admittedAt }, currentDate);
   if (runnerReuseLookupExpired(stages)) {
-    return {
-      preference: { kind: "noPreference", reason: "expired" },
-    };
+    return { kind: "noPreference", reason: "expired" };
   }
   const reuseRoutingExpiresAt = new Date(
-    discoveryStartedAt.getTime() + RUNNER_REUSE_ROUTING_WINDOW_MS,
+    admittedAt.getTime() + RUNNER_REUSE_ROUTING_WINDOW_MS,
   );
   const predecessorWaitUntil = new Date(
-    discoveryStartedAt.getTime() + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+    admittedAt.getTime() + RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
   );
   const exactSandboxRoutingExpiresAt = new Date(
-    discoveryStartedAt.getTime() + RUNNER_EXACT_SANDBOX_ROUTING_WINDOW_MS,
+    admittedAt.getTime() + RUNNER_EXACT_SANDBOX_ROUTING_WINDOW_MS,
   );
 
   if (!candidate) {
     return {
-      preference: {
-        kind: "noPreference",
-        reason: stages.shouldLookUpGenericReuse ? "noViableHolder" : "expired",
-      },
+      kind: "noPreference",
+      reason: stages.shouldLookUpGenericReuse ? "noViableHolder" : "expired",
     };
   }
 
@@ -1430,13 +621,11 @@ function runnerReusePreferenceResult(args: {
       throw new Error("Exact sandbox preference is missing its predecessor");
     }
     return {
-      preference: {
-        kind: "preference",
-        runnerIdentity: candidate.runnerIdentity,
-        tier: "exactSandbox",
-        predecessorRunId: candidate.predecessorRunId,
-        expiresAt: exactSandboxRoutingExpiresAt.toISOString(),
-      },
+      kind: "preference",
+      runnerIdentity: candidate.runnerIdentity,
+      tier: "exactSandbox",
+      predecessorRunId: candidate.predecessorRunId,
+      expiresAt: exactSandboxRoutingExpiresAt.toISOString(),
     };
   }
 
@@ -1455,30 +644,25 @@ function runnerReusePreferenceResult(args: {
       );
     }
     return {
-      waitBudgetSource: candidate.candidateRunnerHasActiveProducer
-        ? "active_producer"
-        : "completion_bridge",
-      preference: {
-        kind: "preference",
-        runnerIdentity: candidate.runnerIdentity,
-        tier: "finalizingPredecessor",
-        predecessorRunId: candidate.predecessorRunId,
-        expiresAt: (candidate.candidateRunnerHasActiveProducer
-          ? predecessorWaitUntil
-          : new Date(
-              Math.min(
-                candidate.predecessorCompletedAt.getTime() +
-                  RUNNER_FINALIZING_COMPLETION_BRIDGE_MS,
-                predecessorWaitUntil.getTime(),
-              ),
-            )
-        ).toISOString(),
-      },
+      kind: "preference",
+      runnerIdentity: candidate.runnerIdentity,
+      tier: "finalizingPredecessor",
+      predecessorRunId: candidate.predecessorRunId,
+      expiresAt: (candidate.candidateRunnerHasActiveProducer
+        ? predecessorWaitUntil
+        : new Date(
+            Math.min(
+              candidate.predecessorCompletedAt.getTime() +
+                RUNNER_FINALIZING_COMPLETION_BRIDGE_MS,
+              predecessorWaitUntil.getTime(),
+            ),
+          )
+      ).toISOString(),
     };
   }
 
   if (!stages.shouldLookUpGenericReuse) {
-    return { preference: { kind: "noPreference", reason: "expired" } };
+    return { kind: "noPreference", reason: "expired" };
   }
   const homeEvidence = currentPredecessorHomeEvidence(
     candidate,
@@ -1493,19 +677,17 @@ function runnerReusePreferenceResult(args: {
   }
 
   if (!candidate.hasReusableSandbox && !candidate.hasHomeCache) {
-    return { preference: { kind: "noPreference", reason: "noViableHolder" } };
+    return { kind: "noPreference", reason: "noViableHolder" };
   }
   return {
-    preference: {
-      kind: "preference",
-      runnerIdentity: candidate.runnerIdentity,
-      tier: candidate.hasReusableSandbox ? "reusableSandbox" : "homeCache",
-      expiresAt: reuseRoutingExpiresAt.toISOString(),
-    },
+    kind: "preference",
+    runnerIdentity: candidate.runnerIdentity,
+    tier: candidate.hasReusableSandbox ? "reusableSandbox" : "homeCache",
+    expiresAt: reuseRoutingExpiresAt.toISOString(),
   };
 }
 
-/** A direct sender consumes its captured read without finalizing a queue row. */
+/** Resolve the captured direct placement read against the admission clock. */
 export function preparedRunnerReusePreference(
   preparation: RunnerReusePreparation | undefined,
   admittedAt: Date,
@@ -1517,9 +699,9 @@ export function preparedRunnerReusePreference(
     throw preparation.selection.error;
   }
   return runnerReusePreferenceResult({
-    candidate: preparation.selection.value.candidate,
-    discoveryStartedAt: admittedAt,
-  }).preference;
+    candidate: preparation.selection.value,
+    admittedAt,
+  });
 }
 
 function currentPredecessorHomeEvidence(
@@ -1544,7 +726,7 @@ function predecessorHomePreferenceResult(
   candidate: RunnerReuseCandidate,
   routingExpiresAt: Date,
   predecessorWaitUntil: Date,
-): RunnerReusePreferenceResolution {
+): RunnerPreference {
   if (
     !candidate.predecessorRunId ||
     candidate.predecessorHomeEvidence === null
@@ -1568,21 +750,12 @@ function predecessorHomePreferenceResult(
         }
       : { evidence };
   return {
-    ...(evidence === "expected"
-      ? {
-          waitBudgetSource: candidate.predecessorRunnerHasActiveProducer
-            ? "active_producer"
-            : "completion_bridge",
-        }
-      : {}),
-    preference: {
-      kind: "preference",
-      runnerIdentity: candidate.runnerIdentity,
-      tier: "predecessorHome",
-      predecessorRunId: candidate.predecessorRunId,
-      expiresAt: routingExpiresAt.toISOString(),
-      home,
-    },
+    kind: "preference",
+    runnerIdentity: candidate.runnerIdentity,
+    tier: "predecessorHome",
+    predecessorRunId: candidate.predecessorRunId,
+    expiresAt: routingExpiresAt.toISOString(),
+    home,
   };
 }
 
@@ -1603,13 +776,4 @@ function predecessorHomeWaitUntil(
       predecessorWaitUntil.getTime(),
     ),
   );
-}
-
-export function runnerReuseKeyTelemetryKind(
-  reuseKey: string | null,
-): "thread" | "session" | "none" {
-  if (reuseKey === null) {
-    return "none";
-  }
-  return reuseKey.startsWith("thread:") ? "thread" : "session";
 }

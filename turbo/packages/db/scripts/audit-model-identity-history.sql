@@ -32,9 +32,6 @@ SELECT selected_model, status, count(*) AS runs,
   count(*) FILTER (WHERE NULLIF(model_runtime_provider, '') IS NOT NULL AND NULLIF(model_runtime_model, '') IS NOT NULL AND built_in_model_key_id IS NOT NULL) AS captured_builtin_bindings
 FROM agent_runs WHERE selected_model IN ('auto', 'okou-1.0')
 GROUP BY selected_model, status ORDER BY selected_model, status;
-SELECT count(*) AS queued_jobs,
-  count(*) FILTER (WHERE run.selected_model = 'okou-1.0') AS legacy_jobs
-FROM runner_job_queue AS job JOIN agent_runs AS run ON run.id = job.run_id;
 SELECT run.selected_model, run.framework, count(*) AS retained_native_runs,
   count(*) FILTER (WHERE run.legacy_conversation_history_hash IS NOT NULL) AS blob_references
 FROM agent_runs AS run

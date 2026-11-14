@@ -69,9 +69,6 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     const heartbeat = await api.heartbeatRunner(runnerGroup);
     expect(heartbeat.body.ok).toBeTruthy();
 
-    const poll = await api.pollRunner(runnerGroup);
-    expect(poll.body.job).toBeNull();
-
     const missingRunId = randomUUID();
     const missingRun = await api.requestReadRun(actor, missingRunId, [404]);
     expectApiError(missingRun.body);
@@ -86,9 +83,9 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     expect(missingContext.body.error.code).toBe("NOT_FOUND");
   });
 
-  it("keeps official runner held-sandbox heartbeat and empty polling visible through public endpoints", async () => {
+  it("keeps official runner held-sandbox heartbeat visible through public endpoints", async () => {
     const api = createRunsApi(context);
-    const runnerGroup = await api.configureRunnerGroup();
+    await api.configureRunnerGroup();
     const heldSandboxStates = [
       {
         reuseKey: "thread:cron-bdd-held",
@@ -109,21 +106,9 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
       );
     }
     expect(heartbeat.body.ok).toBeTruthy();
-
-    const emptyPoll = await api.requestPollRunner(
-      true,
-      { group: runnerGroup, supportedProfiles: ["vm0/default"] },
-      [200],
-    );
-    if (emptyPoll.status !== 200) {
-      throw new Error(
-        `Expected empty poll to succeed, got ${emptyPoll.status}`,
-      );
-    }
-    expect(emptyPoll.body.job).toBeNull();
   });
 
-  it("rejects runner metadata reads and job claims at unauthenticated and missing boundaries", async () => {
+  it("rejects runner metadata reads at unauthenticated and missing boundaries", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
@@ -144,22 +129,6 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     );
     expectApiError(missingRunner.body);
     expect(missingRunner.body.error.code).toBe("NOT_FOUND");
-
-    const unauthenticatedClaim = await api.requestClaimRunnerJob(
-      false,
-      missingRunId,
-      [401],
-    );
-    expectApiError(unauthenticatedClaim.body);
-    expect(unauthenticatedClaim.body.error.code).toBe("UNAUTHORIZED");
-
-    const missingClaim = await api.requestClaimRunnerJob(
-      true,
-      missingRunId,
-      [404],
-    );
-    expectApiError(missingClaim.body);
-    expect(missingClaim.body.error.code).toBe("NOT_FOUND");
   });
 
   it("rejects unauthenticated and unauthorized runner, queue, read, context, and cancel requests", async () => {
@@ -210,14 +179,6 @@ describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", (
     );
     expectApiError(invalidHeartbeatGroup.body);
     expect(invalidHeartbeatGroup.body.error.code).toBe("BAD_REQUEST");
-
-    const unauthenticatedPoll = await api.requestPollRunner(
-      false,
-      { group: "vm0/test", supportedProfiles: ["vm0/default"] },
-      [401],
-    );
-    expectApiError(unauthenticatedPoll.body);
-    expect(unauthenticatedPoll.body.error.code).toBe("UNAUTHORIZED");
   });
 
   it("issues runner realtime tokens only for authenticated vm0 runner groups", async () => {

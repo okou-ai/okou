@@ -8,7 +8,7 @@ fn template(owner: &str) -> Value {
 
 #[test]
 fn publication_accepts_large_template_bundles_in_separate_owner_directories() {
-    let mut body: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+    let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
     body["contentBundles"]["templates"] =
         serde_json::json!([template("user-template"), template("presentation-template")]);
     let response = decode_execution_publication(&serde_json::to_vec(&body).unwrap()).unwrap();
@@ -39,7 +39,7 @@ fn publication_accepts_large_template_bundles_in_separate_owner_directories() {
 #[test]
 fn publication_rejects_unsafe_template_owners_references_and_duplicate_mounts() {
     for kind in ["owner", "id", "size", "url", "duplicate", "overlap", "null"] {
-        let mut body: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+        let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
         body["contentBundles"]["templates"] = serde_json::json!([template("user-template")]);
         match kind {
             "owner" => {
@@ -80,7 +80,7 @@ fn publication_rejects_unsafe_template_owners_references_and_duplicate_mounts() 
 
 #[test]
 fn publication_preserves_template_order_before_explicit_overlay_mounts() {
-    let mut body: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+    let mut body: Value = serde_json::from_str(RUNNER_EXECUTION_CONTEXT_FIXTURE).unwrap();
     let target = format!("/home/user/workspace/generated/user-template/{TEMPLATE_ID}/references");
     let mut overlay = body["storageManifest"]["storageMounts"][0].clone();
     overlay["mountPath"] = serde_json::json!(target);

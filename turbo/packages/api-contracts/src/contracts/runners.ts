@@ -19,11 +19,9 @@ import {
   uuid,
   enum as zEnum,
   ZodIssueCode,
-  unknown as zUnknown,
   type RefinementCtx,
   type infer as zInfer,
 } from "zod";
-
 import { MIN_EPOCH_MS_TIMESTAMP } from "./api-start-time";
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "./paid-tools";
 import {
@@ -144,51 +142,13 @@ export const RUNNER_BUILTIN_FIREWALL_RESOLVE_NAMES_MAX = 512;
 // Existing versioned writers stay on generation 2 until their activation slice.
 export const PI_MODEL_CONFIG_CURRENT_GENERATION = 2;
 export const PI_MODEL_CONFIG_DIALECT_TIER_GENERATION = 3;
-// Generation 4 was the retired native carrier; Runners built before its
-// removal may still advertise it, so OpenRouter Chat Completions skips to 5.
+// Generation 4 was the retired native carrier; Chat Completions uses 5.
 export const PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION = 5;
-export const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX = 8;
-/** Release versions are exact `MAJOR.MINOR.PATCH`; nothing here is a range. */
-export const releaseVersionSchema = string().regex(
-  /^\d+\.\d+\.\d+$/,
-  "Release versions are MAJOR.MINOR.PATCH",
-);
-
-export const runnerClaimPollReasonSchema = zEnum([
-  "immediate",
-  "deferred",
-  "wakeup_retry",
-  "slow",
-  "fast",
-]);
 
 const runnerProcessIdentitySchema = object({
   runnerId: uuid(),
   heartbeatGeneration: runnerHeartbeatGenerationSchema,
 }).strict();
-
-export const runnerClaimCapabilitiesSchema = object({
-  piModelConfigGenerations: array(number().int().positive().max(255))
-    .min(1)
-    .max(RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX)
-    .refine((generations) => {
-      return new Set(generations).size === generations.length;
-    }, "Pi model-config generations must be unique"),
-})
-  .strict()
-  .readonly();
-
-/**
- * Versions of the Okou CLI bundled into a Runner and installed into its rootfs.
- * Advertised on claim for attribution.
- */
-export const runnerInstalledVersionsSchema = object({
-  cli: releaseVersionSchema,
-  piAgentRuntime: releaseVersionSchema,
-  piSdk: string().min(1).max(64),
-})
-  .strict()
-  .readonly();
 
 /**
  * Atomic advisory decision for cross-runner reuse coordination. A preferred
@@ -230,38 +190,7 @@ export const runnerPreferenceSchema = union([
   }).strict(),
 ]);
 
-export const runnerPreferenceClaimStateSchema = zEnum([
-  "active",
-  "expired",
-  "cleared",
-]);
-
-const runnerClaimDiscoverySourceSchema = zEnum(["ably", "poll"]);
-const runnerClaimTelemetrySchema = object({
-  discoverySource: runnerClaimDiscoverySourceSchema.optional(),
-  jobDiscoveredToClaimRequestMs: number().int().nonnegative().optional(),
-  localAdmissionToClaimRequestMs: number().int().nonnegative().optional(),
-  directCandidateNotificationToEnqueueMs: number()
-    .int()
-    .nonnegative()
-    .optional(),
-  directCandidateInboxWaitMs: number().int().nonnegative().optional(),
-  providerDiscoveryToMainLoopMs: number().int().nonnegative().optional(),
-  mainLoopToLocalAdmissionMs: number().int().nonnegative().optional(),
-  pollDueToJobDiscoveredMs: number().int().nonnegative().optional(),
-  pollHttpRequestMs: number().int().nonnegative().optional(),
-  pollReason: runnerClaimPollReasonSchema.optional(),
-  runnerPreference: runnerPreferenceSchema.optional().catch(undefined),
-  runnerPreferenceClaimState: runnerPreferenceClaimStateSchema.optional(),
-}).catch({});
-
-const runnerPollTelemetrySchema = object({
-  pollReason: runnerClaimPollReasonSchema.optional(),
-}).catch({});
-
 const runnerProfileListSchema = array(string());
-const runnerSupportedProfileListSchema = runnerProfileListSchema.min(1);
-export const RUNNER_POLL_EXCLUDED_RUN_IDS_MAX = 128;
 
 const networkPolicyRefreshSchema = object({
   nextRefreshAt: iso.datetime({ offset: true }),
@@ -457,30 +386,6 @@ const runnerBuiltinFirewallsResolveResponseSchema = object({
  */
 export const DEFAULT_PROFILE = "vm0/default";
 
-const runnersPollBodySchema = object({
-  runnerId: uuid().optional(),
-  group: runnerGroupSchema,
-  supportedProfiles: runnerSupportedProfileListSchema,
-  excludedRunIds: array(uuid())
-    .max(RUNNER_POLL_EXCLUDED_RUN_IDS_MAX)
-    .optional(),
-  telemetry: runnerPollTelemetrySchema.optional(),
-});
-
-/**
- * Job schema for polling response
- */
-export const jobSchema = object({
-  runId: uuid(),
-  prompt: string(),
-  appendSystemPrompt: string().nullable(),
-  vars: record(string(), string()).nullable(),
-  experimentalProfile: string(),
-  cliAgentSessionId: string().nullable().optional(),
-  reuseKey: string().nullable().optional(),
-  runnerPreference: runnerPreferenceSchema,
-});
-
 export const heldSandboxStateSchema = object({
   reuseKey: string(),
   lastCompletedAt: iso.datetime({ offset: true }),
@@ -508,31 +413,6 @@ export const heldHomeStateSchema = object({
   )
     .min(1)
     .max(8),
-});
-
-/**
- * Runners poll contract - POST /api/runners/poll
- * Long-polling endpoint to fetch pending jobs for a runner group
- *
- * NOTE: Uses POST instead of GET to avoid CDN caching issues on preview deployments.
- * POST requests are never cached, ensuring the Authorization header is always read fresh.
- */
-export const runnersPollContract = c.router({
-  poll: {
-    method: "POST",
-    path: "/api/runners/poll",
-    headers: authHeadersSchema,
-    body: runnersPollBodySchema,
-    responses: {
-      200: object({
-        job: jobSchema.nullable(),
-      }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Poll for pending jobs (long-polling with 30s timeout)",
-  },
 });
 
 const archiveSizeSchema = number().int().min(1).max(Number.MAX_SAFE_INTEGER);
@@ -584,8 +464,8 @@ export const storageMountEntrySchema = object({
 });
 
 /**
- * Canonical resolved Storage mount persisted by the API before claim-time
- * capability negotiation. Ownership is API-only metadata and is intentionally
+ * Canonical resolved Storage mount prepared by the API before direct dispatch.
+ * Ownership is API-only metadata and is intentionally
  * omitted from the Runner wire representation.
  */
 export const storedStorageMountEntrySchema = storageMountEntrySchema.extend({
@@ -939,13 +819,13 @@ const storedSkillBundleSchema = contentBundleSchema
   .strict();
 
 /**
- * Complete API-owned runtime preparation, assembled at Claim before durable
- * ownership. The stored queue contract below captures only irrecoverable input.
+ * Complete API-owned runtime preparation, assembled before direct dispatch.
+ * The admission input below captures only irrecoverable decisions.
  */
 const preparedExecutionContextBaseSchema = object({
-  // Exact Official content is selected at admission, never refreshed at claim.
+  // Exact Official content is frozen at admission.
   officialWorkflowBundles: array(storedSkillBundleSchema).optional(),
-  // Current authorized Seed references selected at Claim.
+  // Current authorized Seed references selected during execution preparation.
   seedSkillBundles: array(storedSkillBundleSchema),
   // Current explicitly selected template guidance.
   templateGuidanceBundles: array(storedTemplateGuidanceBundleSchema).optional(),
@@ -969,7 +849,7 @@ const preparedExecutionContextBaseSchema = object({
   // This field must not be included in the runner-facing ExecutionContext.
   secretValueEnvironmentKeys: array(string()).nullable(),
   // Connector-owned runtime vars used by proxy/firewall template resolution.
-  // User-provided run vars stay in agent_runs.vars and are merged at claim time.
+  // Run vars stay in agent_runs.vars and merge during execution preparation.
   vars: record(string(), string()).nullable().optional(),
   nativeContinuation: nativeContinuationSchema,
   // AES-256-GCM encrypted Record<string, string>. Keys are the runtime secret
@@ -1026,8 +906,8 @@ const preparedExecutionContextBaseSchema = object({
   piModelConfig: piModelConfigSchema.optional(),
 });
 
-/** Queue input. Run facts and current configuration are reconstructed at Claim. */
-export const storedExecutionContextSchema = preparedExecutionContextBaseSchema
+/** In-memory admission input; current Run sources are reconstructed before dispatch. */
+export const executionInputSchema = preparedExecutionContextBaseSchema
   .pick({
     nativeContinuation: true,
     customWorkflowSelection: true,
@@ -1044,7 +924,7 @@ export const storedExecutionContextSchema = preparedExecutionContextBaseSchema
     }),
   });
 
-/** Complete Claim preparation also supplies diagnostics and the Runner response. */
+/** Complete execution preparation also supplies diagnostics and the Runner response. */
 const preparedExecutionContextObjectSchema =
   preparedExecutionContextBaseSchema.extend({
     cliAgentType: string(),
@@ -1060,22 +940,7 @@ export const preparedExecutionContextSchema =
   preparedExecutionContextObjectSchema.superRefine(requireCompletePiFields);
 
 /**
- * Claim-time reader that inspects Pi generation support before decoding the
- * generation-specific route. Other prepared-context readers remain fully typed.
- */
-const claimPreparedExecutionContextObjectSchema =
-  preparedExecutionContextObjectSchema.extend({
-    piModelConfig: zUnknown().optional(),
-  });
-
-/** Complete normalized inputs, before generation-specific Pi negotiation. */
-export const claimPreparedExecutionContextSchema =
-  claimPreparedExecutionContextObjectSchema.superRefine(
-    requireCompletePiFields,
-  );
-
-/**
- * Execution context returned when claiming a job.
+ * Complete execution context sent directly to the selected Runner.
  *
  * This is the canonical producer schema. The runner's `ExecutionContext` is a
  * tolerant consumer projection and intentionally does not mirror every field.
@@ -1084,7 +949,7 @@ export const claimPreparedExecutionContextSchema =
 const executionContextObjectSchema = object({
   // Selected immutable packages, including an empty set for agentless jobs.
   contentBundles: claimedContentBundlesSchema,
-  // Response-only telemetry context; unavailable for non-chat or older claims.
+  // Response-only telemetry context; unavailable for non-chat executions.
   isFirstRun: boolean().optional(),
   runId: uuid(),
   reuseKey: string().nullable().optional(),
@@ -1132,7 +997,7 @@ const executionContextObjectSchema = object({
   // active sandbox policy when temporary allow grants expire.
   networkPolicyRefreshes: networkPolicyRefreshesSchema.optional(),
   // Stable connector targets pinned for this run. The runner owns this list
-  // after claim independently of whether each target is currently available.
+  // after dispatch independently of whether each target is currently available.
   connectorRuntimeTargets: connectorRuntimeTargetsSchema,
   // Tools to disable in Claude CLI (passed as --disallowed-tools)
   disallowedTools: array(string()).optional(),
@@ -1198,41 +1063,6 @@ export const executionContextSchema = executionContextObjectSchema.superRefine(
     }
   },
 );
-
-/**
- * Runners job claim contract - POST /api/runners/jobs/:id/claim
- * Claim a pending job for execution
- * Verifies that the job's agent_run belongs to the authenticated user
- */
-export const runnersJobClaimContract = c.router({
-  claim: {
-    method: "POST",
-    path: "/api/runners/jobs/:id/claim",
-    headers: authHeadersSchema,
-    pathParams: object({
-      id: uuid(),
-    }),
-    query: object({
-      workflowSkills: literal("2"),
-    }),
-    body: object({
-      runnerIdentity: runnerProcessIdentitySchema.optional(),
-      runnerHostname: runnerHostnameSchema.optional(),
-      capabilities: runnerClaimCapabilitiesSchema,
-      telemetry: runnerClaimTelemetrySchema.optional(),
-      installedVersions: runnerInstalledVersionsSchema.optional(),
-    }),
-    responses: {
-      200: executionContextSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema, // Job does not belong to user
-      404: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Claim a pending job for execution",
-  },
-});
 
 export const runnerCancellationModeSchema = zEnum(["cooperative", "hard"]);
 export type RunnerCancellationMode = zInfer<
@@ -1403,7 +1233,7 @@ const MAX_HEARTBEAT_HOME_CACHES = 4096;
  */
 export const heartbeatBodySchema = object({
   runnerId: uuid(),
-  // Advisory locality, using the same configured identity as winning claims.
+  // Advisory locality, using the selected process identity.
   runnerHostname: runnerHostnameSchema.optional(),
   group: runnerGroupSchema,
   snapshotGeneration: runnerHeartbeatGenerationSchema,
@@ -1453,27 +1283,18 @@ export const runnersHeartbeatContract = c.router({
     summary: "Report runner heartbeat with capacity and state",
   },
 });
-
-export type RunnersPollContract = typeof runnersPollContract;
-export type RunnersJobClaimContract = typeof runnersJobClaimContract;
 export type RunnersSteerContract = typeof runnersSteerContract;
 export type RunnersConnectorRuntimeSyncContract =
   typeof runnersConnectorRuntimeSyncContract;
 export type RunnersHeartbeatContract = typeof runnersHeartbeatContract;
 export type RunnersBuiltinFirewallsResolveContract =
   typeof runnersBuiltinFirewallsResolveContract;
-export type Job = zInfer<typeof jobSchema>;
 export type RunnerPreference = zInfer<typeof runnerPreferenceSchema>;
-export type RunnerPreferenceClaimState = zInfer<
-  typeof runnerPreferenceClaimStateSchema
->;
 export type ActiveReuseProducer = zInfer<typeof activeReuseProducerSchema>;
 export type HeldSandboxState = zInfer<typeof heldSandboxStateSchema>;
 export type HeldHomeState = zInfer<typeof heldHomeStateSchema>;
 export type ExecutionContext = zInfer<typeof executionContextSchema>;
-export type StoredExecutionContext = zInfer<
-  typeof storedExecutionContextSchema
->;
+export type ExecutionInput = zInfer<typeof executionInputSchema>;
 export type PreparedExecutionContext = zInfer<
   typeof preparedExecutionContextSchema
 >;
@@ -1483,12 +1304,6 @@ export type PiModelConfigV3 = zInfer<typeof piModelConfigV3Schema>;
 export type PiModelConfigV5 = zInfer<typeof piModelConfigV5Schema>;
 export type PiModelCredentialBinding = zInfer<
   typeof piModelCredentialBindingSchema
->;
-export type RunnerClaimCapabilities = zInfer<
-  typeof runnerClaimCapabilitiesSchema
->;
-export type RunnerInstalledVersions = zInfer<
-  typeof runnerInstalledVersionsSchema
 >;
 export type PiLaunchConfig = zInfer<typeof piLaunchConfigSchema>;
 export type PiResourceSnapshot = zInfer<typeof piResourceSnapshotSchema>;
