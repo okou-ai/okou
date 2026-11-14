@@ -49,7 +49,8 @@ struct ChatDetailView: View {
       var rows: [ConversationCollectionRow] = conversation.hasEarlierMessages ? [.earlier] : []
       rows += sharing.groups.filter { !$0.eventIDs.allSatisfy { !visibleIDs.contains($0) } }
         .enumerated().map { index, group in
-          .share(group, topSpacing: index == 0 ? 20 : 24)
+          // The preceding row already reserves the selection background's bottom inset.
+          .share(group, topSpacing: index == 0 ? OkouSpace.xl : OkouSpace.xxl - OkouSpace.sm)
         }
       return rows
     }

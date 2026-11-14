@@ -34,6 +34,8 @@ struct ChatSharingRow<Content: View>: View {
         .fill(selected ? OkouColor.stateSelected : .clear)
         .padding(-OkouSpace.sm)
     }
+    // Keep the expanded bottom corners inside the collection cell's measured bounds.
+    .padding(.bottom, OkouSpace.sm)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(group.messages.map(\.copyText).joined(separator: "\n"))
     .accessibilityHint(group.messages.first?.role == .user ? "Select question" : "Select answer")
