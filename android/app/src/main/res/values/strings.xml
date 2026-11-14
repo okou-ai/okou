@@ -59,4 +59,23 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
+    <string name="instructions_section">My Okou</string>
+    <string name="instructions_title">Instructions</string>
+    <string name="instructions_timing">Saved changes apply to future tasks.</string>
+    <string name="instructions_loading">Loading Instructions…</string>
+    <string name="instructions_saving">Saving Instructions…</string>
+    <string name="instructions_conflict">Saved Instructions changed elsewhere. Reload the latest version to discard your local changes.</string>
+    <string name="instructions_uncertain">The save is not confirmed. Your text is kept. Check the saved version before retrying.</string>
+    <string name="instructions_load_failed">Could not load Instructions.</string>
+    <string name="instructions_unavailable">Personal Instructions are unavailable in this context.</string>
+    <string name="instructions_current">Instructions are up to date.</string>
+    <string name="instructions_unsaved">You have unsaved changes.</string>
+    <string name="instructions_local_failed">Could not save the local draft. Try again.</string>
+    <string name="instructions_save_rejected">The save was rejected. Your changes are kept.</string>
+    <string name="instructions_invalid">The text contains an unsupported character.</string>
+    <string name="instructions_refresh">Check saved version</string>
+    <string name="instructions_save">Save Instructions</string>
+    <string name="instructions_reload">Reload latest and discard changes</string>
+    <string name="instructions_discard">Discard changes</string>
+    <string name="instructions_retry_save">Retry the same save</string>
 </resources>

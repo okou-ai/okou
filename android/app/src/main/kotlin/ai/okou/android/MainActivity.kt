@@ -32,6 +32,7 @@ class MainActivity : AppCompatActivity() {
                     WorkspaceSessionFactory(app::createWorkspaceSession),
                     BuildConfig.API_ORIGIN,
                     app.chatCache,
+                    app.instructionsDrafts,
                 )
             }
         }

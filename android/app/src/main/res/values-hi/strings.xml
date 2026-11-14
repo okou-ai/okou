@@ -58,4 +58,23 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
+    <string name="instructions_section">मेरा Okou</string>
+    <string name="instructions_title">निजी निर्देश</string>
+    <string name="instructions_timing">सहेजे गए बदलाव आगामी कार्यों पर लागू होते हैं।</string>
+    <string name="instructions_loading">निर्देश लोड हो रहे हैं…</string>
+    <string name="instructions_saving">निर्देश सहेजे जा रहे हैं…</string>
+    <string name="instructions_conflict">निर्देश कहीं और बदल गए हैं। नवीनतम संस्करण लोड करने पर स्थानीय बदलाव हट जाएंगे।</string>
+    <string name="instructions_uncertain">सहेजने की पुष्टि नहीं हुई। आपका पाठ सुरक्षित है। फिर प्रयास करने से पहले सहेजा गया संस्करण देखें।</string>
+    <string name="instructions_load_failed">निर्देश लोड नहीं हो सके।</string>
+    <string name="instructions_unavailable">इस संदर्भ में निजी निर्देश उपलब्ध नहीं हैं।</string>
+    <string name="instructions_current">निर्देश अद्यतित हैं।</string>
+    <string name="instructions_unsaved">आपके बदलाव अभी सहेजे नहीं गए हैं।</string>
+    <string name="instructions_local_failed">स्थानीय ड्राफ़्ट सहेजा नहीं जा सका। फिर प्रयास करें।</string>
+    <string name="instructions_save_rejected">सहेजना अस्वीकार हुआ। आपके बदलाव सुरक्षित हैं।</string>
+    <string name="instructions_invalid">पाठ में असमर्थित वर्ण है।</string>
+    <string name="instructions_refresh">सहेजा गया संस्करण जाँचें</string>
+    <string name="instructions_save">निर्देश सहेजें</string>
+    <string name="instructions_reload">नवीनतम संस्करण लोड करके बदलाव हटाएँ</string>
+    <string name="instructions_discard">बदलाव हटाएँ</string>
+    <string name="instructions_retry_save">वही सहेजना फिर आज़माएँ</string>
 </resources>

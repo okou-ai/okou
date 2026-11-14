@@ -58,4 +58,23 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
+    <string name="instructions_section">我的 Okou</string>
+    <string name="instructions_title">個人指令</string>
+    <string name="instructions_timing">儲存的變更會套用至之後的任務。</string>
+    <string name="instructions_loading">正在載入個人指令…</string>
+    <string name="instructions_saving">正在儲存個人指令…</string>
+    <string name="instructions_conflict">個人指令已在其他位置變更。重新載入最新版本將捨棄本機變更。</string>
+    <string name="instructions_uncertain">尚未確認儲存結果。文字已保留，請先檢查已儲存的版本再重試。</string>
+    <string name="instructions_load_failed">無法載入個人指令。</string>
+    <string name="instructions_unavailable">目前無法使用個人指令。</string>
+    <string name="instructions_current">個人指令已是最新版本。</string>
+    <string name="instructions_unsaved">你有未儲存的變更。</string>
+    <string name="instructions_local_failed">無法儲存本機草稿，請重試。</string>
+    <string name="instructions_save_rejected">儲存遭拒，變更已保留。</string>
+    <string name="instructions_invalid">文字含有不支援的字元。</string>
+    <string name="instructions_refresh">檢查已儲存版本</string>
+    <string name="instructions_save">儲存個人指令</string>
+    <string name="instructions_reload">載入最新版本並捨棄變更</string>
+    <string name="instructions_discard">捨棄變更</string>
+    <string name="instructions_retry_save">重試同一次儲存</string>
 </resources>

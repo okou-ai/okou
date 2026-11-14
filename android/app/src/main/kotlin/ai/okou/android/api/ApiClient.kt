@@ -15,8 +15,10 @@ import ai.okou.android.api.generated.HistoryRowsQueryVariant2
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
+import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.historyRows
@@ -135,6 +137,15 @@ class ApiClient(
     }
 
     suspend fun organization(): Organization = execute { api.organization(it) }
+
+    suspend fun personalInstructions(): PersonalInstructions = execute {
+        api.personalInstructions(it)
+    }
+
+    suspend fun updatePersonalInstructions(body: UpdateInstructionsRequest): PersonalInstructions =
+        execute {
+            api.updatePersonalInstructions(it, body)
+        }
 
     suspend fun chatSnapshot(): ChatSnapshot = execute { api.chatSnapshot(it) }
 

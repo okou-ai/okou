@@ -58,4 +58,23 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
+    <string name="instructions_section">Okou Saya</string>
+    <string name="instructions_title">Instruksi</string>
+    <string name="instructions_timing">Perubahan yang disimpan berlaku untuk tugas berikutnya.</string>
+    <string name="instructions_loading">Memuat Instruksi…</string>
+    <string name="instructions_saving">Menyimpan Instruksi…</string>
+    <string name="instructions_conflict">Instruksi berubah di tempat lain. Muat versi terbaru untuk membuang perubahan lokal.</string>
+    <string name="instructions_uncertain">Penyimpanan belum terkonfirmasi. Teks tetap disimpan. Periksa versi tersimpan sebelum mencoba lagi.</string>
+    <string name="instructions_load_failed">Tidak dapat memuat Instruksi.</string>
+    <string name="instructions_unavailable">Instruksi pribadi tidak tersedia dalam konteks ini.</string>
+    <string name="instructions_current">Instruksi sudah terbaru.</string>
+    <string name="instructions_unsaved">Ada perubahan yang belum disimpan.</string>
+    <string name="instructions_local_failed">Tidak dapat menyimpan draf lokal. Coba lagi.</string>
+    <string name="instructions_save_rejected">Penyimpanan ditolak. Perubahan tetap disimpan.</string>
+    <string name="instructions_invalid">Teks berisi karakter yang tidak didukung.</string>
+    <string name="instructions_refresh">Periksa versi tersimpan</string>
+    <string name="instructions_save">Simpan Instruksi</string>
+    <string name="instructions_reload">Muat versi terbaru dan buang perubahan</string>
+    <string name="instructions_discard">Buang perubahan</string>
+    <string name="instructions_retry_save">Coba simpan yang sama lagi</string>
 </resources>

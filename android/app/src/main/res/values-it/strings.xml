@@ -58,4 +58,23 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
+    <string name="instructions_section">Il mio Okou</string>
+    <string name="instructions_title">Istruzioni</string>
+    <string name="instructions_timing">Le modifiche salvate si applicano alle attività future.</string>
+    <string name="instructions_loading">Caricamento istruzioni…</string>
+    <string name="instructions_saving">Salvataggio istruzioni…</string>
+    <string name="instructions_conflict">Le istruzioni sono cambiate altrove. Ricarica la versione più recente per scartare le modifiche locali.</string>
+    <string name="instructions_uncertain">Il salvataggio non è confermato. Il testo è conservato. Controlla la versione salvata prima di riprovare.</string>
+    <string name="instructions_load_failed">Impossibile caricare le istruzioni.</string>
+    <string name="instructions_unavailable">Le istruzioni personali non sono disponibili in questo contesto.</string>
+    <string name="instructions_current">Le istruzioni sono aggiornate.</string>
+    <string name="instructions_unsaved">Hai modifiche non salvate.</string>
+    <string name="instructions_local_failed">Impossibile salvare la bozza locale. Riprova.</string>
+    <string name="instructions_save_rejected">Salvataggio rifiutato. Le modifiche sono conservate.</string>
+    <string name="instructions_invalid">Il testo contiene un carattere non supportato.</string>
+    <string name="instructions_refresh">Controlla versione salvata</string>
+    <string name="instructions_save">Salva istruzioni</string>
+    <string name="instructions_reload">Carica ultima versione e scarta modifiche</string>
+    <string name="instructions_discard">Scarta modifiche</string>
+    <string name="instructions_retry_save">Riprova lo stesso salvataggio</string>
 </resources>

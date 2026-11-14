@@ -8,7 +8,9 @@ import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.InitializePreferencesRequestLocale
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectArchive
+import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.chat.ChatListService
@@ -18,6 +20,7 @@ import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.HistoryPage
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
+import ai.okou.android.instructions.PersonalInstructionsService
 import java.io.Closeable
 import java.util.Locale
 import java.util.TimeZone
@@ -45,7 +48,7 @@ data class WorkspaceIdentity(
 
 data class WorkspaceBootstrap(val organization: Organization, val preferences: UserPreferences)
 
-interface WorkspaceSession : Closeable, ChatListService {
+interface WorkspaceSession : Closeable, ChatListService, PersonalInstructionsService {
     suspend fun bootstrap(): WorkspaceBootstrap
 
     suspend fun preferences(): UserPreferences
@@ -83,6 +86,20 @@ class CanonicalWorkspaceSession(
     override suspend fun projectEvents(since: Long) = api.projectEvents(since)
 
     override suspend fun featureSwitches() = api.featureSwitches()
+
+    override suspend fun personalInstructionsEnabled() =
+        api.featureSwitches().effectiveSwitches["singleAgent"] == true
+
+    override suspend fun personalInstructions() = api.personalInstructions().owned()
+
+    override suspend fun updatePersonalInstructions(content: String, ifVersion: String) =
+        api.updatePersonalInstructions(UpdateInstructionsRequest(content, ifVersion)).owned()
+
+    private fun PersonalInstructions.owned(): PersonalInstructions {
+        if (orgId != identity.workspaceId || userId != identity.userId)
+            throw ApiFailure.IncompatibleResponse()
+        return this
+    }
 
     override suspend fun historySnapshot(threadId: String) = api.historySnapshot(threadId)
 
