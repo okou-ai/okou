@@ -216,6 +216,10 @@ outlive presentation controllers; dispatch requires a read-back durable copy of
 the same frozen operation and current authorization. Missing input observations
 do not prove rollback. Recovery reuses the original IDs and payload only after
 an explicit action. Draft durability is device-local, without cross-client sync.
+Unacknowledged new-chat creation results remain with their original draft target
+until native navigation opens the authoritative thread. Parallel targets cannot
+replace each other's handoff; late text before that handoff follows its created
+thread instead of becoming an unrelated new-chat draft.
 
 Other focused commands, from `android/`:
 

@@ -29,7 +29,9 @@ class ChatComposerModel(
 
     fun retryLocal() = owner.retryLocal(connection)
 
-    fun beginNew() = owner.beginNew(connection)
+    fun beginNew(projectId: String?) = owner.beginNew(connection, projectId)
+
+    fun acknowledge(threadId: String) = owner.acknowledge(connection, threadId)
 
     override fun onCleared() {
         connection.retired = true

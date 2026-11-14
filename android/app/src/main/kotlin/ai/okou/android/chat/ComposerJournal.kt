@@ -44,6 +44,7 @@ data class ComposerEntry(
     val text: String = "",
     val pending: PendingText? = null,
     val receipt: TextReceipt? = null,
+    val createdThreadId: String? = null,
 )
 
 @Serializable
@@ -86,8 +87,6 @@ data class ComposerState(
     val checking: Set<String> = emptySet(),
     val failed: Set<String> = emptySet(),
     val unobserved: Set<String> = emptySet(),
-    val openedThread: String? = null,
-    val openedFrom: String? = null,
 ) {
     fun entry(target: ComposerTarget) = journal?.entries?.get(target.key) ?: ComposerEntry()
 
@@ -96,6 +95,7 @@ data class ComposerState(
             persistence != ComposerPersistence.Failed &&
             (target.key !in busy || target.key in checking) &&
             entry(target).pending == null &&
+            entry(target).createdThreadId == null &&
             entry(target).text.isNotBlank() &&
             (if (target.threadId != null) target.agentId != null
             else context == ComposerContext.Ready)

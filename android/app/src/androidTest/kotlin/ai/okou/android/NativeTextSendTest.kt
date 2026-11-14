@@ -2,6 +2,7 @@ package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.chat.ComposerTarget
 import android.view.KeyEvent
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -15,12 +16,14 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -61,7 +64,9 @@ class NativeTextSendTest {
                     device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
                 )
             fun click(id: Int) {
-                text(app.getString(id)).click()
+                device
+                    .findObject(UiSelector().packageName(app.packageName).text(app.getString(id)))
+                    .click()
             }
             fun editor() =
                 checkNotNull(
@@ -110,20 +115,37 @@ class NativeTextSendTest {
             scenario.recreate()
             assertTrue(editor().text.contains("Native first message"))
             held.countDown()
-            assertTrue(
-                device.wait(
-                    object : Condition<UiDevice, Boolean> {
-                        override fun apply(device: UiDevice): Boolean =
-                            device
-                                .findObject(
-                                    By.pkg(app.packageName)
-                                        .text(app.getString(R.string.composer_send))
-                                )
-                                ?.isEnabled == true
-                    },
-                    10_000,
+            fun readyToSend(target: ComposerTarget) {
+                assertTrue(
+                    device.wait(
+                        object : Condition<UiDevice, Boolean> {
+                            override fun apply(device: UiDevice): Boolean {
+                                var ready = false
+                                checkNotNull(scenario).onActivity {
+                                    ready =
+                                        ViewModelProvider(it)[SessionModel::class.java]
+                                            .uiState
+                                            .value
+                                            .ready
+                                            ?.composer
+                                            ?.uiState
+                                            ?.value
+                                            ?.canSend(target) == true
+                                }
+                                return ready &&
+                                    device
+                                        .findObject(
+                                            By.pkg(app.packageName)
+                                                .text(app.getString(R.string.composer_send))
+                                        )
+                                        ?.isEnabled == true
+                            }
+                        },
+                        10_000,
+                    )
                 )
-            )
+            }
+            readyToSend(ComposerTarget())
             click(R.string.composer_send)
             text("New conversation")
             assertEquals(1, fixture.inputs.size)
@@ -132,6 +154,12 @@ class NativeTextSendTest {
             ime(true)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             ime(false)
+            readyToSend(
+                ComposerTarget(
+                    checkNotNull(fixture.created.single()["clientThreadId"]).jsonPrimitive.content,
+                    CHAT_AGENT,
+                )
+            )
             click(R.string.composer_send)
             assertTrue(
                 device.wait(

@@ -337,6 +337,51 @@ class ChatComposerModelTest {
     }
 
     @Test
+    fun concurrentNewTargetsKeepTheirOwnDurableHandoffAndLateTextFollowsItsThread() =
+        check { service, store, create ->
+            val model = create(false, identity)
+            val a = ComposerTarget(projectId = CHAT_PROJECT)
+            val b = ComposerTarget()
+            val first = service.gate()
+            val second = service.gate()
+            service.write = { request ->
+                if (service.creates.first().clientThreadId == request.threadId) first.await()
+                else second.await()
+                AcceptedInput(checkNotNull(request.threadId))
+            }
+            model.open(a)
+            runCurrent()
+            model.edit(a, "Project input")
+            model.send(a)
+            runCurrent()
+            model.open(b)
+            runCurrent()
+            model.edit(b, "Personal input")
+            model.send(b)
+            runCurrent()
+            val aId = service.creates[0].clientThreadId
+            val bId = service.creates[1].clientThreadId
+            second.complete(Unit)
+            runCurrent()
+            assertEquals(bId, model.uiState.value.entry(b).createdThreadId)
+            first.complete(Unit)
+            runCurrent()
+            assertEquals(aId, model.uiState.value.entry(a).createdThreadId)
+            assertEquals(bId, model.uiState.value.entry(b).createdThreadId)
+            assertEquals(bId, store.load(identity).journal.entries[b.key]!!.createdThreadId)
+            model.edit(b, "Typed while navigation catches up")
+            runCurrent()
+            assertEquals(
+                "Typed while navigation catches up",
+                model.uiState.value.entry(ComposerTarget(bId, CHAT_AGENT)).text,
+            )
+            model.acknowledge(checkNotNull(bId))
+            runCurrent()
+            assertNull(model.uiState.value.entry(b).createdThreadId)
+            assertEquals(aId, model.uiState.value.entry(a).createdThreadId)
+        }
+
+    @Test
     fun realDiskReopenKeepsTargetsAndAccountsSeparateAndCorruptionDoesNotResetInput() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val root = temporary.newFolder()

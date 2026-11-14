@@ -75,6 +75,7 @@ fun ChatListRoute(model: ChatListModel, composer: ChatComposerModel) {
     val open: (ConfirmedChat) -> Unit = { thread ->
         composing = false
         selected = thread.id
+        composer.acknowledge(thread.id)
         model.history.open(thread)
         scope.launch { drawer.close() }
     }
@@ -82,15 +83,16 @@ fun ChatListRoute(model: ChatListModel, composer: ChatComposerModel) {
         collapsed = if (id in collapsed) collapsed - id else collapsed + id
     }
     val newChat: (String?) -> Unit = { projectId ->
-        composer.beginNew()
+        composer.beginNew(projectId)
         selected = null
         newProject = projectId
         composing = true
         scope.launch { drawer.close() }
     }
-    LaunchedEffect(composing, newProject, inputState.openedThread, state.threads) {
-        if (composing && inputState.openedFrom == ComposerTarget(projectId = newProject).key)
-            state.threads.firstOrNull { it.id == inputState.openedThread }?.let(open)
+    val createdThread = inputState.entry(ComposerTarget(projectId = newProject)).createdThreadId
+    LaunchedEffect(composing, newProject, createdThread, state.threads) {
+        if (composing && createdThread != null)
+            state.threads.firstOrNull { it.id == createdThread }?.let(open)
     }
     BackHandler(selected != null || composing) {
         if (drawer.isOpen || drawer.isAnimationRunning) scope.launch { drawer.close() }
@@ -134,10 +136,7 @@ fun ChatListRoute(model: ChatListModel, composer: ChatComposerModel) {
                     style = MaterialTheme.typography.headlineSmall,
                 )
                 Box(Modifier.weight(1f))
-                if (
-                    inputState.openedFrom == ComposerTarget(projectId = newProject).key &&
-                        inputState.openedThread != null
-                ) {
+                if (createdThread != null) {
                     Text(stringResource(R.string.composer_accepted), Modifier.padding(16.dp))
                     ChatAction(R.string.chat_refresh, model::refreshList)
                 } else ChatComposerField(composer, ComposerTarget(projectId = newProject))

@@ -118,7 +118,12 @@ internal class ChatComposerOwner(
     private fun put(key: String, value: ComposerEntry) {
         val journal = mutable.value.journal ?: return
         val entries =
-            if (value.text.isEmpty() && value.pending == null && value.receipt == null)
+            if (
+                value.text.isEmpty() &&
+                    value.pending == null &&
+                    value.receipt == null &&
+                    value.createdThreadId == null
+            )
                 journal.entries - key
             else journal.entries + (key to value)
         replace(journal.copy(entries = entries))
@@ -176,17 +181,28 @@ internal class ChatComposerOwner(
 
     fun edit(connection: Connection, target: ComposerTarget, text: String) {
         if (!connection.current() || mutable.value.journal == null) return
-        val old = mutable.value.entry(target)
-        if (old.text != text) put(target.key, old.copy(text = text))
+        val key = mutable.value.entry(target).createdThreadId?.let { "thread:$it" } ?: target.key
+        val old = mutable.value.journal?.entries?.get(key) ?: ComposerEntry()
+        if (old.text != text) put(key, old.copy(text = text))
     }
 
     fun retryLocal(connection: Connection) {
         if (connection.current()) mutable.value.journal?.let(::replace)
     }
 
-    fun beginNew(connection: Connection) {
-        if (connection.current())
-            mutable.value = mutable.value.copy(openedThread = null, openedFrom = null)
+    fun beginNew(connection: Connection, projectId: String?) {
+        if (!connection.current()) return
+        val target = ComposerTarget(projectId = projectId)
+        val old = mutable.value.entry(target)
+        if (old.createdThreadId != null) put(target.key, old.copy(createdThreadId = null))
+    }
+
+    fun acknowledge(connection: Connection, threadId: String) {
+        if (!connection.current()) return
+        val journal = mutable.value.journal ?: return
+        journal.entries
+            .filterValues { it.createdThreadId == threadId }
+            .forEach { (key, entry) -> put(key, entry.copy(createdThreadId = null)) }
     }
 
     private fun checkingTargets() =
@@ -376,11 +392,17 @@ internal class ChatComposerOwner(
             entry.copy(
                 pending = null,
                 receipt = TextReceipt(pending.threadId, pending.eventId, disposition),
+                createdThreadId = null,
             )
         // Retain meaningful input, plus this one delivery receipt; do not accumulate read history.
-        val meaningful = journal.entries.filterValues { it.text.isNotEmpty() || it.pending != null }
-        replace(journal.copy(entries = (meaningful - op.key) + (destination to value)))
-        mutable.value = mutable.value.copy(openedThread = pending.threadId, openedFrom = op.key)
+        val meaningful =
+            journal.entries.filterValues {
+                it.text.isNotEmpty() || it.pending != null || it.createdThreadId != null
+            }
+        var entries = (meaningful - op.key) + (destination to value)
+        if (pending.create != null)
+            entries = entries + (op.key to ComposerEntry(createdThreadId = pending.threadId))
+        replace(journal.copy(entries = entries))
         op.connection.accepted(pending.threadId)
     }
 
