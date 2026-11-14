@@ -474,12 +474,14 @@ def test_probe_generated_valid_document_prefixes_are_incomplete_or_terminal():
         for end in range(len(body) + 1):
             prefix = body[:end]
             result = probe_top_level_string_field(prefix)
-            replay = f"seed={_GENERATION_SEED} case={case_index} byte={end} prefix={prefix!r}"
-
             if result.status == "incomplete":
-                assert result.value is None, replay
+                assert result.value is None, (
+                    f"seed={_GENERATION_SEED} case={case_index} byte={end} prefix={prefix!r}"
+                )
             else:
-                assert result == expected, replay
+                assert result == expected, (
+                    f"seed={_GENERATION_SEED} case={case_index} byte={end} prefix={prefix!r}"
+                )
 
 
 @pytest.mark.parametrize(
