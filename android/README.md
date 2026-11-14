@@ -200,6 +200,23 @@ independent Kotlin/JVM test entry could compile those same sources without an
 SDK, without splitting production modules. The command above uses the app's
 standard Android build configuration; the project maintains one test entry.
 
+Text composer suites exercise the real private journal, shared controllers, frozen
+submission identity, duplicate taps, newer edits, disconnected acceptance and
+explicit original-ID recovery. `ChatComposerApiTest` uses the installed generated
+201 methods and bounded input-status read; `ChatComposerRootTest` holds default
+availability and write responses through the actual native route.
+`NativeTextSendTest` covers new/existing sends, IME/Back and Activity recreation
+on API 35. Its synthetic HTTP content and private temporary journal do not use
+production credentials or establish physical/OEM keyboard coverage.
+
+Meaningful drafts and pending text operations live in `noBackupFilesDir/chat-input`,
+scoped by origin/user/workspace, separately from the rebuildable confirmed cache.
+Native selection/composition stay with the text control. Accepted local writes
+outlive presentation controllers; dispatch requires a read-back durable copy of
+the same frozen operation and current authorization. Missing input observations
+do not prove rollback. Recovery reuses the original IDs and payload only after
+an explicit action. Draft durability is device-local, without cross-client sync.
+
 Other focused commands, from `android/`:
 
 ```bash
@@ -537,8 +554,10 @@ service; direct arbitrary HTTP in features is outside the transport contract.
 `ApiClient` binds an HTTPS origin, installed `BuildConfig.VERSION_NAME`, session
 identity and a suspending `WorkspaceTokenProvider` resolved for each request.
 The provider may reuse an unexpired token and refresh it when needed. Its ordinary methods
-cover workspace/member preferences, native chat-list and history reads, and visible
-read confirmation. The authentication
+cover workspace/member preferences, native chat-list/history reads, visible read
+confirmation, text creation/sending and original-input status observations.
+Body-bearing success codes are checked against the consumed canonical contract
+(201 for create/send, 200 for reads). The authentication
 owner captures the right origin/user/workspace, cancels retired consumers and
 closes their client; token renewal itself does not replace durable identity.
 Construction starts no token resolution or network work. The authenticated root

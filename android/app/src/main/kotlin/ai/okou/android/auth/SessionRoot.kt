@@ -72,7 +72,7 @@ fun SessionRoot(
                         MemberPreferencesSettings(ready.preferences)
                         PersonalInstructionsSettings(ready.instructions)
                     },
-                    homeContent = { ChatListRoute(ready.chats) },
+                    homeContent = { ChatListRoute(ready.chats, ready.composer) },
                 )
             }
         } else if (state.stage == SessionStage.SignIn) {

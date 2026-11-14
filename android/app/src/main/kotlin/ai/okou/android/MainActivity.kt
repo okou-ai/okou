@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity() {
                     BuildConfig.API_ORIGIN,
                     app.chatCache,
                     app.instructionsDrafts,
+                    app.composerJournal,
                 )
             }
         }

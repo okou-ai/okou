@@ -77,4 +77,20 @@
     <string name="instructions_reload">최신 버전 불러오기 및 변경 취소</string>
     <string name="instructions_discard">변경 취소</string>
     <string name="instructions_retry_save">동일한 저장 다시 시도</string>
+    <string name="composer_new">새 대화</string>
+    <string name="composer_new_project">이 프로젝트에서 새 대화</string>
+    <string name="composer_message">메시지</string>
+    <string name="composer_send">보내기</string>
+    <string name="composer_local_failed">이 기기에 초안 변경 사항을 저장하지 못했습니다.</string>
+    <string name="composer_target_loading">대화 사용 가능 여부 확인 중…</string>
+    <string name="composer_target_unavailable">이 계정에서는 새 대화를 사용할 수 없습니다.</string>
+    <string name="composer_unconfirmed">메시지 전송 결과를 아직 확인하지 못했습니다.</string>
+    <string name="composer_check">전송 결과 확인</string>
+    <string name="composer_retry">같은 메시지 다시 보내기</string>
+    <string name="composer_not_observed">아직 메시지를 확인할 수 없어 전송 결과는 미확인 상태입니다.</string>
+    <string name="composer_request_failed">요청에 실패했습니다. 초안과 확인 대기 메시지는 보관됩니다.</string>
+    <string name="composer_saving">이 기기에 초안 저장 중…</string>
+    <string name="composer_accepted">메시지가 접수되어 처리를 기다리는 중입니다.</string>
+    <string name="composer_consumed">입력이 선택되었지만 현재 실행 상태는 알 수 없습니다.</string>
+    <string name="composer_revoked">메시지가 철회되었습니다</string>
 </resources>

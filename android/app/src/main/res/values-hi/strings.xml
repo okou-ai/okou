@@ -77,4 +77,20 @@
     <string name="instructions_reload">नवीनतम संस्करण लोड करके बदलाव हटाएँ</string>
     <string name="instructions_discard">बदलाव हटाएँ</string>
     <string name="instructions_retry_save">वही सहेजना फिर आज़माएँ</string>
+    <string name="composer_new">नई चैट</string>
+    <string name="composer_new_project">इस प्रोजेक्ट में नई चैट</string>
+    <string name="composer_message">संदेश</string>
+    <string name="composer_send">भेजें</string>
+    <string name="composer_local_failed">इस डिवाइस पर ड्राफ़्ट के बदलाव सहेजे नहीं जा सके।</string>
+    <string name="composer_target_loading">चैट की उपलब्धता लोड हो रही है…</string>
+    <string name="composer_target_unavailable">इस खाते के लिए नई चैट उपलब्ध नहीं है।</string>
+    <string name="composer_unconfirmed">संदेश की डिलीवरी की पुष्टि नहीं हुई है।</string>
+    <string name="composer_check">डिलीवरी जाँचें</string>
+    <string name="composer_retry">यही संदेश फिर भेजें</string>
+    <string name="composer_not_observed">संदेश अभी दिखाई नहीं दे रहा है। डिलीवरी की पुष्टि नहीं हुई है।</string>
+    <string name="composer_request_failed">अनुरोध विफल हुआ। ड्राफ़्ट और लंबित संदेश सुरक्षित हैं।</string>
+    <string name="composer_saving">इस डिवाइस पर ड्राफ़्ट सहेजा जा रहा है…</string>
+    <string name="composer_accepted">संदेश स्वीकार किया गया; प्रोसेसिंग की प्रतीक्षा है।</string>
+    <string name="composer_consumed">इनपुट लिया गया; निष्पादन की वर्तमान स्थिति अज्ञात है।</string>
+    <string name="composer_revoked">संदेश वापस लिया गया</string>
 </resources>

@@ -77,4 +77,20 @@
     <string name="instructions_reload">Charger la dernière version et abandonner les modifications</string>
     <string name="instructions_discard">Abandonner les modifications</string>
     <string name="instructions_retry_save">Réessayer le même enregistrement</string>
+    <string name="composer_new">Nouvelle discussion</string>
+    <string name="composer_new_project">Nouvelle discussion dans ce Projet</string>
+    <string name="composer_message">Message</string>
+    <string name="composer_send">Envoyer</string>
+    <string name="composer_local_failed">Les modifications du brouillon ne peuvent pas être enregistrées sur cet appareil.</string>
+    <string name="composer_target_loading">Chargement de la disponibilité des discussions…</string>
+    <string name="composer_target_unavailable">Aucune nouvelle discussion disponible pour ce compte.</string>
+    <string name="composer_unconfirmed">La remise du message est non confirmée.</string>
+    <string name="composer_check">Vérifier la remise</string>
+    <string name="composer_retry">Réessayer le même message</string>
+    <string name="composer_not_observed">Le message est encore introuvable. Sa remise reste non confirmée.</string>
+    <string name="composer_request_failed">La demande a échoué. Le brouillon et le message en attente sont conservés.</string>
+    <string name="composer_saving">Enregistrement du brouillon sur cet appareil…</string>
+    <string name="composer_accepted">Message accepté ; traitement en attente.</string>
+    <string name="composer_consumed">La saisie a été prise en charge ; son état actuel est inconnu.</string>
+    <string name="composer_revoked">Message révoqué</string>
 </resources>

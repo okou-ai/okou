@@ -30,7 +30,10 @@ import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MemberPreferencesModelTest {
-    private class Service : WorkspaceSession, ChatListService by TestChatService() {
+    private class Service :
+        WorkspaceSession,
+        ChatListService by TestChatService(),
+        ai.okou.android.chat.ChatComposerService by ai.okou.android.TestChatComposerService() {
         override suspend fun personalInstructionsEnabled() = false
 
         override suspend fun personalInstructions():

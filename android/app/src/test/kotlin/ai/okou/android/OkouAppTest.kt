@@ -2,6 +2,7 @@ package ai.okou.android
 
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListRoute
 import ai.okou.android.preferences.MemberPreferencesModel
@@ -76,6 +77,22 @@ class OkouAppTest {
                             }
                             initializer { AppearanceModel(store) }
                             initializer {
+                                val app = compose.activity.application as TestOkouApplication
+                                ChatComposerModel(
+                                    TestChatComposerService(),
+                                    app.composerJournal,
+                                    WorkspaceIdentity(
+                                        "https://api.okou.ai",
+                                        "shell-user",
+                                        "shell-session",
+                                        "shell-org",
+                                    ),
+                                    { true },
+                                    {},
+                                    {},
+                                )
+                            }
+                            initializer {
                                 MemberPreferencesModel(
                                     testBootstrap().preferences,
                                     (compose.activity.application as TestOkouApplication)
@@ -95,7 +112,8 @@ class OkouAppTest {
                         },
                     )
                 Triple(
-                    provider[ChatListModel::class.java].apply { refresh() },
+                    provider[ChatListModel::class.java].apply { refresh() } to
+                        provider[ChatComposerModel::class.java],
                     provider[AppearanceModel::class.java],
                     if (withWorkspacePreferences) provider[MemberPreferencesModel::class.java]
                     else null,
@@ -118,7 +136,7 @@ class OkouAppTest {
                         workspacePreferences = {
                             models.third?.let { MemberPreferencesSettings(it) }
                         },
-                        homeContent = { ChatListRoute(models.first) },
+                        homeContent = { ChatListRoute(models.first.first, models.first.second) },
                     )
                 }
             }

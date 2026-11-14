@@ -154,6 +154,14 @@ class ChatListModel(
         if (current()) mutable.value = mutable.value.copy(filter = value)
     }
 
+    fun refreshAfterSend(threadId: String) {
+        viewModelScope.launch {
+            listJob?.join()
+            if (current()) refreshList()
+        }
+        if (history.uiState.value.thread?.id == threadId) history.refreshAfterSend(threadId)
+    }
+
     fun refresh() {
         if (!current()) return
         restoreCache()

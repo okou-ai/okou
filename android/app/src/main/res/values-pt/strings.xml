@@ -77,4 +77,20 @@
     <string name="instructions_reload">Carregar versão mais recente e descartar alterações</string>
     <string name="instructions_discard">Descartar alterações</string>
     <string name="instructions_retry_save">Repetir o mesmo salvamento</string>
+    <string name="composer_new">Nova conversa</string>
+    <string name="composer_new_project">Nova conversa neste Projeto</string>
+    <string name="composer_message">Mensagem</string>
+    <string name="composer_send">Enviar</string>
+    <string name="composer_local_failed">Não foi possível salvar as alterações do rascunho neste dispositivo.</string>
+    <string name="composer_target_loading">Carregando disponibilidade da conversa…</string>
+    <string name="composer_target_unavailable">Uma nova conversa não está disponível para esta conta.</string>
+    <string name="composer_unconfirmed">A entrega da mensagem não foi confirmada.</string>
+    <string name="composer_check">Verificar entrega</string>
+    <string name="composer_retry">Reenviar a mesma mensagem</string>
+    <string name="composer_not_observed">A mensagem ainda não está visível. A entrega continua sem confirmação.</string>
+    <string name="composer_request_failed">A solicitação falhou. O rascunho e a mensagem pendente foram preservados.</string>
+    <string name="composer_saving">Salvando rascunho neste dispositivo…</string>
+    <string name="composer_accepted">Mensagem aceita; aguardando processamento.</string>
+    <string name="composer_consumed">A entrada foi recebida; o estado atual de execução é desconhecido.</string>
+    <string name="composer_revoked">Mensagem revogada</string>
 </resources>
