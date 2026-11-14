@@ -45,7 +45,7 @@ async fn claim_accepts_matching_context() {
             runner_types::profile_name::DEFAULT_PROFILE.to_owned(),
         ))
         .await
-        .expect("matching context should be job");
+        .expect("matching context should be claimed");
 
     assert_eq!(job.context().run_id, run_id);
 }

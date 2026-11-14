@@ -8,7 +8,7 @@ use super::support::{
 };
 
 // -----------------------------------------------------------------------
-// Test 11: Budget full → job skipped (not job) → budget freed → next job succeeds
+// Test 11: Budget full → job skipped before claim → budget freed → next job succeeds
 //
 // Different from test 4 (claim failure): here try_reserve returns false
 // so claim() is never called. The job stays in the channel but the main
@@ -92,7 +92,7 @@ async fn budget_exhausted_buffers_discovery_until_budget_frees() {
     );
     assert!(
         env.cancel_tokens.handle(id2).await.is_none(),
-        "queued job must not be job while budget is exhausted",
+        "queued job must not be claimed while budget is exhausted",
     );
     assert!(
         env.handle

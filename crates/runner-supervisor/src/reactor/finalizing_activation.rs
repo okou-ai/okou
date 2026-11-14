@@ -184,7 +184,7 @@ async fn run_finalizing_activation(
                 job,
                 cancellation,
                 ExecutionFailure::from_error(
-                    "runner panicked while preparing a job finalizing successor",
+                    "runner panicked while preparing a finalizing successor",
                 ),
                 pre_spawn_timing.finalizing_diagnostics(),
                 &ctx,
@@ -509,7 +509,7 @@ async fn prepare_finalizing_resource(
     select_finalizing_resource(selection, pre_spawn_timing, reserved_exact).await
 }
 
-/// Complete a job finalizing successor without activating a sandbox.
+/// Complete a finalizing successor without activating a sandbox.
 ///
 /// This path is used for cancellation, preparation and activation failures, identity mismatches,
 /// and recovered panics after their resource cleanup has run. It always completes with no sandbox

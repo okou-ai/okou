@@ -382,6 +382,10 @@ intervals start at that acceptance-completion point, excluding receiver intake a
 the checks before it. `api_to_spawn` and `api_to_agent_ready` keep the original API
 start time and cover the complete path to their respective endpoints.
 
+Pre-executor phase durations and bounded resource-selection outcomes use
+`runner_pre_spawn_*`. These component measurements retain their own boundaries
+within Runner acceptance and activation.
+
 `runner_agent_start_process`, `runner_executor_start_to_spawn`,
 `runner_accepted_to_spawn`, and `api_to_spawn` retain their process-launch boundary,
 observed through `exec_started`. The historical `shell_started_at`, `shell_spawn`,

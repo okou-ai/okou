@@ -479,7 +479,7 @@ impl DeferredUploadPhase {
 
 /// Spawn a job executor task.
 ///
-/// The provider has already job the job and the caller has reserved
+/// The provider has bound execution input and the caller has reserved
 /// resources in the budget. The spawned task runs the executor, reports
 /// completion through the supervisor, which owns the post-executor
 /// park-or-destroy decision in [`crate::sandbox_finalization::finalize_execution_run`].

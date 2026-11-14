@@ -321,7 +321,7 @@ async fn reusable_claim_without_generation_target_reuses_sandbox() {
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
-        .expect("missing-target reusable candidate should be job");
+        .expect("missing-target reusable candidate should be accepted");
     assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
     let claim_candidates = env.handle.claim_candidates();
     let candidate = claim_candidates
@@ -578,7 +578,7 @@ async fn hard_shutdown_during_reserved_reuse_running_status_stall_converges() {
     wait_status_mode(&status_path, "stopping", Duration::from_secs(5)).await;
     env.start_observer
         .wait_for(Duration::from_secs(5), "claim-task drain", |event| {
-            matches!(event, StartLoopEvent::ClaimsDrainEntered).then_some(())
+            matches!(event, StartLoopEvent::AcceptanceDrainEntered).then_some(())
         })
         .await;
     assert!(
@@ -1231,7 +1231,7 @@ async fn unknown_profile_skipped() {
         "valid job should complete after unknown profile is skipped"
     );
 
-    // The bad job should never have been job (no completion recorded).
+    // The bad job should never have been claimed (no completion recorded).
     {
         let comps = env.handle.completions.lock().unwrap();
         assert!(
@@ -1266,7 +1266,7 @@ async fn duplicate_discovery_deduplicated() {
     let run_id = RunId::new_v4();
     push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
 
-    // Wait for the original job to be job and blocked at the sandbox gate.
+    // Wait for the original job to be accepted and blocked at the sandbox gate.
     let _token = wait_cancel_token(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
     wait_discover_entered(&env, Duration::from_secs(5)).await;
 

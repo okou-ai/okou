@@ -83,7 +83,7 @@ async fn claim_behind_retained_publication(reuse: bool, hard_stop: bool) {
         });
         env.start_observer
             .wait_for(Duration::from_secs(2), "claim-task drain", |event| {
-                matches!(event, StartLoopEvent::ClaimsDrainEntered).then_some(())
+                matches!(event, StartLoopEvent::AcceptanceDrainEntered).then_some(())
             })
             .await;
         release.add_permits(1);

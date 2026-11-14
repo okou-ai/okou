@@ -57,7 +57,7 @@ async fn running_reaps_completed_jobs_without_budget_exhaustion() {
 //
 // After the first job completes, discover_fut is recreated
 // (Box::pin(provider.discover())). The second job must be discovered,
-// job, executed, and completed through the recreated future.
+// claimed, executed, and completed through the recreated future.
 // -----------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]

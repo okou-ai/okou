@@ -197,7 +197,7 @@ impl BlankPoolSelection {
             Self::Miss(reason) => ("miss", Some(reason.as_str())),
         };
         telemetry.record_bounded_outcome(
-            "runner_claim_blank_pool_selection",
+            "runner_pre_spawn_blank_pool_selection",
             true,
             outcome,
             reason,
@@ -232,7 +232,7 @@ impl FinalizingHandoffOutcome {
 impl FinalizingHandoffTelemetry {
     pub fn record(self, telemetry: &mut JobTelemetry) {
         telemetry.record_bounded_outcome_with_error(
-            "runner_claim_finalizing_handoff",
+            "runner_pre_spawn_finalizing_handoff",
             self.outcome.succeeded(),
             (!self.outcome.succeeded()).then_some(self.outcome.as_str()),
             self.outcome.as_str(),
@@ -248,7 +248,7 @@ impl FinalizingExactIdleLookup {
             Self::Miss(reason) => ("miss", Some(reason.as_str())),
         };
         telemetry.record_bounded_outcome(
-            "runner_claim_finalizing_exact_idle_lookup",
+            "runner_pre_spawn_finalizing_exact_idle_lookup",
             true,
             outcome,
             reason,
@@ -282,15 +282,15 @@ impl RunnerPreSpawnPhase {
 
     const fn action_type(self) -> &'static str {
         match self {
-            Self::ResumeSessionValidation => "runner_claim_resume_session_validation",
-            Self::FinalizingWait => "runner_claim_finalizing_wait",
-            Self::DeviceRateLimits => "runner_claim_device_rate_limits",
-            Self::IdleReuseLookup => "runner_claim_idle_reuse_lookup",
-            Self::HomeCacheStateLookup => "runner_claim_home_cache_state_lookup",
-            Self::HomePromotionValidation => "runner_claim_home_promotion_validation",
-            Self::IdleUnpark => "runner_claim_idle_unpark",
-            Self::ActiveStatusPublish => "runner_claim_active_status_publish",
-            Self::SpawnJobSetup => "runner_claim_spawn_job_setup",
+            Self::ResumeSessionValidation => "runner_pre_spawn_resume_session_validation",
+            Self::FinalizingWait => "runner_pre_spawn_finalizing_wait",
+            Self::DeviceRateLimits => "runner_pre_spawn_device_rate_limits",
+            Self::IdleReuseLookup => "runner_pre_spawn_idle_reuse_lookup",
+            Self::HomeCacheStateLookup => "runner_pre_spawn_home_cache_state_lookup",
+            Self::HomePromotionValidation => "runner_pre_spawn_home_promotion_validation",
+            Self::IdleUnpark => "runner_pre_spawn_idle_unpark",
+            Self::ActiveStatusPublish => "runner_pre_spawn_active_status_publish",
+            Self::SpawnJobSetup => "runner_pre_spawn_job_setup",
         }
     }
 }
@@ -444,7 +444,7 @@ impl RunnerPreSpawnTiming {
         }
         if let Some(task_enqueued_at) = self.task_enqueued_at {
             telemetry.record(
-                "runner_claim_task_schedule_wait",
+                "runner_pre_spawn_task_schedule_wait",
                 executor_started_at.saturating_duration_since(task_enqueued_at),
                 true,
                 None,

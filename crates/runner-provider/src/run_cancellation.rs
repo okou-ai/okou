@@ -48,7 +48,7 @@
 //! follows this ordering. The broader lifecycle is exercised by
 //! [`signals`](https://github.com/okou-ai/okou/blob/main/crates/runner-supervisor/src/reactor/signals.rs),
 //! [`provider cancellation`](https://github.com/okou-ai/okou/blob/main/crates/runner-provider/src/provider/api_ably_supervisor.rs),
-//! [`job discovery`](https://github.com/okou-ai/okou/blob/main/crates/runner-supervisor/src/reactor/job_activation.rs),
+//! [`job activation`](https://github.com/okou-ai/okou/blob/main/crates/runner-supervisor/src/reactor/job_activation.rs),
 //! [`sandbox finalization`](https://github.com/okou-ai/okou/blob/main/crates/runner/src/cmd/start/sandbox_finalization.rs#L697-L732),
 //! and the focused
 //! [`cancellation tests`](https://github.com/okou-ai/okou/blob/main/crates/runner-provider/src/run_cancellation.rs).

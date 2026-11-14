@@ -66,7 +66,7 @@ pub enum RunCleanupDisposition {
     ActiveOrUnknown,
     /// The sandbox has been accepted by the idle pool.
     IdlePoolOwned,
-    /// The sandbox and budget were delivered to a job exact successor.
+    /// The sandbox and budget were delivered to an exact successor.
     HandoffOwned,
     /// The active sandbox was explicitly destroyed and destroy returned normally.
     DestroyCompleted,
@@ -74,7 +74,7 @@ pub enum RunCleanupDisposition {
     StatusRemoved,
 }
 
-/// Shared monotonic cleanup state for a job run.
+/// Shared monotonic cleanup state for an execution.
 #[derive(Clone, Debug)]
 pub struct RunCleanupState {
     state: Arc<AtomicU8>,
@@ -163,7 +163,7 @@ pub enum BudgetOwnership {
     /// The idle pool accepted the sandbox and its lease, so settlement performs no
     /// release. Reuse transfers the lease; idle destruction drops it.
     IdleOwned,
-    /// A job exact successor owns the sandbox and lease directly.
+    /// An exact successor owns the sandbox and lease directly.
     HandoffOwned,
     /// Orphan reconciliation retains capacity until physical absence is proven.
     OrphanOwned,

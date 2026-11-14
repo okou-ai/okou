@@ -318,12 +318,12 @@ export function executionContextBody(args: {
     officialWorkflowBundles: _officialWorkflowBundles,
     seedSkillBundles: _seedSkillBundles,
     templateGuidanceBundles: _templateGuidanceBundles,
-    storageMounts: _storedStorageMounts,
+    storageMounts: _storageMounts,
     featureFlags: _featureFlags,
-    ...runnerStoredContext
+    ...runnerContext
   } = args.preparedContext;
   return {
-    ...runnerStoredContext,
+    ...runnerContext,
     ...(args.run.isFirstRun === null
       ? {}
       : { isFirstRun: args.run.isFirstRun }),
@@ -336,8 +336,8 @@ export function executionContextBody(args: {
       connectorVars: args.preparedContext.vars,
     }),
     storageManifest: {
-      storageMounts: args.preparedContext.storageMounts.map((storedMount) => {
-        const { orgId: _orgId, userId: _userId, ...mount } = storedMount;
+      storageMounts: args.preparedContext.storageMounts.map((storageMount) => {
+        const { orgId: _orgId, userId: _userId, ...mount } = storageMount;
         return mount;
       }),
     },

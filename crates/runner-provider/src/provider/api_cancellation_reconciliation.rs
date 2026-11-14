@@ -302,8 +302,8 @@ impl CancellationReconciliation {
         }
     }
 
-    /// Called only after ExecutionJob validates a successful claim. Attachment is
-    /// serialized with both exact registration retirement and provider shutdown.
+    /// Bind reconciliation to the provider's execution input and exact registration.
+    /// Attachment is serialized with registration retirement and provider shutdown.
     pub(super) fn observe(
         &self,
         run_id: RunId,

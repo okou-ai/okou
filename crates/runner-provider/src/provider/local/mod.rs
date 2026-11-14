@@ -366,7 +366,7 @@ impl super::LocalJobSource for LocalProvider {
                 })
                 .await
                 {
-                    warn!(run_id = %run_id, error = %e, "local: blocking job-job failure cleanup failed");
+                    warn!(run_id = %run_id, error = %e, "local: blocking run-id mismatch cleanup failed");
                 }
                 None
             }

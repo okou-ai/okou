@@ -381,7 +381,7 @@ impl MockJobProvider {
             );
     }
 
-    /// Attach an active-input source at the same job-job boundary as a real provider.
+    /// Attach an active-input source when binding execution input, as a real provider does.
     pub fn set_claim_with_active_input(
         &self,
         run_id: RunId,

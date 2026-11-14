@@ -196,7 +196,7 @@ async fn assert_supplied_panic(point: OuterJobPanicPoint) {
     assert_eq!(
         completion.error.as_deref(),
         Some(if producer.is_some() {
-            "runner panicked while preparing a job finalizing successor"
+            "runner panicked while preparing a finalizing successor"
         } else {
             "job activation setup panicked"
         })

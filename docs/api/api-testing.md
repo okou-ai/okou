@@ -204,7 +204,7 @@ lifecycles instead of using a private driver to manufacture their prerequisites.
 Use the construction and observation rules together:
 
 - Obtain Runner credentials through normal chat send, authenticated heartbeat
-  and claim. A locally signed token for an invented Run does not establish that
+  and direct dispatch. A locally signed token for an invented Run does not establish that
   lifecycle or a real caller's permission combination. Preserve genuine provider
   ingress, upload preparation, output publication and completion protocols. Upload only
   to keys returned by the normal protocol.
@@ -242,7 +242,7 @@ Use the construction and observation rules together:
 
 Keep independently public behavior in mixed scenarios and record lost or
 retained coverage precisely in the owning issue or PR. A request, completion or
-pending claim does not establish later operator review, physical cleanup or
+accepted dispatch does not establish later operator review, physical cleanup or
 internal recovery. See
 [Testing External Behavior](../testing.md#external-behavior) for the complete
 scenario decision procedure.
@@ -506,7 +506,7 @@ The delegation limit is an exception Ethan approved in #37440. Production
 always grants a user-started chain the fixed 32-hop budget, and no API,
 configuration or environment value changes it. Tests lower it through
 `setupWorkflowOrg({ maxAutonomyBudget })` so the real Automation, copy and
-Runner claim chain reaches exhaustion in a few hops instead of 32. Test context
+Runner execution chain reaches exhaustion in a few hops instead of 32. Test context
 restores the default after every case. Keep this control: it is not a private
 state driver, and it must not be cleaned up as one.
 

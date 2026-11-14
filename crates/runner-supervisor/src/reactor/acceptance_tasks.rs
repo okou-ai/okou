@@ -353,7 +353,7 @@ impl UnconsumedFinalizingActivation {
     fn into_request(mut self) -> Result<FinalizingActivationRequest, ReactorError> {
         self.request.take().ok_or_else(|| {
             ReactorError::Internal(
-                "finalizing result lost its acceptance before handoff".to_owned(),
+                "finalizing result lost its activation request before dispatch".to_owned(),
             )
         })
     }

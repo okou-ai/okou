@@ -462,7 +462,7 @@ pub async fn reserve_source_idle_for_spawn(
 }
 
 /// Reserve exactly the predecessor's generation, retaining a typed miss reason
-/// from the same locked observation when no matching entry can be job.
+/// from the same locked observation when no matching entry can be reserved.
 pub async fn reserve_exact_idle_for_spawn(
     idle_pool: &SharedIdlePool,
     reuse_key: &str,
