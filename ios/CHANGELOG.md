@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.43.2](https://github.com/okou-ai/okou/compare/ios-v0.43.1...ios-v0.43.2) (2026-11-14)
+
+
+### Performance Improvements
+
+* **ios:** sync projects incrementally ([#47111](https://github.com/okou-ai/okou/issues/47111)) ([ebe2e3d](https://github.com/okou-ai/okou/commit/ebe2e3dfd4be9b8c0593f9289cd17e80681bba37))
+
 ## [0.43.1](https://github.com/okou-ai/okou/compare/ios-v0.43.0...ios-v0.43.1) (2026-11-13)
 
 

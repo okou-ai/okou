@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.25.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.2...runner-supervisor-v0.25.3) (2026-11-14)
+
+
+### Bug Fixes
+
+* **runner:** preserve sandbox and home reuse on direct dispatch ([#47101](https://github.com/okou-ai/okou/issues/47101)) ([abd8ffa](https://github.com/okou-ai/okou/commit/abd8ffa4ac9930964ae4844bd017991daa1138af))
+
+
+### Refactoring
+
+* **runner:** retire legacy run acquisition clients ([#47100](https://github.com/okou-ai/okou/issues/47100)) ([a9904bc](https://github.com/okou-ai/okou/commit/a9904bc0c2405516d10168768e09a410f10541eb))
+
 ## [0.25.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.1...runner-supervisor-v0.25.2) (2026-11-13)
 
 ## [0.25.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.0...runner-supervisor-v0.25.1) (2026-11-13)

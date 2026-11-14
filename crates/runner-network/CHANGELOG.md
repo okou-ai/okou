@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.6.8](https://github.com/okou-ai/okou/compare/runner-network-v0.6.7...runner-network-v0.6.8) (2026-11-14)
+
 ## [0.6.7](https://github.com/okou-ai/okou/compare/runner-network-v0.6.6...runner-network-v0.6.7) (2026-11-13)
 
 ## [0.6.6](https://github.com/okou-ai/okou/compare/runner-network-v0.6.5...runner-network-v0.6.6) (2026-11-13)

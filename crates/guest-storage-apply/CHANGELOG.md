@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.3](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.2...guest-storage-apply-v0.32.3) (2026-11-14)
+
+
+### Refactoring
+
+* **rust:** type internal owned descriptor stat checks ([#47124](https://github.com/okou-ai/okou/issues/47124)) ([5e36773](https://github.com/okou-ai/okou/commit/5e36773632938b2b6ba02fecd4768941a7ce3fd4))
+
 ## [0.32.2](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.1...guest-storage-apply-v0.32.2) (2026-11-13)
 
 

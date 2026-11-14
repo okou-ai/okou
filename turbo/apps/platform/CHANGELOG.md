@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1130.0](https://github.com/okou-ai/okou/compare/app-v0.1129.0...app-v0.1130.0) (2026-11-14)
+
+
+### Features
+
+* **android:** add native conversation history ([#47084](https://github.com/okou-ai/okou/issues/47084)) ([ceff05b](https://github.com/okou-ai/okou/commit/ceff05bf314bda810b8fd0203f50bba4ead15048))
+* **app:** add presentation output format preference ([#47056](https://github.com/okou-ai/okou/issues/47056)) ([0ade2b2](https://github.com/okou-ai/okou/commit/0ade2b212cae98fe96ece41f48f58e7d3b76005b))
+
+
+### Refactoring
+
+* **browser:** enforce native connections and retire viewer endpoint ([#47114](https://github.com/okou-ai/okou/issues/47114)) ([78e6915](https://github.com/okou-ai/okou/commit/78e6915a86aad95ad10b91b3552adc49328a2c42))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.63.0
+    * @okouai/core bumped to 8.839.0
+    * @okouai/ui bumped to 1.21.16
+
 ## [0.1129.0](https://github.com/okou-ai/okou/compare/app-v0.1128.0...app-v0.1129.0) (2026-11-13)
 
 

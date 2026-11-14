@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.6](https://github.com/okou-ai/okou/compare/runner-host-v0.11.5...runner-host-v0.11.6) (2026-11-14)
+
+
+### Refactoring
+
+* **rust:** type internal owned descriptor stat checks ([#47124](https://github.com/okou-ai/okou/issues/47124)) ([5e36773](https://github.com/okou-ai/okou/commit/5e36773632938b2b6ba02fecd4768941a7ce3fd4))
+
 ## [0.11.5](https://github.com/okou-ai/okou/compare/runner-host-v0.11.4...runner-host-v0.11.5) (2026-11-13)
 
 ## [0.11.4](https://github.com/okou-ai/okou/compare/runner-host-v0.11.3...runner-host-v0.11.4) (2026-11-13)

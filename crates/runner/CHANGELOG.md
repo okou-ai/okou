@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.249.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.3...runner-rs-v0.249.4) (2026-11-14)
+
+
+### Refactoring
+
+* **python:** reuse capped capture for catalog streams ([#47106](https://github.com/okou-ai/okou/issues/47106)) ([1a8bb03](https://github.com/okou-ai/okou/commit/1a8bb03205c21afd3d7cff7307bd755be038c473))
+* **runner:** retire legacy run acquisition clients ([#47100](https://github.com/okou-ai/okou/issues/47100)) ([a9904bc](https://github.com/okou-ai/okou/commit/a9904bc0c2405516d10168768e09a410f10541eb))
+* **rust:** type internal owned descriptor permission changes ([#47128](https://github.com/okou-ai/okou/issues/47128)) ([991e0d8](https://github.com/okou-ai/okou/commit/991e0d807829bc2e51169b17e18f9d618cc105a9))
+* **rust:** type internal owned descriptor stat checks ([#47124](https://github.com/okou-ai/okou/issues/47124)) ([5e36773](https://github.com/okou-ai/okou/commit/5e36773632938b2b6ba02fecd4768941a7ce3fd4))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.2...runner-rs-v0.249.3) (2026-11-13)
 
 
