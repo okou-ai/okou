@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { emitPwaScrollSource } from "../../lib/pwa-scroll-diagnostics.ts";
 import { useGet, useSet } from "ccstate-react";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import {
@@ -24,6 +25,7 @@ function ChatScrollCommitMarker({
       // the content. Lifecycle refs continue to use stable onRef commands.
       ref={(element) => {
         if (element) {
+          emitPwaScrollSource({ kind: "generic-commit", element });
           detach(restore(signal), Reason.DomCallback);
         }
       }}

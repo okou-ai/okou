@@ -5186,6 +5186,20 @@
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
+  "pwaScrollDiagnostics": {
+    "idle": "Bereit",
+    "label": "Scroll-Diagnose der Vorschau",
+    "mark": "Markieren",
+    "notice": "Nur im Arbeitsspeicher. Neuladen löscht die Aufzeichnung. Geometrie- und Stilabfragen bei nativen Ereignissen und Markierungen verursachen Mehraufwand. Vor dem Lesen stoppen. Zeitliche Nähe zu Eingaben beweist keine Kausalität.",
+    "readSnapshot": "Momentaufnahme lesen",
+    "recording": "Aufzeichnung läuft",
+    "start": "Starten",
+    "status": "PWA-Diagnose: {{status}}",
+    "stop": "Stoppen",
+    "stopped": "Gestoppt",
+    "stoppedJson": "Gestoppte Diagnose als JSON",
+    "summary": "SHA {{sha}}\nstate={{state}} standalone={{standalone}} display={{display}} anchorSupport={{anchorSupport}}\nrun={{run}} retained={{retained}}/{{total}} dropped={{dropped}}\n{{entries}}"
+  },
   "queue": {
     "concurrentRuns_one": "{{count}} gleichzeitige Ausführung",
     "concurrentRuns_other": "{{count}} gleichzeitige Ausführungen",

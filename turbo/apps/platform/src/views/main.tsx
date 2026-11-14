@@ -4,6 +4,8 @@ import { StoreProvider, useGet, useSet } from "ccstate-react";
 import { Toaster } from "@okouai/ui/components/ui/sonner";
 import { ErrorBoundary } from "./error-boundary.tsx";
 import { Router } from "./router.tsx";
+import { PwaScrollDiagnostics } from "./pwa-scroll-diagnostics.tsx";
+import { isPwaScrollDiagnosticsPreview } from "../lib/pwa-scroll-diagnostics.ts";
 import { ClerkOptionsProvider } from "./clerk-options-provider.tsx";
 import { FeatureGuideDialog } from "./components/feature-guide-dialog.tsx";
 import { ForceUpgradeDialog } from "./components/force-upgrade-dialog.tsx";
@@ -76,6 +78,7 @@ export const setupRouter = (
           <ClerkOptionsProvider>
             <Router />
           </ClerkOptionsProvider>
+          {isPwaScrollDiagnosticsPreview() && <PwaScrollDiagnostics />}
           <InspectLogFileInput />
           <ForceUpgradeDialog />
           <FeatureGuideDialog />

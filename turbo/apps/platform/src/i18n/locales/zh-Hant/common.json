@@ -5168,6 +5168,20 @@
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project 不可用"
   },
+  "pwaScrollDiagnostics": {
+    "idle": "閒置",
+    "label": "預覽捲動診斷",
+    "mark": "標記",
+    "notice": "僅存記憶體，重新整理即遺失。原生事件及標記時讀取幾何與樣式會增加負擔。請先停止再讀取。與輸入時間接近不代表因果關係。",
+    "readSnapshot": "讀取快照",
+    "recording": "錄製中",
+    "start": "開始",
+    "status": "PWA 診斷：{{status}}",
+    "stop": "停止",
+    "stopped": "已停止",
+    "stoppedJson": "停止後的診斷 JSON",
+    "summary": "SHA {{sha}}\nstate={{state}} standalone={{standalone}} display={{display}} anchorSupport={{anchorSupport}}\nrun={{run}} retained={{retained}}/{{total}} dropped={{dropped}}\n{{entries}}"
+  },
   "queue": {
     "concurrentRuns_one": "{{count}} 個併發執行",
     "concurrentRuns_other": "{{count}} 個併發執行",

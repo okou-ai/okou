@@ -17,6 +17,11 @@ import {
 } from "../utils.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 
+import {
+  emitPwaScrollSource,
+  isPwaScrollDiagnosticsPreview,
+} from "../../lib/pwa-scroll-diagnostics.ts";
+
 const L = logger("AutoScroll");
 const AT_BOTTOM_THRESHOLD_PX = 10;
 const SCROLL_ANCHOR_ATTRIBUTE = "data-chat-scroll-anchor-event-id";
@@ -202,12 +207,21 @@ function applyScrollTop(
     0,
     Math.min(scrollTop, container.scrollHeight - container.clientHeight),
   );
+  emitPwaScrollSource({
+    kind: "apply",
+    element: container,
+    requestedTop: scrollTop,
+    targetTop: targetScrollTop,
+    behavior,
+  });
   if (behavior === "smooth") {
     if (runtime.programmaticSmoothScrollTop === targetScrollTop) {
+      emitPwaScrollSource({ kind: "apply-skip", element: container, behavior });
       return;
     }
     runtime.programmaticScrollTop = null;
     runtime.programmaticSmoothScrollTop = targetScrollTop;
+    emitPwaScrollSource({ kind: "apply-write", element: container, behavior });
     container.scrollTo({ top: targetScrollTop, behavior });
     return;
   }
@@ -217,8 +231,10 @@ function applyScrollTop(
     // layout-taking descendant scrollbars after a programmatic scroll, so keep
     // an already-restored viewport untouched.
     runtime.programmaticScrollTop = container.scrollTop;
+    emitPwaScrollSource({ kind: "apply-skip", element: container, behavior });
     return;
   }
+  emitPwaScrollSource({ kind: "apply-write", element: container, behavior });
   container.scrollTop = scrollTop;
   // Remember where this module left the container. The browser clamps the
   // assignment, so read the offset back instead of trusting the requested one.
@@ -366,6 +382,10 @@ function createInternalScrollSignals(
       const next = new Map(positions);
       next.set(threadId, position);
       set(threadScrollPositions$, next);
+      emitPwaScrollSource({
+        kind: "held-capture",
+        offset: position.viewportOffsetTop,
+      });
       await set(afterThreadScrollPositionChanged$, signal);
     },
   );
@@ -378,6 +398,7 @@ function createInternalScrollSignals(
       const next = new Map(positions);
       next.delete(threadId);
       set(threadScrollPositions$, next);
+      emitPwaScrollSource({ kind: "held-clear" });
       await set(afterThreadScrollPositionChanged$, signal);
     },
   );
@@ -525,6 +546,12 @@ function createScrollNavigationSignals(
       if (!runtime.initialized || !container) {
         return;
       }
+      emitPwaScrollSource({
+        kind: "restore",
+        element: container,
+        held: position !== null,
+        measured: runtime.hasMeasuredPosition,
+      });
       L.debug("layout scroll restore", {
         threadId,
         targetEventId: position?.targetEventId ?? null,
@@ -556,6 +583,11 @@ function createScrollNavigationSignals(
           targetEventId: position.targetEventId,
         });
       }
+      emitPwaScrollSource({
+        kind: "bottom-fallback",
+        element: container,
+        held: position !== null,
+      });
       await set(scrollToBottom$, signal);
     },
   );
@@ -568,6 +600,7 @@ function createScrollNavigationSignals(
         get(scroll.threadScrollPosition$) !== null &&
         runtime.hasMeasuredPosition
       ) {
+        emitPwaScrollSource({ kind: "layout-skip", held: true });
         return;
       }
       await set(restoreScrollPosition$, signal);
@@ -612,6 +645,12 @@ function createRequestScrollAfterRender(
         behavior,
       });
       set(internalPendingRequest$, request);
+      emitPwaScrollSource({
+        kind: "request",
+        revision: request.revision,
+        held: position !== null,
+        behavior,
+      });
       if (position === null) {
         await set(scroll.clearThreadScrollPosition$, signal);
       } else {
@@ -690,6 +729,7 @@ function createRenderScrollSignals(
       ): Promise<void> => {
         signal.throwIfAborted();
         const revision = scrollRenderRevision(marker);
+        emitPwaScrollSource({ kind: "commit", element: marker, revision });
         const request = get(pendingScrollAfterRenderRequest$);
         if (!request || request.revision !== revision) {
           L.debug("stale render scroll commit ignored", {
@@ -791,6 +831,7 @@ function createAttachScrollContainer(
 ) {
   return command(({ set }, container: HTMLElement, signal: AbortSignal) => {
     set(scroll.bindScrollContainer$, container);
+    emitPwaScrollSource({ kind: "container-mount", element: container });
     L.debug("container bound", {
       threadId,
       initialized: runtime.initialized,
@@ -874,6 +915,7 @@ function createAttachScrollContainer(
           capture: true,
         });
         container.removeEventListener("scrollend", handleScrollEnd);
+        emitPwaScrollSource({ kind: "container-unmount", element: container });
         set(scroll.clearScrollContainer$, container);
         runtime.initialized = false;
         runtime.hasMeasuredPosition = false;
@@ -894,6 +936,16 @@ function createScrollContentOnRef(
   return onRef(
     command(({ set }, content: HTMLElement, signal: AbortSignal) => {
       L.debug("content bound", { threadId });
+      emitPwaScrollSource({ kind: "content-mount", element: content });
+      if (isPwaScrollDiagnosticsPreview()) {
+        signal.addEventListener(
+          "abort",
+          () => {
+            emitPwaScrollSource({ kind: "content-unmount", element: content });
+          },
+          { once: true },
+        );
+      }
       const restoreLayout = onDomEventFn(() => {
         return set(navigation.restoreScrollPosition$, signal);
       });

@@ -5168,6 +5168,20 @@
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
+  "pwaScrollDiagnostics": {
+    "idle": "Siaga",
+    "label": "Diagnostik gulir pratinjau",
+    "mark": "Tandai",
+    "notice": "Hanya di memori. Memuat ulang menghapus jejak. Pembacaan geometri dan gaya pada peristiwa native dan penanda menambah beban. Hentikan sebelum membaca. Kedekatan dengan input bukan bukti sebab-akibat.",
+    "readSnapshot": "Baca snapshot",
+    "recording": "Merekam",
+    "start": "Mulai",
+    "status": "Diag. PWA: {{status}}",
+    "stop": "Hentikan",
+    "stopped": "Dihentikan",
+    "stoppedJson": "JSON diagnostik yang dihentikan",
+    "summary": "SHA {{sha}}\nstate={{state}} standalone={{standalone}} display={{display}} anchorSupport={{anchorSupport}}\nrun={{run}} retained={{retained}}/{{total}} dropped={{dropped}}\n{{entries}}"
+  },
   "queue": {
     "concurrentRuns_one": "{{count}} eksekusi bersamaan",
     "concurrentRuns_other": "{{count}} eksekusi bersamaan",

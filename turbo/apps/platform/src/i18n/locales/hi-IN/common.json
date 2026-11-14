@@ -5186,6 +5186,20 @@
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
+  "pwaScrollDiagnostics": {
+    "idle": "निष्क्रिय",
+    "label": "प्रीव्यू स्क्रॉल निदान",
+    "mark": "चिह्न लगाएँ",
+    "notice": "केवल मेमोरी में। रीलोड करने से ट्रेस मिट जाता है। नेटिव इवेंट और चिह्न पर ज्यामिति व शैली पढ़ने से अतिरिक्त भार पड़ता है। पढ़ने से पहले रोकें। इनपुट के पास समय पर होना कारण का प्रमाण नहीं है।",
+    "readSnapshot": "स्नैपशॉट पढ़ें",
+    "recording": "रिकॉर्डिंग जारी",
+    "start": "शुरू करें",
+    "status": "PWA निदान: {{status}}",
+    "stop": "रोकें",
+    "stopped": "रुका हुआ",
+    "stoppedJson": "रुके हुए निदान का JSON",
+    "summary": "SHA {{sha}}\nstate={{state}} standalone={{standalone}} display={{display}} anchorSupport={{anchorSupport}}\nrun={{run}} retained={{retained}}/{{total}} dropped={{dropped}}\n{{entries}}"
+  },
   "queue": {
     "concurrentRuns_one": "{{count}} समवर्ती रन",
     "concurrentRuns_other": "{{count}} समवर्ती रन",
