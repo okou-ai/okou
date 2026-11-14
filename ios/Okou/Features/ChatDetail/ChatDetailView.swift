@@ -529,6 +529,8 @@ struct ChatDetailView: View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
       if message.role == .assistant && showsAvatar {
         assistantAvatar
+          .padding(
+            .leading, conversation.sharing.isSelecting ? OkouAvatarSize.message + OkouSpace.sm : 0)
       }
       if message.role == .system {
         Label(message.text, okouSymbol: message.isError ? "circle-alert" : "circle-stop")
