@@ -14,12 +14,13 @@ final class ChatModelSelectionResourceTests: XCTestCase {
     let began = expectation(description: "The conversation metadata request started")
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("/metadata") {
+      let response = try modelReadResponse(request)
+      if request.url?.path == metadataPath {
         reads.withLock { $0 += 1 }
         began.fulfill()
         await gate.wait()
       }
-      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+      return response
     }
     let models = modelStore(fixture)
     let selection = ChatModelSelectionStore(models: models, thread: thread())
@@ -62,7 +63,8 @@ final class ChatModelSelectionResourceTests: XCTestCase {
     let cancelled = expectation(description: "The original metadata HTTP request was cancelled")
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("/metadata") {
+      let response = try modelReadResponse(request)
+      if request.url?.path == metadataPath {
         let count = reads.withLock {
           $0 += 1
           return $0
@@ -77,7 +79,7 @@ final class ChatModelSelectionResourceTests: XCTestCase {
         }
         return ChatHTTPResponse(body: count == 1 ? ModelHTTPFixtures.metadata : changedMetadata)
       }
-      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+      return response
     }
     let models = modelStore(fixture)
     let selection = ChatModelSelectionStore(models: models, thread: thread())
@@ -107,7 +109,8 @@ final class ChatModelSelectionResourceTests: XCTestCase {
     let cancelled = expectation(description: "Retirement cancelled the original HTTP request")
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("/metadata") {
+      let response = try modelReadResponse(request)
+      if request.url?.path == metadataPath {
         let count = reads.withLock {
           $0 += 1
           return $0
@@ -122,7 +125,7 @@ final class ChatModelSelectionResourceTests: XCTestCase {
         }
         return ChatHTTPResponse(body: count == 1 ? ModelHTTPFixtures.metadata : changedMetadata)
       }
-      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+      return response
     }
     let models = modelStore(fixture)
     let retired = ChatModelSelectionStore(models: models, thread: thread())
@@ -152,7 +155,8 @@ final class ChatModelSelectionResourceTests: XCTestCase {
   {
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("/metadata") {
+      let response = try modelReadResponse(request)
+      if request.url?.path == metadataPath {
         let count = reads.withLock {
           $0 += 1
           return $0
@@ -162,7 +166,7 @@ final class ChatModelSelectionResourceTests: XCTestCase {
         }
         return ChatHTTPResponse(body: changedMetadata)
       }
-      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+      return response
     }
     let models = modelStore(fixture)
     let selection = ChatModelSelectionStore(models: models, thread: thread())
@@ -190,20 +194,22 @@ final class ChatModelSelectionResourceTests: XCTestCase {
     let saved = Mutex(false)
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
-      let path = request.url!.path
-      if path.hasSuffix("/model-selection") {
+      if request.httpMethod == "POST",
+        request.url?.path == "/api/chat-threads/\(ModelHTTPFixtures.threadID)/model-selection"
+      {
         let body = try XCTUnwrap(
           JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
         XCTAssertEqual(body["model"] as? String, "claude-model")
         saved.withLock { $0 = true }
         return ChatHTTPResponse(status: 204, body: "")
       }
-      if path.hasSuffix("/metadata") {
+      let response = try modelReadResponse(request)
+      if request.url?.path == metadataPath {
         reads.withLock { $0 += 1 }
         return ChatHTTPResponse(
           body: saved.withLock { $0 } ? changedMetadata : ModelHTTPFixtures.metadata)
       }
-      return try XCTUnwrap(ModelHTTPFixtures.response(path))
+      return response
     }
     let models = modelStore(fixture)
     let selection = ChatModelSelectionStore(models: models, thread: thread())
@@ -232,6 +238,15 @@ final class ChatModelSelectionResourceTests: XCTestCase {
       title: "Example", selectedModel: "codex-model", createdAt: Date(), updatedAt: Date(),
       sortAt: Date())
   }
+}
+
+private let metadataPath = "/api/chat-threads/\(ModelHTTPFixtures.threadID)/metadata"
+
+private func modelReadResponse(_ request: URLRequest) throws -> ChatHTTPResponse {
+  guard request.httpMethod == "GET", let path = request.url?.path,
+    let response = ModelHTTPFixtures.response(path)
+  else { throw URLError(.unsupportedURL) }
+  return response
 }
 
 private let changedMetadata = ModelHTTPFixtures.metadata.replacingOccurrences(
