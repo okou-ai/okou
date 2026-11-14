@@ -2088,4 +2088,167 @@ for (const url of [diagnosticUrl, "https://app.okou.ai/sign-in"]) {
   assert.equal(response.headers.has("x-okou-preview-build-sha"), false);
   await response.body.cancel();
 }
+// Gateway requests reach the exact Worker alias but must serve the bound public
+// origin. Direct aliases remain useful for diagnostics without public-origin auth.
+for (const identity of ["pr-25304", "staging"]) {
+  const publicOrigin = `https://${identity}-app.omby.ai`;
+  const aliasOrigin = `https://${identity}-app-okou-app-preview.vm0.workers.dev`;
+  const env = {
+    ...edgePreviewEnvironment,
+    APP_PREVIEW_ORIGIN: publicOrigin,
+    CLERK_EDGE_AUTHORIZED_PARTY: publicOrigin,
+  };
+  const navigationHeaders = {
+    "sec-fetch-mode": "navigate",
+    "sec-fetch-dest": "document",
+    "x-forwarded-host": `${identity}-app.omby.ai`,
+    "x-forwarded-proto": "https",
+    Cookie: "__session=public-preview-session",
+  };
+  const apiRequests = [];
+  const publicWorker = withPreviewBuildIdentity(
+    workerModule.createWorker(
+      embeddedShell,
+      () => {
+        return {
+          authenticateRequest(request, options) {
+            assert.equal(request.url, `${publicOrigin}/sign-in?next=%2Fchats`);
+            assert.equal(
+              request.headers.get("host"),
+              new URL(publicOrigin).host,
+            );
+            assert.equal(request.headers.get("x-forwarded-host"), null);
+            assert.equal(request.headers.get("x-forwarded-proto"), null);
+            assert.deepEqual(options.authorizedParties, [publicOrigin]);
+            return Promise.resolve({
+              headers: new Headers(),
+              isAuthenticated: true,
+              toAuth() {
+                return {
+                  userId: "user_public_preview",
+                  sessionId: "sess_public_preview",
+                  orgId: "org_public_preview",
+                };
+              },
+            });
+          },
+        };
+      },
+      (url, options) => {
+        apiRequests.push({ url: new URL(url), headers: options.headers });
+        return Promise.resolve(Response.json({ publicPreview: true }));
+      },
+    ),
+    diagnosticHtml,
+  );
+  const forwardedResponse = await publicWorker.fetch(
+    new Request(`${aliasOrigin}/sign-in?next=%2Fchats`, {
+      headers: navigationHeaders,
+    }),
+    env,
+  );
+  assert.equal(forwardedResponse.status, 200);
+  assert.equal(
+    forwardedResponse.headers.get("x-okou-preview-build-sha"),
+    diagnosticSha,
+  );
+  const html = await forwardedResponse.text();
+  for (const asset of [
+    "index-Test1234.js",
+    "index-Test1234.css",
+    "vendor-Test1234.js",
+  ]) {
+    assert.ok(html.includes(`${publicOrigin}/okou-app/assets/${asset}`));
+  }
+  if (identity.startsWith("pr-")) {
+    assert.deepEqual(clerkEdgeSessionJson(html), {
+      userId: "user_public_preview",
+      sessionId: "sess_public_preview",
+    });
+    assert.equal(apiRequests.length, 7);
+    for (const { url, headers } of apiRequests) {
+      assert.equal(url.origin, `https://${identity}-api.vm6.ai`);
+      assert.equal(headers.get("Origin"), publicOrigin);
+      assert.equal(headers.get("Cookie"), "__session=public-preview-session");
+    }
+    assert.deepEqual(prefetchedApiJson(html, "/api/agents"), {
+      publicPreview: true,
+    });
+  }
+
+  const directResponse = await publicWorker.fetch(
+    diagnosticRequest(`${aliasOrigin}/sign-in`),
+    env,
+  );
+  assert.equal(
+    directResponse.headers.get("x-okou-preview-build-sha"),
+    diagnosticSha,
+  );
+  const directHtml = await directResponse.text();
+  assert.ok(
+    directHtml.includes(`${aliasOrigin}/okou-app/assets/index-Test1234.js`),
+  );
+  assert.doesNotMatch(directHtml, /okou-clerk-edge-session/u);
+}
+
+// Untrusted forwarding must not change the serving origin or grant Clerk auth.
+// These are live trust-boundary cases, not retired behavior assertions.
+for (const scenario of [
+  { origin: edgePreviewOrigin, forwardedHost: "pr-25305-app.omby.ai" },
+  { origin: edgePreviewOrigin, forwardedHost: "app.okou.ai" },
+  { origin: edgePreviewOrigin, forwardedHost: "unrelated.example" },
+  {
+    origin: edgePreviewOrigin,
+    forwardedHost: "pr-25304-app.omby.ai, unrelated.example",
+  },
+  {
+    origin: edgePreviewOrigin,
+    forwardedHost: "pr-25304-app.omby.ai",
+    proto: "http",
+  },
+  {
+    origin: edgePreviewOrigin,
+    forwardedHost: "pr-25304-app.omby.ai",
+    binding: undefined,
+  },
+  {
+    origin: "https://pr-25305-app-okou-app-preview.vm0.workers.dev",
+    forwardedHost: "pr-25304-app.omby.ai",
+  },
+  {
+    origin: "https://staging-app-okou-app-preview.vm0.workers.dev",
+    forwardedHost: "pr-25304-app.omby.ai",
+  },
+  {
+    origin: "https://unrelated.example",
+    forwardedHost: "pr-25304-app.omby.ai",
+  },
+]) {
+  const env = {
+    ...edgePreviewEnvironment,
+    APP_PREVIEW_ORIGIN: Object.hasOwn(scenario, "binding")
+      ? scenario.binding
+      : "https://pr-25304-app.omby.ai",
+    CLERK_EDGE_AUTHORIZED_PARTY: "https://pr-25304-app.omby.ai",
+  };
+  const response = await withPreviewBuildIdentity(
+    guardedEdgeWorker,
+    diagnosticHtml,
+  ).fetch(
+    new Request(`${scenario.origin}/sign-in`, {
+      headers: {
+        "x-forwarded-host": scenario.forwardedHost,
+        "x-forwarded-proto": scenario.proto ?? "https",
+        Forwarded: "host=pr-25304-app.omby.ai;proto=https",
+      },
+    }),
+    env,
+  );
+  const html = await response.text();
+  assert.doesNotMatch(html, /okou-clerk-edge-session/u);
+  const assetOrigin = scenario.origin.endsWith(".workers.dev")
+    ? scenario.origin
+    : "https://static.okou.io";
+  assert.ok(html.includes(`${assetOrigin}/okou-app/assets/index-Test1234.js`));
+}
 console.log("okou app worker tests passed");

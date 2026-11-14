@@ -457,17 +457,17 @@ jobs:
         run: |
           JOB_REF="${{ steps.set-job-ref.outputs.job-ref }}"
           PREVIEW_DOMAIN="${{ vars.PREVIEW_DOMAIN }}"
-          CF_WORKERS_SUBDOMAIN="${{ vars.CF_WORKERS_SUBDOMAIN }}"
+          APP_PREVIEW_DOMAIN="${{ vars.CF_PAGES_PREVIEW_DOMAIN }}"
 
-          if [ -n "$PREVIEW_DOMAIN" ] && [ -n "$CF_WORKERS_SUBDOMAIN" ] && [ -n "$JOB_REF" ]; then
+          if [ -n "$PREVIEW_DOMAIN" ] && [ -n "$APP_PREVIEW_DOMAIN" ] && [ -n "$JOB_REF" ]; then
             APP_URL="$(bash .github/scripts/resolve-app-preview-url.sh \
               "$JOB_REF" \
-              "$CF_WORKERS_SUBDOMAIN")"
+              "$APP_PREVIEW_DOMAIN")"
             {
               echo "app-url=${APP_URL}"
               echo "api-url=https://${JOB_REF}-api.${PREVIEW_DOMAIN}"
             } >> "$GITHUB_OUTPUT"
-            echo "App preview URL uses ${CF_WORKERS_SUBDOMAIN}.workers.dev; API preview uses ${PREVIEW_DOMAIN}"
+            echo "App preview URL uses ${APP_PREVIEW_DOMAIN}; API preview uses ${PREVIEW_DOMAIN}"
           else
             {
               echo "app-url="
@@ -1519,7 +1519,7 @@ jobs:
 
   # Build the canonical app artifact independently of Vercel, publish its
   # immutable resources to R2, and upload the small application shell with a
-  # standalone Cloudflare Worker version.
+  # standalone Cloudflare Worker version behind the public omby preview gateway.
   deploy-app:
     needs: [detect-release, detect-turbo-ts-checks]
     runs-on: ubuntu-latest
@@ -1552,6 +1552,8 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: auto
       CF_WORKERS_SUBDOMAIN: ${{ vars.CF_WORKERS_SUBDOMAIN }}
+      # Keep the existing repository variable; the gateway no longer uses Pages.
+      APP_PREVIEW_DOMAIN: ${{ vars.CF_PAGES_PREVIEW_DOMAIN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
       PREVIEW_DOMAIN: ${{ vars.PREVIEW_DOMAIN }}
       R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
@@ -1574,17 +1576,24 @@ jobs:
             "$MERGE_GROUP_HEAD_REF")"
           echo "alias=$alias" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve app Worker preview URL
+      - name: Resolve public and upstream app preview URLs
         id: app-preview
         env:
           WORKER_PREVIEW_ALIAS: ${{ steps.worker-alias.outputs.alias }}
         run: |
+          : "${APP_PREVIEW_DOMAIN:?CF_PAGES_PREVIEW_DOMAIN variable is required}"
           : "${CF_WORKERS_SUBDOMAIN:?CF_WORKERS_SUBDOMAIN variable is required}"
           job_ref="${WORKER_PREVIEW_ALIAS%-app}"
           url="$(bash .github/scripts/resolve-app-preview-url.sh \
             "$job_ref" \
+            "$APP_PREVIEW_DOMAIN")"
+          worker_url="$(bash .github/scripts/resolve-app-worker-preview-url.sh \
+            "$job_ref" \
             "$CF_WORKERS_SUBDOMAIN")"
-          echo "url=$url" >> "$GITHUB_OUTPUT"
+          {
+            echo "url=$url"
+            echo "worker-url=$worker_url"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/toolchain-init
 
@@ -1809,7 +1818,7 @@ jobs:
           set -euo pipefail
           : "${CLOUDFLARE_API_TOKEN:?CF_API_WORKER_DEPLOY_API_TOKEN secret is required}"
           : "${CLOUDFLARE_ACCOUNT_ID:?CF_ACCOUNT_ID variable is required}"
-          : "${EXPECTED_PREVIEW_URL:?app Worker preview URL is required}"
+          : "${EXPECTED_PREVIEW_URL:?public app preview URL is required}"
 
           worker_secret_args=()
           if [[ "$EVENT_NAME" == "pull_request" ]]; then
@@ -1824,8 +1833,8 @@ jobs:
               *) echo "App Worker preview requires a Clerk test secret key" >&2; exit 1 ;;
             esac
 
-            # Keep Clerk bindings encrypted and version-scoped. The exact alias
-            # origin is included so the Worker never trusts an arbitrary Host.
+            # Keep Clerk bindings encrypted and version-scoped. Bind the exact
+            # public origin, not the gateway's internal Worker upstream.
             umask 077
             worker_secrets="$(mktemp)"
             trap 'rm -f "$worker_secrets"' EXIT
@@ -1882,18 +1891,27 @@ jobs:
           pnpm --filter @okouai/app-worker exec wrangler versions upload \
             --env preview \
             --preview-alias "$WORKER_PREVIEW_ALIAS" \
+            --var "APP_PREVIEW_ORIGIN:$EXPECTED_PREVIEW_URL" \
             "${worker_secret_args[@]}" \
             --message "app artifact ${ARTIFACT_SHA}"
 
           echo "url=$EXPECTED_PREVIEW_URL" >> "$GITHUB_OUTPUT"
 
-      - name: Record standalone app Worker preview
+      - name: Verify public app preview ingress
         env:
           APP_PREVIEW_URL: ${{ steps.worker-deploy.outputs.url }}
+          ARTIFACT_SHA: ${{ steps.artifact.outputs.sha }}
+        run: bash .github/scripts/verify-app-preview-ingress.sh "$APP_PREVIEW_URL" "$ARTIFACT_SHA"
+
+      - name: Record app preview ingress
+        env:
+          APP_PREVIEW_URL: ${{ steps.worker-deploy.outputs.url }}
+          WORKER_PREVIEW_URL: ${{ steps.app-preview.outputs.worker-url }}
           WORKER_PREVIEW_ALIAS: ${{ steps.worker-alias.outputs.alias }}
         run: |
+          echo "App preview: ${APP_PREVIEW_URL}" >> "$GITHUB_STEP_SUMMARY"
           echo "App Worker preview alias: ${WORKER_PREVIEW_ALIAS}" >> "$GITHUB_STEP_SUMMARY"
-          echo "App Worker preview: ${APP_PREVIEW_URL}" >> "$GITHUB_STEP_SUMMARY"
+          echo "App Worker upstream: ${WORKER_PREVIEW_URL}" >> "$GITHUB_STEP_SUMMARY"
 
   deploy-stripe-listener:
     runs-on: ubuntu-latest
