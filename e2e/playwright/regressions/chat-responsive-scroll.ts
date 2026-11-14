@@ -13,7 +13,7 @@ import { chromium, type Locator } from "@playwright/test";
 // Screenshots contain only the transcript; paragraph text is hashed in JSON.
 
 const assistantSelector =
-  "[data-chat-selection-source][data-chat-scroll-anchor-event-id]:not([data-chat-run-work-history] *)";
+  '[data-role="assistant"] [data-chat-selection-source][data-chat-scroll-anchor-event-id]:not([data-chat-run-work-history] *)';
 const readingTolerance = 4;
 const bottomTolerance = 2;
 const desktop = { width: 1440, height: 1000 };
