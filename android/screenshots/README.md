@@ -55,7 +55,7 @@ The command replaces only its generated `android/build/screenshots/` output. A f
 recipe or incomplete image bundle returns nonzero; logs and available native diagnostics
 remain uploadable. The artifact includes an `index.html`, PNGs, `screenshots.json` with
 device details, and `run.json` with actual target SHA, driver SHA and recipe identity.
-Download/unzip it and open the index locally. The workflow keeps artifacts for seven days;
+Download/unzip it and open the index locally. The workflow keeps artifacts for one day;
 download links require the appropriate GitHub access and expire with retention/deletion.
 
 ## Before merging

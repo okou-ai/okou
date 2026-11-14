@@ -80,7 +80,7 @@ jobs:
             android/app/build/outputs/androidTest-results/
             android/app/build/outputs/managed_device_android_test_additional_output/
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 1
       - name: Link review evidence
         if: always()
         env:
