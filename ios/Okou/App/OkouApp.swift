@@ -431,7 +431,7 @@ private struct WorkspaceRootView: View {
 
   private var widgetSnapshot: OkouWidgetSnapshot {
     OkouWidgetPublishing.snapshot(
-      workspaceID: workspaceID, threads: store.list.threads,
+      userID: userID, workspaceID: workspaceID, threads: store.list.threads,
       name: authentication.firstName?.trimmingCharacters(in: .whitespacesAndNewlines),
       hasDraft: store.hasDraft)
   }

@@ -26,6 +26,7 @@
 		000000000000000000000084 /* CCStateSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000083 /* CCStateSwiftUI */; };
 		0000000000000000000000A1 /* OkouWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 0000000000000000000000A5 /* OkouWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		0000000000000000000000A2 /* ChatData in Frameworks */ = {isa = PBXBuildFile; productRef = 00000000000000000000002D /* ChatData */; };
+		0000000000000000000000B1 /* ClerkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 00000000000000000000000E /* ClerkKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -96,6 +97,21 @@
 			);
 			target = 0000000000000000000000AB /* OkouWidgets */;
 		};
+		0000000000000000000000B2 /* Exceptions for "Push" folder in "OkouWidgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				CrashReporting.swift,
+				NotificationServiceExtension.swift,
+			);
+			target = 0000000000000000000000AB /* OkouWidgets */;
+		};
+		0000000000000000000000B3 /* Exceptions for "Push" folder in "OkouNotificationService" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				OkouWidgetRefresh.swift,
+			);
+			target = 000000000000000000000040 /* OkouNotificationService */;
+		};
 		0000000000000000000000B0 /* Exceptions for "Okou" folder in "OkouWidgets" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -136,6 +152,10 @@
 		};
 		000000000000000000000055 /* Push */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				0000000000000000000000B3 /* Exceptions for "Push" folder in "OkouNotificationService" target */,
+				0000000000000000000000B2 /* Exceptions for "Push" folder in "OkouWidgets" target */,
+			);
 			path = Push;
 			sourceTree = "<group>";
 		};
@@ -192,6 +212,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0000000000000000000000A2 /* ChatData in Frameworks */,
+				0000000000000000000000B1 /* ClerkKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -327,10 +348,12 @@
 			);
 			fileSystemSynchronizedGroups = (
 				0000000000000000000000A7 /* Widgets */,
+				000000000000000000000055 /* Push */,
 			);
 			name = OkouWidgets;
 			packageProductDependencies = (
 				00000000000000000000002D /* ChatData */,
+				00000000000000000000000E /* ClerkKit */,
 			);
 			productName = OkouWidgets;
 			productReference = 0000000000000000000000A5 /* OkouWidgets.appex */;

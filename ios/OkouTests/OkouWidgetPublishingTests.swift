@@ -31,7 +31,7 @@ final class OkouWidgetPublishingTests: XCTestCase {
       thread(7, title: "Has a draft", minutesAgo: 40),
     ]
     let snapshot = OkouWidgetPublishing.snapshot(
-      workspaceID: "workspace", threads: threads, name: "Tong",
+      userID: "user", workspaceID: "workspace", threads: threads, name: "Tong",
       hasDraft: { $0 == threads[6].id })
 
     XCTAssertEqual(
@@ -52,7 +52,8 @@ final class OkouWidgetPublishingTests: XCTestCase {
   func testSnapshotKeepsTwelveChats() {
     let threads = (1...20).map { thread($0, title: "Chat \($0)", minutesAgo: Double($0)) }
     let snapshot = OkouWidgetPublishing.snapshot(
-      workspaceID: "workspace", threads: threads, name: nil, hasDraft: { _ in false })
+      userID: "user", workspaceID: "workspace", threads: threads, name: nil,
+      hasDraft: { _ in false })
     XCTAssertEqual(snapshot.chats.count, 12)
     XCTAssertEqual(snapshot.chats.first?.title, "Chat 1")
   }

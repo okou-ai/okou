@@ -51,6 +51,8 @@ class ArchiveProofTests(unittest.TestCase):
             "ClerkKeychainAccessGroup": "C5UWSXYB67.ai.okou.ios",
             "NotificationAppGroup": "group.ai.okou.ios",
             "SentryDSN": "https://public@o1.ingest.us.sentry.io/42",
+            "APIBaseURL": "https://api.okou.ai",
+            "ClerkPublishableKey": "pk_live_example",
         }
         write_plist(self.app / "Info.plist", self.info)
         write_plist(
@@ -106,6 +108,10 @@ class ArchiveProofTests(unittest.TestCase):
             "NSExtension": {
                 "NSExtensionPointIdentifier": "com.apple.widgetkit-extension"
             },
+            "ClerkKeychainAccessGroup": "C5UWSXYB67.ai.okou.ios",
+            "NotificationAppGroup": "group.ai.okou.ios",
+            "APIBaseURL": "https://api.okou.ai",
+            "ClerkPublishableKey": "pk_live_example",
         }
         write_plist(self.widgets / "Info.plist", self.widgets_info)
         (self.widgets / "OkouWidgets").write_bytes(
@@ -316,6 +322,18 @@ class ArchiveProofTests(unittest.TestCase):
             with self.subTest(changes=changes):
                 write_plist(self.widgets / "Info.plist", {**self.widgets_info, **changes})
                 self.invoke("prepare", success=False)
+                self.assertFalse(self.destination.exists())
+
+    def test_prepare_rejects_a_widget_extension_without_the_shared_session(self):
+        for changes, message in (
+            ({"ClerkKeychainAccessGroup": ""}, "shared storage identities"),
+            ({"NotificationAppGroup": "group.other"}, "shared storage identities"),
+            ({"APIBaseURL": "https://staging.example"}, "API and session service"),
+            ({"ClerkPublishableKey": "pk_test_other"}, "API and session service"),
+        ):
+            with self.subTest(changes=changes):
+                write_plist(self.widgets / "Info.plist", {**self.widgets_info, **changes})
+                self.assertIn(message, self.invoke("prepare", success=False))
                 self.assertFalse(self.destination.exists())
 
     def test_export_rejects_unsigned_or_mismatched_widget_extension(self):

@@ -1,4 +1,5 @@
 import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
+import { scheduleUserWidgetRefresh$ } from "./ios-widget-push.service";
 import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/staff-single-agent-migration";
 import { buildEmailPrompt } from "./email-prompt";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
@@ -4160,7 +4161,7 @@ export function createThreadClaimRunObjects(
   );
 
   const publishPendingRun$ = command(
-    async (_context, pending: PendingClaimRun, signal: AbortSignal) => {
+    async ({ set }, pending: PendingClaimRun, signal: AbortSignal) => {
       signal.throwIfAborted();
       // Immediate and queued picks have committed their active-run slot here.
       // Pending shell approvals must re-read chat_busy before the runner starts.
@@ -4169,6 +4170,7 @@ export function createThreadClaimRunObjects(
       );
       signal.throwIfAborted();
       // The committed pending Run is the active indicator's only start edge.
+      set(scheduleUserWidgetRefresh$, pending.context.head.userId);
       await publishChatIndicatorsChangedSafely({
         userId: pending.context.head.userId,
         orgId: pending.context.head.orgId,

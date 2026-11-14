@@ -4,6 +4,7 @@ import OSLog
 import Observation
 import UIKit
 import UserNotifications
+import WidgetKit
 
 /// One immutable local data scope; its client still verifies identity before requests.
 struct NotificationWorkspace {
@@ -36,6 +37,8 @@ protocol NotificationSystem {
   func deliveredNotifications() async -> [DeliveredChatNotification]
   func removeDeliveredNotifications(identifiers: [String])
   func setBadgeCount(_ count: Int) async throws
+  /// The token WidgetKit issues once a widget with a push handler is installed, as hex.
+  func widgetPushToken() async -> String?
   var environment: String? { get }
 }
 
@@ -71,6 +74,11 @@ struct AppleNotificationSystem: NotificationSystem {
     if let url = URL(string: UIApplication.openSettingsURLString) {
       await UIApplication.shared.open(url)
     }
+  }
+  // WidgetCenter is not Sendable; read it off the main actor and return only the token.
+  nonisolated func widgetPushToken() async -> String? {
+    let info = await WidgetCenter.shared.currentPushInfo
+    return info?.token.map { String(format: "%02x", $0) }.joined()
   }
   var environment: String? {
     switch Bundle.main.object(forInfoDictionaryKey: "APNsEnvironment") as? String {
@@ -123,6 +131,8 @@ final class NotificationService {
     let revision: Int
     let deviceToken: String
     let environment: String
+    /// Lets the API refresh this device's widgets when a chat starts or finishes elsewhere.
+    let widgetPushToken: String?
   }
 
   init(
@@ -270,8 +280,17 @@ final class NotificationService {
         system.register()
       }
       guard let deviceToken, let environment = system.environment else { return }
-      if binding?.deviceToken == deviceToken && binding?.environment == environment { return }
-      let next = nextBinding(deviceToken: deviceToken, environment: environment)
+      // WidgetKit issues this token only after a widget is added, so each foreground refresh
+      // reads it again and rebinds when it appears or changes.
+      let widgetPushToken = await system.widgetPushToken()
+      guard self.generation == generation, !Task.isCancelled else { return }
+      if binding?.deviceToken == deviceToken && binding?.environment == environment
+        && binding?.widgetPushToken == widgetPushToken
+      {
+        return
+      }
+      let next = nextBinding(
+        deviceToken: deviceToken, environment: environment, widgetPushToken: widgetPushToken)
       // Save the attempt before I/O so sign-out can fence even an uncertain write.
       binding = next
       defaults.set(true, forKey: "ios-push-registration-attempted")
@@ -343,10 +362,12 @@ final class NotificationService {
     return revision
   }
 
-  private func nextBinding(deviceToken: String, environment: String) -> Binding {
+  private func nextBinding(
+    deviceToken: String, environment: String, widgetPushToken: String?
+  ) -> Binding {
     Binding(
       installationId: installationID, revision: nextRevision(), deviceToken: deviceToken,
-      environment: environment)
+      environment: environment, widgetPushToken: widgetPushToken)
   }
 
   /// A foreground visit acknowledges this device's badge before chat reads or network I/O.

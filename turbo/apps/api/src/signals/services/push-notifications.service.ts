@@ -3,6 +3,7 @@ import { recordIosNotificationFact } from "./ios-notification-telemetry";
 import { iosPushRegistrations } from "@okouai/db/schema/ios-push-registration";
 import { hasApnsConfiguration, sendApnsNotification } from "../external/apns";
 import { isActiveIosPushSession$ } from "./ios-push-registrations.service";
+import { refreshUserWidgets$ } from "./ios-widget-push.service";
 import webpush, { WebPushError } from "web-push";
 import { and, eq } from "drizzle-orm";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -206,8 +207,20 @@ export const sendUserPushNotifications$ = command(
   },
 );
 
-/** Badge-only pushes keep installed clients current after reads on any device. */
+/**
+ * Badge-only pushes and widget reloads keep installed clients current after reads,
+ * mutes and deletions on any device.
+ */
 export const synchronizeUserPushBadge$ = command(
+  async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
+    await Promise.all([
+      set(synchronizeUserBadgeCount$, userId, signal),
+      set(refreshUserWidgets$, userId, signal),
+    ]);
+  },
+);
+
+const synchronizeUserBadgeCount$ = command(
   async ({ get, set }, userId: string, signal: AbortSignal): Promise<void> => {
     if (
       !hasApnsConfiguration("production") &&
