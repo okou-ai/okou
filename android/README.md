@@ -28,6 +28,16 @@ field and saving clears Instructions. A lost save response reads the server back
 an unresolved attempt stays frozen until that read or an explicit retry with the
 same version resolves it.
 
+Activities for the same API origin/user/workspace share one editing transaction
+while retaining their own native selection and session authorization. Request
+progress, read failures and persisted intent are separate facts. Preparation
+must acknowledge that exact frozen intent before HTTP; a superseded queued write
+is not a durability receipt. Cancelling or failing preparation restores the
+editable intent, while cancellation after dispatch preserves the unknown attempt.
+Settlement only replaces its captured local revision. Retiring a controller
+cancels its own network work; the shared editor is released after the last
+controller detaches, and accepted local IO remains application-owned.
+
 Unsaved text and unresolved save attempts live in a separate application-owned,
 versioned AtomicFile store under `noBackupFilesDir/personal-instructions`.
 Format 1 contains content, the base response and attempt state, scoped by normalized
@@ -177,6 +187,8 @@ cursors, disk reopen, dirty retry, retired results and visible read confirmation
 
 Instructions suites exercise conditional HTTP saves, owner validation, durable
 draft reopening/isolation, local IO failures and uncertain-write reconciliation.
+They also cover shared controllers, superseded preparation receipts and retirement
+before dispatch without incorrectly freezing an editable draft.
 `PersonalInstructionsSettingsTest` holds the actual HTTP read while Settings stays
 usable and checks native selection through conflicts. `NativeInstructionsTest`
 uses the API 35 device for multiline input, IME/system Back, Activity recreation,

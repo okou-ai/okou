@@ -34,6 +34,11 @@ data class InstructionsDraft(
 
 data class RestoredInstructionsDraft(val draft: InstructionsDraft?, val durable: Boolean)
 
+enum class InstructionsCommit {
+    Committed,
+    Superseded,
+}
+
 @Serializable
 private data class InstructionsDocument(val format: Int, val draft: InstructionsDraft?)
 
@@ -44,7 +49,7 @@ class PersonalInstructionsDraftStore(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private class Write(val value: InstructionsDraft?) {
-        val done = CompletableDeferred<Unit>()
+        val done = CompletableDeferred<InstructionsCommit>()
     }
 
     private val owner = SupervisorJob()
@@ -52,6 +57,7 @@ class PersonalInstructionsDraftStore(
     private val io = Mutex()
     private val guard = Any()
     private val latest = mutableMapOf<String, Write>()
+    private val editors = mutableMapOf<String, PersonalInstructionsOwner>()
     private var closed = false
     private val json = Json {
         encodeDefaults = true
@@ -63,7 +69,27 @@ class PersonalInstructionsDraftStore(
             listOf(identity.apiOrigin.toHttpUrl().toString(), identity.userId, identity.workspaceId)
         )
 
-    fun persist(identity: WorkspaceIdentity, value: InstructionsDraft?): Deferred<Unit> {
+    // Presentation controllers attach on Main. Only attached identities retain a shared editor.
+    internal fun attach(
+        identity: WorkspaceIdentity,
+        connection: PersonalInstructionsOwner.Connection,
+    ): PersonalInstructionsOwner =
+        editors
+            .getOrPut(key(identity)) { PersonalInstructionsOwner(this, identity) }
+            .also { it.attach(connection) }
+
+    internal fun detach(
+        identity: WorkspaceIdentity,
+        connection: PersonalInstructionsOwner.Connection,
+        editor: PersonalInstructionsOwner,
+    ) {
+        if (editor.detach(connection)) editors.remove(key(identity), editor)
+    }
+
+    internal fun persist(
+        identity: WorkspaceIdentity,
+        value: InstructionsDraft?,
+    ): Deferred<InstructionsCommit> {
         val key = key(identity)
         val write = Write(value)
         synchronized(guard) {
@@ -71,13 +97,16 @@ class PersonalInstructionsDraftStore(
             latest[key] = write
             scope.launch {
                 try {
-                    io.withLock {
-                        // Skip obsolete queued edits, but finish the write already in progress.
-                        if (synchronized(guard) { latest[key] === write })
-                            withContext(dispatcher) { write(key, value) }
-                    }
+                    val committed =
+                        io.withLock {
+                            // Skip obsolete queued edits, but finish the write already in progress.
+                            if (synchronized(guard) { latest[key] === write }) {
+                                withContext(dispatcher) { write(key, value) }
+                                InstructionsCommit.Committed
+                            } else InstructionsCommit.Superseded
+                        }
                     synchronized(guard) { if (latest[key] === write) latest.remove(key) }
-                    write.done.complete(Unit)
+                    write.done.complete(committed)
                 } catch (cancelled: CancellationException) {
                     write.done.cancel(cancelled)
                     throw cancelled

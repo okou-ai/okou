@@ -188,6 +188,40 @@ class PersonalInstructionsModelTest {
         }
 
     @Test
+    fun conditionalRejectionRemainsAConflictUntilExplicitReload() = check { service, _, create, _ ->
+        val model = create(false)
+        model.open()
+        runCurrent()
+        model.edit("My local edit")
+        service.saved = service.saved.copy(content = "Changed on Web", version = "v2")
+        model.save()
+        runCurrent()
+        assertEquals(InstructionsPhase.Conflict, model.uiState.value.phase)
+        model.edit("Original")
+        assertNotNull(model.uiState.value.draft)
+        assertFalse(model.uiState.value.canSave)
+        model.save()
+        runCurrent()
+        assertEquals(1, service.writes.size)
+
+        service.read = { throw ApiFailure.Network(IOException("read unavailable")) }
+        model.refresh()
+        runCurrent()
+        assertEquals(InstructionsPhase.Failed, model.uiState.value.phase)
+        model.edit("Intentional replacement after failure")
+        assertFalse(model.uiState.value.canSave)
+        service.read = { service.saved }
+        model.discard()
+        runCurrent()
+        assertEquals("Changed on Web", model.uiState.value.content)
+        assertNull(model.uiState.value.draft)
+        model.edit("New edit")
+        model.save()
+        runCurrent()
+        assertEquals("New edit" to "v2", service.writes.last())
+    }
+
+    @Test
     fun anAcceptedButDisconnectedSaveReconcilesWithoutReplayingTheWrite() =
         check { service, store, create, _ ->
             val model = create(false)
@@ -443,6 +477,171 @@ class PersonalInstructionsModelTest {
             assertEquals("Never lose this", model.uiState.value.content)
             assertEquals("Never lose this", store.load(identity).draft?.content)
             assertFalse(store.load(identity).durable)
+        }
+
+    @Test
+    fun neverDispatchedSaveStaysEditableAfterOwnerReplacement() =
+        check(true) { service, store, create, _ ->
+            var model = create(false)
+            model.open()
+            runCurrent()
+            model.edit("Never dispatched")
+            model.save()
+            runCurrent()
+            assertTrue(service.writes.isEmpty())
+            assertTrue(model.uiState.value.canEdit)
+            assertFalse(checkNotNull(store.load(identity).draft).attempted)
+
+            model = create(true)
+            model.open()
+            runCurrent()
+            assertEquals("Never dispatched", model.uiState.value.content)
+            assertTrue(model.uiState.value.canEdit)
+            assertTrue(model.uiState.value.localFailure)
+            model.edit("Continue editing")
+            runCurrent()
+            assertEquals("Continue editing", store.load(identity).draft?.content)
+            assertTrue(service.writes.isEmpty())
+        }
+
+    @Test
+    fun currentControllersShareTheFrozenSaveAndRetainTheNextAcceptedDraft() =
+        check { service, store, create, _ ->
+            val first = create(false)
+            val second = create(false)
+            first.open()
+            second.open()
+            runCurrent()
+            first.edit("First draft")
+            second.edit("Latest accepted draft")
+            assertEquals("Latest accepted draft", first.uiState.value.content)
+
+            val held = CompletableDeferred<Unit>()
+            service.write = { content, version ->
+                val durable = checkNotNull(store.load(identity).draft)
+                assertTrue(durable.attempted)
+                assertEquals(content, durable.content)
+                assertEquals(version, durable.base.version)
+                held.await()
+                service.saved.copy(content = content, version = "v2").also { service.saved = it }
+            }
+            try {
+                first.save()
+                second.edit("Not accepted while saving")
+                second.save()
+                assertFalse(second.uiState.value.canEdit)
+                runCurrent()
+                assertEquals(listOf("Latest accepted draft" to "v1"), service.writes)
+                val live = create(true)
+                live.open()
+                runCurrent()
+                assertEquals(InstructionsPhase.Saving, live.uiState.value.phase)
+                held.complete(Unit)
+                runCurrent()
+                assertEquals("Latest accepted draft", live.uiState.value.content)
+                live.edit("Next accepted draft")
+                runCurrent()
+                assertEquals("Next accepted draft", first.uiState.value.content)
+                assertEquals("Next accepted draft", store.load(identity).draft?.content)
+                val replacement = create(true)
+                replacement.open()
+                runCurrent()
+                assertEquals("Next accepted draft", replacement.uiState.value.content)
+            } finally {
+                held.complete(Unit)
+            }
+        }
+
+    @Test
+    fun retiringTheSendingControllerKeepsSharedRecoveryAndFencesItsLateResponse() =
+        check { service, store, create, _ ->
+            val observer = create(false)
+            val sender = create(false)
+            observer.open()
+            runCurrent()
+            sender.edit("Committed before cancellation")
+            val response = CompletableDeferred<Unit>()
+            service.write = { content, _ ->
+                val committed = service.saved.copy(content = content, version = "v2")
+                service.saved = committed
+                withContext(NonCancellable) {
+                    response.await()
+                    committed
+                }
+            }
+            try {
+                sender.save()
+                runCurrent()
+                val replacement = create(true)
+                assertEquals(InstructionsPhase.Uncertain, observer.uiState.value.phase)
+                assertFalse(observer.uiState.value.canEdit)
+                assertTrue(checkNotNull(store.load(identity).draft).attempted)
+                replacement.refresh()
+                runCurrent()
+                assertEquals("Committed before cancellation", observer.uiState.value.content)
+                assertTrue(observer.uiState.value.canEdit)
+                observer.edit("Newer unsaved input")
+                runCurrent()
+                response.complete(Unit)
+                runCurrent()
+                assertEquals("Newer unsaved input", replacement.uiState.value.content)
+                assertEquals("Newer unsaved input", store.load(identity).draft?.content)
+                assertEquals(1, service.writes.size)
+            } finally {
+                response.complete(Unit)
+            }
+        }
+
+    @Test
+    fun retirementBeforeDispatchUnfreezesTheSharedIntentWithoutLosingNewInput() =
+        check { service, store, create, _ ->
+            val first = create(false)
+            first.open()
+            runCurrent()
+            first.edit("Save cancelled in preparation")
+            first.save()
+            // Retire before the IO dispatcher can acknowledge preparation or start HTTP.
+            val replacement = create(true)
+            replacement.open()
+            runCurrent()
+            assertTrue(replacement.uiState.value.canEdit)
+            assertFalse(checkNotNull(store.load(identity).draft).attempted)
+            replacement.edit("Replacement input")
+            runCurrent()
+            assertEquals("Replacement input", store.load(identity).draft?.content)
+            assertTrue(service.writes.isEmpty())
+        }
+
+    @Test
+    fun retiringARefreshKeepsAnOfflineUndoProvisionalForTheRemainingController() =
+        check { service, store, create, _ ->
+            val observer = create(false)
+            val reader = create(false)
+            observer.open()
+            runCurrent()
+            observer.edit("Local draft")
+            val response = CompletableDeferred<PersonalInstructions>()
+            service.read = { response.await() }
+            try {
+                reader.refresh()
+                runCurrent()
+                create(true)
+                assertEquals(InstructionsPhase.Failed, observer.uiState.value.phase)
+                observer.edit("Original")
+                runCurrent()
+                assertNotNull(observer.uiState.value.draft)
+                assertEquals("Original", store.load(identity).draft?.content)
+                assertFalse(observer.uiState.value.canSave)
+                service.saved = service.saved.copy(content = "Changed on Web", version = "v2")
+                service.read = { service.saved }
+                observer.refresh()
+                runCurrent()
+                assertEquals(InstructionsPhase.Conflict, observer.uiState.value.phase)
+                assertEquals("Original", observer.uiState.value.content)
+                assertTrue(service.writes.isEmpty())
+            } finally {
+                response.complete(service.saved)
+            }
         }
 
     @Test

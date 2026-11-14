@@ -23,6 +23,30 @@ class PersonalInstructionsStorageTest {
         PersonalInstructions("org-a", "user-a", "Saved", "2026-11-14T00:00:00Z", "v1")
 
     @Test
+    fun supersededPreparationIsNotADurableReceiptForTheAttempt() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val store =
+            PersonalInstructionsDraftStore(
+                ApplicationProvider.getApplicationContext(),
+                temporary.newFolder(),
+                dispatcher,
+            )
+        try {
+            val attempt =
+                store.persist(identity, InstructionsDraft("Attempt", base, attempted = true))
+            val newer = store.persist(identity, InstructionsDraft("Newer draft", base))
+            assertEquals(InstructionsCommit.Superseded, attempt.await())
+            assertEquals(InstructionsCommit.Committed, newer.await())
+            val restored = store.load(identity)
+            assertEquals("Newer draft", restored.draft?.content)
+            assertFalse(checkNotNull(restored.draft).attempted)
+            assertTrue(restored.durable)
+        } finally {
+            store.close()
+        }
+    }
+
+    @Test
     fun latestScopedIntentReopensWithoutBundleOrSqliteRowLimits() = runTest {
         val directory = temporary.newFolder()
         val dispatcher = StandardTestDispatcher(testScheduler)
