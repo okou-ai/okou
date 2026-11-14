@@ -9,8 +9,9 @@ import shutil
 import subprocess
 import sys
 from functools import cache
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
-from types import CodeType, SimpleNamespace
+from types import CodeType, ModuleType, SimpleNamespace
 from typing import Any
 
 import flow_metadata_key_linter
@@ -29,26 +30,32 @@ _NESTED_FINALLY_DEPTH = 24
 
 
 @cache
-def _runtime_fixture_code(name: str) -> CodeType:
-    path = _FIXTURE_ROOT / name
-    return compile(path.read_bytes(), str(path), "exec", dont_inherit=True)
+def _runtime_fixture_code(path: str) -> CodeType:
+    return compile(Path(path).read_bytes(), path, "exec", dont_inherit=True)
+
+
+class _RuntimeFixtureLoader(SourceFileLoader):
+    def get_code(self, fullname: str) -> CodeType:
+        return _runtime_fixture_code(self.path)
 
 
 def _runtime_fixture_namespace(
     name: str, *, init_globals: dict[str, object] | None = None
 ) -> dict[str, Any]:
     # Cache only immutable code; each oracle keeps its own functions and globals.
-    namespace = dict(init_globals or {})
+    module = ModuleType("<run_path>")
+    namespace = vars(module)
+    namespace.update(init_globals or {})
+    path = str(_FIXTURE_ROOT / name)
     namespace.update(
         __name__="<run_path>",
-        __file__=str(_FIXTURE_ROOT / name),
+        __file__=path,
         __doc__=None,
         __loader__=None,
         __package__="",
         __spec__=None,
     )
-    # Execute only trusted, checked-in fixture definitions, as the runtime oracle.
-    exec(_runtime_fixture_code(name), namespace)  # noqa: S102
+    _RuntimeFixtureLoader(module.__name__, path).exec_module(module)
     return namespace
 
 
