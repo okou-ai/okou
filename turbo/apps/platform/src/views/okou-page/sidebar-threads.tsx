@@ -62,7 +62,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  RequestCommit,
   cn,
 } from "@okouai/ui";
 import {
@@ -1971,6 +1970,7 @@ function ChatThreadListRowGroup({
   ) : (
     <div
       data-project-children-id={group.projectId}
+      data-project-fold-id={active?.id}
       data-project-fold-state={
         active ? (active.running ? "running" : "prepared") : undefined
       }
@@ -2047,6 +2047,10 @@ function ChatThreadListRowsView({
         data-testid={
           rowHeight === null ? undefined : "sidebar-chat-threads-virtual-list"
         }
+        data-project-fold-id={motion?.id}
+        data-project-fold-state={
+          motion ? (motion.running ? "running" : "prepared") : undefined
+        }
         style={
           height === undefined
             ? undefined
@@ -2121,32 +2125,18 @@ export function ChatThreadListRows({
     equalityFn: equalChatThreadListWindows,
   });
   const motionHostRef = useSet(listSignals.motionHostRef$);
-  const requestedMotion = useGet(listSignals.foldMotion$);
-  const commitFold = useSet(listSignals.commitFold$);
   return (
-    <>
-      <ChatThreadListRowsView
-        {...options}
-        rows={window.rows}
-        startIndex={window.startIndex}
-        indexes={window.indexes}
-        motion={window.motion}
-        motionHostRef={motionHostRef}
-        rowHeight={rowHeight}
-        height={height}
-      >
-        {children}
-      </ChatThreadListRowsView>
-      <RequestCommit
-        request={
-          requestedMotion
-            ? requestedMotion.running
-              ? requestedMotion.startedCommit
-              : requestedMotion.preparedCommit
-            : null
-        }
-        onCommit={commitFold}
-      />
-    </>
+    <ChatThreadListRowsView
+      {...options}
+      rows={window.rows}
+      startIndex={window.startIndex}
+      indexes={window.indexes}
+      motion={window.motion}
+      motionHostRef={motionHostRef}
+      rowHeight={rowHeight}
+      height={height}
+    >
+      {children}
+    </ChatThreadListRowsView>
   );
 }

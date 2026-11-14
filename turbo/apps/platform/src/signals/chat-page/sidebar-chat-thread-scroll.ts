@@ -28,7 +28,6 @@ import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";
 import {
   createProjectFoldMotionSignals,
   type ProjectFoldMotion,
-  type ProjectFoldCommitRequest,
 } from "./project-fold-motion.ts";
 
 const CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE = 100;
@@ -56,8 +55,6 @@ export interface SidebarChatThreadListSignals {
   readonly currentThreadListed$: Computed<boolean>;
   readonly hasHiddenArchivedThreads$: Computed<boolean>;
   readonly window$: Computed<SidebarChatThreadWindow>;
-  readonly foldMotion$: Computed<ProjectFoldMotion | null>;
-  readonly commitFold$: Command<void, [ProjectFoldCommitRequest]>;
   readonly motionHostRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
@@ -397,8 +394,6 @@ function createSidebarChatThreadViewportSignals(
     currentThreadListed$: list.currentThreadListed$,
     hasHiddenArchivedThreads$: list.hasHiddenArchivedThreads$,
     window$,
-    foldMotion$: foldMotion.motion$,
-    commitFold$: foldMotion.commit$,
     motionHostRef$,
   };
 }

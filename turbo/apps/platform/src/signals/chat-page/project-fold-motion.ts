@@ -1,5 +1,6 @@
 import { command, computed, state, type Computed } from "ccstate";
 import { animationFrame } from "signal-timers";
+import { flushSync } from "react-dom";
 import {
   collapseProject$,
   expandProject$,
@@ -11,7 +12,6 @@ import {
   onRef,
   resetSignal,
   waitForToken,
-  type DeferredPromise,
 } from "../utils.ts";
 import type { SidebarChatThreadRow } from "./sidebar-chat-thread-scroll.ts";
 import {
@@ -19,19 +19,14 @@ import {
   type ProjectFoldGeometry,
 } from "./project-fold-geometry.ts";
 
-export interface ProjectFoldCommitRequest {
-  readonly completion: DeferredPromise<void>;
-}
-
 /** One viewport-owned presentation transaction, never a second logical list. */
 export interface ProjectFoldMotion {
+  readonly id: string;
   readonly projectId: string;
   readonly logicalRows: readonly SidebarChatThreadRow[];
   readonly expandedRows: readonly SidebarChatThreadRow[];
   readonly geometry: ProjectFoldGeometry;
   readonly range: ReturnType<typeof getProjectFoldRange>;
-  readonly preparedCommit: ProjectFoldCommitRequest;
-  readonly startedCommit: ProjectFoldCommitRequest;
   readonly running: boolean;
 }
 
@@ -74,19 +69,6 @@ function createFoldDomSignals() {
       set(internalMotion$, null);
     }
   });
-  const commit$ = command(({ get }, request: ProjectFoldCommitRequest) => {
-    const motion = get(internalMotion$);
-    const expected = motion?.running
-      ? motion.startedCommit
-      : motion?.preparedCommit;
-    if (
-      request === expected &&
-      get(host$)?.isConnected &&
-      !request.completion.settled()
-    ) {
-      request.completion.resolve();
-    }
-  });
   const hostRef$ = onRef(
     command(({ get, set }, host: HTMLElement, signal: AbortSignal) => {
       set(host$, host);
@@ -127,7 +109,6 @@ function createFoldDomSignals() {
     bindList$,
     restart$,
     motion$,
-    commit$,
     cancel$,
     hostRef$,
   };
@@ -239,18 +220,51 @@ function createPrepareFoldCommand(
         return null;
       }
       const motion: ProjectFoldMotion = {
+        id: crypto.randomUUID(),
         projectId,
         logicalRows,
         expandedRows,
         geometry,
         range,
         running: false,
-        preparedCommit: { completion: createDeferredPromise<void>(signal) },
-        startedCommit: { completion: createDeferredPromise<void>(signal) },
       };
       set(dom.internalMotion$, motion);
       return motion;
     },
+  );
+}
+
+function waitForFoldFrame(signal: AbortSignal) {
+  const frame = createDeferredPromise<void>(signal);
+  animationFrame(
+    () => {
+      frame.resolve();
+    },
+    { signal },
+  );
+  return frame.promise;
+}
+
+function matchesFoldDom(
+  host: HTMLElement,
+  block: HTMLElement,
+  motion: ProjectFoldMotion,
+) {
+  const phase = motion.running ? "running" : "prepared";
+  const matchesHeight =
+    motion.running ||
+    Math.abs(
+      Number.parseFloat(block.style.height) - motion.geometry.fromHeight,
+    ) <= 0.02;
+  return (
+    matchesHeight &&
+    [host, block].every((element) => {
+      return (
+        element.isConnected &&
+        element.dataset.projectFoldId === motion.id &&
+        element.dataset.projectFoldState === phase
+      );
+    })
   );
 }
 
@@ -275,7 +289,7 @@ function createRunFoldCommand(dom: FoldDomSignals) {
           set(dom.restart$);
         }
       };
-      await prepared.preparedCommit.completion.promise;
+      await waitForFoldFrame(signal);
       signal.throwIfAborted();
       const list = get(dom.list$);
       if (
@@ -291,30 +305,30 @@ function createRunFoldCommand(dom: FoldDomSignals) {
       ].find((element) => {
         return element.dataset.projectChildrenId === prepared.projectId;
       });
-      if (!block) {
+      // Animate only when this command's prepared geometry is actually mounted.
+      if (!block || !matchesFoldDom(host, block, prepared)) {
         finish();
         return;
       }
       host.getBoundingClientRect();
       block.getBoundingClientRect();
-      const frame = createDeferredPromise<void>(signal);
-      animationFrame(
-        () => {
-          frame.resolve();
-        },
-        { signal },
-      );
-      await frame.promise;
+      await waitForFoldFrame(signal);
       signal.throwIfAborted();
       if (get(list.rows$) !== prepared.logicalRows || get(dom.host$) !== host) {
         finish();
         return;
       }
       transaction = { ...transaction, running: true };
-      set(dom.internalMotion$, transaction);
-      await transaction.startedCommit.completion.promise;
+      // This continuation is async: ccstate publishes inside this boundary.
+      flushSync(() => {
+        set(dom.internalMotion$, transaction);
+      });
       signal.throwIfAborted();
-      if (get(list.rows$) !== prepared.logicalRows || get(dom.host$) !== host) {
+      if (
+        get(list.rows$) !== prepared.logicalRows ||
+        get(dom.host$) !== host ||
+        !matchesFoldDom(host, block, transaction)
+      ) {
         finish();
         return;
       }
@@ -376,7 +390,6 @@ export function createProjectFoldMotionSignals(
     motion$: dom.motion$,
     list$: dom.list$,
     bindList$: dom.bindList$,
-    commit$: dom.commit$,
     cancel$: dom.cancel$,
     hostRef$: dom.hostRef$,
     fold$,

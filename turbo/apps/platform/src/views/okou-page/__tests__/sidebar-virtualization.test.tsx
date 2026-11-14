@@ -398,7 +398,7 @@ async function openFoldList({
   };
 }
 
-/** Deliver one browser frame without replaying cancelled callbacks. */
+/** Deliver the two command-owned startup frames without replaying cancellation. */
 function holdFoldFrame() {
   let frames = new Map<number, FrameRequestCallback>();
   let nextId = 1_000_000;
@@ -411,18 +411,16 @@ function holdFoldFrame() {
     frames.delete(id);
   });
   return async () => {
-    // Let the command consume its explicit prepared-DOM acknowledgement.
-    await act(async () => {
-      await Promise.resolve();
-    });
-    const pending = [...frames.values()];
-    frames = new Map();
-    await act(() => {
-      for (const callback of pending) {
-        callback(0);
-      }
-      return Promise.resolve();
-    });
+    for (let frame = 0; frame < 2; frame++) {
+      const pending = [...frames.values()];
+      frames = new Map();
+      await act(() => {
+        for (const callback of pending) {
+          callback(0);
+        }
+        return Promise.resolve();
+      });
+    }
   };
 }
 
