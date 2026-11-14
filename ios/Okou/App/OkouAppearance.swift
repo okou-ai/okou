@@ -7,6 +7,16 @@ struct OkouAppearance: ViewModifier {
   func body(content: Content) -> some View {
     content
       .preferredColorScheme(OkouAppearancePreference(rawValue: appearance)?.colorScheme)
+      .modifier(OkouContentStyle())
+      .background(OkouColor.background)
+  }
+}
+
+/// The app's type, colours and scroll edges. A UIKit-hosted page applies it again: its host
+/// starts from SwiftUI's default environment rather than the app root's.
+struct OkouContentStyle: ViewModifier {
+  func body(content: Content) -> some View {
+    content
       .font(.okou(.body))
       .foregroundStyle(OkouColor.foreground)
       .tint(OkouColor.foreground)
@@ -15,6 +25,5 @@ struct OkouAppearance: ViewModifier {
       // search capsule and buttons, which carry their own glass.
       .scrollEdgeEffectHidden(true, for: .bottom)
       .environment(\.defaultMinListRowHeight, OkouControl.minimumTarget)
-      .background(OkouColor.background)
   }
 }

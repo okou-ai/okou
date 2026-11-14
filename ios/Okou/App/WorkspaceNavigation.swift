@@ -13,8 +13,8 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     let coordinator = context.coordinator
     let navigation = WorkspaceNavigationController()
     navigation.setNavigationBarHidden(true, animated: false)
-    coordinator.list.rootView = AnyView(list().environment(\.self, context.environment))
-    coordinator.chat.rootView = AnyView(chat().environment(\.self, context.environment))
+    coordinator.list.rootView = Self.page(list(), in: context.environment)
+    coordinator.chat.rootView = Self.page(chat(), in: context.environment)
     navigation.setViewControllers(
       sidebar.isOpen ? [coordinator.list] : [coordinator.list, coordinator.chat], animated: false)
     coordinator.install(on: navigation)
@@ -23,11 +23,25 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
 
   func updateUIViewController(_ navigation: WorkspaceNavigationController, context: Context) {
     let coordinator = context.coordinator
-    coordinator.list.rootView = AnyView(list().environment(\.self, context.environment))
-    coordinator.chat.rootView = AnyView(chat().environment(\.self, context.environment))
+    coordinator.list.rootView = Self.page(list(), in: context.environment)
+    coordinator.chat.rootView = Self.page(chat(), in: context.environment)
     coordinator.requestedSidebarOpen = sidebar.isOpen
     // Reconcile in UIKit's layout lifecycle, outside SwiftUI's update transaction.
     navigation.view.setNeedsLayout()
+  }
+
+  /// Each host keeps its own SwiftUI environment and receives only what the app sets above the
+  /// navigation. Forwarding the whole environment (`\.self`) also carried SwiftUI's private
+  /// state into both hosts: the chat header's scroll edge joined the sidebar's collector, and
+  /// the transcript lost its top edge effect whenever the sidebar updated last.
+  private static func page(_ content: some View, in environment: EnvironmentValues) -> AnyView {
+    AnyView(
+      content
+        .modifier(OkouContentStyle())
+        .environment(\.scenePhase, environment.scenePhase)
+        .environment(\.openURL, environment.openURL)
+        .environment(\.openChatSource, environment.openChatSource)
+        .environment(\.newChatActivation, environment.newChatActivation))
   }
 
   static func dismantleUIViewController(
