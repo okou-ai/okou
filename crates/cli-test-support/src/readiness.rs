@@ -101,7 +101,7 @@ async fn file_contains(path: &Path, matcher: &aho_corasick::AhoCorasick) -> io::
     let path = path.to_owned();
     let matcher = matcher.clone();
     tokio::task::spawn_blocking(move || {
-        let mut file = std::fs::File::open(path)?;
+        let mut file = ReadinessReader(std::fs::File::open(path)?);
         let found = matcher
             .try_stream_find_iter(&mut file)
             .map_err(io::Error::other)?
@@ -117,6 +117,21 @@ async fn file_contains(path: &Path, matcher: &aho_corasick::AhoCorasick) -> io::
     })
     .await
     .map_err(io::Error::other)?
+}
+
+struct ReadinessReader(std::fs::File);
+
+impl io::Read for ReadinessReader {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        loop {
+            // Like the former read-to-end operation, retry interrupted reads.
+            // The streaming matcher otherwise returns them to the caller.
+            match io::Read::read(&mut self.0, buffer) {
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+                result => return result,
+            }
+        }
+    }
 }
 
 /// Wait for a path to appear, leaving deadline policy to the caller.
