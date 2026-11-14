@@ -16,6 +16,7 @@ import { agentsMainContract } from "../contracts/agents";
 import { projectsContract } from "../contracts/projects";
 import { projectSnapshotArchiveSchema } from "../validators/projects";
 import { featureSwitchesContract } from "../contracts/feature-switches";
+import { instructionsContract } from "../contracts/instructions";
 
 export interface KotlinRouteBinding {
   readonly name: string;
@@ -90,6 +91,17 @@ const historyReadBindings: readonly KotlinRouteBinding[] = [
 
 /** Only routes used by the installed native client, not every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
+  {
+    name: "personalInstructions",
+    response: "PersonalInstructions",
+    route: instructionsContract.get,
+  },
+  {
+    name: "updatePersonalInstructions",
+    response: "PersonalInstructions",
+    request: "UpdateInstructionsRequest",
+    route: instructionsContract.update,
+  },
   { name: "organization", response: "Organization", route: orgContract.get },
   {
     name: "preferences",
@@ -119,6 +131,16 @@ export interface KotlinTypeBinding {
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
+  {
+    name: "PersonalInstructions",
+    schema: instructionsContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "UpdateInstructionsRequest",
+    schema: instructionsContract.update.body,
+    direction: "input",
+  },
   {
     name: "Organization",
     schema: orgContract.get.responses[200],

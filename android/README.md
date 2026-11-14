@@ -19,6 +19,36 @@ Web color palettes and the languages allowed by canonical `supportedLocales`.
 Palette/language preferences synchronize through the member/workspace API;
 Light/Dark/Follow system remains device-local and independent.
 
+My Okou in Settings reads and edits the signed-in user's personal Instructions
+for the selected workspace. It uses the existing `singleAgent` availability and
+canonical Instructions API without blocking chat or Appearance while loading.
+Saves always carry the displayed base version; a concurrent Web edit preserves
+the local draft and requires explicitly loading the latest version. Clearing the
+field and saving clears Instructions. A lost save response reads the server back;
+an unresolved attempt stays frozen until that read or an explicit retry with the
+same version resolves it.
+
+Activities for the same API origin/user/workspace share one editing transaction
+while retaining their own native selection and session authorization. Request
+progress, read failures and persisted intent are separate facts. Preparation
+must acknowledge that exact frozen intent before HTTP; a superseded queued write
+is not a durability receipt. Cancelling or failing preparation restores the
+editable intent, while cancellation after dispatch preserves the unknown attempt.
+Settlement only replaces its captured local revision. Retiring a controller
+cancels its own network work; the shared editor is released after the last
+controller detaches, and accepted local IO remains application-owned.
+
+Unsaved text and unresolved save attempts live in a separate application-owned,
+versioned AtomicFile store under `noBackupFilesDir/personal-instructions`.
+Format 1 contains content, the base response and attempt state, scoped by normalized
+API origin/user/workspace. It contains no credentials and survives editor retirement
+and process restart independently of the rebuildable chat cache. Disk errors retain
+accepted edits in memory and expose retry; malformed files are never silently reset.
+Activity saved state carries only the native selection, keeping large text out of
+the size-limited Binder bundle.
+Feature-local 403/404 does not sign out the workspace. Visible/foreground/manual
+refresh checks other clients; automatic live Instructions updates remain later work.
+
 The workspace presentation owner retains chat-list state across navigation and
 configuration changes. Switching account/workspace or signing out retires that owner.
 Authentication and canonical preferences/member-memory bootstrap use production
@@ -55,7 +85,8 @@ unsupported local schemas may be recreated, never migrated together with drafts
 or credentials. Room exports its schema under `app/schemas` through its Gradle/KSP
 integration. A saved list and the last status refresh do not establish current
 network freshness. Signed archive URLs, credentials and transient indicators are
-not persisted. Durable drafts are not introduced.
+not persisted in the chat cache. Personal Instructions drafts use the separate
+intent store described above.
 
 Conversation history shares this cache and its workspace authorization lease.
 Room schema v2 adds `history_scopes` (thread, authorization, canonical event format,
@@ -153,6 +184,16 @@ holds real HTTP responses while exercising native navigation. `NativeChatListTes
 runs list → history → Back, Settings and recreation on the existing API 35 managed
 device. History tests cover real gzip transport, malformed archives, paired
 cursors, disk reopen, dirty retry, retired results and visible read confirmation.
+
+Instructions suites exercise conditional HTTP saves, owner validation, durable
+draft reopening/isolation, local IO failures and uncertain-write reconciliation.
+They also cover shared controllers, superseded preparation receipts and retirement
+before dispatch without incorrectly freezing an editable draft.
+`PersonalInstructionsSettingsTest` holds the actual HTTP read while Settings stays
+usable and checks native selection through conflicts. `NativeInstructionsTest`
+uses the API 35 device for multiline input, IME/system Back, Activity recreation,
+save and external-version conflict. These tests use isolated fake server content;
+they do not modify production Instructions or establish OEM keyboard coverage.
 
 The plain Kotlin state-holder tests do not themselves use Android APIs. An
 independent Kotlin/JVM test entry could compile those same sources without an

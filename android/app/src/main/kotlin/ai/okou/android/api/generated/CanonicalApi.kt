@@ -11,11 +11,23 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.QueryMap
 
 internal interface CanonicalApi {
+    @GET("/api/instructions")
+    suspend fun `personalInstructions`(
+        @Header("Authorization") token: String
+    ): Response<PersonalInstructions>
+
+    @PUT("/api/instructions")
+    suspend fun `updatePersonalInstructions`(
+        @Header("Authorization") token: String,
+        @Body body: UpdateInstructionsRequest,
+    ): Response<PersonalInstructions>
+
     @GET("/api/org")
     suspend fun `organization`(@Header("Authorization") token: String): Response<Organization>
 

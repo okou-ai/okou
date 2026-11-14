@@ -58,4 +58,23 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
+    <string name="instructions_section">Mon Okou</string>
+    <string name="instructions_title">Instructions</string>
+    <string name="instructions_timing">Les modifications enregistrées concernent les prochaines tâches.</string>
+    <string name="instructions_loading">Chargement des instructions…</string>
+    <string name="instructions_saving">Enregistrement des instructions…</string>
+    <string name="instructions_conflict">Les instructions ont changé ailleurs. Rechargez la dernière version pour abandonner les modifications locales.</string>
+    <string name="instructions_uncertain">Enregistrement non confirmé. Votre texte est conservé. Vérifiez la version enregistrée avant de réessayer.</string>
+    <string name="instructions_load_failed">Impossible de charger les instructions.</string>
+    <string name="instructions_unavailable">Les instructions personnelles sont indisponibles dans ce contexte.</string>
+    <string name="instructions_current">Les instructions sont à jour.</string>
+    <string name="instructions_unsaved">Vous avez des modifications non enregistrées.</string>
+    <string name="instructions_local_failed">Impossible de conserver le brouillon local. Réessayez.</string>
+    <string name="instructions_save_rejected">Enregistrement refusé. Vos modifications sont conservées.</string>
+    <string name="instructions_invalid">Le texte contient un caractère non pris en charge.</string>
+    <string name="instructions_refresh">Vérifier la version enregistrée</string>
+    <string name="instructions_save">Enregistrer les instructions</string>
+    <string name="instructions_reload">Charger la dernière version et abandonner les modifications</string>
+    <string name="instructions_discard">Abandonner les modifications</string>
+    <string name="instructions_retry_save">Réessayer le même enregistrement</string>
 </resources>

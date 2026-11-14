@@ -58,4 +58,23 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
+    <string name="instructions_section">Mi Okou</string>
+    <string name="instructions_title">Instrucciones</string>
+    <string name="instructions_timing">Los cambios guardados se aplican a las tareas futuras.</string>
+    <string name="instructions_loading">Cargando instrucciones…</string>
+    <string name="instructions_saving">Guardando instrucciones…</string>
+    <string name="instructions_conflict">Las instrucciones cambiaron en otro lugar. Recarga la última versión para descartar los cambios locales.</string>
+    <string name="instructions_uncertain">No se confirmó el guardado. Tu texto se conserva. Comprueba la versión guardada antes de reintentar.</string>
+    <string name="instructions_load_failed">No se pudieron cargar las instrucciones.</string>
+    <string name="instructions_unavailable">Las instrucciones personales no están disponibles en este contexto.</string>
+    <string name="instructions_current">Las instrucciones están actualizadas.</string>
+    <string name="instructions_unsaved">Tienes cambios sin guardar.</string>
+    <string name="instructions_local_failed">No se pudo guardar el borrador local. Inténtalo de nuevo.</string>
+    <string name="instructions_save_rejected">Se rechazó el guardado. Tus cambios se conservan.</string>
+    <string name="instructions_invalid">El texto contiene un carácter no compatible.</string>
+    <string name="instructions_refresh">Comprobar versión guardada</string>
+    <string name="instructions_save">Guardar instrucciones</string>
+    <string name="instructions_reload">Cargar última versión y descartar cambios</string>
+    <string name="instructions_discard">Descartar cambios</string>
+    <string name="instructions_retry_save">Reintentar el mismo guardado</string>
 </resources>

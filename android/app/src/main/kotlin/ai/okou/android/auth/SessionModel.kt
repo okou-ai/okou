@@ -6,6 +6,8 @@ import ai.okou.android.api.generated.Organization
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.chatScopeHash
+import ai.okou.android.instructions.PersonalInstructionsDraftStore
+import ai.okou.android.instructions.PersonalInstructionsModel
 import ai.okou.android.preferences.MemberPreferencesModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -40,6 +42,7 @@ data class ReadyWorkspace(
     val organization: Organization,
     val preferences: MemberPreferencesModel,
     val chats: ChatListModel,
+    val instructions: PersonalInstructionsModel,
 )
 
 data class SessionUiState(
@@ -56,6 +59,7 @@ class SessionModel(
     private val factory: WorkspaceSessionFactory,
     private val apiOrigin: String,
     private val chatCache: ChatCacheStore,
+    private val instructionsDrafts: PersonalInstructionsDraftStore,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     @Volatile private var generation = 0L
@@ -192,7 +196,28 @@ class SessionModel(
                             generation,
                             SessionStage.Ready,
                             memberships,
-                            ReadyWorkspace(identity, data.organization, preferences, chats),
+                            ReadyWorkspace(
+                                identity,
+                                data.organization,
+                                preferences,
+                                chats,
+                                ViewModelProvider(
+                                    store,
+                                    viewModelFactory {
+                                        initializer {
+                                            PersonalInstructionsModel(
+                                                owner,
+                                                instructionsDrafts,
+                                                identity,
+                                                { current(ticket, snapshot) },
+                                                { error ->
+                                                    workspaceFailure(ticket, snapshot, error)
+                                                },
+                                            )
+                                        }
+                                    },
+                                )[PersonalInstructionsModel::class.java],
+                            ),
                         )
                     chats.refresh()
                 } catch (cancelled: CancellationException) {

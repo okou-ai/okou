@@ -6,10 +6,12 @@ import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatListService
+import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testBootstrap
 import androidx.lifecycle.ViewModelProvider
@@ -53,6 +55,16 @@ class SessionModelTest {
 
         override suspend fun preferences() = testBootstrap(identity.workspaceId).preferences
 
+        override suspend fun personalInstructionsEnabled() = false
+
+        override suspend fun personalInstructions(): PersonalInstructions =
+            error("Instructions are not enabled in this fixture")
+
+        override suspend fun updatePersonalInstructions(
+            content: String,
+            ifVersion: String,
+        ): PersonalInstructions = error("Instructions are not enabled in this fixture")
+
         override suspend fun updatePreferences(update: UpdatePreferencesRequest) =
             preferences().also { this.update() }
 
@@ -70,6 +82,12 @@ class SessionModelTest {
         Dispatchers.setMain(dispatcher)
         val store = ViewModelStore()
         val resources = mutableListOf<Resource>()
+        val drafts =
+            PersonalInstructionsDraftStore(
+                ApplicationProvider.getApplicationContext(),
+                temporary.newFolder(),
+                dispatcher,
+            )
         val cache =
             ChatCacheStore(
                 ApplicationProvider.getApplicationContext(),
@@ -92,6 +110,7 @@ class SessionModelTest {
                                 },
                                 "https://api.okou.ai/",
                                 cache,
+                                drafts,
                                 dispatcher,
                             )
                         }
@@ -101,6 +120,7 @@ class SessionModelTest {
         } finally {
             store.clear()
             cache.close()
+            drafts.close()
             runCurrent()
             Dispatchers.resetMain()
         }

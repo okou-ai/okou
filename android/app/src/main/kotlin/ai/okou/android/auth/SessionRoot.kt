@@ -5,6 +5,7 @@ import ai.okou.android.AppearanceUiState
 import ai.okou.android.OkouApp
 import ai.okou.android.R
 import ai.okou.android.chat.ChatListRoute
+import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -67,7 +68,10 @@ fun SessionRoot(
                     selectAppearance,
                     retryAppearance,
                     account = { WorkspaceActions(state, chooseWorkspace, signOut) },
-                    workspacePreferences = { MemberPreferencesSettings(ready.preferences) },
+                    workspacePreferences = {
+                        MemberPreferencesSettings(ready.preferences)
+                        PersonalInstructionsSettings(ready.instructions)
+                    },
                     homeContent = { ChatListRoute(ready.chats) },
                 )
             }

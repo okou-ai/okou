@@ -21,6 +21,18 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 
 @Serializable
+data class PersonalInstructions(
+    val `orgId`: String,
+    val `userId`: String,
+    val `content`: String,
+    val `updatedAt`: String,
+    val `version`: String,
+)
+
+@Serializable
+data class UpdateInstructionsRequest(val `content`: String, val `ifVersion`: String? = null)
+
+@Serializable
 enum class OrganizationRole {
     @SerialName("admin") ADMIN,
     @SerialName("member") MEMBER,

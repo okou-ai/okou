@@ -58,4 +58,23 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
+    <string name="instructions_section">マイ Okou</string>
+    <string name="instructions_title">個人の指示</string>
+    <string name="instructions_timing">保存した変更は今後のタスクに適用されます。</string>
+    <string name="instructions_loading">指示を読み込み中…</string>
+    <string name="instructions_saving">指示を保存中…</string>
+    <string name="instructions_conflict">指示が別の場所で変更されました。最新版を読み込むとローカルの変更が破棄されます。</string>
+    <string name="instructions_uncertain">保存を確認できません。テキストは保持されています。保存済みの版を確認してから再試行してください。</string>
+    <string name="instructions_load_failed">指示を読み込めませんでした。</string>
+    <string name="instructions_unavailable">現在、個人の指示は利用できません。</string>
+    <string name="instructions_current">指示は最新です。</string>
+    <string name="instructions_unsaved">未保存の変更があります。</string>
+    <string name="instructions_local_failed">ローカルの下書きを保存できませんでした。再試行してください。</string>
+    <string name="instructions_save_rejected">保存が拒否されました。変更は保持されています。</string>
+    <string name="instructions_invalid">テキストに未対応の文字が含まれています。</string>
+    <string name="instructions_refresh">保存済みの版を確認</string>
+    <string name="instructions_save">指示を保存</string>
+    <string name="instructions_reload">最新版を読み込み変更を破棄</string>
+    <string name="instructions_discard">変更を破棄</string>
+    <string name="instructions_retry_save">同じ保存を再試行</string>
 </resources>

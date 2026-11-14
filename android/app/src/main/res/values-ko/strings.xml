@@ -58,4 +58,23 @@
     <string name="language_hi_in">हिन्दी</string>
     <string name="language_zh_hans">简体中文</string>
     <string name="language_zh_hant">繁體中文</string>
+    <string name="instructions_section">내 Okou</string>
+    <string name="instructions_title">개인 지침</string>
+    <string name="instructions_timing">저장한 변경 사항은 이후 작업에 적용됩니다.</string>
+    <string name="instructions_loading">지침 불러오는 중…</string>
+    <string name="instructions_saving">지침 저장 중…</string>
+    <string name="instructions_conflict">다른 곳에서 지침이 변경되었습니다. 최신 버전을 불러오면 로컬 변경 사항이 삭제됩니다.</string>
+    <string name="instructions_uncertain">저장을 확인하지 못했습니다. 텍스트는 보관됩니다. 저장된 버전을 확인한 후 다시 시도하세요.</string>
+    <string name="instructions_load_failed">지침을 불러오지 못했습니다.</string>
+    <string name="instructions_unavailable">현재 개인 지침을 사용할 수 없습니다.</string>
+    <string name="instructions_current">지침이 최신 상태입니다.</string>
+    <string name="instructions_unsaved">저장하지 않은 변경 사항이 있습니다.</string>
+    <string name="instructions_local_failed">로컬 초안을 저장하지 못했습니다. 다시 시도하세요.</string>
+    <string name="instructions_save_rejected">저장이 거부되었습니다. 변경 사항은 보관됩니다.</string>
+    <string name="instructions_invalid">지원하지 않는 문자가 포함되어 있습니다.</string>
+    <string name="instructions_refresh">저장된 버전 확인</string>
+    <string name="instructions_save">지침 저장</string>
+    <string name="instructions_reload">최신 버전 불러오기 및 변경 취소</string>
+    <string name="instructions_discard">변경 취소</string>
+    <string name="instructions_retry_save">동일한 저장 다시 시도</string>
 </resources>
