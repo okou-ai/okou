@@ -206,7 +206,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private var preparedRows: PreparedRows?
   private var appliesRows = false
   private var pendingScroll: (String, UnitPoint, Bool)?
-  private var sharingBottomInset: CGFloat = 0
+  private var sharingTrailingSpace: CGFloat = 0
   private var lastMetrics: ConversationCollectionMetrics?
   private var publishesMetrics = false
   private var lastViewportSize = CGSize.zero
@@ -589,8 +589,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private func updateContentInsets() {
     let insets = UIEdgeInsets(
       top: source.contentInsets.top, left: source.contentInsets.leading,
-      bottom: source.contentInsets.bottom + sharingBottomInset,
-      right: source.contentInsets.trailing)
+      bottom: source.contentInsets.bottom, right: source.contentInsets.trailing)
     guard collection.contentInset != insets else { return }
     collection.contentInset = insets
     collection.verticalScrollIndicatorInsets = insets
@@ -1023,9 +1022,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       appliesRows = false
       displayedRows = displayedRows.filter { ids.contains($0.key) }
       measurements = measurements.filter { ids.contains($0.key) }
-      if sharingBottomInset > 0, !rows.contains(where: \.isShareSelection) {
-        sharingBottomInset = 0
-        updateContentInsets()
+      if sharingTrailingSpace > 0, !rows.contains(where: \.isShareSelection) {
+        setSharingTrailingSpace(0)
       }
       collection.layoutIfNeeded()
       updateLoading()
@@ -1097,7 +1095,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       let spacing = displayedRows[position.messageID]?.readingContentTopSpacing,
       let frame = layout.layoutAttributesForItem(at: index)?.frame
     else { return }
-    var insets = collection.adjustedContentInset
+    let insets = collection.adjustedContentInset
     let requested = frame.minY + spacing - insets.top - position.offset
     if displayedRows[position.messageID]?.isShareSelection == true {
       // Hidden work/usage/follow-up rows can shorten the transcript below the
@@ -1105,9 +1103,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       let maximum = max(
         -insets.top, collection.contentSize.height - collection.bounds.height + insets.bottom)
       if requested > maximum {
-        sharingBottomInset += requested - maximum
-        updateContentInsets()
-        insets = collection.adjustedContentInset
+        setSharingTrailingSpace(sharingTrailingSpace + requested - maximum)
       }
     }
     let minimum = -insets.top
@@ -1118,13 +1114,20 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.setContentOffset(CGPoint(x: collection.contentOffset.x, y: y), animated: false)
   }
 
+  private func setSharingTrailingSpace(_ height: CGFloat) {
+    sharingTrailingSpace = height
+    // This is scrollable empty content, not an occluding bar or safe area.
+    layout.sectionInset.bottom = height
+    layout.invalidateLayout()
+    collection.layoutIfNeeded()
+  }
+
   func scrollTo(_ id: String, anchor: UnitPoint, animated: Bool) {
     guard source.sendTransition?.isActive != true else { return }
     let lastShareID = source.rows.last.flatMap { $0.isShareSelection ? $0.id : nil }
     let targetID = id == "conversation-bottom" ? lastShareID ?? id : id
-    if isViewLoaded, id == "conversation-bottom", sharingBottomInset > 0 {
-      sharingBottomInset = 0
-      updateContentInsets()
+    if isViewLoaded, id == "conversation-bottom", sharingTrailingSpace > 0 {
+      setSharingTrailingSpace(0)
     }
     guard isViewLoaded, let index = dataSource.indexPath(for: targetID) else {
       pendingScroll = (id, anchor, animated)
