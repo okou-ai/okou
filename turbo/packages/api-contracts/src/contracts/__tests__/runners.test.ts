@@ -11,6 +11,10 @@ import {
   elapsedSinceApiStartMs,
   executionContextSchema,
   nativeContinuationSchema,
+  piModelConfigSchema,
+  piModelConfigV2Schema,
+  piModelConfigV3Schema,
+  piModelConfigV5Schema,
   heartbeatBodySchema,
   heldHomeStateSchema,
   RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
@@ -339,6 +343,343 @@ describe("admitted Workflow selection contract", () => {
         executionInputSchema.parse(queued).customWorkflowSelection,
       ).toStrictEqual(selection);
     }
+  });
+});
+
+describe("Pi sandbox execution contract", () => {
+  const piSessionId = "22222222-2222-4222-8222-222222222222";
+  const preparedContext = {
+    storageMounts: [],
+    seedSkillBundles: [],
+    connectorRuntimeTargets: [],
+    environment: null,
+    platformEnvironment: {},
+    secretValueEnvironmentKeys: null,
+    nativeContinuation: {
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: null,
+    },
+    encryptedSecrets: null,
+    cliAgentType: "pi",
+  };
+  const piPreparedContext = {
+    piSessionId,
+    piLaunchConfig: { schemaVersion: 2 as const },
+    piModelConfig: {
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "openai/gpt-6-luna",
+      schemaVersion: 5,
+      dialect: "openai-completions",
+      transport: "sse",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
+    },
+  };
+  const piRunnerContext = {
+    piSessionId: piPreparedContext.piSessionId,
+    piLaunchConfig: piPreparedContext.piLaunchConfig,
+    piModelConfig: piPreparedContext.piModelConfig,
+  };
+
+  it("accepts only the exact generation 5 Chat Completions route", () => {
+    const chatCompletions = {
+      schemaVersion: 5,
+      dialect: "openai-completions",
+      transport: "sse",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "@preset/okou-1-0",
+      catalogModel: "okou-1.0",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
+    } as const;
+    expect(piModelConfigV5Schema.parse(chatCompletions)).toEqual(
+      chatCompletions,
+    );
+    expect(piModelConfigSchema.parse(chatCompletions)).toEqual(chatCompletions);
+    for (const candidate of [
+      { ...chatCompletions, serviceTier: "priority" },
+      { ...chatCompletions, provider: "openai-codex" },
+      { ...chatCompletions, dialect: "openai-responses" },
+      { ...chatCompletions, schemaVersion: 3 },
+      { ...chatCompletions, schemaVersion: 4 },
+      { ...chatCompletions, credentialBindings: [] },
+      {
+        ...chatCompletions,
+        credentialBindings: [
+          {
+            kind: "access-token",
+            environment: "CHATGPT_ACCESS_TOKEN",
+            secretName: "CHATGPT_ACCESS_TOKEN",
+          },
+        ],
+      },
+    ]) {
+      expect(piModelConfigSchema.safeParse(candidate).success).toBe(false);
+    }
+    for (const schemaVersion of [2, 3] as const) {
+      expect(
+        piModelConfigSchema.safeParse({ ...chatCompletions, schemaVersion })
+          .success,
+      ).toBe(false);
+    }
+  });
+
+  it.each([2, 3] as const)(
+    "accepts only exact generation %s dialect-aware credential binding sets",
+    (schemaVersion) => {
+      const schema =
+        schemaVersion === 2 ? piModelConfigV2Schema : piModelConfigV3Schema;
+      const publicResponses = {
+        schemaVersion,
+        dialect: "openai-responses",
+        transport: "sse",
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openai/gpt-6-luna",
+        thinkingLevel: "low",
+        credentialBindings: [
+          {
+            kind: "api-key",
+            environment: "OPENAI_API_KEY",
+            secretName: "OPENROUTER_API_KEY",
+          },
+        ],
+      } as const;
+      const codexResponses = {
+        schemaVersion,
+        dialect: "openai-codex-responses",
+        transport: "sse",
+        provider: "openai-codex",
+        baseUrl: "https://chatgpt.com/backend-api",
+        model: "gpt-6-luna",
+        thinkingLevel: "low",
+        credentialBindings: [
+          {
+            kind: "account-id",
+            environment: "CHATGPT_ACCOUNT_ID",
+            secretName: "CHATGPT_ACCOUNT_ID",
+          },
+          {
+            kind: "access-token",
+            environment: "CHATGPT_ACCESS_TOKEN",
+            secretName: "CHATGPT_ACCESS_TOKEN",
+          },
+        ],
+      } as const;
+
+      expect(schema.parse(publicResponses)).toEqual(publicResponses);
+      expect(schema.parse(codexResponses)).toEqual(codexResponses);
+      expect(piModelConfigSchema.parse(publicResponses)).toEqual(
+        publicResponses,
+      );
+      expect(piModelConfigSchema.parse(codexResponses)).toEqual(codexResponses);
+
+      for (const serviceTier of [
+        undefined,
+        "priority",
+        "fast",
+        "default",
+        "unknown",
+        null,
+      ]) {
+        for (const config of [publicResponses, codexResponses]) {
+          const candidate = {
+            ...config,
+            ...(serviceTier === undefined ? {} : { serviceTier }),
+          };
+          const expected =
+            serviceTier === undefined ||
+            (config.dialect === "openai-responses"
+              ? serviceTier === "priority"
+              : schemaVersion === 3 && serviceTier === "fast");
+          expect(piModelConfigSchema.safeParse(candidate).success).toBe(
+            expected,
+          );
+          expect(schema.safeParse(candidate).success).toBe(expected);
+          if (schemaVersion === 3) {
+            expect(piModelConfigV2Schema.safeParse(candidate).success).toBe(
+              false,
+            );
+          }
+        }
+      }
+
+      for (const invalid of [
+        { ...publicResponses, transport: "auto" },
+        { ...publicResponses, extra: true },
+        { ...publicResponses, thinkingLevel: "future" },
+        { ...publicResponses, catalogModel: "x".repeat(513) },
+        { ...codexResponses, catalogModel: "gpt-6-luna" },
+        { ...codexResponses, provider: "openrouter" },
+        { ...publicResponses, provider: "openai" },
+        {
+          ...codexResponses,
+          credentialBindings: [
+            codexResponses.credentialBindings[0],
+            codexResponses.credentialBindings[0],
+          ],
+        },
+        { ...publicResponses, provider: "openai-codex" },
+        { ...publicResponses, credentialBindings: [] },
+        {
+          ...publicResponses,
+          credentialBindings: [
+            publicResponses.credentialBindings[0],
+            publicResponses.credentialBindings[0],
+          ],
+        },
+        {
+          ...publicResponses,
+          credentialBindings: [
+            {
+              kind: "api-key",
+              environment: "CHATGPT_ACCESS_TOKEN",
+              secretName: "OPENAI_API_KEY",
+            },
+          ],
+        },
+        {
+          ...publicResponses,
+          credentialBindings: [
+            {
+              kind: "api-key",
+              environment: "OPENAI_API_KEY",
+              secretName: "CHATGPT_REFRESH_TOKEN",
+            },
+          ],
+        },
+        {
+          ...codexResponses,
+          credentialBindings: [codexResponses.credentialBindings[1]],
+        },
+        {
+          ...codexResponses,
+          serviceTier: "priority",
+        },
+        {
+          ...codexResponses,
+          credentialBindings: [
+            ...codexResponses.credentialBindings,
+            {
+              kind: "id-token",
+              environment: "CHATGPT_ID_TOKEN",
+              secretName: "CHATGPT_ID_TOKEN",
+            },
+          ],
+        },
+      ]) {
+        expect(schema.safeParse(invalid).success).toBe(false);
+      }
+    },
+  );
+
+  it("preserves the Chat Thread session across prepared and Runner-facing contexts", () => {
+    const stored = preparedExecutionContextSchema.parse({
+      ...preparedContext,
+      ...piPreparedContext,
+    });
+    const claimed = executionContextSchema.parse({
+      ...executionContextSchema.parse(loadRunnerExecutionContextFixture()),
+      cliAgentType: "pi",
+      ...piRunnerContext,
+    });
+
+    expect(stored.piSessionId).toBe(piPreparedContext.piSessionId);
+    expect(claimed.piSessionId).toBe(piPreparedContext.piSessionId);
+  });
+
+  it.each([
+    {
+      name: "old launch config",
+      launchConfig: { schemaVersion: 1 },
+    },
+  ])("rejects $name without a Sandbox compatibility path", (fixture) => {
+    expect(
+      preparedExecutionContextSchema.safeParse({
+        ...preparedContext,
+        ...piPreparedContext,
+        piLaunchConfig: fixture.launchConfig,
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each(["piSessionId", "piLaunchConfig", "piModelConfig"])(
+    "rejects a prepared Pi context without %s",
+    (missingField) => {
+      const incompleteContext: Record<string, unknown> = {
+        ...piPreparedContext,
+      };
+      Reflect.deleteProperty(incompleteContext, missingField);
+
+      expect(
+        preparedExecutionContextSchema.safeParse({
+          ...preparedContext,
+          ...incompleteContext,
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it("rejects a prepared Pi framework without the entire hard-cut bundle", () => {
+    expect(
+      preparedExecutionContextSchema.safeParse(preparedContext).success,
+    ).toBe(false);
+  });
+
+  it.each(["piLaunchConfig", "piModelConfig"] as const)(
+    "rejects prepared %s for another framework",
+    (field) => {
+      const invalidStoredContext = {
+        ...preparedContext,
+        cliAgentType: "claude-code",
+        [field]: piPreparedContext[field],
+      };
+
+      expect(
+        preparedExecutionContextSchema.safeParse(invalidStoredContext).success,
+      ).toBe(false);
+    },
+  );
+
+  it("requires all Pi fields on a claimed Pi context", () => {
+    const fixture = executionContextSchema.parse(
+      loadRunnerExecutionContextFixture(),
+    );
+    for (const field of [
+      "piSessionId",
+      "piLaunchConfig",
+      "piModelConfig",
+    ] as const) {
+      const incomplete: Record<string, unknown> = {
+        ...fixture,
+        cliAgentType: "pi",
+        ...piRunnerContext,
+      };
+      Reflect.deleteProperty(incomplete, field);
+      expect(executionContextSchema.safeParse(incomplete).success).toBe(false);
+    }
+  });
+
+  it("rejects Pi fields for non-Pi claimed frameworks", () => {
+    expect(
+      executionContextSchema.safeParse({
+        ...executionContextSchema.parse(loadRunnerExecutionContextFixture()),
+        ...piRunnerContext,
+      }).success,
+    ).toBe(false);
   });
 });
 
