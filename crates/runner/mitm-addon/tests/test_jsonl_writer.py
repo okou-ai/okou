@@ -198,9 +198,7 @@ def test_writer_rate_limits_append_failures_until_stable_recovery(tmp_path, mitm
     assert healthy_path.read_bytes() == b"healthy-before-interval\nhealthy-before-recovery\n"
     assert jsonl_writer._pending_bytes == 0
     assert jsonl_writer._queued_writes == 0
-    assert not jsonl_writer._accepted_by_path
-    assert not jsonl_writer._completed_by_path
-    assert not jsonl_writer._flush_waiters_by_path
+    assert not jsonl_writer._progress_by_path
 
 
 def test_writer_does_not_recover_from_mixed_path_batch(tmp_path, mitm_ctx):
@@ -315,9 +313,21 @@ def test_writer_publishes_backlog_completion_once_per_batch(tmp_path):
 
         def notify_all(self) -> None:
             self.notifications += 1
-            self.accepted_by_path = dict(jsonl_writer._accepted_by_path)
-            self.completed_by_path = dict(jsonl_writer._completed_by_path)
-            self.flush_waiters_by_path = dict(jsonl_writer._flush_waiters_by_path)
+            self.accepted_by_path = {
+                path: progress.accepted
+                for path, progress in jsonl_writer._progress_by_path.items()
+                if progress.accepted
+            }
+            self.completed_by_path = {
+                path: progress.completed
+                for path, progress in jsonl_writer._progress_by_path.items()
+                if progress.completed
+            }
+            self.flush_waiters_by_path = {
+                path: progress.flush_waiters
+                for path, progress in jsonl_writer._progress_by_path.items()
+                if progress.flush_waiters
+            }
             self.pending_bytes = jsonl_writer._pending_bytes
             self.queued_writes = jsonl_writer._queued_writes
             self._condition.notify_all()
@@ -370,7 +380,7 @@ def test_writer_publishes_backlog_completion_once_per_batch(tmp_path):
             waiter_thread.start()
             with condition:
                 waiter_registered = condition.wait_for(
-                    lambda: jsonl_writer._flush_waiters_by_path.get(waiter_path, 0) == 1,
+                    lambda: jsonl_writer._progress_by_path[waiter_path].flush_waiters == 1,
                     timeout=1,
                 )
             if not waiter_registered:
@@ -417,15 +427,13 @@ def test_completed_write_prunes_path_state_without_explicit_flush(tmp_path):
     log_path = str(tmp_path / "proxy.jsonl")
 
     def path_state_pruned() -> bool:
-        return log_path not in jsonl_writer._accepted_by_path and jsonl_writer._pending_bytes == 0
+        return log_path not in jsonl_writer._progress_by_path and jsonl_writer._pending_bytes == 0
 
     jsonl_writer.write_jsonl_line(log_path, b'{"message":"done"}\n', "proxy")
     with jsonl_writer._condition:
         assert jsonl_writer._condition.wait_for(path_state_pruned, timeout=1)
 
-    assert log_path not in jsonl_writer._accepted_by_path
-    assert log_path not in jsonl_writer._completed_by_path
-    assert log_path not in jsonl_writer._flush_waiters_by_path
+    assert log_path not in jsonl_writer._progress_by_path
     assert jsonl_writer._pending_bytes == 0
     assert (tmp_path / "proxy.jsonl").read_bytes().splitlines()
 
@@ -458,7 +466,7 @@ def test_flush_prunes_completed_path_state(tmp_path):
 
             with jsonl_writer._condition:
                 flush_waiter_registered = jsonl_writer._condition.wait_for(
-                    lambda: jsonl_writer._flush_waiters_by_path.get(log_path, 0) == 1,
+                    lambda: jsonl_writer._progress_by_path[log_path].flush_waiters == 1,
                     timeout=1,
                 )
             if not flush_waiter_registered:
@@ -473,9 +481,7 @@ def test_flush_prunes_completed_path_state(tmp_path):
     flush_thread.join_and_raise(timeout=0)
     assert not flush_thread.is_alive()
 
-    assert log_path not in jsonl_writer._accepted_by_path
-    assert log_path not in jsonl_writer._completed_by_path
-    assert log_path not in jsonl_writer._flush_waiters_by_path
+    assert log_path not in jsonl_writer._progress_by_path
     assert jsonl_writer._pending_bytes == 0
 
 
@@ -551,7 +557,7 @@ def test_out_of_order_concurrent_flushes_prune_after_final_waiter(tmp_path):
 
             with condition:
                 first_waiter_registered = condition.wait_for(
-                    lambda: jsonl_writer._flush_waiters_by_path.get(log_path, 0) == 1,
+                    lambda: jsonl_writer._progress_by_path[log_path].flush_waiters == 1,
                     timeout=1,
                 )
             if not first_waiter_registered:
@@ -569,7 +575,7 @@ def test_out_of_order_concurrent_flushes_prune_after_final_waiter(tmp_path):
 
             with condition:
                 flush_waiters_registered = condition.wait_for(
-                    lambda: jsonl_writer._flush_waiters_by_path.get(log_path, 0) == 2,
+                    lambda: jsonl_writer._progress_by_path[log_path].flush_waiters == 2,
                     timeout=1,
                 )
             if not flush_waiters_registered:
@@ -583,9 +589,9 @@ def test_out_of_order_concurrent_flushes_prune_after_final_waiter(tmp_path):
             second_flush.join_and_raise(timeout=1)
             assert first_flush.is_alive()
             with condition:
-                assert jsonl_writer._accepted_by_path[log_path] == 2
-                assert jsonl_writer._completed_by_path[log_path] == 2
-                assert jsonl_writer._flush_waiters_by_path[log_path] == 1
+                assert jsonl_writer._progress_by_path[log_path].accepted == 2
+                assert jsonl_writer._progress_by_path[log_path].completed == 2
+                assert jsonl_writer._progress_by_path[log_path].flush_waiters == 1
 
             condition.release_delayed_waiter.set()
             first_flush.join_and_raise(timeout=1)
@@ -599,9 +605,7 @@ def test_out_of_order_concurrent_flushes_prune_after_final_waiter(tmp_path):
         thread.join_and_raise(timeout=0)
         assert not thread.is_alive()
 
-    assert log_path not in jsonl_writer._accepted_by_path
-    assert log_path not in jsonl_writer._completed_by_path
-    assert log_path not in jsonl_writer._flush_waiters_by_path
+    assert log_path not in jsonl_writer._progress_by_path
     assert jsonl_writer._pending_bytes == 0
     assert jsonl_writer._queued_writes == 0
     assert (tmp_path / "net.jsonl").read_bytes() == b"first\nsecond\n"
@@ -633,7 +637,10 @@ def test_shutdown_writer_returns_when_normal_write_backlog_is_full(tmp_path):
             for _ in range(jsonl_writer.MAX_PENDING_JSONL_WRITES):
                 jsonl_writer.write_jsonl_line(log_path, line, "network")
 
-            assert jsonl_writer._accepted_by_path[log_path] == jsonl_writer.MAX_PENDING_JSONL_WRITES
+            assert (
+                jsonl_writer._progress_by_path[log_path].accepted
+                == jsonl_writer.MAX_PENDING_JSONL_WRITES
+            )
             assert jsonl_writer._queued_writes == jsonl_writer.MAX_PENDING_JSONL_WRITES
             assert jsonl_writer._pending_bytes == jsonl_writer.MAX_PENDING_JSONL_WRITES * len(line)
 
@@ -711,8 +718,8 @@ def test_flush_log_path_timeout_returns_false_and_cleans_waiter(tmp_path):
             assert append_started.wait(timeout=1)
 
             assert jsonl_writer.flush_log_path(log_path, timeout=0.01) is False
-            assert jsonl_writer._flush_waiters_by_path.get(log_path, 0) == 0
-            assert jsonl_writer._completed_by_path.get(log_path, 0) == 0
+            assert jsonl_writer._progress_by_path[log_path].flush_waiters == 0
+            assert jsonl_writer._progress_by_path[log_path].completed == 0
         finally:
             release_append.set()
             jsonl_writer.reset_for_tests()

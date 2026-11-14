@@ -4,7 +4,6 @@ import os
 import queue
 import threading
 import time
-from collections import defaultdict
 from dataclasses import dataclass
 
 import addon_process_logging
@@ -23,6 +22,15 @@ class _WriteItem:
     line: bytes
     log_name: str
     sequence: int
+
+
+@dataclass
+class _PathProgress:
+    """Sequence progress retained until completion and the final flush pin retire."""
+
+    accepted: int = 0
+    completed: int = 0
+    flush_waiters: int = 0
 
 
 @dataclass(eq=False)
@@ -45,9 +53,7 @@ _queue: queue.SimpleQueue[_WriteItem | object] = queue.SimpleQueue()
 _worker: threading.Thread | None = None
 _shutdown = False
 _stop_enqueued = False
-_accepted_by_path: defaultdict[str, int] = defaultdict(int)
-_completed_by_path: defaultdict[str, int] = defaultdict(int)
-_flush_waiters_by_path: defaultdict[str, int] = defaultdict(int)
+_progress_by_path: dict[str, _PathProgress] = {}
 _pending_flushes: list[FlushBoundary] = []
 _pending_bytes = 0
 _queued_writes = 0
@@ -95,7 +101,8 @@ def write_jsonl_line(log_path: str, line: bytes, log_name: str) -> None:
             )
             return
         else:
-            sequence = _accepted_by_path.get(log_path, 0) + 1
+            progress = _progress_by_path.get(log_path)
+            sequence = (progress.accepted if progress is not None else 0) + 1
             item = _WriteItem(
                 log_path=log_path,
                 line=line,
@@ -103,7 +110,7 @@ def write_jsonl_line(log_path: str, line: bytes, log_name: str) -> None:
                 sequence=sequence,
             )
             _queue.put_nowait(item)
-            _accepted_by_path[log_path] = sequence
+            _path_progress_locked(log_path).accepted = sequence
             _pending_bytes += line_size
             _queued_writes += 1
 
@@ -121,8 +128,9 @@ def capture_flush_boundary(log_path: str) -> FlushBoundary | None:
     with _condition:
         if len(_pending_flushes) >= MAX_PENDING_FLUSHES:
             return None
-        target = _accepted_by_path.get(log_path, 0)
-        pending = target - _completed_by_path.get(log_path, 0)
+        progress = _progress_by_path.get(log_path)
+        target = progress.accepted if progress is not None else 0
+        pending = target - (progress.completed if progress is not None else 0)
         boundary = FlushBoundary(log_path, target, pending)
         if pending:
             _increment_flush_waiter_locked(log_path)
@@ -142,11 +150,12 @@ def flush_log_path(log_path: str, *, timeout: float | None = None) -> bool:
         return True
 
     with _condition:
-        target = _accepted_by_path.get(log_path, 0)
+        progress = _path_progress_locked(log_path)
+        target = progress.accepted
         deadline = None if timeout is None else time.monotonic() + timeout
         _increment_flush_waiter_locked(log_path)
         try:
-            while _completed_by_path.get(log_path, 0) < target:
+            while progress.completed < target:
                 if deadline is None:
                     _condition.wait()
                     continue
@@ -169,11 +178,13 @@ def flush_all_logs() -> None:
     was persisted.
     """
     with _condition:
-        targets = dict(_accepted_by_path)
+        targets = {path: progress.accepted for path, progress in _progress_by_path.items()}
         for path in targets:
             _increment_flush_waiter_locked(path)
         try:
-            while any(_completed_by_path.get(path, 0) < target for path, target in targets.items()):
+            while any(
+                _progress_by_path[path].completed < target for path, target in targets.items()
+            ):
                 _condition.wait()
         finally:
             for path in targets:
@@ -221,8 +232,8 @@ def shutdown_writer(*, timeout: float | None = SHUTDOWN_JOIN_TIMEOUT_SECONDS) ->
 
 def reset_for_tests() -> None:
     """Reset writer state between tests."""
-    global _queue, _worker, _shutdown, _stop_enqueued, _accepted_by_path, _completed_by_path
-    global _flush_waiters_by_path, _pending_bytes, _queued_writes, _drop_warning_logged
+    global _queue, _worker, _shutdown, _stop_enqueued, _progress_by_path
+    global _pending_bytes, _queued_writes, _drop_warning_logged
     global _last_append_failure_at, _last_append_failure_warning_at
 
     shutdown_writer(timeout=None)
@@ -231,9 +242,7 @@ def reset_for_tests() -> None:
         _worker = None
         _shutdown = False
         _stop_enqueued = False
-        _accepted_by_path = defaultdict(int)
-        _completed_by_path = defaultdict(int)
-        _flush_waiters_by_path = defaultdict(int)
+        _progress_by_path = {}
         _pending_flushes.clear()
         _pending_bytes = 0
         _queued_writes = 0
@@ -402,15 +411,13 @@ def _complete_batch(items: list[object]) -> None:
 
     with _condition:
         for log_path, sequence in completed_by_path.items():
-            _completed_by_path[log_path] = max(
-                _completed_by_path[log_path],
-                sequence,
-            )
+            progress = _progress_by_path[log_path]
+            progress.completed = max(progress.completed, sequence)
         _pending_bytes = max(0, _pending_bytes - completed_bytes)
         _queued_writes = max(0, _queued_writes - completed_writes)
         for boundary in tuple(_pending_flushes):
             boundary.pending = max(
-                0, boundary.sequence - _completed_by_path.get(boundary.log_path, 0)
+                0, boundary.sequence - _progress_by_path[boundary.log_path].completed
             )
             if boundary.pending == 0:
                 _pending_flushes.remove(boundary)
@@ -420,25 +427,31 @@ def _complete_batch(items: list[object]) -> None:
         _condition.notify_all()
 
 
+def _path_progress_locked(log_path: str) -> _PathProgress:
+    progress = _progress_by_path.get(log_path)
+    if progress is None:
+        progress = _PathProgress()
+        _progress_by_path[log_path] = progress
+    return progress
+
+
 def _increment_flush_waiter_locked(log_path: str) -> None:
-    _flush_waiters_by_path[log_path] += 1
+    _path_progress_locked(log_path).flush_waiters += 1
 
 
 def _decrement_flush_waiter_locked(log_path: str) -> None:
-    current = _flush_waiters_by_path.get(log_path, 0)
-    if current <= 1:
-        _flush_waiters_by_path.pop(log_path, None)
-    else:
-        _flush_waiters_by_path[log_path] = current - 1
+    progress = _progress_by_path[log_path]
+    progress.flush_waiters = max(0, progress.flush_waiters - 1)
 
 
 def _prune_completed_path_locked(log_path: str) -> None:
-    if _flush_waiters_by_path.get(log_path, 0) > 0:
-        return
-    accepted = _accepted_by_path.get(log_path)
-    if accepted is not None and _completed_by_path.get(log_path, 0) >= accepted:
-        _accepted_by_path.pop(log_path, None)
-        _completed_by_path.pop(log_path, None)
+    progress = _progress_by_path.get(log_path)
+    if (
+        progress is not None
+        and progress.flush_waiters == 0
+        and progress.completed >= progress.accepted
+    ):
+        del _progress_by_path[log_path]
 
 
 def _warn_drop_once(log_name: str) -> None:
