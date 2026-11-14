@@ -25,17 +25,17 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
         alignment: isExpanded ? .topLeading : .leading
       )
       .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
-      .overlay(alignment: .bottomLeading) {
-        leading()
-          .padding(.bottom, isExpanded ? OkouSpace.six : 0)
-      }
-      .overlay(alignment: .bottomTrailing) {
-        trailing()
-          // Resolve motion at the toolbar so fading controls inherit its animated
-          // position while the keyboard raises the surface.
-          .geometryGroup()
-          .padding(.leading, isExpanded ? actionSize + OkouSpace.xs : 0)
-          .padding(.bottom, isExpanded ? OkouSpace.six : 0)
+      .overlay(alignment: .bottom) {
+        HStack(spacing: OkouSpace.xs) {
+          leading()
+            .frame(maxWidth: .infinity, alignment: .leading)
+          trailing()
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        // Resolve motion at the toolbar so fading controls inherit its animated
+        // position while the keyboard raises the surface.
+        .geometryGroup()
+        .padding(.bottom, isExpanded ? OkouSpace.six : 0)
       }
   }
 }

@@ -63,12 +63,12 @@ struct ChatComposerView: View {
   }
   private var canSendFromKeyboard: Bool { hasContent && canPerformPrimaryAction }
   /// A draft keeps the open layout after the keyboard closes; collapsing it cut the text to
-  /// one truncated line under the controls. Voice input opens it too, and the model sheet
-  /// keeps it open while the keyboard is down under the sheet.
+  /// one truncated line under the controls. A selected project needs the bottom toolbar;
+  /// voice input and the model sheet also keep it open while the keyboard is down.
   private var expandsInput: Bool {
     isFocused || hasText || draftState?.document.hasFeedback == true
       || draftState?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-      || voiceActive || showsModels
+      || project != nil || voiceActive || showsModels
   }
   private var showsStop: Bool { canStop && !hasContent }
   private var voiceActive: Bool {
@@ -88,11 +88,6 @@ struct ChatComposerView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
-      if let project {
-        OkouBanner(Text(verbatim: project.name), icon: "folder", dismiss: removeProject)
-          .accessibilityLabel("Project: \(project.name)")
-          .disabled(isBusy || needsUpgrade)
-      }
       if let voice = draftState?.voice, voice.error != nil || voiceActive {
         ComposerVoiceInputTray(voice: voice)
           .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
@@ -224,6 +219,30 @@ struct ChatComposerView: View {
                 ? "Confirm connector settings before sending" : ""
             )
             .disabled(isBusy || needsUpgrade)
+            if let project {
+              Button {
+                removeProject?()
+              } label: {
+                HStack(spacing: OkouSpace.six) {
+                  OkouIcon("folder", size: OkouIconSize.inline)
+                  Text(verbatim: project.name)
+                    .font(.okou(.callout))
+                    .lineLimit(1)
+                  if removeProject != nil {
+                    OkouIcon("x", size: OkouIconSize.badge)
+                  }
+                }
+                .foregroundStyle(OkouColor.mutedForeground)
+                .padding(.horizontal, OkouSpace.sm)
+                .frame(minHeight: actionSize)
+                .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+              .accessibilityLabel("Remove from project")
+              .accessibilityValue(project.name)
+              .accessibilityIdentifier("composer-project")
+              .disabled(isBusy || needsUpgrade || removeProject == nil)
+            }
           }
         } trailing: {
           HStack(spacing: OkouSpace.xs) {
