@@ -168,7 +168,7 @@ function createModelValues(
     return get(navigationScopeSource$);
   });
   const tabLayout$ = computed((get) => {
-    return layoutTabs(get(tabs$), get(selectedTabId$), true, get(spaceState$));
+    return layoutTabs(get(tabs$), get(selectedTabId$), get(spaceState$));
   });
   return {
     snapshot$,
