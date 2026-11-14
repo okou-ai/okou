@@ -62,6 +62,10 @@ interface ChatScrollGeometry {
   readonly bottomScrollTop: () => number;
   readonly firstVisibleAnchor: () => HTMLElement;
   readonly growBeforeMessages: (height: number) => void;
+  readonly growWithinMessage: (
+    anchor: HTMLElement,
+    height: number | (() => number),
+  ) => void;
 }
 
 interface MutableConversation {
@@ -107,11 +111,19 @@ function installChatScrollGeometry(
   );
   let scrollTop = 0;
   let heightBeforeMessages = 0;
+  const growthByEventId = new Map<string, () => number>();
+  const messageGrowth = (anchor: HTMLElement): number => {
+    return growthByEventId.get(anchorId(anchor))?.() ?? 0;
+  };
 
   const scrollHeight = (): number => {
+    const anchors = renderedAnchors(container);
     return (
       heightBeforeMessages +
-      renderedAnchors(container).length * ROW_HEIGHT_PX +
+      anchors.length * ROW_HEIGHT_PX +
+      anchors.reduce((height, anchor) => {
+        return height + messageGrowth(anchor);
+      }, 0) +
       CONTENT_BOTTOM_PADDING_PX
     );
   };
@@ -120,6 +132,7 @@ function installChatScrollGeometry(
   };
 
   Object.defineProperties(container, {
+    clientWidth: { configurable: true, value: 800 },
     clientHeight: {
       configurable: true,
       get: () => {
@@ -147,14 +160,21 @@ function installChatScrollGeometry(
         return rect(viewportTop(), viewportHeight());
       }
       if (Object.hasOwn(this.dataset, "chatScrollAnchorEventId")) {
-        const index = renderedAnchors(container).indexOf(this);
+        const anchors = renderedAnchors(container);
+        const index = anchors.indexOf(this);
         if (index !== -1) {
+          const growthBefore = anchors
+            .slice(0, index)
+            .reduce((height, anchor) => {
+              return height + messageGrowth(anchor);
+            }, 0);
           return rect(
             viewportTop() +
               heightBeforeMessages +
-              index * ROW_HEIGHT_PX -
+              index * ROW_HEIGHT_PX +
+              growthBefore -
               scrollTop,
-            ROW_CONTENT_HEIGHT_PX,
+            ROW_CONTENT_HEIGHT_PX + messageGrowth(this),
           );
         }
       }
@@ -197,6 +217,16 @@ function installChatScrollGeometry(
     },
     growBeforeMessages: (height) => {
       heightBeforeMessages += height;
+    },
+    growWithinMessage: (anchor, height) => {
+      const id = anchorId(anchor);
+      const previousGrowth = growthByEventId.get(id);
+      growthByEventId.set(id, () => {
+        return (
+          (previousGrowth?.() ?? 0) +
+          (typeof height === "function" ? height() : height)
+        );
+      });
     },
   };
 }
@@ -1299,6 +1329,748 @@ test.each([
   },
 );
 
+async function openSemanticReadingFixture(captureInitially = true) {
+  const jumpId = "d0000000-0000-4000-a000-000000000984";
+  const paragraphs = Array.from({ length: 40 }, (_, index) => {
+    return `Semantic reading paragraph ${(index + 1).toString()} with CJK 中文 and emoji 😀.`;
+  });
+  mockChatLifecycleWithoutBrowserSession({
+    threadId: THREAD_IDS.growingHistory,
+    chatEvents: completedHistoryEvents(8).map((event) => {
+      if (event.id === "scroll-user-5") {
+        return { ...event, id: jumpId };
+      }
+      if (event.id === "scroll-assistant-8") {
+        return {
+          ...event,
+          content: `History answer 8\n\n[Jump to earlier question](https://app.okou.ai/chats/${THREAD_IDS.growingHistory}#event-${jumpId})`,
+        };
+      }
+      return event.id === "scroll-assistant-6"
+        ? {
+            ...event,
+            content: `${paragraphs.join("\n\n")}\n\n\`\`\`text\nwide code\n\`\`\``,
+          }
+        : event;
+    }),
+  });
+  const container = await openConversation(
+    THREAD_IDS.growingHistory,
+    "History answer 8",
+    true,
+  );
+  let height = INITIAL_VIEWPORT_HEIGHT_PX;
+  const geometry = installChatScrollGeometry(container, () => {
+    return height;
+  });
+  let width = 800;
+  Object.defineProperty(container, "clientWidth", {
+    configurable: true,
+    get: () => {
+      return width;
+    },
+  });
+  const passage = screen.getByText(paragraphs[20] ?? "");
+  const body = passage.closest<HTMLElement>(
+    "[data-chat-scroll-anchor-event-id]",
+  );
+  if (!body) {
+    throw new Error("Semantic reading fixture has no event body");
+  }
+  geometry.growWithinMessage(body, 6000);
+  let reflow = 0;
+  const prose = Array.from(body.querySelectorAll<HTMLElement>("p"));
+  const paragraphRect = (element: Element): DOMRect => {
+    const index = prose.indexOf(element as HTMLElement);
+    return rect(
+      body.getBoundingClientRect().top +
+        index * 100 +
+        (index >= 20 ? reflow : 0),
+      70,
+    );
+  };
+  for (const paragraph of prose) {
+    Object.defineProperty(paragraph, "getBoundingClientRect", {
+      configurable: true,
+      value: () => {
+        return paragraphRect(paragraph);
+      },
+    });
+  }
+  vi.spyOn(Range.prototype, "getClientRects").mockImplementation(function (
+    this: Range,
+  ) {
+    const paragraph = this.startContainer.parentElement?.closest("p");
+    const boxes =
+      paragraph && body.contains(paragraph)
+        ? [rect(paragraphRect(paragraph).top, 24, 8)]
+        : [];
+    return boxes as unknown as DOMRectList;
+  });
+  const scrollToPassage = () => {
+    scrollFromUser(
+      container,
+      container.scrollTop + body.getBoundingClientRect().top + 2000 - 34.75,
+    );
+  };
+  const initialPassageTop = passage.getBoundingClientRect().top;
+  if (captureInitially) {
+    scrollToPassage();
+    await expectHistoryPositionHeld();
+  }
+  expect(passage.getBoundingClientRect().top).toBe(
+    captureInitially ? 34.75 : initialPassageTop,
+  );
+  return {
+    container,
+    geometry,
+    passage,
+    jumpId,
+    scrollToPassage,
+    reflow: (delta: number, nativeAdjustment = 0) => {
+      reflow += delta;
+      geometry.growWithinMessage(body, delta);
+      container.scrollTop += nativeAdjustment;
+      fireEvent.scroll(container);
+    },
+    setHeight: (value: number) => {
+      height = value;
+    },
+    setWidth: (value: number) => {
+      width = value;
+    },
+  };
+}
+
+test("Capture the sole ordinary reading scroll after completed width calibration", async () => {
+  const fixture = await openSemanticReadingFixture(false);
+  // Install the first real viewport measurement before browser calibration.
+  await act(() => {
+    fireEvent.resize(window);
+  });
+  expect(fixture.container.scrollTop).toBe(fixture.geometry.bottomScrollTop());
+  for (const width of [902, 898, 800]) {
+    fixture.setWidth(width);
+    fixture.container.scrollTop -= 20;
+    fireEvent.scroll(fixture.container);
+    await act(() => {
+      fireEvent.resize(window);
+    });
+    expect(fixture.container.scrollTop).toBe(
+      fixture.geometry.bottomScrollTop(),
+    );
+  }
+  // This is intentionally an ordinary scripted scroll, with no input marker.
+  fixture.scrollToPassage();
+  await expectHistoryPositionHeld();
+  fixture.reflow(275, 75);
+  await act(() => {
+    document.fonts.dispatchEvent(new Event("loadingdone"));
+  });
+  expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
+});
+
+test("The narrow reveal restores its live pre-hide prose point after hidden reflow", async () => {
+  context.mocks.browser.matchMedia(() => {
+    return false;
+  });
+  const fixture = await openSemanticReadingFixture();
+  // Move one paragraph without a scroll event: preserve must measure live
+  // prose rather than reuse the previously captured p21 bookmark.
+  fixture.container.scrollTop += 100;
+  const liveOffset = fixture.passage.getBoundingClientRect().top;
+  await openUtilityAutomations();
+  fixture.setHeight(0);
+  fixture.reflow(275, 75);
+  const hiddenTop = fixture.container.scrollTop;
+  await act(() => {
+    document.fonts.dispatchEvent(new Event("loadingdone"));
+    fireEvent.load(fixture.passage);
+  });
+  expect(fixture.container.scrollTop).toBe(hiddenTop);
+  const frames = controlRevealFrames();
+  fixture.setHeight(INITIAL_VIEWPORT_HEIGHT_PX);
+  fixture.container.scrollTop = 0;
+  fireEvent.scroll(fixture.container);
+  click(buttonByLabel("Close automations"));
+  await frames.paint();
+  await frames.paint();
+  await waitFor(() => {
+    expect(fixture.passage.getBoundingClientRect().top).toBe(liveOffset);
+  });
+});
+
+test("Repeated narrow reveals retain a logical glyph that no longer fits the short viewport", async () => {
+  context.mocks.browser.matchMedia(() => {
+    return false;
+  });
+  const fixture = await openSemanticReadingFixture();
+  for (const height of [40, INITIAL_VIEWPORT_HEIGHT_PX]) {
+    await openUtilityAutomations();
+    fixture.setHeight(0);
+    fixture.reflow(height === 40 ? 275 : -275, 75);
+    const frames = controlRevealFrames();
+    fixture.setHeight(height);
+    fixture.container.scrollTop = 0;
+    fireEvent.scroll(fixture.container);
+    click(buttonByLabel("Close automations"));
+    await frames.paint();
+    await frames.paint();
+    await waitFor(() => {
+      expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
+    });
+  }
+});
+
+test.each(["history", "tail"] as const)(
+  "Restore %s when viewport CSS reveals the transcript with automations still open",
+  async (intent) => {
+    context.mocks.browser.matchMedia(() => {
+      return false;
+    });
+    const fixture = await openSemanticReadingFixture();
+    const before = fixture.container.scrollTop;
+    if (intent === "tail") {
+      fixture.container.scrollTop = fixture.geometry.bottomScrollTop();
+      fireEvent.scroll(fixture.container);
+    }
+    await openUtilityAutomations();
+    fixture.setHeight(0);
+    fixture.reflow(275, 75);
+    const hiddenTop = fixture.container.scrollTop;
+    await act(() => {
+      fireEvent.resize(window);
+    });
+    expect(fixture.container.scrollTop).toBe(hiddenTop);
+    fixture.setHeight(INITIAL_VIEWPORT_HEIGHT_PX);
+    fixture.container.scrollTop = 0;
+    fireEvent.scroll(fixture.container);
+    await act(() => {
+      fireEvent.resize(window);
+    });
+    const expectedTop =
+      intent === "tail" ? fixture.geometry.bottomScrollTop() : before + 275;
+    await waitFor(() => {
+      expect(fixture.container.scrollTop).toBe(expectedTop);
+      expect(buttonByLabel("Close automations")).toBeVisible();
+    });
+  },
+);
+
+test.each(["font", "resize", "resource", "commit"] as const)(
+  "Restore the same prose glyph after native reflow at a %s completion",
+  async (cause) => {
+    const fixture = await openSemanticReadingFixture();
+    const complete =
+      cause === "commit"
+        ? await prepareLayoutReflow("a capability layout commits")
+        : async () => {
+            await act(() => {
+              if (cause === "resize") {
+                fireEvent.resize(window);
+              } else if (cause === "resource") {
+                fireEvent.load(fixture.passage);
+              } else {
+                document.fonts.dispatchEvent(new Event("loadingdone"));
+              }
+            });
+          };
+    const before = fixture.container.scrollTop;
+    fixture.reflow(275, 75);
+    expect(fixture.passage.getBoundingClientRect().top).toBe(234.75);
+    // Repeated native adjustment while geometry is still pending must not
+    // replace the pre-reflow point, even at the same intermediate dimensions.
+    fixture.container.scrollTop += 15;
+    fireEvent.scroll(fixture.container);
+    await complete();
+    await waitFor(() => {
+      expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
+      expect(fixture.container.scrollTop).toBe(before + 275);
+    });
+    fireEvent.scroll(fixture.container);
+    fixture.reflow(-275, -50);
+    await act(() => {
+      fireEvent.resize(window);
+    });
+    expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
+    expect(fixture.container.scrollTop).toBe(before);
+  },
+);
+
+test.each(["wheel", "touch", "keyboard", "pointer"] as const)(
+  "A real %s reader takeover supersedes the pre-reflow bookmark",
+  async (input) => {
+    const fixture = await openSemanticReadingFixture();
+    fixture.reflow(275, 75);
+    if (input === "wheel") {
+      fireEvent.wheel(fixture.container, { deltaY: 60 });
+    }
+    if (input === "touch") {
+      fireEvent.touchMove(fixture.container);
+    }
+    if (input === "keyboard") {
+      fireEvent.keyDown(fixture.container, { key: "PageDown" });
+    }
+    if (input === "pointer") {
+      fireEvent.pointerDown(fixture.container);
+    }
+    scrollFromUser(fixture.container, fixture.container.scrollTop + 160);
+    const readerTop = fixture.passage.getBoundingClientRect().top;
+    const readerScrollTop = fixture.container.scrollTop;
+    await act(() => {
+      document.fonts.dispatchEvent(new Event("loadingdone"));
+    });
+    expect(fixture.container.scrollTop).toBe(readerScrollTop);
+    expect(fixture.passage.getBoundingClientRect().top).toBe(readerTop);
+  },
+);
+
+test("Nested scroller input cannot claim the next native reflow as reader movement", async () => {
+  const fixture = await openSemanticReadingFixture();
+  const nested = screen.getByText("wide code").closest("pre");
+  if (!nested) {
+    throw new Error("Nested code scroller not found");
+  }
+  nested.style.overflowX = "auto";
+  Object.defineProperties(nested, {
+    clientWidth: { configurable: true, value: 100 },
+    scrollWidth: { configurable: true, value: 1000 },
+  });
+  fireEvent.wheel(nested, { deltaX: 40 });
+  fireEvent.scroll(nested);
+  fixture.reflow(275, 75);
+  await act(() => {
+    document.fonts.dispatchEvent(new Event("loadingdone"));
+  });
+  expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
+});
+
+test.each(["wide code", "nested boundary", "button"] as const)(
+  "A vertical wheel over %s chains into the thread after geometry changes",
+  async (source) => {
+    const fixture = await openSemanticReadingFixture();
+    const nested = screen.getByText("wide code").closest("pre");
+    if (!nested) {
+      throw new Error("Nested code scroller not found");
+    }
+    nested.style.overflowX = "auto";
+    nested.style.overflowY = source === "nested boundary" ? "auto" : "visible";
+    Object.defineProperties(nested, {
+      clientWidth: { configurable: true, value: 100 },
+      scrollWidth: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: {
+        configurable: true,
+        value: source === "nested boundary" ? 300 : 100,
+      },
+      scrollTop: {
+        configurable: true,
+        value: source === "nested boundary" ? 200 : 0,
+      },
+    });
+    fixture.reflow(275, 75);
+    const target =
+      source === "button"
+        ? queryAllByRoleFast("button", fixture.container)[0]
+        : nested;
+    if (!target) {
+      throw new Error("Rendered message button not found");
+    }
+    fireEvent.wheel(target, { deltaY: 60 });
+    scrollFromUser(fixture.container, fixture.container.scrollTop + 160);
+    const chosenTop = fixture.container.scrollTop;
+    const chosenPassage = fixture.passage.getBoundingClientRect().top;
+    await act(() => {
+      document.fonts.dispatchEvent(new Event("loadingdone"));
+    });
+    expect(fixture.container.scrollTop).toBe(chosenTop);
+    expect(fixture.passage.getBoundingClientRect().top).toBe(chosenPassage);
+  },
+);
+
+test.each(["consumed", "contained"] as const)(
+  "A %s nested vertical wheel preserves the outer prose bookmark",
+  async (kind) => {
+    const fixture = await openSemanticReadingFixture();
+    const nested = screen.getByText("wide code").closest("pre");
+    if (!nested) {
+      throw new Error("Nested code scroller not found");
+    }
+    nested.style.overflowY = "auto";
+    nested.style.overscrollBehaviorY =
+      kind === "contained" ? "contain" : "auto";
+    Object.defineProperties(nested, {
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, value: kind === "contained" ? 200 : 0 },
+    });
+    fixture.reflow(275, 75);
+    fireEvent.wheel(nested, { deltaY: 60 });
+    fixture.container.scrollTop += 15;
+    fireEvent.scroll(fixture.container);
+    await act(() => {
+      document.fonts.dispatchEvent(new Event("loadingdone"));
+    });
+    expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
+  },
+);
+
+test.each(["wheel", "thumb"] as const)(
+  "Motionless %s input at the tail cannot claim a later native reflow",
+  async (input) => {
+    const fixture = await openSemanticReadingFixture();
+    click(buttonByLabel("Scroll to bottom"));
+    await waitFor(() => {
+      expect(fixture.container.scrollTop).toBe(
+        fixture.geometry.bottomScrollTop(),
+      );
+    });
+    if (input === "wheel") {
+      fireEvent.wheel(fixture.container, { deltaY: 60 });
+    } else {
+      Object.defineProperty(fixture.container, "scrollWidth", {
+        configurable: true,
+        value: fixture.container.clientWidth,
+      });
+      act(() => {
+        fireEvent.scroll(fixture.container);
+      });
+      const scrollbar = await screen.findByTestId("chat-message-scrollbar");
+      const thumb = scrollbar.querySelector('[data-slot="scroll-area-thumb"]');
+      if (!(thumb instanceof HTMLElement)) {
+        throw new Error("Rendered scrollbar thumb not found");
+      }
+      fireEvent.pointerDown(thumb, { button: 0 });
+      fireEvent.pointerUp(thumb, { button: 0 });
+    }
+    fixture.reflow(275, 75);
+    await act(() => {
+      document.fonts.dispatchEvent(new Event("loadingdone"));
+    });
+    expect(fixture.container.scrollTop).toBe(
+      fixture.geometry.bottomScrollTop(),
+    );
+    expect(queryButtonByLabel("Scroll to bottom")).not.toBeInTheDocument();
+  },
+);
+
+test("Motionless visible input retains the prose glyph for later reflow", async () => {
+  const fixture = await openSemanticReadingFixture();
+  fireEvent.wheel(fixture.container, { deltaY: 60 });
+  fixture.reflow(275, 75);
+  await act(() => {
+    document.fonts.dispatchEvent(new Event("loadingdone"));
+  });
+  expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
+});
+
+test("An explicit event jump supersedes the old prose bookmark", async () => {
+  const fixture = await openSemanticReadingFixture();
+  Object.defineProperty(fixture.container, "scrollTo", {
+    configurable: true,
+    value: (options: ScrollToOptions) => {
+      fixture.container.scrollTop = options.top ?? 0;
+    },
+  });
+  fixture.reflow(275, 75);
+  const link = queryAllByRoleFast("link", fixture.container).find(
+    (candidate) => {
+      return candidate.textContent === "Jump to earlier question";
+    },
+  );
+  if (!link) {
+    throw new Error("Event jump link not found");
+  }
+  click(link);
+  const target = await waitFor(() => {
+    const target = anchorById(fixture.container, fixture.jumpId);
+    expect(target.getBoundingClientRect().top).toBe(0);
+    return target;
+  });
+  const jumpedScrollTop = fixture.container.scrollTop;
+  await act(() => {
+    fireEvent(fixture.container, new Event("scrollend"));
+    document.fonts.dispatchEvent(new Event("loadingdone"));
+  });
+  expect(fixture.container.scrollTop).toBe(jumpedScrollTop);
+  expect(target.getBoundingClientRect().top).toBe(0);
+});
+
+test.each(["height", "width"] as const)(
+  "A zero-%s pane defers its semantic correction until it has geometry",
+  async (dimension) => {
+    const fixture = await openSemanticReadingFixture();
+    if (dimension === "height") {
+      fixture.setHeight(0);
+    } else {
+      fixture.setWidth(0);
+    }
+    fixture.reflow(275, 75);
+    const hiddenScrollTop = fixture.container.scrollTop;
+    await act(() => {
+      fireEvent.resize(window);
+    });
+    expect(fixture.container.scrollTop).toBe(hiddenScrollTop);
+    fixture.setHeight(INITIAL_VIEWPORT_HEIGHT_PX);
+    fixture.setWidth(800);
+    await act(() => {
+      fireEvent.resize(window);
+    });
+    expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
+  },
+);
+
+test("Returning to the tail invalidates an old prose bookmark", async () => {
+  const fixture = await openSemanticReadingFixture();
+  click(buttonByLabel("Scroll to bottom"));
+  await waitFor(() => {
+    expect(fixture.container.scrollTop).toBe(
+      fixture.geometry.bottomScrollTop(),
+    );
+  });
+  fixture.reflow(275, 75);
+  // More native scrolling within the same unfinished geometry change is not
+  // evidence that the reader left the tail.
+  fixture.container.scrollTop -= 45;
+  fireEvent.scroll(fixture.container);
+  await act(() => {
+    document.fonts.dispatchEvent(new Event("loadingdone"));
+  });
+  expect(fixture.container.scrollTop).toBe(fixture.geometry.bottomScrollTop());
+  expect(queryButtonByLabel("Scroll to bottom")).not.toBeInTheDocument();
+});
+
+type LayoutReflow = "fonts finish loading" | "a capability layout commits";
+const LAYOUT_REFLOWS: readonly LayoutReflow[] = [
+  "fonts finish loading",
+  "a capability layout commits",
+];
+
+async function prepareLayoutReflow(
+  trigger: LayoutReflow,
+): Promise<() => Promise<void>> {
+  if (trigger === "fonts finish loading") {
+    return async () => {
+      await act(() => {
+        document.fonts.dispatchEvent(new Event("loadingdone"));
+      });
+    };
+  }
+  click(buttonByLabel("Add"));
+  const menu = await screen.findByRole("menu", { name: "Add" });
+  const research = queryAllByRoleFast("menuitem", menu).find((candidate) => {
+    return candidate.textContent?.trim() === "Research";
+  });
+  if (!research) {
+    throw new Error("Research menu item not found");
+  }
+  return async () => {
+    click(research);
+    await screen.findByRole("region", { name: "Research" });
+  };
+}
+
+test.each(LAYOUT_REFLOWS)(
+  "Keep the browser's history passage when %s",
+  async (trigger) => {
+    const events = completedHistoryEvents(8).map((event) => {
+      return event.id === "scroll-assistant-6"
+        ? { ...event, content: "History answer 6\n\nThe passage being read" }
+        : event;
+    });
+    mockMutableConversation(THREAD_IDS.growingHistory, events);
+    const container = await openConversation(
+      THREAD_IDS.growingHistory,
+      "History answer 8",
+      true,
+    );
+    const geometry = installChatScrollGeometry(container);
+    scrollFromUser(container, 240);
+    await expectHistoryPositionHeld();
+    const reflow = await prepareLayoutReflow(trigger);
+    const passage = screen.getByText("The passage being read");
+    const body = passage.closest<HTMLElement>(
+      "[data-chat-scroll-anchor-event-id]",
+    );
+    if (!body) {
+      throw new Error("Reading passage has no message body");
+    }
+    let paragraphOffset = 120;
+    Object.defineProperty(passage, "getBoundingClientRect", {
+      configurable: true,
+      value: () => {
+        return rect(body.getBoundingClientRect().top + paragraphOffset, 24);
+      },
+    });
+    const passageTop = passage.getBoundingClientRect().top;
+    const bodyTop = body.getBoundingClientRect().top;
+
+    // Model internal paragraph wrapping and the browser's native anchoring.
+    // Its scroll event has not arrived yet; the held message offset is stale.
+    geometry.growWithinMessage(body, 75);
+    paragraphOffset += 75;
+    container.scrollTop += 75;
+    const nativeScrollTop = container.scrollTop;
+    expect(body.getBoundingClientRect().top).toBe(bodyTop - 75);
+    expect(passage.getBoundingClientRect().top).toBe(passageTop);
+
+    await reflow();
+
+    expect(container.scrollTop).toBe(nativeScrollTop);
+    expect(passage.getBoundingClientRect().top).toBe(passageTop);
+    expect(buttonByLabel("Scroll to bottom")).toBeInTheDocument();
+  },
+);
+
+test("Keep the browser's history passage when the responsive workspace commits", async () => {
+  const viewport = context.mocks.browser.matchMedia((query) => {
+    return query === "(min-width: 48rem)";
+  });
+  mockMutableConversation(
+    THREAD_IDS.growingHistory,
+    completedHistoryEvents(8).map((event) => {
+      return event.id === "scroll-assistant-6"
+        ? { ...event, content: "History answer 6\n\nThe passage being read" }
+        : event;
+    }),
+  );
+  const container = await openConversation(
+    THREAD_IDS.growingHistory,
+    "History answer 8",
+    true,
+  );
+  const geometry = installChatScrollGeometry(container);
+  scrollFromUser(container, 240);
+  await expectHistoryPositionHeld();
+  const passage = screen.getByText("The passage being read");
+  const body = passage.closest<HTMLElement>(
+    "[data-chat-scroll-anchor-event-id]",
+  );
+  if (!body) {
+    throw new Error("Reading passage has no message body");
+  }
+  let paragraphOffset = 120;
+  Object.defineProperty(passage, "getBoundingClientRect", {
+    configurable: true,
+    value: () => {
+      return rect(body.getBoundingClientRect().top + paragraphOffset, 24);
+    },
+  });
+  const passageTop = passage.getBoundingClientRect().top;
+  geometry.growWithinMessage(body, 75);
+  paragraphOffset += 75;
+  container.scrollTop += 75;
+  const nativeScrollTop = container.scrollTop;
+
+  act(() => {
+    viewport.setMatches(false);
+  });
+  await screen.findByLabelText("Back to chats");
+
+  expect(chatScrollContainer()).toBe(container);
+  expect(container.scrollTop).toBe(nativeScrollTop);
+  expect(passage.getBoundingClientRect().top).toBe(passageTop);
+});
+
+test.each(LAYOUT_REFLOWS)(
+  "Follow the latest reply when %s",
+  async (trigger) => {
+    mockMutableConversation(
+      THREAD_IDS.growingHistory,
+      completedHistoryEvents(8),
+    );
+    const container = await openConversation(
+      THREAD_IDS.growingHistory,
+      "History answer 8",
+      true,
+    );
+    const geometry = installChatScrollGeometry(container);
+    const reflow = await prepareLayoutReflow(trigger);
+    const latest = screen
+      .getByText("History answer 8")
+      .closest<HTMLElement>("[data-chat-scroll-anchor-event-id]");
+    if (!latest) {
+      throw new Error("Latest reply has no message body");
+    }
+    const initialBottomScrollTop = geometry.bottomScrollTop();
+    expect(container.scrollTop).toBe(initialBottomScrollTop);
+    // The capability action captures tail intent before committing the tray.
+    // Its paragraph reflow must become visible only after that DOM commit.
+    geometry.growWithinMessage(latest, () => {
+      return trigger === "fonts finish loading" ||
+        document.querySelector('[data-slot="capability-tray"]')
+        ? 75
+        : 0;
+    });
+    const growthBeforeReflow = trigger === "fonts finish loading" ? 75 : 0;
+    expect(geometry.bottomScrollTop()).toBe(
+      initialBottomScrollTop + growthBeforeReflow,
+    );
+    await reflow();
+
+    await waitFor(() => {
+      expect(geometry.bottomScrollTop()).toBe(initialBottomScrollTop + 75);
+      expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+      expect(latest.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+        container.getBoundingClientRect().bottom,
+      );
+    });
+  },
+);
+
+test.each(LAYOUT_REFLOWS)(
+  "Finish an initially unmeasured linked-message restore when %s",
+  async (trigger) => {
+    // Keep the linked event ID intact; the mutable fixture intentionally
+    // replaces row IDs with cursor-compatible UUIDs.
+    mockChatLifecycleWithoutBrowserSession({
+      threadId: THREAD_IDS.growingHistory,
+      threadTitle: "Initially hidden linked conversation",
+      chatEvents: completedHistoryEvents(8),
+    });
+    installViewportHeightBeforeOpen(0);
+    await setupPage({
+      context,
+      path: `/chats/${THREAD_IDS.growingHistory}#event-scroll-assistant-6`,
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
+    });
+    await screen.findByText("History answer 6");
+    const container = chatScrollContainer();
+    await waitFor(() => {
+      expect(container.querySelector("[data-locator-landed]")).not.toBeNull();
+    });
+    await expectHistoryPositionHeld();
+    expect(container.clientHeight).toBe(0);
+    let viewportHeight = 0;
+    const geometry = installChatScrollGeometry(container, () => {
+      return viewportHeight;
+    });
+    const reflow = await prepareLayoutReflow(trigger);
+    const linkedMessage = screen
+      .getByText("History answer 6")
+      .closest<HTMLElement>("[data-chat-scroll-anchor-event-id]");
+    if (!linkedMessage) {
+      throw new Error("Linked reply has no message body");
+    }
+    expect(container.clientHeight).toBe(0);
+    // The first attempt had no viewport. Real layout now places the target
+    // elsewhere, so completing its original request must still be allowed.
+    geometry.growBeforeMessages(75);
+    viewportHeight = INITIAL_VIEWPORT_HEIGHT_PX;
+
+    await reflow();
+
+    await waitFor(() => {
+      expect(linkedMessage.getBoundingClientRect().top).toBe(
+        container.getBoundingClientRect().top,
+      );
+      expect(container.scrollTop).toBeLessThan(geometry.bottomScrollTop());
+      expect(buttonByLabel("Scroll to bottom")).toBeInTheDocument();
+    });
+  },
+);
+
 test.each([false, true])(
   "Preserve the visible message as content grows with Home capabilities %s",
   async (capabilitiesEnabled) => {
@@ -1506,6 +2278,147 @@ test("Loading older messages preserves the reading position", async () => {
       anchorById(container, readingAnchorId).getBoundingClientRect().top,
     ).toBe(readingTop);
   });
+});
+
+function deferHistoryDiagram() {
+  const imageReady = context.mocks.deferred<void>();
+  const imageUrl = "https://example.com/deferred-history-diagram.png";
+  let pending = false;
+  const bboxDescriptor = Object.getOwnPropertyDescriptor(
+    SVGElement.prototype,
+    "getBBox",
+  );
+  Object.defineProperty(SVGElement.prototype, "getBBox", {
+    configurable: true,
+    value: () => {
+      return rect(0, 80, 120);
+    },
+  });
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      if (bboxDescriptor) {
+        Object.defineProperty(SVGElement.prototype, "getBBox", bboxDescriptor);
+      } else {
+        Reflect.deleteProperty(SVGElement.prototype, "getBBox");
+      }
+    },
+    { once: true },
+  );
+  vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
+    this: HTMLImageElement,
+  ) {
+    Object.defineProperties(this, {
+      naturalWidth: { configurable: true, value: 120 },
+      naturalHeight: { configurable: true, value: 80 },
+    });
+    if (this.src !== imageUrl) {
+      return Promise.resolve();
+    }
+    pending = true;
+    return imageReady.promise;
+  });
+  return {
+    imageReady,
+    pending: () => {
+      return pending;
+    },
+    content: `History answer 5\n\n\`\`\`mermaid\nflowchart TD\n  Earlier@{ img: "${imageUrl}", h: 80 }\n\`\`\``,
+  };
+}
+
+test.each(["reader", "tail"] as const)(
+  "A newer %s intent wins while an event jump awaits resource preparation",
+  async (takeover) => {
+    const diagram = deferHistoryDiagram();
+    const jumpId = "d0000000-0000-4000-a000-000000000985";
+    mockChatLifecycleWithoutBrowserSession({
+      threadId: THREAD_IDS.prependedHistory,
+      chatEvents: completedHistoryEvents(12).map((event) => {
+        if (event.id === "scroll-user-5") {
+          return { ...event, id: jumpId };
+        }
+        if (event.id === "scroll-assistant-5") {
+          return { ...event, content: diagram.content };
+        }
+        return event.id === "scroll-assistant-12"
+          ? {
+              ...event,
+              content: `History answer 12\n\n[Deferred jump](https://app.okou.ai/chats/${THREAD_IDS.prependedHistory}#event-${jumpId})`,
+            }
+          : event;
+      }),
+    });
+    const container = await openConversation(
+      THREAD_IDS.prependedHistory,
+      "History answer 12",
+    );
+    const geometry = installChatScrollGeometry(container);
+    const link = queryAllByRoleFast("link", container).find((candidate) => {
+      return candidate.textContent === "Deferred jump";
+    });
+    if (!link) {
+      throw new Error("Deferred jump link not found");
+    }
+    click(link);
+    await waitFor(() => {
+      expect(diagram.pending()).toBeTruthy();
+    });
+    if (takeover === "tail") {
+      click(buttonByLabel("Scroll to bottom"));
+    } else {
+      fireEvent.wheel(container, { deltaY: -80 });
+      scrollFromUser(container, geometry.bottomScrollTop() - 400);
+    }
+    const chosenAnchor = geometry.firstVisibleAnchor();
+    const chosenId = anchorId(chosenAnchor);
+    const chosenOffset = chosenAnchor.getBoundingClientRect().top;
+    await act(async () => {
+      diagram.imageReady.resolve();
+      await diagram.imageReady.promise;
+    });
+    // The newer intent can legitimately remove the old diagram's render
+    // window. The resolved decode and React's act flush complete that producer.
+    expect(screen.getByText("History answer 12")).toBeInTheDocument();
+    expect(anchorById(container, chosenId).getBoundingClientRect().top).toBe(
+      chosenOffset,
+    );
+    expect(Boolean(queryButtonByLabel("Scroll to bottom"))).toBe(
+      takeover === "reader",
+    );
+    expect(container.scrollTop === geometry.bottomScrollTop()).toBe(
+      takeover === "tail",
+    );
+  },
+);
+
+test("New tail intent wins while a history prepend awaits resource preparation", async () => {
+  const diagram = deferHistoryDiagram();
+  mockMutableConversation(
+    THREAD_IDS.prependedHistory,
+    completedHistoryEvents(12).map((event) => {
+      return event.id === "scroll-assistant-5"
+        ? { ...event, content: diagram.content }
+        : event;
+    }),
+  );
+  const container = await openConversation(
+    THREAD_IDS.prependedHistory,
+    "History answer 12",
+  );
+  const geometry = installChatScrollGeometry(container);
+  scrollFromUser(container, 40);
+  await waitFor(() => {
+    expect(diagram.pending()).toBeTruthy();
+  });
+  click(buttonByLabel("Scroll to bottom"));
+  await act(async () => {
+    diagram.imageReady.resolve();
+    await diagram.imageReady.promise;
+  });
+  await screen.findByRole("img", { name: "Diagram" });
+  expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  expect(queryButtonByLabel("Scroll to bottom")).not.toBeInTheDocument();
 });
 
 test("Load earlier messages once scrolling stops near the top", async () => {

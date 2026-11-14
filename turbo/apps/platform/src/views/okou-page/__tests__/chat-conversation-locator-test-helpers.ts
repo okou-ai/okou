@@ -49,6 +49,11 @@ export function mockChatGeometry(): void {
         : 0;
     },
   );
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return Object.hasOwn(this.dataset, "scrollContainer") ? 800 : 0;
+    },
+  );
   vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(
     function (this: HTMLElement) {
       return Object.hasOwn(this.dataset, "scrollContainer")

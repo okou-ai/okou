@@ -258,6 +258,7 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
   }
 
   Object.defineProperties(container, {
+    clientWidth: { configurable: true, value: 800 },
     clientHeight: {
       configurable: true,
       get: (): number => {

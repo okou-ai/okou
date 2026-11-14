@@ -2457,9 +2457,13 @@ function createLoadEarlierGroupsAfterScroll(
         return false;
       }
       const scrollPosition = set(scroll.readRenderedThreadScrollPosition$);
+      const capturedIntent = set(scroll.readCapturedThreadScrollPosition$);
       const didPrepend = await set(loadMoreGroups$, signal);
       signal.throwIfAborted();
-      if (didPrepend) {
+      if (
+        didPrepend &&
+        set(scroll.readCapturedThreadScrollPosition$) === capturedIntent
+      ) {
         await set(scroll.autoScroll$, scrollPosition, signal);
         signal.throwIfAborted();
       }

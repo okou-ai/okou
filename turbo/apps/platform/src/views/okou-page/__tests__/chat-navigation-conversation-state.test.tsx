@@ -292,6 +292,7 @@ test("Keep the work being read expanded as a later run arrives", async () => {
   Object.defineProperties(scroller, {
     scrollHeight: { configurable: true, value: 1600 },
     clientHeight: { configurable: true, value: 400 },
+    clientWidth: { configurable: true, value: 720 },
   });
   installReadingPositionGeometry(container, scroller, responseBeingRead.id);
   scroller.scrollTop = 500;
