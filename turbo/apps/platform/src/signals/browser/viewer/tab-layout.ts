@@ -12,8 +12,8 @@ export function layoutTabs(
   selectedId: string | null,
   space: TabSpace | null,
 ) {
-  // Matches BrowserTab's min-w-32; leave room for an icon, title and close action.
-  const minimum = 128;
+  // Matches BrowserTab's min-w-14: favicon, close button and their padding.
+  const minimum = 56;
   const selected = targets.findIndex((target) => {
     return target.id === selectedId;
   });

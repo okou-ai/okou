@@ -4857,7 +4857,7 @@ test("The overflow menu shares favicons and keeps narrow tabs selectable and clo
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
     function (this: HTMLElement) {
       return Object.hasOwn(this.dataset, "browserTabBudget")
-        ? new DOMRect(0, 0, 200, 36)
+        ? new DOMRect(0, 0, 100, 36)
         : original.call(this);
     },
   );

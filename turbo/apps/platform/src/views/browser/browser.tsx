@@ -902,7 +902,7 @@ function BrowserTab({
   return (
     <div
       className={cn(
-        "relative flex h-9 min-w-32 max-w-56 flex-1 basis-0 items-center rounded-lg pr-1",
+        "@container/browser-tab relative flex h-9 min-w-14 max-w-56 flex-1 basis-0 items-center rounded-lg pr-1",
         selected && "bg-state-selected",
       )}
     >
@@ -914,12 +914,14 @@ function BrowserTab({
               data-browser-tab-id={target.id}
               aria-label={name}
               disabled={triggerDisabled}
-              className="min-w-0 flex-1 justify-start rounded-lg px-2 text-xs data-active:bg-transparent data-active:shadow-none"
+              className="min-w-0 flex-1 justify-start rounded-lg px-1.5 text-xs data-active:bg-transparent data-active:shadow-none"
             />
           }
         >
           <BrowserTabIcon signals={signals} target={target} />
-          <span className="truncate">{name}</span>
+          <span className="hidden truncate @min-[5rem]/browser-tab:block">
+            {name}
+          </span>
         </TooltipTrigger>
         <TooltipContent>{name}</TooltipContent>
       </Tooltip>
