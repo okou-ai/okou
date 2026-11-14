@@ -186,6 +186,10 @@ are useful for compilation/tests but do not provide accelerated emulator evidenc
 
 ### Instrumented Android Tests
 
+For commit-addressed, PR-specific screenshot acceptance, see
+[feature screenshot recipes](screenshots/README.md). Temporary recipes are selected manually
+and removed in the same PR before merge; shared capture support stays available.
+
 The `androidTest` suite launches the real Activity and uses UI Automator to
 exercise chat-list navigation and Back, appearance restoration with a new Activity
 owner, native system bars and live platform night-mode changes, plus palette/language

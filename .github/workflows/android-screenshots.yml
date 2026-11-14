@@ -1,0 +1,87 @@
+name: Android Screenshots
+
+run-name: Android screenshots for ${{ inputs.commit_sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Full commit SHA containing the app and temporary recipe
+        type: string
+        required: true
+      script_path:
+        description: Repository-relative .sh path under android/screenshots/
+        type: string
+        required: true
+  workflow_call:
+    inputs:
+      commit_sha:
+        type: string
+        required: true
+      script_path:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      TARGET_SHA: ${{ inputs.commit_sha }}
+      SCREENSHOT_SCRIPT: ${{ inputs.script_path }}
+      DRIVER_SHA: ${{ github.workflow_sha }}
+    steps:
+      - name: Validate immutable target
+        shell: bash
+        run: |
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'commit_sha must be a full lowercase commit SHA' >&2
+            exit 2
+          }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - name: Verify checked-out source
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+        with:
+          cache-read-only: true
+      - name: Install Android SDK
+        run: bash android/scripts/setup-sdk.sh --accept-licenses
+      - name: Enable emulator hardware acceleration
+        shell: bash
+        run: |
+          test -c /dev/kvm
+          sudo chown "$(id -u):$(id -g)" /dev/kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Execute selected feature recipe
+        run: python3 android/scripts/screenshots.py run --commit "$TARGET_SHA" --driver "$DRIVER_SHA" --script "$SCREENSHOT_SCRIPT"
+      - name: Retain screenshots and diagnostics
+        id: artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-screenshots-${{ inputs.commit_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            android/build/screenshots/
+            android/app/build/reports/androidTests/
+            android/app/build/outputs/androidTest-results/
+            android/app/build/outputs/managed_device_android_test_additional_output/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Link review evidence
+        if: always()
+        env:
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: |
+          printf '### Android screenshots\n\nTarget: `%s`\n\nRecipe: `%s`\n\n[Artifact](%s)\n' \
+            "$TARGET_SHA" "$SCREENSHOT_SCRIPT" "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
