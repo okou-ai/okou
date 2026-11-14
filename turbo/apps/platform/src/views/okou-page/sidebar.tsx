@@ -15,7 +15,7 @@ import {
   Plug,
   Search,
 } from "lucide-react";
-import { Button, RequestCommit, ShortcutTooltipGroup, cn } from "@okouai/ui";
+import { Button, ShortcutTooltipGroup, cn } from "@okouai/ui";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import {
   sidebarOff$,
@@ -61,8 +61,6 @@ import {
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { newChatAgentId$ } from "../../signals/agent-chat.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
-import { commitWorkspaceLayout$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
-import { workspaceLayoutThreads$ } from "../../signals/chat-page/workspace-layout-commit.ts";
 import { workspaceResizing$ } from "../../signals/chat-page/workspace-resize.ts";
 
 type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
@@ -683,8 +681,6 @@ function ChatListColumn() {
 
 function ThreeColumnNav() {
   const hidden = useGet(sidebarOff$);
-  const syncLayout = useSet(commitWorkspaceLayout$);
-  const workspaceThreads = useGet(workspaceLayoutThreads$);
   const width = useGet(chatListWidth$);
   const resizing = useGet(workspaceResizing$);
   return (
@@ -696,28 +692,15 @@ function ThreeColumnNav() {
       >
         <Collapsible.Panel
           render={(props, state) => {
-            const layoutKey = JSON.stringify([
-              state.open,
-              state.transitionStatus,
-              width,
-              resizing,
-            ]);
             return (
-              <RequestCommit
-                onCommit={syncLayout}
-                request={workspaceThreads}
-                commitKey={layoutKey}
-              >
-                <div
-                  {...props}
-                  data-sidebar-layout-owner="chat-list"
-                  data-sidebar-layout-key={layoutKey}
-                  data-sidebar-layout-resizing={resizing ? "true" : undefined}
-                  data-sidebar-layout-starting={
-                    state.transitionStatus === "starting" ? "" : undefined
-                  }
-                />
-              </RequestCommit>
+              <div
+                {...props}
+                data-sidebar-layout-owner="chat-list"
+                data-sidebar-layout-resizing={resizing ? "true" : undefined}
+                data-sidebar-layout-starting={
+                  state.transitionStatus === "starting" ? "" : undefined
+                }
+              />
             );
           }}
           inert={hidden}

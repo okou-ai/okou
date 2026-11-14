@@ -14,6 +14,7 @@ import {
   Reason,
   resetSignal,
   setLoop,
+  waitForBrowserPaint,
   type DeferredPromise,
 } from "../utils.ts";
 import { detachBrowser } from "./reporting.ts";
@@ -221,12 +222,19 @@ function createRuntimeState(
     const lease = get(installed$);
     return lease !== null && get(lease.controller.connected$);
   });
+  // Functions written directly to state are updaters, not stored callbacks.
+  const toolbarNotification$ = state<{ readonly changed: () => void } | null>(
+    null,
+  );
+  const toolbarChanged$ = command(({ get }) => {
+    get(toolbarNotification$)?.changed();
+  });
   const model = createViewerSignals(
     remoteNavigation$,
     remoteNavigationScope$,
     creationReadySource$,
     connectedSource$,
-    recoveryChanged$,
+    { changed$: recoveryChanged$, toolbarChanged$ },
   );
   const cancelAutomatic$ = command(({ get, set }) => {
     // Intent replacement and old-fault retirement are one publication.
@@ -291,6 +299,7 @@ function createRuntimeState(
     resetRecovery$,
     recoveryNotification$,
     recoveryChanged$,
+    toolbarNotification$,
     resetAutomatic$,
     recoveryTarget$,
     recoveryIntent$,
@@ -466,6 +475,34 @@ function createDOMFocus(
   });
 }
 
+function createToolbarRef(
+  context: RuntimeState,
+  toolbar: ReturnType<typeof createNodeRef<HTMLDivElement>>,
+  focus: ReturnType<typeof createDOMFocus>,
+) {
+  return onRef(
+    command(({ get, set }, node: HTMLDivElement, signal: AbortSignal) => {
+      set(toolbar.mount$, node, signal);
+      set(focus.listen$, node, signal);
+      const notification = {
+        changed: () => {
+          set(focus.reconcile$);
+        },
+      };
+      set(context.toolbarNotification$, notification);
+      signal.addEventListener(
+        "abort",
+        () => {
+          if (get(context.toolbarNotification$) === notification) {
+            set(context.toolbarNotification$, null);
+          }
+        },
+        { once: true },
+      );
+    }),
+  );
+}
+
 function createDOMGraph(
   context: RuntimeState,
   onPageInput$?: Command<void, []>,
@@ -532,12 +569,7 @@ function createDOMGraph(
     set(context.presentedFrame$, null);
   });
   const focus = createDOMFocus(context, toolbarNodes$);
-  const toolbarRef$ = onRef(
-    command(({ set }, node: HTMLDivElement, signal: AbortSignal) => {
-      set(toolbar.mount$, node, signal);
-      set(focus.listen$, node, signal);
-    }),
-  );
+  const toolbarRef$ = createToolbarRef(context, toolbar, focus);
   const identity$ = computed((get): BrowserIdentity | null => {
     const connection = get(liveConnection$);
     const nodes = get(nodes$);
@@ -674,6 +706,10 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
             nodes.input.node,
             owner,
           );
+          // Native activation measures the mounted canvas after its first paint,
+          // rather than asking a React layout effect to acknowledge the panel.
+          await waitForBrowserPaint(owner);
+          owner.throwIfAborted();
           observeDisplay(
             nodes.canvas.node,
             (size) => {
@@ -1115,6 +1151,15 @@ function createPauseObservation(
       const lease = get(context.installed$);
       if (lease) {
         await set(lease.controller.pause$, paused, signal);
+        if (!paused) {
+          await waitForBrowserPaint(signal);
+          if (get(context.installed$) === lease && !get(context.paused$)) {
+            set(
+              lease.controller.measure$,
+              measureDisplay(lease.identity.nodes.canvas.node),
+            );
+          }
+        }
       }
     },
   );
@@ -1290,6 +1335,9 @@ function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
       signal.throwIfAborted();
       if (selected.status === "rejected") {
         set(focus.cancel$, token);
+        // Completing this action re-enables its trigger even when a newer
+        // handoff owns focus; settle that surviving request after the paint.
+        set(focus.reconcile$);
         throw selected.reason;
       }
       set(focus.selected$, token);
@@ -1329,6 +1377,7 @@ function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
       signal.throwIfAborted();
       if (closed.status === "rejected") {
         set(focus.cancel$, token);
+        set(focus.reconcile$);
         throw closed.reason;
       }
       // Positive close/inventory receipt never waits for successor pixels.
@@ -1665,7 +1714,7 @@ function createPresentation(context: RuntimeState, graph: RuntimeGraph) {
   };
 }
 
-/** Application layout commits name their change; no observer infers it later. */
+/** Application layout commands name their change; no observer infers it later. */
 function createLayoutSync(
   context: RuntimeState,
   syncTabs$: Command<void, [motion?: TabStripMotion | null]>,
@@ -1798,8 +1847,6 @@ export function createBrowserRuntime(
     clipboardRecovery$: graph.native.recovery$,
     proxyType$: graph.native.proxyType$,
     tabLayout$: model.tabLayout$,
-    focusHandoff$: graph.focus.handoff$,
-    acknowledgeFocusCommit$: graph.focus.acknowledge$,
     rejectFavicon$: model.rejectFavicon$,
     editAddress$: model.editAddress$,
     resetAddress$: model.resetAddress$,
@@ -1821,6 +1868,7 @@ export function createBrowserRuntime(
       canvas$: graph.canvas.ref$,
       input$: graph.inputNode.ref$,
       toolbar$: graph.toolbar.ref$,
+      toolbarActions$: tabStrip.actionsRef$,
       tabs$: graph.tabs.ref$,
       address$: addressRef$,
       surface$,

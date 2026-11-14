@@ -1173,7 +1173,9 @@ test("Browser tab admission narrows conservatively on the chat-list action befor
   click(buttonByName("Show chat list"));
   // Base UI has staged the list at zero, before any native animation exists.
   // This is still the pre-motion 800px panel: admission must use its 400px floor.
-  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  await waitFor(() => {
+    expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  });
 
   const panel = native.transition("panel", "flex-basis");
   const list = native.transition("chat-list", "width");
@@ -1186,6 +1188,70 @@ test("Browser tab admission narrows conservatively on the chat-list action befor
   panel.end();
   list.end();
   expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+});
+
+test("Browser tab admission settles surviving shell motion after navigation cancels visibility paint", async () => {
+  mockWideScreen();
+  const native = mockTabAdmissionGeometry(600, 800);
+  const initial = await openManyTabBrowser();
+  await selectLastBrowserTab(initial.sidebar);
+  click(buttonByName("Hide chat list"));
+  await waitFor(() => {
+    expect(buttonByName("Show chat list")).toBeInTheDocument();
+  });
+  native.geometry.widthTransitions = true;
+  // Hold the action's first paint at the browser boundary, not its command.
+  vi.spyOn(window, "requestAnimationFrame").mockImplementationOnce(() => {
+    return 0;
+  });
+  click(buttonByName("Show chat list"));
+  await waitFor(() => {
+    expect(admittedTabNames(initial.sidebar)).toStrictEqual(
+      FOUR_WITH_LAST_SELECTED,
+    );
+  });
+  const listOwner = sidebarWidthOwner("chat-list");
+  const panel = native.transition("panel", "flex-basis");
+  const list = native.transition("chat-list", "width");
+  panel.run();
+  list.run();
+  act(() => {
+    window.history.pushState(null, "", "/");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByRole("textbox", { name: "Message" }),
+    ).toBeInTheDocument();
+    expect(initial.sidebar).not.toBeInTheDocument();
+  });
+  expect(sidebarWidthOwner("chat-list")).toBe(listOwner);
+  act(() => {
+    window.history.pushState(null, "", `/chats/${THREAD_ID}`);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expectConversationReady();
+  await selectDesktopHeaderAction("Open browser");
+  const sidebar = liveBrowserSidebar();
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeEnabled();
+  });
+  await selectLastBrowserTab(sidebar);
+  expect(buttonByName("Hide chat list")).toBeInTheDocument();
+  Object.assign(native.geometry, { budget: 600, panel: 800 });
+  fireEvent.resize(window);
+  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  panel.end();
+  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  list.end();
+  await waitFor(() => {
+    expect(admittedTabNames(sidebar)).toHaveLength(12);
+  });
+  expect(
+    within(sidebar).getByLabelText("Page 12", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
 });
 
 test.each(["panel", "chat-list"] as const)(
@@ -1232,7 +1298,9 @@ test("Browser tab admission cannot unlock an old wide budget after native cancel
   const oldPanel = native.transition("panel", "flex-basis");
   const oldList = native.transition("chat-list", "width");
   click(buttonByName("Show chat list"));
-  expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  await waitFor(() => {
+    expect(admittedTabNames(sidebar)).toStrictEqual(FOUR_WITH_LAST_SELECTED);
+  });
   const newPanel = native.transition("panel", "flex-basis");
   const newList = native.transition("chat-list", "width");
   click(buttonByName("Hide chat list"));

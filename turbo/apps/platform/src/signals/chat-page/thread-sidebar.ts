@@ -23,7 +23,9 @@ import {
   isTextPreviewKind,
   type TextPreviewComputed,
 } from "../text-preview.ts";
-import { resetSignal } from "../utils.ts";
+import { detach, Reason, resetSignal } from "../utils.ts";
+import { pageSignal$ } from "../page-signal.ts";
+import { refreshWorkspaceLayout$ } from "./workspace-layout.ts";
 import {
   createMarkdownPreviewTree,
   type MarkdownPreviewTreeComputed,
@@ -352,11 +354,10 @@ export function createThreadSidebarSignals(
 
   const publishTarget$ = command(
     ({ get, set }, target: NonMailThreadSidebarTarget): void => {
-      const current = get(internalTarget$);
-      if (current === null) {
+      if (get(internalTarget$) === null) {
         set(internalAnimateEntry$, get(internalEntryAnimationsEnabled$));
       }
-      if (current?.type !== target.type) {
+      if (get(internalTarget$)?.type !== target.type) {
         set(internalFullscreen$, false);
       }
       set(imageCanvas.reset$);
@@ -365,6 +366,10 @@ export function createThreadSidebarSignals(
       }
       set(internalTarget$, target);
       set(closeThreadMailLocation$);
+      detach(
+        set(refreshWorkspaceLayout$, get(pageSignal$)),
+        Reason.DomCallback,
+      );
     },
   );
 
@@ -406,13 +411,14 @@ export function createThreadSidebarSignals(
     },
   );
 
-  const dismiss$ = command(({ set }) => {
+  const dismiss$ = command(({ get, set }) => {
     set(resetSidebarSessionSignal$);
     set(internalTarget$, null);
     set(internalAnimateEntry$, false);
     set(internalFullscreen$, false);
     set(automationEditor.setEditingAutomation$, null);
     set(imageCanvas.reset$);
+    detach(set(refreshWorkspaceLayout$, get(pageSignal$)), Reason.DomCallback);
   });
   const close$ = command(({ set }) => {
     set(dismiss$);
@@ -440,11 +446,15 @@ export function createThreadSidebarSignals(
     fullscreen$: computed((get) => {
       return get(internalFullscreen$);
     }),
-    toggleFullscreen$: command(({ set }) => {
+    toggleFullscreen$: command(({ get, set }) => {
       set(imageCanvas.reset$);
       set(internalFullscreen$, (fullscreen) => {
         return !fullscreen;
       });
+      detach(
+        set(refreshWorkspaceLayout$, get(pageSignal$)),
+        Reason.DomCallback,
+      );
     }),
     imageCanvas,
     diagram,

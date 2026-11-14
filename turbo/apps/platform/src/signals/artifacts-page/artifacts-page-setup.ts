@@ -12,7 +12,6 @@ import { artifactChangedTopic } from "@okouai/api-contracts/validators/realtime"
 import { closeLightboxImmediately$ } from "../okou-page/attachment-chips.ts";
 import { historyState$, searchParams$ } from "../route.ts";
 import {
-  artifactCatalogSidebar,
   artifactCatalogKindFromSearchParams,
   artifactCatalogScrollTargetFromHistoryState,
   artifactIdFromCatalogSearchParams,
@@ -22,6 +21,8 @@ import {
   reloadArtifactCatalog$,
   setArtifactCatalogKindFromRoute$,
 } from "./artifact-catalog-signals.ts";
+
+import { artifactCatalogSidebar } from "./artifact-catalog-instance.ts";
 
 export const setupArtifactsPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {

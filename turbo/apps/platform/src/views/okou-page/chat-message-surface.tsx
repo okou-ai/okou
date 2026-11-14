@@ -41,16 +41,18 @@ export const CHAT_THREAD_WORK_HISTORY_TEXT_CLASS =
   "text-sm leading-5 text-muted-foreground";
 export const CHAT_THREAD_WORK_HISTORY_MARKDOWN_CLASS = "!text-muted-foreground";
 
-// `transition-none` keeps the responsive margin from animating, which would
-// otherwise continue changing layout after resize.
+// Keep message rows in the same formatting context as sidebars cross the
+// container breakpoint so native scroll anchoring can preserve reading position.
+// Only the columns change: stacked on narrow panes, avatar and reply on wide ones.
+// `transition-none` keeps the responsive margin from animating after resize.
 export const CHAT_THREAD_USER_MESSAGE_ROW_CLASS =
-  "flex flex-col items-end min-w-0 duration-300 transition-none @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
+  "grid grid-cols-1 justify-items-end min-w-0 duration-300 transition-none @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start @[900px]:justify-items-stretch";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS =
   "relative flex flex-col gap-2 duration-300";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS =
-  "flex flex-col gap-2 @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
+  "grid grid-cols-1 gap-2 @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
 
 // In the stacked mobile layout, inset the response by 6px so the centre of its
 // canonical 16px leading icons lines up with the centre of the 28px avatar
@@ -70,10 +72,10 @@ export const CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS =
 // reading column, so the transcript keeps one left edge and one layout at every
 // width, and the gutter is free for the share selection column.
 export const CHAT_THREAD_NAME_LINE_USER_MESSAGE_ROW_CLASS =
-  "flex flex-col items-end min-w-0";
+  "grid grid-cols-1 justify-items-end min-w-0";
 
 export const CHAT_THREAD_NAME_LINE_ASSISTANT_MESSAGE_ROW_CLASS =
-  "flex flex-col gap-1";
+  "grid grid-cols-1 gap-1";
 
 export const CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS =
   "flex h-8 w-fit max-w-full min-w-0 items-center gap-2 text-sm font-medium text-foreground";
@@ -100,7 +102,7 @@ export const CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS = cn(
 );
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_ROW_CLASS =
-  "pl-1.5 @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:pl-0";
+  "grid grid-cols-1 pl-1.5 @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:pl-0";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS =
   "flex items-center justify-between gap-2";

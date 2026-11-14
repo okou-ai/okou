@@ -1,7 +1,7 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
 import { AppWindow, AppWindowMac, Loader2, Play } from "lucide-react";
-import { Button, cn, LayoutPanel } from "@okouai/ui";
+import { Button, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -155,7 +155,6 @@ function BrowserCdpViewer({
 }) {
   const connection = useLastLoadable(signals.viewerConnection$);
   const recovering = useGet(signals.browser.recovering$);
-  const syncLayout = useSet(signals.browser.syncLayout$);
   // Keep the DOM during same-identity revalidation. The graph revokes input
   // immediately while pending and owns endpoint changes without a React remount.
   // Conceal a known replacement while preserving the graph until its actual
@@ -179,10 +178,7 @@ function BrowserCdpViewer({
         </div>
       )}
       {/* Preserve geometry so concealment cannot pause its own connection wait. */}
-      <LayoutPanel
-        active={!connecting}
-        layoutKey="browser-viewer"
-        onLayoutCommit={syncLayout}
+      <div
         aria-hidden={connecting}
         inert={connecting}
         data-browser-session-cdp-viewer
@@ -202,7 +198,7 @@ function BrowserCdpViewer({
             className="pointer-events-none absolute bottom-2 right-3 rounded border border-divider bg-popover px-2 py-1 text-[11px] leading-4 text-muted-foreground shadow-sm"
           />
         )}
-      </LayoutPanel>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { command, computed, state, type Command } from "ccstate";
 import type { TabStripMotion } from "../browser/tab-strip.ts";
 import { CHAT_THREAD_SIDEBAR_MIN_WIDTH } from "./chat-thread-sidebar-layout.ts";
+import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../../views/okou-page/sidebar-breakpoint.ts";
 
 const OWNER_SELECTOR = "[data-sidebar-layout-owner]";
 
@@ -14,19 +15,48 @@ function isWidthTransition(animation: Animation): boolean {
   );
 }
 
-function isStagedWidth(element: HTMLElement): boolean {
-  if (element.dataset.sidebarLayoutStarting === undefined) {
-    return false;
-  }
+function canTransitionWidth(element: HTMLElement): boolean {
   const style = getComputedStyle(element);
   return (
     style.display !== "none" &&
     style.transitionProperty.split(",").some((property) => {
-      return property.trim() === "width" || property.trim() === "all";
+      return ["width", "flex-basis", "all"].includes(property.trim());
     }) &&
     style.transitionDuration.split(",").some((duration) => {
       return Number.parseFloat(duration) > 0;
     })
+  );
+}
+
+interface ChatListIntent {
+  readonly token: object;
+  readonly opening: boolean;
+  readonly painted: boolean;
+}
+
+function isChatListStaged(
+  intent: ChatListIntent | null,
+  owners: readonly HTMLElement[],
+): boolean {
+  if (
+    !intent ||
+    !window.matchMedia(SIDEBAR_DESKTOP_MEDIA_QUERY).matches ||
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ) {
+    return false;
+  }
+  if (!intent.painted) {
+    return owners.some(canTransitionWidth);
+  }
+  const list = owners.find((element) => {
+    return element.dataset.sidebarLayoutOwner === "chat-list";
+  });
+  return (
+    list !== undefined &&
+    canTransitionWidth(list) &&
+    (intent.opening
+      ? list.getBoundingClientRect().width <= 1
+      : list.getBoundingClientRect().width > 1)
   );
 }
 
@@ -35,10 +65,11 @@ export function createThreadSidebarLayoutMotion(
   sync$: Command<void, [TabStripMotion | null]>,
 ) {
   const mountedRoot$ = state<HTMLDivElement | null>(null);
+  const chatListIntent$ = state<ChatListIntent | null>(null);
   const root$ = computed((get) => {
     return get(mountedRoot$);
   });
-  const commit$ = command(({ get, set }): void => {
+  const commit$ = command(({ get, set }, preparation?: object): void => {
     const root = get(root$);
     if (!root) {
       return;
@@ -50,14 +81,34 @@ export function createThreadSidebarLayoutMotion(
       owners.every((element) => {
         return element.dataset.sidebarLayoutResizing === "true";
       });
-    // Otherwise resolving styles materializes replacement CSS transitions,
-    // including cancel followed by a new run. One terminal event cannot unlock.
+    let intent = get(chatListIntent$);
+    if (intent && intent.token === preparation) {
+      intent = { ...intent, painted: true };
+      set(chatListIntent$, intent);
+    }
+    // Hold the semantic action before its own paint, then only bridge a
+    // still-staged list. Positive opening geometry need not equal the stored
+    // preference (responsive layouts can clamp it). Native animations below
+    // own completion once they exist; absent/mobile/no-motion lists settle.
+    const approachingTarget = !resizing && isChatListStaged(intent, owners);
+    const nativeMotion = owners.some((element) => {
+      return element.getAnimations().some(isWidthTransition);
+    });
+    if (!approachingTarget || (intent?.painted && nativeMotion)) {
+      set(chatListIntent$, null);
+    }
+    // Resolving styles materializes replacement CSS transitions, including
+    // cancel followed by a new run. One terminal event cannot unlock the row.
     const moving =
       !resizing &&
-      owners.some((element) => {
-        const staged = isStagedWidth(element);
-        return staged || element.getAnimations().some(isWidthTransition);
-      });
+      (approachingTarget ||
+        nativeMotion ||
+        owners.some((element) => {
+          return (
+            element.dataset.sidebarLayoutStarting !== undefined &&
+            canTransitionWidth(element)
+          );
+        }));
     const panel = owners.find((element) => {
       return element.dataset.sidebarLayoutOwner === "panel";
     });
@@ -72,6 +123,25 @@ export function createThreadSidebarLayoutMotion(
           )
         : 0;
     set(sync$, moving ? { minimumWidth } : null);
+  });
+  const prepareChatList$ = command(
+    ({ set }, targetWidth: number, resizing: boolean): object => {
+      const token = {};
+      set(
+        chatListIntent$,
+        resizing ? null : { token, opening: targetWidth > 0, painted: false },
+      );
+      set(commit$);
+      return token;
+    },
+  );
+  const cancelChatList$ = command(({ get, set }, preparation: object): void => {
+    if (get(chatListIntent$)?.token !== preparation) {
+      return;
+    }
+    set(chatListIntent$, null);
+    // The caller retired its intent, not the shell's native width motion.
+    set(commit$);
   });
   const mount$ = command(
     ({ get, set }, root: HTMLDivElement, signal: AbortSignal): void => {
@@ -102,6 +172,7 @@ export function createThreadSidebarLayoutMotion(
         () => {
           if (get(root$) === root) {
             set(mountedRoot$, null);
+            set(chatListIntent$, null);
           }
         },
         { once: true },
@@ -109,5 +180,5 @@ export function createThreadSidebarLayoutMotion(
       set(commit$);
     },
   );
-  return { commit$, mount$, root$ };
+  return { prepareChatList$, cancelChatList$, commit$, mount$, root$ };
 }

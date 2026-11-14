@@ -676,7 +676,7 @@ export function createComposerSignals(
 }
 
 /**
- * Own capability commits and annotation uploads while this composer is mounted.
+ * Own capability geometry and annotation uploads while this composer is mounted.
  * The annotation editor lives in this subtree; losing it must cancel uploads
  * rather than leave the restored draft permanently pending.
  *

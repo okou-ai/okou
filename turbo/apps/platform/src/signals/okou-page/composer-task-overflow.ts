@@ -1,5 +1,15 @@
-import { command, computed, state } from "ccstate";
-import { onRef } from "../utils.ts";
+import { command, computed, state, type Command } from "ccstate";
+import { i18n } from "../../i18n/index.ts";
+import { onDomEventFn, onRef, waitForBrowserPaint } from "../utils.ts";
+
+const mountedMeasurements$ = state<ReadonlySet<Command<void, []>>>(new Set());
+
+/** Width-changing workspace commands call this after their own paint wait. */
+export const refreshComposerTaskOverflow$ = command(({ get, set }) => {
+  for (const measure$ of get(mountedMeasurements$)) {
+    set(measure$);
+  }
+});
 
 /** Intrinsic chip widths decide which choices belong in More. */
 export function createComposerTaskOverflowSignals() {
@@ -79,33 +89,55 @@ export function createComposerTaskOverflowSignals() {
       set(hidden$, hidden);
     }
   });
+  const refresh$ = command(async ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const root = get(root$);
+    if (!root) {
+      return;
+    }
+    await waitForBrowserPaint(signal);
+    signal.throwIfAborted();
+    if (get(root$) === root) {
+      set(measure$);
+    }
+  });
   const bindRoot$ = onRef(
-    command(({ get, set }, root: HTMLElement, signal: AbortSignal) => {
+    command(async ({ get, set }, root: HTMLElement, signal: AbortSignal) => {
       set(root$, root);
-      const measure = () => {
-        return set(measure$);
-      };
+      set(
+        mountedMeasurements$,
+        new Set([...get(mountedMeasurements$), measure$]),
+      );
+      const measure = onDomEventFn(() => {
+        return set(refresh$, signal);
+      });
       window.addEventListener("resize", measure, { signal });
       window.addEventListener(
         "transitionend",
         (event) => {
           if (event.target instanceof Element && event.target.contains(root)) {
-            measure();
+            measure(event);
           }
         },
         { capture: true, signal },
       );
       // Web fonts can change intrinsic label widths without a window resize.
       document.fonts.addEventListener("loadingdone", measure, { signal });
+      i18n.on("languageChanged", measure);
       signal.addEventListener(
         "abort",
         () => {
+          i18n.off("languageChanged", measure);
           if (get(root$) === root) {
             set(root$, null);
+            const mounted = new Set(get(mountedMeasurements$));
+            mounted.delete(measure$);
+            set(mountedMeasurements$, mounted);
           }
         },
         { once: true },
       );
+      await set(refresh$, signal);
     }),
   );
   return { hiddenTaskIndices$, measure$, bindRoot$ };

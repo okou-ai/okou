@@ -23,8 +23,6 @@ import {
   IconButton,
   Input,
   Slider,
-  LayoutCommit,
-  RequestCommit,
   Textarea,
   TransientAlert,
   Tabs,
@@ -43,7 +41,6 @@ import {
 } from "@okouai/ui";
 import {
   isBrowserOperationFailure,
-  type BrowserFocusHandoff,
   type BrowserSignals,
 } from "../../signals/browser/browser.ts";
 import { NavigationFault } from "../../signals/browser/navigation/action.ts";
@@ -855,7 +852,6 @@ function BrowserTab({
   target,
   name,
   selected,
-  handoff,
   selecting,
 }: {
   readonly signals: BrowserSignals;
@@ -866,7 +862,6 @@ function BrowserTab({
   };
   readonly name: string;
   readonly selected: boolean;
-  readonly handoff: Extract<BrowserFocusHandoff, { kind: "tab" }> | null;
   readonly selecting: boolean;
 }) {
   const { t } = useTranslation();
@@ -874,73 +869,65 @@ function BrowserTab({
   const pageSignal = useGet(pageSignal$);
   const [closeOperation, closeTab] = useLoadableSet(signals.closeTab$);
   const rejectFavicon = useSet(signals.rejectFavicon$);
-  const acknowledge = useSet(signals.acknowledgeFocusCommit$);
   const closing = closeOperation.state === "loading";
   const triggerDisabled = controls.tabsDisabled || selecting || closing;
-  // Each tab owns its close loadable and therefore its actual enable commit.
   return (
-    <RequestCommit
-      request={handoff}
-      commitKey={JSON.stringify([target.id, selected, triggerDisabled])}
-      onCommit={acknowledge}
+    <div
+      className={cn(
+        "group relative h-9 min-w-[32px] max-w-56 flex-1 basis-0",
+        selected && "min-w-[48px]",
+      )}
     >
-      <div
-        className={cn(
-          "group relative h-9 min-w-[32px] max-w-56 flex-1 basis-0",
-          selected && "min-w-[48px]",
-        )}
+      <TabsTrigger
+        value={target.id}
+        data-browser-tab-id={target.id}
+        aria-label={name}
+        disabled={triggerDisabled}
+        className="w-full justify-start rounded-lg px-2 pr-7 text-xs data-active:bg-state-selected data-active:shadow-none"
       >
-        <TabsTrigger
-          value={target.id}
-          data-browser-tab-id={target.id}
-          aria-label={name}
-          disabled={triggerDisabled}
-          className="w-full justify-start rounded-lg px-2 pr-7 text-xs data-active:bg-state-selected data-active:shadow-none"
-        >
-          {target.faviconUrl ? (
-            <img
-              src={target.faviconUrl}
-              alt=""
-              className="size-3.5 shrink-0"
-              onError={() => {
-                if (target.faviconUrl) {
-                  rejectFavicon(target.id, target.faviconUrl);
-                }
-              }}
-            />
-          ) : (
-            <Globe size={14} className="shrink-0" />
-          )}
-          <span className="truncate">{name}</span>
-        </TabsTrigger>
-        <IconButton
-          type="button"
-          data-close-target={target.id}
-          aria-label={t(
-            ($) => {
-              return $.browserViewer.closeTab;
-            },
-            { title: name },
-          )}
-          disabled={!controls.canMutateTabs || closing || selecting}
-          className="absolute right-0.5 top-1.5 size-6 rounded-md opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-          onClick={(event) => {
-            event.stopPropagation();
-            detach(closeTab(target.id, pageSignal), Reason.DomCallback);
-          }}
-        >
-          <X size={12} />
-        </IconButton>
-        <BrowserOperationError
-          occurrences={[
-            closeOperation.state === "hasError" &&
-              isBrowserOperationFailure(closeOperation.error) &&
-              closeOperation,
-          ]}
-          className="absolute left-0 top-full z-20 w-56 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
-        />
-      </div>
-    </RequestCommit>
+        {target.faviconUrl ? (
+          <img
+            src={target.faviconUrl}
+            alt=""
+            className="size-3.5 shrink-0"
+            onError={() => {
+              if (target.faviconUrl) {
+                rejectFavicon(target.id, target.faviconUrl);
+              }
+            }}
+          />
+        ) : (
+          <Globe size={14} className="shrink-0" />
+        )}
+        <span className="truncate">{name}</span>
+      </TabsTrigger>
+      <IconButton
+        type="button"
+        data-close-target={target.id}
+        aria-label={t(
+          ($) => {
+            return $.browserViewer.closeTab;
+          },
+          { title: name },
+        )}
+        disabled={!controls.canMutateTabs || closing || selecting}
+        className="absolute right-0.5 top-1.5 size-6 rounded-md opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+        onClick={(event) => {
+          event.stopPropagation();
+          detach(closeTab(target.id, pageSignal), Reason.DomCallback);
+        }}
+      >
+        <X size={12} />
+      </IconButton>
+      <BrowserOperationError
+        occurrences={[
+          closeOperation.state === "hasError" &&
+            isBrowserOperationFailure(closeOperation.error) &&
+            closeOperation,
+        ]}
+        className="absolute left-0 top-full z-20 w-56 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
+      />
+    </div>
   );
 }
 
@@ -1020,11 +1007,8 @@ function BrowserTabs({
   const controls = useGet(signals.controls$);
   const toolbarRef = useSet(signals.refs.toolbar$);
   const tabsRef = useSet(signals.refs.tabs$);
-  const handoff = useGet(signals.focusHandoff$);
-  const toolbarHandoff = handoff?.kind === "toolbar" ? handoff : null;
-  const acknowledge = useSet(signals.acknowledgeFocusCommit$);
+  const actionsRef = useSet(signals.refs.toolbarActions$);
   const newTabDisabled = !controls.canCreate || creating;
-  const syncLayout = useSet(signals.syncLayout$);
   const title = (id: string, value: string) => {
     return (selectedTabId === id && navigation?.url === "about:blank") ||
       value === "about:blank"
@@ -1037,82 +1021,66 @@ function BrowserTabs({
           });
   };
   return (
-    <RequestCommit
-      request={toolbarHandoff}
-      commitKey={JSON.stringify([
-        selectedTabId,
-        newTabDisabled,
-        layout.overflow,
-      ])}
-      onCommit={acknowledge}
+    <div
+      ref={toolbarRef}
+      data-browser-toolbar
+      className="flex min-w-0 shrink-0 items-center gap-1 border-b border-divider px-2 py-1"
     >
-      <LayoutCommit
-        layoutKey={String(Boolean(actions))}
-        onLayoutCommit={syncLayout}
+      <div
+        data-browser-tab-budget
+        className="flex min-w-0 flex-1 items-center gap-1"
       >
-        <div
-          ref={toolbarRef}
-          data-browser-toolbar
-          className="flex min-w-0 shrink-0 items-center gap-1 border-b border-divider px-2 py-1"
+        <TabsList
+          ref={tabsRef}
+          className="h-9 min-w-0 flex-1 justify-start gap-1 rounded-none bg-transparent p-0"
         >
-          <div
-            data-browser-tab-budget
-            className="flex min-w-0 flex-1 items-center gap-1"
-          >
-            <TabsList
-              ref={tabsRef}
-              className="h-9 min-w-0 flex-1 justify-start gap-1 rounded-none bg-transparent p-0"
-            >
-              {layout.items.map(({ target }) => {
-                const name = title(target.id, target.title);
-                return (
-                  <BrowserTab
-                    key={target.id}
-                    signals={signals}
-                    target={
-                      tabs.find((tab) => {
-                        return tab.id === target.id;
-                      }) ?? target
-                    }
-                    name={name}
-                    selected={selectedTabId === target.id}
-                    handoff={
-                      handoff?.kind === "tab" && handoff.targetId === target.id
-                        ? handoff
-                        : null
-                    }
-                    selecting={selecting}
-                  />
-                );
-              })}
-            </TabsList>
-            {layout.overflow && (
-              <BrowserTabPicker
+          {layout.items.map(({ target }) => {
+            const name = title(target.id, target.title);
+            return (
+              <BrowserTab
+                key={target.id}
                 signals={signals}
+                target={
+                  tabs.find((tab) => {
+                    return tab.id === target.id;
+                  }) ?? target
+                }
+                name={name}
+                selected={selectedTabId === target.id}
                 selecting={selecting}
-                onSelect={onSelect}
-                title={title}
               />
-            )}
-          </div>
-          <IconButton
-            data-browser-new-tab
-            type="button"
-            aria-label={t(($) => {
-              return $.browserViewer.newTab;
-            })}
-            disabled={newTabDisabled}
-            className="size-8"
-            onClick={() => {
-              detach(onCreate(), Reason.DomCallback);
-            }}
-          >
-            <Plus size={16} />
-          </IconButton>
+            );
+          })}
+        </TabsList>
+        {layout.overflow && (
+          <BrowserTabPicker
+            signals={signals}
+            selecting={selecting}
+            onSelect={onSelect}
+            title={title}
+          />
+        )}
+      </div>
+      <IconButton
+        data-browser-new-tab
+        type="button"
+        aria-label={t(($) => {
+          return $.browserViewer.newTab;
+        })}
+        disabled={newTabDisabled}
+        className="size-8"
+        onClick={() => {
+          detach(onCreate(), Reason.DomCallback);
+        }}
+      >
+        <Plus size={16} />
+      </IconButton>
+      {actions && (
+        <div ref={actionsRef} className="flex shrink-0 items-center gap-1">
           {actions}
         </div>
-      </LayoutCommit>
-    </RequestCommit>
+      )}
+    </div>
   );
 }
 
