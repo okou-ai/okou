@@ -147,13 +147,15 @@ pub async fn exercise(
     actual_context.reuse_key = Some(reuse_key.clone());
     let job = ExecutionJob::local_with_active_input_source(successor, actual_context, None)
         .map_err(|_| io::Error::other("native finalizing claim mismatch"))?;
-    let mut admission = GuardedFinalizingHandoff::new(job, request, run_id, tracker.clone());
+    let mut guarded_handoff = GuardedFinalizingHandoff::new(job, request, run_id, tracker.clone());
     let cleanup: TestResult<()> = async {
         if producer.offer(&guard.reuse_publisher())? != GuardedFinalizingOfferOutcome::Delivered {
             return Err(io::Error::other("native finalizing delivery was refused").into());
         }
-        admission.cancel_delivery();
-        let mut task = admission.cleanup(&operations, inputs.envelope()).await?;
+        guarded_handoff.cancel_delivery();
+        let mut task = guarded_handoff
+            .cleanup(&operations, inputs.envelope())
+            .await?;
         if !matches!(
             task.join().await??,
             ActivationCleanupOutcome::Completed {
@@ -169,18 +171,18 @@ pub async fn exercise(
     .await;
     if let Err(error) = cleanup {
         if let Some(receipts) = receipts {
-            receipts.retain(admission);
+            receipts.retain(guarded_handoff);
             receipts.retain(producer);
             receipts.retain(guard);
         }
         return Err(error);
     }
     drop(
-        admission
+        guarded_handoff
             .take_job_for_completion()
             .ok_or_else(|| io::Error::other("native finalizing original claim disappeared"))?,
     );
-    drop(admission);
+    drop(guarded_handoff);
     drop(producer);
     if !tracker.take_retained_activation_owners()?.is_empty()
         || !tracker.take_retained_finalizing_owners()?.is_empty()

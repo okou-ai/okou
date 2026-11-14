@@ -45,7 +45,7 @@ async fn unpark_failure_destroys_idle_entry_and_falls_through() {
     assert_eq!(idle_pool.lock().await.len(), 1, "pool seeded");
     assert!(
         !budget.can_afford(2, 4096),
-        "the idle lease should exhaust fresh admission capacity"
+        "the idle lease should exhaust fresh execution capacity"
     );
 
     let run_handle = tokio::spawn(run(config));

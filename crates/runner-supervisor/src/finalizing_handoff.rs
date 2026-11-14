@@ -552,7 +552,7 @@ async fn receive_finalizing_handoff(
 /// for pressure are either returned as reuse reservations or converted into retiring leases;
 /// they are never counted twice. When neither source can make progress, the loop waits for cancellation, budget
 /// availability, or an idle-pool change and retries. A cancellation or other failure returns
-/// without a resource so the outer claim path can complete the job and release retained leases.
+/// without a resource so the outer execution path can complete the job and release retained leases.
 async fn acquire_fallback_resource(
     request: FinalizingFallback<'_>,
     pre_spawn_timing: &mut RunnerPreSpawnTiming,

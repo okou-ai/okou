@@ -249,7 +249,7 @@ async fn supplied_http_returns_429_before_body_intake_and_retries_after_slot_rec
     let body = envelope(identity, run_id).to_string();
     let mut stream = tokio::net::UnixStream::connect(&socket).await.unwrap();
     // Withhold the body: a busy receiver must answer from headers alone,
-    // without waiting for either an admission slot or the upload deadline.
+    // without waiting for either an acceptance slot or the upload deadline.
     stream.write_all(format!("POST /runners/{}/control/runs/{run_id}/dispatch HTTP/1.1\r\nHost: {HOST}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", identity.runner_id(), body.len()).as_bytes()).await.unwrap();
     let mut bytes = Vec::new();
     tokio::time::timeout(Duration::from_secs(1), stream.read_to_end(&mut bytes))

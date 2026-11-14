@@ -259,7 +259,7 @@ async fn soft_drain_settles_parallel_claims_and_does_not_admit_later_work() {
     assert_run_exits_within(
         runner,
         Duration::from_secs(10),
-        "soft drain must settle both admitted claims",
+        "soft drain must settle both accepted local claims",
     )
     .await;
     wait_budget_count(&budget, 0, Duration::from_secs(10)).await;
@@ -356,7 +356,10 @@ async fn discovery_end_settles_parallel_claims_without_hard_cancellation() {
             .await
     );
     assert!(!second_token.is_cancelled());
-    assert!(!runner.is_finished(), "teardown must join every admission");
+    assert!(
+        !runner.is_finished(),
+        "teardown must join every acceptance task"
+    );
     assert!(!env.handle.shutdown_with_claim_in_flight());
 
     env.handle.unblock_claim(runs[1]);

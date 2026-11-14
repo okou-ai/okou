@@ -213,7 +213,7 @@ pub trait LocalJobSource: Send + Sync {
     /// Wait for a local candidate without claiming it. Discovery may prune
     /// completed local job files. Reactor retains this future across maintenance ticks.
     async fn discover(&self) -> Option<JobCandidate>;
-    /// Atomic local claim. Accepted admission tasks retain this future until
+    /// Atomic local claim. Acceptance tasks retain this future until
     /// ownership transfers to execution or explicit completion/rollback.
     async fn claim(&self, candidate: JobCandidate) -> Option<ExecutionJob>;
 }

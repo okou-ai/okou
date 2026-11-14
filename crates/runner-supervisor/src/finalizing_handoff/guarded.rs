@@ -1,4 +1,4 @@
-//! Borrowed custody across the real finalizing broker and provider claim.
+//! Borrowed custody across the real finalizing broker and bound execution job.
 
 #[cfg(test)]
 mod tests;
@@ -26,7 +26,7 @@ pub enum RetainedFinalizingResource {
 pub struct GuardedFinalizingRecovery {
     pub job: Option<ExecutionJob>,
     pub resource: Option<RetainedFinalizingResource>,
-    /// Lost delivery is unresolved even when the original claim is recovered.
+    /// Lost delivery is unresolved even when the original job is recovered.
     pub delivery_uncertain: bool,
 }
 
@@ -264,7 +264,7 @@ impl GuardedFinalizingHandoff {
         let successor = self
             .job
             .as_ref()
-            .ok_or("finalizing claim consumed")?
+            .ok_or("finalizing job consumed")?
             .context()
             .run_id;
         let Resource::Handoff(owner) = &mut self.resource else {
@@ -284,12 +284,12 @@ impl GuardedFinalizingHandoff {
         owner
             .prepare_activation(successor, self.predecessor)
             .await?;
-        // Readiness keeps resource custody; claim/auth move only around the
+        // Readiness keeps resource custody; job/auth move only around the
         // synchronous commit and are restored on any commit refusal.
         let job = self
             .job
             .take()
-            .ok_or("finalizing claim consumed before commit")?;
+            .ok_or("finalizing job consumed before commit")?;
         let resource = match owner.commit_activation(successor, self.predecessor) {
             Ok(resource) => resource,
             Err(error) => {

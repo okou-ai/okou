@@ -55,7 +55,7 @@ async fn queued_heartbeat_allows_budget_pressure_and_drain_to_progress() {
     drop(holder);
 
     // A concurrent finalizer must be able to acquire the pool even while the
-    // reactor is waiting for admission capacity.
+    // reactor is waiting for acceptance capacity.
     tokio::select! {
         result = &mut reactor => panic!("reactor exited while running: {result:?}"),
         guard = tokio::time::timeout(Duration::from_secs(2), env.idle_pool.lock()) => {
@@ -73,7 +73,7 @@ async fn queued_heartbeat_allows_budget_pressure_and_drain_to_progress() {
 }
 
 #[tokio::test]
-async fn queued_heartbeat_allows_fresh_admission_to_progress() {
+async fn queued_heartbeat_allows_fresh_acceptance_to_progress() {
     let (mut config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
     let (trigger, receiver) = tokio::sync::mpsc::unbounded_channel();
     config.test_hooks.manual_routine_heartbeat_rx = Some(receiver);
@@ -94,14 +94,14 @@ async fn queued_heartbeat_allows_fresh_admission_to_progress() {
     tokio::select! {
         result = &mut reactor => panic!("reactor exited before job completion: {result:?}"),
         completed = env.handle.wait_completion(run_id, Duration::from_secs(5)) => {
-            assert!(completed.is_some(), "fresh admission must complete after pool contention ends");
+            assert!(completed.is_some(), "fresh acceptance must complete after pool contention ends");
         }
     }
     assert_eq!(env.handle.claim_candidates().len(), 1);
     env.drain();
     tokio::time::timeout(Duration::from_secs(5), reactor)
         .await
-        .expect("reactor must drain after fresh admission")
+        .expect("reactor must drain after fresh acceptance")
         .unwrap();
 }
 

@@ -237,7 +237,7 @@ async fn poison_job_publication_failure_backs_off_without_blocking_other_jobs() 
         "failed publication must release ownership"
     );
 
-    // Serial discovery/claim/settlement models a single available admission slot:
+    // Serial discovery/claim/settlement models a single available acceptance slot:
     // no discovery scan can happen to see the poison claim while it is in flight.
     let candidate = provider.discover().await.unwrap();
     assert_eq!(candidate.run_id(), valid_id);

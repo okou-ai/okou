@@ -544,7 +544,7 @@ impl RetiringIdleEntry {
 /// consumed. Resource-budget substitution takes only its short synchronous
 /// mutex inside that pool lock and never carries a guard across an await. Every
 /// evicted payload obtains tracked cleanup ownership before the final pool
-/// snapshot is captured. The caller owns publication so pre-claim admission
+/// snapshot is captured. The caller owns publication so pre-claim acceptance
 /// can register it independently without waiting for status state or IO.
 pub async fn select_idle_entries_for_pressure(
     idle_pool: &SharedIdlePool,
@@ -593,7 +593,7 @@ pub async fn select_idle_entries_for_pressure(
                         profile = %retiring.profile_name(),
                         vcpu = retiring.budget_vcpu(),
                         memory_mb = retiring.budget_memory_mb(),
-                        "evicting idle sandbox for admission pressure"
+                        "evicting idle sandbox for execution capacity pressure"
                     );
                     retiring_leases.push(retiring.into_budget_lease());
                     fresh_lease = try_substitute_retiring_leases(

@@ -4,7 +4,7 @@
 //! and base-directory locks, and supplies concrete factory plans and resources.
 //! This crate owns the retained reactor, ordered factory startup/teardown, job
 //! dispatch, independent maintenance, lifecycle signal consumption, and adjacent
-//! idle/admission/finalization/heartbeat/orphan policies.
+//! idle/acceptance/finalization/heartbeat/orphan policies.
 
 use std::sync::Arc;
 

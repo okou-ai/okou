@@ -1,4 +1,4 @@
-//! Per-run cancellation state shared by provider, lifecycle, admission, and
+//! Per-run cancellation state shared by provider, lifecycle, acceptance, and
 //! execution paths.
 //!
 //! [`RunCancellationRegistry`] owns one [`RunCancellationHandle`] for each
@@ -92,7 +92,7 @@ pub struct DuplicateRunCancellationRegistration;
 #[must_use = "the registration must remain owned until its run is cleaned up"]
 /// Lifecycle owner for one entry in a [`RunCancellationRegistry`].
 ///
-/// Keep this value alive from registration through admission, activation,
+/// Keep this value alive from registration through acceptance, activation,
 /// execution, and the final cleanup path so provider or lifecycle cancellation
 /// can continue to find the run. Registration teardown is explicit: dropping
 /// this value does not unregister it, so callers must invoke

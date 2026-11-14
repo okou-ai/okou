@@ -104,7 +104,7 @@ fn fallback_home_lock_policy_reads_live_predecessor() {
     );
 }
 
-fn released_admission() -> FinalizingHandoffContext {
+fn released_handoff_context() -> FinalizingHandoffContext {
     let active_runs = ActiveRuns::new(Arc::new(Notify::new()));
     let predecessor_run_id = RunId::new_v4();
     let guard = active_runs.register(
@@ -128,7 +128,7 @@ fn released_admission() -> FinalizingHandoffContext {
 
 #[tokio::test]
 async fn released_predecessor_selects_fresh_capacity_without_double_ownership() {
-    let mut handoff_context = released_admission();
+    let mut handoff_context = released_handoff_context();
     let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(
         IdlePoolConfig::default(),
     )));
@@ -327,7 +327,7 @@ async fn fallback_capacity_wait_wakes_when_budget_is_released() {
     let budget_for_task = Arc::clone(&budget);
     let entered_for_task = Arc::clone(&entered);
     let task = tokio::spawn(async move {
-        let mut handoff_context = released_admission();
+        let mut handoff_context = released_handoff_context();
         let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(
             IdlePoolConfig::default(),
         )));
@@ -420,7 +420,7 @@ async fn assert_fallback_budget_wakeup_reuses_published(
     publication: FallbackPublication,
     native_history: bool,
 ) {
-    let mut handoff_context = released_admission();
+    let mut handoff_context = released_handoff_context();
     if !native_history {
         handoff_context.native_generation_run_id = None;
     }

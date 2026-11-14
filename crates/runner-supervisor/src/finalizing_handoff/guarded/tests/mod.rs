@@ -1,4 +1,4 @@
-//! Actual producer park, broker delivery, claim and independently tracked saving.
+//! Actual producer park, broker delivery, execution job and independently tracked saving.
 
 use std::{
     path::PathBuf,
@@ -128,14 +128,14 @@ impl Fixture {
         backing: Option<Arc<dyn SandboxBackingProcess>>,
         available: u64,
     ) -> Self {
-        Self::with_claim_key(running, backing, available, Some(KEY)).await
+        Self::with_reuse_key(running, backing, available, Some(KEY)).await
     }
 
-    async fn with_claim_key(
+    async fn with_reuse_key(
         running: bool,
         backing: Option<Arc<dyn SandboxBackingProcess>>,
         available: u64,
-        claim_key: Option<&str>,
+        reuse_key: Option<&str>,
     ) -> Self {
         let home = HomePromotionFixture::new(KEY).await;
         let predecessor = home.promotion.run_id();
@@ -225,7 +225,7 @@ impl Fixture {
         .unwrap();
         let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
         let provider = Provider::default();
-        let job = provider.bind_execution(run, claim_key).await;
+        let job = provider.bind_execution(run, reuse_key).await;
         Self {
             active_image: home.cache.paths().active_home_image(&home.sandbox_id),
             _dir: home._dir,
@@ -302,7 +302,7 @@ impl Fixture {
 }
 
 #[tokio::test]
-async fn finalizing_real_parked_and_running_delivery_transfers_actual_claim_and_lease() {
+async fn finalizing_real_parked_and_running_delivery_transfers_job_and_lease() {
     for running in [false, true] {
         let (_, backing) = MockBackingProcess::channel();
         let mut f = Fixture::new(running, Some(backing), 64).await;
@@ -331,10 +331,10 @@ async fn finalizing_real_parked_and_running_delivery_transfers_actual_claim_and_
 }
 
 #[tokio::test]
-async fn finalizing_actual_claim_reuse_key_mismatch_never_unparks_original_resource() {
+async fn finalizing_execution_reuse_key_mismatch_never_unparks_original_resource() {
     for key in [None, Some("thread:another-tenant")] {
         let (_, backing) = MockBackingProcess::channel();
-        let mut f = Fixture::with_claim_key(true, Some(backing), 64, key).await;
+        let mut f = Fixture::with_reuse_key(true, Some(backing), 64, key).await;
         f.deliver();
         let mut guarded_handoff = f.guarded_handoff.take().unwrap();
         guarded_handoff.receive().await.unwrap();
@@ -468,7 +468,7 @@ async fn finalizing_cancelled_receive_and_dropped_handoff_recover_queued_real_de
 }
 
 #[tokio::test]
-async fn finalizing_mismatched_claim_and_predecessor_retain_resource_and_original_auth() {
+async fn finalizing_mismatched_job_and_predecessor_retain_resource_and_original_auth() {
     for prior in [false, true] {
         let (_, backing) = MockBackingProcess::channel();
         let mut f = Fixture::new(true, Some(backing), 64).await;
@@ -494,7 +494,7 @@ async fn finalizing_mismatched_claim_and_predecessor_retain_resource_and_origina
 }
 
 #[tokio::test]
-async fn finalizing_unpark_cancellation_failure_and_panic_preserve_claim() {
+async fn finalizing_unpark_cancellation_failure_and_panic_preserve_job() {
     for fault in ["cancel", "error", "panic"] {
         let (_, backing) = MockBackingProcess::channel();
         let mut f = Fixture::new(true, Some(backing), 64).await;
@@ -582,7 +582,7 @@ async fn finalizing_lost_producer_is_sticky_uncertainty_and_missing_backing_is_r
         .await;
     drop(guarded_handoff);
     // Producer-loss uncertainty survives the observation owner, even when its
-    // claim has already moved to the explicit completion owner.
+    // job has already moved to the explicit completion owner.
     f.tracker.close_and_wait().await;
     let recovered = f.tracker.take_retained_finalizing_owners().unwrap();
     assert_eq!(recovered.len(), 1);
@@ -602,7 +602,7 @@ async fn finalizing_lost_producer_is_sticky_uncertainty_and_missing_backing_is_r
 }
 
 #[tokio::test]
-async fn finalizing_cancelled_admission_and_unknown_observation_retain_cleanup_and_auth() {
+async fn finalizing_cancelled_cleanup_request_and_unknown_observation_retain_cleanup_and_auth() {
     for unknown in [false, true] {
         let (_, backing) = MockBackingProcess::channel();
         let mut f = Fixture::new(true, Some(backing), 64).await;
@@ -682,7 +682,7 @@ async fn finalizing_dropped_cleanup_observer_shutdown_waits_for_required_tail_an
 }
 
 #[tokio::test]
-async fn finalizing_required_freeze_failures_and_lost_exit_retain_original_home_and_claim() {
+async fn finalizing_required_freeze_failures_and_lost_exit_retain_original_home_and_job() {
     for fault in ["freeze_error", "freeze_panic", "exit_lost"] {
         let (exit, backing) = MockBackingProcess::channel();
         let mut f = Fixture::new(true, Some(backing), 64).await;
