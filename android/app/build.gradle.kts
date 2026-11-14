@@ -166,6 +166,7 @@ dependencies {
     implementation(libs.retrofit.serialization)
     implementation(libs.okhttp)
     implementation(libs.serialization.json)
+    implementation(libs.commonmark)
     implementation(libs.room.runtime)
     implementation(libs.sqlite.bundled)
     ksp(libs.room.compiler)

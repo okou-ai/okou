@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="home">होम</string>
     <string name="settings">सेटिंग</string>
     <string name="back">वापस</string>
     <string name="appearance">दिखावट</string>

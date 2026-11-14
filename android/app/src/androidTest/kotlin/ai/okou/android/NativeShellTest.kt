@@ -109,6 +109,14 @@ class NativeShellTest {
                     }
                     .click()
             }
+            fun dismissRestoredPicker(firstChoice: Int) {
+                // The restored selection may be offscreen; the first choice identifies the picker.
+                fun option() =
+                    By.pkg(app.packageName).checkable(true).hasDescendant(label(firstChoice))
+                await("Restored preference picker is open") { device.hasObject(option()) }
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+                await("Preference picker is dismissed") { !device.hasObject(option()) }
+            }
             launch()
             click(R.string.settings)
             select("Default")
@@ -118,15 +126,15 @@ class NativeShellTest {
             awaitActivity("Traditional Chinese is applied by Android") {
                 it.resources.configuration.locales[0].toLanguageTag() == "zh-Hant"
             }
-            click(R.string.home)
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             text(R.string.chat_list_title)
             closeActivity()
             launch()
             click(R.string.settings)
             select("藍色地平線")
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            dismissRestoredPicker(R.string.palette_default)
             select("繁體中文")
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            dismissRestoredPicker(R.string.language_en_us)
         }
 
     private fun launch() {
@@ -147,7 +155,10 @@ class NativeShellTest {
 
     private fun label(id: Int): BySelector = By.pkg(app.packageName).text(app.getString(id))
 
-    private fun click(id: Int) = text(id).click()
+    private fun click(id: Int) =
+        if (id == R.string.settings)
+            checkNotNull(device.wait(Until.findObject(By.desc(app.getString(id))), WAIT)).click()
+        else text(id).click()
 
     // Compose exposes the label as a child of the native checkable option.
     private fun appearanceOption(id: Int): BySelector =

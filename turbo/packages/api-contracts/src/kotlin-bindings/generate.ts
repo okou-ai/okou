@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isNoBody } from "../contracts/trpc-contract";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../contracts/chat-event-schema-version";
 import {
   CLIENT_TYPE_ANDROID,
   CLIENT_TYPE_HEADER,
@@ -30,6 +31,7 @@ import {
   kotlinHistoryFixtureTypes,
 } from "./history-fixtures";
 import { kotlinTokens } from "./source-tokens";
+import { kotlinHistorySemanticsFixtureJson } from "./history-semantics-fixtures";
 import {
   kotlinFixtureJson,
   kotlinFixtureRoutes,
@@ -176,7 +178,9 @@ export function renderKotlinFiles(
         .map(([name, value]) => {
           return `    const val ${name} = ${quote(value)}`;
         })
-        .join("\n")}\n}\n`,
+        .join(
+          "\n",
+        )}\n    const val CHAT_EVENT_SCHEMA_VERSION = ${CURRENT_CHAT_EVENT_SCHEMA_VERSION}\n}\n`,
     ],
   ]);
 }
@@ -212,6 +216,10 @@ export function renderKotlinTestFiles(): ReadonlyMap<string, string> {
   files.set(
     "android/app/src/test/resources/api-bindings/chat-history.json",
     kotlinHistoryFixtureJson(),
+  );
+  files.set(
+    "android/app/src/test/resources/api-bindings/chat-history-semantics.json",
+    kotlinHistorySemanticsFixtureJson(),
   );
   return files;
 }

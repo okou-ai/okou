@@ -1,0 +1,259 @@
+package ai.okou.android.chat
+
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+
+enum class HistoryRole {
+    User,
+    Assistant,
+    System,
+}
+
+enum class HistoryBlockKind {
+    Text,
+    Reference,
+    Unsupported,
+    Error,
+}
+
+enum class HistoryExecution {
+    Idle,
+    Queued,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+data class HistoryBlock(val kind: HistoryBlockKind, val text: String)
+
+data class HistoryMessage(
+    val id: String,
+    val runId: String?,
+    val role: HistoryRole,
+    val blocks: List<HistoryBlock>,
+    val queued: Boolean = false,
+    val rejected: Boolean = false,
+    val status: String? = null,
+)
+
+data class HistoryTranscript(
+    val messages: List<HistoryMessage>,
+    val execution: HistoryExecution,
+    val workSteps: Int,
+)
+
+internal fun JsonObject.text(key: String): String? = (get(key) as? JsonPrimitive)?.contentOrNull
+
+/** Project confirmed event facts, without reinterpreting unknown JSON as a text-only bubble. */
+fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
+    checkpoint.validate()
+    val revoked = checkpoint.rows.mapNotNullTo(hashSetOf()) { it.revokesId }
+    val automationInputs =
+        checkpoint.rows.filter { it.type == "input.automation" }.mapTo(hashSetOf()) { it.id }
+    val rows = checkpoint.rows.filter { it.id !in revoked }
+    val terminals = rows.filter { it.terminal }.mapNotNullTo(hashSetOf()) { it.runId }
+    val cancellations = rows.filter { it.type == "run.cancelled" }.associateBy { it.runId }
+    val interrupted =
+        rows.filter { it.type == "control.interrupt" }.mapNotNullTo(hashSetOf()) { it.runId }
+    val pending =
+        rows
+            .filter { it.runId == null && it.type in setOf("input.prompt", "input.automation") }
+            .mapTo(hashSetOf()) { it.id }
+    // Manual prompts remain in the transcript; only automation occupies Web's queued groups.
+    val queued =
+        rows
+            .filter { it.type == "input.automation" && it.id in pending }
+            .mapTo(hashSetOf()) { it.id }
+    // Match Web's transcript visibility without discarding the underlying confirmed rows.
+    val visible =
+        rows.filterNot {
+            it.type == "control.revoke" ||
+                it.type == "input.budget" ||
+                (it.type == "run.cancelled" && it.runId in interrupted) ||
+                (it.type == "input.rejected" && it.revokesId in automationInputs)
+        }
+    // Like Web, place an older run's late event with its run; queued inputs come last.
+    val turns = linkedMapOf<String, MutableList<HistoryEvent>>()
+    for (row in visible) turns
+        .getOrPut(
+            if (row.id in queued) "queued:${row.id}"
+            else row.runId?.let { "run:$it" } ?: "event:${row.id}"
+        ) {
+            mutableListOf()
+        }
+        .add(row)
+    val ordered =
+        turns.values.filter { it.none { row -> row.id in queued } }.flatten() +
+            visible.filter { it.id in queued }
+    val messages =
+        ordered.mapNotNull { row ->
+            // Keep Web's stable interruption identity/position while preserving the real
+            // cancellation's content when its terminal row eventually arrives.
+            val payload =
+                (if (row.type == "control.interrupt") cancellations[row.runId] ?: row else row)
+                    .payload
+            val blocks = mutableListOf<HistoryBlock>()
+            val role =
+                when (row.type) {
+                    "input.prompt",
+                    "input.rejected",
+                    "input.automation" -> {
+                        val document = payload?.get("userMessage")
+                        if (
+                            row.type == "input.automation" &&
+                                (document == null || document === JsonNull)
+                        )
+                            return@mapNotNull null
+                        blocks.addAll(userBlocks(document))
+                        payload?.text("error")?.let {
+                            blocks.add(HistoryBlock(HistoryBlockKind.Error, it))
+                        }
+                        HistoryRole.User
+                    }
+                    "output.message" -> {
+                        payload?.text("content")?.let {
+                            blocks.add(HistoryBlock(HistoryBlockKind.Text, it))
+                        }
+                            ?: blocks.add(
+                                HistoryBlock(HistoryBlockKind.Unsupported, row.wire.toString())
+                            )
+                        HistoryRole.Assistant
+                    }
+                    "output.error",
+                    "run.failed" -> {
+                        payload?.text("content")?.let {
+                            blocks.add(HistoryBlock(HistoryBlockKind.Text, it))
+                        }
+                        payload?.text("error")?.let {
+                            blocks.add(HistoryBlock(HistoryBlockKind.Error, it))
+                        }
+                        row.wire.text("failureReason")?.let {
+                            blocks.add(HistoryBlock(HistoryBlockKind.Reference, it))
+                        }
+                        HistoryRole.System
+                    }
+                    "run.cancelled",
+                    "run.completed",
+                    "control.interrupt" -> {
+                        if (row.type == "control.interrupt" && row.runId == null)
+                            return@mapNotNull null
+                        payload?.text("content")?.let {
+                            blocks.add(HistoryBlock(HistoryBlockKind.Text, it))
+                        }
+                        payload?.text("error")?.let {
+                            blocks.add(HistoryBlock(HistoryBlockKind.Error, it))
+                        }
+                        HistoryRole.Assistant
+                    }
+                    "usage.recorded" -> {
+                        payload?.get("usage")?.let {
+                            blocks.add(HistoryBlock(HistoryBlockKind.Reference, it.toString()))
+                        }
+                        if (blocks.isEmpty()) return@mapNotNull null
+                        HistoryRole.System
+                    }
+                    "output.followups" -> {
+                        payload?.text("content")?.let {
+                            blocks.add(HistoryBlock(HistoryBlockKind.Reference, it))
+                        }
+                        if (blocks.isEmpty()) return@mapNotNull null
+                        HistoryRole.System
+                    }
+                    else -> return@mapNotNull null
+                }
+            HistoryMessage(
+                row.id,
+                row.runId,
+                role,
+                blocks,
+                row.id in queued,
+                row.type == "input.rejected",
+                if (row.type == "control.interrupt") "run.cancelled"
+                else row.type.takeIf { row.terminal || it == "output.error" },
+            )
+        }
+    val execution =
+        when {
+            historyIsRunning(rows, terminals + interrupted) -> HistoryExecution.Running
+            pending.isNotEmpty() -> HistoryExecution.Queued
+            else ->
+                // A late event from an older run stays with that turn, including in this summary.
+                when (
+                    messages
+                        .lastOrNull {
+                            it.status == "run.completed" ||
+                                it.status == "run.failed" ||
+                                it.status == "run.cancelled"
+                        }
+                        ?.status
+                ) {
+                    "run.completed" -> HistoryExecution.Completed
+                    "run.failed" -> HistoryExecution.Failed
+                    "run.cancelled" -> HistoryExecution.Cancelled
+                    else -> HistoryExecution.Idle
+                }
+        }
+    return HistoryTranscript(messages, execution, rows.count { it.type == "output.message" })
+}
+
+/** Match Web's run indicator: old activity cannot revive a newer terminal's settled state. */
+private fun historyIsRunning(rows: List<HistoryEvent>, endedRuns: Set<String>): Boolean {
+    val starts = mutableMapOf<String, Int>()
+    var newestLiveStart: Int? = null
+    for ((index, row) in rows.withIndex()) {
+        if (row.type != "input.prompt" && row.type != "input.rejected") continue
+        val run = row.runId ?: continue
+        val start = starts.getOrPut(run) { index }
+        if (run !in endedRuns) newestLiveStart = maxOf(newestLiveStart ?: start, start)
+    }
+    for (row in rows.asReversed()) {
+        // An interrupt's raw runId is its target, not ownership of new activity.
+        if (row.type == "usage.recorded" || row.type == "control.interrupt") continue
+        if (row.terminal) {
+            val start = starts[row.runId] ?: return false
+            return newestLiveStart?.let { it > start } == true
+        }
+        if (row.runId != null && row.runId !in endedRuns) return true
+        if (row.runId == null && (row.type == "output.message" || row.type == "output.error"))
+            return false
+    }
+    return false
+}
+
+private fun userBlocks(value: JsonElement?): List<HistoryBlock> {
+    val document = value as? JsonObject
+    val parts = document?.get("parts") as? JsonArray
+    if ((document?.get("version") as? JsonPrimitive)?.intOrNull != 1 || parts == null)
+        return listOf(HistoryBlock(HistoryBlockKind.Unsupported, value?.toString() ?: "null"))
+    return parts
+        .map { part ->
+            val objectPart = part as? JsonObject
+            when (objectPart?.text("type")) {
+                "text" ->
+                    objectPart.text("text")?.let { HistoryBlock(HistoryBlockKind.Text, it) }
+                        ?: HistoryBlock(HistoryBlockKind.Unsupported, part.toString())
+                // Preserve the complete reference/annotation, including IDs and capability
+                // metadata.
+                "attachment",
+                "file",
+                "image",
+                "annotation",
+                "feedback",
+                "chat_thread",
+                "agent",
+                "project",
+                "template",
+                "source",
+                "automation",
+                "model" -> HistoryBlock(HistoryBlockKind.Reference, part.toString())
+                else -> HistoryBlock(HistoryBlockKind.Unsupported, part.toString())
+            }
+        }
+        .ifEmpty { listOf(HistoryBlock(HistoryBlockKind.Unsupported, value.toString())) }
+}

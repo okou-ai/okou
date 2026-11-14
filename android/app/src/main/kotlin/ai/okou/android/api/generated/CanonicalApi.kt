@@ -2,12 +2,18 @@
 // Regenerate: cd turbo && pnpm -F @okouai/api-contracts generate:kotlin
 package ai.okou.android.api.generated
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.POST
+import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.QueryMap
 
 internal interface CanonicalApi {
     @GET("/api/org")
@@ -54,4 +60,85 @@ internal interface CanonicalApi {
 
     @GET("/api/feature-switches")
     suspend fun `featureSwitches`(@Header("Authorization") token: String): Response<FeatureSwitches>
+
+    @GET("/api/chat-threads/{threadId}/event-snapshot")
+    suspend fun `historySnapshot`(
+        @Header("Authorization") token: String,
+        @Path("threadId") `pathThreadId`: String,
+    ): Response<HistorySnapshot>
+
+    @GET("/api/chat-threads/{threadId}/event-rows")
+    suspend fun `historyRowsWire`(
+        @Header("Authorization") token: String,
+        @Path("threadId") `pathThreadId`: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<HistoryRows>
+
+    @GET("/api/chat-threads/{id}")
+    suspend fun `threadDetail`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<ThreadDetail>
+
+    @POST("/api/chat-threads/{id}/mark-read")
+    suspend fun `markRead`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<ReadState>
+}
+
+internal suspend fun CanonicalApi.`historyRows`(
+    token: String,
+    `pathThreadId`: String,
+    query: HistoryRowsQuery,
+): Response<HistoryRows> = `historyRowsWire`(token, `pathThreadId`, query.toQueryParameters())
+
+internal fun HistoryRowsQuery.toQueryParameters(): Map<String, String> {
+    val value = Json.encodeToJsonElement(HistoryRowsQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all { it in setOf("sinceSeqId", "sinceEventId", "limit") } &&
+                    value["sinceSeqId"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let { it.isFinite() && it == 0.0 } == true)
+                    } &&
+                    !value.containsKey("sinceEventId") &&
+                    value["limit"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let { it.isFinite() && it >= 1.0 && it <= 50.0 } ==
+                                true)
+                    }),
+                (value.keys.all { it in setOf("sinceSeqId", "sinceEventId", "limit") } &&
+                    value["sinceSeqId"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let {
+                                it.isFinite() &&
+                                    it % 1.0 == 0.0 &&
+                                    it <= 9007199254740991.0 &&
+                                    it > 0.0
+                            } == true)
+                    } &&
+                    value["sinceEventId"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            Regex(
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                )
+                                .containsMatchIn(field.content))
+                    } &&
+                    value["limit"].let { field ->
+                        (field is JsonPrimitive &&
+                            !field.isString &&
+                            field.doubleOrNull?.let { it.isFinite() && it >= 1.0 && it <= 50.0 } ==
+                                true)
+                    }),
+            )
+            .count { it } == 1
+    ) {
+        "Invalid HistoryRowsQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
 }
