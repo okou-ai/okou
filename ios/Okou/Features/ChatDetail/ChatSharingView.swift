@@ -38,6 +38,7 @@ struct ChatSharingRow<Content: View>: View {
     .accessibilityLabel(group.messages.map(\.copyText).joined(separator: "\n"))
     .accessibilityHint(group.messages.first?.role == .user ? "Select question" : "Select answer")
     .accessibilityValue(partial ? "Partially selected" : selected ? "Selected" : "Not selected")
+    .accessibilityAddTraits(.isButton)
     .accessibilityAddTraits(selected ? .isSelected : [])
     .accessibilityIdentifier("chat-sharing-select-\(group.id)")
   }

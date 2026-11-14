@@ -56,6 +56,23 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     case .earlier, .footer, .followups: nil
     }
   }
+
+  /// Sharing replaces a work header with a selection mark above the answer.
+  /// Keep the body, rather than that changing header, at the reader's offset.
+  var sharingBodyInset: CGFloat {
+    switch self {
+    case .share(let group, _) where group.messages.first?.role == .assistant:
+      OkouAvatarSize.message + OkouSpace.sm
+    case .message(let message, true, _, _, _, _, _) where message.role == .assistant:
+      OkouAvatarSize.message + OkouSpace.sm
+    default: 0
+    }
+  }
+
+  var isShareSelection: Bool {
+    if case .share = self { return true }
+    return false
+  }
 }
 
 struct ConversationCollectionMetrics: Equatable {
@@ -958,7 +975,21 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     appliesRows = true
     let rows = prepared.rows
     let ids = Set(rows.map(\.id))
-    let position = source.anchor.preservedPosition ?? captureReadingPosition(retaining: ids)
+    // Work summaries and follow-ups disappear in selection mode. An anchor for
+    // one of those removed rows cannot override a surviving message's position.
+    let preserved = source.anchor.preservedPosition.flatMap {
+      ids.contains($0.messageID) ? $0 : nil
+    }
+    var position = preserved ?? captureReadingPosition(retaining: ids)
+    if let current = position,
+      let previous = displayedRows[current.messageID],
+      let next = rows.first(where: { $0.id == current.messageID }),
+      previous.isShareSelection != next.isShareSelection
+    {
+      position = ConversationReadingPosition(
+        messageID: current.messageID,
+        offset: current.offset + previous.sharingBodyInset - next.sharingBodyInset)
+    }
     if !source.followsBottom, let position { source.anchor.preserve(position) }
     let oldIDs = Set(dataSource.snapshot().itemIdentifiers)
     var updatedMeasurements = prepared.measurements
