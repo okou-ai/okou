@@ -12,6 +12,7 @@ import { validateRunOutputMemoryCitationRetirement } from "./test-run-output-mem
 import { validateStripeInvoicePaidRetirement } from "./test-stripe-invoice-paid-retirement";
 import { validateManagedDataRetirement } from "./test-managed-data-retirement";
 import { validateHistoricalRunCleanup } from "./test-historical-run-cleanup";
+import { validateRunnerJobQueueRetirement } from "./test-runner-job-queue-retirement";
 /**
  * Migration Consistency Test - Schema Comparison
  *
@@ -195,11 +196,10 @@ async function validateHistoricalRunCleanupBeforeGuard(
   }
 }
 
-/** Late callback, job and usage publication must reject Run deletion. */
+/** Late callback and usage publication must reject Run deletion. */
 async function validateRestrictiveRunReferences(dbUrl: string): Promise<void> {
   const names = [
     "agent_run_callbacks_run_id_agent_runs_id_fk",
-    "runner_job_queue_run_id_agent_runs_id_fk",
     "usage_event_run_id_agent_runs_id_fk",
   ];
   const client = new Client({ connectionString: dbUrl });
@@ -3062,6 +3062,7 @@ async function main(): Promise<void> {
 
     await validateBrowserOwnerDdlReplay(dbUrl.href);
     await validateEmailIntegrationMigration(dbUrl.href);
+    await validateRunnerJobQueueRetirement(dbUrl.href);
 
     // Step 1: Test with existing migrations
     console.log("=== Phase 2: Test existing migrations ===\n");
