@@ -17,7 +17,7 @@ const mergeUtilities = extendTailwindMerge({
     theme: {
       animate: ["skeleton-pulse"],
       radius: ["surface", "surface-compact"],
-      shadow: ["surface"],
+      shadow: ["surface", "segment-selected"],
       spacing: ["safe"],
     },
     classGroups: {
