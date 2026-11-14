@@ -521,7 +521,7 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
       context,
       actor,
       "test-subdomain",
-      async ({ claim, resolveAuth }) => {
+      async ({ execution: claim, resolveAuth }) => {
         expect(claim.environment).toMatchObject({
           SUBDOMAIN_TEST_EMAIL: "support@example.com",
           SUBDOMAIN_TEST_SUBDOMAIN: "example",

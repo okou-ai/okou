@@ -34,8 +34,8 @@ describe("chat indicator realtime signal", () => {
       });
       expect(indicatorSignalCount()).toBe(1);
 
-      const claim = await owned.claimRunnerRun(run.runId);
-      const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+      const execution = await owned.executionInput(run.runId);
+      const headers = { authorization: `Bearer ${execution.sandboxToken}` };
       context.mocks.ably.publish.mockClear();
       await webhooks.requestAgentEvents(
         {

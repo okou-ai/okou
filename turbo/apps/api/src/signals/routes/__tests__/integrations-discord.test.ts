@@ -24,7 +24,7 @@ import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
-import { claimPublicDiscordTestRun } from "./helpers/discord-run";
+import { launchPublicDiscordTestRun } from "./helpers/discord-run";
 
 const context = testContext();
 const track = createFixtureTracker((fixture: DiscordFixture) => {
@@ -247,9 +247,9 @@ describe("Discord installation link run access", () => {
     const { actor, restore } = createActors();
     const owner = actor();
     const profile = createAuthOrgAgentsBddApi(context).user(owner);
-    const run = await claimPublicDiscordTestRun(context, profile);
+    const run = await launchPublicDiscordTestRun(context, profile);
     // Web runs can use the CLI, but must not receive Discord-only invite guidance.
-    expect(run.claim.appendSystemPrompt).not.toContain(
+    expect(run.execution.appendSystemPrompt).not.toContain(
       "okou discord install-link",
     );
     restore();

@@ -279,7 +279,7 @@ function createChatAccountInputSignals(
 }
 
 /** Preserve registered account bindings and resolve current native-only selections. */
-interface ClaimConnectedAccountsArgs {
+interface ExecutionConnectedAccountsArgs {
   readonly identity$: Computed<
     Promise<{
       readonly userId: string;
@@ -300,7 +300,7 @@ interface ClaimConnectedAccountsArgs {
   readonly timing$: DispatchTiming$;
 }
 
-function createClaimAccountInputs(args: ClaimConnectedAccountsArgs) {
+function createExecutionAccountInputs(args: ExecutionConnectedAccountsArgs) {
   const connectorInput$ = computed(async (get) => {
     const [identity, targets] = await Promise.all([
       get(args.identity$),
@@ -367,7 +367,7 @@ function createClaimAccountInputs(args: ClaimConnectedAccountsArgs) {
   };
 }
 
-function createClaimConnectorScope(args: ClaimConnectedAccountsArgs) {
+function createExecutionConnectorScope(args: ExecutionConnectedAccountsArgs) {
   return computed(async (get): Promise<EffectiveConnectorScope> => {
     const [scope, targets, catalog] = await Promise.all([
       get(args.scope$),
@@ -408,11 +408,11 @@ function createClaimConnectorScope(args: ClaimConnectedAccountsArgs) {
   });
 }
 
-export function createClaimConnectedAccounts(
-  args: ClaimConnectedAccountsArgs,
+export function createExecutionConnectedAccounts(
+  args: ExecutionConnectedAccountsArgs,
 ): ConnectedAccounts {
-  const { connectorInput$, chatAccounts } = createClaimAccountInputs(args);
-  const connectorScope$ = createClaimConnectorScope(args);
+  const { connectorInput$, chatAccounts } = createExecutionAccountInputs(args);
+  const connectorScope$ = createExecutionConnectorScope(args);
   const inputs: ConnectorInputSignals = {
     connectorInput$,
     connectorScope$,

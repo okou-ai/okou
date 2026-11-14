@@ -36,7 +36,7 @@ const {
   entitledNativeChatActor,
   sendChatRun,
   queueChatRun,
-  claimChatRun,
+  runExecution,
   cancelChatRun,
 } = createChatEventsFixture(context);
 
@@ -62,21 +62,17 @@ async function sharedGrants(
   );
 }
 
-async function claimAndCancel(
-  actor: ApiTestUser,
-  agentId: string,
-  runnerGroup: string,
-) {
+async function executeAndCancel(actor: ApiTestUser, agentId: string) {
   const run = await sendChatRun(actor, {
     agentId,
     prompt: "use the current connector permission definitions",
   });
-  const { claim, sandboxHeaders } = await claimChatRun(runnerGroup, run.runId);
+  const { execution, sandboxHeaders } = await runExecution(run.runId);
   await cancelChatRun(actor, run.runId, sandboxHeaders);
-  return claim;
+  return execution;
 }
 
-test("uses current permission definitions after publication with a warm claim cache", async () => {
+test("uses current permission definitions after publication with a warm execution cache", async () => {
   const publisher = (
     await setupApp({
       context,
@@ -84,7 +80,7 @@ test("uses current permission definitions after publication with a warm claim ca
       isolatePg: true,
     })
   )(cronConnectorCatalogContract);
-  const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+  const { actor, agentId } = await entitledNativeChatActor();
   await connectors.connectManualGrant(
     actor,
     "figma",
@@ -173,7 +169,7 @@ test("uses current permission definitions after publication with a warm claim ca
   }
 
   await publish(original);
-  const first = await claimAndCancel(actor, agentId, runnerGroup);
+  const first = await executeAndCancel(actor, agentId);
   expect(first.networkPolicies?.figma).toStrictEqual({
     allow: ["file_content:read"],
     deny: [],
@@ -209,14 +205,14 @@ test("uses current permission definitions after publication with a warm claim ca
   figma.firewall.defaultUnknownPolicy = "ask";
   await publish(artifact);
   const run = await queued.launch();
-  const { claim, sandboxHeaders } = await claimChatRun(runnerGroup, run.runId);
-  expect(claim.networkPolicies?.figma).toStrictEqual({
+  const { execution, sandboxHeaders } = await runExecution(run.runId);
+  expect(execution.networkPolicies?.figma).toStrictEqual({
     allow: [],
     deny: ["file_comments:read", "file_content:read"],
     ask: [],
     unknownPolicy: "ask",
   });
-  expect(claim.networkPolicyRefreshes?.figma).toBeUndefined();
+  expect(execution.networkPolicyRefreshes?.figma).toBeUndefined();
   await cancelChatRun(actor, run.runId, sandboxHeaders);
 });
 
@@ -226,7 +222,7 @@ describe.each([false, true])(
     it.each(["add", "revoke"] as const)(
       "applies a %s grant change made after the Run was queued",
       async (change) => {
-        const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+        const { actor, agentId } = await entitledNativeChatActor();
         mockGitHubConnectorOAuth();
         server.use(
           http.delete(
@@ -277,7 +273,7 @@ describe.each([false, true])(
         await connectors.updateFeatureSwitches(actor, {
           connectorChatAccountAccess: chatAccounts,
         });
-        await claimAndCancel(actor, agentId, runnerGroup);
+        await executeAndCancel(actor, agentId);
         const queued = await queueChatRun(actor, {
           agentId,
           prompt: "use the current GitHub permissions at claim",
@@ -302,14 +298,11 @@ describe.each([false, true])(
           ).resolves.toStrictEqual([]);
         }
         const run = await queued.launch();
-        const { claim, sandboxHeaders } = await claimChatRun(
-          runnerGroup,
-          run.runId,
-        );
-        expect(claim.connectorRuntimeTargets).toContainEqual(
+        const { execution, sandboxHeaders } = await runExecution(run.runId);
+        expect(execution.connectorRuntimeTargets).toContainEqual(
           expect.objectContaining({ kind: "builtin", connectorSlug: "github" }),
         );
-        expect(claim.networkPolicies?.github).toMatchObject(
+        expect(execution.networkPolicies?.github).toMatchObject(
           change === "add"
             ? {
                 deny: expect.arrayContaining(["user:read"]),
@@ -320,7 +313,7 @@ describe.each([false, true])(
                 deny: expect.not.arrayContaining(["user:read"]),
               },
         );
-        expect(claim.networkPolicies?.github?.allow).toContain(
+        expect(execution.networkPolicies?.github?.allow).toContain(
           "notifications:read",
         );
         await cancelChatRun(actor, run.runId, sandboxHeaders);
@@ -393,7 +386,7 @@ describe.each([false, true])(
         await connectors.updateFeatureSwitches(actor, {
           connectorChatAccountAccess: chatAccounts,
         });
-        await claimAndCancel(actor, agentId, runnerGroup);
+        await executeAndCancel(actor, agentId);
         const queued = await queueChatRun(actor, {
           agentId,
           prompt: "use the current Slack write grant and its original expiry",
@@ -420,20 +413,19 @@ describe.each([false, true])(
         await connectors.updateFeatureSwitches(actor, {
           connectorChatAccountAccess: !chatAccounts,
         });
-        const { claim, sandboxHeaders } = await claimChatRun(
-          runnerGroup,
-          run.runId,
-        );
-        expect(claim.networkPolicies?.slack?.allow).toStrictEqual(
+        const { execution, sandboxHeaders } = await runExecution(run.runId);
+        expect(execution.networkPolicies?.slack?.allow).toStrictEqual(
           expired
             ? expect.not.arrayContaining(["chat:write"])
             : expect.arrayContaining(["chat:write"]),
         );
         if (expired) {
-          expect(claim.networkPolicies?.slack?.deny).toContain("chat:write");
-          expect(claim.networkPolicyRefreshes?.slack).toBeUndefined();
+          expect(execution.networkPolicies?.slack?.deny).toContain(
+            "chat:write",
+          );
+          expect(execution.networkPolicyRefreshes?.slack).toBeUndefined();
         } else {
-          expect(claim.networkPolicyRefreshes?.slack).toStrictEqual({
+          expect(execution.networkPolicyRefreshes?.slack).toStrictEqual({
             nextRefreshAt: new Date(expiresAt).toISOString(),
           });
           // Active-Run sync follows current settings, independently of the
@@ -443,7 +435,7 @@ describe.each([false, true])(
           });
           mockNow(expiresAt);
           const synced = await runs.syncConnectorRuntime(run.runId, {
-            targets: claim.connectorRuntimeTargets.filter((target) => {
+            targets: execution.connectorRuntimeTargets.filter((target) => {
               return (
                 target.kind === "builtin" && target.connectorSlug === "slack"
               );

@@ -8,7 +8,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { integrationsSlackReadRoutes } from "../integrations-slack-read";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { seedOrgMembership$ } from "./helpers/org-membership";
@@ -19,7 +19,7 @@ import {
 
 // Connecting a Slack user resolves the built-in Slack connector OAuth method.
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const claimedToken = createRunExecutionCredentials(context).okouToken;
 const store = createStore();
 const slackOrgs = createPublicSlackOrgApi(context);
 const SLACK_USER_CONVERSATIONS_URL =

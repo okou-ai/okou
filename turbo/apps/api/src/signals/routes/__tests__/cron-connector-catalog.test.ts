@@ -5,7 +5,7 @@ import { readPublishedArchive } from "./helpers/published-archive";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createHash, randomUUID } from "node:crypto";
 import { prepareContentBundle } from "@okouai/core/content-bundle";
-import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
+import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
@@ -512,12 +512,9 @@ describe("connector catalog valid lifecycle", () => {
       prompt: "Use the X Connector Skill",
       model: "gpt-6-luna",
     });
-    const { claim, sandboxHeaders } = await owner.claimChatRun(
-      owner.runnerGroup,
-      run.runId,
-    );
-    expect(claim.cliAgentType).toBe("pi");
-    const bundle = claim.contentBundles.skills.find((entry) => {
+    const { execution, sandboxHeaders } = await owner.runExecution(run.runId);
+    expect(execution.cliAgentType).toBe("pi");
+    const bundle = execution.contentBundles.skills.find((entry) => {
       return entry.mountPath === "/home/user/.pi/agent/skills/x";
     });
     expect(bundle).toMatchObject({
@@ -528,7 +525,7 @@ describe("connector catalog valid lifecycle", () => {
       throw new Error("Expected the X Connector Skill bundle");
     }
     expect(
-      readClaimedContentBundle(
+      readExecutionContentBundle(
         new Map([[`bundles/v1/${skill.sha256}.tar.gz`, skill.archive]]),
         bundle,
       ),
@@ -632,7 +629,7 @@ describe("connector catalog valid lifecycle", () => {
       context,
       actor,
       "gitlab",
-      async ({ claim, resolveAuth }) => {
+      async ({ execution: claim, resolveAuth }) => {
         expect(claim.environment).not.toHaveProperty("GITLAB_HOST");
         const resolved = await resolveAuth({
           authHeaders: {
@@ -707,11 +704,8 @@ describe("connector catalog valid lifecycle", () => {
         agentId: owned.agentId,
         prompt,
       });
-      const { claim, sandboxHeaders } = await owned.claimChatRun(
-        owned.runnerGroup,
-        run.runId,
-      );
-      const mounts = claim.contentBundles.skills.filter((mount) => {
+      const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
+      const mounts = execution.contentBundles.skills.filter((mount) => {
         return skills.some(({ connector }) => {
           return mount.mountPath.endsWith(
             `/${getCustomConnectorSkillName(connector.slug, connector.id)}`,
@@ -784,11 +778,8 @@ describe("connector catalog valid lifecycle", () => {
     const updated = readPublishedArchive(context, updateStart);
     expect(updated.sha256).not.toBe(published.sha256);
     const check = async (runId: string, expected: typeof published) => {
-      const { claim, sandboxHeaders } = await owned.claimChatRun(
-        owned.runnerGroup,
-        runId,
-      );
-      const mount = claim.contentBundles.skills.find((entry) => {
+      const { execution, sandboxHeaders } = await owned.runExecution(runId);
+      const mount = execution.contentBundles.skills.find((entry) => {
         return (
           entry.mountPath ===
           `/home/user/.pi/agent/skills/${getCustomConnectorSkillName(connector.slug, connector.id)}`
@@ -857,9 +848,14 @@ describe("connector catalog valid lifecycle", () => {
       externalId: STEAM_TEST_ID,
       connectionStatus: "connected",
     });
-    await withConnectorRuntime(context, actor, "steam", ({ claim }) => {
-      expect(claim.environment?.STEAM_ID).toBe(STEAM_TEST_ID);
-    });
+    await withConnectorRuntime(
+      context,
+      actor,
+      "steam",
+      ({ execution: claim }) => {
+        expect(claim.environment?.STEAM_ID).toBe(STEAM_TEST_ID);
+      },
+    );
   });
 
   it("refreshes AWS credentials in a Run after external-code authorization", async () => {
@@ -1103,30 +1099,35 @@ describe("connector catalog valid lifecycle", () => {
     await connectorsApi.connectManualGrant(actor, "agora", "api-token", {
       credential: "bundled-skill-token",
     });
-    await withConnectorRuntime(context, actor, "agora", ({ claim }) => {
-      const bundle = claim.contentBundles.skills.find((entry) => {
-        return entry.mountPath.endsWith("/agora");
-      });
-      expect(bundle).toMatchObject({
-        sha256: skill.sha256,
-        archiveBytes: skill.archiveBytes,
-      });
-      if (!bundle) {
-        throw new Error("Expected the authorized built-in Skill bundle");
-      }
-      expect(
-        readClaimedContentBundle(
-          new Map([[`bundles/v1/${skill.sha256}.tar.gz`, skill.archive]]),
-          bundle,
-        ),
-      ).toStrictEqual(
-        new Map(
-          skill.files.map((file) => {
-            return [file.path, file.content];
-          }),
-        ),
-      );
-    });
+    await withConnectorRuntime(
+      context,
+      actor,
+      "agora",
+      ({ execution: claim }) => {
+        const bundle = claim.contentBundles.skills.find((entry) => {
+          return entry.mountPath.endsWith("/agora");
+        });
+        expect(bundle).toMatchObject({
+          sha256: skill.sha256,
+          archiveBytes: skill.archiveBytes,
+        });
+        if (!bundle) {
+          throw new Error("Expected the authorized built-in Skill bundle");
+        }
+        expect(
+          readExecutionContentBundle(
+            new Map([[`bundles/v1/${skill.sha256}.tar.gz`, skill.archive]]),
+            bundle,
+          ),
+        ).toStrictEqual(
+          new Map(
+            skill.files.map((file) => {
+              return [file.path, file.content];
+            }),
+          ),
+        );
+      },
+    );
   });
 });
 

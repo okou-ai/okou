@@ -6,7 +6,7 @@ import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createFirewallApi } from "./api-bdd-firewall";
 import { createRunsApi, type RunModel } from "./api-bdd-runs";
 
-type RunClaim = Awaited<
+type RunnerExecutionInput = Awaited<
   ReturnType<ReturnType<typeof createRunsApi>["executionInput"]>
 >;
 type ConnectorRuntimeAuthBody = Omit<
@@ -14,26 +14,29 @@ type ConnectorRuntimeAuthBody = Omit<
   "encryptedSecrets" | "secretConnectorMap" | "secretConnectorMetadataMap"
 >;
 
-async function resolveClaimedAuth(
-  claim: RunClaim,
+async function resolveExecutionAuth(
+  execution: RunnerExecutionInput,
   firewall: ReturnType<typeof createFirewallApi>,
   body: ConnectorRuntimeAuthBody,
 ) {
-  if (!claim.encryptedSecrets) {
-    throw new Error("Expected encrypted secrets from the real Runner claim");
+  if (!execution.encryptedSecrets) {
+    throw new Error(
+      "Expected encrypted secrets from the real Runner execution",
+    );
   }
   const response = await firewall.requestFirewallAuth(
-    { authorization: `Bearer ${claim.sandboxToken}` },
+    { authorization: `Bearer ${execution.sandboxToken}` },
     {
       ...body,
-      encryptedSecrets: claim.encryptedSecrets,
-      secretConnectorMap: claim.secretConnectorMap ?? undefined,
-      secretConnectorMetadataMap: claim.secretConnectorMetadataMap ?? undefined,
+      encryptedSecrets: execution.encryptedSecrets,
+      secretConnectorMap: execution.secretConnectorMap ?? undefined,
+      secretConnectorMetadataMap:
+        execution.secretConnectorMetadataMap ?? undefined,
     },
     [200],
   );
   if (response.status !== 200) {
-    throw new Error("Expected the claimed connector credential to resolve");
+    throw new Error("Expected the execution connector credential to resolve");
   }
   return response.body;
 }
@@ -44,10 +47,10 @@ export async function withConnectorRuntime(
   actor: ApiTestUser,
   connectorSlug: string,
   consume: (args: {
-    readonly claim: RunClaim;
+    readonly execution: RunnerExecutionInput;
     readonly resolveAuth: (
       body: ConnectorRuntimeAuthBody,
-    ) => ReturnType<typeof resolveClaimedAuth>;
+    ) => ReturnType<typeof resolveExecutionAuth>;
   }) => Promise<void> | void,
   options: { readonly model?: RunModel } = {},
 ): Promise<void> {
@@ -92,12 +95,12 @@ export async function withConnectorRuntime(
   owned.runId = runId;
   await runs.heartbeatRunner(runnerGroup);
   await flushWaitUntilForTest();
-  const claim = await runs.executionInput(runId);
+  const execution = await runs.executionInput(runId);
   expect((await runs.readRun(actor, runId)).status).toBe("running");
   await consume({
-    claim,
+    execution,
     resolveAuth: async (body) => {
-      return await resolveClaimedAuth(claim, firewall, body);
+      return await resolveExecutionAuth(execution, firewall, body);
     },
   });
   await cleanup();

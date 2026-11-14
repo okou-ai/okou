@@ -830,7 +830,7 @@ describe("webhook telemetry contract", () => {
         ...buckets.map((bucket) => {
           return {
             ts: "2026-01-15T10:00:00.000Z",
-            action_type: "runner_claim_to_spawn",
+            action_type: "runner_admission_to_spawn",
             duration_ms: 10,
             success: true,
             runner_pre_spawn_concurrency_bucket: bucket,
@@ -859,7 +859,7 @@ describe("webhook telemetry contract", () => {
         sandboxOperations: [
           {
             ts: "2026-01-15T10:00:00.000Z",
-            action_type: "runner_claim_to_spawn",
+            action_type: "runner_admission_to_spawn",
             duration_ms: 10,
             success: true,
             runner_pre_spawn_concurrency_bucket: "10_plus",
@@ -886,7 +886,7 @@ describe("webhook telemetry contract", () => {
             utilizationBuckets[index % utilizationBuckets.length];
           return {
             ts: "2026-01-15T10:00:00.000Z",
-            action_type: "runner_claim_to_spawn",
+            action_type: "runner_admission_to_spawn",
             duration_ms: 10,
             success: true,
             runner_resource_budget_vcpu_utilization_bucket: utilization,
@@ -929,7 +929,7 @@ describe("webhook telemetry contract", () => {
         sandboxOperations: [
           {
             ts: "2026-01-15T10:00:00.000Z",
-            action_type: "runner_claim_to_spawn",
+            action_type: "runner_admission_to_spawn",
             duration_ms: 10,
             success: true,
             runner_resource_budget_vcpu_utilization_bucket: "101_plus",
@@ -943,7 +943,7 @@ describe("webhook telemetry contract", () => {
         sandboxOperations: [
           {
             ts: "2026-01-15T10:00:00.000Z",
-            action_type: "runner_claim_to_spawn",
+            action_type: "runner_admission_to_spawn",
             duration_ms: 10,
             success: true,
             runner_resource_budget_lease_count_bucket: "10_plus",

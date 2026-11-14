@@ -321,7 +321,7 @@ async fn reusable_claim_without_generation_target_reuses_sandbox() {
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
-        .expect("missing-target reusable candidate should be claimed");
+        .expect("missing-target reusable candidate should be job");
     assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
     let claim_candidates = env.handle.claim_candidates();
     let candidate = claim_candidates
@@ -583,7 +583,7 @@ async fn hard_shutdown_during_reserved_reuse_running_status_stall_converges() {
         .await;
     assert!(
         !stopping.is_finished(),
-        "hard shutdown should wait for the claimed activation transfer"
+        "hard shutdown should wait for the job activation transfer"
     );
     tokio::time::pause();
     tokio::time::advance(Duration::from_secs(5)).await;
@@ -896,7 +896,7 @@ async fn reserved_reuse_activation_panic_recovers_claim_and_sandbox() {
     crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher(&overrides);
     let (mut config, env) =
         mock_run_config_with_overrides(test_profiles(), 2, 4096, 1, Arc::clone(&overrides));
-    config.test_hooks.outer_job_panic = Some(OuterJobPanicPoint::ClaimedActivation);
+    config.test_hooks.outer_job_panic = Some(OuterJobPanicPoint::JobActivation);
     let budget = Arc::clone(&config.capacity.budget);
     let reuse_key = RunId::new_v4().to_string();
     seed_idle_pool_with_overrides(
@@ -929,7 +929,7 @@ async fn reserved_reuse_activation_panic_recovers_claim_and_sandbox() {
         .expect("activation panic should complete the provider claim");
     assert_eq!(
         completion.error.as_deref(),
-        Some("claimed activation setup panicked")
+        Some("job activation setup panicked")
     );
     assert_eq!(completion.sandbox_id, None);
     wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
@@ -1231,7 +1231,7 @@ async fn unknown_profile_skipped() {
         "valid job should complete after unknown profile is skipped"
     );
 
-    // The bad job should never have been claimed (no completion recorded).
+    // The bad job should never have been job (no completion recorded).
     {
         let comps = env.handle.completions.lock().unwrap();
         assert!(
@@ -1266,7 +1266,7 @@ async fn duplicate_discovery_deduplicated() {
     let run_id = RunId::new_v4();
     push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
 
-    // Wait for the original job to be claimed and blocked at the sandbox gate.
+    // Wait for the original job to be job and blocked at the sandbox gate.
     let _token = wait_cancel_token(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
     wait_discover_entered(&env, Duration::from_secs(5)).await;
 

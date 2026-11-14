@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
-use super::{ClaimedJob, CompletionAuth, CompletionReportTiming, JobCandidate, JobProvider};
+use super::{CompletionAuth, CompletionReportTiming, ExecutionJob, JobCandidate, JobProvider};
 use crate::ProviderResult;
 use crate::local_queue::{LocalClaimResult, LocalDiscoveredJob, LocalQueue};
 use crate::run_cancellation::RunCancellationRegistry;
@@ -279,7 +279,7 @@ impl super::LocalJobSource for LocalProvider {
             }
         }
     }
-    async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob> {
+    async fn claim(&self, candidate: JobCandidate) -> Option<ExecutionJob> {
         let run_id = candidate.run_id();
         let partition_profile = candidate.profile_name().to_owned();
         let Some(job_file) = candidate.local_job_path().map(std::path::Path::to_path_buf) else {
@@ -347,26 +347,26 @@ impl super::LocalJobSource for LocalProvider {
         let active_input_source = req.active_input.unwrap_or(false).then(|| {
             crate::active_input::ActiveInputSource::local_queue(self.queue.clone(), run_id)
         });
-        match ClaimedJob::local_with_active_input_source(run_id, context, active_input_source) {
-            Ok(claimed) => {
+        match ExecutionJob::local_with_active_input_source(run_id, context, active_input_source) {
+            Ok(job) => {
                 self.cancel_scanner.mark_owned_claim(run_id).await;
                 self.cancel_scanner.scan_cancel_files().await;
-                info!(run_id = %run_id, "local: job claimed");
-                Some(claimed)
+                info!(run_id = %run_id, "local: admitted job");
+                Some(job)
             }
             Err(err) => {
                 let error = format!(
-                    "claimed job run_id mismatch: expected={}, context={}",
+                    "admitted job run_id mismatch: expected={}, context={}",
                     err.expected_run_id, err.context_run_id
                 );
-                warn!(run_id = %run_id, error = %error, "local: claimed job invariant violation");
+                warn!(run_id = %run_id, error = %error, "local: admitted job invariant violation");
                 let queue = self.queue.clone();
                 if let Err(e) = tokio::task::spawn_blocking(move || {
                     queue.fail_claimed_job_sync(run_id, error);
                 })
                 .await
                 {
-                    warn!(run_id = %run_id, error = %e, "local: blocking claimed-job failure cleanup failed");
+                    warn!(run_id = %run_id, error = %e, "local: blocking job-job failure cleanup failed");
                 }
                 None
             }

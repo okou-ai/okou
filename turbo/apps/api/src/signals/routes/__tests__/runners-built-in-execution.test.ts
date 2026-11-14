@@ -19,7 +19,7 @@ describe("Runner built-in and personal dispatch", () => {
         prompt: "Use the captured Auto route",
         model: "auto",
       });
-      const input = await owned.claimRunnerRun(run.runId);
+      const input = await owned.executionInput(run.runId);
       expect(input).toMatchObject({
         cliAgentType: "pi",
         billableFirewalls: ["model-provider:openrouter-codex"],
@@ -59,7 +59,7 @@ describe("Runner built-in and personal dispatch", () => {
         prompt: "Use Auto with Codex execution enabled",
         model: "auto",
       });
-      const input = await owned.claimRunnerRun(run.runId);
+      const input = await owned.executionInput(run.runId);
       expect(input).toMatchObject({
         cliAgentType: "pi",
         piModelConfig: {
@@ -85,7 +85,7 @@ describe("Runner built-in and personal dispatch", () => {
         prompt: "Use my own subscription",
         model: "gpt-6-luna",
       });
-      const input = await owned.claimRunnerRun(run.runId);
+      const input = await owned.executionInput(run.runId);
       expect(input).toMatchObject({
         cliAgentType: "pi",
         billableFirewalls: [],

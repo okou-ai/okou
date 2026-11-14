@@ -11,7 +11,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { sshConnectionsRoutes } from "../ssh-connections";
-import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
+import { createVncExecutionApi } from "./helpers/vnc-execution";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { requireVncCredentialId } from "./helpers/vnc-response";
@@ -41,7 +41,7 @@ function raw(path: string, body: unknown) {
 }
 
 describe("RSA-AES owner and private Runner boundaries", () => {
-  const claimed = createClaimedVncApi(context);
+  const claimed = createVncExecutionApi(context);
   afterEach(claimed.cleanup);
 
   it.each(VNC_RSA_AES_SECURITY_TYPES)(

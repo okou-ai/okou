@@ -16,7 +16,7 @@ import type { ApiTestUser } from "./helpers/api-bdd";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   createChatEventsFixture,
-  claimEnvironment,
+  executionEnvironment,
   eventBackedContents,
 } from "./helpers/chat-events-fixture";
 
@@ -28,7 +28,7 @@ const {
   entitledChatActor,
   configureSubscriptionPiModel,
   sendChatRunAfterPick,
-  claimChatRun,
+  runExecution,
   waitForRunStatus,
   cancelChatRun,
   sessionHeaders,
@@ -93,7 +93,7 @@ async function expectPiActivitySummary(
 
 describe("CHAT-02: model-first routing", () => {
   async function piActivityScenario(): Promise<void> {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
     const model = "gpt-6-luna";
     await configureSubscriptionPiModel(actor, {}, model);
     mockPiResourceArchiveDownloads();
@@ -104,8 +104,8 @@ describe("CHAT-02: model-first routing", () => {
       prompt,
       model,
     });
-    const claimed = await claimChatRun(runnerGroup, run.runId);
-    const memory = claimed.claim.storageManifest?.storageMounts.find(
+    const execution = await runExecution(run.runId);
+    const memory = execution.execution.storageManifest?.storageMounts.find(
       (mount) => {
         return mount.name === "memory";
       },
@@ -118,30 +118,32 @@ describe("CHAT-02: model-first routing", () => {
       missingRootPolicy: "preserveParentVersion",
       writeback: true,
     });
-    expect(claimed.claim.cliAgentType).toBe("pi");
-    expect(claimed.claim.piSessionId).toBe(run.threadId);
+    expect(execution.execution.cliAgentType).toBe("pi");
+    expect(execution.execution.piSessionId).toBe(run.threadId);
     // The first turn has no stored history, so the Sandbox starts fresh.
 
-    expect(claimed.claim.nativeContinuation).toStrictEqual({
+    expect(execution.execution.nativeContinuation).toStrictEqual({
       sessionId: null,
       generationRunId: null,
       recoveryPrompt: null,
     });
-    expect(claimed.claim.piModelConfig).toMatchObject({
+    expect(execution.execution.piModelConfig).toMatchObject({
       provider: "openai-codex",
       model: "gpt-6-luna",
     });
-    expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
-    const lunaEnvironment = claimEnvironment(claimed.claim);
+    expect(execution.execution.piLaunchConfig).toMatchObject({
+      schemaVersion: 2,
+    });
+    const lunaEnvironment = executionEnvironment(execution.execution);
     expect(lunaEnvironment.OKOU_TOKEN).toBeTruthy();
-    const lunaInstructions = claimed.claim.appendSystemPrompt;
+    const lunaInstructions = execution.execution.appendSystemPrompt;
     if (!lunaInstructions) {
       throw new Error("Expected Luna Web instructions");
     }
     expect(lunaInstructions).toContain("You are currently running inside: Web");
     expect(lunaInstructions).toContain("okou web download-file -h");
     expect(lunaInstructions).toContain("Run commands with: `okou <command>`");
-    expect(claimed.claim.prompt).toBe(prompt);
+    expect(execution.execution.prompt).toBe(prompt);
     await webhooks.requestAgentEvents(
       {
         runId: run.runId,
@@ -200,7 +202,7 @@ describe("CHAT-02: model-first routing", () => {
           },
         ],
       },
-      claimed.sandboxHeaders,
+      execution.sandboxHeaders,
       [200],
     );
     await flushWaitUntilForTest();
@@ -229,10 +231,10 @@ describe("CHAT-02: model-first routing", () => {
           cliAgentType: "pi",
           cliAgentSessionId: run.threadId,
           cliAgentSessionHistoryDisposition: "native_only",
-          storageOutputs: storageOutputs,
+          storageOutputs,
         },
       },
-      claimed.sandboxHeaders,
+      execution.sandboxHeaders,
       [200],
       undefined,
     );
@@ -261,9 +263,9 @@ describe("CHAT-02: model-first routing", () => {
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryDisposition: "native_only",
-        storageOutputs: storageOutputs,
+        storageOutputs,
       },
-      claimed.sandboxHeaders,
+      execution.sandboxHeaders,
       [200],
     );
     expect(committedOutputs.body).toStrictEqual({
@@ -277,9 +279,9 @@ describe("CHAT-02: model-first routing", () => {
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryDisposition: "native_only",
-        storageOutputs: storageOutputs,
+        storageOutputs,
       },
-      claimed.sandboxHeaders,
+      execution.sandboxHeaders,
       [200],
     );
     expect(idempotentOutputs.body).toStrictEqual(committedOutputs.body);
@@ -294,7 +296,7 @@ describe("CHAT-02: model-first routing", () => {
         cliAgentSessionId: "different-native-identity",
         cliAgentSessionHistoryDisposition: "native_only",
       },
-      claimed.sandboxHeaders,
+      execution.sandboxHeaders,
       [400],
     );
     expect(JSON.stringify(replacementOutputs.body)).toContain(
@@ -310,7 +312,7 @@ describe("CHAT-02: model-first routing", () => {
       threadId: run.threadId,
       prompt: "reject a changed native Framework",
     });
-    const failedClaim = await claimChatRun(runnerGroup, failedRun.runId);
+    const failedExecution = await runExecution(failedRun.runId);
     await webhooks.requestAgentRunOutputs(
       {
         runId: failedRun.runId,
@@ -318,7 +320,7 @@ describe("CHAT-02: model-first routing", () => {
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryDisposition: "native_only",
       },
-      failedClaim.sandboxHeaders,
+      failedExecution.sandboxHeaders,
       [400],
     );
     await webhooks.requestAgentComplete(
@@ -327,7 +329,7 @@ describe("CHAT-02: model-first routing", () => {
         exitCode: 1,
         error: "failed before native initialization",
       },
-      failedClaim.sandboxHeaders,
+      failedExecution.sandboxHeaders,
       [200],
     );
     await flushWaitUntilForTest();
@@ -337,20 +339,20 @@ describe("CHAT-02: model-first routing", () => {
       model,
       prompt: "cancel before native initialization",
     });
-    const cancelledClaim = await claimChatRun(runnerGroup, cancelledRun.runId);
+    const cancelledExecution = await runExecution(cancelledRun.runId);
     await cancelChatRun(
       actor,
       cancelledRun.runId,
-      cancelledClaim.sandboxHeaders,
+      cancelledExecution.sandboxHeaders,
     );
     const retry = await sendChatRunAfterPick(actor, {
       agentId,
       threadId: run.threadId,
       prompt: "recover Chat history after uninitialized turns",
     });
-    const retryClaim = await claimChatRun(runnerGroup, retry.runId);
-    expect(retryClaim.claim.piSessionId).toBe(run.threadId);
-    expect(retryClaim.claim.nativeContinuation).toStrictEqual({
+    const retryExecution = await runExecution(retry.runId);
+    expect(retryExecution.execution.piSessionId).toBe(run.threadId);
+    expect(retryExecution.execution.nativeContinuation).toStrictEqual({
       sessionId: null,
       generationRunId: null,
       recoveryPrompt: expect.stringContaining(
@@ -371,7 +373,7 @@ describe("CHAT-02: model-first routing", () => {
         exitCode: 1,
         error: "failure without native initialization",
       },
-      retryClaim.sandboxHeaders,
+      retryExecution.sandboxHeaders,
       [200],
     );
     await flushWaitUntilForTest();
@@ -381,8 +383,7 @@ describe("CHAT-02: model-first routing", () => {
       threadId: run.threadId,
       prompt: "retry one atomically reported Pi failure",
     });
-    const reportedFailureClaim = await claimChatRun(
-      runnerGroup,
+    const reportedFailureExecution = await runExecution(
       reportedFailureRun.runId,
     );
     const reportedFailureBody = {
@@ -397,7 +398,7 @@ describe("CHAT-02: model-first routing", () => {
     } as const;
     const reportedFailure = await webhooks.requestAgentComplete(
       reportedFailureBody,
-      reportedFailureClaim.sandboxHeaders,
+      reportedFailureExecution.sandboxHeaders,
       [200],
     );
     expect(reportedFailure.body).toStrictEqual({
@@ -408,7 +409,7 @@ describe("CHAT-02: model-first routing", () => {
     await flushWaitUntilForTest();
     const repeatedReportedFailure = await webhooks.requestAgentComplete(
       reportedFailureBody,
-      reportedFailureClaim.sandboxHeaders,
+      reportedFailureExecution.sandboxHeaders,
       [200],
     );
     expect(repeatedReportedFailure.body).toStrictEqual(reportedFailure.body);
@@ -420,10 +421,10 @@ describe("CHAT-02: model-first routing", () => {
           cliAgentType: "pi",
           cliAgentSessionId: run.threadId,
           cliAgentSessionHistoryDisposition: "native_only",
-          storageOutputs: storageOutputs,
+          storageOutputs,
         },
       },
-      claimed.sandboxHeaders,
+      execution.sandboxHeaders,
       [200],
     );
     expect(repeatedCombinedCompletion.body).toStrictEqual(
@@ -434,12 +435,12 @@ describe("CHAT-02: model-first routing", () => {
       threadId: run.threadId,
       prompt: "verify the current native generation after rejected writes",
     });
-    const probeClaim = await claimChatRun(runnerGroup, probe.runId);
-    expect(probeClaim.claim.nativeContinuation).toMatchObject({
+    const probeExecution = await runExecution(probe.runId);
+    expect(probeExecution.execution.nativeContinuation).toMatchObject({
       sessionId: run.threadId,
       generationRunId: reportedFailureRun.runId,
     });
-    await cancelChatRun(actor, probe.runId, probeClaim.sandboxHeaders);
+    await cancelChatRun(actor, probe.runId, probeExecution.sandboxHeaders);
 
     // Switching the thread to the Claude Code route must not resume the Pi
     // history; the org keeps the Pi route as its default.
@@ -451,18 +452,20 @@ describe("CHAT-02: model-first routing", () => {
       prompt: "keep an incompatible run off the Pi history",
       model: "claude-fable-5-1",
     });
-    const explicitResumeClaim = await api.executionInput(explicitResume.runId);
-    expect(explicitResumeClaim.cliAgentType).toBe("claude-code");
+    const explicitResumeExecution = await api.executionInput(
+      explicitResume.runId,
+    );
+    expect(explicitResumeExecution.cliAgentType).toBe("claude-code");
 
-    expect(explicitResumeClaim.nativeContinuation).toMatchObject({
+    expect(explicitResumeExecution.nativeContinuation).toMatchObject({
       sessionId: null,
       generationRunId: null,
     });
-    expect(explicitResumeClaim.nativeContinuation?.recoveryPrompt).toContain(
-      "okou chat messages --output-dir /tmp/okou-chat-history",
-    );
+    expect(
+      explicitResumeExecution.nativeContinuation?.recoveryPrompt,
+    ).toContain("okou chat messages --output-dir /tmp/okou-chat-history");
     await cancelChatRun(actor, explicitResume.runId, {
-      authorization: `Bearer ${explicitResumeClaim.sandboxToken}`,
+      authorization: `Bearer ${explicitResumeExecution.sandboxToken}`,
     });
   }
 

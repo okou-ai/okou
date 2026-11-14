@@ -16,7 +16,7 @@ import { SlackFileFetchError } from "../../external/slack-file-fetcher";
 import { integrationsSlackRoutes } from "../integrations-slack";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
@@ -26,7 +26,7 @@ import { settleIncludingAbort } from "../../utils";
 
 // Connecting a Slack user resolves the built-in Slack connector OAuth method.
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const claimedToken = createRunExecutionCredentials(context).okouToken;
 const store = createStore();
 
 const bdd = createBddApi(context);
@@ -658,7 +658,7 @@ describe("GET /api/integrations/slack/download-file", () => {
           }),
         );
         for (const [index, request] of requests.entries()) {
-          const claim = await scenario.claim(request.actor);
+          const execution = await scenario.launchRun(request.actor);
           await flushWaitUntilForTest();
           context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
             {
@@ -685,7 +685,7 @@ describe("GET /api/integrations/slack/download-file", () => {
           const fetches = context.mocks.slack.fetchFile.mock.calls.length;
           const response = await requestDownloadFile(
             `?file_id=${fileId}`,
-            `Bearer ${claim.token}`,
+            `Bearer ${execution.token}`,
           );
           if (!request.installation) {
             await expectErrorResponse(response, 404, "NOT_FOUND");

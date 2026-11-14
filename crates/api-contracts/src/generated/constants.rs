@@ -220,15 +220,15 @@ pub mod runners {
     pub const RUNNER_JOB_TERMINAL_HOST_SLACK_MS: u64 = 3250;
 
     /// Wire and blob metadata value for gzip-compressed resume session history.
-    /// Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.
+    /// Rust and TypeScript components use this shared contract value when negotiating session history uploads and execution publications.
     pub const SESSION_HISTORY_ENCODING_GZIP: &str = "gzip";
 
     /// Wire and blob metadata value for uncompressed resume session history.
-    /// Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.
+    /// Rust and TypeScript components use this shared contract value when negotiating session history uploads and execution publications.
     pub const SESSION_HISTORY_ENCODING_IDENTITY: &str = "identity";
 
     /// Wire and blob metadata value for zstd-compressed resume session history.
-    /// Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.
+    /// Rust and TypeScript components use this shared contract value when negotiating session history uploads and execution publications.
     pub const SESSION_HISTORY_ENCODING_ZSTD: &str = "zstd";
 
     /// Runner and guest filesystem path constants shared across Rust and TypeScript.

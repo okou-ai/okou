@@ -68,7 +68,7 @@ import {
 import { normalizeMountOverlay } from "./storage-mount-overlay";
 import { createSystemSkillsContext } from "./system-skills-context.service";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { createClaimConnectedAccounts } from "./thread-connected-accounts.signals";
+import { createExecutionConnectedAccounts } from "./thread-connected-accounts.signals";
 import { createConnectorEnvironmentSignals } from "./thread-connector-environment.signals";
 import {
   createModelProviderEnvironmentSignals,
@@ -323,7 +323,7 @@ function createExecutionConnectorContext(
   const timing$ = computed(() => {
     return new ApiDispatchTimingCollector();
   });
-  const connected = createClaimConnectedAccounts({
+  const connected = createExecutionConnectedAccounts({
     identity$: connectorIdentity$,
     targets$,
     scope$: sources.signals.connectorScope$,
@@ -331,7 +331,7 @@ function createExecutionConnectorContext(
     definitions$: sources.signals.customConnectorDefinitions$,
     connectors$: sources.signals.connectors$,
     policies$: sources.signals.permissionPolicies$,
-    features$: features$,
+    features$,
     timing$,
   });
   const bodyEnvironment$ = computed(async (get) => {

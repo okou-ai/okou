@@ -50,13 +50,13 @@ async function createRun(actor = bdd.user()) {
     prompt: "Read data",
   });
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.executionInput(run.runId);
+  const execution = await runs.executionInput(run.runId);
   return {
     actor,
     agentId: agent.agentId,
     runId: run.runId,
-    claim,
-    headers: { authorization: `Bearer ${claim.sandboxToken}` },
+    execution,
+    headers: { authorization: `Bearer ${execution.sandboxToken}` },
   };
 }
 
@@ -100,9 +100,12 @@ async function finish(run: Awaited<ReturnType<typeof createRun>>) {
 describe("Data Router accounting when a run ends", () => {
   it("totals reported request credits once at completion and keeps the service token out of the sandbox environment", async () => {
     const run = await createRun();
-    expect(run.claim.platformEnvironment.OKOU_DATA_ROUTER_URL).toBe(ROUTER);
+    expect(run.execution.platformEnvironment.OKOU_DATA_ROUTER_URL).toBe(ROUTER);
     expect(
-      JSON.stringify([run.claim.environment, run.claim.platformEnvironment]),
+      JSON.stringify([
+        run.execution.environment,
+        run.execution.platformEnvironment,
+      ]),
     ).not.toContain("router-test-service-token");
     const requestId = randomUUID();
     const secondRequestId = randomUUID();
@@ -240,7 +243,9 @@ describe("Data Router accounting when a run ends", () => {
     });
     for (const headers of [
       auth(own.actor),
-      { authorization: `Bearer ${own.claim.platformEnvironment.OKOU_TOKEN}` },
+      {
+        authorization: `Bearer ${own.execution.platformEnvironment.OKOU_TOKEN}`,
+      },
     ]) {
       const history = await accept(
         setupApp({ context, routes: dataRouterHistoryRoutes })(

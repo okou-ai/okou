@@ -24,12 +24,15 @@ describe("Claim Storage URL freshness", () => {
     await fixture.run(async () => {
       const agentId = await fixture.initializeNative();
       fixture.installObjects();
-      const writer = await fixture.claim(agentId, "Publish nonempty Memory");
+      const writer = await fixture.startExecution(
+        agentId,
+        "Publish nonempty Memory",
+      );
       expect(writer.memory.empty).toBeTruthy();
       const versionId = await fixture.publish(writer, [
         { path: "MEMORY.md", content: "A pinned Memory fact" },
       ]);
-      const cached = await fixture.claim(
+      const cached = await fixture.startExecution(
         agentId,
         "Cache the accepted version URL",
       );
@@ -49,7 +52,7 @@ describe("Claim Storage URL freshness", () => {
           model: "claude-fable-5-1",
         },
         (blocker) => {
-          fixture.registerClaim(blocker.runId, blocker.sandboxToken);
+          fixture.registerExecution(blocker.runId, blocker.sandboxToken);
           fixture.registerQueuedThread(blocker.threadId);
         },
       );
@@ -57,7 +60,7 @@ describe("Claim Storage URL freshness", () => {
       await fixture.api.configureRunnerGroup();
       const launched = await queued.launch();
       const state = await fixture.api.readRun(fixture.actor, launched.runId);
-      const refreshed = await fixture.claimQueued({
+      const refreshed = await fixture.readExecution({
         ...launched,
         status: state.status,
         createdAt: state.createdAt,
@@ -69,7 +72,7 @@ describe("Claim Storage URL freshness", () => {
       expect(refreshed.memory.archiveUrl).toBeDefined();
       expect(refreshed.memory.archiveUrl).not.toBe(cached.memory.archiveUrl);
       await fixture.cancel(refreshed);
-      const reused = await fixture.claim(
+      const reused = await fixture.startExecution(
         agentId,
         "Reuse the winning Claim URL",
       );

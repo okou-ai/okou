@@ -69,7 +69,7 @@ async fn claim_behind_retained_publication(reuse: bool, hard_stop: bool) {
         publication_waits.wait_for(|count| *count > 0),
     )
     .await
-    .expect("claimed ownership must wait for the retained writer")
+    .expect("job ownership must wait for the retained writer")
     .unwrap();
     assert_eq!(overrides.unpark_call_count(), 0);
     assert!(overrides.start_agent_process_calls().is_empty());
@@ -147,7 +147,7 @@ async fn claim_behind_retained_publication(reuse: bool, hard_stop: bool) {
         unpark.release_many(usize::MAX);
     }
     env.start_observer
-        .wait_for(Duration::from_secs(5), "confirmed claimed ownership", |event| {
+        .wait_for(Duration::from_secs(5), "confirmed job ownership", |event| {
             matches!(event, StartLoopEvent::ActiveRunStatusPublished { run_id } if *run_id == first)
                 .then_some(())
         })

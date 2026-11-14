@@ -902,7 +902,7 @@ describe("template usage Axiom transport", () => {
         agentId: owned.agentId,
         prompt: "Keep the thread busy",
       });
-      const claimed = await owned.claimChatRun(owned.runnerGroup, anchor.runId);
+      const execution = await owned.runExecution(anchor.runId);
       const sourceEventId = randomUUID();
       await owned.requestSendEvent(
         owned.actor,
@@ -923,7 +923,7 @@ describe("template usage Axiom transport", () => {
       await flushWaitUntilForTest();
       expect(templateEvents(owned.actor.orgId)).toStrictEqual([]);
       fixture.chatCallbacks.mockChatOutputEvents([]);
-      await fixture.completeChatRunOk(anchor.runId, claimed.sandboxHeaders);
+      await fixture.completeChatRunOk(anchor.runId, execution.sandboxHeaders);
       await flushWaitUntilForTest();
       const messages = await fixture.waitForThreadMessages(
         owned.actor,
@@ -959,7 +959,7 @@ describe("template usage Axiom transport", () => {
         agentId: owned.agentId,
         prompt: "Start without a template",
       });
-      const { claim } = await owned.claimChatRun(owned.runnerGroup, run.runId);
+      const { execution } = await owned.runExecution(run.runId);
       const sourceEventId = randomUUID();
       await owned.requestSendEvent(
         owned.actor,
@@ -978,30 +978,30 @@ describe("template usage Axiom transport", () => {
         [201],
       );
       const next = await fixture.api.nextSteerableInput(
-        claim.sandboxToken,
+        execution.sandboxToken,
         run.runId,
       );
       expect(next.input?.eventId).toBe(sourceEventId);
       expect(next.input?.prompt).toContain("Selected document template:");
       await expect(
-        fixture.api.nextSteerableInput(claim.sandboxToken, run.runId),
+        fixture.api.nextSteerableInput(execution.sandboxToken, run.runId),
       ).resolves.toStrictEqual(next);
       await flushWaitUntilForTest();
       expect(templateEvents(owned.actor.orgId)).toStrictEqual([]);
       await Promise.all([
         fixture.api.declareSteeredInput(
-          claim.sandboxToken,
+          execution.sandboxToken,
           run.runId,
           sourceEventId,
         ),
         fixture.api.declareSteeredInput(
-          claim.sandboxToken,
+          execution.sandboxToken,
           run.runId,
           sourceEventId,
         ),
       ]);
       await fixture.api.declareSteeredInput(
-        claim.sandboxToken,
+        execution.sandboxToken,
         run.runId,
         sourceEventId,
       );
@@ -1028,7 +1028,7 @@ describe("template usage Axiom transport", () => {
         agentId: owned.agentId,
         prompt: "Start without template volumes",
       });
-      const { claim } = await owned.claimChatRun(owned.runnerGroup, run.runId);
+      const { execution } = await owned.runExecution(run.runId);
       const sourceEventId = randomUUID();
       await owned.requestSendEvent(
         owned.actor,
@@ -1065,13 +1065,13 @@ describe("template usage Axiom transport", () => {
         [201],
       );
       const next = await fixture.api.nextSteerableInput(
-        claim.sandboxToken,
+        execution.sandboxToken,
         run.runId,
       );
       expect(next.input?.eventId).toBe(sourceEventId);
       expect(next.input?.prompt).not.toContain("Selected document template:");
       await fixture.api.declareSteeredInput(
-        claim.sandboxToken,
+        execution.sandboxToken,
         run.runId,
         sourceEventId,
       );
@@ -1221,7 +1221,7 @@ async function ownedTelemetryUpload() {
     agentId: owned.agentId,
     prompt: "Exercise Axiom error diagnostics",
   });
-  const { claim } = await owned.claimChatRun(owned.runnerGroup, runId);
+  const { execution } = await owned.runExecution(runId);
   const client = setupApp({
     context,
     routes: webhooksAgentHealthUsageTelemetryRoutes,
@@ -1231,7 +1231,7 @@ async function ownedTelemetryUpload() {
     runId,
     send: () => {
       return client.send({
-        headers: { authorization: `Bearer ${claim.sandboxToken}` },
+        headers: { authorization: `Bearer ${execution.sandboxToken}` },
         body: {
           runId,
           metrics: [
@@ -1283,11 +1283,10 @@ describe("completed chat callback failure diagnostics", () => {
         });
         await fixture.chatCallbacks.registerPushSubscription(owned.actor);
         fixture.chatCallbacks.enableVapid();
-        const { sandboxHeaders, claim } = await fixture.claimChatRun(
-          owned.runnerGroup,
+        const { sandboxHeaders, execution } = await fixture.runExecution(
           run.runId,
         );
-        owned.rememberClaim(run.runId, claim.sandboxToken);
+        owned.rememberExecution(run.runId, execution.sandboxToken);
         context.mocks.ably.presenceGet.mockRejectedValue(
           new TypeError(privateDetail, {
             cause: { code: "EPIPE", response: privateDetail },
@@ -1571,7 +1570,7 @@ describe("selected eager Axiom operation payload", () => {
     "reports %i selected decrypts with both completed intervals",
     async (expectedCount) => {
       const fixture = createChatEventsFixture(context);
-      const { actor, agentId, runnerGroup } = await fixture.entitledChatActor();
+      const { actor, agentId } = await fixture.entitledChatActor();
       await fixture.api.updateUserModelPreference(actor, "claude-fable-5-1");
       await fixture.connectors.connectManualGrant(
         actor,
@@ -1609,9 +1608,9 @@ describe("selected eager Axiom operation payload", () => {
         model: "claude-fable-5-1",
         prompt: "Verify selected eager observations",
       });
-      const claimed = await fixture.claimChatRun(runnerGroup, run.runId);
+      const execution = await fixture.runExecution(run.runId);
       const actualDecrypts = kms.decryptCalls;
-      expect(claimed.claim.environment).toMatchObject({
+      expect(execution.execution.environment).toMatchObject({
         FIGMA_TOKEN: "fixture-figma-token",
         ...(expectedCount ? { OPENAI_TOKEN: "eager-transport-token" } : {}),
         ...(expectedCount === 2
@@ -1671,7 +1670,7 @@ describe("selected eager Axiom operation payload", () => {
           );
         }),
       ).toBeTruthy();
-      await fixture.cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+      await fixture.cancelChatRun(actor, run.runId, execution.sandboxHeaders);
     },
   );
 });

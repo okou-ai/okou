@@ -1340,7 +1340,7 @@ describe("POST /api/webhooks/notion", () => {
       prompt: "Switch this automation Chat's Notion account",
     });
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.executionInput(run.runId);
+    const execution = await runsApi.executionInput(run.runId);
     onTestFinished(async () => {
       await createWebhookCallbackApi(context).requestAgentComplete(
         {
@@ -1352,11 +1352,11 @@ describe("POST /api/webhooks/notion", () => {
             cliAgentSessionHistoryDisposition: "native_only",
           },
         },
-        { authorization: `Bearer ${claim.sandboxToken}` },
+        { authorization: `Bearer ${execution.sandboxToken}` },
         [200],
       );
     });
-    const token = claim.platformEnvironment.OKOU_TOKEN;
+    const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected an Okou token from the Runner claim");
     }

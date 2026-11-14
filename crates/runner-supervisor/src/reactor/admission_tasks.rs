@@ -13,43 +13,42 @@ use tracing::info;
 
 use super::RuntimeProfile;
 use super::error::ReactorError;
-use super::finalizing_claim::{FinalizingClaimRequest, spawn_finalizing_claim};
-use super::job_discovery::recover_unconsumed_finalizing_claim;
-use super::job_discovery::{
-    AdmissionContext, DiscoveredJob, DiscoveredJobContext, DiscoveredJobProfile,
-    DiscoveredJobResult, SandboxAdmittedJob, prepare_admitted_job, prepare_discovered_job,
-    prepare_job_profile,
+use super::finalizing_activation::{FinalizingActivationRequest, spawn_finalizing_activation};
+use super::job_activation::recover_unconsumed_finalizing_activation;
+use super::job_activation::{
+    AdmissionContext, ExecutionProfile, JobActivationContext, JobActivationResult, LocalJob,
+    SandboxAdmittedJob, prepare_admitted_job, prepare_job_profile, prepare_local_job,
 };
 use super::job_spawn::JobResult;
 use crate::SharedFactory;
 use crate::executor::BlankPoolSelection;
-use crate::pre_claim_admission::{
-    AdmittedClaim, AdmittedResource, PreClaimOutcome, PreClaimRequest, SandboxAdmittedResource,
-    admit_and_claim,
+use crate::resource_admission::{
+    AdmissionRequest, AdmittedJob, AdmittedResource, LocalAdmissionOutcome,
+    SandboxAdmittedResource, admit_and_claim,
 };
-use runner_provider::{JobCandidate, LocalJobSource};
+use runner_provider::LocalJobSource;
 use runner_types::ids::RunId;
 
 // A conservative pressure bound, independent of stricter local resources.
 // Activation/recovery and completed unconsumed results retain their original slot.
-pub(super) const MAX_IN_FLIGHT_CLAIMS: usize = 4;
+pub(super) const MAX_IN_FLIGHT_ADMISSIONS: usize = 4;
 
-pub(super) struct ClaimTasks {
+pub(super) struct AdmissionTasks {
     context: Arc<AdmissionContext>,
-    tasks: FuturesUnordered<JoinHandle<ClaimTaskResult>>,
+    tasks: FuturesUnordered<JoinHandle<AdmissionTaskResult>>,
     in_flight: HashSet<RunId>,
     preparing: Option<oneshot::Receiver<()>>,
     slots: Arc<Semaphore>,
 }
 
-impl ClaimTasks {
+impl AdmissionTasks {
     pub(super) fn new(context: AdmissionContext) -> Self {
         Self {
             context: Arc::new(context),
             tasks: FuturesUnordered::new(),
             in_flight: HashSet::new(),
             preparing: None,
-            slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_CLAIMS)),
+            slots: Arc::new(Semaphore::new(MAX_IN_FLIGHT_ADMISSIONS)),
         }
     }
 
@@ -72,7 +71,7 @@ impl ClaimTasks {
         factories: &BTreeMap<String, (SharedFactory, bool)>,
     ) {
         use crate::ingress::dispatch::Disposition;
-        use crate::pre_claim_admission::{SuppliedAdmission, admit_supplied};
+        use crate::resource_admission::{SuppliedAdmission, admit_supplied};
         let Some(supplied) = work.context.take() else {
             return;
         };
@@ -80,8 +79,6 @@ impl ClaimTasks {
         if self.in_flight.contains(&run_id) {
             return;
         }
-        let candidate = JobCandidate::new(run_id, work.profile.clone())
-            .with_reuse_key(supplied.reuse_key.clone());
         let Some(profile) = prepare_job_profile(&work.profile, profiles, factories) else {
             work.settle(Disposition::Rejected);
             return;
@@ -93,8 +90,7 @@ impl ClaimTasks {
         self.tasks.push(tokio::spawn(async move {
             let admission = admit_supplied(
                 supplied,
-                PreClaimRequest {
-                    candidate,
+                AdmissionRequest {
                     profile_name: &profile.profile_name,
                     job_vcpu: profile.vcpu,
                     job_memory: profile.memory_mb,
@@ -108,15 +104,15 @@ impl ClaimTasks {
             let outcome = match admission {
                 SuppliedAdmission::Admitted(admission) => {
                     work.settle(Disposition::Accepted);
-                    prepare_claimed(*admission, profile, context).await
+                    prepare_admitted(*admission, profile, context).await
                 }
                 SuppliedAdmission::Rejected => {
                     work.settle(Disposition::Rejected);
-                    ClaimTaskOutcome::Deferred
+                    AdmissionTaskOutcome::Deferred
                 }
-                SuppliedAdmission::Unknown => ClaimTaskOutcome::Deferred,
+                SuppliedAdmission::Unknown => AdmissionTaskOutcome::Deferred,
             };
-            ClaimTaskResult {
+            AdmissionTaskResult {
                 run_id,
                 outcome,
 
@@ -125,7 +121,7 @@ impl ClaimTasks {
         }));
     }
 
-    pub(super) async fn progress(&mut self) -> Option<Result<ClaimTaskResult, JoinError>> {
+    pub(super) async fn progress(&mut self) -> Option<Result<AdmissionTaskResult, JoinError>> {
         let preparing = self.is_preparing();
         tokio::select! {
             result = self.tasks.next(), if !self.tasks.is_empty() => {
@@ -152,7 +148,7 @@ impl ClaimTasks {
 
     pub(super) fn submit(
         &mut self,
-        job: DiscoveredJob,
+        job: LocalJob,
         profiles: &BTreeMap<String, RuntimeProfile>,
         factories: &BTreeMap<String, (SharedFactory, bool)>,
         source: Arc<dyn LocalJobSource>,
@@ -165,7 +161,7 @@ impl ClaimTasks {
             info!(%run_id, "duplicate candidate already has an in-flight admission");
             return;
         }
-        let Some(job) = prepare_discovered_job(job, profiles, factories) else {
+        let Some(job) = prepare_local_job(job, profiles, factories) else {
             return;
         };
         let Ok(permit) = self.slots.clone().try_acquire_owned() else {
@@ -175,13 +171,13 @@ impl ClaimTasks {
         let context = Arc::clone(&self.context);
         let (admission_ready, ready) = oneshot::channel();
         self.preparing = Some(ready);
-        // Dropping the observer detaches accepted claim/activation work. Its
+        // Dropping the observer detaches accepted admission/activation work. Its
         // final guarded result owns recovery if Reactor disappears.
         self.tasks.push(tokio::spawn(async move {
             let resources = context.resources();
             let outcome = admit_and_claim(
-                PreClaimRequest {
-                    candidate: job.candidate,
+                job.candidate,
+                AdmissionRequest {
                     profile_name: &job.profile.profile_name,
                     job_vcpu: job.profile.vcpu,
                     job_memory: job.profile.memory_mb,
@@ -193,12 +189,12 @@ impl ClaimTasks {
             )
             .await;
             let outcome = match outcome {
-                PreClaimOutcome::Claimed(admission) => {
-                    prepare_claimed(*admission, job.profile, context).await
+                LocalAdmissionOutcome::Admitted(admission) => {
+                    prepare_admitted(*admission, job.profile, context).await
                 }
-                PreClaimOutcome::Deferred => ClaimTaskOutcome::Deferred,
+                LocalAdmissionOutcome::Deferred => AdmissionTaskOutcome::Deferred,
             };
-            ClaimTaskResult {
+            AdmissionTaskResult {
                 run_id,
                 outcome,
 
@@ -207,7 +203,7 @@ impl ClaimTasks {
         }));
     }
 
-    pub(super) async fn next(&mut self) -> Option<Result<ClaimTaskResult, JoinError>> {
+    pub(super) async fn next(&mut self) -> Option<Result<AdmissionTaskResult, JoinError>> {
         let result = self.tasks.next().await?;
         if let Ok(result) = &result {
             self.in_flight.remove(&result.run_id);
@@ -219,80 +215,80 @@ impl ClaimTasks {
     // recovery await remains owned by the bounded independently scheduled task.
     pub(super) fn consume(
         &self,
-        result: Result<ClaimTaskResult, JoinError>,
+        result: Result<AdmissionTaskResult, JoinError>,
         jobs: &mut JoinSet<JobResult>,
-    ) -> Result<DiscoveredJobResult, ClaimConsumptionError> {
-        let result = result.map_err(|_| ClaimConsumptionError::AdmissionTask)?;
+    ) -> Result<JobActivationResult, AdmissionConsumptionError> {
+        let result = result.map_err(|_| AdmissionConsumptionError::AdmissionTask)?;
         match result.outcome {
-            ClaimTaskOutcome::Prepared(result) => (*result)
+            AdmissionTaskOutcome::Prepared(result) => (*result)
                 .dispatch(&self.context.spawn_ctx, jobs)
-                .map_err(ClaimConsumptionError::Ownership),
-            ClaimTaskOutcome::Finalizing(claim) => {
-                spawn_finalizing_claim(
-                    (*claim)
+                .map_err(AdmissionConsumptionError::Ownership),
+            AdmissionTaskOutcome::Finalizing(admission) => {
+                spawn_finalizing_activation(
+                    (*admission)
                         .into_request()
-                        .map_err(ClaimConsumptionError::Ownership)?,
+                        .map_err(AdmissionConsumptionError::Ownership)?,
                     &self.context.spawn_ctx,
                     jobs,
                 );
-                Ok(DiscoveredJobResult::completed(false))
+                Ok(JobActivationResult::completed(false))
             }
-            ClaimTaskOutcome::Deferred => Ok(DiscoveredJobResult::completed(false)),
-            ClaimTaskOutcome::Failed(error) => Err(ClaimConsumptionError::Ownership(error)),
+            AdmissionTaskOutcome::Deferred => Ok(JobActivationResult::completed(false)),
+            AdmissionTaskOutcome::Failed(error) => Err(AdmissionConsumptionError::Ownership(error)),
             // Activation used to run inline: retain its existing recovery and
             // Reactor panic boundary rather than relabel it an admission error.
-            ClaimTaskOutcome::Panicked(panic) => std::panic::resume_unwind(panic),
+            AdmissionTaskOutcome::Panicked(panic) => std::panic::resume_unwind(panic),
         }
     }
 }
 
-pub(super) enum ClaimConsumptionError {
+pub(super) enum AdmissionConsumptionError {
     AdmissionTask,
     Ownership(ReactorError),
 }
 
-impl ClaimConsumptionError {
+impl AdmissionConsumptionError {
     pub(super) fn into_stopping_failure(self) -> (&'static str, ReactorError) {
         match self {
             Self::AdmissionTask => (
-                "claim admission task failure",
-                ReactorError::Internal("claim admission task failed".to_owned()),
+                "job admission task failure",
+                ReactorError::Internal("job admission task failed".to_owned()),
             ),
-            Self::Ownership(error) => ("claim result ownership failure", error),
+            Self::Ownership(error) => ("admission result ownership failure", error),
         }
     }
 }
 
-pub(super) struct ClaimTaskResult {
+pub(super) struct AdmissionTaskResult {
     run_id: RunId,
-    outcome: ClaimTaskOutcome,
+    outcome: AdmissionTaskOutcome,
 
     _permit: Option<OwnedSemaphorePermit>,
 }
 
-enum ClaimTaskOutcome {
-    Finalizing(Box<UnconsumedFinalizingClaim>),
-    Prepared(Box<DiscoveredJobResult>),
+enum AdmissionTaskOutcome {
+    Finalizing(Box<UnconsumedFinalizingActivation>),
+    Prepared(Box<JobActivationResult>),
     Deferred,
     Failed(ReactorError),
     Panicked(Box<dyn Any + Send>),
 }
 
-async fn prepare_claimed(
-    admission: AdmittedClaim,
-    profile: DiscoveredJobProfile,
+async fn prepare_admitted(
+    admission: AdmittedJob,
+    profile: ExecutionProfile,
     context: Arc<AdmissionContext>,
-) -> ClaimTaskOutcome {
-    let AdmittedClaim {
-        claimed,
+) -> AdmissionTaskOutcome {
+    let AdmittedJob {
+        job,
         resource,
         cancellation,
-        claim_returned_at,
+        admitted_at,
         blank_pool_selection,
     } = admission;
     let resource = match resource {
         AdmittedResource::Finalizing(admission) => {
-            let DiscoveredJobProfile {
+            let ExecutionProfile {
                 profile_name,
                 rootfs_hash,
                 vcpu,
@@ -301,12 +297,12 @@ async fn prepare_claimed(
                 restore_guest_state,
                 factory,
             } = profile;
-            return ClaimTaskOutcome::Finalizing(Box::new(UnconsumedFinalizingClaim {
-                request: Some(FinalizingClaimRequest {
-                    claimed,
+            return AdmissionTaskOutcome::Finalizing(Box::new(UnconsumedFinalizingActivation {
+                request: Some(FinalizingActivationRequest {
+                    job,
                     cancellation,
                     admission,
-                    claim_returned_at,
+                    admitted_at,
                     profile_name,
                     rootfs_hash,
                     vcpu,
@@ -326,14 +322,14 @@ async fn prepare_claimed(
     let spawn_ctx = &context.spawn_ctx;
     let prepared = prepare_admitted_job(
         SandboxAdmittedJob {
-            claimed,
+            job,
             resource,
             cancellation,
-            claim_returned_at,
+            admitted_at,
             blank_pool_selection,
         },
         profile,
-        DiscoveredJobContext {
+        JobActivationContext {
             budget: &spawn_ctx.budget,
             idle_pool: &spawn_ctx.idle_pool,
             status: &spawn_ctx.status,
@@ -343,27 +339,27 @@ async fn prepare_claimed(
         },
     );
     match AssertUnwindSafe(prepared).catch_unwind().await {
-        Ok(Ok(result)) => ClaimTaskOutcome::Prepared(Box::new(result)),
-        Ok(Err(error)) => ClaimTaskOutcome::Failed(error),
-        Err(panic) => ClaimTaskOutcome::Panicked(panic),
+        Ok(Ok(result)) => AdmissionTaskOutcome::Prepared(Box::new(result)),
+        Ok(Err(error)) => AdmissionTaskOutcome::Failed(error),
+        Err(panic) => AdmissionTaskOutcome::Panicked(panic),
     }
 }
 
-struct UnconsumedFinalizingClaim {
-    request: Option<FinalizingClaimRequest>,
+struct UnconsumedFinalizingActivation {
+    request: Option<FinalizingActivationRequest>,
     blank_pool_selection: Option<BlankPoolSelection>,
     context: Arc<AdmissionContext>,
 }
 
-impl UnconsumedFinalizingClaim {
-    fn into_request(mut self) -> Result<FinalizingClaimRequest, ReactorError> {
+impl UnconsumedFinalizingActivation {
+    fn into_request(mut self) -> Result<FinalizingActivationRequest, ReactorError> {
         self.request.take().ok_or_else(|| {
             ReactorError::Internal("finalizing result lost its admission before handoff".to_owned())
         })
     }
 }
 
-impl Drop for UnconsumedFinalizingClaim {
+impl Drop for UnconsumedFinalizingActivation {
     fn drop(&mut self) {
         let Some(request) = self.request.take() else {
             return;
@@ -373,9 +369,10 @@ impl Drop for UnconsumedFinalizingClaim {
         let cleanup = context.spawn_ctx.idle_destroy_tracker.clone();
         cleanup.spawn_cleanup(
             async move {
-                recover_unconsumed_finalizing_claim(request, blank_pool_selection, &context).await;
+                recover_unconsumed_finalizing_activation(request, blank_pool_selection, &context)
+                    .await;
             },
-            "unconsumed_finalizing_claim",
+            "unconsumed_finalizing_activation",
         );
     }
 }

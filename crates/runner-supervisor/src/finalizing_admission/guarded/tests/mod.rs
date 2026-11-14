@@ -74,7 +74,7 @@ struct Provider {
     completed: Mutex<Vec<(RunId, String)>>,
 }
 impl Provider {
-    async fn bind_execution(&self, run: RunId, key: Option<&str>) -> ClaimedJob {
+    async fn bind_execution(&self, run: RunId, key: Option<&str>) -> ExecutionJob {
         let mut context = execution_context_for_test(run);
         context.reuse_key = key.map(str::to_owned);
         context.sandbox_token = format!("original-claim-{run}");
@@ -86,8 +86,8 @@ impl JobProvider for Provider {
     async fn bind_supplied(
         &self,
         context: runner_types::types::ExecutionContext,
-    ) -> runner_provider::ProviderResult<ClaimedJob> {
-        Ok(ClaimedJob::supplied(context, None))
+    ) -> runner_provider::ProviderResult<ExecutionJob> {
+        Ok(ExecutionJob::supplied(context, None))
     }
     async fn complete(&self, request: CompleteRequest, auth: CompletionAuth) {
         let token = auth.into_sandbox_token(request.run_id).unwrap();
@@ -225,7 +225,7 @@ impl Fixture {
         .unwrap();
         let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
         let provider = Provider::default();
-        let claimed = provider.bind_execution(run, claim_key).await;
+        let job = provider.bind_execution(run, claim_key).await;
         Self {
             active_image: home.cache.paths().active_home_image(&home.sandbox_id),
             _dir: home._dir,
@@ -243,7 +243,7 @@ impl Fixture {
                 tracker.clone(),
             )),
             admission: Some(GuardedFinalizingAdmission::new(
-                claimed,
+                job,
                 request,
                 predecessor,
                 tracker.clone(),
@@ -282,9 +282,9 @@ impl Fixture {
             HomeCacheCheckoutResult::LockBusy
         );
     }
-    async fn complete(&self, claimed: ClaimedJob) {
+    async fn complete(&self, job: ExecutionJob) {
         let before = self.provider.completed.lock().unwrap().len();
-        let (context, auth, _) = claimed.into_parts();
+        let (context, auth, _) = job.into_parts();
         self.provider
             .complete(
                 CompleteRequest {
@@ -324,9 +324,9 @@ async fn finalizing_real_parked_and_running_delivery_transfers_actual_claim_and_
             ),
             (2, 8)
         );
-        assert_eq!(activated.claimed.context().run_id, f.run);
+        assert_eq!(activated.job.context().run_id, f.run);
         f.retained().await;
-        f.complete(activated.claimed).await;
+        f.complete(activated.job).await;
     }
 }
 
@@ -463,7 +463,7 @@ async fn finalizing_cancelled_receive_and_dropped_admission_recover_queued_real_
             Some(RetainedFinalizingResource::Handoff(_))
         ));
         f.retained().await;
-        f.complete(recovered.claimed.unwrap()).await;
+        f.complete(recovered.job.unwrap()).await;
     }
 }
 
@@ -480,7 +480,7 @@ async fn finalizing_mismatched_claim_and_predecessor_retain_resource_and_origina
             None
         } else {
             let other = f.provider.bind_execution(RunId::new_v4(), None).await;
-            admission.claimed.replace(other)
+            admission.job.replace(other)
         };
         assert!(admission.activate().await.is_err());
         assert!(admission.owner().is_some());
@@ -523,7 +523,7 @@ async fn finalizing_unpark_cancellation_failure_and_panic_preserve_claim() {
             admission.owner().unwrap().state(),
             FinalizingHandoffState::Uncertain
         );
-        assert_eq!(admission.claimed().unwrap().context().run_id, f.run);
+        assert_eq!(admission.job().unwrap().context().run_id, f.run);
         f.retained().await;
         f.complete(admission.take_claim_for_completion().unwrap())
             .await;
@@ -576,7 +576,7 @@ async fn finalizing_lost_producer_is_sticky_uncertainty_and_missing_backing_is_r
             Err(MemoryOperationError::ProducerLost)
         );
     }
-    assert_eq!(admission.claimed().unwrap().context().run_id, f.run);
+    assert_eq!(admission.job().unwrap().context().run_id, f.run);
     f.retained().await;
     f.complete(admission.take_claim_for_completion().unwrap())
         .await;
@@ -587,7 +587,7 @@ async fn finalizing_lost_producer_is_sticky_uncertainty_and_missing_backing_is_r
     let recovered = f.tracker.take_retained_finalizing_owners().unwrap();
     assert_eq!(recovered.len(), 1);
     assert!(recovered[0].delivery_uncertain);
-    assert!(recovered[0].claimed.is_none());
+    assert!(recovered[0].job.is_none());
 
     let mut missing = Fixture::new(true, None, 64).await;
     assert_eq!(
@@ -625,12 +625,12 @@ async fn finalizing_cancelled_admission_and_unknown_observation_retain_cleanup_a
             drop(release);
         }
         f.retained().await;
-        assert_eq!(admission.claimed().unwrap().context().run_id, f.run);
+        assert_eq!(admission.job().unwrap().context().run_id, f.run);
         drop(admission);
         f.tracker.close_and_wait().await;
         let mut owners = f.tracker.take_retained_finalizing_owners().unwrap();
         assert_eq!(owners.len(), 1);
-        f.complete(owners.pop().unwrap().claimed.unwrap()).await;
+        f.complete(owners.pop().unwrap().job.unwrap()).await;
     }
 }
 

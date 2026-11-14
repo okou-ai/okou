@@ -527,7 +527,7 @@ the credential ratchet, not by this allowlist.
 ### Credentials From Real Flows
 
 Obtain credentials through the real sign-in, chat send, heartbeat and Runner
-claim flow. `api/no-test-credential-forging` rejects test use of
+execution flow. `api/no-test-credential-forging` rejects test use of
 `signSandboxJwtForTests`, `signPatJwtForTests`, `signSkillImportJwtForTests`,
 `encryptSecretForTests`, `generateSandboxToken` and `verifyOkouToken`, including
 aliased, namespace and destructured access. Files that already used them are

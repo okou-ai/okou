@@ -650,9 +650,9 @@ describe("Teams chat callbacks", () => {
         text: "hold the Teams Run for steering",
       });
       await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await owner.claim(firstRunId);
+      const execution = await owner.executionInput(firstRunId);
       await expect(
-        runsApi.nextSteerableInput(claim.sandboxToken, firstRunId),
+        runsApi.nextSteerableInput(execution.sandboxToken, firstRunId),
       ).resolves.toStrictEqual({ input: null });
 
       const queuedPrompt = `steer Teams input ${fixture.teamsTenantId}`;
@@ -669,7 +669,7 @@ describe("Teams chat callbacks", () => {
         throw new Error("Expected the queued Teams steering event");
       }
       const next = await runsApi.nextSteerableInput(
-        claim.sandboxToken,
+        execution.sandboxToken,
         firstRunId,
       );
       if (!next.input) {
@@ -693,17 +693,17 @@ describe("Teams chat callbacks", () => {
       expect(next.input.prompt).not.toContain("Channel ID:");
       await expect(
         runsApi.declareSteeredInput(
-          claim.sandboxToken,
+          execution.sandboxToken,
           firstRunId,
           queuedInput.id,
         ),
       ).resolves.toStrictEqual({ outcome: "steered" });
       await expect(
-        runsApi.nextSteerableInput(claim.sandboxToken, firstRunId),
+        runsApi.nextSteerableInput(execution.sandboxToken, firstRunId),
       ).resolves.toStrictEqual({ input: null });
       await completeSandboxRun({
         runId: firstRunId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: execution.sandboxToken,
         exitCode: 0,
       });
       const completed = await runsApi.readRun(teams.actor, firstRunId);
@@ -729,7 +729,7 @@ describe("Teams chat callbacks", () => {
           if (phase === "claimed Run") {
             const runId = await runIdForPrompt(teams.actor, prompt);
             await runsApi.heartbeatRunner(runnerGroup);
-            await owner.claim(runId);
+            await owner.executionInput(runId);
           }
           throw failure;
         }),

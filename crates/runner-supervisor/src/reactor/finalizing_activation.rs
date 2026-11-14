@@ -21,17 +21,14 @@ use futures_util::FutureExt;
 use tokio::task::JoinSet;
 use tracing::info;
 
-use super::job_discovery::{
-    activation_resources, build_spawn_job_request, claimed_activation_resources,
+use super::job_activation::{
+    activation_resources, build_spawn_job_request, job_activation_resources,
 };
 use super::job_spawn::{JobResult, SpawnContext, run_job};
 #[cfg(test)]
 use super::{OuterJobPanicPoint, maybe_panic_outer_job};
 use crate::SharedFactory;
-use crate::claimed_activation::{ClaimedActivationGuard, ClaimedJobSetup, ReadyClaimedResource};
-use crate::claimed_resource_activation::{
-    ReservedActivation, ReservedActivationRequest, activate_reserved_idle,
-};
+use crate::activation::{JobActivationGuard, JobActivationSetup, ReadyExecutionResource};
 use crate::executor::{
     ExecutionFailure, FinalizingDiagnostics, FinalizingHandoffOutcome, FinalizingHandoffReason,
     RunnerPreSpawnPhase, RunnerPreSpawnTiming, validate_resume_session_id,
@@ -49,17 +46,20 @@ use crate::finalizing_admission::{
 use crate::home_image_cache::HomeImagePreparePolicy;
 use crate::idle_lifecycle::{ReservedIdleActivation, rollback_reserved_idle_for_spawn};
 use crate::idle_pool::IdleSandboxKind;
+use crate::resource_activation::{
+    ReservedActivation, ReservedActivationRequest, activate_reserved_idle,
+};
 use crate::resource_budget::BudgetLease;
 use crate::telemetry::JobTelemetry;
-use runner_provider::ClaimedJob;
+use runner_provider::ExecutionJob;
 use runner_provider::RunCancellationRegistration;
 use runner_types::types::{CompleteRequest, SandboxReuseResult};
 
-pub(super) struct FinalizingClaimRequest {
-    pub(super) claimed: ClaimedJob,
+pub(super) struct FinalizingActivationRequest {
+    pub(super) job: ExecutionJob,
     pub(super) cancellation: RunCancellationRegistration,
     pub(super) admission: FinalizingAdmission,
-    pub(super) claim_returned_at: Instant,
+    pub(super) admitted_at: Instant,
     pub(super) profile_name: String,
     pub(super) rootfs_hash: String,
     pub(super) vcpu: u32,
@@ -86,7 +86,7 @@ enum FinalizingActivation {
 }
 
 struct FinalizingPreparation<'a> {
-    claimed: &'a ClaimedJob,
+    job: &'a ExecutionJob,
     cancellation: &'a RunCancellationRegistration,
     admission: &'a mut FinalizingAdmission,
     profile_name: &'a str,
@@ -97,20 +97,23 @@ struct FinalizingPreparation<'a> {
     ctx: &'a SpawnContext,
 }
 
-pub(super) fn spawn_finalizing_claim(
-    request: FinalizingClaimRequest,
+pub(super) fn spawn_finalizing_activation(
+    request: FinalizingActivationRequest,
     ctx: &SpawnContext,
     jobs: &mut JoinSet<JobResult>,
 ) {
-    jobs.spawn(run_finalizing_claim(request, ctx.clone()));
+    jobs.spawn(run_finalizing_activation(request, ctx.clone()));
 }
 
-async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext) -> JobResult {
-    let FinalizingClaimRequest {
-        claimed,
+async fn run_finalizing_activation(
+    request: FinalizingActivationRequest,
+    ctx: SpawnContext,
+) -> JobResult {
+    let FinalizingActivationRequest {
+        job,
         cancellation,
         mut admission,
-        claim_returned_at,
+        admitted_at,
         profile_name,
         rootfs_hash,
         vcpu,
@@ -120,15 +123,15 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
         device_rate_limits,
         factory,
     } = request;
-    let run_id = claimed.context().run_id;
+    let run_id = job.context().run_id;
     let mut pre_spawn_timing =
-        RunnerPreSpawnTiming::start_at(claim_returned_at, &ctx.pre_spawn_concurrency);
+        RunnerPreSpawnTiming::start_at(admitted_at, &ctx.pre_spawn_concurrency);
     pre_spawn_timing.mark_task_enqueued();
     let started_at = Instant::now();
     let mut reserved_exact = None;
     let preparation = AssertUnwindSafe(prepare_finalizing_resource(
         FinalizingPreparation {
-            claimed: &claimed,
+            job: &job,
             cancellation: &cancellation,
             admission: &mut admission,
             profile_name: &profile_name,
@@ -157,8 +160,8 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
                 )
                 .await;
             }
-            return Ok(complete_claimed_without_sandbox(
-                claimed,
+            return Ok(complete_without_sandbox(
+                job,
                 cancellation,
                 *failure,
                 pre_spawn_timing.finalizing_diagnostics(),
@@ -177,11 +180,11 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
                 )
                 .await;
             }
-            let cancellation = complete_claimed_without_sandbox(
-                claimed,
+            let cancellation = complete_without_sandbox(
+                job,
                 cancellation,
                 ExecutionFailure::from_error(
-                    "runner panicked while preparing a claimed finalizing successor",
+                    "runner panicked while preparing a job finalizing successor",
                 ),
                 pre_spawn_timing.finalizing_diagnostics(),
                 &ctx,
@@ -194,7 +197,7 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
 
     let active_run_guard = ctx.active_runs.register(
         run_id,
-        claimed.context().reuse_key().map(str::to_owned),
+        job.context().reuse_key().map(str::to_owned),
         profile_name.clone(),
     );
     let activation = match resource {
@@ -221,11 +224,11 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
                         FinalizingHandoffOutcome::ActivationFailed,
                         Some(FinalizingHandoffReason::HandoffIdentityMismatch),
                     );
-                    return Ok(complete_claimed_without_sandbox(
-                        claimed,
+                    return Ok(complete_without_sandbox(
+                        job,
                         cancellation,
                         ExecutionFailure::from_error(
-                            "finalizing handoff identity did not match claimed successor",
+                            "finalizing handoff identity did not match job successor",
                         ),
                         pre_spawn_timing.finalizing_diagnostics(),
                         &ctx,
@@ -244,7 +247,7 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
     let mut activation_transfer_guard = None;
     let mut selected_home_source_run_id = None;
     let ready = match activation {
-        FinalizingActivation::Fresh(active_lease) => ReadyClaimedResource {
+        FinalizingActivation::Fresh(active_lease) => ReadyExecutionResource {
             reuse_entry: None,
             active_lease,
             reuse_result: SandboxReuseResult::PoolMiss,
@@ -270,8 +273,8 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
                     FinalizingHandoffOutcome::ActivationFailed,
                     Some(FinalizingHandoffReason::ActivationCancelled),
                 );
-                return Ok(complete_claimed_without_sandbox(
-                    claimed,
+                return Ok(complete_without_sandbox(
+                    job,
                     cancellation,
                     ExecutionFailure::cancelled(),
                     pre_spawn_timing.finalizing_diagnostics(),
@@ -296,7 +299,7 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
                     device_rate_limits: &device_rate_limits,
                     home_disk_mb,
                     rootfs_hash: &rootfs_hash,
-                    context: claimed.context(),
+                    context: job.context(),
                 },
                 &activation_resources(&ctx),
                 &mut pre_spawn_timing,
@@ -320,7 +323,7 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
                         pre_spawn_timing
                             .record_finalizing_handoff_outcome(FinalizingHandoffOutcome::Accepted);
                     }
-                    ReadyClaimedResource {
+                    ReadyExecutionResource {
                         reuse_entry: reuse_entry.map(|entry| *entry),
                         active_lease,
                         reuse_result,
@@ -340,8 +343,8 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
                             Some(FinalizingHandoffReason::ExactActivationFailed),
                         );
                     }
-                    let cancellation = complete_claimed_without_sandbox(
-                        claimed,
+                    let cancellation = complete_without_sandbox(
+                        job,
                         cancellation,
                         ExecutionFailure::from_error(error),
                         pre_spawn_timing.finalizing_diagnostics(),
@@ -369,10 +372,10 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
     } else {
         None
     };
-    let mut activation = ClaimedActivationGuard::new(
-        ClaimedJobSetup {
+    let mut activation = JobActivationGuard::new(
+        JobActivationSetup {
             required_home_source_run_id,
-            claimed,
+            job,
             rootfs_hash,
             cancellation,
             profile_name,
@@ -386,7 +389,7 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
             pre_spawn_timing,
             active_run_guard,
         },
-        claimed_activation_resources(&ctx),
+        job_activation_resources(&ctx),
     );
     let mut request = match AssertUnwindSafe(build_spawn_job_request(&mut activation, &ctx))
         .catch_unwind()
@@ -402,7 +405,7 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
         }
         Err(panic) => {
             if let Err(error) = activation.recover_setup_panic().await {
-                tracing::error!(%error, "claimed activation panic recovery failed");
+                tracing::error!(%error, "job activation panic recovery failed");
             }
             std::panic::resume_unwind(panic);
         }
@@ -427,7 +430,7 @@ async fn prepare_finalizing_resource(
     reserved_exact: &mut Option<ReservedIdleActivation>,
 ) -> Result<FinalizingResource, Box<ExecutionFailure>> {
     let FinalizingPreparation {
-        claimed,
+        job,
         cancellation,
         admission,
         profile_name,
@@ -437,20 +440,20 @@ async fn prepare_finalizing_resource(
         pre_spawn_timing,
         ctx,
     } = request;
-    let run_id = claimed.context().run_id;
+    let run_id = job.context().run_id;
     #[cfg(test)]
     maybe_panic_outer_job(
         ctx.outer_job_panic,
-        OuterJobPanicPoint::ClaimedWithoutSandbox,
+        OuterJobPanicPoint::AdmittedWithoutSandbox,
         run_id,
     );
-    if let Err(error) = validate_resume_session_id(claimed.context()) {
+    if let Err(error) = validate_resume_session_id(job.context()) {
         return Err(ExecutionFailure::from_error(error).into());
     }
 
     // Bound execution input owns native intent. Physical handoff alone grants
     // no native-history authority.
-    admission.native_generation_run_id = claimed
+    admission.native_generation_run_id = job
         .context()
         .native_continuation
         .as_ref()
@@ -463,7 +466,7 @@ async fn prepare_finalizing_resource(
         run_id = %run_id,
         predecessor_run_id = %admission.source_run_id,
         native_generation_matches_source = admission.native_generation_run_id.is_some(),
-        "finalizing successor claimed before sandbox publication"
+        "finalizing successor job before sandbox publication"
     );
     let selection = FinalizingSelectionRequest {
         run_id,
@@ -501,20 +504,20 @@ async fn prepare_finalizing_resource(
     select_finalizing_resource(selection, pre_spawn_timing, reserved_exact).await
 }
 
-/// Complete a claimed finalizing successor without activating a sandbox.
+/// Complete a job finalizing successor without activating a sandbox.
 ///
 /// This path is used for cancellation, preparation and activation failures, identity mismatches,
 /// and recovered panics after their resource cleanup has run. It always completes with no sandbox
 /// and flushes the supplied finalizing handoff outcome directly because no executor is running to
 /// emit that telemetry.
-async fn complete_claimed_without_sandbox(
-    claimed: ClaimedJob,
+async fn complete_without_sandbox(
+    job: ExecutionJob,
     cancellation: RunCancellationRegistration,
     failure: ExecutionFailure,
     diagnostics: Option<FinalizingDiagnostics>,
     ctx: &SpawnContext,
 ) -> RunCancellationRegistration {
-    let (context, completion_auth, active_input_source) = claimed.into_parts();
+    let (context, completion_auth, active_input_source) = job.into_parts();
     drop(active_input_source);
     let telemetry = diagnostics.map(|diagnostics| {
         let mut telemetry = JobTelemetry::new(

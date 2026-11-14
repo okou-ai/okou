@@ -20,8 +20,8 @@ interface Owner {
   readonly userId: string;
 }
 
-/** Ordinary claimed Runs only. Historical and intentionally invalid runtimes keep their own fixtures. */
-export function createClaimedVncApi(context: TestContext) {
+/** Runtime access through ordinary Run execution credentials. */
+export function createVncExecutionApi(context: TestContext) {
   const api = createVncRuntimeApi(context);
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
@@ -86,7 +86,7 @@ export function createClaimedVncApi(context: TestContext) {
     const agentToken = input.platformEnvironment.OKOU_TOKEN;
     if (!sandboxToken || !agentToken) {
       throw new Error(
-        "Expected the Runner claim to issue distinct sandbox and Agent credentials",
+        "Expected the execution to issue distinct sandbox and Agent credentials",
       );
     }
     await expect(runs.readRun(actor, runId)).resolves.toMatchObject({

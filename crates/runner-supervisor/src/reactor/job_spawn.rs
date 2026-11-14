@@ -1,6 +1,6 @@
 //! Claimed job task spawning, completion, and panic cleanup.
 //!
-//! Discovery and idle reuse decide when a claimed job should start. This module
+//! Discovery and idle reuse decide when a admitted job should start. This module
 //! owns the spawned task body: concrete executor invocation and request wiring,
 //! deferred telemetry/network-log uploads, and the outer panic boundary.
 //! The supervisor owns post-executor finalizing, completion and settlement policy.
@@ -23,8 +23,8 @@ use super::{
     maybe_panic_outer_job,
 };
 use crate::SharedFactory;
+use crate::activation::JobActivationError;
 use crate::blank_pool::BlankPoolDiagnostics;
-use crate::claimed_activation::ClaimedActivationError;
 use crate::executor::{
     self, ExecutorConfig, RunnerPreSpawnConcurrency, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
 };
@@ -42,20 +42,20 @@ use crate::ownership::RunSandbox;
 use crate::resource_budget::{BudgetLease, ResourceBudget};
 use crate::sandbox_finalization::FinalizeContext;
 #[cfg(not(test))]
-use crate::sandbox_finalization::finalize_claimed_run;
+use crate::sandbox_finalization::finalize_execution_run;
 #[cfg(test)]
-use crate::sandbox_finalization::finalize_claimed_run_with_test_hooks;
+use crate::sandbox_finalization::finalize_execution_run_with_test_hooks;
 use crate::status::StatusTracker;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::telemetry::JobTelemetry;
 use runner_lifecycle::active_runs::{ActiveRunGuard, ActiveRunReusePublisher, ActiveRuns};
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
-use runner_provider::{ClaimedJob, JobProvider};
+use runner_provider::{ExecutionJob, JobProvider};
 use runner_provider::{RunCancellationHandle, RunCancellationRegistration, RunCancellationSignals};
 use runner_types::ids::RunId;
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
-pub(super) type JobResult = Result<RunCancellationRegistration, ClaimedActivationError>;
+pub(super) type JobResult = Result<RunCancellationRegistration, JobActivationError>;
 
 /// Per-job profile parameters resolved from the profile config.
 pub(super) struct JobProfile {
@@ -108,7 +108,7 @@ pub(super) struct SpawnContext {
 }
 
 pub(super) struct SpawnJobRequest {
-    pub(super) claimed: ClaimedJob,
+    pub(super) job: ExecutionJob,
     pub(super) sandbox_id: SandboxId,
     pub(super) job_profile: JobProfile,
     pub(super) reuse_entry: Option<ReusableIdleSandbox>,
@@ -401,7 +401,7 @@ impl FinalizationPhase {
             cleanup_state,
         };
         #[cfg(not(test))]
-        let finalization_ready = finalize_claimed_run(
+        let finalization_ready = finalize_execution_run(
             sandbox,
             ActiveBudgetLease::new(active_lease),
             &mut telemetry,
@@ -409,7 +409,7 @@ impl FinalizationPhase {
         )
         .await;
         #[cfg(test)]
-        let finalization_ready = finalize_claimed_run_with_test_hooks(
+        let finalization_ready = finalize_execution_run_with_test_hooks(
             sandbox,
             ActiveBudgetLease::new(active_lease),
             &mut telemetry,
@@ -479,10 +479,10 @@ impl DeferredUploadPhase {
 
 /// Spawn a job executor task.
 ///
-/// The provider has already claimed the job and the caller has reserved
+/// The provider has already job the job and the caller has reserved
 /// resources in the budget. The spawned task runs the executor, reports
 /// completion through the supervisor, which owns the post-executor
-/// park-or-destroy decision in [`crate::sandbox_finalization::finalize_claimed_run`].
+/// park-or-destroy decision in [`crate::sandbox_finalization::finalize_execution_run`].
 ///
 /// If `reuse_entry` is `Some`, the job reuses an existing idle sandbox.
 /// Otherwise it creates a new one via the factory.
@@ -513,7 +513,7 @@ pub(super) async fn run_job(
 ) -> RunCancellationRegistration {
     let started_at = Instant::now();
     let SpawnJobRequest {
-        claimed,
+        job,
         sandbox_id,
         job_profile,
         reuse_entry,
@@ -522,7 +522,7 @@ pub(super) async fn run_job(
         active_run_guard,
     } = request;
     let active_run_reuse = active_run_guard.reuse_publisher();
-    let (context, completion_auth, active_input_source) = claimed.into_parts();
+    let (context, completion_auth, active_input_source) = job.into_parts();
     let run_id = context.run_id;
     let reuse_key = context.reuse_key().map(str::to_owned);
     let cli_agent_session_id = if executor::validate_resume_session_id(&context).is_ok() {
@@ -703,7 +703,7 @@ pub(super) async fn run_job(
         // Structural guarantee: claim (in provider) is always paired with complete.
         signal_usage_flush(run_id, &usage_flush_tx);
         let telemetry = completion_payload
-            .complete_claimed_run(
+            .complete_execution_run(
                 provider.as_ref(),
                 move || finalization.finalize(executor_result),
                 status.as_ref(),
@@ -781,7 +781,7 @@ pub(super) async fn handle_job_result(result: Option<Result<JobResult, tokio::ta
             cancellation.unregister().await;
         }
         Some(Ok(Err(error))) => {
-            error!(%error, "claimed activation job failed");
+            error!(%error, "job activation job failed");
         }
         Some(Err(e)) => {
             error!(error = %e, "job task panicked");

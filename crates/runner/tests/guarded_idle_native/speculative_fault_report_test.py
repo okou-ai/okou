@@ -118,7 +118,7 @@ class SpeculativeFaultReportTests(unittest.TestCase):
         value = self.validate()
         self.assertEqual(set(value["cases"]),fault.CASES)
         self.assertIs(value["native_speculative_callback_loss_complete"],True)
-        for key in ("inflight_unpark_or_guest_rpc_cancellation_proven", "api_claim_arbitration_proven",
+        for key in ("inflight_unpark_or_guest_rpc_cancellation_proven",
                     "full_supervisor_shutdown_proven", "memory_envelope_calibrated",
                     "production_protection_proven", "bootstrap_provenance_verified"):
             self.assertIs(value[key],False)

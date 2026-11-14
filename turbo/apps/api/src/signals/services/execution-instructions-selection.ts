@@ -9,14 +9,14 @@ export function agentInstructionsSelectionSql(singleAgent: SQL): SQL {
     SELECT CASE WHEN ${singleAgent}
       THEN COALESCE(${instructions.bundle}, ${JSON.stringify(SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE)}::jsonb)
       ELSE ${agents.instructionsBundle} END AS "instructionsBundle"
-    FROM ${agents} CROSS JOIN locked_run
-    LEFT JOIN ${instructions} ON ${and(eq(instructions.orgId, sql`locked_run."orgId"`), eq(instructions.userId, sql`locked_run."userId"`))}
+    FROM ${agents} CROSS JOIN admitted_run
+    LEFT JOIN ${instructions} ON ${and(eq(instructions.orgId, sql`admitted_run."orgId"`), eq(instructions.userId, sql`admitted_run."userId"`))}
     WHERE ${and(
-      eq(agents.id, sql`locked_run."agentId"`),
-      eq(agents.orgId, sql`locked_run."orgId"`),
+      eq(agents.id, sql`admitted_run."agentId"`),
+      eq(agents.orgId, sql`admitted_run."orgId"`),
       or(
         eq(agents.visibility, "public"),
-        eq(agents.owner, sql`locked_run."userId"`),
+        eq(agents.owner, sql`admitted_run."userId"`),
       ),
     )}
   )`;

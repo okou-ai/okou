@@ -10,10 +10,10 @@ async fn claim_attaches_active_input_source_when_requested() {
     write_job_with_active_input(dir.path(), job_id, "hello with active input");
 
     let candidate = provider.discover().await.unwrap();
-    let claimed = provider.claim(candidate).await.unwrap();
+    let job = provider.claim(candidate).await.unwrap();
 
     assert!(matches!(
-        claimed.active_input_source(),
+        job.active_input_source(),
         Some(crate::active_input::ActiveInputSource::LocalQueue(source))
             if source.run_id == job_id && source.queue.group_dir() == dir.path()
     ));
@@ -40,8 +40,8 @@ async fn claim_maps_secret_environment_into_context_and_masking() {
     );
 
     let candidate = provider.discover().await.unwrap();
-    let claimed = provider.claim(candidate).await.unwrap();
-    let ctx = claimed.context();
+    let job = provider.claim(candidate).await.unwrap();
+    let ctx = job.context();
     let environment = ctx.environment.as_ref().unwrap();
     let secret_values = ctx.secret_values.as_ref().unwrap();
     let local_secret_env_keys = ctx.local_secret_env_keys.as_ref().unwrap();

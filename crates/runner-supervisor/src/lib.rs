@@ -32,9 +32,8 @@ use runner_provider::http;
 use runner_storage::storage_cache;
 use runner_types::storage_fingerprints;
 
+pub mod activation;
 pub mod blank_pool;
-pub mod claimed_activation;
-pub mod claimed_resource_activation;
 mod duration;
 pub mod finalizing_admission;
 pub mod heartbeat;
@@ -46,10 +45,11 @@ pub mod job_lifecycle;
 mod network_log_http_adapter;
 pub mod orphan_reap;
 pub mod ownership;
-pub mod pre_claim_admission;
 #[cfg(test)]
 mod provider_test_support;
 pub mod reactor;
+pub mod resource_activation;
+pub mod resource_admission;
 pub mod sandbox_finalization;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;

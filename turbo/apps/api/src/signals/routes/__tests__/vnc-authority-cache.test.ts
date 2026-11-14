@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
+import { createVncExecutionApi } from "./helpers/vnc-execution";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
 import {
   createVncRuntimeApi,
@@ -17,7 +17,7 @@ import {
 
 const context = testContext();
 const api = createVncRuntimeApi(context);
-const claimed = createClaimedVncApi(context);
+const claimed = createVncExecutionApi(context);
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 beforeEach(initializeVncRuntimeTest);

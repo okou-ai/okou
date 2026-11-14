@@ -16,7 +16,7 @@ import { vncAccessRoutes } from "../vnc-access";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
+import { createVncExecutionApi } from "./helpers/vnc-execution";
 import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { inlineSshKey } from "./helpers/ssh-credential";
@@ -90,7 +90,7 @@ async function visibility(agentId: string, value: "public" | "private") {
 }
 
 describe("live chat VNC Run inventory", () => {
-  const claimed = createClaimedVncApi(context);
+  const claimed = createVncExecutionApi(context);
   const publicRuns = createPublicRemoteAccessRunApi(context);
   afterEach(async () => {
     await publicRuns.cleanup();
@@ -809,7 +809,7 @@ describe("live chat VNC Run inventory", () => {
       );
       await api.enableDefault(value, "vnc", connection.body.id);
       const f = await publicRuns.start(value);
-      const runtime = await publicRuns.claim(f, vncRunnerHeaders);
+      const runtime = await publicRuns.executionInput(f, vncRunnerHeaders);
       await publicRuns.finish(runtime, status);
       api.authenticate(f);
       const unavailableInventory = await accept(

@@ -69,7 +69,7 @@ fn elapsed_since_api_start_ms_rejects_seconds_shaped_start() {
 #[test]
 fn blank_pool_selection_records_one_latest_bounded_outcome() {
     let mut telemetry = new_telemetry();
-    let mut timing = RunnerPreSpawnTiming::start_after_claim();
+    let mut timing = RunnerPreSpawnTiming::start_after_admission();
     timing.record_blank_pool_selection(BlankPoolSelection::Miss(
         BlankPoolSelectionReason::EmptyInventory,
     ));
@@ -77,7 +77,7 @@ fn blank_pool_selection_records_one_latest_bounded_outcome() {
         BlankPoolSelectionReason::HeadroomReserved,
     ));
 
-    RunnerSpawnTiming::start(Some(timing)).record_claim_to_executor_start(&mut telemetry);
+    RunnerSpawnTiming::start(Some(timing)).record_admission_to_executor_start(&mut telemetry);
 
     let operations = telemetry.pending_ops_with_outcome_snapshot();
     let matching: Vec<_> = operations
@@ -874,7 +874,7 @@ async fn execute_job_fresh_path_preserves_preparation_telemetry() {
     )
     .await;
 
-    assert_lacks_action(&telemetry, "runner_claim_to_executor_start");
+    assert_lacks_action(&telemetry, "runner_admission_to_executor_start");
     assert_lacks_action(&telemetry, "runner_claim_resume_session_validation");
     assert_lacks_action(&telemetry, "runner_claim_task_schedule_wait");
     assert_action_success(&telemetry, "runner_fresh_sandbox_start", true);
@@ -914,11 +914,11 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
     .await;
 
     for action in [
-        "runner_claim_to_executor_start",
+        "runner_admission_to_executor_start",
         "runner_executor_start_to_spawn",
-        "runner_claim_to_spawn",
+        "runner_admission_to_spawn",
         "runner_executor_start_to_agent_ready",
-        "runner_claim_to_agent_ready",
+        "runner_admission_to_agent_ready",
         "runner_fresh_sandbox_prepare",
         "runner_fresh_sandbox_factory_create",
         "runner_fresh_sandbox_proxy_register",
@@ -1031,7 +1031,7 @@ async fn execute_job_attributes_overlapping_pre_spawn_work_and_releases_membersh
         .await;
 
         for action in [
-            "runner_claim_to_executor_start",
+            "runner_admission_to_executor_start",
             "runner_fresh_sandbox_prepare",
             "runner_agent_start_process",
             "api_to_spawn",
@@ -1081,7 +1081,7 @@ async fn execute_job_attributes_overlapping_pre_spawn_work_and_releases_membersh
 #[test]
 fn pre_finalization_deadline_records_bounded_handoff_outcome() {
     let mut telemetry = new_telemetry();
-    let mut timing = RunnerPreSpawnTiming::start_after_claim();
+    let mut timing = RunnerPreSpawnTiming::start_after_admission();
 
     timing.record_finalizing_handoff(
         FinalizingHandoffOutcome::PreFinalizationDeadline,
@@ -1149,7 +1149,7 @@ async fn execute_job_attributes_resource_budget_occupancy_until_agent_ready() {
         RunnerResourceBudgetLeaseCountBucket::Two,
     ));
     for action in [
-        "runner_claim_to_executor_start",
+        "runner_admission_to_executor_start",
         "runner_fresh_sandbox_prepare",
         "runner_agent_start_process",
         "api_to_spawn",
@@ -1487,11 +1487,11 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
 
     assert_reused_proxy_registration_timing(&telemetry);
     for action in [
-        "runner_claim_to_executor_start",
+        "runner_admission_to_executor_start",
         "runner_executor_start_to_spawn",
-        "runner_claim_to_spawn",
+        "runner_admission_to_spawn",
         "runner_executor_start_to_agent_ready",
-        "runner_claim_to_agent_ready",
+        "runner_admission_to_agent_ready",
         "runner_reused_sandbox_prepare",
         "runner_guest_state_restore",
         "runner_required_private_files_write",
@@ -1621,7 +1621,7 @@ async fn execution_entries_preserve_start_telemetry_on_session_rejection() {
         assert_eq!(requests.len(), 2);
         let mut expected_actions = Vec::new();
         if with_hooks {
-            expected_actions.extend(["runner_claim_to_executor_start"]);
+            expected_actions.extend(["runner_admission_to_executor_start"]);
             expected_actions.extend(
                 RUNNER_PRE_SPAWN_PHASE_CASES
                     .iter()
@@ -1828,7 +1828,7 @@ async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
     };
 
     let cancel = tokio_util::sync::CancellationToken::new();
-    let mut pre_spawn_timing = RunnerPreSpawnTiming::start_after_claim();
+    let mut pre_spawn_timing = RunnerPreSpawnTiming::start_after_admission();
     pre_spawn_timing.record_blank_pool_selection(BlankPoolSelection::Hit);
     let mut context = minimal_context();
     context.is_first_run = Some(false);
@@ -2137,9 +2137,9 @@ async fn start_process_failure_records_phase_failure_without_spawn_completion() 
     assert_action_success(&telemetry, "runner_agent_start_process", false);
     assert_action_success(&telemetry, "agent_execute", false);
     assert_lacks_action(&telemetry, "runner_executor_start_to_spawn");
-    assert_lacks_action(&telemetry, "runner_claim_to_spawn");
+    assert_lacks_action(&telemetry, "runner_admission_to_spawn");
     assert_lacks_action(&telemetry, "runner_executor_start_to_agent_ready");
-    assert_lacks_action(&telemetry, "runner_claim_to_agent_ready");
+    assert_lacks_action(&telemetry, "runner_admission_to_agent_ready");
     assert_lacks_action(&telemetry, "runner_agent_start_to_ready");
     assert_pre_spawn_concurrency_bucket(
         &telemetry,

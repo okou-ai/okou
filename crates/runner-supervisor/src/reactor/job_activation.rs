@@ -11,41 +11,41 @@ use tracing::{info, warn};
 
 use super::RuntimeProfile as ProfileConfig;
 use super::error::{ReactorError, ReactorResult};
-use super::finalizing_claim::FinalizingClaimRequest;
+use super::finalizing_activation::FinalizingActivationRequest;
 use super::job_spawn::{JobProfile, JobResult, SpawnContext, SpawnJobRequest, spawn_job};
 #[cfg(test)]
 use super::{OuterJobPanicPoint, maybe_panic_outer_job};
 use crate::SharedFactory;
-use crate::claimed_activation::{
-    ClaimedActivationError, ClaimedActivationGuard, ClaimedActivationResources, ClaimedJobSetup,
-    ReadyClaimedResource, blank_pool_selection_telemetry,
-};
-use crate::claimed_resource_activation::{
-    ActivationResources, ReservedActivation, ReservedActivationRequest, ReuseAdmissionRequest,
-    ReuseFromPoolReady, activate_reserved_idle, try_reuse_from_pool,
+use crate::activation::{
+    JobActivationError, JobActivationGuard, JobActivationResources, JobActivationSetup,
+    ReadyExecutionResource, blank_pool_selection_telemetry,
 };
 use crate::executor::{
     BlankPoolSelection, RunnerPreSpawnPhase, RunnerPreSpawnTiming, validate_resume_session_id,
 };
 use crate::idle_lifecycle::SharedIdlePool;
 use crate::lifecycle::RunnerMode;
-use crate::pre_claim_admission::{
-    PreClaimResources, SandboxAdmittedResource, rollback_sandbox_admitted_resource,
+use crate::resource_activation::{
+    ActivationResources, ReservedActivation, ReservedActivationRequest, ReuseAdmissionRequest,
+    ReuseFromPoolReady, activate_reserved_idle, try_reuse_from_pool,
+};
+use crate::resource_admission::{
+    AdmissionResources, SandboxAdmittedResource, rollback_sandbox_admitted_resource,
 };
 use crate::resource_budget::ResourceBudget;
 use crate::status::StatusTracker;
 use crate::telemetry::JobTelemetry;
-use runner_provider::{ClaimedJob, JobCandidate};
+use runner_provider::{ExecutionJob, JobCandidate};
 use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
 #[cfg(test)]
 use runner_types::ids::RunId;
 use runner_types::types::CompleteRequest;
 
-pub(super) struct DiscoveredJob {
+pub(super) struct LocalJob {
     pub(super) candidate: JobCandidate,
 }
 
-pub(super) struct DiscoveredJobProfile {
+pub(super) struct ExecutionProfile {
     pub(super) profile_name: String,
     pub(super) rootfs_hash: String,
     pub(super) vcpu: u32,
@@ -55,17 +55,17 @@ pub(super) struct DiscoveredJobProfile {
     pub(super) factory: SharedFactory,
 }
 
-pub(super) struct PreparedDiscoveredJob {
+pub(super) struct PreparedLocalJob {
     pub(super) candidate: JobCandidate,
-    pub(super) profile: DiscoveredJobProfile,
+    pub(super) profile: ExecutionProfile,
 }
 
-/// Ordinary claimed custody, excluding the specialized finalizing successor.
+/// Ordinary job custody, excluding the specialized finalizing successor.
 pub(super) struct SandboxAdmittedJob {
-    pub(super) claimed: ClaimedJob,
+    pub(super) job: ExecutionJob,
     pub(super) resource: SandboxAdmittedResource,
     pub(super) cancellation: RunCancellationRegistration,
-    pub(super) claim_returned_at: Instant,
+    pub(super) admitted_at: Instant,
     pub(super) blank_pool_selection: Option<BlankPoolSelection>,
 }
 
@@ -76,8 +76,8 @@ pub(super) struct AdmissionContext {
 }
 
 impl AdmissionContext {
-    pub(super) fn resources(&self) -> PreClaimResources<'_> {
-        PreClaimResources {
+    pub(super) fn resources(&self) -> AdmissionResources<'_> {
+        AdmissionResources {
             active_runs: &self.spawn_ctx.active_runs,
             idle_pool: &self.spawn_ctx.idle_pool,
             status: &self.spawn_ctx.status,
@@ -92,7 +92,7 @@ impl AdmissionContext {
     }
 }
 
-pub(super) struct DiscoveredJobContext<'a> {
+pub(super) struct JobActivationContext<'a> {
     pub(super) budget: &'a Arc<ResourceBudget>,
     pub(super) idle_pool: &'a SharedIdlePool,
     pub(super) status: &'a Arc<StatusTracker>,
@@ -101,12 +101,12 @@ pub(super) struct DiscoveredJobContext<'a> {
     pub(super) spawn_ctx: &'a SpawnContext,
 }
 
-pub(super) struct DiscoveredJobResult {
+pub(super) struct JobActivationResult {
     pub(super) needs_reuse_state_refresh: bool,
-    prepared: Option<Box<ClaimedActivationGuard>>,
+    prepared: Option<Box<JobActivationGuard>>,
 }
 
-impl DiscoveredJobResult {
+impl JobActivationResult {
     pub(super) fn completed(needs_reuse_state_refresh: bool) -> Self {
         Self {
             needs_reuse_state_refresh,
@@ -156,8 +156,8 @@ pub(super) fn activation_resources(ctx: &SpawnContext) -> ActivationResources<'_
     }
 }
 
-fn pre_claim_resources<'a>(ctx: &'a DiscoveredJobContext<'_>) -> PreClaimResources<'a> {
-    PreClaimResources {
+fn admission_resources<'a>(ctx: &'a JobActivationContext<'_>) -> AdmissionResources<'a> {
+    AdmissionResources {
         active_runs: &ctx.spawn_ctx.active_runs,
         idle_pool: ctx.idle_pool,
         status: ctx.status,
@@ -171,19 +171,19 @@ fn pre_claim_resources<'a>(ctx: &'a DiscoveredJobContext<'_>) -> PreClaimResourc
     }
 }
 
-pub(super) fn prepare_discovered_job(
-    job: DiscoveredJob,
+pub(super) fn prepare_local_job(
+    job: LocalJob,
     profiles: &BTreeMap<String, ProfileConfig>,
     factories: &BTreeMap<String, (SharedFactory, bool)>,
-) -> Option<PreparedDiscoveredJob> {
-    let DiscoveredJob { candidate } = job;
+) -> Option<PreparedLocalJob> {
+    let LocalJob { candidate } = job;
     let run_id = candidate.run_id();
     let profile_name = candidate.profile_name();
     let Some(profile) = prepare_job_profile(profile_name, profiles, factories) else {
         warn!(run_id = %run_id, profile = %profile_name, "unknown profile or missing factory, skipping");
         return None;
     };
-    Some(PreparedDiscoveredJob { candidate, profile })
+    Some(PreparedLocalJob { candidate, profile })
 }
 
 /// Profile lookup shared by discovery and authenticated complete-input intake.
@@ -192,10 +192,10 @@ pub(super) fn prepare_job_profile(
     profile_name: &str,
     profiles: &BTreeMap<String, ProfileConfig>,
     factories: &BTreeMap<String, (SharedFactory, bool)>,
-) -> Option<DiscoveredJobProfile> {
+) -> Option<ExecutionProfile> {
     let profile = profiles.get(profile_name)?;
     let (factory, restore_guest_state) = factories.get(profile_name)?;
-    Some(DiscoveredJobProfile {
+    Some(ExecutionProfile {
         profile_name: profile_name.to_owned(),
         rootfs_hash: profile.rootfs_hash.clone(),
         vcpu: profile.vcpu,
@@ -208,11 +208,11 @@ pub(super) fn prepare_job_profile(
 
 pub(super) async fn prepare_admitted_job(
     admission: SandboxAdmittedJob,
-    profile: DiscoveredJobProfile,
-    mut ctx: DiscoveredJobContext<'_>,
-) -> ReactorResult<DiscoveredJobResult> {
-    let run_id = admission.claimed.context().run_id;
-    let DiscoveredJobProfile {
+    profile: ExecutionProfile,
+    mut ctx: JobActivationContext<'_>,
+) -> ReactorResult<JobActivationResult> {
+    let run_id = admission.job.context().run_id;
+    let ExecutionProfile {
         profile_name,
         rootfs_hash: job_rootfs_hash,
         vcpu: job_vcpu,
@@ -225,43 +225,43 @@ pub(super) async fn prepare_admitted_job(
     let factory = &factory;
     let device_rate_limits = ctx.spawn_ctx.device_rate_limits.clone();
     let SandboxAdmittedJob {
-        claimed,
+        job,
         resource,
         cancellation,
-        claim_returned_at,
+        admitted_at,
         blank_pool_selection,
     } = admission;
     let mut pre_spawn_timing =
-        RunnerPreSpawnTiming::start_at(claim_returned_at, &ctx.spawn_ctx.pre_spawn_concurrency);
+        RunnerPreSpawnTiming::start_at(admitted_at, &ctx.spawn_ctx.pre_spawn_concurrency);
     if let Some(selection) = blank_pool_selection {
         pre_spawn_timing.record_blank_pool_selection(selection);
     }
     let started_at = Instant::now();
-    let resume_session_error = validate_resume_session_id(claimed.context()).err();
+    let resume_session_error = validate_resume_session_id(job.context()).err();
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::ResumeSessionValidation, started_at);
     if let Some(error) = resume_session_error {
         let needs_reuse_state_refresh = matches!(&resource, SandboxAdmittedResource::Reusable(_));
-        complete_claimed_without_sandbox(
-            claimed,
+        complete_without_sandbox(
+            job,
             cancellation,
             resource,
-            ClaimedFailureDiagnostics::from_timing(&pre_spawn_timing),
+            ActivationFailureDiagnostics::from_timing(&pre_spawn_timing),
             crate::executor::ExecutionFailure::from_error(error),
             &mut ctx,
         )
         .await;
-        return Ok(DiscoveredJobResult::completed(needs_reuse_state_refresh));
+        return Ok(JobActivationResult::completed(needs_reuse_state_refresh));
     }
-    info!(run_id = %run_id, profile = %profile_name, "job claimed, spawning executor");
+    info!(run_id = %run_id, profile = %profile_name, "admitted job, spawning executor");
     let started_at = Instant::now();
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::DeviceRateLimits, started_at);
 
-    // Hide the claimed reuse key from heartbeats before unpark or fallback
+    // Hide the job reuse key from heartbeats before unpark or fallback
     // cleanup can yield. Otherwise a concurrent heartbeat could briefly
     // advertise stale home-cache state for an active run.
     let active_run_guard = ctx.spawn_ctx.active_runs.register(
         run_id,
-        claimed.context().reuse_key().map(str::to_owned),
+        job.context().reuse_key().map(str::to_owned),
         profile_name.clone(),
     );
     let cancellation_handle = cancellation.handle();
@@ -289,7 +289,7 @@ pub(super) async fn prepare_admitted_job(
                     device_rate_limits: &device_rate_limits,
                     home_disk_mb: job_home_disk_mb,
                     rootfs_hash: &job_rootfs_hash,
-                    context: claimed.context(),
+                    context: job.context(),
                     job_lease,
                 },
                 &activation_resources(ctx.spawn_ctx),
@@ -300,17 +300,17 @@ pub(super) async fn prepare_admitted_job(
             {
                 Ok(ready) => ready,
                 Err(failure) => {
-                    let completion = complete_claimed_failure(
-                        claimed,
+                    let completion = complete_execution_failure(
+                        job,
                         cancellation,
-                        ClaimedFailureDiagnostics::from_timing(&pre_spawn_timing),
+                        ActivationFailureDiagnostics::from_timing(&pre_spawn_timing),
                         crate::executor::ExecutionFailure::from_error(failure.error),
                         ctx.spawn_ctx,
                     )
                     .await;
                     drop(active_run_guard);
                     completion.flush_telemetry().await;
-                    return Ok(DiscoveredJobResult::completed(true));
+                    return Ok(JobActivationResult::completed(true));
                 }
             };
             (
@@ -327,16 +327,16 @@ pub(super) async fn prepare_admitted_job(
             if cancellation_handle.is_cancelled() {
                 drop(transfer_guard);
                 drop(active_run_guard);
-                complete_claimed_without_sandbox(
-                    claimed,
+                complete_without_sandbox(
+                    job,
                     cancellation,
                     SandboxAdmittedResource::Reusable(reservation),
-                    ClaimedFailureDiagnostics::from_timing(&pre_spawn_timing),
+                    ActivationFailureDiagnostics::from_timing(&pre_spawn_timing),
                     crate::executor::ExecutionFailure::cancelled(),
                     &mut ctx,
                 )
                 .await;
-                return Ok(DiscoveredJobResult::completed(true));
+                return Ok(JobActivationResult::completed(true));
             }
             match activate_reserved_idle(
                 reservation,
@@ -347,7 +347,7 @@ pub(super) async fn prepare_admitted_job(
                     device_rate_limits: &device_rate_limits,
                     home_disk_mb: job_home_disk_mb,
                     rootfs_hash: &job_rootfs_hash,
-                    context: claimed.context(),
+                    context: job.context(),
                 },
                 &activation_resources(ctx.spawn_ctx),
                 &mut pre_spawn_timing,
@@ -375,36 +375,36 @@ pub(super) async fn prepare_admitted_job(
                     drop(transfer_guard);
                     let failure = crate::executor::ExecutionFailure::from_error(error);
                     if let Some(budget_lease) = budget_lease {
-                        complete_claimed_without_sandbox(
-                            claimed,
+                        complete_without_sandbox(
+                            job,
                             cancellation,
                             SandboxAdmittedResource::Fresh(budget_lease),
-                            ClaimedFailureDiagnostics::from_timing(&pre_spawn_timing),
+                            ActivationFailureDiagnostics::from_timing(&pre_spawn_timing),
                             failure,
                             &mut ctx,
                         )
                         .await;
                     } else {
-                        let completion = complete_claimed_failure(
-                            claimed,
+                        let completion = complete_execution_failure(
+                            job,
                             cancellation,
-                            ClaimedFailureDiagnostics::from_timing(&pre_spawn_timing),
+                            ActivationFailureDiagnostics::from_timing(&pre_spawn_timing),
                             failure,
                             ctx.spawn_ctx,
                         )
                         .await;
                         completion.flush_telemetry().await;
                     }
-                    return Ok(DiscoveredJobResult::completed(true));
+                    return Ok(JobActivationResult::completed(true));
                 }
             }
         }
     };
 
-    let mut activation = ClaimedActivationGuard::new(
-        ClaimedJobSetup {
+    let mut activation = JobActivationGuard::new(
+        JobActivationSetup {
             required_home_source_run_id: None,
-            claimed,
+            job,
             rootfs_hash: job_rootfs_hash,
             cancellation,
             profile_name,
@@ -414,7 +414,7 @@ pub(super) async fn prepare_admitted_job(
             restore_guest_state: *restore_guest_state,
             device_rate_limits,
             factory: Arc::clone(factory),
-            resource: ReadyClaimedResource {
+            resource: ReadyExecutionResource {
                 reuse_entry,
                 active_lease,
                 reuse_result,
@@ -423,7 +423,7 @@ pub(super) async fn prepare_admitted_job(
             pre_spawn_timing,
             active_run_guard,
         },
-        claimed_activation_resources(ctx.spawn_ctx),
+        job_activation_resources(ctx.spawn_ctx),
     );
     match AssertUnwindSafe(prepare_spawn_job_request(&mut activation, ctx.spawn_ctx))
         .catch_unwind()
@@ -438,17 +438,17 @@ pub(super) async fn prepare_admitted_job(
                 .finish()
                 .await;
             drop(activation_transfer_guard);
-            return Ok(DiscoveredJobResult::completed(true));
+            return Ok(JobActivationResult::completed(true));
         }
         Err(panic) => {
             if let Err(error) = activation.recover_setup_panic().await {
-                tracing::error!(%error, "claimed activation panic recovery failed");
+                tracing::error!(%error, "job activation panic recovery failed");
             }
             drop(activation_transfer_guard);
             std::panic::resume_unwind(panic);
         }
     };
-    let result = DiscoveredJobResult {
+    let result = JobActivationResult {
         needs_reuse_state_refresh,
         prepared: Some(Box::new(activation)),
     };
@@ -458,8 +458,8 @@ pub(super) async fn prepare_admitted_job(
     Ok(result)
 }
 
-pub(super) fn claimed_activation_resources(ctx: &SpawnContext) -> ClaimedActivationResources {
-    ClaimedActivationResources {
+pub(super) fn job_activation_resources(ctx: &SpawnContext) -> JobActivationResources {
+    JobActivationResources {
         provider: Arc::clone(&ctx.provider),
         exec_config: Arc::clone(&ctx.exec_config),
         status: Arc::clone(&ctx.status),
@@ -470,16 +470,16 @@ pub(super) fn claimed_activation_resources(ctx: &SpawnContext) -> ClaimedActivat
 }
 
 async fn prepare_spawn_job_request(
-    activation: &mut ClaimedActivationGuard,
+    activation: &mut JobActivationGuard,
     ctx: &SpawnContext,
-) -> Result<(), ClaimedActivationError> {
+) -> Result<(), JobActivationError> {
     activation.record_resource_budget_occupancy(&ctx.budget)?;
     #[cfg(test)]
-    let run_id = activation.setup()?.claimed.context().run_id;
+    let run_id = activation.setup()?.job.context().run_id;
     #[cfg(test)]
     maybe_panic_outer_job(
         ctx.outer_job_panic,
-        OuterJobPanicPoint::ClaimedActivation,
+        OuterJobPanicPoint::JobActivation,
         run_id,
     );
     activation.publish_active_status().await?;
@@ -489,13 +489,13 @@ async fn prepare_spawn_job_request(
 }
 
 fn finish_spawn_job_request(
-    activation: &mut ClaimedActivationGuard,
+    activation: &mut JobActivationGuard,
     ctx: &SpawnContext,
-) -> Result<SpawnJobRequest, ClaimedActivationError> {
+) -> Result<SpawnJobRequest, JobActivationError> {
     let sandbox_id = activation.sandbox_id();
-    let ClaimedJobSetup {
+    let JobActivationSetup {
         required_home_source_run_id,
-        claimed,
+        job,
         rootfs_hash,
         cancellation,
         profile_name,
@@ -509,7 +509,7 @@ fn finish_spawn_job_request(
         pre_spawn_timing,
         active_run_guard,
     } = activation.take_setup_after_status()?;
-    let ReadyClaimedResource {
+    let ReadyExecutionResource {
         reuse_entry,
         active_lease,
         reuse_result,
@@ -518,12 +518,12 @@ fn finish_spawn_job_request(
     drop(idle_snapshot);
 
     let home_image_prepare_policy = if ctx.exec_config.home_cache.is_some()
-        && claimed.context().reuse_key().is_some_and(|key| {
+        && job.context().reuse_key().is_some_and(|key| {
             ctx.home_cache_snapshot
                 .has_compatible_home_hint(key, &profile_name)
         }) {
         crate::home_image_cache::HomeImagePreparePolicy::TryCacheWithLockWait
-    } else if claimed.is_supplied() {
+    } else if job.is_supplied() {
         // Assigned direct work can check a ready home without waiting for an
         // unknown owner; advisory inventory need not observe every publication.
         crate::home_image_cache::HomeImagePreparePolicy::TryCacheWithoutLockWait
@@ -532,7 +532,7 @@ fn finish_spawn_job_request(
     };
 
     Ok(SpawnJobRequest {
-        claimed,
+        job,
         sandbox_id,
         job_profile: JobProfile {
             required_home_source_run_id,
@@ -555,26 +555,26 @@ fn finish_spawn_job_request(
     })
 }
 
-async fn complete_claimed_without_sandbox(
-    claimed: ClaimedJob,
+async fn complete_without_sandbox(
+    job: ExecutionJob,
     cancellation: RunCancellationRegistration,
     resource: SandboxAdmittedResource,
-    diagnostics: ClaimedFailureDiagnostics,
+    diagnostics: ActivationFailureDiagnostics,
     failure: crate::executor::ExecutionFailure,
-    ctx: &mut DiscoveredJobContext<'_>,
+    ctx: &mut JobActivationContext<'_>,
 ) {
     let completion =
-        complete_claimed_failure(claimed, cancellation, diagnostics, failure, ctx.spawn_ctx).await;
-    rollback_sandbox_admitted_resource(resource, &pre_claim_resources(ctx)).await;
+        complete_execution_failure(job, cancellation, diagnostics, failure, ctx.spawn_ctx).await;
+    rollback_sandbox_admitted_resource(resource, &admission_resources(ctx)).await;
     completion.flush_telemetry().await;
 }
 
 #[derive(Clone, Copy)]
-struct ClaimedFailureDiagnostics {
+struct ActivationFailureDiagnostics {
     blank_pool_selection: Option<BlankPoolSelection>,
 }
 
-impl ClaimedFailureDiagnostics {
+impl ActivationFailureDiagnostics {
     fn from_timing(timing: &RunnerPreSpawnTiming) -> Self {
         Self {
             blank_pool_selection: timing.blank_pool_selection(),
@@ -582,11 +582,11 @@ impl ClaimedFailureDiagnostics {
     }
 }
 
-struct ClaimedFailureCompletion {
+struct ActivationFailureCompletion {
     telemetry: Option<JobTelemetry>,
 }
 
-impl ClaimedFailureCompletion {
+impl ActivationFailureCompletion {
     async fn flush_telemetry(self) {
         if let Some(telemetry) = self.telemetry {
             telemetry.flush().await;
@@ -594,14 +594,14 @@ impl ClaimedFailureCompletion {
     }
 }
 
-async fn complete_claimed_failure(
-    claimed: ClaimedJob,
+async fn complete_execution_failure(
+    job: ExecutionJob,
     cancellation: RunCancellationRegistration,
-    diagnostics: ClaimedFailureDiagnostics,
+    diagnostics: ActivationFailureDiagnostics,
     failure: crate::executor::ExecutionFailure,
     ctx: &SpawnContext,
-) -> ClaimedFailureCompletion {
-    let (context, completion_auth, active_input_source) = claimed.into_parts();
+) -> ActivationFailureCompletion {
+    let (context, completion_auth, active_input_source) = job.into_parts();
     let run_id = context.run_id;
     drop(active_input_source);
     let telemetry = blank_pool_selection_telemetry(
@@ -622,33 +622,33 @@ async fn complete_claimed_failure(
         )
         .await;
     cancellation.unregister().await;
-    ClaimedFailureCompletion { telemetry }
+    ActivationFailureCompletion { telemetry }
 }
 
 pub(super) async fn build_spawn_job_request(
-    activation: &mut ClaimedActivationGuard,
+    activation: &mut JobActivationGuard,
     ctx: &SpawnContext,
-) -> Result<SpawnJobRequest, ClaimedActivationError> {
+) -> Result<SpawnJobRequest, JobActivationError> {
     prepare_spawn_job_request(activation, ctx).await?;
     finish_spawn_job_request(activation, ctx)
 }
 
-pub(super) async fn recover_unconsumed_finalizing_claim(
-    request: FinalizingClaimRequest,
+pub(super) async fn recover_unconsumed_finalizing_activation(
+    request: FinalizingActivationRequest,
     blank_pool_selection: Option<BlankPoolSelection>,
     ctx: &AdmissionContext,
 ) {
-    let FinalizingClaimRequest {
-        claimed,
+    let FinalizingActivationRequest {
+        job,
         cancellation,
         admission,
         ..
     } = request;
-    warn!(run_id = %claimed.context().run_id, "claim result lost its reactor owner; completing without sandbox");
-    let completion = complete_claimed_failure(
-        claimed,
+    warn!(run_id = %job.context().run_id, "admitted job lost its reactor owner; completing without sandbox");
+    let completion = complete_execution_failure(
+        job,
         cancellation,
-        ClaimedFailureDiagnostics {
+        ActivationFailureDiagnostics {
             blank_pool_selection,
         },
         crate::executor::ExecutionFailure::cancelled(),

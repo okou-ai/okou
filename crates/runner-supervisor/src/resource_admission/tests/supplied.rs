@@ -32,7 +32,7 @@ async fn existing_run_registration_guards_supplied_work_without_http_history() {
         BlankPoolReplenisher::new(&BTreeMap::new(), &BTreeMap::new(), &budget, 0, None)
             .diagnostics();
     let active_runs = runner_lifecycle::active_runs::ActiveRuns::new(Arc::clone(&notify));
-    let ctx = PreClaimResources {
+    let ctx = AdmissionResources {
         active_runs: &active_runs,
         idle_pool: &pool,
         status: &status,
@@ -55,8 +55,7 @@ async fn existing_run_registration_guards_supplied_work_without_http_history() {
         Duration::from_secs(1),
         admit_supplied(
             context,
-            PreClaimRequest {
-                candidate: JobCandidate::new(run_id, "vm0/default".into()),
+            AdmissionRequest {
                 profile_name: "vm0/default",
                 job_vcpu: 2,
                 job_memory: 4096,

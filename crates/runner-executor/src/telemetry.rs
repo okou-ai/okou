@@ -105,7 +105,7 @@ impl OomEvidenceUploadFailure {
 /// Actual startup resource after preparation settles.
 pub(crate) use runner_types::types::SandboxStartupPath as RunnerStartupPath;
 
-/// Inclusive post-claim startup concurrency captured when a job enters timing.
+/// Inclusive post-admission startup concurrency captured when a job enters timing.
 ///
 /// Each job remains a member until its timing is consumed after Agent readiness
 /// or dropped on early exit, including time after its guest process has spawned.

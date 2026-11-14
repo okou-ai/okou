@@ -82,16 +82,16 @@ describe("builtin MCP Run admission", () => {
       prompt: "Find out which MCP connectors are authorized",
     });
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.executionInput(run.runId);
-    expect(claim.appendSystemPrompt).toContain(
+    const execution = await runs.executionInput(run.runId);
+    expect(execution.appendSystemPrompt).toContain(
       "The following MCP connectors are authorized for this Agent:",
     );
-    expect(claim.appendSystemPrompt).toContain("- `manual-mcp`");
-    expect(claim.appendSystemPrompt).not.toContain("- `public-mcp`");
-    expect(claim.appendSystemPrompt).not.toContain("- `github`");
-    expect(claim.connectorRuntimeTargets).toStrictEqual([]);
-    expect(claim.environment).not.toHaveProperty("MCP_API_KEY");
-    const token = claim.platformEnvironment.OKOU_TOKEN;
+    expect(execution.appendSystemPrompt).toContain("- `manual-mcp`");
+    expect(execution.appendSystemPrompt).not.toContain("- `public-mcp`");
+    expect(execution.appendSystemPrompt).not.toContain("- `github`");
+    expect(execution.connectorRuntimeTargets).toStrictEqual([]);
+    expect(execution.environment).not.toHaveProperty("MCP_API_KEY");
+    const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the Run authentication context");
     }
@@ -150,32 +150,34 @@ describe("builtin MCP Run admission", () => {
       replacementAccount.id,
     );
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.executionInput(run.runId);
-    expect(claim.environment).not.toHaveProperty("MCP_API_KEY");
-    expect(claim.platformEnvironment).not.toHaveProperty("MCP_API_KEY");
-    expect(claim.secretConnectorMap ?? {}).not.toHaveProperty("MCP_API_KEY");
-    expect(claim.secretConnectorMetadataMap ?? {}).not.toHaveProperty(
+    const execution = await runs.executionInput(run.runId);
+    expect(execution.environment).not.toHaveProperty("MCP_API_KEY");
+    expect(execution.platformEnvironment).not.toHaveProperty("MCP_API_KEY");
+    expect(execution.secretConnectorMap ?? {}).not.toHaveProperty(
       "MCP_API_KEY",
     );
-    expect(claim.secretValues).not.toContain("admitted-mcp-token");
-    expect(claim.secretValues).not.toContain("new-default-mcp-token");
-    expect(claim.firewalls).toStrictEqual(
+    expect(execution.secretConnectorMetadataMap ?? {}).not.toHaveProperty(
+      "MCP_API_KEY",
+    );
+    expect(execution.secretValues).not.toContain("admitted-mcp-token");
+    expect(execution.secretValues).not.toContain("new-default-mcp-token");
+    expect(execution.firewalls).toStrictEqual(
       expect.arrayContaining([
         { kind: "builtin", name: "public-mcp", sourceId: publicAccountId },
         { kind: "builtin", name: "manual-mcp", sourceId: admittedAccount.id },
       ]),
     );
-    expect(claim.networkPolicies?.["manual-mcp"]).toStrictEqual({
+    expect(execution.networkPolicies?.["manual-mcp"]).toStrictEqual({
       allow: [],
       deny: [],
       ask: [],
       unknownPolicy: "allow",
     });
-    expect(claim.appendSystemPrompt).toContain("# MCP Connectors");
-    expect(claim.appendSystemPrompt).toContain("`manual-mcp`");
-    expect(claim.appendSystemPrompt).toContain("`public-mcp`");
+    expect(execution.appendSystemPrompt).toContain("# MCP Connectors");
+    expect(execution.appendSystemPrompt).toContain("`manual-mcp`");
+    expect(execution.appendSystemPrompt).toContain("`public-mcp`");
     const mountPaths =
-      claim.storageManifest?.storageMounts.map((mount) => {
+      execution.storageManifest?.storageMounts.map((mount) => {
         return mount.mountPath;
       }) ?? [];
     expect(
@@ -183,8 +185,8 @@ describe("builtin MCP Run admission", () => {
         return path.endsWith("/manual-mcp") || path.endsWith("/public-mcp");
       }),
     ).toBeFalsy();
-    const token = claim.platformEnvironment.OKOU_TOKEN;
-    if (!token || !claim.encryptedSecrets) {
+    const token = execution.platformEnvironment.OKOU_TOKEN;
+    if (!token || !execution.encryptedSecrets) {
       throw new Error("Expected the admitted Run authentication context");
     }
     const discovery = await accept(
@@ -210,10 +212,11 @@ describe("builtin MCP Run admission", () => {
       ]),
     );
     const authBody = {
-      encryptedSecrets: claim.encryptedSecrets,
+      encryptedSecrets: execution.encryptedSecrets,
       authHeaders: { Authorization: `Bearer ${secretTemplate("MCP_API_KEY")}` },
-      secretConnectorMap: claim.secretConnectorMap ?? undefined,
-      secretConnectorMetadataMap: claim.secretConnectorMetadataMap ?? undefined,
+      secretConnectorMap: execution.secretConnectorMap ?? undefined,
+      secretConnectorMetadataMap:
+        execution.secretConnectorMetadataMap ?? undefined,
       matchedFirewall: {
         name: "manual-mcp",
         apiId: "manual-mcp:0",
@@ -225,7 +228,7 @@ describe("builtin MCP Run admission", () => {
     const authorizationTime = now();
     mockNow(authorizationTime);
     const auth = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       authBody,
       [200],
     );
@@ -235,7 +238,7 @@ describe("builtin MCP Run admission", () => {
     });
 
     const collidingAliasAuth = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       {
         ...authBody,
         encryptedSecrets: firewall.encryptedSecretsBody({
@@ -256,7 +259,7 @@ describe("builtin MCP Run admission", () => {
       admittedAccount.id,
     );
     const missingAccountAuth = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       authBody,
       [424],
     );

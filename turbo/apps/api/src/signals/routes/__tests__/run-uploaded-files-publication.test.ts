@@ -9,7 +9,7 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createChatEventsFixture,
-  okouTokenFromClaim,
+  okouTokenFromExecution,
 } from "./helpers/chat-events-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -26,11 +26,8 @@ async function claimedUpload(options: { readonly stage?: boolean } = {}) {
     agentId: owner.agentId,
     prompt: "Publish an uploaded report",
   });
-  const { claim, sandboxHeaders } = await fixture.claimChatRun(
-    owner.runnerGroup,
-    run.runId,
-  );
-  const bearer = `Bearer ${okouTokenFromClaim(claim)}`;
+  const { execution, sandboxHeaders } = await fixture.runExecution(run.runId);
+  const bearer = `Bearer ${okouTokenFromExecution(execution)}`;
   // Public organization-less uploads may later be attached to a run.
   createRouteMocks(context).clerk.session(actor.userId, null);
   const prepared = await accept(

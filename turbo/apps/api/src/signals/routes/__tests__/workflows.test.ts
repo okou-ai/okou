@@ -424,10 +424,10 @@ describe("workflows", () => {
     ).resolves.toStrictEqual([run.runId]);
 
     await api.heartbeatRunner(runnerGroup);
-    const claim = await api.executionInput(run.runId);
-    expect(claim.cliAgentType).toBe("codex");
-    expect(claim.environment?.OPENAI_MODEL).toBe("gpt-6-astra");
-    expect(claim.environment?.ANTHROPIC_MODEL).toBeUndefined();
+    const execution = await api.executionInput(run.runId);
+    expect(execution.cliAgentType).toBe("codex");
+    expect(execution.environment?.OPENAI_MODEL).toBe("gpt-6-astra");
+    expect(execution.environment?.ANTHROPIC_MODEL).toBeUndefined();
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
@@ -3176,11 +3176,11 @@ test("promotes a queued workflow after failure and completes it with a real Runn
   expect(queued.body.runId).toBeNull();
   const webhooks = createWebhookCallbackApi(context);
   await api.heartbeatRunner(runnerGroup);
-  const firstClaim = await api.executionInput(first.runId);
+  const firstExecution = await api.executionInput(first.runId);
   await webhooks.requestAgentComplete(
     { runId: first.runId, exitCode: 1, error: "Synthetic failure" },
     {
-      authorization: `Bearer ${firstClaim.sandboxToken}`,
+      authorization: `Bearer ${firstExecution.sandboxToken}`,
     },
     [200],
   );
@@ -3194,7 +3194,7 @@ test("promotes a queued workflow after failure and completes it with a real Runn
   }
   await expect(rewards()).resolves.toMatchObject({ claimedCount: 0 });
   await api.heartbeatRunner(runnerGroup);
-  const nextClaim = await api.executionInput(next.runId);
+  const nextExecution = await api.executionInput(next.runId);
   const sessionId = `workflow-session-${next.runId}`;
   await webhooks.requestAgentComplete(
     {
@@ -3206,7 +3206,7 @@ test("promotes a queued workflow after failure and completes it with a real Runn
         cliAgentSessionHistoryDisposition: "native_only",
       },
     },
-    { authorization: `Bearer ${nextClaim.sandboxToken}` },
+    { authorization: `Bearer ${nextExecution.sandboxToken}` },
     [200],
   );
   await flushWaitUntilForTest();

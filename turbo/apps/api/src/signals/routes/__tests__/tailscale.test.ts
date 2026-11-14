@@ -14,7 +14,7 @@ import { sshConnectionsRoutes } from "../ssh-connections";
 import { runnerSshRoutes } from "../runner-ssh";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { createRouteMocks } from "./helpers/route-test";
-import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
+import { createSshExecutionApi } from "./helpers/ssh-execution";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, joinAll } from "../../utils";
@@ -137,7 +137,7 @@ async function resources() {
       .credentials,
   };
 }
-const ordinary = createClaimedSshRuntimeApi(context, {
+const ordinary = createSshExecutionApi(context, {
   runnerHeaders,
   authenticate,
 });

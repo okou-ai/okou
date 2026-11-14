@@ -14,7 +14,7 @@ import { browserRoutes } from "../browser";
 import { controlBrowserDeadline } from "./helpers/browser-deadline";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 
 import {
   createBrowserFixtures,
@@ -34,7 +34,9 @@ function client() {
 }
 function use(chat: Chat) {
   return client().use({
-    headers: { authorization: `Bearer ${okouTokenFromClaim(chat.claim)}` },
+    headers: {
+      authorization: `Bearer ${okouTokenFromExecution(chat.execution)}`,
+    },
     body: {},
   });
 }

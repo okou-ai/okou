@@ -19,10 +19,10 @@ import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import {
   createChatEventsFixture,
-  okouTokenFromClaim,
+  okouTokenFromExecution,
   userMessages,
   type PromptMessage,
-  type RunnerClaim,
+  type RunnerExecutionInput,
 } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createPublicComputerUseHosts } from "./helpers/public-computer-use-hosts";
@@ -36,7 +36,7 @@ const {
   chatCallbacks,
   entitledChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   waitForThreadMessages,
   completeChatRunOk,
   cancelChatRun,
@@ -59,7 +59,7 @@ async function entitledNativeChatActor(): Promise<
 async function expectRunAppContext(args: {
   readonly actor: ApiTestUser;
   readonly runId: string;
-  readonly claim: RunnerClaim;
+  readonly claim: RunnerExecutionInput;
   readonly appUrl: string;
 }): Promise<void> {
   if (!args.actor.orgId) {
@@ -90,7 +90,7 @@ async function readThreadComputerUseHostId(
 describe("CHAT-02: default assistant identity", () => {
   it("keeps the default name as Okou through queued runs without renaming custom agents", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
-    const { actor, runnerGroup } = await entitledNativeChatActor();
+    const { actor } = await entitledNativeChatActor();
     bdd.acceptAgentStorageWrites();
     const onboarding = await bdd.readOnboardingStatus(actor);
     const defaultAgentId = onboarding.defaultAgentId;
@@ -105,11 +105,11 @@ describe("CHAT-02: default assistant identity", () => {
     const anchorRun = await api.readRun(actor, anchor.runId);
     expect(anchorRun.appendSystemPrompt).toContain("Your name is Okou.");
 
-    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
+    const anchorExecution = await runExecution(anchor.runId);
     await expectRunAppContext({
       actor,
       runId: anchor.runId,
-      claim: anchorClaim.claim,
+      claim: anchorExecution.execution,
       appUrl: "https://app.okou.ai",
     });
     const queuedEventId = randomUUID();
@@ -141,7 +141,7 @@ describe("CHAT-02: default assistant identity", () => {
     });
 
     chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    await completeChatRunOk(anchor.runId, anchorExecution.sandboxHeaders);
     await flushWaitUntilForTest();
     const promotedMessages = await waitForThreadMessages(
       actor,
@@ -163,11 +163,11 @@ describe("CHAT-02: default assistant identity", () => {
     }
     const promotedRun = await api.readRun(actor, promoted.runId);
     expect(promotedRun.appendSystemPrompt).toContain("Your name is Okou.");
-    const promotedClaim = await claimChatRun(runnerGroup, promoted.runId);
+    const promotedExecution = await runExecution(promoted.runId);
     await expectRunAppContext({
       actor,
       runId: promoted.runId,
-      claim: promotedClaim.claim,
+      claim: promotedExecution.execution,
       appUrl: "https://app.okou.ai",
     });
     await cancelChatRun(actor, promoted.runId);
@@ -185,11 +185,11 @@ describe("CHAT-02: default assistant identity", () => {
       .appendSystemPrompt;
     expect(customPrompt).toContain("Your name is Nova.");
     expect(customPrompt).not.toContain("Your name is Okou.");
-    const customClaim = await claimChatRun(runnerGroup, customRun.runId);
+    const customExecution = await runExecution(customRun.runId);
     await expectRunAppContext({
       actor,
       runId: customRun.runId,
-      claim: customClaim.claim,
+      claim: customExecution.execution,
       appUrl: "https://preview.example.test",
     });
 
@@ -200,7 +200,7 @@ describe("CHAT-02: default assistant identity", () => {
 describe("CHAT-02: run-scoped agent-token chat launches", () => {
   it("preserves the caller's run annotation on immediate and queued handoffs", async () => {
     const owned = await publicChatActor(context);
-    const { actor, agentId, runnerGroup } = owned;
+    const { actor, agentId } = owned;
     await owned.run(async () => {
       await api.updateUserModelPreference(actor, "claude-fable-5-1");
       if (!actor.orgId) {
@@ -211,8 +211,9 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
         agentId,
         prompt: "launch chat work from this run",
       });
-      const callerClaim = await owned.claimChatRun(runnerGroup, caller.runId);
-      const okouToken = callerClaim.claim.platformEnvironment.OKOU_TOKEN;
+      const callerExecution = await owned.runExecution(caller.runId);
+      const okouToken =
+        callerExecution.execution.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
         throw new Error("Expected a claimed agent token");
       }
@@ -338,7 +339,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       await cancelChatRun(actor, promoted.runId, {
         authorization: `Bearer ${(await api.executionInput(promoted.runId)).sandboxToken}`,
       });
-      await cancelChatRun(actor, caller.runId, callerClaim.sandboxHeaders);
+      await cancelChatRun(actor, caller.runId, callerExecution.sandboxHeaders);
     });
   }, 90_000);
 });
@@ -351,7 +352,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         clockTime: now,
         beforeWorkspaceCleanup: hosts.cleanup,
       });
-      const { actor, agentId, runnerGroup } = owned;
+      const { actor, agentId } = owned;
       await owned.run(() => {
         return api.updateUserModelPreference(actor, "claude-fable-5-1");
       });
@@ -367,8 +368,8 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         agentId,
         prompt: "no computer use selected",
       });
-      const plainClaim = await owned.claimChatRun(runnerGroup, plain.runId);
-      const plainToken = okouTokenFromClaim(plainClaim.claim);
+      const plainExecution = await owned.runExecution(plain.runId);
+      const plainToken = okouTokenFromExecution(plainExecution.execution);
       const deniedCommand = await owned.run(() => {
         return cu.requestCreateComputerUseWriteCommand(
           { bearer: plainToken },
@@ -403,7 +404,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         );
       });
       await owned.run(() => {
-        return cancelChatRun(actor, plain.runId, plainClaim.sandboxHeaders);
+        return cancelChatRun(actor, plain.runId, plainExecution.sandboxHeaders);
       });
 
       // Selecting an online host pins it to the thread and grants the run
@@ -421,18 +422,22 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         "Computer Use is enabled for this run on BDD Desktop.",
       );
       expect(grantedRun.appendSystemPrompt).not.toContain(hostId);
-      const grantedClaim = await owned.claimChatRun(runnerGroup, granted.runId);
+      const grantedExecution = await owned.runExecution(granted.runId);
       await owned.run(() => {
         return cu.heartbeatComputerUseHost(connection);
       });
       await owned.run(() => {
         return cu.requestCreateComputerUseWriteCommand(
-          { bearer: okouTokenFromClaim(grantedClaim.claim) },
+          { bearer: okouTokenFromExecution(grantedExecution.execution) },
           [200],
         );
       });
       await owned.run(() => {
-        return cancelChatRun(actor, granted.runId, grantedClaim.sandboxHeaders);
+        return cancelChatRun(
+          actor,
+          granted.runId,
+          grantedExecution.sandboxHeaders,
+        );
       });
 
       // Follow-up sends without the field stay granted via the sticky host.
@@ -441,18 +446,22 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         threadId: granted.threadId,
         prompt: "keep using the same host",
       });
-      const stickyClaim = await owned.claimChatRun(runnerGroup, sticky.runId);
+      const stickyExecution = await owned.runExecution(sticky.runId);
       await owned.run(() => {
         return cu.heartbeatComputerUseHost(connection);
       });
       await owned.run(() => {
         return cu.requestCreateComputerUseWriteCommand(
-          { bearer: okouTokenFromClaim(stickyClaim.claim) },
+          { bearer: okouTokenFromExecution(stickyExecution.execution) },
           [200],
         );
       });
       await owned.run(() => {
-        return cancelChatRun(actor, sticky.runId, stickyClaim.sandboxHeaders);
+        return cancelChatRun(
+          actor,
+          sticky.runId,
+          stickyExecution.sandboxHeaders,
+        );
       });
 
       // An explicit null clears the sticky host: the next run on the same
@@ -463,18 +472,22 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         prompt: "drop the host",
         computerUseHostId: null,
       });
-      const clearedClaim = await owned.claimChatRun(runnerGroup, cleared.runId);
+      const clearedExecution = await owned.runExecution(cleared.runId);
       await owned.run(() => {
         return cu.heartbeatComputerUseHost(connection);
       });
       await owned.run(() => {
         return cu.requestCreateComputerUseWriteCommand(
-          { bearer: okouTokenFromClaim(clearedClaim.claim) },
+          { bearer: okouTokenFromExecution(clearedExecution.execution) },
           [403],
         );
       });
       await owned.run(() => {
-        return cancelChatRun(actor, cleared.runId, clearedClaim.sandboxHeaders);
+        return cancelChatRun(
+          actor,
+          cleared.runId,
+          clearedExecution.sandboxHeaders,
+        );
       });
 
       mockNow(now() + 91_000);
@@ -491,16 +504,13 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         "Computer Use is enabled for this run on BDD Desktop.",
       );
       clearMockNow();
-      const staleClaim = await owned.claimChatRun(
-        runnerGroup,
-        staleGranted.runId,
-      );
+      const staleExecution = await owned.runExecution(staleGranted.runId);
       await owned.run(() => {
         return cu.heartbeatComputerUseHost(connection);
       });
       await owned.run(() => {
         return cu.requestCreateComputerUseWriteCommand(
-          { bearer: okouTokenFromClaim(staleClaim.claim) },
+          { bearer: okouTokenFromExecution(staleExecution.execution) },
           [200],
         );
       });
@@ -508,7 +518,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         return cancelChatRun(
           actor,
           staleGranted.runId,
-          staleClaim.sandboxHeaders,
+          staleExecution.sandboxHeaders,
         );
       });
     });

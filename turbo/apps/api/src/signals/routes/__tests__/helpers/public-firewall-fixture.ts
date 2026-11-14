@@ -33,7 +33,7 @@ export function createPublicFirewallFixture(
   const kmsKeyId = env("SECRETS_KMS_KEY_ID");
   const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
   const runIds = new Set<string>();
-  const claims = new Map<string, string>();
+  const executions = new Map<string, string>();
   const deletedRuns = new Set<string>();
   const queuedThreads = new Set<string>();
   const scenarioCleanups: (() => Promise<void>)[] = [];
@@ -70,7 +70,7 @@ export function createPublicFirewallFixture(
       if (run.status === "pending" || run.status === "running") {
         await runs.requestCancelRun(actor, runId, [200]);
       }
-      const token = claims.get(runId);
+      const token = executions.get(runId);
       if (token && ["pending", "running", "cancelled"].includes(run.status)) {
         await createWebhookCallbackApi(context).requestAgentComplete(
           { runId, exitCode: 1, error: "Owned carrier cancelled" },
@@ -298,9 +298,9 @@ export function createPublicFirewallFixture(
         subscriptionId,
       });
     },
-    registerClaim(runId: string, token: string): void {
+    registerExecution(runId: string, token: string): void {
       runIds.add(runId);
-      claims.set(runId, token);
+      executions.set(runId, token);
     },
     registerRun(runId: string): void {
       runIds.add(runId);

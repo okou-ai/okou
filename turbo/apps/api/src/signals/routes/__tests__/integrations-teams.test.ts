@@ -20,7 +20,7 @@ import { integrationsTeamsUploadCompleteRoutes } from "../integrations-teams-upl
 import { integrationsTeamsUploadInitRoutes } from "../integrations-teams-upload-init";
 import { webFileUrlRoutes } from "../web-file-url";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -33,7 +33,7 @@ import {
 } from "./helpers/teams-connect";
 
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const store = createStore();
 const mocks = createRouteMocks(context);
 const SERVICE_URL = "https://smba.trafficmanager.net/amer/";

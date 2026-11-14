@@ -37,23 +37,23 @@ function createIndicatorCredentials() {
   function actorKey(actor: ApiTestUser) {
     return JSON.stringify([actor.userId, actor.orgId]);
   }
-  async function claim(actor: ApiTestUser, runId: string) {
+  async function readExecution(actor: ApiTestUser, runId: string) {
     const owner = owners.get(actorKey(actor));
     if (!owner) {
       throw new Error("Expected an owned indicator Run");
     }
     await api.heartbeatRunner();
-    const claim = await owner.claim(runId);
-    const token = claim.platformEnvironment?.OKOU_TOKEN;
+    const execution = await owner.executionInput(runId);
+    const token = execution.platformEnvironment?.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected an issued indicator credential");
     }
     tokens.set(actorKey(actor), token);
-    return claim;
+    return execution;
   }
 
   return {
-    claim,
+    claim: readExecution,
     register(actor: ApiTestUser, owner: ReturnType<typeof publicRunOwner>) {
       owners.set(actorKey(actor), owner);
     },

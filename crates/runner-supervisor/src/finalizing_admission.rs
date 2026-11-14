@@ -82,7 +82,7 @@ fn home_prepare_lock_policy_for_fallback(state: ActiveRunReuseState) -> HomeImag
     }
 }
 
-/// Only the shared resources required to select a claimed finalizing successor's sandbox.
+/// Only the shared resources required to select a job finalizing successor's sandbox.
 #[derive(Clone, Copy)]
 pub struct FinalizingSelectionResources<'a> {
     pub idle_pool: &'a SharedIdlePool,
@@ -304,7 +304,7 @@ async fn select_finalizing_resource_inner(
 /// Wait for a physical predecessor handoff, a published exact reservation, or fallback.
 ///
 /// The handoff request is one-shot and is created before observing the predecessor state so a
-/// successor that was claimed early can race publication safely. Generic sources retain their
+/// successor that was job early can race publication safely. Generic sources retain their
 /// local admission deadline, including during finalization. A native-matching source
 /// uses that deadline before finalization, then a separate acceptance grace starting when both
 /// finalization and this successor's wait have begun. A late request cannot arrive expired. Only an

@@ -82,8 +82,8 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
         prompt: "Prepare a test Link purchase approval",
       });
   await api.heartbeatRunner(runnerGroup);
-  const claim = await api.executionInput(run.runId);
-  const token = claim.platformEnvironment.OKOU_TOKEN;
+  const execution = await api.executionInput(run.runId);
+  const token = execution.platformEnvironment.OKOU_TOKEN;
   if (!token) {
     throw new Error("Missing claimed run token");
   }
@@ -95,7 +95,7 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
     await api.requestCancelRun(actor, run.runId, [200]);
     await createWebhookCallbackApi(context).requestAgentComplete(
       { runId: run.runId, exitCode: 1, error: "Wallet test carrier canceled" },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
@@ -110,7 +110,7 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
           runId: run.runId,
           exitCode: 0,
         },
-        { authorization: `Bearer ${claim.sandboxToken}` },
+        { authorization: `Bearer ${execution.sandboxToken}` },
         [200],
       );
       completed = true;
@@ -118,8 +118,8 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
     },
     actor: { ...actor, orgId: actor.orgId },
     agentId: agent.agentId,
-    prompt: claim.appendSystemPrompt ?? "",
-    environmentNames: Object.keys(claim.platformEnvironment),
+    prompt: execution.appendSystemPrompt ?? "",
+    environmentNames: Object.keys(execution.platformEnvironment),
     headers: { authorization: `Bearer ${token}` },
   };
 }
@@ -3157,9 +3157,9 @@ test("an approval Workflow continues the original web chat once and retains inte
   if (!resumed?.runId) {
     throw new Error("Missing approval continuation run");
   }
-  const claim = await fixture.api.executionInput(resumed.runId);
+  const execution = await fixture.api.executionInput(resumed.runId);
   const headers = {
-    authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+    authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
   };
   await accept(
     client().getSpend({ headers, params: { id: fixture.spend.id } }),
@@ -3233,7 +3233,7 @@ test("cancelling a watched purchase from another chat fails before contacting Li
     prompt: "Inspect an existing purchase from another chat",
   });
   await fixture.api.heartbeatRunner(fixture.runnerGroup);
-  const claim = await fixture.api.executionInput(other.runId);
+  const execution = await fixture.api.executionInput(other.runId);
   onTestFinished(async () => {
     await fixture.api.requestCancelRun(fixture.actor, other.runId, [200]);
     await createWebhookCallbackApi(context).requestAgentComplete(
@@ -3242,13 +3242,13 @@ test("cancelling a watched purchase from another chat fails before contacting Li
         exitCode: 1,
         error: "Wallet test carrier canceled",
       },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
   });
   const headers = {
-    authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+    authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
   };
   let cancellations = 0;
   server.use(

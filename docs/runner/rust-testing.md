@@ -129,11 +129,11 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-lifecycle -- --test-threads=1
 
-# Extracted Runner claimed-run execution and session-history owner tests
+# Extracted Runner execution and session-history owner tests
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-executor -- --test-threads=1
 
-# Extracted Runner idle, supplied/local admission and rollback, claimed activation, post-executor finalizing/report ordering/sandbox finalization/settlement, heartbeat, and orphan-recovery owner tests
+# Extracted Runner idle, supplied/local admission and rollback, job activation, post-executor finalizing/report ordering/sandbox finalization/settlement, heartbeat, and orphan-recovery owner tests
 # Supervisor's ordinary unit target covers policy and cross-domain runtime through
 # the actual reactor/factory/dispatch/maintenance entries, without test=false,
 # source inclusion, filtering or copied provider fixtures. Runner retains boot,

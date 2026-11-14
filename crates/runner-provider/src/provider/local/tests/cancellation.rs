@@ -66,7 +66,7 @@ async fn claim_reconciles_without_waiting_for_unrelated_gate_and_wakes_watcher()
     .expect("initial scan should retain markers without registered handles");
     let blocked = insert_cancel_registration(&tokens, blocked_id).await;
     let guard = blocked.handle().transfer_guard().await;
-    let claimed = insert_cancel_registration(&tokens, claimed_id).await;
+    let cancellation = insert_cancel_registration(&tokens, claimed_id).await;
     let candidate = JobCandidate::local(
         claimed_id,
         crate::profile::DEFAULT_PROFILE.to_owned(),
@@ -78,7 +78,7 @@ async fn claim_reconciles_without_waiting_for_unrelated_gate_and_wakes_watcher()
         .expect("claim must not wait for an unrelated cancellation gate")
         .expect("claim should succeed");
     assert_eq!(job.context().run_id, claimed_id);
-    assert!(claimed.handle().is_hard_cancelled());
+    assert!(cancellation.handle().is_hard_cancelled());
     assert!(!claimed_marker.exists());
     assert!(!blocked.is_cancelled());
     assert!(blocked_marker.exists());

@@ -24,7 +24,7 @@ interface RuntimeOptions {
 }
 
 /** Ordinary chat Runs only; historical and intentionally invalid fixtures stay separate. */
-export function createClaimedSshRuntimeApi(
+export function createSshExecutionApi(
   context: TestContext,
   options: {
     readonly runnerHeaders: { readonly authorization: string };
@@ -60,7 +60,7 @@ export function createClaimedSshRuntimeApi(
       runtimeOptions.agentId ??
       (
         await bdd.createAgent(actor, {
-          displayName: "Claimed SSH Agent",
+          displayName: "SSH execution Agent",
           visibility: "public",
         })
       ).agentId;
@@ -92,7 +92,7 @@ export function createClaimedSshRuntimeApi(
     const sandboxToken = input.sandboxToken;
     const agentToken = input.platformEnvironment.OKOU_TOKEN;
     if (!sandboxToken || !agentToken) {
-      throw new Error("Expected the claim's sandbox and Agent credentials");
+      throw new Error("Expected the execution's sandbox and Agent credentials");
     }
     await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
       status: "running",

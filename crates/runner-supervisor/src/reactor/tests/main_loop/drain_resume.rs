@@ -49,7 +49,7 @@ async fn drain_then_resume_keeps_jobs_running() {
     assert_eq!(c.exit_code, 0, "job ran to normal completion");
     assert!(c.error.is_none(), "no cancellation error");
 
-    // Runner is back in Running — a second job is claimed (cancel_token
+    // Runner is back in Running — a second job is job (cancel_token
     // inserted). Don't wait for completion here; the shared wait_process_gate
     // would also block this job's exit.
     let run_id_2 = RunId::new_v4();

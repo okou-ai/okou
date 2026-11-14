@@ -24,7 +24,7 @@ interface OwnedRun {
 
 /**
  * Launches Automation Runs through the public run route and drives them to
- * completion through the authenticated Runner claim and webhook protocol.
+ * completion through the authenticated Runner execution and webhook protocol.
  */
 export function createPublicAutomationRunApi(context: TestContext) {
   const runs = createRunsApi(context);
@@ -81,7 +81,7 @@ export function createPublicAutomationRunApi(context: TestContext) {
       if (current.status === "pending" || current.status === "running") {
         await cleanupRuns.requestCancelRun(actor, run.runId, [200]);
       }
-      // A public cancellation keeps a claimed slot until its Runner ACKs.
+      // A public cancellation keeps an executing slot until its Runner ACKs.
       if (
         run.sandboxToken &&
         (current.status === "pending" ||
@@ -170,9 +170,11 @@ export function createPublicAutomationRunApi(context: TestContext) {
   ): Promise<void> {
     const run = track(actor, runId, runnerGroup);
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.executionInput(runId);
-    run.sandboxToken = claim.sandboxToken;
-    const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
+    const execution = await runs.executionInput(runId);
+    run.sandboxToken = execution.sandboxToken;
+    const sandboxHeaders = {
+      authorization: `Bearer ${execution.sandboxToken}`,
+    };
     if (args.output !== undefined) {
       await webhooks.requestAgentEvents(
         {

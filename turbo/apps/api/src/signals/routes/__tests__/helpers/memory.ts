@@ -15,7 +15,7 @@ interface MemoryFile {
   readonly content: string | Buffer;
 }
 
-/** Publish only to the writable memory mount issued by an actual Runner claim. */
+/** Publish only to the writable memory mount issued by a dispatched Run. */
 export async function commitMemoryVersion(
   context: TestContext,
   run: {
@@ -36,7 +36,7 @@ export async function commitMemoryVersion(
     return mount.name === MEMORY_ARTIFACT_NAME && mount.writeback;
   });
   if (!memory) {
-    throw new Error("Expected the claimed Run's writable memory mount");
+    throw new Error("Expected the execution's writable memory mount");
   }
   const blocks: Buffer[] = [];
   const entries = files.map((file) => {

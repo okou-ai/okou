@@ -21,18 +21,18 @@ import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { contentBundleAvailableCondition } from "./content-bundle-claim";
+import { contentBundleAvailableCondition } from "./execution-content-bundle";
 import {
   STAFF_SINGLE_AGENT_ORG_ID,
   STAFF_WORKFLOW_COPY_NAMESPACE,
 } from "@okouai/core/staff-single-agent-migration";
 
-export const claimedWorkflowSchema = zObject({
+export const executionWorkflowSchema = zObject({
   id: zUuid(),
   name: zString(),
   contentBundle: contentBundleSchema,
 });
-export type ClaimedWorkflow = zInfer<typeof claimedWorkflowSchema>;
+export type ExecutionWorkflow = zInfer<typeof executionWorkflowSchema>;
 
 /**
  * Temporary compatibility for legacy Runs admitted before the staff cutover.
@@ -41,25 +41,25 @@ export type ClaimedWorkflow = zInfer<typeof claimedWorkflowSchema>;
  * Retire after all pre-cutover pending/active Runs have drained.
  */
 function retainedStaffWorkflowAdmission(): SQL {
-  return sql`(locked_run."orgId" = ${STAFF_SINGLE_AGENT_ORG_ID}
+  return sql`(admitted_run."orgId" = ${STAFF_SINGLE_AGENT_ORG_ID}
     AND EXISTS (SELECT 1 FROM workflows AS legacy_workflow
       JOIN selected_workflows AS selected ON selected.id = legacy_workflow.id
-      WHERE legacy_workflow.org_id = locked_run."orgId"
-        AND legacy_workflow.agent_id = locked_run."agentId"
+      WHERE legacy_workflow.org_id = admitted_run."orgId"
+        AND legacy_workflow.agent_id = admitted_run."agentId"
         AND overlay(overlay(md5(${STAFF_WORKFLOW_COPY_NAMESPACE} || legacy_workflow.id::text)
           placing '5' from 13 for 1) placing '8' from 17 for 1)::uuid = ${workflows.id}))`;
 }
 
-export interface WorkflowClaimInput {
+export interface ExecutionWorkflowInput {
   readonly selection: PreparedExecutionContext["customWorkflowSelection"];
   readonly skillRoot: string;
   readonly ambiguousMountPaths: readonly string[];
 }
 
-function officialWorkflowClaimSelection(
+function officialWorkflowSelection(
   context: PreparedExecutionContext,
   skillRoot: string,
-): WorkflowClaimInput["selection"] {
+): ExecutionWorkflowInput["selection"] {
   const officialPaths = (context.officialWorkflowBundles ?? []).map(
     (bundle) => {
       return bundle.mountPath;
@@ -89,16 +89,16 @@ function officialWorkflowClaimSelection(
     : context.customWorkflowSelection;
 }
 
-export function workflowClaimInput(
+export function executionWorkflowInput(
   context: PreparedExecutionContext,
-): WorkflowClaimInput {
+): ExecutionWorkflowInput {
   const skillRoot =
     context.cliAgentType === "pi"
       ? "/home/user/.pi/agent/skills"
       : context.cliAgentType === "codex"
         ? "/home/user/.codex/skills"
         : "/home/user/.claude/skills";
-  const selection = officialWorkflowClaimSelection(context, skillRoot);
+  const selection = officialWorkflowSelection(context, skillRoot);
   const ordinaryMount = /^custom-skill@[a-f0-9-]{36}$/u;
   for (const mount of context.storageMounts) {
     if (
@@ -125,21 +125,21 @@ export function workflowClaimInput(
   };
 }
 
-function workflowEligibilitySql(input: WorkflowClaimInput): SQL {
+function workflowEligibilitySql(input: ExecutionWorkflowInput): SQL {
   const protectedPaths = input.selection?.protectedMountPaths ?? [];
-  return sql`${eq(workflows.orgId, sql`locked_run."orgId"`)}
-    AND ${eq(workflows.agentId, sql`locked_run."agentId"`)}
-    AND ${eq(agents.orgId, sql`locked_run."orgId"`)}
-    AND (${eq(agents.visibility, "public")} OR ${eq(agents.owner, sql`locked_run."userId"`)})
+  return sql`${eq(workflows.orgId, sql`admitted_run."orgId"`)}
+    AND ${eq(workflows.agentId, sql`admitted_run."agentId"`)}
+    AND ${eq(agents.orgId, sql`admitted_run."orgId"`)}
+    AND (${eq(agents.visibility, "public")} OR ${eq(agents.owner, sql`admitted_run."userId"`)})
     AND ${isNull(workflows.officialDefinitionName)}
-    AND (${eq(workflows.visibility, "public")} OR ${eq(workflows.ownerUserId, sql`locked_run."userId"`)})
+    AND (${eq(workflows.visibility, "public")} OR ${eq(workflows.ownerUserId, sql`admitted_run."userId"`)})
     AND ${notInArray(workflows.name, [...SEED_SKILLS])}
     AND NOT (${JSON.stringify(protectedPaths)}::jsonb ? (${input.skillRoot} || '/' || ${workflows.name}))`;
 }
 
 /** Recheck the captured sources, without choosing a new slug winner or payload. */
 export function workflowReferencesAuthorizedCondition(
-  input: WorkflowClaimInput,
+  input: ExecutionWorkflowInput,
   workflowIds: readonly string[],
 ): SQL {
   return eq(
@@ -147,7 +147,7 @@ export function workflowReferencesAuthorizedCondition(
       .select({ count: count() })
       .from(workflows)
       .innerJoin(agents, eq(agents.id, workflows.agentId))
-      .crossJoin(sql`locked_run`)
+      .crossJoin(sql`admitted_run`)
       .where(
         and(inArray(workflows.id, workflowIds), workflowEligibilitySql(input)),
       ),
@@ -156,39 +156,39 @@ export function workflowReferencesAuthorizedCondition(
 }
 
 /**
- * Data only: consumed by the existing successful Run/thread claim statement.
- * The outgoing Stage 1 writer commits body + reservation before its package.
- * Its exact pending token blocks a mixed-generation claim during API drain.
- * Remove that token read with the Stage 3 publication bridge retirement.
+ * Select authorized Workflow packages for execution preparation and recheck
+ * their source authority when assigning the Run to a serving process.
  */
-export function workflowClaimSelectionSql(input: WorkflowClaimInput): SQL {
+export function executionWorkflowSelectionSql(
+  input: ExecutionWorkflowInput,
+): SQL {
   const selection = input.selection;
   const automationId = selection?.automationId ?? null;
   const eligible = workflowEligibilitySql(input);
   return sql`selected_workflows AS MATERIALIZED (
       SELECT DISTINCT ON (${workflows.name}) ${workflows.id} AS id, ${workflows.name} AS name,
         ${workflows.contentBundle} AS "contentBundle"
-      FROM ${workflows} INNER JOIN ${agents} ON ${eq(agents.id, workflows.agentId)} CROSS JOIN locked_run
+      FROM ${workflows} INNER JOIN ${agents} ON ${eq(agents.id, workflows.agentId)} CROSS JOIN admitted_run
       WHERE ${eligible}
-      ORDER BY ${workflows.name}, (${workflows.visibility} = 'private' AND ${workflows.ownerUserId} = locked_run."userId") DESC, ${workflows.createdAt}, ${workflows.id}
+      ORDER BY ${workflows.name}, (${workflows.visibility} = 'private' AND ${workflows.ownerUserId} = admitted_run."userId") DESC, ${workflows.createdAt}, ${workflows.id}
     ), workflow_selection AS MATERIALIZED (
       SELECT COALESCE(jsonb_agg(to_jsonb(selected_workflows)), '[]'::jsonb) AS documents,
         COALESCE(bool_and(NOT (${JSON.stringify(input.ambiguousMountPaths)}::jsonb ? (${input.skillRoot} || '/' || name))), true) AS available,
         COALESCE(bool_and(${contentBundleAvailableCondition(sql`selected_workflows."contentBundle"`)}), true) AS "bundlesAvailable"
       FROM selected_workflows
     ), workflow_admission AS MATERIALIZED (
-      SELECT * FROM workflow_selection, locked_run
+      SELECT * FROM workflow_selection, admitted_run
       WHERE workflow_selection.available AND (
-        locked_run."agentId" IS NULL OR (
-          locked_run."agentId" = ${selection?.agentId ?? null}::uuid
+        admitted_run."agentId" IS NULL OR (
+          admitted_run."agentId" = ${selection?.agentId ?? null}::uuid
           AND (NOT ${selection?.protectedMountPaths === undefined}
-            OR locked_run."triggerSource" NOT IN ('automation-schedule', 'automation-event')
-            OR locked_run."workflowAutomationId" IS NOT NULL)
+            OR admitted_run."triggerSource" NOT IN ('automation-schedule', 'automation-event')
+            OR admitted_run."workflowAutomationId" IS NOT NULL)
           AND EXISTS (SELECT 1 FROM selected_agent)
-          AND (COALESCE(${automationId}::uuid, locked_run."workflowAutomationId") IS NULL OR EXISTS (
+          AND (COALESCE(${automationId}::uuid, admitted_run."workflowAutomationId") IS NULL OR EXISTS (
             SELECT 1 FROM ${workflowAutomations} INNER JOIN ${workflows} ON ${eq(workflows.id, workflowAutomations.workflowId)}
-            WHERE ${and(eq(workflowAutomations.id, sql`COALESCE(${automationId}::uuid, locked_run."workflowAutomationId")`), eq(workflowAutomations.orgId, sql`locked_run."orgId"`), eq(workflowAutomations.ownerUserId, sql`locked_run."userId"`), eq(workflows.orgId, sql`locked_run."orgId"`))}
-              AND ((${workflows.agentId} = locked_run."agentId" AND ((${workflows.officialDefinitionName} IS NOT NULL AND ${workflows.officialInstallationState} = 'installed') OR EXISTS (SELECT 1 FROM selected_workflows WHERE id = ${workflows.id})))
+            WHERE ${and(eq(workflowAutomations.id, sql`COALESCE(${automationId}::uuid, admitted_run."workflowAutomationId")`), eq(workflowAutomations.orgId, sql`admitted_run."orgId"`), eq(workflowAutomations.ownerUserId, sql`admitted_run."userId"`), eq(workflows.orgId, sql`admitted_run."orgId"`))}
+              AND ((${workflows.agentId} = admitted_run."agentId" AND ((${workflows.officialDefinitionName} IS NOT NULL AND ${workflows.officialInstallationState} = 'installed') OR EXISTS (SELECT 1 FROM selected_workflows WHERE id = ${workflows.id})))
                 OR ${retainedStaffWorkflowAdmission()})
           ))
         )

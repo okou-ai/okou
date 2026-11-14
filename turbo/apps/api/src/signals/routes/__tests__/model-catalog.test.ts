@@ -17,11 +17,11 @@ import { userModelPreferenceRoutes } from "../user-model-preference";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const {
@@ -31,7 +31,7 @@ const {
   misc,
   entitledNativeChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   waitForThreadMessages,
   cancelChatRun,
   configureSubscriptionPiModel,
@@ -236,7 +236,7 @@ describe("GET /api/model-catalog", () => {
     async (scope) => {
       const actor = authOrgApi.user({ orgRole: "org:member" });
       authOrgApi.mockClerkOrg(actor);
-      const claimed = await credentials.claim(actor);
+      const claimed = await credentials.forActor(actor);
       const token = scope === "okou" ? claimed.token : claimed.sandboxToken;
 
       const response = await accept(
@@ -354,14 +354,14 @@ describe("public selections of replaced models", () => {
   }, 90_000);
 
   it("accepts a pinned model whose retained subscription was disconnected and reports the reconnect error", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const active = await sendChatRun(actor, {
       agentId,
       prompt: "keep the subscription account in use",
       model: "claude-fable-5-1",
     });
-    const activeClaim = await claimChatRun(runnerGroup, active.runId);
+    const activeExecution = await runExecution(active.runId);
     const thread = await chat.createThread(actor, {
       agentId,
       model: "claude-fable-5-1",
@@ -389,7 +389,7 @@ describe("public selections of replaced models", () => {
     ).resolves.toMatchObject({
       selectedModel: "claude-fable-5-1",
     });
-    await cancelChatRun(actor, active.runId, activeClaim.sandboxHeaders);
+    await cancelChatRun(actor, active.runId, activeExecution.sandboxHeaders);
     await flushWaitUntilForTest();
     const page = await waitForThreadMessages(actor, thread.id, (events) => {
       return events.some((event) => {
@@ -429,7 +429,7 @@ describe("public selections of replaced models", () => {
   }, 90_000);
 
   it("stores an explicitly requested replaced model as its successor on the thread and member preference", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const thread = await chat.createThread(actor, {
       agentId,
@@ -443,8 +443,8 @@ describe("public selections of replaced models", () => {
       model: "claude-fable-5",
     });
 
-    const claimed = await claimChatRun(runnerGroup, run.runId);
-    expect(claimed.claim.modelUsageProvider).toBe("claude-fable-5-1");
+    const execution = await runExecution(run.runId);
+    expect(execution.execution.modelUsageProvider).toBe("claude-fable-5-1");
     expect((await api.readRun(actor, run.runId)).source.model).toBe(
       "claude-fable-5-1",
     );
@@ -452,7 +452,7 @@ describe("public selections of replaced models", () => {
     await expect(memberModelPreference(actor)).resolves.toMatchObject({
       selectedModel: "claude-fable-5-1",
     });
-    await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, run.runId, execution.sandboxHeaders);
   }, 90_000);
 
   it("clears Fast when an explicitly requested replacement does not offer it", async () => {

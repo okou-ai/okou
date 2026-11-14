@@ -22,9 +22,9 @@ async fn supplied_publication_binds_run_scoped_controls_and_completion() {
         context.instruction_file.is_some(),
         "shared content normalization is required on supplied work"
     );
-    let claimed = provider.bind_supplied(context).await.unwrap();
+    let job = provider.bind_supplied(context).await.unwrap();
     assert!(matches!(
-        claimed.active_input_source(),
+        job.active_input_source(),
         Some(ActiveInputSource::Api(_))
     ));
     let request = server
@@ -38,7 +38,7 @@ async fn supplied_publication_binds_run_scoped_controls_and_completion() {
     )
     .await
     .unwrap();
-    let (_, completion_auth, source) = claimed.into_parts();
+    let (_, completion_auth, source) = job.into_parts();
     drop(source);
     let completing = provider.clone();
     let task = tokio::spawn(async move {

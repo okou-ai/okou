@@ -302,12 +302,12 @@ async function startScheduledRun(scenario: Scenario) {
     latestInput.runId,
     scenario.runnerGroup,
   );
-  const claimed = await runs.executionInput(latestInput.runId);
-  owned.sandboxToken = claimed.sandboxToken;
+  const execution = await runs.executionInput(latestInput.runId);
+  owned.sandboxToken = execution.sandboxToken;
   return {
     automation,
     runId: latestInput.runId,
-    headers: { authorization: `Bearer ${claimed.sandboxToken}` },
+    headers: { authorization: `Bearer ${execution.sandboxToken}` },
     owned,
   };
 }

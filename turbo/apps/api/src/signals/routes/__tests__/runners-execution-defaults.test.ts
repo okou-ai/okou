@@ -22,15 +22,12 @@ describe("Direct Run launch defaults", () => {
       });
       await bdd.updateUserTimezone(owned.actor, "Asia/Shanghai");
 
-      const { claim } = await owned.claimChatRun(
-        owned.runnerGroup,
-        queued.runId,
-      );
-      expect(claim.userTimezone).toBe("America/Los_Angeles");
-      expect(claim.disallowedTools).toStrictEqual(
+      const { execution } = await owned.runExecution(queued.runId);
+      expect(execution.userTimezone).toBe("America/Los_Angeles");
+      expect(execution.disallowedTools).toStrictEqual(
         expect.arrayContaining(["CronCreate", "Skill(loop)"]),
       );
-      expect(claim.platformEnvironment).toMatchObject({
+      expect(execution.platformEnvironment).toMatchObject({
         OKOU_APP_URL: "https://claim-defaults.example",
         OKOU_AGENT_ID: owned.agentId,
         OKOU_CHAT_THREAD_ID: queued.threadId,

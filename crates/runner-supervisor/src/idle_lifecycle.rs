@@ -255,8 +255,7 @@ impl IdleDestroyTracker {
         &self,
         recovery: crate::finalizing_admission::GuardedFinalizingRecovery,
     ) {
-        if recovery.claimed.is_some() || recovery.resource.is_some() || recovery.delivery_uncertain
-        {
+        if recovery.job.is_some() || recovery.resource.is_some() || recovery.delivery_uncertain {
             // Preserve actual custody on an advisory poisoned lock. Recovery
             // still reports that error; this never fabricates a valid receipt.
             let mut owners = match self.finalizing_owners.lock() {
@@ -463,7 +462,7 @@ pub async fn reserve_source_idle_for_spawn(
 }
 
 /// Reserve exactly the predecessor's generation, retaining a typed miss reason
-/// from the same locked observation when no matching entry can be claimed.
+/// from the same locked observation when no matching entry can be job.
 pub async fn reserve_exact_idle_for_spawn(
     idle_pool: &SharedIdlePool,
     reuse_key: &str,
@@ -502,7 +501,7 @@ pub async fn rollback_reserved_idle_for_spawn(
         let destroy_task = match restore_result {
             RestoreReservedIdleResult::Restored => None,
             RestoreReservedIdleResult::Replaced(job) | RestoreReservedIdleResult::Rejected(job) => {
-                Some(tracker.spawn_job(*job, "finalizing_claim_reserved_idle_rollback"))
+                Some(tracker.spawn_job(*job, "finalizing_activation_reserved_idle_rollback"))
             }
         };
         (destroy_task, snapshot)

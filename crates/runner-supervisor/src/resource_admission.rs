@@ -12,7 +12,7 @@ use runner_lifecycle::lifecycle::RunnerMode;
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::StatusTracker;
 use runner_provider::{
-    ClaimedJob, JobCandidate, JobProvider, LocalJobSource, RunCancellationRegistration,
+    ExecutionJob, JobCandidate, JobProvider, LocalJobSource, RunCancellationRegistration,
     RunCancellationRegistry,
 };
 use runner_types::ids::RunId;
@@ -21,9 +21,9 @@ use std::time::Instant;
 use tokio::sync::{Notify, oneshot, watch};
 use tracing::warn;
 
-/// Narrow, borrowed composition inputs required for the admission-to-claim transaction.
+/// Borrowed owners needed for resource admission and activation.
 #[derive(Clone, Copy)]
-pub struct PreClaimResources<'a> {
+pub struct AdmissionResources<'a> {
     pub active_runs: &'a ActiveRuns,
     pub idle_pool: &'a SharedIdlePool,
     pub status: &'a Arc<StatusTracker>,
@@ -49,40 +49,38 @@ pub enum SandboxAdmittedResource {
     Reusable(ReservedIdleActivation),
 }
 
-pub struct AdmittedClaim {
-    pub claimed: ClaimedJob,
+pub struct AdmittedJob {
+    pub job: ExecutionJob,
     pub resource: AdmittedResource,
     pub cancellation: RunCancellationRegistration,
-    pub claim_returned_at: Instant,
+    pub admitted_at: Instant,
     pub blank_pool_selection: Option<BlankPoolSelection>,
 }
 
-/// Concrete profile facts supplied by Runner, without exposing a pre-claim reservation.
-pub struct PreClaimRequest<'a> {
-    pub candidate: JobCandidate,
+/// Concrete profile and device facts supplied by Runner.
+pub struct AdmissionRequest<'a> {
     pub profile_name: &'a str,
     pub job_vcpu: u32,
     pub job_memory: u32,
     pub device_rate_limits: &'a Option<sandbox::DeviceRateLimits>,
 }
 
-pub enum PreClaimOutcome {
-    Claimed(Box<AdmittedClaim>),
+pub enum LocalAdmissionOutcome {
+    Admitted(Box<AdmittedJob>),
     Deferred,
 }
 pub(crate) enum SuppliedAdmission {
-    Admitted(Box<AdmittedClaim>),
+    Admitted(Box<AdmittedJob>),
     Rejected,
     Unknown,
 }
 
 /// Complete-input resource admission, including a matching local producer handoff.
-/// No remote acquisition participates here.
 pub(crate) async fn admit_supplied(
     context: runner_types::types::ExecutionContext,
-    request: PreClaimRequest<'_>,
+    request: AdmissionRequest<'_>,
     deadline: tokio::time::Instant,
-    ctx: &PreClaimResources<'_>,
+    ctx: &AdmissionResources<'_>,
     admission_ready: oneshot::Sender<()>,
 ) -> SuppliedAdmission {
     if *ctx.mode_rx.borrow() != RunnerMode::Running || tokio::time::Instant::now() >= deadline {
@@ -122,7 +120,8 @@ pub(crate) async fn admit_supplied(
         (AdmittedResource::Finalizing(finalizing), None)
     } else {
         let Some(resource) = acquire_local_admission_resource(
-            &request.candidate,
+            run_id,
+            context.reuse_key().filter(|key| !key.is_empty()),
             request.profile_name,
             request.job_vcpu,
             request.job_memory,
@@ -142,8 +141,8 @@ pub(crate) async fn admit_supplied(
             return SuppliedAdmission::Unknown;
         }
     };
-    let claimed = match ctx.provider.bind_supplied(context).await {
-        Ok(claimed) if claimed.context().run_id == run_id => claimed,
+    let job = match ctx.provider.bind_supplied(context).await {
+        Ok(job) if job.context().run_id == run_id => job,
         _ => {
             cancellation.unregister().await;
             rollback_untracked_resource(resource, ctx).await;
@@ -156,13 +155,12 @@ pub(crate) async fn admit_supplied(
         return SuppliedAdmission::Rejected;
     }
     let _ = admission_ready.send(());
-    SuppliedAdmission::Admitted(Box::new(AdmittedClaim {
-        claimed,
+    SuppliedAdmission::Admitted(Box::new(AdmittedJob {
+        job,
         resource,
         cancellation,
-        // The shared local startup timer begins at custody transfer. Supplied
-        // jobs have no remote acquisition phase.
-        claim_returned_at: Instant::now(),
+        // The shared local startup timer begins at custody transfer.
+        admitted_at: Instant::now(),
         blank_pool_selection,
     }))
 }
@@ -170,14 +168,16 @@ pub(crate) async fn admit_supplied(
 /// Atomic filesystem acquisition after reversible ordinary local admission.
 /// The owning task is joined through claim settlement and activation/rollback.
 pub async fn admit_and_claim(
-    request: PreClaimRequest<'_>,
+    candidate: JobCandidate,
+    request: AdmissionRequest<'_>,
     source: &dyn LocalJobSource,
-    ctx: &PreClaimResources<'_>,
+    ctx: &AdmissionResources<'_>,
     admission_ready: oneshot::Sender<()>,
-) -> PreClaimOutcome {
-    let run_id = request.candidate.run_id();
+) -> LocalAdmissionOutcome {
+    let run_id = candidate.run_id();
     let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
-        &request.candidate,
+        run_id,
+        candidate.reuse_key(),
         request.profile_name,
         request.job_vcpu,
         request.job_memory,
@@ -186,13 +186,13 @@ pub async fn admit_and_claim(
     )
     .await
     else {
-        return PreClaimOutcome::Deferred;
+        return LocalAdmissionOutcome::Deferred;
     };
     let cancellation = match ctx.cancel_tokens.register(run_id).await {
         Ok(registration) => registration,
         Err(_) => {
             rollback_untracked_resource(resource, ctx).await;
-            return PreClaimOutcome::Deferred;
+            return LocalAdmissionOutcome::Deferred;
         }
     };
     let mode = *ctx.mode_rx.borrow();
@@ -204,39 +204,40 @@ pub async fn admit_and_claim(
         RunnerMode::Starting | RunnerMode::Draining | RunnerMode::Stopped => {
             cancellation.unregister().await;
             rollback_untracked_resource(resource, ctx).await;
-            return PreClaimOutcome::Deferred;
+            return LocalAdmissionOutcome::Deferred;
         }
     }
     let _ = admission_ready.send(());
-    let claimed = source.claim(request.candidate).await;
-    let claim_returned_at = Instant::now();
-    let Some(claimed) = claimed else {
+    let job = source.claim(candidate).await;
+    let admitted_at = Instant::now();
+    let Some(job) = job else {
         cancellation.unregister().await;
         rollback_untracked_resource(resource, ctx).await;
-        return PreClaimOutcome::Deferred;
+        return LocalAdmissionOutcome::Deferred;
     };
-    if claimed.context().run_id != run_id {
-        warn!(%run_id, context_run_id = %claimed.context().run_id, "local source returned a mismatched run_id");
+    if job.context().run_id != run_id {
+        warn!(%run_id, context_run_id = %job.context().run_id, "local source returned a mismatched run_id");
         cancellation.unregister().await;
         rollback_untracked_resource(resource, ctx).await;
-        return PreClaimOutcome::Deferred;
+        return LocalAdmissionOutcome::Deferred;
     }
-    PreClaimOutcome::Claimed(Box::new(AdmittedClaim {
-        claimed,
+    LocalAdmissionOutcome::Admitted(Box::new(AdmittedJob {
+        job,
         resource,
         cancellation,
-        claim_returned_at,
+        admitted_at,
         blank_pool_selection,
     }))
 }
 
 async fn acquire_local_admission_resource(
-    candidate: &JobCandidate,
+    run_id: RunId,
+    reuse_key: Option<&str>,
     profile_name: &str,
     job_vcpu: u32,
     job_memory: u32,
     device_rate_limits: &Option<sandbox::DeviceRateLimits>,
-    ctx: &PreClaimResources<'_>,
+    ctx: &AdmissionResources<'_>,
 ) -> Option<(AdmittedResource, Option<BlankPoolSelection>)> {
     let IdlePressureOutcome {
         selection,
@@ -248,15 +249,15 @@ async fn acquire_local_admission_resource(
         ctx.budget,
         Vec::new(),
         IdlePressureRequest {
-            run_id: candidate.run_id(),
-            reuse_key: candidate.reuse_key(),
+            run_id,
+            reuse_key,
             profile_name,
             device_rate_limits,
             allow_compatible_blank: true,
             blank_pool_diagnostics: Some(ctx.blank_pool_diagnostics),
             vcpu: job_vcpu,
             memory_mb: job_memory,
-            context: "candidate_admission_oldest",
+            context: "job_admission_oldest",
         },
     )
     .await;
@@ -264,7 +265,7 @@ async fn acquire_local_admission_resource(
         let status = Arc::clone(ctx.status);
         ctx.idle_destroy_tracker.spawn_cleanup(
             async move { set_idle_status_snapshot(&status, snapshot).await },
-            "candidate_admission_idle_status",
+            "job_admission_idle_status",
         );
     }
     match selection {
@@ -273,7 +274,7 @@ async fn acquire_local_admission_resource(
             blank_pool_selection,
         )),
         IdlePressureSelection::Fresh(lease) => {
-            // Claimed activation rechecks the pool, so claim need not wait for it.
+            // Activation rechecks the pool after capacity has been reserved.
             Some((AdmittedResource::Fresh(lease), blank_pool_selection))
         }
         IdlePressureSelection::Exhausted(retiring_leases) => {
@@ -283,7 +284,7 @@ async fn acquire_local_admission_resource(
     }
 }
 
-async fn rollback_untracked_resource(resource: AdmittedResource, ctx: &PreClaimResources<'_>) {
+async fn rollback_untracked_resource(resource: AdmittedResource, ctx: &AdmissionResources<'_>) {
     match resource {
         AdmittedResource::Finalizing(admission) => drop(admission),
         AdmittedResource::Fresh(lease) => drop(lease),
@@ -303,7 +304,7 @@ async fn rollback_untracked_resource(resource: AdmittedResource, ctx: &PreClaimR
 /// Recover ordinary local custody after execution/reporting ownership is settled.
 pub async fn rollback_sandbox_admitted_resource(
     resource: SandboxAdmittedResource,
-    ctx: &PreClaimResources<'_>,
+    ctx: &AdmissionResources<'_>,
 ) {
     let resource = match resource {
         SandboxAdmittedResource::Fresh(lease) => AdmittedResource::Fresh(lease),

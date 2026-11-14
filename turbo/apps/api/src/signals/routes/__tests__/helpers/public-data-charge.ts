@@ -114,7 +114,7 @@ export async function chargePublicDataUsage(
   }
   const runId = observed.body.runId;
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.executionInput(runId);
+  const execution = await runs.executionInput(runId);
   // Run setup authenticates its actor and installs a single-member directory.
   // Restore the caller's provider fixture before the debit refreshes membership.
   if (memberships) {
@@ -122,10 +122,15 @@ export async function chargePublicDataUsage(
       memberships,
     );
   }
-  await registerPublicDataUsage(context, runId, claim.sandboxToken, credits);
+  await registerPublicDataUsage(
+    context,
+    runId,
+    execution.sandboxToken,
+    credits,
+  );
   await createWebhookCallbackApi(context).requestAgentComplete(
     { runId, exitCode: 1, error: "Billing fixture finished" },
-    { authorization: `Bearer ${claim.sandboxToken}` },
+    { authorization: `Bearer ${execution.sandboxToken}` },
     [200],
   );
   await flushWaitUntilForTest();

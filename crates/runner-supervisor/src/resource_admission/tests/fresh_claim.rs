@@ -32,7 +32,7 @@ async fn fresh_claim_does_not_wait_for_a_second_pool_lock_after_reservation() {
         BlankPoolReplenisher::new(&BTreeMap::new(), &BTreeMap::new(), &budget, 0, None)
             .diagnostics();
     let active_runs = runner_lifecycle::active_runs::ActiveRuns::new(Arc::clone(&notify));
-    let ctx = PreClaimResources {
+    let ctx = AdmissionResources {
         active_runs: &active_runs,
         idle_pool: &pool,
         status: &status,
@@ -47,9 +47,9 @@ async fn fresh_claim_does_not_wait_for_a_second_pool_lock_after_reservation() {
     let first_holder = pool.lock().await;
     let (ready, mut admission_ready) = oneshot::channel();
     let admission = admit_and_claim(
-        PreClaimRequest {
-            candidate: JobCandidate::new(run_id, "vm0/default".into())
-                .with_reuse_key(Some("thread:fresh-claim".into())),
+        JobCandidate::new(run_id, "vm0/default".into())
+            .with_reuse_key(Some("thread:fresh-claim".into())),
+        AdmissionRequest {
             profile_name: "vm0/default",
             job_vcpu: 2,
             job_memory: 4096,
@@ -89,7 +89,7 @@ async fn fresh_claim_does_not_wait_for_a_second_pool_lock_after_reservation() {
     let outcome = tokio::time::timeout(Duration::from_secs(2), admission)
         .await
         .expect("fresh rejection must release its lease while the pool remains locked");
-    assert!(matches!(outcome, PreClaimOutcome::Deferred));
+    assert!(matches!(outcome, LocalAdmissionOutcome::Deferred));
     assert_eq!(budget.allocated(), (0, 0, 0));
     assert!(cancel_tokens.handle(run_id).await.is_none());
     assert!(handle.completions.lock().unwrap().is_empty());

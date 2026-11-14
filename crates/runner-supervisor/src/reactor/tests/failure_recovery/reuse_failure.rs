@@ -232,7 +232,7 @@ async fn uncertain_reserved_cleanup_fails_claim_without_starting_replacement() {
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
-        .expect("uncertain cleanup should fail the claimed run");
+        .expect("uncertain cleanup should fail the job run");
     assert_eq!(completion.exit_code, 1);
     assert_eq!(completion.sandbox_id, None);
     assert_eq!(
@@ -310,7 +310,7 @@ async fn uncertain_post_claim_pool_reuse_keeps_active_status_without_starting_re
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
-        .expect("uncertain late pool cleanup should fail the claimed run");
+        .expect("uncertain late pool cleanup should fail the job run");
     assert_eq!(completion.exit_code, 1);
     assert_eq!(completion.sandbox_id, None);
     assert_eq!(

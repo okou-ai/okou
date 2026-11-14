@@ -58,18 +58,18 @@ async function fundedFreeRuns() {
       });
       fixture.registerRun(run.runId);
       await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.executionInput(run.runId);
-      fixture.registerClaim(run.runId, claim.sandboxToken);
+      const execution = await runs.executionInput(run.runId);
+      fixture.registerExecution(run.runId, execution.sandboxToken);
       return {
         run,
-        claim,
-        headers: { authorization: `Bearer ${claim.sandboxToken}` },
+        execution,
+        headers: { authorization: `Bearer ${execution.sandboxToken}` },
       };
     }
 
     const active = await claimRun("Keep using managed services");
     const peer = await claimRun("Complete and settle shared credit usage");
-    const encryptedSecrets = active.claim.encryptedSecrets;
+    const encryptedSecrets = active.execution.encryptedSecrets;
     if (!encryptedSecrets) {
       throw new Error("Expected the real managed Run's encrypted secrets");
     }
@@ -78,9 +78,9 @@ async function fundedFreeRuns() {
       authHeaders: {
         Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
       },
-      secretConnectorMap: active.claim.secretConnectorMap ?? undefined,
+      secretConnectorMap: active.execution.secretConnectorMap ?? undefined,
       secretConnectorMetadataMap:
-        active.claim.secretConnectorMetadataMap ?? undefined,
+        active.execution.secretConnectorMetadataMap ?? undefined,
       firewallBillable: true,
     };
 
@@ -149,7 +149,7 @@ describe("current credit balance during an active free Run", () => {
         expect(funded.body.expiresAt).toBeGreaterThanOrEqual(before + 25);
         expect(funded.body.expiresAt).toBeLessThanOrEqual(before + 35);
 
-        const toolToken = active.claim.platformEnvironment.OKOU_TOKEN;
+        const toolToken = active.execution.platformEnvironment.OKOU_TOKEN;
         if (!toolToken) {
           throw new Error("Expected the real managed Run's Okou token");
         }

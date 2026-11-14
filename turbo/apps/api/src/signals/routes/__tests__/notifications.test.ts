@@ -17,7 +17,7 @@ import { createBddApi, type ApiTestUserOptions } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { mockClerkUsers } from "./helpers/clerk-users";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createPublicAutomationRunApi } from "./helpers/public-automation-run";
@@ -61,7 +61,7 @@ async function runningAgent(options: ApiTestUserOptions = {}) {
     prompt: "Notify me about a useful update",
   });
   expect(run).toMatchObject({ status: "running" });
-  const claim = await runs.executionInput(run.runId);
+  const execution = await runs.executionInput(run.runId);
   mockClerkUsers(context, [
     {
       id: actor.userId,
@@ -76,7 +76,7 @@ async function runningAgent(options: ApiTestUserOptions = {}) {
     actor,
     runs,
     runId: run.runId,
-    headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+    headers: { authorization: `Bearer ${okouTokenFromExecution(execution)}` },
   };
 }
 
@@ -257,10 +257,12 @@ describe("agent mail notifications", () => {
       automation.body.id,
       runnerGroup,
     );
-    const claim = await runs.executionInput(runId);
+    const execution = await runs.executionInput(runId);
     automationRuns.track(actor, runId, runnerGroup).sandboxToken =
-      claim.sandboxToken;
-    const headers = { authorization: `Bearer ${okouTokenFromClaim(claim)}` };
+      execution.sandboxToken;
+    const headers = {
+      authorization: `Bearer ${okouTokenFromExecution(execution)}`,
+    };
     const input = body();
     await accept(
       client().mail({ headers, body: { ...content(), kind: "morning-brief" } }),

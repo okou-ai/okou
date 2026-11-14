@@ -38,7 +38,7 @@ pub struct JobResponse {
     pub error: Option<String>,
 }
 
-/// Active input written by local producers for a claimed live run.
+/// Active input written by local producers for a job live run.
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActiveInputEntry {

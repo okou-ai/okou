@@ -100,7 +100,7 @@ export async function setupConnectedDiscordActor(
   }
   if (!options.reuseOrganization) {
     await authOrgApi.readAgent(actor, onboarding.defaultAgentId);
-    // These lifecycle fixtures exercise the native Runner claim protocol.
+    // These lifecycle fixtures exercise the native Runner execution protocol.
     await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });

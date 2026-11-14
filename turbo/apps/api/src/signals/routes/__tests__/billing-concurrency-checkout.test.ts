@@ -31,7 +31,7 @@ const {
   TEST_PRICE_CONCURRENCY,
   setTierPrices,
   currentSecond,
-  claimAgentToken,
+  issueAgentToken,
   readBillingStatus,
   createSubscriptionOrg,
   createOwnedBillingOrg,
@@ -4076,7 +4076,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
         ],
       },
     });
-    const token = await claimAgentToken(fixture);
+    const token = await issueAgentToken(fixture);
 
     const client = setupApp({
       context,

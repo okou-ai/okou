@@ -704,8 +704,8 @@ test.each([
           return;
         }
         await runs.heartbeatRunner(runnerGroup);
-        const claim = await ownRuns.claim(run.id);
-        const token = claim.platformEnvironment?.OKOU_TOKEN;
+        const execution = await ownRuns.executionInput(run.id);
+        const token = execution.platformEnvironment?.OKOU_TOKEN;
         expect(token).toStrictEqual(expect.any(String));
         const runHeaders = { authorization: `Bearer ${token}` };
         if (scenario !== "access") {
@@ -719,7 +719,7 @@ test.each([
               exitCode: 1,
               error: "Cannot continue session from history",
             },
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             [200],
           );
           await flushWaitUntilForTest();

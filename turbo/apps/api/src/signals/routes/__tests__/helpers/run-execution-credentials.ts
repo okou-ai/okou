@@ -11,8 +11,8 @@ import { createRunsApi } from "./api-bdd-runs";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { publicRunOwner } from "./public-run-owner";
 
-/** Reuse one real, owned Runner claim per caller within the current case. */
-export function createClaimedRunCredentials(context: TestContext) {
+/** Reuse one real, owned Runner execution per caller within the current case. */
+export function createRunExecutionCredentials(context: TestContext) {
   const credentials = new Map<
     string,
     {
@@ -30,7 +30,7 @@ export function createClaimedRunCredentials(context: TestContext) {
     owners.clear();
     credentials.clear();
   });
-  async function claim(
+  async function launchRun(
     identity: {
       readonly userId: string;
       readonly orgId: string | null;
@@ -38,7 +38,7 @@ export function createClaimedRunCredentials(context: TestContext) {
     fresh = false,
   ) {
     if (!identity.orgId) {
-      throw new Error("A Runner claim requires an organization");
+      throw new Error("A Runner execution requires an organization");
     }
     const key = JSON.stringify([identity.userId, identity.orgId]);
     const existing = credentials.get(key);
@@ -55,7 +55,7 @@ export function createClaimedRunCredentials(context: TestContext) {
       workspaces.set(identity.orgId, ownedWorkspace);
       workspace = ownedWorkspace;
       // Registered before all Run owners: reverse-order teardown releases
-      // every actor's claims before restoring the shared external mocks.
+      // every actor's Runs before restoring the shared external mocks.
       onTestFinished(() => {
         ownedWorkspace.restore();
       });
@@ -104,14 +104,14 @@ export function createClaimedRunCredentials(context: TestContext) {
           prompt: "Exercise the caller's API access",
         });
         await runs.heartbeatRunner(runnerGroup);
-        const claim = await owner.claim(run.runId);
-        const issued = claim.platformEnvironment?.OKOU_TOKEN;
+        const execution = await owner.executionInput(run.runId);
+        const issued = execution.platformEnvironment?.OKOU_TOKEN;
         if (!issued) {
-          throw new Error("Expected the real claim's Okou token");
+          throw new Error("Expected the dispatched execution's Okou token");
         }
         return {
           token: issued,
-          sandboxToken: claim.sandboxToken,
+          sandboxToken: execution.sandboxToken,
           runId: run.runId,
           threadId: run.threadId,
           agentId: agent.agentId,
@@ -130,21 +130,21 @@ export function createClaimedRunCredentials(context: TestContext) {
     return token;
   }
   return {
-    claim(identity: Parameters<typeof claim>[0]) {
-      return claim(identity);
+    forActor(identity: Parameters<typeof launchRun>[0]) {
+      return launchRun(identity);
     },
-    freshClaim(identity: Parameters<typeof claim>[0]) {
-      return claim(identity, true);
+    freshForActor(identity: Parameters<typeof launchRun>[0]) {
+      return launchRun(identity, true);
     },
     async removeMember(
-      identity: Parameters<typeof claim>[0],
+      identity: Parameters<typeof launchRun>[0],
       survivingAdmin?: ApiTestUser,
     ) {
       const actorOwners = owners.get(
         JSON.stringify([identity.userId, identity.orgId]),
       );
       if (!actorOwners || !identity.orgId) {
-        throw new Error("Claim a Run before revoking its member");
+        throw new Error("Launch a Run before revoking its member");
       }
       // Release this actor's accepted work while its credentials still exist.
       const auth = createAuthOrgAgentsBddApi(context);
@@ -197,11 +197,11 @@ export function createClaimedRunCredentials(context: TestContext) {
         }
       });
     },
-    async okouToken(identity: Parameters<typeof claim>[0]) {
-      return (await claim(identity)).token;
+    async okouToken(identity: Parameters<typeof launchRun>[0]) {
+      return (await launchRun(identity)).token;
     },
-    async sandboxToken(identity: Parameters<typeof claim>[0]) {
-      return (await claim(identity)).sandboxToken;
+    async sandboxToken(identity: Parameters<typeof launchRun>[0]) {
+      return (await launchRun(identity)).sandboxToken;
     },
   };
 }

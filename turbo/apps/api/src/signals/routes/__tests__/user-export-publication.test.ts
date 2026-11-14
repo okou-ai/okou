@@ -386,7 +386,10 @@ test("publishes the exact owned memory bytes committed by a genuine Runner claim
   const carrier = createPublicRunnerMemory(context, owner);
   await carrier.run(async () => {
     const agentId = await carrier.initializeNative();
-    const claimed = await carrier.claim(agentId, "Write my exported memory");
+    const claimed = await carrier.startExecution(
+      agentId,
+      "Write my exported memory",
+    );
     const content = "Memory from an authenticated Runner";
     const files = [
       {
@@ -477,7 +480,7 @@ test.each([
     const carrier = createPublicRunnerMemory(context, owner);
     await carrier.run(async () => {
       const agentId = await carrier.initializeNative();
-      const claimed = await carrier.claim(
+      const claimed = await carrier.startExecution(
         agentId,
         "Export my completed conversation: 你好",
       );

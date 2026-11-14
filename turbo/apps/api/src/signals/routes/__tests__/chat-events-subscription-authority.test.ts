@@ -29,7 +29,7 @@ const {
   configureSubscriptionPiModel,
   sendChatRun,
   sendWaitingChatInput,
-  claimChatRun,
+  runExecution,
   waitForThreadMessages,
   completeChatRunOk,
   cancelChatRun,
@@ -42,14 +42,14 @@ const {
 describe("CHAT-02: run-level model overrides", () => {
   describe("subscription account preparation", () => {
     it("rejects a personal account disconnected while its input is queued", async () => {
-      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+      const { actor, agentId } = await entitledNativeChatActor();
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
       const anchor = await sendChatRun(actor, {
         agentId,
         prompt: "hold capacity",
         model: "claude-fable-5-1",
       });
-      const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
+      const anchorExecution = await runExecution(anchor.runId);
       const captured = await configureSubscriptionPiModel(actor, {
         accountId: `preparation-subscription-${randomUUID()}`,
       });
@@ -69,8 +69,8 @@ describe("CHAT-02: run-level model overrides", () => {
       );
       // Concurrent real completion reports may both schedule the same pick.
       await Promise.all([
-        completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders),
-        completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders),
+        completeChatRunOk(anchor.runId, anchorExecution.sandboxHeaders),
+        completeChatRunOk(anchor.runId, anchorExecution.sandboxHeaders),
       ]);
       const page = await waitForThreadMessages(
         actor,
@@ -128,7 +128,7 @@ describe("CHAT-02: run-level model overrides", () => {
 
   describe("final subscription authority", () => {
     async function claimPreparedSubscription() {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId } = await entitledChatActor();
       const identity = `held-subscription-${randomUUID()}`;
       const captured = await configureSubscriptionPiModel(actor, {
         accountId: identity,
@@ -143,8 +143,8 @@ describe("CHAT-02: run-level model overrides", () => {
         prompt: "preserve final subscription authority",
         runOptions: { codexServiceTier: "fast" },
       });
-      const claimed = await claimChatRun(runnerGroup, run.runId);
-      return { actor, captured, run, ...claimed };
+      const execution = await runExecution(run.runId);
+      return { actor, captured, run, ...execution };
     }
 
     it.each(["connected invalid_grant", "retained terminal refresh"] as const)(
@@ -171,14 +171,14 @@ describe("CHAT-02: run-level model overrides", () => {
         const rejected = await firewall.requestFirewallAuth(
           f.sandboxHeaders,
           {
-            encryptedSecrets: string().parse(f.claim.encryptedSecrets),
+            encryptedSecrets: string().parse(f.execution.encryptedSecrets),
             authHeaders: {
               Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
               "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
             },
-            secretConnectorMap: f.claim.secretConnectorMap ?? undefined,
+            secretConnectorMap: f.execution.secretConnectorMap ?? undefined,
             secretConnectorMetadataMap:
-              f.claim.secretConnectorMetadataMap ?? undefined,
+              f.execution.secretConnectorMetadataMap ?? undefined,
             forceRefresh: true,
           },
           [502],
@@ -199,7 +199,7 @@ describe("CHAT-02: run-level model overrides", () => {
   // it no longer revokes the prepared subscription. `personal-subscription-run-
   // identity` owns that retention contract; this case keeps the refresh path.
   it("rejects a prepared subscription when its captured account needs a reconnect", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
     await configureSubscriptionPiModel(actor, {
       accountId: "prepared-subscription-account",
       accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
@@ -212,10 +212,7 @@ describe("CHAT-02: run-level model overrides", () => {
       prompt: "retain subscription revocation at execution",
       runOptions: { codexServiceTier: "fast" },
     });
-    const { claim, sandboxHeaders } = await claimChatRun(
-      runnerGroup,
-      run.runId,
-    );
+    const { execution, sandboxHeaders } = await runExecution(run.runId);
     const firewall = createFirewallApi(context);
     firewall.mockCodexTokenRefresh(() => {
       return HttpResponse.json(
@@ -231,14 +228,14 @@ describe("CHAT-02: run-level model overrides", () => {
     const rejected = await firewall.requestFirewallAuth(
       sandboxHeaders,
       {
-        encryptedSecrets: string().parse(claim.encryptedSecrets),
+        encryptedSecrets: string().parse(execution.encryptedSecrets),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
           "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
         },
-        secretConnectorMap: claim.secretConnectorMap ?? undefined,
+        secretConnectorMap: execution.secretConnectorMap ?? undefined,
         secretConnectorMetadataMap:
-          claim.secretConnectorMetadataMap ?? undefined,
+          execution.secretConnectorMetadataMap ?? undefined,
         forceRefresh: true,
       },
       [502],
@@ -265,8 +262,7 @@ describe("CHAT-02: run-level model overrides", () => {
         run: own,
         actor,
         agentId,
-        runnerGroup,
-        claimChatRun,
+        runExecution,
         sendChatRun,
       } = await publicChatActor(context);
       await own(async () => {
@@ -280,19 +276,21 @@ describe("CHAT-02: run-level model overrides", () => {
         model: route.selectedModel,
         prompt: "Luna standard start",
       });
-      const firstClaim = await claimChatRun(runnerGroup, first.runId);
+      const firstExecution = await runExecution(first.runId);
 
-      expect(firstClaim.claim.piSessionId).toBe(first.threadId);
-      expect(firstClaim.claim.piModelConfig).toMatchObject({
+      expect(firstExecution.execution.piSessionId).toBe(first.threadId);
+      expect(firstExecution.execution.piModelConfig).toMatchObject({
         model: route.runtimeModel,
       });
-      expect(firstClaim.claim.piModelConfig).not.toHaveProperty("serviceTier");
+      expect(firstExecution.execution.piModelConfig).not.toHaveProperty(
+        "serviceTier",
+      );
       await own(async () => {
         return await completeSandboxFirstPiRun({
           actor,
           answer: "Luna standard sandbox answer",
           historyObjects: objects,
-          claim: firstClaim,
+          execution: firstExecution,
           prompt: "Luna standard start",
           run: first,
           responsesModel: { provider: "openai", model: route.selectedModel },
@@ -311,13 +309,13 @@ describe("CHAT-02: run-level model overrides", () => {
         runOptions: { codexServiceTier: "fast" },
       });
       await flushWaitUntilForTest();
-      const fastClaim = await claimChatRun(runnerGroup, fast.runId);
+      const fastExecution = await runExecution(fast.runId);
 
-      expect(fastClaim.claim.nativeContinuation).toMatchObject({
+      expect(fastExecution.execution.nativeContinuation).toMatchObject({
         sessionId: first.threadId,
         generationRunId: first.runId,
       });
-      expect(fastClaim.claim.piModelConfig).toMatchObject({
+      expect(fastExecution.execution.piModelConfig).toMatchObject({
         model: route.runtimeModel,
         serviceTier: route.type === "codex-oauth-token" ? "fast" : "priority",
       });
@@ -326,7 +324,7 @@ describe("CHAT-02: run-level model overrides", () => {
           actor,
           answer: "Luna Fast sandbox answer",
           historyObjects: objects,
-          claim: fastClaim,
+          execution: fastExecution,
           prompt: "Luna Fast continuation",
           run: fast,
           responsesModel: { provider: "openai", model: route.selectedModel },
@@ -350,11 +348,11 @@ describe("CHAT-02: run-level model overrides", () => {
         prompt: "Luna standard return",
       });
       await flushWaitUntilForTest();
-      const standardClaim = await claimChatRun(runnerGroup, standard.runId);
-      expect(standardClaim.claim.piModelConfig).toMatchObject({
+      const standardExecution = await runExecution(standard.runId);
+      expect(standardExecution.execution.piModelConfig).toMatchObject({
         model: route.runtimeModel,
       });
-      expect(standardClaim.claim.piModelConfig).not.toHaveProperty(
+      expect(standardExecution.execution.piModelConfig).not.toHaveProperty(
         "serviceTier",
       );
       await own(async () => {
@@ -362,7 +360,7 @@ describe("CHAT-02: run-level model overrides", () => {
           actor,
           answer: "Luna standard sandbox answer",
           historyObjects: objects,
-          claim: standardClaim,
+          execution: standardExecution,
           prompt: "Luna standard return",
           run: standard,
           responsesModel: { provider: "openai", model: route.selectedModel },
@@ -404,7 +402,7 @@ describe("CHAT-02: run-level model overrides", () => {
     "promotes queued and immediate $name Fast from $origin into the runner claim",
     async ({ route, origin }) => {
       const owned = await publicChatActor(context);
-      const { actor, agentId, runnerGroup } = owned;
+      const { actor, agentId } = owned;
       await owned.run(async () => {
         await api.ensurePersonalSubscriptionModel(actor, {
           model: "claude-fable-5-1",
@@ -419,9 +417,9 @@ describe("CHAT-02: run-level model overrides", () => {
           prompt: "hold the Luna target thread",
           model: "claude-fable-5-1",
         });
-        const anchorClaim = await owned.claimChatRun(runnerGroup, anchor.runId);
-        const sourceClaim = await owned.claimChatRun(runnerGroup, source.runId);
-        const token = sourceClaim.claim.platformEnvironment.OKOU_TOKEN;
+        const anchorExecution = await owned.runExecution(anchor.runId);
+        const sourceExecution = await owned.runExecution(source.runId);
+        const token = sourceExecution.execution.platformEnvironment.OKOU_TOKEN;
         if (!token) {
           throw new Error("Expected a claimed agent token");
         }
@@ -447,7 +445,7 @@ describe("CHAT-02: run-level model overrides", () => {
           throw new Error("Expected queued subscription send");
         }
         chatCallbacks.mockChatOutputEvents([]);
-        await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+        await completeChatRunOk(anchor.runId, anchorExecution.sandboxHeaders);
         await flushWaitUntilForTest();
         const messages = await waitForThreadMessages(
           actor,
@@ -466,18 +464,15 @@ describe("CHAT-02: run-level model overrides", () => {
         if (!promoted?.runId) {
           throw new Error("Expected queued subscription promotion");
         }
-        const promotedClaim = await owned.claimChatRun(
-          runnerGroup,
-          promoted.runId,
-        );
-        expect(promotedClaim.claim.piModelConfig).toMatchObject({
+        const promotedExecution = await owned.runExecution(promoted.runId);
+        expect(promotedExecution.execution.piModelConfig).toMatchObject({
           model: route.runtimeModel,
           serviceTier: fastTier,
         });
         await cancelChatRun(
           actor,
           promoted.runId,
-          promotedClaim.sandboxHeaders,
+          promotedExecution.sandboxHeaders,
         );
         await expectThreadModelCredits(context, actor, anchor.threadId, 0);
 
@@ -517,18 +512,15 @@ describe("CHAT-02: run-level model overrides", () => {
         if (!immediateRunId) {
           throw new Error("Expected immediate subscription run");
         }
-        const immediateClaim = await owned.claimChatRun(
-          runnerGroup,
-          immediateRunId,
-        );
-        expect(immediateClaim.claim.piModelConfig).toMatchObject({
+        const immediateExecution = await owned.runExecution(immediateRunId);
+        expect(immediateExecution.execution.piModelConfig).toMatchObject({
           model: route.runtimeModel,
           serviceTier: fastTier,
         });
         await cancelChatRun(
           actor,
           immediateRunId,
-          immediateClaim.sandboxHeaders,
+          immediateExecution.sandboxHeaders,
         );
         await expectThreadModelCredits(
           context,
@@ -536,7 +528,11 @@ describe("CHAT-02: run-level model overrides", () => {
           immediate.body.threadId,
           0,
         );
-        await cancelChatRun(actor, source.runId, sourceClaim.sandboxHeaders);
+        await cancelChatRun(
+          actor,
+          source.runId,
+          sourceExecution.sandboxHeaders,
+        );
       });
     },
     90_000,

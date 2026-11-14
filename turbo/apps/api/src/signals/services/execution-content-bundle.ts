@@ -12,7 +12,7 @@ import {
   type StoragePresignedUrlCacheWrite,
 } from "./system-storage-presigned-url-cache.service";
 
-/** Match contentBundleSchema before the atomic claim consumes its queued Run. */
+/** Select only references accepted by the execution Content Bundle contract. */
 export function contentBundleAvailableCondition(reference: SQLWrapper): SQL {
   const archiveBytes = sql`(${reference}->>'archiveBytes')::numeric`;
   return sql`CASE WHEN
@@ -26,15 +26,15 @@ export function contentBundleAvailableCondition(reference: SQLWrapper): SQL {
   ELSE false END`;
 }
 
-export interface ClaimedContentBundleSignature {
+export interface ExecutionContentBundleSignature {
   readonly bundle: (ContentBundle | TemplateGuidanceBundle) & {
     readonly downloadUrl: string;
   };
   readonly cacheWrite: StoragePresignedUrlCacheWrite | undefined;
 }
 
-/** Reuse only the successful claim's snapshot; sign misses without R2 I/O. */
-export const signClaimedContentBundle$ = command(
+/** Reuse the selected URL snapshot and sign cache misses without R2 I/O. */
+export const signExecutionContentBundle$ = command(
   async (
     { get },
     args: {
@@ -44,7 +44,7 @@ export const signClaimedContentBundle$ = command(
         { readonly url: string; readonly expiresAtMs: number } | undefined;
     },
     signal: AbortSignal,
-  ): Promise<ClaimedContentBundleSignature> => {
+  ): Promise<ExecutionContentBundleSignature> => {
     signal.throwIfAborted();
     const request = contentBundleUrlCacheRequest(
       args.cache,
@@ -66,7 +66,7 @@ export const signClaimedContentBundle$ = command(
     signal.throwIfAborted();
     const result = signed.results.get(request.cacheKey);
     if (!result) {
-      throw new Error("Claimed Content Bundle URL is missing");
+      throw new Error("Execution Content Bundle URL is missing");
     }
     return {
       bundle: { ...args.reference, downloadUrl: result.url },

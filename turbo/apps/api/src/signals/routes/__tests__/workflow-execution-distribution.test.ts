@@ -16,7 +16,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
+import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 import {
   createChatEventsFixture,
   requireOrgId,
@@ -140,8 +140,8 @@ test.each([
     context.mocks.s3.send.mockClear();
     const run = await queued.launch();
     await runs.heartbeatRunner(group);
-    const claim = await runs.executionInput(run.runId);
-    expect(claim.cliAgentType).toBe(framework);
+    const execution = await runs.executionInput(run.runId);
+    expect(execution.cliAgentType).toBe(framework);
     expect(context.mocks.s3.send).not.toHaveBeenCalledWith(
       expect.objectContaining({
         input: expect.objectContaining({
@@ -149,14 +149,14 @@ test.each([
         }),
       }),
     );
-    const skill = claim.contentBundles.skills.find((entry) => {
+    const skill = execution.contentBundles.skills.find((entry) => {
       return entry.mountPath.endsWith(`/${workflow.name}`);
     })!;
     expect(skill.mountPath).toBe(`${root}/${workflow.name}`);
     expect(
-      readClaimedContentBundle(
+      readExecutionContentBundle(
         s3.objects,
-        claim.contentBundles.instructions!,
+        execution.contentBundles.instructions!,
       ).get("instructions.md")?.length,
     ).toBe(0);
     expect(Object.keys(skill).sort()).toStrictEqual([
@@ -165,17 +165,17 @@ test.each([
       "mountPath",
       "sha256",
     ]);
-    const selected = readClaimedContentBundle(s3.objects, skill);
+    const selected = readExecutionContentBundle(s3.objects, skill);
     expect(selected.get("SKILL.md")?.toString()).toContain(
       "claim-selected body",
     );
     expect(selected.get("reference.md")?.toString()).toBe("new attachment");
     expect(selected.get("资料/说明.md")?.toString()).toBe("附件内容");
-    const added = claim.contentBundles.skills.find((entry) => {
+    const added = execution.contentBundles.skills.find((entry) => {
       return entry.mountPath.endsWith(`/${second.name}`);
     })!;
     expect(
-      readClaimedContentBundle(s3.objects, added).get("SKILL.md")?.toString(),
+      readExecutionContentBundle(s3.objects, added).get("SKILL.md")?.toString(),
     ).toContain("newly available");
     await accept(
       detailClient().update({
@@ -188,8 +188,10 @@ test.each([
       }),
       [200],
     );
-    expect(readClaimedContentBundle(s3.objects, skill)).toStrictEqual(selected);
-    await finish(run.runId, claim.sandboxToken);
+    expect(readExecutionContentBundle(s3.objects, skill)).toStrictEqual(
+      selected,
+    );
+    await finish(run.runId, execution.sandboxToken);
     const next = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "Use the next published version",
@@ -199,7 +201,7 @@ test.each([
       return entry.mountPath.endsWith(`/${workflow.name}`);
     })!;
     expect(later.sha256).not.toBe(skill.sha256);
-    const laterFiles = readClaimedContentBundle(s3.objects, later);
+    const laterFiles = readExecutionContentBundle(s3.objects, later);
     expect(laterFiles.get("SKILL.md")?.toString()).toContain("later body");
     expect(laterFiles.get("reference.md")?.toString()).toBe("later attachment");
     expect(laterFiles.has("资料/说明.md")).toBeFalsy();
@@ -227,13 +229,13 @@ test("shares a complete package hash across distinct Workflow owners", async () 
       agentId,
       prompt: "Use the shared package",
     });
-    const claim = await runs.executionInput(run.runId);
-    const skill = claim.contentBundles.skills[0]!;
+    const execution = await runs.executionInput(run.runId);
+    const skill = execution.contentBundles.skills[0]!;
     expect(
-      readClaimedContentBundle(s3.objects, skill).get("notes.md")?.toString(),
+      readExecutionContentBundle(s3.objects, skill).get("notes.md")?.toString(),
     ).toBe("Identical attachment");
     references.push(skill);
-    await finish(run.runId, claim.sandboxToken);
+    await finish(run.runId, execution.sandboxToken);
   }
   expect(references[0]!.sha256).toBe(references[1]!.sha256);
   expect(references[0]!.archiveBytes).toBe(references[1]!.archiveBytes);
@@ -261,18 +263,18 @@ test("re-evaluates private/public precedence without exposing another member's p
   });
   const run = await queued.launch();
   await runs.heartbeatRunner(group);
-  const claim = await runs.executionInput(run.runId);
+  const execution = await runs.executionInput(run.runId);
   expect(
-    claim.contentBundles.skills.map((entry) => {
+    execution.contentBundles.skills.map((entry) => {
       return entry.mountPath.split("/").at(-1);
     }),
   ).toStrictEqual([privateWorkflow.name, ...SEED_SKILLS]);
   expect(
-    readClaimedContentBundle(s3.objects, claim.contentBundles.skills[0]!)
+    readExecutionContentBundle(s3.objects, execution.contentBundles.skills[0]!)
       .get("SKILL.md")
       ?.toString(),
   ).toContain("private body");
-  await finish(run.runId, claim.sandboxToken);
+  await finish(run.runId, execution.sandboxToken);
 });
 
 test("withholds a prepared Workflow after its owner withdraws sharing", async () => {
@@ -343,7 +345,7 @@ test("withholds a prepared Workflow after its owner withdraws sharing", async ()
       threadId: sent.body.threadId,
       prompt: "Continue with the remaining authorized workflows",
     });
-    const execution = await owner.claim(next.runId);
+    const execution = await owner.executionInput(next.runId);
     expect(
       execution.contentBundles.skills.some((skill) => {
         return skill.mountPath.endsWith(`/${workflow.name}`);
@@ -375,14 +377,14 @@ test("invokes the caller's Private Workflow when Public and foreign Private Work
   });
   await runs.heartbeatRunner(group);
   // The claim mounts this slug's current winner.
-  const claim = await runs.executionInput(run.runId);
-  const skill = claim.contentBundles.skills.find((entry) => {
+  const execution = await runs.executionInput(run.runId);
+  const skill = execution.contentBundles.skills.find((entry) => {
     return entry.mountPath.endsWith(`/${name}`);
   })!;
   expect(
-    readClaimedContentBundle(s3.objects, skill).get("SKILL.md")?.toString(),
+    readExecutionContentBundle(s3.objects, skill).get("SKILL.md")?.toString(),
   ).toContain("private body");
-  await finish(run.runId, claim.sandboxToken);
+  await finish(run.runId, execution.sandboxToken);
 });
 
 test("runs a queued explicit invocation without its deleted Workflow", async () => {
@@ -401,13 +403,13 @@ test("runs a queued explicit invocation without its deleted Workflow", async () 
   );
   const run = await queued.launch();
   await runs.heartbeatRunner(group);
-  const claim = await runs.executionInput(run.runId);
+  const execution = await runs.executionInput(run.runId);
   expect(
-    claim.contentBundles.skills.map((entry) => {
+    execution.contentBundles.skills.map((entry) => {
       return entry.mountPath.split("/").at(-1);
     }),
   ).toStrictEqual([...SEED_SKILLS]);
-  await finish(run.runId, claim.sandboxToken);
+  await finish(run.runId, execution.sandboxToken);
 });
 
 test("mounts the current winner for a queued invocation whose slug is reused", async () => {
@@ -432,21 +434,21 @@ test("mounts the current winner for a queued invocation whose slug is reused", a
   });
   const run = await queued.launch();
   await runs.heartbeatRunner(group);
-  const claim = await runs.executionInput(run.runId);
-  const invoked = claim.contentBundles.skills.find((entry) => {
+  const execution = await runs.executionInput(run.runId);
+  const invoked = execution.contentBundles.skills.find((entry) => {
     return entry.mountPath.endsWith(`/${workflow.name}`);
   })!;
   expect(
-    readClaimedContentBundle(s3.objects, invoked).get("SKILL.md")?.toString(),
+    readExecutionContentBundle(s3.objects, invoked).get("SKILL.md")?.toString(),
   ).toContain("different invocation target");
-  expect(claim.contentBundles.skills).toStrictEqual(
+  expect(execution.contentBundles.skills).toStrictEqual(
     expect.arrayContaining([
       expect.objectContaining({
         mountPath: expect.stringMatching(new RegExp(`/${renamed}$`, "u")),
       }),
     ]),
   );
-  await finish(run.runId, claim.sandboxToken);
+  await finish(run.runId, execution.sandboxToken);
 });
 
 test("keeps a large non-ASCII Workflow in its complete package without truncation", async () => {
@@ -458,17 +460,17 @@ test("keeps a large non-ASCII Workflow in its complete package without truncatio
     prompt: "Use workflows",
   });
   await runs.heartbeatRunner(group);
-  const claim = await runs.executionInput(run.runId);
-  const skill = claim.contentBundles.skills.find((entry) => {
+  const execution = await runs.executionInput(run.runId);
+  const skill = execution.contentBundles.skills.find((entry) => {
     return entry.mountPath.endsWith(`/${workflow.name}`);
   })!;
   expect(Buffer.byteLength(JSON.stringify(skill))).toBeLessThan(2048);
-  const skillMd = readClaimedContentBundle(s3.objects, skill)
+  const skillMd = readExecutionContentBundle(s3.objects, skill)
     .get("SKILL.md")!
     .toString();
   expect(skillMd.endsWith(`${instruction.trim()}\n`)).toBeTruthy();
   expect(Buffer.byteLength(skillMd)).toBeGreaterThan(4.5 * 1024 * 1024);
-  await finish(run.runId, claim.sandboxToken);
+  await finish(run.runId, execution.sandboxToken);
 });
 
 test("preserves a running Agent after rejected completion and accepts cancellation acknowledgement", async () => {
@@ -481,7 +483,7 @@ test("preserves a running Agent after rejected completion and accepts cancellati
     prompt: "Use workflows",
   });
   await runs.heartbeatRunner(group);
-  const claim = await runs.executionInput(run.runId);
+  const execution = await runs.executionInput(run.runId);
   await accept(
     detailClient().update({
       headers: headers(actor),
@@ -507,7 +509,7 @@ test("preserves a running Agent after rejected completion and accepts cancellati
         ],
       },
     },
-    { authorization: `Bearer ${claim.sandboxToken}` },
+    { authorization: `Bearer ${execution.sandboxToken}` },
     [400],
   );
   await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
@@ -517,7 +519,7 @@ test("preserves a running Agent after rejected completion and accepts cancellati
   expect(blocked.body).toMatchObject({ error: { code: "CONFLICT" } });
   await runs.requestCancelRun(actor, run.runId, [200]);
   await flushWaitUntilForTest();
-  await finish(run.runId, claim.sandboxToken);
+  await finish(run.runId, execution.sandboxToken);
   await flushWaitUntilForTest();
   await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
     status: "cancelled",

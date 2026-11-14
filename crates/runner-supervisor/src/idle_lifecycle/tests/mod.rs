@@ -20,7 +20,7 @@ use runner_lifecycle::idle_reuse_preparation::add_healthy_reuse_preparation_matc
 use runner_lifecycle::resource_budget::ResourceBudget;
 use runner_storage::storage_fingerprints::StorageFingerprints;
 
-fn claimed_idle_pool(
+fn admitted_idle_pool(
     gate: ParkingGate,
     native_generation_run_id: RunId,
 ) -> (SharedIdlePool, Arc<ResourceBudget>, SandboxId) {
@@ -30,7 +30,7 @@ fn claimed_idle_pool(
     let mut pool = IdlePool::new_with_parking_gate(IdlePoolConfig { max_idle: 2 }, gate);
     assert!(matches!(
         pool.park(
-            ParkedIdleCandidateBuilder::new("thread:claimed-idle", lease)
+            ParkedIdleCandidateBuilder::new("thread:job-idle", lease)
                 .with_sandbox_id(sandbox_id)
                 .with_source_run_id(native_generation_run_id)
                 .with_native_generation_run_id(native_generation_run_id)
@@ -44,7 +44,7 @@ fn claimed_idle_pool(
 #[tokio::test]
 async fn claimed_idle_reservation_rollback_restores_pool_and_status() {
     let generation = RunId::new_v4();
-    let (idle_pool, budget, sandbox_id) = claimed_idle_pool(ParkingGate::new_open(), generation);
+    let (idle_pool, budget, sandbox_id) = admitted_idle_pool(ParkingGate::new_open(), generation);
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("status.json");
     let status = StatusTracker::new(path.clone(), 4, None, None);
@@ -53,7 +53,7 @@ async fn claimed_idle_reservation_rollback_restores_pool_and_status() {
     status.set_idle_snapshot(initial.clone()).await.unwrap();
 
     let reservation =
-        reserve_reusable_idle_for_spawn(&idle_pool, "thread:claimed-idle", "vm0/default", &None)
+        reserve_reusable_idle_for_spawn(&idle_pool, "thread:job-idle", "vm0/default", &None)
             .await
             .expect("ordinary matching sandbox should reserve");
     assert_eq!(idle_pool.lock().await.len(), 0);
@@ -97,7 +97,7 @@ async fn claimed_idle_reservation_rollback_restores_pool_and_status() {
 #[tokio::test]
 async fn claimed_exact_reservation_classifies_miss_without_mutation() {
     let generation = RunId::new_v4();
-    let (idle_pool, budget, sandbox_id) = claimed_idle_pool(ParkingGate::new_open(), generation);
+    let (idle_pool, budget, sandbox_id) = admitted_idle_pool(ParkingGate::new_open(), generation);
     let initial_revision = idle_pool.lock().await.revision();
     let other_limits = sandbox::DeviceRateLimits {
         block: sandbox::BlockRateLimits {
@@ -118,21 +118,21 @@ async fn claimed_exact_reservation_classifies_miss_without_mutation() {
             ExactIdleReservationMiss::Absent,
         ),
         (
-            "thread:claimed-idle",
+            "thread:job-idle",
             "other-profile",
             None,
             generation,
             ExactIdleReservationMiss::ProfileMismatch,
         ),
         (
-            "thread:claimed-idle",
+            "thread:job-idle",
             "vm0/default",
             Some(other_limits),
             generation,
             ExactIdleReservationMiss::DeviceLimitMismatch,
         ),
         (
-            "thread:claimed-idle",
+            "thread:job-idle",
             "vm0/default",
             None,
             RunId::new_v4(),
@@ -154,7 +154,7 @@ async fn claimed_exact_reservation_classifies_miss_without_mutation() {
     }
     let reservation = reserve_exact_idle_for_spawn(
         &idle_pool,
-        "thread:claimed-idle",
+        "thread:job-idle",
         "vm0/default",
         &None,
         generation,
@@ -185,7 +185,7 @@ async fn claimed_exact_reservation_classifies_miss_without_mutation() {
 #[tokio::test]
 async fn rejected_claimed_idle_rollback_destroys_and_notifies() {
     let gate = ParkingGate::new_open();
-    let (idle_pool, budget, _) = claimed_idle_pool(gate.clone(), RunId::new_v4());
+    let (idle_pool, budget, _) = admitted_idle_pool(gate.clone(), RunId::new_v4());
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("status.json");
     let status = StatusTracker::new(path.clone(), 4, None, None);
@@ -193,7 +193,7 @@ async fn rejected_claimed_idle_rollback_destroys_and_notifies() {
     let initial = idle_pool.lock().await.status_snapshot();
     status.set_idle_snapshot(initial).await.unwrap();
     let reservation =
-        reserve_reusable_idle_for_spawn(&idle_pool, "thread:claimed-idle", "vm0/default", &None)
+        reserve_reusable_idle_for_spawn(&idle_pool, "thread:job-idle", "vm0/default", &None)
             .await
             .expect("sandbox should reserve before soft drain");
     status

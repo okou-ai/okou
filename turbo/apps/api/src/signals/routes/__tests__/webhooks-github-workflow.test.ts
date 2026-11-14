@@ -622,21 +622,21 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       if (!runId || listedRuns.runs.length !== 1) {
         throw new Error(`Expected a ${testCase.name} automation run`);
       }
-      const claim = await runsApi.executionInput(runId);
-      const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+      const execution = await runsApi.executionInput(runId);
+      const okouToken = execution.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
         throw new Error("Expected the webhook run to expose OKOU_TOKEN");
       }
-      expect(claim.prompt).toContain(
+      expect(execution.prompt).toContain(
         `Summary: ${testCase.expectedTrigger} (GitHub webhook delivery ${deliveryId}).`,
       );
       for (const expected of testCase.expectedPrompt) {
-        expect(claim.prompt).toContain(expected);
+        expect(execution.prompt).toContain(expected);
       }
       for (const excluded of testCase.excludedPrompt ?? []) {
-        expect(claim.prompt).not.toContain(excluded);
+        expect(execution.prompt).not.toContain(excluded);
       }
-      expect(claim.appendSystemPrompt).toContain("# Agent Identity");
+      expect(execution.appendSystemPrompt).toContain("# Agent Identity");
     },
   );
 
@@ -1037,20 +1037,20 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       ],
     });
     expect(chatEventDisplayText(claimedEvent)).toBe(displayMessage);
-    const claim = await runsApi.executionInput(runId);
-    const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+    const execution = await runsApi.executionInput(runId);
+    const okouToken = execution.platformEnvironment.OKOU_TOKEN;
     if (!okouToken) {
       throw new Error("Expected the automation event run to expose OKOU_TOKEN");
     }
     expect(verifyOkouToken(okouToken)?.capabilities).toContain(
       "chat-thread:write",
     );
-    expect(claim.prompt).toContain(
+    expect(execution.prompt).toContain(
       'GitHub Actions workflow "Turbo" completed with conclusion "failure"',
     );
-    expect(claim.prompt).toContain('"attempt": 2');
-    expect(claim.prompt).toContain('"triggeringEvent": "push"');
-    expect(claim.appendSystemPrompt).toContain("# Agent Identity");
+    expect(execution.prompt).toContain('"attempt": 2');
+    expect(execution.prompt).toContain('"triggeringEvent": "push"');
+    expect(execution.appendSystemPrompt).toContain("# Agent Identity");
   });
 
   it("accepts startup failures with GitHub's documented nullable run fields", async () => {
@@ -1117,13 +1117,13 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     if (!runId || listedRuns.runs.length !== 1) {
       throw new Error("Expected a startup-failure workflow automation");
     }
-    const claim = await runsApi.executionInput(runId);
-    expect(claim.prompt).toContain(
+    const execution = await runsApi.executionInput(runId);
+    expect(execution.prompt).toContain(
       'GitHub Actions workflow ".github/workflows/turbo.yml" completed with conclusion "startup_failure"',
     );
-    expect(claim.prompt).toContain('"name": null');
-    expect(claim.prompt).toContain('"actor": null');
-    expect(claim.prompt).toContain('"triggeringActor": null');
-    expect(claim.appendSystemPrompt).toContain("# Agent Identity");
+    expect(execution.prompt).toContain('"name": null');
+    expect(execution.prompt).toContain('"actor": null');
+    expect(execution.prompt).toContain('"triggeringActor": null');
+    expect(execution.appendSystemPrompt).toContain("# Agent Identity");
   });
 });

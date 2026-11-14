@@ -9,13 +9,13 @@ const {
   chat,
   entitledNativeChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   cancelChatRun,
 } = createChatEventsFixture(context);
 
 describe("chat enqueue telemetry failures", () => {
   it("keeps an input claimable and its retry idempotent when timing delivery throws AbortError", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     mockAxiomSdkTelemetryFailure({
       mode: "ingest",
       datasets: ["vm0-sandbox-op-log-dev"],
@@ -29,8 +29,8 @@ describe("chat enqueue telemetry failures", () => {
       prompt,
       clientEventId: eventId,
     });
-    const claim = await claimChatRun(runnerGroup, sent.runId);
-    expect(claim.claim.prompt).toContain(prompt);
+    const execution = await runExecution(sent.runId);
+    expect(execution.execution.prompt).toContain(prompt);
     const beforeRetry = await chat.listThreadEvents(actor, sent.threadId);
 
     await chat.requestSendEvent(

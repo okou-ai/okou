@@ -4,8 +4,8 @@ import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bund
 import { readContentBundle } from "@okouai/core/content-bundle";
 import { seededSkillBundleArchive } from "../../../../test-fixtures/seeded-skill-bundle-archive";
 
-/** Inspect new or baseline external S3 fixture bytes using the claimed reference. */
-export function readClaimedContentBundle(
+/** Inspect new or baseline external S3 fixture bytes using the execution reference. */
+export function readExecutionContentBundle(
   objects: ReadonlyMap<string, Buffer>,
   reference: ContentBundle & { readonly downloadUrl: string },
 ): ReadonlyMap<string, Buffer> {
@@ -19,7 +19,7 @@ export function readClaimedContentBundle(
   expect(objectPath.endsWith(`/${key}`)).toBeTruthy();
   const archive = objects.get(key) ?? seededSkillBundleArchive(key);
   if (!archive) {
-    throw new Error("Claimed content bundle was not published to S3");
+    throw new Error("Execution content bundle was not published to S3");
   }
   expect(archive).toHaveLength(reference.archiveBytes);
   expect(createHash("sha256").update(archive).digest("hex")).toBe(

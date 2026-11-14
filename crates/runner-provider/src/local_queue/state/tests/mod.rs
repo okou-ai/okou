@@ -597,7 +597,7 @@ fn discover_candidate_returns_first_eligible_job_in_lexicographic_order() {
     let group_dir = dir.path();
     let queue = LocalQueue::new(group_dir.to_path_buf());
     let profile = crate::profile::DEFAULT_PROFILE;
-    let claimed = run_id("00000000-0000-0000-0000-000000000001");
+    let job = run_id("00000000-0000-0000-0000-000000000001");
     let completed = run_id("00000000-0000-0000-0000-000000000002");
     let eligible = run_id("00000000-0000-0000-0000-000000000003");
     let later = run_id("00000000-0000-0000-0000-000000000004");
@@ -605,7 +605,7 @@ fn discover_candidate_returns_first_eligible_job_in_lexicographic_order() {
     write_job_request(group_dir, later, profile);
     let eligible_path = write_job_request(group_dir, eligible, profile);
     write_job_request(group_dir, completed, profile);
-    write_job_request(group_dir, claimed, profile);
+    write_job_request(group_dir, job, profile);
 
     let profile_dir = super::super::profile_jobs_dir(group_dir, profile).unwrap();
     std::fs::write(
@@ -614,7 +614,7 @@ fn discover_candidate_returns_first_eligible_job_in_lexicographic_order() {
     )
     .unwrap();
     std::fs::create_dir_all(super::super::claims_dir(group_dir)).unwrap();
-    std::fs::write(super::super::claim_path(group_dir, claimed), b"").unwrap();
+    std::fs::write(super::super::claim_path(group_dir, job), b"").unwrap();
     assert!(queue.write_result_sync(completed, 0, None));
 
     let candidate = queue
@@ -742,11 +742,11 @@ fn discover_candidate_falls_back_when_snapshot_claim_dir_is_invalid() {
     let group_dir = dir.path();
     let queue = LocalQueue::new(group_dir.to_path_buf());
     let profile = crate::profile::DEFAULT_PROFILE;
-    let claimed = run_id("00000000-0000-0000-0000-000000000001");
+    let job = run_id("00000000-0000-0000-0000-000000000001");
     let eligible = run_id("00000000-0000-0000-0000-000000000002");
     let target_claims_dir = dir.path().join("target-claims");
     std::fs::create_dir_all(&target_claims_dir).unwrap();
-    std::fs::write(target_claims_dir.join(format!("{claimed}.claim")), b"").unwrap();
+    std::fs::write(target_claims_dir.join(format!("{job}.claim")), b"").unwrap();
     symlink(&target_claims_dir, super::super::claims_dir(group_dir)).unwrap();
 
     for index in 1..=DISCOVERY_SNAPSHOT_CANDIDATE_THRESHOLD + 1 {
@@ -841,16 +841,16 @@ fn collect_cancel_markers_resolves_batch_job_presence_across_profiles() {
     let large_job = RunId::new_v4();
     let missing = RunId::new_v4();
     let terminal = RunId::new_v4();
-    let claimed = RunId::new_v4();
+    let job = RunId::new_v4();
 
     write_job_request(group_dir, default_job, crate::profile::DEFAULT_PROFILE);
     write_job_request(group_dir, large_job, "vm0/large");
     write_job_request(group_dir, terminal, crate::profile::DEFAULT_PROFILE);
     assert!(queue.write_result_sync(terminal, 0, None));
     std::fs::create_dir_all(super::super::claims_dir(group_dir)).unwrap();
-    std::fs::write(super::super::claim_path(group_dir, claimed), b"").unwrap();
+    std::fs::write(super::super::claim_path(group_dir, job), b"").unwrap();
 
-    for run_id in [default_job, large_job, missing, terminal, claimed] {
+    for run_id in [default_job, large_job, missing, terminal, job] {
         write_cancel_marker(group_dir, run_id);
     }
 
@@ -860,7 +860,7 @@ fn collect_cancel_markers_resolves_batch_job_presence_across_profiles() {
     assert_marker_state(&states, large_job, CancelTargetState::Pending);
     assert_marker_state(&states, missing, CancelTargetState::NotPending);
     assert_marker_state(&states, terminal, CancelTargetState::NotPending);
-    assert_marker_state(&states, claimed, CancelTargetState::Pending);
+    assert_marker_state(&states, job, CancelTargetState::Pending);
 }
 
 #[test]

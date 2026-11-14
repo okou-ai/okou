@@ -31,7 +31,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
+import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -337,29 +337,26 @@ test.each(scenarios)(
       throw new Error("Expected the Official Workflow Run");
     }
     const runId = launched.runId;
-    const { claim, sandboxHeaders } = await owned.claimChatRun(
-      owned.runnerGroup,
-      runId,
-    );
+    const { execution, sandboxHeaders } = await owned.runExecution(runId);
     if (curatesSuggestions) {
-      expect(claim.appendSystemPrompt).toContain(
+      expect(execution.appendSystemPrompt).toContain(
         "# Suggestions feedback context",
       );
-      expect(claim.appendSystemPrompt).toContain(
+      expect(execution.appendSystemPrompt).toContain(
         '"complete":true,"feedback":[]',
       );
     } else {
-      expect(claim.appendSystemPrompt).not.toContain(
+      expect(execution.appendSystemPrompt).not.toContain(
         "# Suggestions feedback context",
       );
     }
-    const bundle = claim.contentBundles.skills.find((skill) => {
+    const bundle = execution.contentBundles.skills.find((skill) => {
       return skill.mountPath.endsWith(`/${definitionName}`);
     });
     if (!bundle) {
       throw new Error("Expected an Official Workflow bundle in the claim");
     }
-    const files = readClaimedContentBundle(s3.objects, bundle);
+    const files = readExecutionContentBundle(s3.objects, bundle);
     expect(files.get("SKILL.md")?.toString()).toContain(heading);
     expectScopeGuidance(files.get("SKILL.md")?.toString(), learning);
     expectPublishingReference(
@@ -405,10 +402,7 @@ test.each(scenarios)(
         if (!runId) {
           throw new Error("Expected the concurrent Suggestions Run");
         }
-        const { sandboxHeaders } = await owned.claimChatRun(
-          owned.runnerGroup,
-          runId,
-        );
+        const { sandboxHeaders } = await owned.runExecution(runId);
         await owned.run(() => {
           return fixture.failChatRun(
             runId,

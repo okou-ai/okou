@@ -1,4 +1,4 @@
-import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
+import { createSshExecutionApi } from "./helpers/ssh-execution";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 
@@ -72,7 +72,7 @@ describe("SSH connection routes", () => {
   const runnerHeaders = {
     authorization: `Bearer vm0_official_${runnerSecret}`,
   };
-  const ordinary = createClaimedSshRuntimeApi(context, {
+  const ordinary = createSshExecutionApi(context, {
     runnerHeaders,
     authenticate,
   });

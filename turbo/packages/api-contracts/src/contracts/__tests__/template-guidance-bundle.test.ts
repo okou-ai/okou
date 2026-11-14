@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { claimedContentBundlesSchema } from "../content-bundle";
+import { executionContentBundlesSchema } from "../content-bundle";
 import { runContextArchiveSchema } from "../run-context-archive";
 import {
   storedTemplateGuidanceBundleSchema,
@@ -16,12 +16,12 @@ const template = {
 
 describe("template guidance claim and retained context", () => {
   it("accepts the dedicated envelope without defaulting fields for legacy claims", () => {
-    const legacy = claimedContentBundlesSchema.parse({
+    const legacy = executionContentBundlesSchema.parse({
       format: "tar-gzip-v1",
       skills: [],
     });
     expect(legacy).not.toHaveProperty("templates");
-    const claimed = claimedContentBundlesSchema.parse({
+    const claimed = executionContentBundlesSchema.parse({
       ...legacy,
       templates: [{ ...template, downloadUrl: "https://example.test/archive" }],
     });
@@ -61,7 +61,7 @@ describe("template guidance claim and retained context", () => {
       { downloadUrl: "https://secret@example.test/archive" },
     ]) {
       expect(
-        claimedContentBundlesSchema.safeParse({
+        executionContentBundlesSchema.safeParse({
           format: "tar-gzip-v1",
           skills: [],
           templates: [

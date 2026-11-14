@@ -23,10 +23,8 @@ use sandbox::{DeviceRateLimits, SandboxId};
 use tokio::sync::{Notify, OwnedMutexGuard};
 use tracing::{info, warn};
 
+use crate::activation::{remove_failed_activation_status, retain_uncertain_activation_ownership};
 use crate::blank_pool::BlankPoolDiagnostics;
-use crate::claimed_activation::{
-    remove_failed_activation_status, retain_uncertain_activation_ownership,
-};
 use crate::idle_lifecycle::{
     IdleDestroyTracker, ReservedIdleActivation, SharedIdlePool,
     add_preparing_run_with_idle_status_snapshot, rollback_reserved_idle_for_spawn,
@@ -70,7 +68,7 @@ pub struct ReuseFromPoolFailure {
     pub error: String,
 }
 
-/// Fully selected resource and transfer gate for a claimed fresh admission.
+/// Fully selected resource and transfer gate for a job fresh admission.
 pub struct ReuseFromPoolReady {
     pub reuse_entry: Option<ReusableIdleSandbox>,
     pub active_lease: BudgetLease,
@@ -230,7 +228,7 @@ pub async fn activate_reserved_idle(
             reuse_key_fingerprint,
             reuse_key_kind = reserved_reuse_key.as_deref().map(reuse_key_kind),
             profile = %profile_name,
-            "reserved idle sandbox configuration does not match claimed job, destroying before fresh fallback"
+            "reserved idle sandbox configuration does not match admitted job, destroying before fresh fallback"
         );
         return cleanup_reserved_for_fresh_fallback(
             reservation.into_destroy_job(),
@@ -252,7 +250,7 @@ pub async fn activate_reserved_idle(
             run_id = %run_id,
             reuse_key_fingerprint,
             reuse_key_kind = reserved_reuse_key.as_deref().map(reuse_key_kind),
-            "claimed reuse key does not match reserved idle sandbox, destroying before fresh fallback"
+            "job reuse key does not match reserved idle sandbox, destroying before fresh fallback"
         );
         return cleanup_reserved_for_fresh_fallback(
             reservation.into_destroy_job(),
@@ -600,7 +598,7 @@ pub async fn try_reuse_from_pool(
                     %error,
                     activation_phase = "preparing_commit",
                     recovery_outcome = "restore_parked",
-                    "failed to persist claimed idle sandbox activation ownership"
+                    "failed to persist job idle sandbox activation ownership"
                 );
                 recover_failed_parked_activation_status(
                     ReservedIdleActivation::new(entry, idle_snapshot),

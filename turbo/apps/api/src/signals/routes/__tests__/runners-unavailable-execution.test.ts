@@ -33,7 +33,7 @@ describe.each([false, true])(
           prompt: "Execute with current connector permissions",
           model: "claude-fable-5-1",
         });
-        const input = await owned.claimRunnerRun(run.runId);
+        const input = await owned.executionInput(run.runId);
         expect(input.networkPolicies?.figma).toStrictEqual({
           allow: ["file_content:read"],
           ask: [],
@@ -77,7 +77,7 @@ describe.each([false, true])(
           prompt: "Cancel this execution",
           model: "claude-fable-5-1",
         });
-        const input = await owned.claimRunnerRun(cancelled.runId);
+        const input = await owned.executionInput(cancelled.runId);
         await api.requestCancelRun(owned.actor, cancelled.runId, [200]);
         await createWebhookCallbackApi(context).requestAgentComplete(
           { runId: cancelled.runId, exitCode: 137 },
@@ -93,7 +93,7 @@ describe.each([false, true])(
           threadId: cancelled.threadId,
           prompt: "Continue with authorized connector access",
         });
-        const execution = await owned.claimRunnerRun(next.runId);
+        const execution = await owned.executionInput(next.runId);
         expect(execution.networkPolicies?.figma).toStrictEqual({
           allow: ["file_content:read"],
           ask: [],

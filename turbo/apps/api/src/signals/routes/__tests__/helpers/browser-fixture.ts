@@ -10,7 +10,7 @@ import { server } from "../../../../mocks/server";
 import { now } from "../../../../lib/time";
 import { browserRoutes } from "../../browser";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
-import { requireOrgId, okouTokenFromClaim } from "./chat-events-fixture";
+import { requireOrgId, okouTokenFromExecution } from "./chat-events-fixture";
 
 import { publicChatActor } from "./public-chat-actor";
 import { createNativeWindowProvider } from "./browser-native-window";
@@ -210,8 +210,8 @@ export function createBrowserFixtures(context: TestContext) {
           prompt: "Prepare my chat-owned Browser lifetime",
           cloudBrowserEnabled: browserEnabled,
         });
-        const claim = await owned.claimRunnerRun(sent.runId);
-        return { ...sent, runnerIdentity, claim, provider };
+        const execution = await owned.executionInput(sent.runId);
+        return { ...sent, runnerIdentity, execution, provider };
       });
     }
     return { owned, start, featureActor, provider };
@@ -222,7 +222,9 @@ export function createBrowserFixtures(context: TestContext) {
   async function open(chat: Chat) {
     const result = await accept(
       client().use({
-        headers: { authorization: `Bearer ${okouTokenFromClaim(chat.claim)}` },
+        headers: {
+          authorization: `Bearer ${okouTokenFromExecution(chat.execution)}`,
+        },
         body: {},
       }),
       [200],

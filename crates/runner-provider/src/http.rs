@@ -119,7 +119,7 @@ fn authority_has_userinfo_marker(value: &str) -> bool {
     authority.contains('@')
 }
 
-/// Default timeout for API requests (covers large claim payloads).
+/// Default timeout for API requests, including large execution payloads.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const VERCEL_BYPASS_HEADER: &str = "x-vercel-protection-bypass";
 #[cfg(test)]

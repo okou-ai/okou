@@ -1356,7 +1356,7 @@ export function createRunsApi(context: TestContext) {
     },
 
     async heartbeatRunner(group?: string) {
-      // Claim setup must not let a feature-specific mocked clock prune runner
+      // Execution setup must not let a feature-specific mocked clock prune runner
       // rows owned by parallel files in the shared test database.
       return await withNowScopeForTest(async () => {
         return await accept(

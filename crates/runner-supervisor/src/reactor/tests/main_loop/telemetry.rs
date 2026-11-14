@@ -16,7 +16,7 @@ async fn telemetry_flush_includes_start_loop_claim_phase_spans() {
         .mock_async(|when, then| {
             when.method(POST)
                 .path("/api/webhooks/agent/telemetry")
-                .body_includes("runner_claim_to_executor_start")
+                .body_includes("runner_admission_to_executor_start")
                 .body_includes("runner_claim_resume_session_validation")
                 .body_includes("runner_claim_device_rate_limits")
                 .body_includes("runner_claim_idle_reuse_lookup")

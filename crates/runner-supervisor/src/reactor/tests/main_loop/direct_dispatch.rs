@@ -24,7 +24,7 @@ impl JobProvider for SuppliedProvider {
     async fn bind_supplied(
         &self,
         context: runner_types::types::ExecutionContext,
-    ) -> runner_provider::ProviderResult<runner_provider::ClaimedJob> {
+    ) -> runner_provider::ProviderResult<runner_provider::ExecutionJob> {
         if let Some(gate) = &self.1 {
             gate.enter_and_wait().await;
         }
@@ -126,12 +126,12 @@ async fn supplied_http_caller_disconnect_does_not_cancel_accepted_execution() {
 
 #[tokio::test]
 async fn supplied_http_activation_panic_uses_existing_terminal_recovery() {
-    assert_supplied_panic(OuterJobPanicPoint::ClaimedActivation).await;
+    assert_supplied_panic(OuterJobPanicPoint::JobActivation).await;
 }
 
 #[tokio::test]
 async fn supplied_http_finalizing_preparation_panic_completes_once_without_a_sandbox() {
-    assert_supplied_panic(OuterJobPanicPoint::ClaimedWithoutSandbox).await;
+    assert_supplied_panic(OuterJobPanicPoint::AdmittedWithoutSandbox).await;
 }
 
 async fn assert_supplied_panic(point: OuterJobPanicPoint) {
@@ -139,7 +139,7 @@ async fn assert_supplied_panic(point: OuterJobPanicPoint) {
     config.test_hooks.outer_job_panic = Some(point);
     config.provider.provider = Arc::new(SuppliedProvider(config.provider.provider.clone(), None));
     let source = RunId::new_v4();
-    let producer = (point == OuterJobPanicPoint::ClaimedWithoutSandbox).then(|| {
+    let producer = (point == OuterJobPanicPoint::AdmittedWithoutSandbox).then(|| {
         env.active_runs.register(
             source,
             Some("thread:finalizing-panic".into()),
@@ -196,9 +196,9 @@ async fn assert_supplied_panic(point: OuterJobPanicPoint) {
     assert_eq!(
         completion.error.as_deref(),
         Some(if producer.is_some() {
-            "runner panicked while preparing a claimed finalizing successor"
+            "runner panicked while preparing a job finalizing successor"
         } else {
-            "claimed activation setup panicked"
+            "job activation setup panicked"
         })
     );
     assert_eq!(completion.sandbox_id, None);

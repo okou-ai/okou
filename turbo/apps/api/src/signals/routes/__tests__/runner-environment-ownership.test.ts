@@ -47,22 +47,24 @@ describe("runner environment ownership", () => {
       prompt: "exercise environment ownership",
     });
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.executionInput(run.runId);
+    const execution = await runs.executionInput(run.runId);
 
     // Platform-owned values reach the Runner only as trusted platform
     // environment, never as Agent environment entries.
-    expect(claim.platformEnvironment).toMatchObject({
+    expect(execution.platformEnvironment).toMatchObject({
       OKOU_TOKEN: expect.any(String),
       OKOU_AGENT_ID: agent.agentId,
     });
-    expect(claim.secretValues).toContain(claim.platformEnvironment.OKOU_TOKEN);
-    for (const key of Object.keys(claim.platformEnvironment)) {
-      expect(claim.environment).not.toHaveProperty(key);
+    expect(execution.secretValues).toContain(
+      execution.platformEnvironment.OKOU_TOKEN,
+    );
+    for (const key of Object.keys(execution.platformEnvironment)) {
+      expect(execution.environment).not.toHaveProperty(key);
     }
     // Runtime-owned identity remains in the trusted overlay; the reserved
     // namespace is excluded from the untrusted environment.
     expect(
-      Object.keys(claim.environment ?? {}).filter((key) => {
+      Object.keys(execution.environment ?? {}).filter((key) => {
         return key.startsWith("OKOU_");
       }),
     ).toStrictEqual([]);
@@ -71,7 +73,7 @@ describe("runner environment ownership", () => {
     // token value.
     const snapshot = runContextSnapshotForRun(run.runId);
     expect(JSON.stringify(snapshot)).not.toContain(
-      claim.platformEnvironment.OKOU_TOKEN,
+      execution.platformEnvironment.OKOU_TOKEN,
     );
 
     await runs.requestCancelRun(actor, run.runId, [200]);

@@ -11,7 +11,7 @@ use runner_lifecycle::idle_pool::{
     ActivatedFinalizingHandoff, FinalizingHandoffCandidate, GuardedFinalizingHandoffOwner,
     IdleActivationOwner, IdleParkCandidate, IdleRetirementEnvelope,
 };
-use runner_provider::ClaimedJob;
+use runner_provider::ExecutionJob;
 use runner_types::ids::RunId;
 
 use crate::idle_lifecycle::{GuardedActivationCleanupTask, IdleDestroyTracker};
@@ -24,7 +24,7 @@ pub enum RetainedFinalizingResource {
 
 /// Does not retain a tracker handle: registry ownership cannot form an Arc cycle.
 pub struct GuardedFinalizingRecovery {
-    pub claimed: Option<ClaimedJob>,
+    pub job: Option<ExecutionJob>,
     pub resource: Option<RetainedFinalizingResource>,
     /// Lost delivery is unresolved even when the original claim is recovered.
     pub delivery_uncertain: bool,
@@ -166,7 +166,7 @@ impl Drop for GuardedFinalizingOffer {
     fn drop(&mut self) {
         self.tracker
             .retain_finalizing_recovery(GuardedFinalizingRecovery {
-                claimed: None,
+                job: None,
                 resource: self.resource.take_recovery(),
                 delivery_uncertain: false,
             });
@@ -175,14 +175,14 @@ impl Drop for GuardedFinalizingOffer {
 
 #[must_use]
 pub struct ActivatedGuardedFinalizing {
-    pub claimed: ClaimedJob,
+    pub job: ExecutionJob,
     pub resource: ActivatedFinalizingHandoff,
 }
 
 /// Actual claim/auth and receiver remain owned if any borrowed wait is cancelled.
 #[must_use]
 pub struct GuardedFinalizingAdmission {
-    claimed: Option<ClaimedJob>,
+    job: Option<ExecutionJob>,
     request: Option<ActiveRunHandoffRequest>,
     predecessor: RunId,
     resource: Resource,
@@ -192,13 +192,13 @@ pub struct GuardedFinalizingAdmission {
 
 impl GuardedFinalizingAdmission {
     pub fn new(
-        claimed: ClaimedJob,
+        job: ExecutionJob,
         request: ActiveRunHandoffRequest,
         predecessor: RunId,
         tracker: IdleDestroyTracker,
     ) -> Self {
         Self {
-            claimed: Some(claimed),
+            job: Some(job),
             request: Some(request),
             predecessor,
             resource: Resource::Transferred,
@@ -207,8 +207,8 @@ impl GuardedFinalizingAdmission {
         }
     }
 
-    pub fn claimed(&self) -> Option<&ClaimedJob> {
-        self.claimed.as_ref()
+    pub fn job(&self) -> Option<&ExecutionJob> {
+        self.job.as_ref()
     }
 
     pub fn owner(&self) -> Option<&GuardedFinalizingHandoffOwner> {
@@ -262,7 +262,7 @@ impl GuardedFinalizingAdmission {
     pub async fn activate(&mut self) -> Result<ActivatedGuardedFinalizing, String> {
         let _token = self.tracker.acceptance_token().map_err(|e| e.to_string())?;
         let successor = self
-            .claimed
+            .job
             .as_ref()
             .ok_or("finalizing claim consumed")?
             .context()
@@ -274,9 +274,9 @@ impl GuardedFinalizingAdmission {
             return Err("finalizing producer backing was not captured".into());
         }
         if self
-            .claimed
+            .job
             .as_ref()
-            .and_then(|claimed| claimed.context().reuse_key.as_deref())
+            .and_then(|job| job.context().reuse_key.as_deref())
             != owner.reuse_key()
         {
             return Err("finalizing handoff reuse key does not match the actual claim".into());
@@ -286,19 +286,19 @@ impl GuardedFinalizingAdmission {
             .await?;
         // Readiness keeps resource custody; claim/auth move only around the
         // synchronous commit and are restored on any commit refusal.
-        let claimed = self
-            .claimed
+        let job = self
+            .job
             .take()
             .ok_or("finalizing claim consumed before commit")?;
         let resource = match owner.commit_activation(successor, self.predecessor) {
             Ok(resource) => resource,
             Err(error) => {
-                self.claimed = Some(claimed);
+                self.job = Some(job);
                 return Err(error);
             }
         };
         self.resource = Resource::Transferred;
-        Ok(ActivatedGuardedFinalizing { claimed, resource })
+        Ok(ActivatedGuardedFinalizing { job, resource })
     }
 
     pub fn cancel_delivery(&mut self) {
@@ -310,8 +310,8 @@ impl GuardedFinalizingAdmission {
     }
 
     /// Explicit fallback/terminal owner takes the original provider authorization.
-    pub fn take_claim_for_completion(&mut self) -> Option<ClaimedJob> {
-        self.claimed.take()
+    pub fn take_claim_for_completion(&mut self) -> Option<ExecutionJob> {
+        self.job.take()
     }
 
     pub async fn cleanup(
@@ -336,7 +336,7 @@ impl Drop for GuardedFinalizingAdmission {
         self.cancel_delivery();
         self.tracker
             .retain_finalizing_recovery(GuardedFinalizingRecovery {
-                claimed: self.claimed.take(),
+                job: self.job.take(),
                 resource: self.resource.take_recovery(),
                 delivery_uncertain: self.delivery_uncertain,
             });

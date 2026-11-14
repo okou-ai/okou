@@ -349,19 +349,10 @@ python3 crates/runner/tests/guarded_idle_native/speculative_fault_report.py <p1-
 
 The injected failure is at the callback response boundary after completed actual
 restore/RPC. It does not prove cancellation inside unpark, an in-flight Guest RPC
-or repark, actual API claim arbitration or full Supervisor shutdown. Ordinary
+or repark, or full Supervisor shutdown. Ordinary
 consumer regressions are separate from opt-in native execution. Complete C/D/P4,
 bootstrap provenance, residency, calibrated RAM relief and OOM/production
 protection remain separate gates.
-
-## Retired acquisition corpora
-
-The remote Claim rejection, provider-failure and producer-loss acquisition
-corpora were retired with the Runner Claim/Poll client. Their
-historical receipt readers remain for preserved evidence; shared ext4 and
-retained-custody utilities are also used by the current Guest preparation and
-running-restore corpora. Ordinary native memory, Guest, retirement, pause,
-unpark, finalizing handoff and required-saving fixtures remain active.
 
 ## Same-key replacement against a captured batch
 
@@ -1169,71 +1160,3 @@ opt-in. This phased sequence does not claim simultaneous promotion leases,
 permanent retention of two cache generations, an actual API claim-loss race,
 calibrated physical relief, full residency, bootstrap provenance or production
 activation. Parent aggregate acceptance remains separate.
-
-## Historical real API competing claims (#41467)
-
-This section describes pre-direct-dispatch producer artifacts and their retained
-evidence format. The current API no longer creates claimable Runner jobs; its
-competing-Claim bridge and launch command have been retired. Current direct
-dispatch tests and legacy native Claim-loss tests cover separate boundaries,
-not a joint deployed acceptance result.
-
-`native_real_api_competing_claims_preserve_both_owners` composes two independent
-native guarded preparations with the production authenticated claim route and
-invocation-owned PostgreSQL. The explicit API entry constructs synthetic actors,
-predecessors and candidates through public onboarding/chat/Runner/callback
-interfaces. Its loopback listener mounts existing production routes only. The
-canonical external-provider registry supplies synthetic external services.
-No development server or production account/database is used.
-
-The transport waits for both actual requests and both positively observed native
-owners, then forwards A first, B first, or both concurrently. It never selects a
-status. Each order covers fresh and newly matching-snapshot Guests. Concurrent
-release observes overlapping HTTP lifetimes; it does not establish an internal
-database schedule. Before releasing a successful response, the bridge records
-the actor's public running state. Each pending native owner also records an
-independent host observation while its pool blocks heartbeat publication, then
-joins the acknowledged heartbeat after releasing that pool. The winner keeps its original returned context and token,
-executes one exclusive synthetic GuestRPC task, and completes through the public
-protocol. The loser reparks through production guarded rollback. Both complete
-the existing full home/data, 64 MiB required saving, private-runtime removal,
-physical-exit and full-lease/accounting checks. The independent heartbeat peer
-checks acknowledged HTTP progress; it is distinct from the real claim API.
-This seam does not run the complete Executor/framework CLI or certify CLI session
-history, calibrated host envelopes, bootstrap provenance or production protection.
-
-Freeze the source, actual Host and all eleven canonical Guest binaries. Verify
-the installed Guest bytes in an owned rootfs and create a new matching snapshot
-with this Host. Keep the original snapshot preparation record. Start an owned
-loopback PostgreSQL cluster in UTC and apply normal migrations; the ordinary API
-global setup supplies canonical baseline catalog seeds. Retain the producer's
-cluster system identifier, binary/version, data directory, migration receipt,
-source manifest and native input hashes in an owner-only `producer.json` with
-format `native-real-api-producer-v1`.
-
-The original API workspace launcher required native privileges under an owned
-private mount namespace and `OKOU_TEST_REAL_API_INPUTS` pointing to a bounded owned JSON containing `root`
-(a new results directory with `producer.json`), `driver` (the frozen
-`real_api_driver.py` here), `sourceSha`, `databaseUrl` (the owned cluster), and
-`producerFile` (the same producer receipt). The driver documents its frozen input
-paths in code and refuses source/input changes. It used unchanged P1 duration,
-sampling, headroom, log and cleanup guards. Failed cases retain original evidence
-and uncertain ownership. Reproduce old-API/native compatibility only with matched
-original producer artifacts, rather than fabricating legacy queue rows in the
-current API database. The reader commands below inspect retained evidence.
-Disk preflight reserves four complete profile-sized Home images for the two
-original owners and their saved-home verification; existing rootfs and snapshot
-inputs are already allocated. This is a fixture capacity check, not a measured
-production storage envelope.
-
-```bash
-python3 crates/runner/tests/guarded_idle_native/real_api_claim_report.py <results-root>
-python3 crates/runner/tests/guarded_idle_native/real_api_claim_report_test.py
-```
-
-The original-file reader requires all six scenarios/twelve owner paths, genuine
-200/404 results, original authority, public winner/completion, exact source and
-producer/snapshot/policy bindings, complete data/full leases and joined owners.
-Its ordinary synthetic CLI mutation tests do not supply native acceptance. Keep
-evidence private because original synthetic authorization is deliberately
-retained. Missing native evidence blocks readiness; #39998 stays open.

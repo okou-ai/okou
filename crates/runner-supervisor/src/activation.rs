@@ -1,7 +1,7 @@
-//! Claimed-resource ownership from active-status publication through executor handoff.
+//! Admitted-resource ownership from active-status publication through executor handoff.
 //!
 //! The Runner composition root builds the executor request. Until that request is ready, this
-//! guard owns the claim, cancellation registration, sandbox lease and active-run registration.
+//! guard owns the job, cancellation registration, sandbox lease and active-run registration.
 //! Dropping it starts recovery rather than silently abandoning provider or sandbox ownership.
 
 use std::sync::Arc;
@@ -15,7 +15,7 @@ use runner_lifecycle::active_runs::ActiveRunGuard;
 use runner_lifecycle::idle_pool::{DestroyOutcome, IdlePoolSnapshot, ReusableIdleSandbox};
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::{StatusPersistenceError, StatusTracker};
-use runner_provider::{ClaimedJob, JobProvider, RunCancellationRegistration};
+use runner_provider::{ExecutionJob, JobProvider, RunCancellationRegistration};
 use runner_types::ids::RunId;
 use runner_types::types::{CompleteRequest, ExecutionContext, SandboxReuseResult};
 use sandbox::{DeviceRateLimits, SandboxId};
@@ -30,8 +30,8 @@ use crate::idle_lifecycle::{
 use crate::orphan_reap::OrphanedActiveRuns;
 use crate::ownership::{OwnershipTransitions, RunSandbox};
 
-/// Resource selected for a claimed job, not yet transferred to its executor.
-pub struct ReadyClaimedResource {
+/// Resource selected for an admitted job, not yet transferred to its executor.
+pub struct ReadyExecutionResource {
     pub reuse_entry: Option<ReusableIdleSandbox>,
     pub active_lease: BudgetLease,
     pub reuse_result: SandboxReuseResult,
@@ -39,9 +39,9 @@ pub struct ReadyClaimedResource {
 }
 
 /// All owned inputs held across active-status publication and executor request construction.
-pub struct ClaimedJobSetup {
+pub struct JobActivationSetup {
     pub required_home_source_run_id: Option<RunId>,
-    pub claimed: ClaimedJob,
+    pub job: ExecutionJob,
     pub rootfs_hash: String,
     pub cancellation: RunCancellationRegistration,
     pub profile_name: String,
@@ -51,14 +51,14 @@ pub struct ClaimedJobSetup {
     pub restore_guest_state: bool,
     pub device_rate_limits: Option<DeviceRateLimits>,
     pub factory: SharedFactory,
-    pub resource: ReadyClaimedResource,
+    pub resource: ReadyExecutionResource,
     pub pre_spawn_timing: RunnerPreSpawnTiming,
     pub active_run_guard: ActiveRunGuard,
 }
 
 /// Concrete recovery services supplied by Runner without exposing its `SpawnContext`.
 #[derive(Clone)]
-pub struct ClaimedActivationResources {
+pub struct JobActivationResources {
     pub provider: Arc<dyn JobProvider>,
     pub exec_config: Arc<ExecutorConfig>,
     pub status: Arc<StatusTracker>,
@@ -69,18 +69,18 @@ pub struct ClaimedActivationResources {
 
 /// Checked ownership/publication failures before executor handoff.
 #[derive(Debug, thiserror::Error)]
-pub enum ClaimedActivationError {
-    #[error("claimed activation setup was already transferred")]
+pub enum JobActivationError {
+    #[error("job activation setup was already transferred")]
     SetupAlreadyTransferred,
     #[error("active status was already published")]
     StatusAlreadyPublished,
-    #[error("claimed activation cannot transfer before active status is published")]
+    #[error("job activation cannot transfer before active status is published")]
     StatusNotPublished,
     #[error("persist active runner ownership: {0}")]
     StatusPersistence(#[from] StatusPersistenceError),
 }
 
-impl ClaimedActivationError {
+impl JobActivationError {
     pub fn recovery_reason(&self) -> &'static str {
         match self {
             Self::StatusPersistence(_) => "active_status_persistence_failed",
@@ -91,16 +91,16 @@ impl ClaimedActivationError {
     }
 }
 
-/// Owns a provider claim and sandbox until active status is published and the caller takes it.
-pub struct ClaimedActivationGuard {
-    setup: Option<ClaimedJobSetup>,
+/// Owns an admitted job and sandbox through active-status publication and executor handoff.
+pub struct JobActivationGuard {
+    setup: Option<JobActivationSetup>,
     status_published: bool,
     sandbox_id: SandboxId,
-    recovery: ClaimedActivationResources,
+    recovery: JobActivationResources,
 }
 
-impl ClaimedActivationGuard {
-    pub fn new(setup: ClaimedJobSetup, recovery: ClaimedActivationResources) -> Self {
+impl JobActivationGuard {
+    pub fn new(setup: JobActivationSetup, recovery: JobActivationResources) -> Self {
         let sandbox_id = match &setup.resource.reuse_entry {
             Some(entry) => entry.sandbox_id(),
             None => SandboxId::new_v4(),
@@ -118,16 +118,16 @@ impl ClaimedActivationGuard {
     }
 
     /// Borrow the still-owned execution setup before transfer.
-    pub fn setup(&mut self) -> Result<&mut ClaimedJobSetup, ClaimedActivationError> {
+    pub fn setup(&mut self) -> Result<&mut JobActivationSetup, JobActivationError> {
         self.setup
             .as_mut()
-            .ok_or(ClaimedActivationError::SetupAlreadyTransferred)
+            .ok_or(JobActivationError::SetupAlreadyTransferred)
     }
 
     pub fn record_resource_budget_occupancy(
         &mut self,
         budget: &ResourceBudget,
-    ) -> Result<(), ClaimedActivationError> {
+    ) -> Result<(), JobActivationError> {
         self.setup()?
             .pre_spawn_timing
             .record_resource_budget_occupancy(budget);
@@ -135,18 +135,18 @@ impl ClaimedActivationGuard {
     }
 
     /// Commit the matching pool snapshot and active status before executor ownership transfer.
-    pub async fn publish_active_status(&mut self) -> Result<(), ClaimedActivationError> {
+    pub async fn publish_active_status(&mut self) -> Result<(), JobActivationError> {
         let setup = self
             .setup
             .as_mut()
-            .ok_or(ClaimedActivationError::SetupAlreadyTransferred)?;
+            .ok_or(JobActivationError::SetupAlreadyTransferred)?;
         if self.status_published {
-            return Err(ClaimedActivationError::StatusAlreadyPublished);
+            return Err(JobActivationError::StatusAlreadyPublished);
         }
         let started_at = Instant::now();
         let result = publish_active_run_status(
             &self.recovery.status,
-            setup.claimed.context().run_id,
+            setup.job.context().run_id,
             self.sandbox_id,
             setup.resource.reuse_entry.is_some(),
             setup.resource.idle_snapshot.clone(),
@@ -161,9 +161,9 @@ impl ClaimedActivationGuard {
     }
 
     /// Transfer only after status publication succeeds; a panic while preparing stays recoverable.
-    pub fn take_setup_after_status(&mut self) -> Result<ClaimedJobSetup, ClaimedActivationError> {
+    pub fn take_setup_after_status(&mut self) -> Result<JobActivationSetup, JobActivationError> {
         if !self.status_published {
-            return Err(ClaimedActivationError::StatusNotPublished);
+            return Err(JobActivationError::StatusNotPublished);
         }
         self.take_setup()
     }
@@ -172,7 +172,7 @@ impl ClaimedActivationGuard {
         self,
         reason: &'static str,
         error: String,
-    ) -> Result<ClaimedActivationRecovery, ClaimedActivationError> {
+    ) -> Result<JobActivationRecovery, JobActivationError> {
         self.recover_failure(reason, ExecutionFailure::from_error(error))
             .await
     }
@@ -180,10 +180,10 @@ impl ClaimedActivationGuard {
     /// Finish setup-panic recovery before the caller resumes its original panic.
     ///
     /// Error reporting and unwinding stay at the catch boundary.
-    pub(crate) async fn recover_setup_panic(self) -> Result<(), ClaimedActivationError> {
+    pub(crate) async fn recover_setup_panic(self) -> Result<(), JobActivationError> {
         self.recover(
             "activation_setup_panicked",
-            "claimed activation setup panicked".to_owned(),
+            "job activation setup panicked".to_owned(),
         )
         .await?
         .finish()
@@ -195,26 +195,22 @@ impl ClaimedActivationGuard {
         mut self,
         reason: &'static str,
         failure: ExecutionFailure,
-    ) -> Result<ClaimedActivationRecovery, ClaimedActivationError> {
+    ) -> Result<JobActivationRecovery, JobActivationError> {
         let setup = self.take_setup()?;
-        Ok(recover_claimed_activation_failure(
-            setup,
-            self.sandbox_id,
-            reason,
-            failure,
-            &self.recovery,
+        Ok(
+            recover_activation_failure(setup, self.sandbox_id, reason, failure, &self.recovery)
+                .await,
         )
-        .await)
     }
 
-    fn take_setup(&mut self) -> Result<ClaimedJobSetup, ClaimedActivationError> {
+    fn take_setup(&mut self) -> Result<JobActivationSetup, JobActivationError> {
         self.setup
             .take()
-            .ok_or(ClaimedActivationError::SetupAlreadyTransferred)
+            .ok_or(JobActivationError::SetupAlreadyTransferred)
     }
 }
 
-impl Drop for ClaimedActivationGuard {
+impl Drop for JobActivationGuard {
     fn drop(&mut self) {
         let Some(setup) = self.setup.take() else {
             return;
@@ -224,12 +220,12 @@ impl Drop for ClaimedActivationGuard {
         let cleanup = recovery.idle_destroy_tracker.clone();
         cleanup.spawn_cleanup(
             async move {
-                recover_claimed_activation_failure(
+                recover_activation_failure(
                     setup,
                     sandbox_id,
                     "activation_task_dropped",
                     ExecutionFailure::from_error(
-                        "claimed activation task dropped before executor ownership transfer",
+                        "job activation task dropped before executor ownership transfer",
                     ),
                     &recovery,
                 )
@@ -237,18 +233,18 @@ impl Drop for ClaimedActivationGuard {
                 .finish()
                 .await;
             },
-            "claimed_activation_drop",
+            "activation_drop",
         );
     }
 }
 
 /// Completion result retains cancellation registration for the caller's existing lifecycle.
-pub struct ClaimedActivationRecovery {
+pub struct JobActivationRecovery {
     cancellation: RunCancellationRegistration,
     telemetry: Option<JobTelemetry>,
 }
 
-impl ClaimedActivationRecovery {
+impl JobActivationRecovery {
     pub async fn finish(self) {
         self.cancellation.unregister().await;
         if let Some(telemetry) = self.telemetry {
@@ -282,16 +278,16 @@ async fn publish_active_run_status(
     }
 }
 
-async fn recover_claimed_activation_failure(
-    setup: ClaimedJobSetup,
+async fn recover_activation_failure(
+    setup: JobActivationSetup,
     sandbox_id: SandboxId,
     reason: &'static str,
     execution_failure: ExecutionFailure,
-    ctx: &ClaimedActivationResources,
-) -> ClaimedActivationRecovery {
-    let ClaimedJobSetup {
+    ctx: &JobActivationResources,
+) -> JobActivationRecovery {
+    let JobActivationSetup {
         required_home_source_run_id: _,
-        claimed,
+        job,
         cancellation,
         profile_name: _,
         vcpu: _,
@@ -305,13 +301,13 @@ async fn recover_claimed_activation_failure(
         pre_spawn_timing,
         active_run_guard,
     } = setup;
-    let ReadyClaimedResource {
+    let ReadyExecutionResource {
         reuse_entry,
         active_lease,
         reuse_result: _,
         idle_snapshot: _,
     } = resource;
-    let (context, completion_auth, active_input_source) = claimed.into_parts();
+    let (context, completion_auth, active_input_source) = job.into_parts();
     let run_id = context.run_id;
     drop(active_input_source);
     let telemetry = blank_pool_selection_telemetry(
@@ -326,7 +322,7 @@ async fn recover_claimed_activation_failure(
         recovery_reason = reason,
         activation_phase = "before_executor_handoff",
         recovery_outcome = "destroy_or_release",
-        "recovering claimed activation before executor handoff"
+        "recovering job activation before executor handoff"
     );
     ctx.provider
         .complete(
@@ -366,7 +362,7 @@ async fn recover_claimed_activation_failure(
         );
     }
     drop(active_run_guard);
-    ClaimedActivationRecovery {
+    JobActivationRecovery {
         cancellation,
         telemetry,
     }

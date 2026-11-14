@@ -54,7 +54,7 @@ import {
   mockDiscordMemberships,
   createPublicDiscordBinding,
 } from "./helpers/discord";
-import { claimPublicDiscordTestRun } from "./helpers/discord-run";
+import { launchPublicDiscordTestRun } from "./helpers/discord-run";
 import { createFixtureLifecycle } from "./helpers/fixture-lifecycle";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { integrationsDiscordFileRoutes } from "../integrations-discord-files";
@@ -583,7 +583,10 @@ describe("Discord file authorization and input validation", () => {
 
   it("requires native read or write capability for sandbox requests", async () => {
     const actor = await actorSession();
-    const { claim } = await claimPublicDiscordTestRun(context, actor);
+    const { execution: claim } = await launchPublicDiscordTestRun(
+      context,
+      actor,
+    );
     const headers = { authorization: `Bearer ${claim.sandboxToken}` };
     const client = fileClients();
     const upload = await accept(
@@ -1070,8 +1073,8 @@ describe("Canonical Discord file publication and delivery", () => {
         agentId: agent.agentId,
         prompt: "Create a report",
       });
-      const claim = await runs.executionInput(sent.runId);
-      const token = claim.platformEnvironment.OKOU_TOKEN;
+      const execution = await runs.executionInput(sent.runId);
+      const token = execution.platformEnvironment.OKOU_TOKEN;
       if (!token) {
         throw new Error("Expected the Runner claim to issue an Okou run token");
       }
@@ -1488,8 +1491,8 @@ describe("Canonical Discord file publication and delivery", () => {
       agentId: agent.agentId,
       prompt: "Create a report for Discord",
     });
-    const claim = await runs.executionInput(sent.runId);
-    const token = claim.platformEnvironment.OKOU_TOKEN;
+    const execution = await runs.executionInput(sent.runId);
+    const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the Runner claim to issue an Okou run token");
     }
@@ -1563,8 +1566,8 @@ describe("Canonical Discord file publication and delivery", () => {
       href: `https://discord.com/channels/${connected.guildId}/${provider.guildChannelId}/${source.id}`,
     });
     await runs.heartbeatRunner(connected.runnerGroup);
-    const claim = await runs.executionInput(input.runId);
-    const token = claim.platformEnvironment.OKOU_TOKEN;
+    const execution = await runs.executionInput(input.runId);
+    const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the Runner claim to issue an Okou run token");
     }

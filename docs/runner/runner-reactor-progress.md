@@ -48,12 +48,12 @@ Publication is an atomic file replacement, not a file/directory fsync guarantee.
 
 ## Ownership and shutdown
 
-| Work                           | Owner and progress rule                                                                                                                                                                                                                    | Shutdown                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Heartbeat                      | One independently scheduled task; triggers coalesce into at most one pending request. The next send uses live state and lifecycle mode. Shared immutable configuration is allocated once per controller.                                   | Natural drain flushes a Stopping snapshot. Common teardown joins the active send before provider shutdown. Abnormal controller drop aborts the task; dropping a client request does not retract a remote request, so snapshot generation/sequence fencing remains required.                                                                                                               |
-| Admission / claim / activation | Up to four independently scheduled transactions, including ordinary activation and failure recovery; authoritative budget and exclusive sandbox reservations remain stricter. Completed results retain a slot until Reactor consumes them. | Soft drain stops new admission and settles in-flight results before idle drain or natural completion. Common teardown joins all admissions before idle/provider shutdown. Dropping task handles does not abort accepted work; unconsumed successful results schedule tracked no-sandbox completion and rollback. Process/runtime termination remains an abnormal reconciliation boundary. |
-| Status retry                   | One independently scheduled task. State generations, ordered persistence, and atomic-write continuation remain authoritative.                                                                                                              | Join the retry before final status publication. If the reactor itself is cancelled, the task retains ownership until it finishes.                                                                                                                                                                                                                                                         |
-| Routine home-cache GC          | One independently scheduled task, with a host-global routine flock owning inventory/entry cleanup and completion-marker cadence.                                                                                                           | Join before dependent teardown. Do not abort the task during normal shutdown: filesystem deletion may outlive a dropped async future. If the reactor itself is cancelled, the task retains its locks through completion rather than releasing them over unfinished I/O. Process/runtime termination remains an abnormal boundary.                                                         |
+| Work                     | Owner and progress rule                                                                                                                                                                                                                    | Shutdown                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Heartbeat                | One independently scheduled task; triggers coalesce into at most one pending request. The next send uses live state and lifecycle mode. Shared immutable configuration is allocated once per controller.                                   | Natural drain flushes a Stopping snapshot. Common teardown joins the active send before provider shutdown. Abnormal controller drop aborts the task; dropping a client request does not retract a remote request, so snapshot generation/sequence fencing remains required.                                                                                                               |
+| Admission and activation | Up to four independently scheduled transactions, including ordinary activation and failure recovery; authoritative budget and exclusive sandbox reservations remain stricter. Completed results retain a slot until Reactor consumes them. | Soft drain stops new admission and settles in-flight results before idle drain or natural completion. Common teardown joins all admissions before idle/provider shutdown. Dropping task handles does not abort accepted work; unconsumed successful results schedule tracked no-sandbox completion and rollback. Process/runtime termination remains an abnormal reconciliation boundary. |
+| Status retry             | One independently scheduled task. State generations, ordered persistence, and atomic-write continuation remain authoritative.                                                                                                              | Join the retry before final status publication. If the reactor itself is cancelled, the task retains ownership until it finishes.                                                                                                                                                                                                                                                         |
+| Routine home-cache GC    | One independently scheduled task, with a host-global routine flock owning inventory/entry cleanup and completion-marker cadence.                                                                                                           | Join before dependent teardown. Do not abort the task during normal shutdown: filesystem deletion may outlive a dropped async future. If the reactor itself is cancelled, the task retains its locks through completion rather than releasing them over unfinished I/O. Process/runtime termination remains an abnormal boundary.                                                         |
 
 Required task join failures stop the reactor through its existing lifecycle and common
 teardown path and are returned as terminal errors. Ordinary optional GC or status
@@ -61,11 +61,9 @@ retry errors remain warnings. Runtime task ownership does not make an individual
 filesystem or network operation infinitely fast or cancellation-safe.
 
 Remote work enters through complete HTTP publications. Independent filesystem
-submissions expose a local discovery capability; remote providers expose no
-discovery or Claim operation. Routing preferences, remote candidate waits,
-poll exclusions and speculative acquisition no longer participate in this
-reactor. Direct intake retains deadline, generation, deduplication and Run
-registration fences before transferring execution custody.
+submissions expose a local discovery capability; remote providers own execution
+reporting and control. Direct intake retains deadline, generation, deduplication
+and Run registration fences before transferring execution custody.
 
 Memory-triggered idle maintenance has one independently scheduled observation or
 cleanup at a time. It accepts selected cleanup with `IdleDestroyTracker` before
@@ -161,7 +159,7 @@ the activation registry without retaining or releasing the replacement lease.
 This transfer grants no physical memory credit.
 
 The supplied-policy finalizing component preserves actual broker delivery
-bindings in `GuardedFinalizingOffer` and keeps the original bound `ClaimedJob`
+bindings in `GuardedFinalizingOffer` and keeps the original bound `ExecutionJob`
 in `GuardedFinalizingAdmission`. Both capsules remain outside borrowed
 observation/activation futures. Producer capture precedes broker transfer;
 receipt and post-unpark validation use that original process generation. A
@@ -345,7 +343,7 @@ after a later recovery. No pressure-state lock survives IO or provider work.
   Preparing before physical reuse remain authoritative.
 - Admission tasks own activation and recovery independently. The shared four
   slots include activation waits and completed unconsumed results. Prepared
-  results retain ClaimedActivationGuard until synchronous executor dispatch.
+  results retain JobActivationGuard until synchronous executor dispatch.
   Preparing must persist before unpark. Cancellation transfer gates release
   before returning results, and lost results retain tracked completion and
   resource recovery. Normal shutdown joins accepted work.

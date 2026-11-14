@@ -302,7 +302,7 @@ impl CancellationReconciliation {
         }
     }
 
-    /// Called only after ClaimedJob validates a successful claim. Attachment is
+    /// Called only after ExecutionJob validates a successful claim. Attachment is
     /// serialized with both exact registration retirement and provider shutdown.
     pub(super) fn observe(
         &self,

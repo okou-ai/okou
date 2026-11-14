@@ -1,6 +1,6 @@
 //! Schema-bound response decoding and redacted diagnostic paths.
 //!
-//! Request transport, status classification and claim reconstruction keep their owners.
+//! Request transport, status classification and execution preparation keep their owners.
 
 use api_contracts::generated::{
     decode_paths,
