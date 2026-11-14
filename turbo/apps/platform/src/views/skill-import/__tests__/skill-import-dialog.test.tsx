@@ -393,6 +393,83 @@ test("The dialog lists only workflows the import tagged", async () => {
   expect(within(dialog).queryByText("Made in chat")).toBeNull();
 });
 
+test("Rereading the results keeps the dialog's layout in place", async () => {
+  mockWorkflows();
+  mockSessions();
+  const weeklyReport = workflow({
+    id: "d0000000-0000-4000-a000-000000000431",
+    name: "weekly-report",
+    displayName: "Weekly report",
+    importSource: "claudeCode",
+  });
+  const launchChecklist = workflow({
+    id: "d0000000-0000-4000-a000-000000000432",
+    name: "launch-checklist",
+    displayName: "Launch checklist",
+    importSource: "claudeCode",
+  });
+  let imported: readonly WorkflowSummary[] = [];
+  let reread: ReturnType<typeof context.mocks.deferred<void>> | null = null;
+  let rereadStarted = context.mocks.deferred<void>();
+  context.mocks.api(
+    skillImportSessionsContract.listSkills,
+    async ({ respond }) => {
+      if (reread) {
+        rereadStarted.resolve();
+        await reread.promise;
+      }
+      return respond(200, [...imported]);
+    },
+  );
+  await openWorkflowsPage();
+  click(getButtonNamed("Import skills"));
+  const dialog = await findDialog();
+  await findCopyPrompt(dialog);
+  await waitFor(() => {
+    return expect(
+      context.mocks.ably.hasSubscription("skillImportChanged"),
+    ).toBeTruthy();
+  });
+  await expect(
+    within(dialog).findByText("Imported skills appear here as they arrive."),
+  ).resolves.toBeVisible();
+
+  // While a notification's reread is in flight, the empty import still waits
+  // in the footer instead of swapping in a loading section.
+  reread = context.mocks.deferred<void>();
+  imported = [weeklyReport];
+  context.mocks.ably.trigger("skillImportChanged");
+  await rereadStarted.promise;
+  expect(within(dialog).queryByText("Loading imported skills…")).toBeNull();
+  expect(within(dialog).getByRole("status")).toHaveTextContent(
+    "Imported skills appear here as they arrive.",
+  );
+  reread.resolve();
+  await expect(
+    within(dialog).findByText("Weekly report"),
+  ).resolves.toBeVisible();
+
+  // The next skill's reread keeps the listed one until the new list lands.
+  reread = context.mocks.deferred<void>();
+  rereadStarted = context.mocks.deferred<void>();
+  imported = [weeklyReport, launchChecklist];
+  context.mocks.ably.trigger("skillImportChanged");
+  await rereadStarted.promise;
+  expect(within(dialog).queryByText("Loading imported skills…")).toBeNull();
+  expect(within(dialog).getByText("Weekly report")).toBeVisible();
+  expect(within(dialog).getByRole("status")).toHaveTextContent(
+    "1 imported · listening for more",
+  );
+  reread.resolve();
+  await expect(
+    within(dialog).findByText("Launch checklist"),
+  ).resolves.toBeVisible();
+
+  // Another tool's session never shows this one's list while it opens.
+  click(within(dialog).getByRole("radio", { name: "Codex" }));
+  expect(within(dialog).queryByText("Weekly report")).toBeNull();
+});
+
 test("Reopening retains the prompt and resyncs the whole session including closed-window uploads", async () => {
   const workflows = mockWorkflows();
   mockSessions();
