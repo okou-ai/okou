@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1131.1](https://github.com/okou-ai/okou/compare/app-v0.1131.0...app-v0.1131.1) (2026-11-14)
+
+
+### Performance Improvements
+
+* **app:** narrow browser view subscriptions ([#47184](https://github.com/okou-ai/okou/issues/47184)) ([f2520eb](https://github.com/okou-ai/okou/commit/f2520eb57a3dc0407bd54014e87b96d6ebe8e632))
+
 ## [0.1131.0](https://github.com/okou-ai/okou/compare/app-v0.1130.2...app-v0.1131.0) (2026-11-14)
 
 
