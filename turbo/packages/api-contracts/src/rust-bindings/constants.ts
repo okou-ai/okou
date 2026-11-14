@@ -53,8 +53,6 @@ import {
   RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
   RUNNER_HOSTNAME_MAX_LENGTH,
   OFFICIAL_RUNNER_TOKEN_PREFIX,
-  RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX,
-  RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
   SESSION_HISTORY_ENCODING_GZIP,
   SESSION_HISTORY_ENCODING_IDENTITY,
   SESSION_HISTORY_ENCODING_ZSTD,
@@ -557,14 +555,6 @@ export const rustConstantBindings = [
   },
   {
     rustModulePath: ["runners"],
-    rustConstName: "RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX",
-    value: rustU64(RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX),
-    rustDoc: [
-      "Maximum Pi model configuration generations advertised by one Runner claim.",
-    ],
-  },
-  {
-    rustModulePath: ["runners"],
     rustConstName: "RUNNER_CANCELLATION_RECOVERY_GRACE_MS",
     value: rustU64(RUNNER_CANCELLATION_RECOVERY_GRACE_MS),
     rustDoc: [
@@ -588,15 +578,6 @@ export const rustConstantBindings = [
     rustDoc: [
       "Maximum configured runner hostname length accepted by the runner-facing API.",
       "Rust runners use JavaScript UTF-16 string length semantics when enforcing this shared boundary.",
-    ],
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "RUNNER_POLL_EXCLUDED_RUN_IDS_MAX",
-    value: rustU64(RUNNER_POLL_EXCLUDED_RUN_IDS_MAX),
-    rustDoc: [
-      "Maximum runner-local claim cooldown exclusions accepted by the poll endpoint.",
-      "Rust runners use this shared contract value to bound local cooldown state and poll request size.",
     ],
   },
   {

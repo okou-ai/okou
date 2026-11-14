@@ -20,7 +20,7 @@ export const browserOwnerProfiles = pgTable(
     providerProfileId: uuid("provider_profile_id").notNull(),
     instanceId: uuid("instance_id").notNull(),
     providerSessionId: uuid("provider_session_id"),
-    // Selected provider upload for this instance; older writers leave it unknown.
+    // Selected provider upload for this instance; cleared when it stops.
     browserExtensionId: uuid("browser_extension_id"),
     status: varchar("status", { length: 16 })
       .$type<"creating" | "active" | "stopping" | "stopped">()

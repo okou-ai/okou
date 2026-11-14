@@ -1,6 +1,6 @@
 import {
   browserContract,
-  type BrowserSession,
+  type BrowserConnection,
 } from "@okouai/api-contracts/contracts/browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -68,7 +68,7 @@ function mockViewer(endpointAliases: readonly string[] = []) {
     ],
   });
   let windowId = 101;
-  function session(id = threadId): BrowserSession {
+  function session(id = threadId): BrowserConnection["browser"] {
     return {
       threadId: id,
       name: "automatic recovery",
@@ -250,7 +250,11 @@ async function revalidatePaintedRecovery(
       }
       if (outcome === "absent") {
         return respond(200, {
-          browser: { ...viewer.session(), status: "suspended" },
+          browser: {
+            ...viewer.session(),
+            status: "suspended",
+            window: undefined,
+          },
           viewer: null,
         });
       }

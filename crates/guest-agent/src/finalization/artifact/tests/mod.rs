@@ -305,6 +305,17 @@ async fn artifact_snapshot_enforces_manifest_boundaries_before_storage_api_calls
         .join("files");
     std::fs::create_dir_all(&mount).unwrap();
     let max_files = usize::try_from(STORAGE_MANIFEST_MAX_FILES).unwrap();
+    // Manifest limits count paths, so these immutable empty files can share an inode.
+    #[cfg(target_os = "linux")]
+    {
+        let source = mount.join("00000");
+        std::fs::File::create(&source).unwrap();
+        for index in 1..max_files {
+            std::fs::hard_link(&source, mount.join(format!("{index:05}"))).unwrap();
+        }
+    }
+    // Other platforms may impose lower per-inode link limits.
+    #[cfg(not(target_os = "linux"))]
     for index in 0..max_files {
         std::fs::File::create(mount.join(format!("{index:05}"))).unwrap();
     }

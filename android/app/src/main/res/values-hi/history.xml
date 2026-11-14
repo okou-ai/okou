@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="history_sidebar">बातचीत</string>
+    <string name="history_loading">बातचीत लोड हो रही है…</string>
+    <string name="history_failed">बातचीत रीफ़्रेश नहीं हो सकी। फिर कोशिश करें।</string>
+    <string name="history_missing">यह बातचीत हटाई गई है या उपलब्ध नहीं है।</string>
+    <string name="history_read_failed">पढ़ने की स्थिति की पुष्टि नहीं हो सकी। फिर से रीफ़्रेश करें।</string>
+    <string name="history_empty">अभी कोई संदेश नहीं है।</string>
+    <string name="history_you">आप</string>
+    <string name="history_work">कार्य</string>
+    <string name="history_work_steps">उत्तर चरण: %1$d</string>
+    <string name="history_queued">कतार में</string>
+    <string name="history_rejected">नहीं भेजा गया</string>
+    <string name="history_unsupported">यह सामग्री अपने मूल रूप में दिखाई गई है।</string>
+    <string name="history_reference">संदर्भ</string>
+    <string name="history_completed">पूरा हुआ</string>
+    <string name="history_cancelled">रोका गया</string>
+    <string name="history_run_failed">विफल</string>
+    <string name="history_idle">इतिहास</string>
+    <string name="history_running">चल रहा है</string>
+</resources>

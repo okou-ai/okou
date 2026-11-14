@@ -284,7 +284,8 @@ private final class RealtimeResourceHarness {
         return result
       })
     let resources = WorkspaceResources(
-      client: http.client, sleep: { try await Task.sleep(for: $0) }, modelBootstrap: modelBootstrap)
+      client: http.client, sync: ChatSync(client: http.client),
+      sleep: { try await Task.sleep(for: $0) }, modelBootstrap: modelBootstrap)
     self.resources = resources
     models = ChatModelStore(
       client: http.client, webURL: http.baseURL, resources: resources,

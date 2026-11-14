@@ -31,55 +31,6 @@ pub mod runners {
         };
     }
 
-    /// Generated route bindings under `runners::jobs`.
-    pub mod jobs {
-        /// Generated route bindings under `runners::jobs::by_id`.
-        pub mod by_id {
-            /// Generated route bindings under `runners::jobs::by_id::claim`.
-            pub mod claim {
-                /// Claim a pending job for execution.
-                /// Route contract: `POST /api/runners/jobs/:id/claim`.
-                pub const CLAIM: crate::RouteTemplate = crate::RouteTemplate {
-                    method: crate::Method::Post,
-                    path: "/api/runners/jobs/:id/claim",
-                };
-
-                /// Path parameters for `POST /api/runners/jobs/:id/claim`.
-                #[derive(Debug, Clone, Copy)]
-                pub struct Params<'a> {
-                    /// Value for the `:id` path parameter.
-                    pub id: &'a str,
-                }
-
-                /// Build the concrete path for `POST /api/runners/jobs/:id/claim`.
-                /// Percent-encodes each path parameter as a URL path segment.
-                #[must_use]
-                pub fn path(params: Params<'_>) -> String {
-                    format!(
-                        "/api/runners/jobs/{}/claim",
-                        crate::route::encode_path_segment(params.id),
-                    )
-                }
-
-                /// Build a resolved route for `POST /api/runners/jobs/:id/claim`.
-                #[must_use]
-                pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
-                    crate::ResolvedRoute::new(CLAIM.method, path(params))
-                }
-            }
-        }
-    }
-
-    /// Generated route bindings under `runners::poll`.
-    pub mod poll {
-        /// Poll for pending jobs (long-polling with 30s timeout).
-        /// Route contract: `POST /api/runners/poll`.
-        pub const POLL: crate::Route = crate::Route {
-            method: crate::Method::Post,
-            path: "/api/runners/poll",
-        };
-    }
-
     /// Generated route bindings under `runners::realtime`.
     pub mod realtime {
         /// Generated route bindings under `runners::realtime::token`.

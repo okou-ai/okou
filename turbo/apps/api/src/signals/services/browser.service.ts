@@ -1,484 +1,1239 @@
-import { rootSignal$ } from "../context/root";
-import type { BrowserWindowContext } from "@okouai/api-contracts/contracts/browser";
-import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
-import { browserSessionScreenshotDeletions } from "@okouai/db/schema/browser-session";
-import { browserOwnerProfiles } from "@okouai/db/schema/browser-owner";
-import { browserChatSessions } from "@okouai/db/schema/browser-chat-session";
-import { command } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
+import { and, eq, getTableColumns, gt, isNotNull, or } from "drizzle-orm";
 import {
-  and,
-  eq,
-  exists,
-  inArray,
-  isNotNull,
-  isNull,
-  sql,
-  type SQL,
-} from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/pg-core";
-import { boolean, object } from "zod";
-import { parseRawRows } from "../../lib/db-raw-rows";
-import { logger } from "../../lib/log";
+  BROWSER_MAX_SCREEN_HEIGHT,
+  BROWSER_MIN_SCREEN_HEIGHT,
+  BROWSER_PROVIDER_TIMEOUT_MINUTES,
+  BROWSER_SCREEN_WIDTH,
+  type BrowserSession,
+  type BrowserConnection,
+  type BrowserViewerConnection,
+  type BrowserViewerAcquisition,
+} from "@okouai/api-contracts/contracts/browser";
+import type { BrowserDisplaySize } from "@okouai/core/browser-display";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { agents } from "@okouai/db/schema/agent";
+import { browserOwnerProfiles as profiles } from "@okouai/db/schema/browser-owner";
+import { browserChatSessions as windows } from "@okouai/db/schema/browser-chat-session";
+import { env } from "../../lib/env";
+import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
-import { now, nowDate } from "../../lib/time";
-import { flushAxiom, getDatasetName, ingestToAxiom } from "../external/axiom";
-import { putImmutableS3Object } from "../external/s3";
-import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import { settleIncludingAbort } from "../utils";
 import {
-  captureBrowserUseScreenshot,
-  getBrowserUseSession,
+  controlBrowserOwner$,
+  authorityStillCurrent,
+  type BrowserPublicAuthority,
+} from "./browser-owner.service";
+import { allocateBrowserOwnerProfile$ } from "./browser-owner-profile.service";
+import { createBrowserOwnerWindow$ } from "./browser-owner-window.service";
+import {
+  browserChatWindow,
+  type BrowserChatWindow,
+} from "./browser-chat-session";
+import { ensureBrowserCapacity$ } from "./browser-capacity.service";
+import {
+  resolveBrowserScreenshotUrl$,
+  captureAndStoreBrowserScreenshot$,
+} from "./browser-screenshot.service";
+import type { BrowserServiceError } from "./browser-error";
+import {
+  BrowserUseProviderError,
+  browserUseWindowExists,
+  browserUseNativeConnection,
+  createBrowserUseSession,
+  findBrowserUseSession,
+  resizeBrowserUseSession,
+  resolveBrowserUseViewerConnection,
+  stopBrowserUseSessionForCleanup,
+  type BrowserUseSession,
+  type BrowserUseNativeConnection,
 } from "./browser-use.service";
 import {
-  resolveArtifactFileReference$,
-  allocatePrivateArtifact$,
-  privateArtifactRecord$,
-} from "./private-artifact-storage.service";
-import {
-  loadActivePaidConcurrencySlots$,
-  cappedBaseConcurrencyLimit,
-  totalConcurrencyLimit,
-} from "./org-concurrency-entitlements.service";
-import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
-import { browserCapturePublication } from "./browser-capture-publication";
+  saveBrowserSnapshot$,
+  browserLifetime,
+} from "./browser-snapshot.service";
+import { reconcileBrowsers$ } from "./browser-reconcile.service";
 
-const BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS = 30_000;
-const BROWSER_SCREENSHOT_CONTENT_TYPE = "image/webp";
-const BROWSER_SCREENSHOT_FILENAME = "browser-screenshot.webp";
-const L = logger("Browser");
-
-type BrowserSessionOwner = Pick<
-  typeof browserChatSessions.$inferSelect,
-  "orgId" | "userId" | "chatThreadId"
+interface BrowserInput {
+  readonly viewer?: boolean;
+  readonly operationId?: string;
+  readonly initialDisplay?: BrowserDisplaySize;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly runId?: string;
+  readonly chatThreadId?: string;
+  readonly name?: string;
+  readonly aspectRatio?: number;
+}
+type Result<T> =
+  { readonly kind: "ok"; readonly value: T } | BrowserServiceError;
+type Profile = typeof profiles.$inferSelect;
+type Window = BrowserChatWindow;
+type Metadata = Pick<
+  typeof windows.$inferSelect,
+  "chatThreadId" | "orgId" | "userId" | "name" | "createdAt" | "updatedAt"
 >;
-
-export interface BrowserServiceError {
-  readonly kind: "error";
-  readonly status: 400 | 403 | 404 | 409 | 502 | 503;
-  readonly code: string;
-  readonly message: string;
+const unavailable = (): BrowserServiceError => {
+  return {
+    kind: "error",
+    status: 409,
+    code: "BROWSER_RECLAIMING",
+    message:
+      "This Browser lifetime is unavailable; retry after its current setup or cleanup completes",
+  };
+};
+const missing = (): BrowserServiceError => {
+  return {
+    kind: "error",
+    status: 404,
+    code: "BROWSER_NOT_FOUND",
+    message: "Managed browser not found",
+  };
+};
+function errorResult(error: unknown): BrowserServiceError {
+  if (!(error instanceof BrowserUseProviderError)) {
+    throw error;
+  }
+  return {
+    kind: "error",
+    status: error.status,
+    code: error.code,
+    message: error.message,
+  };
+}
+async function provider<T>(
+  request: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  const result = await settleIncludingAbort(request);
+  signal.throwIfAborted();
+  if (!result.ok) {
+    throw result.error instanceof BrowserUseProviderError
+      ? result.error
+      : new BrowserUseProviderError(
+          502,
+          "BROWSER_USE_SHARED_OPERATION_FAILED",
+          "Managed Browser operation could not be confirmed",
+        );
+  }
+  return result.value;
+}
+function liveBrowserWindow(
+  owner: BrowserPublicAuthority,
+  profile: Profile,
+  window: Pick<Window, "primaryWindowId">,
+) {
+  return and(
+    browserLifetime(owner, profile, window),
+    eq(windows.state, "active"),
+    gt(windows.expiresAt, nowDate()),
+    authorityStillCurrent(owner),
+  );
+}
+const loadBrowserScreenshotUrl$ = command(
+  async (
+    { get, set },
+    owner: Pick<BrowserPublicAuthority, "orgId" | "userId" | "chatThreadId">,
+    signal: AbortSignal,
+  ) => {
+    const [chat] = await get(db$)
+      .select({
+        screenshotObjectKey: windows.screenshotObjectKey,
+        screenshotUrl: windows.screenshotUrl,
+      })
+      .from(windows)
+      .where(
+        and(
+          eq(windows.chatThreadId, owner.chatThreadId),
+          eq(windows.orgId, owner.orgId),
+          eq(windows.userId, owner.userId),
+        ),
+      );
+    signal.throwIfAborted();
+    return chat?.screenshotObjectKey && chat.screenshotUrl
+      ? await set(
+          resolveBrowserScreenshotUrl$,
+          {
+            ...owner,
+            objectKey: chat.screenshotObjectKey,
+            url: chat.screenshotUrl,
+          },
+          signal,
+        )
+      : null;
+  },
+);
+function presentation(
+  meta: Metadata,
+  profile: Profile,
+  window: Window | null,
+  session: Pick<BrowserUseSession, "status" | "liveUrl"> | null,
+  screenshotUrl: string | null,
+): BrowserSession {
+  const live =
+    profile.status === "active" &&
+    profile.timeoutAt > nowDate() &&
+    window?.state === "active" &&
+    window.expiresAt > nowDate() &&
+    session?.status === "active";
+  const metadata = {
+    threadId: meta.chatThreadId,
+    name: meta.name,
+    viewerUrl: `${env("APP_URL")}/browsers/${meta.chatThreadId}`,
+    screenshotUrl,
+    timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
+    createdAt: meta.createdAt.toISOString(),
+    updatedAt: meta.updatedAt.toISOString(),
+  };
+  return live
+    ? {
+        ...metadata,
+        status: "active",
+        liveUrl: session.liveUrl,
+        window: {
+          instanceId: profile.instanceId,
+          primaryWindowId: window.primaryWindowId,
+        },
+        idleExpiresAt: window.expiresAt.toISOString(),
+        suspendedAt: null,
+        suspensionReason: null,
+      }
+    : {
+        ...metadata,
+        status: "suspended",
+        liveUrl: null,
+        idleExpiresAt: null,
+        suspendedAt: profile.updatedAt.toISOString(),
+        suspensionReason: "idle",
+      };
 }
 
-/** Resolve preview storage using the logical owner's independent file record. */
-export const resolveBrowserScreenshotUrl$ = command(
+type BrowserInputNode = Computed<
+  BrowserInput | null | Promise<BrowserInput | null>
+>;
+
+interface ProvisionBrowser {
+  readonly initialDisplay?: BrowserDisplaySize;
+  readonly owner: BrowserPublicAuthority;
+  readonly previous: Profile | null;
+}
+// Publication and exact losing-candidate cleanup finish even if the HTTP caller disconnects.
+const settleBrowserInstancePublication$ = command(
   async (
     { set },
-    screenshot: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly objectKey: string;
-      readonly url: string;
+    args: {
+      readonly owner: BrowserPublicAuthority;
+      readonly profile: Profile;
+      readonly session: BrowserUseSession;
     },
-    signal: AbortSignal,
-  ): Promise<string | null> => {
-    const reference = await set(
-      resolveArtifactFileReference$,
-      screenshot.url,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!reference) {
-      return screenshot.url;
-    }
-    const file = await set(privateArtifactRecord$, reference.id, signal);
-    signal.throwIfAborted();
-    if (
-      !file ||
-      file.userId !== screenshot.userId ||
-      file.orgId !== screenshot.orgId ||
-      file.key !== screenshot.objectKey ||
-      file.materializationStatus !== "ready"
-    ) {
-      return null;
-    }
-    const preview = await set(
-      resolveArtifactPreviewUrl$,
-      { bucket: file.bucket, key: file.key, signingDate: nowDate() },
-      signal,
-    );
-    signal.throwIfAborted();
-    return preview.url;
-  },
-);
-
-const browserAvailableConcurrency$ = command(
-  async ({ get, set }, orgId: string): Promise<number> => {
-    const [capabilities, paidSlots] = await Promise.all([
-      set(loadOrgPlanCapabilities$, orgId),
-      set(loadActivePaidConcurrencySlots$, orgId),
-    ]);
-    if (!capabilities) {
-      return 0;
-    }
-    const limit = totalConcurrencyLimit({
-      baseLimit: cappedBaseConcurrencyLimit(capabilities.baseConcurrencyLimit),
-      paidSlots,
-    });
-    if (!Number.isFinite(limit) || limit === 0) {
-      return limit;
-    }
-    const shared = await get(db$).$count(
-      browserOwnerProfiles,
-      and(
-        eq(browserOwnerProfiles.orgId, orgId),
-        inArray(browserOwnerProfiles.status, [
-          "creating",
-          "active",
-          "stopping",
-        ]),
+  ): Promise<Result<Profile>> => {
+    const { owner, profile, session } = args;
+    const signal = AbortSignal.timeout(15_000);
+    const publication = await settleIncludingAbort(
+      set(
+        controlBrowserOwner$,
+        owner,
+        {
+          kind: "publish",
+          instanceId: profile.instanceId,
+          providerSessionId: session.id,
+          timeoutAt: session.timeoutAt,
+        },
+        signal,
       ),
     );
-    return limit - shared;
+    if (!publication.ok) {
+      throw publication.error;
+    }
+    const db = set(writeDb$);
+    if (publication.value.outcome !== "accepted") {
+      const referenced = await db.$count(
+        profiles,
+        eq(profiles.providerSessionId, session.id),
+      );
+      if (referenced === 0) {
+        await provider(
+          stopBrowserUseSessionForCleanup(
+            session.id,
+            AbortSignal.timeout(15_000),
+          ),
+          signal,
+        );
+      }
+      return unavailable();
+    }
+    signal.throwIfAborted();
+    const [published] = await db
+      .select()
+      .from(profiles)
+      .where(eq(profiles.instanceId, profile.instanceId));
+    signal.throwIfAborted();
+    return published ? { kind: "ok", value: published } : unavailable();
   },
 );
 
-/** Enforce the current shared-owner concurrency entitlement. */
-export const ensureSharedBrowserCapacity$ = command(
+const publishBrowserInstance$ = command(
   async (
     { set },
-    orgId: string,
+    args: {
+      readonly owner: BrowserPublicAuthority;
+      readonly profile: Profile;
+      readonly initialDisplay?: BrowserDisplaySize;
+    },
     signal: AbortSignal,
-  ): Promise<BrowserServiceError | null> => {
-    const available = await set(browserAvailableConcurrency$, orgId);
+  ): Promise<Result<Profile>> => {
+    const { owner, profile } = args;
+    if (!profile.browserExtensionId) {
+      throw new Error("A new shared Browser has no extension upload identity");
+    }
+    const creation = await settleIncludingAbort(
+      createBrowserUseSession(
+        {
+          profileId: profile.providerProfileId,
+          extensionId: profile.browserExtensionId,
+          timeoutMinutes: BROWSER_PROVIDER_TIMEOUT_MINUTES,
+          instanceId: profile.instanceId,
+          initialDisplay: args.initialDisplay,
+        },
+        signal,
+      ),
+    );
+    if (signal.aborted) {
+      if (creation.ok) {
+        await set(settleBrowserInstancePublication$, {
+          owner,
+          profile,
+          session: creation.value,
+        });
+      }
+      signal.throwIfAborted();
+    }
+    if (!creation.ok) {
+      signal.throwIfAborted();
+      throw creation.error;
+    }
+    const result = await set(settleBrowserInstancePublication$, {
+      owner,
+      profile,
+      session: creation.value,
+    });
     signal.throwIfAborted();
-    if (!Number.isFinite(available) || available > 0) {
+    return result;
+  },
+);
+
+const provisionBrowserInstance$ = command(
+  async (
+    { get, set },
+    args: ProvisionBrowser,
+    signal: AbortSignal,
+  ): Promise<
+    Result<{ readonly profile: Profile; readonly created: boolean }>
+  > => {
+    if (args.previous && args.previous.status !== "stopped") {
+      return { kind: "ok", value: { profile: args.previous, created: false } };
+    }
+    const db = get(db$);
+    const capacity = await set(
+      ensureBrowserCapacity$,
+      args.owner.orgId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (capacity) {
+      return capacity;
+    }
+    const allocation = await set(
+      allocateBrowserOwnerProfile$,
+      args.owner,
+      args.previous,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (allocation.outcome !== "accepted") {
+      return unavailable();
+    }
+    const [currentProfile] = await db
+      .select()
+      .from(profiles)
+      .where(
+        and(
+          eq(profiles.instanceId, allocation.profile.instanceId),
+          eq(profiles.status, "creating"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!currentProfile) {
+      return unavailable();
+    }
+    const published = await set(
+      publishBrowserInstance$,
+      {
+        owner: args.owner,
+        profile: currentProfile,
+        initialDisplay: args.initialDisplay,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return published.kind === "error"
+      ? published
+      : { kind: "ok", value: { profile: published.value, created: true } };
+  },
+);
+
+interface AdmitBrowserWindow extends BrowserUseNativeConnection {
+  readonly initialDisplay?: BrowserDisplaySize;
+  readonly owner: BrowserPublicAuthority;
+  readonly profile: Profile;
+  readonly initial: boolean;
+}
+
+const admitBrowserWindow$ = command(
+  async (
+    { get, set },
+    args: AdmitBrowserWindow,
+    signal: AbortSignal,
+  ): Promise<Result<Window>> => {
+    const result = await set(
+      createBrowserOwnerWindow$,
+      {
+        owner: args.owner,
+        instanceId: args.profile.instanceId,
+        cdpUrl: args.cdpUrl,
+        extension: args.extension,
+        initial: args.initial,
+        initialDisplay: args.initialDisplay,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (result.outcome !== "accepted" || !result.window) {
+      return unavailable();
+    }
+    const [window] = await get(db$)
+      .select({
+        chatThreadId: windows.chatThreadId,
+        instanceId: windows.instanceId,
+        state: windows.state,
+        primaryWindowId: windows.primaryWindowId,
+        expiresAt: windows.expiresAt,
+      })
+      .from(windows)
+      .where(liveBrowserWindow(args.owner, args.profile, result.window));
+    signal.throwIfAborted();
+    const binding = window ? browserChatWindow(window) : null;
+    return binding ? { kind: "ok", value: binding } : unavailable();
+  },
+);
+
+const publishBrowserMetadata$ = command(
+  async (
+    { set },
+    args: {
+      readonly owner: BrowserPublicAuthority;
+      readonly input: BrowserInput;
+      readonly profile: Profile;
+      readonly window: Window;
+    },
+    signal: AbortSignal,
+  ): Promise<Result<Metadata>> => {
+    const { owner, input, profile, window } = args;
+    const db = set(writeDb$);
+    const [meta] = await db
+      .update(windows)
+      .set({ name: input.name ?? windows.name, updatedAt: nowDate() })
+      .where(liveBrowserWindow(owner, profile, window))
+      .returning({
+        chatThreadId: windows.chatThreadId,
+        orgId: windows.orgId,
+        userId: windows.userId,
+        name: windows.name,
+        createdAt: windows.createdAt,
+        updatedAt: windows.updatedAt,
+      });
+    signal.throwIfAborted();
+    if (!meta) {
+      return unavailable();
+    }
+    const [confirmed] = await db
+      .select({ id: windows.chatThreadId })
+      .from(windows)
+      .where(liveBrowserWindow(owner, profile, window));
+    signal.throwIfAborted();
+    if (!confirmed) {
+      return unavailable();
+    }
+    await publishBrowserSessionChangedSafely(owner.userId, {
+      threadId: owner.chatThreadId,
+      ...(input.viewer && input.operationId
+        ? { operationId: input.operationId }
+        : {}),
+    });
+    signal.throwIfAborted();
+    return { kind: "ok", value: meta };
+  },
+);
+
+function browserContext(input$: BrowserInputNode) {
+  return computed(async (get) => {
+    const input = await get(input$);
+    if (!input) {
+      return missing();
+    }
+    if (!input.runId && !input.chatThreadId) {
+      return {
+        kind: "error",
+        status: 400,
+        code: "BROWSER_RUN_REQUIRED",
+        message: "Managed Browser requires a chat Run",
+      } as const;
+    }
+    const db = get(db$);
+    const [run] = input.runId
+      ? await db
+          .select({
+            chatThreadId: agentRuns.chatThreadId,
+            agentId: agentRuns.agentId,
+            status: agentRuns.status,
+          })
+          .from(agentRuns)
+          .where(
+            and(
+              eq(agentRuns.id, input.runId),
+              eq(agentRuns.orgId, input.orgId),
+              eq(agentRuns.userId, input.userId),
+              isNotNull(agentRuns.triggerSource),
+            ),
+          )
+          .limit(1)
+      : [];
+    const chatThreadId = input.chatThreadId ?? run?.chatThreadId;
+    const runAgentId = run?.agentId;
+    if (
+      !chatThreadId ||
+      (input.runId && !run) ||
+      (run && (!runAgentId || run.chatThreadId !== chatThreadId))
+    ) {
+      return missing();
+    }
+    const [row] = await get(db$)
+      .select({
+        chatThreadId: chatThreads.id,
+        enabled: chatThreads.cloudBrowserEnabled,
+      })
+      .from(chatThreads)
+      .innerJoin(
+        agents,
+        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, input.orgId)),
+      )
+      .where(
+        and(
+          eq(chatThreads.id, chatThreadId),
+          eq(chatThreads.userId, input.userId),
+          or(eq(agents.visibility, "public"), eq(agents.owner, input.userId)),
+          runAgentId ? eq(chatThreads.agentId, runAgentId) : undefined,
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      return missing();
+    }
+    if (!row.enabled) {
+      return {
+        kind: "error",
+        status: 403,
+        code: "BROWSER_AUTHORIZATION_REQUIRED",
+        message: "Cloud browser is not enabled for this chat thread",
+      } as const;
+    }
+    if (run && !["pending", "running"].includes(run.status)) {
+      return {
+        kind: "error",
+        status: 409,
+        code: "BROWSER_RUN_ENDED",
+        message: "The chat run already ended",
+      } as const;
+    }
+    const owner: BrowserPublicAuthority = {
+      orgId: input.orgId,
+      userId: input.userId,
+      chatThreadId: row.chatThreadId,
+      ...(input.runId ? { runId: input.runId } : {}),
+    };
+    return { kind: "ok", owner, input } as const;
+  });
+}
+
+function browserView(context$: ReturnType<typeof browserContext>) {
+  return computed(async (get) => {
+    const ctx = await get(context$);
+    if (ctx.kind === "error") {
       return null;
     }
+    const [view] = await get(db$)
+      .select({
+        profile: getTableColumns(profiles),
+        browser: {
+          chatThreadId: windows.chatThreadId,
+          instanceId: windows.instanceId,
+          state: windows.state,
+          primaryWindowId: windows.primaryWindowId,
+          expiresAt: windows.expiresAt,
+          orgId: windows.orgId,
+          userId: windows.userId,
+          name: windows.name,
+          createdAt: windows.createdAt,
+          updatedAt: windows.updatedAt,
+        },
+      })
+      .from(profiles)
+      .leftJoin(
+        windows,
+        and(
+          eq(windows.chatThreadId, ctx.owner.chatThreadId),
+          eq(windows.orgId, ctx.owner.orgId),
+          eq(windows.userId, ctx.owner.userId),
+        ),
+      )
+      .where(
+        and(
+          eq(profiles.orgId, ctx.owner.orgId),
+          eq(profiles.userId, ctx.owner.userId),
+        ),
+      );
+    return view
+      ? {
+          ...view,
+          window: view.browser ? browserChatWindow(view.browser) : null,
+        }
+      : null;
+  });
+}
+
+function browserPresent(
+  context$: ReturnType<typeof browserContext>,
+  view$: ReturnType<typeof browserView>,
+) {
+  return command(
+    async (
+      { get, set },
+      includeViewer: boolean,
+      signal: AbortSignal,
+    ): Promise<Result<BrowserViewerAcquisition>> => {
+      const ctx = await get(context$);
+      signal.throwIfAborted();
+      if (ctx.kind === "error") {
+        return ctx;
+      }
+      const view = await get(view$);
+      signal.throwIfAborted();
+      if (!view?.browser) {
+        return missing();
+      }
+      const browser = view.browser;
+      const operation = await settleIncludingAbort(
+        (async (): Promise<Result<BrowserViewerAcquisition>> => {
+          const session =
+            view.profile.status === "active" && view.profile.providerSessionId
+              ? await provider(
+                  findBrowserUseSession(view.profile.providerSessionId, signal),
+                  signal,
+                )
+              : null;
+          const screenshotUrl = await set(
+            loadBrowserScreenshotUrl$,
+            ctx.owner,
+            signal,
+          );
+          const currentBrowser = presentation(
+            browser,
+            view.profile,
+            view.window,
+            session,
+            screenshotUrl,
+          );
+          if (includeViewer && currentBrowser.status === "active") {
+            if (!session?.cdpUrl) {
+              return unavailable();
+            }
+            const viewer = await set(
+              confirmBrowserViewer$,
+              ctx.owner,
+              {
+                browser: currentBrowser,
+                ...browserUseNativeConnection(session),
+              },
+              signal,
+            );
+            return viewer.kind === "error"
+              ? viewer
+              : {
+                  kind: "ok",
+                  value: {
+                    browser: viewer.value.browser,
+                    viewer: viewer.value,
+                  },
+                };
+          }
+          return {
+            kind: "ok",
+            value: {
+              browser: currentBrowser,
+              ...(includeViewer ? { viewer: null } : {}),
+            },
+          };
+        })(),
+      );
+      signal.throwIfAborted();
+      return operation.ok ? operation.value : errorResult(operation.error);
+    },
+  );
+}
+
+const resolveBrowserWindow$ = command(
+  async (
+    { set },
+    args: AdmitBrowserWindow & { readonly window: Window | null },
+    signal: AbortSignal,
+  ): Promise<Result<Window> | null> => {
+    let window = args.window;
+    if (window) {
+      if (
+        window.state !== "active" ||
+        window.expiresAt <= nowDate() ||
+        !(await provider(
+          browserUseWindowExists(args, window.primaryWindowId, signal),
+          signal,
+        ))
+      ) {
+        return null;
+      }
+    } else {
+      const admitted = await set(admitBrowserWindow$, args, signal);
+      signal.throwIfAborted();
+      if (admitted.kind === "error") {
+        return admitted;
+      }
+      window = admitted.value;
+    }
+    const renewed = await set(
+      controlBrowserOwner$,
+      args.owner,
+      {
+        kind: "renew",
+        instanceId: args.profile.instanceId,
+        primaryWindowId: window.primaryWindowId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (renewed.outcome !== "accepted" || !renewed.window) {
+      return unavailable();
+    }
     return {
-      kind: "error",
-      status: 409,
-      code: "BROWSER_CONCURRENCY_LIMIT",
-      message: "This organization has no managed browser concurrency available",
+      kind: "ok",
+      value: {
+        ...window,
+        expiresAt: renewed.window.expiresAt,
+      },
     };
   },
 );
 
-type BrowserScreenshotStage = "prepare" | "capture" | "upload" | "save";
-
-interface BrowserScreenshotPublication {
-  readonly browser: BrowserSessionOwner;
-  readonly fileId: string;
-  readonly shared: {
-    readonly providerSessionId: string;
-    readonly window: BrowserWindowContext;
-    readonly previousValue: string | null;
-    readonly capturedAt: Date;
-  };
-  readonly objectKey: string;
-  readonly url: string;
-}
-
-function browserScreenshotFailureKind(error: unknown): string {
-  if (!(error instanceof Error)) {
-    return "other";
-  }
-  if (
-    error.name === "TimeoutError" ||
-    (error.name === "AbortError" &&
-      error.cause instanceof Error &&
-      error.cause.name === "TimeoutError")
-  ) {
-    return "timeout";
-  }
-  switch (error.message) {
-    case "Browser Use CDP returned no page target": {
-      return "no_page_target";
-    }
-    case "No target with given id found": {
-      return "target_disappeared";
-    }
-    case "Browser Use CDP connection failed": {
-      return "connection_failed";
-    }
-    case "Browser Use CDP connection closed": {
-      return "connection_closed";
-    }
-    default: {
-      return error.name === "AbortError" ? "aborted" : "other";
-    }
-  }
-}
-
-async function recordBrowserScreenshotResult(result: {
-  readonly startedAt: number;
-  readonly outcome: "success" | "failure";
-  readonly failureStage?: BrowserScreenshotStage;
-  readonly failureKind?: string;
-}): Promise<void> {
-  const ingested = ingestToAxiom(getDatasetName("web-logs"), [
-    {
-      _time: nowDate().toISOString(),
-      type: "managed_browser_screenshot",
-      source: "api",
-      outcome: result.outcome,
-      duration_ms: Math.max(0, now() - result.startedAt),
-      ...(result.failureStage === undefined
-        ? {}
-        : { failure_stage: result.failureStage }),
-      ...(result.failureKind === undefined
-        ? {}
-        : { failure_kind: result.failureKind }),
-    },
-  ]);
-  if (ingested) {
-    await flushAxiom({ client: "telemetry" });
-  }
-}
-
-function sharedBrowserScreenshotPublication(
-  args: BrowserScreenshotPublication,
-  shared: BrowserScreenshotPublication["shared"],
-  fileReady: SQL,
-) {
-  const { browser } = args;
-  const t = browserChatSessions;
-  const publication = browserCapturePublication({
-    value: t.screenshotObjectKey,
-    updatedAt: t.screenshotCapturedAt,
-    previousValue: shared.previousValue,
-    capturedAt: shared.capturedAt,
-  });
-  const guard = and(
-    eq(t.chatThreadId, browser.chatThreadId),
-    eq(t.instanceId, shared.window.instanceId),
-    eq(t.primaryWindowId, shared.window.primaryWindowId),
-    exists(
-      new QueryBuilder()
-        .select({ id: browserOwnerProfiles.id })
-        .from(browserOwnerProfiles)
-        .where(
-          and(
-            eq(browserOwnerProfiles.instanceId, shared.window.instanceId),
-            eq(
-              browserOwnerProfiles.providerSessionId,
-              shared.providerSessionId,
-            ),
-            eq(browserOwnerProfiles.orgId, browser.orgId),
-            eq(browserOwnerProfiles.userId, browser.userId),
-          ),
-        ),
-    ),
-  );
-  return {
-    updatedAt: publication.updatedAt,
-    canReplace: and(guard, fileReady, publication.canReplace),
-  };
-}
-
-const publishBrowserScreenshot$ = command(
-  async ({ set }, args: BrowserScreenshotPublication): Promise<boolean> => {
-    const { browser, shared } = args;
-    const artifact = { key: args.objectKey, url: args.url };
-    const db = set(writeDb$);
-    // File completion and preview publication are one operation. Cleanup can
-    // retire pending bytes after a lost DB reply, so publication must compete
-    // with that tombstone on the same existing business file row.
-    const completion = db
-      .update(runUploadedFiles)
-      .set({
-        materializationStatus: "ready",
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(runUploadedFiles.id, args.fileId),
-          eq(runUploadedFiles.storageKey, artifact.key),
-          eq(runUploadedFiles.userId, browser.userId),
-          eq(runUploadedFiles.orgId, browser.orgId),
-          eq(runUploadedFiles.materializationStatus, "pending"),
-          isNull(runUploadedFiles.deletedAt),
-        ),
-      )
-      .returning({ id: runUploadedFiles.id });
-    const completed = db.$with("completed_browser_screenshot").as(completion);
-    const publication = sharedBrowserScreenshotPublication(
-      args,
-      shared,
-      exists(new QueryBuilder().select({ id: completed.id }).from(completed)),
-    );
-    const publicationSql = db
-      .update(browserChatSessions)
-      .set({
-        screenshotObjectKey: artifact.key,
-        screenshotUrl: artifact.url,
-        screenshotCapturedAt: publication.updatedAt,
-      })
-      .where(publication.canReplace)
-      .returning({ id: browserChatSessions.chatThreadId })
-      .getSQL();
-    // Every candidate retains its own cleanup identity, including the accepted
-    // preview. The sweeper excludes referenced keys. This also covers a value
-    // displaced by a concurrent publication that this snapshot cannot see.
-    const previous = db
-      .select({
-        objectKey: browserChatSessions.screenshotObjectKey,
-        chatThreadId: browserChatSessions.chatThreadId,
-        createdAt: browserChatSessions.createdAt,
-      })
-      .from(browserChatSessions)
-      .where(
-        and(
-          eq(browserChatSessions.chatThreadId, browser.chatThreadId),
-          isNotNull(browserChatSessions.screenshotObjectKey),
-        ),
-      );
-    const queued = db
-      .insert(browserSessionScreenshotDeletions)
-      .select(
-        sql`${previous}
-          UNION SELECT ${artifact.key}, ${browser.chatThreadId}::uuid, now()`,
-      )
-      .onConflictDoNothing()
-      .getSQL();
-    const [outcome] = parseRawRows(
-      object({ saved: boolean() }),
-      await db.execute(sql`WITH completed_browser_screenshot AS (${completion.getSQL()}),
-        published AS (${publicationSql}),
-        queued AS (${queued})
-        SELECT EXISTS(SELECT 1 FROM published) AS saved`),
-    );
-    if (!outcome) {
-      throw new Error("Browser screenshot publication returned no outcome");
-    }
-    return outcome.saved;
-  },
-);
-
-const retainAbandonedBrowserScreenshot$ = command(
-  async ({ set }, chatThreadId: string, objectKey: string): Promise<void> => {
-    const db = set(writeDb$);
-    const queued = await settleIncludingAbort(
-      db
-        .insert(browserSessionScreenshotDeletions)
-        .values({ objectKey, chatThreadId })
-        .onConflictDoNothing(),
-    );
-    if (!queued.ok) {
-      L.warn("Managed browser screenshot cleanup handoff failed", {
-        chatThreadId,
-        objectKey,
-        error: queued.error,
-      });
-    }
-  },
-);
-
-export const captureAndStoreBrowserScreenshot$ = command(
+const connectBrowser$ = command(
   async (
-    { get, set },
-    browser: BrowserSessionOwner,
-    shared: {
-      readonly providerSessionId: string;
-      readonly window: BrowserWindowContext;
+    { set },
+    args: {
+      readonly owner: BrowserPublicAuthority;
+      readonly input: BrowserInput;
+      readonly profile: Profile;
+      readonly window: Window | null;
+      readonly initial: boolean;
     },
-  ): Promise<void> => {
-    const startedAt = now();
-    const signal = get(rootSignal$);
-    let stage: BrowserScreenshotStage = "prepare";
-    let allocatedKey: string | undefined;
-    // Include capture cancellation in the final outcome so every started
-    // screenshot operation has a recorded result.
-    const [result] = await Promise.allSettled([
-      (async () => {
-        const [previous] = await get(db$)
-          .select({ objectKey: browserChatSessions.screenshotObjectKey })
-          .from(browserChatSessions)
-          .where(eq(browserChatSessions.chatThreadId, browser.chatThreadId));
-        signal.throwIfAborted();
-        const previousValue = previous?.objectKey ?? null;
-        const provider = await getBrowserUseSession(
-          shared.providerSessionId,
-          signal,
-        );
-        signal.throwIfAborted();
-        if (provider.status !== "active" || !provider.cdpUrl) {
-          return;
-        }
-        stage = "capture";
-        // A delayed native reply must retain its capture-start ordering.
-        const capturedAt = nowDate();
-        const image = await captureBrowserUseScreenshot(
-          provider.cdpUrl,
-          shared.window.primaryWindowId,
-          AbortSignal.any([
+    signal: AbortSignal,
+  ): Promise<Result<BrowserConnection> | null> => {
+    const { owner, input, profile } = args;
+    if (
+      profile.status !== "active" ||
+      !profile.providerSessionId ||
+      profile.timeoutAt <= nowDate()
+    ) {
+      return null;
+    }
+    const session = await provider(
+      findBrowserUseSession(profile.providerSessionId, signal),
+      signal,
+    );
+    if (!session || session.status !== "active") {
+      return null;
+    }
+    if (!session.cdpUrl) {
+      return unavailable();
+    }
+    const connection = browserUseNativeConnection(session);
+    const resolved = await set(
+      resolveBrowserWindow$,
+      {
+        owner,
+        profile,
+        ...connection,
+        initial: args.initial,
+        initialDisplay: input.initialDisplay,
+        window: args.window,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!resolved || resolved.kind === "error") {
+      return resolved;
+    }
+    const window = resolved.value;
+    const meta = await set(
+      publishBrowserMetadata$,
+      { owner, input, profile, window },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (meta.kind === "error") {
+      return meta;
+    }
+    const browser = presentation(meta.value, profile, window, session, null);
+    if (browser.status !== "active") {
+      return unavailable();
+    }
+    return {
+      kind: "ok",
+      value: {
+        browser,
+        cdpUrl: session.cdpUrl,
+        extension: connection.extension,
+      },
+    };
+  },
+);
+
+function browserOpen(
+  context$: ReturnType<typeof browserContext>,
+  view$: ReturnType<typeof browserView>,
+) {
+  // Reclamation can replace the binding captured by the initial computed read.
+  const reconciledView$ = browserView(context$);
+  return command(
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<Result<BrowserConnection>> => {
+      const ctx = await get(context$);
+      signal.throwIfAborted();
+      if (ctx.kind === "error") {
+        return ctx;
+      }
+      const current = await get(view$);
+      signal.throwIfAborted();
+      if (
+        current?.window?.state === "active" &&
+        current.window.instanceId === current.profile.instanceId &&
+        current.window.expiresAt > nowDate()
+      ) {
+        // Validate once, immediately before the exact atomic renewal. Only a
+        // definitively unready Browser needs reclamation; failures are not retried.
+        const reused = await settleIncludingAbort(
+          set(
+            connectBrowser$,
+            {
+              owner: ctx.owner,
+              input: ctx.input,
+              profile: current.profile,
+              window: current.window,
+              initial: false,
+            },
             signal,
-            AbortSignal.timeout(BROWSER_SCREENSHOT_CAPTURE_TIMEOUT_MS),
-          ]),
-        );
-        signal.throwIfAborted();
-        stage = "upload";
-        const artifact = await set(
-          allocatePrivateArtifact$,
-          {
-            userId: browser.userId,
-            orgId: browser.orgId,
-            filename: BROWSER_SCREENSHOT_FILENAME,
-            contentType: BROWSER_SCREENSHOT_CONTENT_TYPE,
-            size: image.byteLength,
-          },
-          signal,
-        );
-        const bucket = artifact.bucket;
-        allocatedKey = artifact.key;
-        await get(
-          putImmutableS3Object(
-            bucket,
-            artifact.key,
-            image,
-            BROWSER_SCREENSHOT_CONTENT_TYPE,
-            { signal, metadata: artifact.metadata },
           ),
         );
         signal.throwIfAborted();
-
-        stage = "save";
-        const saved = await set(publishBrowserScreenshot$, {
-          browser,
-          fileId: artifact.id,
-          shared: { ...shared, previousValue, capturedAt },
-          objectKey: artifact.key,
-          url: artifact.url,
-        });
-        if (!saved) {
-          return;
+        if (!reused.ok) {
+          return errorResult(reused.error);
         }
-
-        // Persistence is the success boundary; a deadline after commit must
-        // not turn an available preview into a failed capture metric.
-        await publishBrowserSessionChangedSafely(browser.userId, {
-          threadId: browser.chatThreadId,
-        });
-        return true;
-      })(),
-    ]);
-    if (result.status === "rejected" && allocatedKey) {
-      // The upload/publication promise has settled, but its commit may be
-      // uncertain. Retain only this attempt's immutable identity; the accepted
-      // pointer protects a publication that actually succeeded. Do not inherit
-      // capture cancellation for this durable recovery handoff.
+        if (reused.value) {
+          return reused.value;
+        }
+      }
+      // Reclaim expired lifetimes before the graph captures its current rows.
       await set(
-        retainAbandonedBrowserScreenshot$,
-        browser.chatThreadId,
-        allocatedKey,
+        reconcileBrowsers$,
+        {
+          ...ctx.owner,
+          operationId: ctx.input.viewer ? ctx.input.operationId : undefined,
+        },
+        signal,
       );
-    }
-    if (result.status === "fulfilled" && !result.value) {
-      return;
-    }
-    // Flush after the background result exists, within the same waitUntil.
-    // Telemetry delivery must not reject the screenshot task.
-    await Promise.allSettled([
-      recordBrowserScreenshotResult({
-        startedAt,
-        ...(result.status === "fulfilled"
-          ? { outcome: "success" }
-          : {
-              outcome: "failure",
-              failureStage: stage,
-              failureKind: browserScreenshotFailureKind(result.reason),
-            }),
-      }),
-    ]);
+      signal.throwIfAborted();
+      const view = await get(reconciledView$);
+      signal.throwIfAborted();
+      const operation = await settleIncludingAbort(
+        (async (): Promise<Result<BrowserConnection>> => {
+          const provisioned = await set(
+            provisionBrowserInstance$,
+            {
+              owner: ctx.owner,
+              previous: view?.profile ?? null,
+              initialDisplay: ctx.input.initialDisplay,
+            },
+            signal,
+          );
+          signal.throwIfAborted();
+          if (provisioned.kind === "error") {
+            return provisioned;
+          }
+          const { profile, created } = provisioned.value;
+          const connected = await set(
+            connectBrowser$,
+            {
+              owner: ctx.owner,
+              input: ctx.input,
+              profile,
+              initial: created,
+              window:
+                view?.profile.instanceId === profile.instanceId
+                  ? view.window
+                  : null,
+            },
+            signal,
+          );
+          signal.throwIfAborted();
+          return connected ?? unavailable();
+        })(),
+      );
+      signal.throwIfAborted();
+      return operation.ok ? operation.value : errorResult(operation.error);
+    },
+  );
+}
+
+function browserLease(
+  context$: ReturnType<typeof browserContext>,
+  view$: ReturnType<typeof browserView>,
+) {
+  return command(
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<Result<BrowserSession>> => {
+      const ctx = await get(context$);
+      signal.throwIfAborted();
+      if (ctx.kind === "error") {
+        return ctx;
+      }
+      const view = await get(view$);
+      signal.throwIfAborted();
+      if (!view?.window || !view.browser) {
+        return missing();
+      }
+      const window = view.window;
+      const health = await settleIncludingAbort(async () => {
+        if (!view.profile.providerSessionId) {
+          return null;
+        }
+        const session = await provider(
+          findBrowserUseSession(view.profile.providerSessionId, signal),
+          signal,
+        );
+        return session?.status === "active" &&
+          session.cdpUrl &&
+          (await provider(
+            browserUseWindowExists(
+              browserUseNativeConnection(session),
+              window.primaryWindowId,
+              signal,
+            ),
+            signal,
+          ))
+          ? session
+          : null;
+      });
+      signal.throwIfAborted();
+      if (!health.ok) {
+        return errorResult(health.error);
+      }
+      if (!health.value) {
+        await set(reconcileBrowsers$, ctx.owner, signal);
+        return unavailable();
+      }
+      const result = await set(
+        controlBrowserOwner$,
+        ctx.owner,
+        {
+          kind: "renew",
+          instanceId: view.profile.instanceId,
+          primaryWindowId: view.window.primaryWindowId,
+        },
+        signal,
+      );
+      if (result.outcome !== "accepted" || !result.window) {
+        return unavailable();
+      }
+      const browser = presentation(
+        view.browser,
+        view.profile,
+        {
+          ...view.window,
+          expiresAt: result.window.expiresAt,
+        },
+        health.value,
+        await set(loadBrowserScreenshotUrl$, ctx.owner, signal),
+      );
+      return { kind: "ok", value: browser };
+    },
+  );
+}
+
+function browserResize(
+  context$: ReturnType<typeof browserContext>,
+  view$: ReturnType<typeof browserView>,
+) {
+  return command(
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<Result<BrowserSession>> => {
+      const ctx = await get(context$);
+      signal.throwIfAborted();
+      if (ctx.kind === "error") {
+        return ctx;
+      }
+      const view = await get(view$);
+      signal.throwIfAborted();
+      if (
+        !view?.window ||
+        !view.browser ||
+        view.profile.status !== "active" ||
+        !view.profile.providerSessionId ||
+        view.window.expiresAt <= nowDate() ||
+        !ctx.input.aspectRatio
+      ) {
+        return unavailable();
+      }
+      const { window, browser } = view;
+      const providerSessionId = view.profile.providerSessionId;
+      const aspectRatio = ctx.input.aspectRatio;
+      const operation = await settleIncludingAbort(
+        (async (): Promise<Result<BrowserSession>> => {
+          const session = await provider(
+            findBrowserUseSession(providerSessionId, signal),
+            signal,
+          );
+          if (!session || session.status !== "active" || !session.cdpUrl) {
+            return unavailable();
+          }
+          const height = Math.min(
+            BROWSER_MAX_SCREEN_HEIGHT,
+            Math.max(
+              BROWSER_MIN_SCREEN_HEIGHT,
+              Math.round(BROWSER_SCREEN_WIDTH / aspectRatio),
+            ),
+          );
+          await provider(
+            resizeBrowserUseSession(
+              session.cdpUrl,
+              BROWSER_SCREEN_WIDTH,
+              height,
+              window.primaryWindowId,
+              signal,
+            ),
+            signal,
+          );
+          const [currentWindow] = await get(db$)
+            .select({
+              chatThreadId: windows.chatThreadId,
+              instanceId: windows.instanceId,
+              state: windows.state,
+              primaryWindowId: windows.primaryWindowId,
+              expiresAt: windows.expiresAt,
+            })
+            .from(windows)
+            .where(
+              and(
+                browserLifetime(ctx.owner, view.profile, window),
+                eq(windows.state, "active"),
+                gt(windows.expiresAt, nowDate()),
+              ),
+            )
+            .limit(1);
+          if (!currentWindow) {
+            return unavailable();
+          }
+          return {
+            kind: "ok",
+            value: presentation(
+              browser,
+              view.profile,
+              browserChatWindow(currentWindow),
+              session,
+              await set(loadBrowserScreenshotUrl$, ctx.owner, signal),
+            ),
+          };
+        })(),
+      );
+      signal.throwIfAborted();
+      return operation.ok ? operation.value : errorResult(operation.error);
+    },
+  );
+}
+
+// One finite acquisition owns remote address resolution and final publication.
+// No provider URL is accepted after its instance/window or authority has changed.
+const confirmBrowserViewer$ = command(
+  async (
+    { get },
+    owner: BrowserPublicAuthority,
+    connection: BrowserConnection,
+    signal: AbortSignal,
+  ): Promise<Result<BrowserViewerConnection>> => {
+    const identity = connection.browser.window;
+    const cdpUrl = await provider(
+      resolveBrowserUseViewerConnection(
+        connection.cdpUrl,
+        connection.browser.liveUrl,
+        signal,
+      ),
+      signal,
+    );
+    const [binding] = await get(db$)
+      .select({ expiresAt: windows.expiresAt, timeoutAt: profiles.timeoutAt })
+      .from(windows)
+      .innerJoin(
+        profiles,
+        and(
+          eq(profiles.instanceId, windows.instanceId),
+          eq(profiles.orgId, owner.orgId),
+          eq(profiles.userId, owner.userId),
+          eq(profiles.status, "active"),
+          isNotNull(profiles.providerSessionId),
+          gt(profiles.timeoutAt, nowDate()),
+        ),
+      )
+      .where(
+        and(
+          eq(windows.chatThreadId, owner.chatThreadId),
+          eq(windows.orgId, owner.orgId),
+          eq(windows.userId, owner.userId),
+          eq(windows.instanceId, identity.instanceId),
+          eq(windows.primaryWindowId, identity.primaryWindowId),
+          eq(windows.state, "active"),
+          gt(windows.expiresAt, nowDate()),
+          authorityStillCurrent(owner),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return binding &&
+      binding.expiresAt !== null &&
+      binding.expiresAt > nowDate() &&
+      binding.timeoutAt > nowDate()
+      ? {
+          kind: "ok",
+          value: {
+            ...connection,
+            browser: {
+              ...connection.browser,
+              idleExpiresAt: binding.expiresAt.toISOString(),
+            },
+            cdpUrl,
+          },
+        }
+      : unavailable();
   },
 );
+
+function browserClose(
+  context$: ReturnType<typeof browserContext>,
+  view$: ReturnType<typeof browserView>,
+) {
+  return command(
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<Result<Record<string, never>>> => {
+      const ctx = await get(context$);
+      signal.throwIfAborted();
+      if (ctx.kind === "error") {
+        return ctx;
+      }
+      const view = await get(view$);
+      signal.throwIfAborted();
+      if (
+        view?.window &&
+        view.browser &&
+        view.profile.status === "active" &&
+        view.profile.providerSessionId
+      ) {
+        const { window, browser } = view;
+        const providerSessionId = view.profile.providerSessionId;
+        const operation = await settleIncludingAbort(
+          (async (): Promise<Result<Record<string, never>>> => {
+            const session = await provider(
+              findBrowserUseSession(providerSessionId, signal),
+              signal,
+            );
+            if (session && session.status === "active" && session.cdpUrl) {
+              const captured = await set(
+                saveBrowserSnapshot$,
+                {
+                  owner: ctx.owner,
+                  profile: view.profile,
+                  window,
+                  ...browserUseNativeConnection(session),
+                },
+                signal,
+              );
+              if (captured) {
+                await set(captureAndStoreBrowserScreenshot$, browser, {
+                  providerSessionId,
+                  window: {
+                    instanceId: view.profile.instanceId,
+                    primaryWindowId: window.primaryWindowId,
+                  },
+                });
+              }
+            }
+            return { kind: "ok", value: {} };
+          })(),
+        );
+        signal.throwIfAborted();
+        return operation.ok ? operation.value : errorResult(operation.error);
+      }
+      return { kind: "ok", value: {} };
+    },
+  );
+}
+
+export function createBrowserGraph(input$: BrowserInputNode) {
+  const context$ = browserContext(input$);
+  const view$ = browserView(context$);
+  const openNative$ = browserOpen(context$, view$);
+  const open$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const result = await set(openNative$, signal);
+    signal.throwIfAborted();
+    const ctx = await get(context$);
+    signal.throwIfAborted();
+    if (result.kind === "error" || ctx.kind === "error" || !ctx.input.viewer) {
+      return result;
+    }
+    const viewer = await settleIncludingAbort(
+      set(confirmBrowserViewer$, ctx.owner, result.value, signal),
+    );
+    signal.throwIfAborted();
+    return viewer.ok ? viewer.value : errorResult(viewer.error);
+  });
+  return {
+    present$: browserPresent(context$, view$),
+    open$,
+    lease$: browserLease(context$, view$),
+    resize$: browserResize(context$, view$),
+    close$: browserClose(context$, view$),
+  };
+}

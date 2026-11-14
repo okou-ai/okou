@@ -2754,6 +2754,11 @@
       "ideasLabel": "Ide untuk memulai",
       "label": "Mulai tugas",
       "more": "Lainnya",
+      "presentationFormat": "Format presentasi",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "Template presentasi",
       "removeTask": "Hapus {{task}}",
       "shelf": {

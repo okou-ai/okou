@@ -4,8 +4,7 @@ import {
   runnersCancellationContract,
   runnersBuiltinFirewallsResolveContract,
   runnersConnectorRuntimeSyncContract,
-  runnersJobClaimContract,
-  runnersPollContract,
+  executionContextSchema,
   runnersSteerContract,
 } from "../contracts/runners";
 
@@ -26,16 +25,10 @@ export const rustDecodePathBindings = [
     ],
   },
   {
-    schema: runnersPollContract.poll.responses[200],
-    rustModulePath: ["runners", "poll"],
-    rustConstName: "RESPONSE",
-    rustDoc: ["Decode-path schema for the runner poll response."],
-  },
-  {
-    schema: runnersJobClaimContract.claim.responses[200],
-    rustModulePath: ["runners", "jobs", "by_id", "claim"],
-    rustConstName: "RESPONSE",
-    rustDoc: ["Decode-path schema for the runner job claim response."],
+    schema: executionContextSchema,
+    rustModulePath: ["runners", "execution_publication"],
+    rustConstName: "CONTEXT",
+    rustDoc: ["Decode-path schema for complete Runner execution input."],
   },
   {
     schema: runnersSteerContract.next.responses[200],

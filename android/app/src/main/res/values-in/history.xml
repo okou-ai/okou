@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="history_sidebar">Percakapan</string>
+    <string name="history_loading">Memuat percakapan…</string>
+    <string name="history_failed">Percakapan tidak dapat diperbarui. Coba lagi.</string>
+    <string name="history_missing">Percakapan ini telah dihapus atau tidak tersedia.</string>
+    <string name="history_read_failed">Status baca tidak dapat dikonfirmasi. Segarkan untuk mencoba lagi.</string>
+    <string name="history_empty">Belum ada pesan.</string>
+    <string name="history_you">Anda</string>
+    <string name="history_work">Pekerjaan</string>
+    <string name="history_work_steps">Langkah respons: %1$d</string>
+    <string name="history_queued">Dalam antrean</string>
+    <string name="history_rejected">Tidak terkirim</string>
+    <string name="history_unsupported">Konten ini ditampilkan dalam bentuk aslinya.</string>
+    <string name="history_reference">Referensi</string>
+    <string name="history_completed">Selesai</string>
+    <string name="history_cancelled">Dihentikan</string>
+    <string name="history_run_failed">Gagal</string>
+    <string name="history_idle">Riwayat</string>
+    <string name="history_running">Berjalan</string>
+</resources>

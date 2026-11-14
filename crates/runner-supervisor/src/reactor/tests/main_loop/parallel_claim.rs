@@ -97,7 +97,7 @@ async fn concurrent_claims_have_finite_backpressure_and_all_queued_jobs_complete
 }
 
 #[tokio::test]
-async fn ready_direct_candidates_claim_in_parallel() {
+async fn buffered_local_candidates_claim_in_parallel() {
     let (config, env) = mock_run_config(test_profiles(), 32, 65536, 16);
     env.handle.block_claims();
     let runs: Vec<_> = (0..MAX_IN_FLIGHT_CLAIMS).map(|_| RunId::new_v4()).collect();
@@ -105,10 +105,12 @@ async fn ready_direct_candidates_claim_in_parallel() {
         env.provider
             .set_claim_result(run_id, Some(minimal_context(run_id)));
         env.handle
-            .push_ready_candidate(runner_provider::JobCandidate::new(
+            .discover_tx
+            .send(runner_provider::JobCandidate::new(
                 run_id,
                 "vm0/default".to_owned(),
-            ));
+            ))
+            .unwrap();
     }
     let runner = tokio::spawn(run(config));
     push_job(&env, runs[0], "vm0/default", Some(minimal_context(runs[0])));

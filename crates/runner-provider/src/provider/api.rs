@@ -1,134 +1,47 @@
-//! [`JobProvider`] backed by an Ably control plane + HTTP polling + REST API.
-
-mod claim_inputs;
+//! Reporting and control ownership for directly supplied API work.
+mod execution_inputs;
 mod response_decode;
-
-pub use claim_inputs::decode_execution_publication;
-
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-
-use tokio::sync::Mutex;
-use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
-
-use api_contracts::generated::{
-    constants::runners::{
-        BUILTIN_FIREWALL_CATALOG_MAX_BYTES, CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
-        PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION, PI_MODEL_CONFIG_CURRENT_GENERATION,
-        PI_MODEL_CONFIG_DIALECT_TIER_GENERATION, RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
-    },
-    routes,
-    types::runners::runs::steerable_inputs::next::Response as NextSteerableInputResponse,
-};
-use bytes::Bytes;
-use reqwest::{Response, StatusCode};
-use serde::{Deserialize, Serialize};
-
-use super::api_ably_supervisor::{
-    AblySupervisor, AblySupervisorConfig, PollDue, PollOutcome, PollReason, PollWakeups,
-};
-use super::api_admission_deferrals::{AdmissionDeferralRecord, AdmissionDeferrals};
+use super::api_ably_supervisor::{AblySupervisor, AblySupervisorConfig};
 use super::api_cancellation_reconciliation::CancellationReconciliation;
-use super::api_claim_cooldowns::{ClaimCooldownRecord, ClaimCooldowns};
-use super::api_claim_in_flight::InFlightClaims;
-use super::api_direct_candidates::{
-    DIRECT_CANDIDATE_STALE_AFTER, DirectCandidateInbox, DirectCandidatePruneSnapshot,
-    DirectJobCandidate,
-};
 use super::builtin_firewall_catalog::{
     BuiltinFirewallCatalog, BuiltinFirewallCatalogRefreshController,
 };
 use super::connector_runtime_sync::ConnectorRuntimeSyncHandle;
-use super::{
-    ApiClaimTiming, ClaimResponseAttribution, ClaimedJob, CompletionAuth, CompletionAuthError,
-    CompletionReportTiming, JobCandidate, JobDiscoverySource, JobProvider, RunnerPreference,
-    RunnerPreferenceClaimState, parse_runner_preference,
-};
+use super::{ClaimedJob, CompletionAuth, CompletionAuthError, CompletionReportTiming, JobProvider};
 use crate::active_input::{ActiveInputNotifications, ActiveInputSource};
 use crate::duration::duration_ms;
 use crate::error::{
     ApiBodyReadError, ApiFailureKind, ApiStatusError, ApiTransportCause, ApiTransportError,
     ProviderError, ProviderResult,
 };
-use crate::http::{
-    ApiRequestBuilder, HttpClient, RecoveryPolicy, RetryConditions, is_transient_http_status,
-};
+use crate::http::{ApiRequestBuilder, HttpClient};
 use crate::run_cancellation::RunCancellationRegistry;
-#[cfg(test)]
-use guest_contracts::okou_cli::OkouCliInstalledPackage;
-use guest_contracts::okou_cli::{InstalledOkouCli, OkouCliVersions};
+use api_contracts::generated::{
+    constants::runners::{
+        BUILTIN_FIREWALL_CATALOG_MAX_BYTES, CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
+    },
+    routes,
+    types::runners::runs::steerable_inputs::next::Response as NextSteerableInputResponse,
+};
+pub use execution_inputs::decode_execution_publication;
+use reqwest::{Response, StatusCode};
+use response_decode::{ApiDecodePath, decode_api_json, decode_api_json_bytes};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 use runner_types::types::{
     CompleteRequest, ConnectorRuntimeSyncBatchResponse, ConnectorRuntimeTargetRegistration,
-    ExecutionContext, HeartbeatState, Job, PollResponse,
+    ExecutionContext, HeartbeatState,
 };
-
-use response_decode::{ApiDecodePath, decode_api_json, decode_api_json_bytes};
+use serde::Deserialize;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info, warn};
 
 fn supports_thread_active_input(reuse_key: Option<&str>) -> bool {
     reuse_key.is_some_and(|key| key.starts_with("thread:"))
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ClaimRequestBody<'a> {
-    runner_identity: &'a RunnerProcessIdentity,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    runner_hostname: Option<&'a str>,
-    capabilities: RunnerClaimCapabilities,
-    telemetry: ClaimRequestTelemetry,
-    /// Versions of the Okou CLI installed in this runner's rootfs. A runner
-    /// without an installed CLI omits the field.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    installed_versions: Option<&'a OkouCliVersions>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RunnerClaimCapabilities {
-    pi_model_config_generations: [u32; 3],
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ClaimRequestTelemetry {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    discovery_source: Option<&'static str>,
-    job_discovered_to_claim_request_ms: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    local_admission_to_claim_request_ms: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    direct_candidate_notification_to_enqueue_ms: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    direct_candidate_inbox_wait_ms: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    provider_discovery_to_main_loop_ms: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    main_loop_to_local_admission_ms: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    poll_due_to_job_discovered_ms: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    poll_http_request_ms: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    poll_reason: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    runner_preference: Option<RunnerPreference>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    runner_preference_claim_state: Option<RunnerPreferenceClaimState>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PollRequestBody<'a> {
-    runner_id: uuid::Uuid,
-    group: &'a str,
-    supported_profiles: &'a [String],
-    #[serde(skip_serializing_if = "Option::is_none")]
-    excluded_run_ids: Option<&'a [RunId]>,
-    telemetry: PollRequestTelemetry,
 }
 
 pub(super) enum ConnectorRuntimeSyncOutcome {
@@ -154,98 +67,10 @@ struct ApiErrorBody {
     complete: bool,
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct PollRequestTelemetry {
-    poll_reason: &'static str,
-}
-
-#[derive(Debug, thiserror::Error)]
-enum ClaimApiError {
-    #[error(transparent)]
-    Request(#[from] ProviderError),
-    #[error("claim response body read failed: {0}")]
-    ResponseRead(String),
-    #[error("claim response decode failed: {0}")]
-    ResponseDecode(String),
-}
-
-#[cfg_attr(test, derive(Debug))]
-struct SuccessfulClaimResponse {
-    context: ExecutionContext,
-    request_to_response_headers_elapsed: Duration,
-    response_body_read_elapsed: Duration,
-    response_first_body_chunk_wait_elapsed: Duration,
-    response_decode_elapsed: Duration,
-    response_attribution: ClaimResponseAttribution,
-}
-
-#[derive(Clone, Copy)]
-enum ClaimFailureClass {
-    HttpTransient,
-    HttpDeterministic,
-    Transport,
-    Local,
-    ResponseRead,
-    ResponseDecode,
-    ResponseInvariant,
-}
-
-impl ClaimFailureClass {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::HttpTransient => "http_transient",
-            Self::HttpDeterministic => "http_deterministic",
-            Self::Transport => "transport",
-            Self::Local => "local",
-            Self::ResponseRead => "response_read",
-            Self::ResponseDecode => "response_decode",
-            Self::ResponseInvariant => "response_invariant",
-        }
-    }
-}
-
-struct ClaimFailureDecision {
-    class: ClaimFailureClass,
-    cooldown: Duration,
-    status: Option<StatusCode>,
-    transport_kind: Option<&'static str>,
-    response_run_id: Option<RunId>,
-}
-
-const CLAIM_TELEMETRY_DURATION_MS_MAX: u64 = 9_007_199_254_740_991;
-
-#[derive(Debug)]
-struct PollApiResult {
-    job: Option<Job>,
-    http_request_elapsed: Duration,
-}
-
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/// Poll interval when Ably is connected (safety net).
-const POLL_SLOW: Duration = Duration::from_secs(30);
-/// Poll interval when Ably is disconnected or unavailable (primary mechanism).
-const POLL_FAST: Duration = Duration::from_secs(5);
-/// Reconcile advertised reuse while Ably may still report Connected, at a
-/// load-limited ten-second cadence. This deliberately exceeds the API's one-
-/// and two-second preference windows; a competitor can claim after expiry.
-/// Connection heartbeats shorten silent-loss detection independently. HTTP
-/// latency, capacity and explicit deferrals can further delay discovery.
-const POLL_REUSE: Duration = Duration::from_secs(10);
-const POLL_REUSE_STAGGER_MS: u64 = 100;
-/// Retry delay after a job-notification wakeup reaches poll but poll fails.
-const POLL_WAKEUP_RETRY: Duration = POLL_FAST;
-const DIRECT_CANDIDATE_INBOX_CAPACITY: usize = 128;
-const CLAIM_COOLDOWN_CAPACITY: usize = RUNNER_POLL_EXCLUDED_RUN_IDS_MAX as usize;
-const CLAIM_TRANSIENT_COOLDOWN: Duration = POLL_FAST;
-const CLAIM_DETERMINISTIC_COOLDOWN: Duration = POLL_SLOW;
-/// Keep one brief platform failure inside the existing local reuse admission.
-const PREFERRED_CLAIM_RETRY_DELAY: Duration = Duration::from_millis(100);
-/// Matches the existing sustained Ably-disconnection reporting boundary.
-const POLL_DEGRADED_AFTER: Duration = Duration::from_secs(60);
 /// Report sustained heartbeat delivery failures independently of routine cadence.
 const HEARTBEAT_DEGRADED_AFTER: Duration = Duration::from_secs(30);
 // The full catalog is multi-megabyte. This budget covers connection setup,
@@ -328,68 +153,13 @@ impl DegradationEpisodeTracker {
     }
 }
 
-enum DiscoveryWakeup {
-    Direct(Box<DirectJobCandidate>),
-    Poll(PollDue),
-}
-
 // ---------------------------------------------------------------------------
 // ApiProvider
 // ---------------------------------------------------------------------------
 
-/// [`JobProvider`] backed by Ably control-plane notifications + HTTP polling + REST API.
-///
-/// This wraps the current production job lifecycle:
-/// - **Control plane**: Ably supervisor for reconnect visibility, cancel notifications,
-///   and poll wakeups
-/// - **Discovery**: HTTP poll fallback (adaptive interval)
-/// - **Claim**: `POST /api/runners/jobs/{id}/claim`
-/// - **Complete**: `POST /api/webhooks/agent/complete` with per-job sandbox token
-///
-/// ## Claim failure and rediscovery
-///
-/// Claim is also feedback into discovery. A successful or unavailable claim
-/// clears any per-run cooldown; an unavailable claim promptly polls the backlog.
-/// Other failures are classified as transient or deterministic and give that run
-/// a corresponding runner-local cooldown.
-/// An active preference for this process can recover one HTTP 500 inside the
-/// original claim future before cooldown, retaining its local reuse reservation
-/// and in-flight exclusion. Expiry and shutdown stop admission of that retry.
-///
-/// While a run is cooling down, matching direct candidates are skipped and the
-/// bounded active run IDs are sent as optional poll exclusions. Recording a
-/// per-run cooldown requests an immediate poll so unrelated candidates can make
-/// progress. An empty excluded poll schedules a deferred retry through the
-/// `PollWakeups` state machine. If every exclusion expires while that poll is in
-/// flight, the provider immediately polls again without the stale exclusions.
-///
-/// The API can still return a cooled run: exclusions are truncated to the
-/// contract maximum, and a cooldown recorded while a poll is in flight is not in
-/// that poll's request. The provider therefore checks returned candidates
-/// locally and defers rather than reclaiming that run at network-round-trip
-/// cadence. Cooldown capacity never
-/// evicts an active entry; saturation instead applies a short provider-wide
-/// cooldown and defers all discovery before retrying.
 pub struct ApiProvider {
     api: ApiClient,
-    runner_identity: RunnerProcessIdentity,
-    runner_hostname: Option<String>,
-    /// Okou CLI installed into every configured rootfs, advertised at claim.
-    installed_okou_cli: Option<InstalledOkouCli>,
     group: String,
-    /// Profile names this runner supports (e.g., ["vm0/default"]).
-    /// Sent in poll requests so the server only returns jobs this runner can handle.
-    supported_profiles: Vec<String>,
-    /// Coalesced poll wakeup state updated by the Ably supervisor.
-    poll_wakeups: Arc<PollWakeups>,
-    /// Supported direct job candidates delivered by Ably notifications.
-    direct_candidates: Arc<DirectCandidateInbox>,
-    /// Runs temporarily ineligible for this runner after a failed claim.
-    claim_cooldowns: ClaimCooldowns,
-    admission_deferrals: AdmissionDeferrals,
-    /// Requests whose queued Run may still be visible before claim settlement.
-    in_flight_claims: InFlightClaims,
-    /// Background Ably control-plane task.
     ably_supervisor: Mutex<Option<AblySupervisor>>,
     cancel_tokens: RunCancellationRegistry,
     cancellation_reconciliation: CancellationReconciliation,
@@ -397,9 +167,7 @@ pub struct ApiProvider {
     ably_side_message_handler: Option<Arc<dyn super::AblySideMessageHandler>>,
     builtin_firewall_catalog_refresh: BuiltinFirewallCatalogRefreshController,
     active_input_notifications: ActiveInputNotifications,
-    poll_degradation_tracker: DegradationEpisodeTracker,
     heartbeat_degradation_tracker: DegradationEpisodeTracker,
-    /// Shutdown signal.
     cancel: CancellationToken,
 }
 
@@ -411,14 +179,11 @@ pub struct BuiltinFirewallCatalogCachePaths {
 pub struct ApiProviderConfig {
     pub ably_side_message_handler: Option<Arc<dyn super::AblySideMessageHandler>>,
     pub runner_identity: RunnerProcessIdentity,
-    pub runner_hostname: Option<String>,
     pub group: String,
-    pub supported_profiles: Vec<String>,
-    pub installed_okou_cli: Option<InstalledOkouCli>,
 }
 
 impl ApiProvider {
-    /// Create a new API-backed provider.
+    /// Create the reporting/control owner for direct work.
     pub fn new(
         http: HttpClient,
         token: String,
@@ -427,16 +192,11 @@ impl ApiProvider {
         cancel: CancellationToken,
         cancel_tokens: RunCancellationRegistry,
     ) -> Arc<Self> {
-        let ApiProviderConfig {
-            ably_side_message_handler,
-            runner_identity,
-            runner_hostname,
-            group,
-            supported_profiles,
-            installed_okou_cli,
-        } = config;
-        let cancellation_reconciliation =
-            CancellationReconciliation::new(http.clone(), group.clone(), runner_identity);
+        let cancellation_reconciliation = CancellationReconciliation::new(
+            http.clone(),
+            config.group.clone(),
+            config.runner_identity,
+        );
         let api = ApiClient::new(http, token);
         let connector_runtime_sync = ConnectorRuntimeSyncHandle::new(api.clone());
         let builtin_firewall_catalog_refresh = BuiltinFirewallCatalogRefreshController::new(
@@ -445,32 +205,16 @@ impl ApiProvider {
             builtin_firewall_catalog_cache_paths.lock_path,
             cancel.clone(),
         );
-        let poll_wakeups = Arc::new(PollWakeups::new(false));
-        let direct_candidates = DirectCandidateInbox::new(
-            DIRECT_CANDIDATE_INBOX_CAPACITY,
-            DIRECT_CANDIDATE_STALE_AFTER,
-        );
-        let active_input_notifications = ActiveInputNotifications::new();
         Arc::new(Self {
             api,
-            runner_identity,
-            runner_hostname,
-            installed_okou_cli,
-            group,
-            supported_profiles,
-            poll_wakeups,
-            direct_candidates,
-            claim_cooldowns: ClaimCooldowns::new(CLAIM_COOLDOWN_CAPACITY),
-            admission_deferrals: AdmissionDeferrals::new(),
-            in_flight_claims: InFlightClaims::default(),
+            group: config.group,
             ably_supervisor: Mutex::new(None),
             cancel_tokens,
             cancellation_reconciliation,
             connector_runtime_sync,
-            ably_side_message_handler,
+            ably_side_message_handler: config.ably_side_message_handler,
             builtin_firewall_catalog_refresh,
-            active_input_notifications,
-            poll_degradation_tracker: DegradationEpisodeTracker::new(),
+            active_input_notifications: ActiveInputNotifications::new(),
             heartbeat_degradation_tracker: DegradationEpisodeTracker::new(),
             cancel,
         })
@@ -478,196 +222,6 @@ impl ApiProvider {
 
     pub fn connector_runtime_sync_handle(&self) -> ConnectorRuntimeSyncHandle {
         self.connector_runtime_sync.clone()
-    }
-
-    async fn try_recv_direct_candidate(&self) -> Option<DirectJobCandidate> {
-        loop {
-            let outcome = self.direct_candidates.try_pop_with_prune().await;
-            if let Some(pruned) = outcome.pruned {
-                Self::log_direct_candidate_pruned("pop", pruned);
-                if outcome.candidate.is_none() {
-                    self.poll_wakeups.request_immediate_poll();
-                }
-            }
-            let candidate = outcome.candidate?;
-            let run_id = candidate.run_id();
-            if self.admission_deferrals.contains(run_id) {
-                if self.cancel.is_cancelled() {
-                    return None;
-                }
-                self.poll_wakeups.request_immediate_poll();
-                continue;
-            }
-            let Some(retry_after) = self.claim_cooldowns.remaining(run_id).await else {
-                return Some(candidate);
-            };
-
-            info!(
-                run_id = %run_id,
-                retry_after_ms = duration_ms(retry_after),
-                "ably: direct candidate skipped during claim cooldown"
-            );
-            self.poll_wakeups.request_immediate_poll();
-            if self.cancel.is_cancelled() {
-                return None;
-            }
-        }
-    }
-
-    async fn schedule_claim_retry_after_poll(&self, polled_with_exclusions: bool) {
-        let snapshot = self.claim_cooldowns.snapshot().await;
-        if let Some(retry_after) = snapshot.retry_after {
-            self.poll_wakeups.request_deferred_poll_after(retry_after);
-        } else if polled_with_exclusions
-            && self.in_flight_claims.is_empty()
-            && self.admission_deferrals.snapshot().run_ids.is_empty()
-        {
-            // Every exclusion expired or settled while the HTTP poll was in flight.
-            // Pending claims wake polling on settlement; do not spin on an empty
-            // poll that correctly excluded them.
-            self.poll_wakeups.request_immediate_poll();
-        }
-    }
-
-    async fn record_claim_failure(&self, run_id: RunId, decision: ClaimFailureDecision) {
-        let status = decision
-            .status
-            .map_or_else(String::new, |status| status.as_u16().to_string());
-        let transport_kind = decision.transport_kind.unwrap_or("");
-        let response_run_id = decision
-            .response_run_id
-            .map_or_else(String::new, |run_id| run_id.to_string());
-        match self.claim_cooldowns.record(run_id, decision.cooldown).await {
-            ClaimCooldownRecord::Recorded { active_count } => {
-                error!(
-                    run_id = %run_id,
-                    failure_class = decision.class.as_str(),
-                    status = %status,
-                    transport_kind,
-                    response_run_id = %response_run_id,
-                    retry_after_ms = duration_ms(decision.cooldown),
-                    retry_scope = "candidate",
-                    retry_scheduled = true,
-                    active_cooldowns = active_count,
-                    cooldown_capacity = CLAIM_COOLDOWN_CAPACITY,
-                    "claim failed, candidate cooling down"
-                );
-                self.poll_wakeups.request_immediate_poll();
-            }
-            ClaimCooldownRecord::Saturated { active_count } => {
-                self.claim_cooldowns.block_all(POLL_FAST).await;
-                error!(
-                    run_id = %run_id,
-                    failure_class = decision.class.as_str(),
-                    status = %status,
-                    transport_kind,
-                    response_run_id = %response_run_id,
-                    retry_after_ms = duration_ms(POLL_FAST),
-                    retry_scope = "provider",
-                    retry_scheduled = true,
-                    active_cooldowns = active_count,
-                    cooldown_capacity = CLAIM_COOLDOWN_CAPACITY,
-                    "claim failed, candidate cooldown capacity reached"
-                );
-                self.poll_wakeups.request_deferred_poll_after(POLL_FAST);
-            }
-        }
-    }
-
-    fn claim_recovery_policy(&self, candidate: &JobCandidate) -> RecoveryPolicy {
-        let Some(preference) = candidate
-            .runner_preference()
-            .filter(|preference| preference.targets(self.runner_identity))
-            .filter(|_| candidate.reuse_key().is_some())
-        else {
-            return RecoveryPolicy::never();
-        };
-        // The API decides ownership; a committed/lost claim can return 404.
-        // The shared executor checks cancellation/expiry only before replay,
-        // allowing the original admitted attempt to drain.
-        RecoveryPolicy::bounded(
-            2,
-            PREFERRED_CLAIM_RETRY_DELAY,
-            RetryConditions::ResetOrStatus(StatusCode::INTERNAL_SERVER_ERROR),
-        )
-        .until(preference.deadline(), self.cancel.clone())
-        .full_attempt_timeouts()
-    }
-
-    async fn wait_for_direct_candidate(&self) -> Option<DirectJobCandidate> {
-        loop {
-            if let Some(candidate) = self.try_recv_direct_candidate().await {
-                return Some(candidate);
-            }
-            if !self
-                .direct_candidates
-                .wait_for_notification(&self.cancel)
-                .await
-            {
-                return None;
-            }
-        }
-    }
-
-    fn log_direct_candidate_pruned(source: &'static str, pruned: DirectCandidatePruneSnapshot) {
-        info!(
-            source,
-            pruned_count = pruned.pruned_count,
-            depth = pruned.depth,
-            capacity = pruned.capacity,
-            stale_after_ms = duration_ms(pruned.stale_after),
-            oldest_pruned_wait_ms = duration_ms(pruned.oldest_pruned_wait_elapsed),
-            "ably: stale direct candidates pruned"
-        );
-    }
-
-    async fn wait_for_discovery_wakeup(
-        &self,
-        mut preceding_poll_deadline: Option<tokio::time::Instant>,
-    ) -> Option<DiscoveryWakeup> {
-        // Subscribe before reading deadlines; a newly recorded/released hold
-        // must interrupt an existing wait without postponing unrelated polls.
-        let mut admission_changed = self.admission_deferrals.subscribe();
-        loop {
-            if let Some(candidate) = self.try_recv_direct_candidate().await {
-                return Some(DiscoveryWakeup::Direct(Box::new(candidate)));
-            }
-
-            // Keep the preceding poll's deadline even if result processing
-            // pruned its holder just before this wait subscribed.
-            let admission_deadline = self
-                .admission_deferrals
-                .snapshot()
-                .next_deadline
-                .into_iter()
-                .chain(preceding_poll_deadline)
-                .min();
-            tokio::select! {
-                biased;
-                () = self.cancel.cancelled() => {
-                    return None;
-                }
-                candidate = self.wait_for_direct_candidate() => {
-                    if let Some(candidate) = candidate {
-                        return Some(DiscoveryWakeup::Direct(Box::new(candidate)));
-                    }
-                }
-                due = self.poll_wakeups.wait_for_poll_due(&self.cancel, POLL_SLOW, POLL_FAST) => {
-                    return due.map(DiscoveryWakeup::Poll);
-                }
-                _ = admission_changed.changed() => {}
-                () = async {
-                    if let Some(deadline) = admission_deadline {
-                        tokio::time::sleep_until(deadline).await;
-                    } else {
-                        std::future::pending::<()>().await;
-                    }
-                } => {
-                    preceding_poll_deadline = None;
-                    self.poll_wakeups.request_immediate_poll();
-                }
-            }
-        }
     }
 
     async fn ensure_ably_supervisor_started(&self) {
@@ -679,46 +233,12 @@ impl ApiProvider {
         *ably_supervisor = Some(AblySupervisor::spawn(AblySupervisorConfig {
             api: self.api.clone(),
             group: self.group.clone(),
-            profiles: self.supported_profiles.clone(),
-            poll_wakeups: Arc::clone(&self.poll_wakeups),
-            direct_candidates: Arc::clone(&self.direct_candidates),
             cancel_tokens: self.cancel_tokens.clone(),
             connector_runtime_sync: self.connector_runtime_sync.clone(),
             ably_side_message_handler: self.ably_side_message_handler.clone(),
             active_input_notifications: self.active_input_notifications.clone(),
             provider_cancel: self.cancel.clone(),
         }));
-    }
-
-    async fn record_poll_failure_at(
-        &self,
-        reason: PollReason,
-        error: &ProviderError,
-        now: Instant,
-    ) {
-        let retryable = match error {
-            ProviderError::ApiStatus(api_error) => is_transient_http_status(api_error.status),
-            _ => eligible_poll_transport_error(error).is_some(),
-        };
-        let observation = if retryable {
-            Some(
-                self.poll_degradation_tracker
-                    .observe_failure(now, POLL_DEGRADED_AFTER)
-                    .await,
-            )
-        } else {
-            None
-        };
-
-        log_poll_failure(reason, error, observation);
-    }
-
-    async fn record_poll_success_at(&self, reason: PollReason, now: Instant) {
-        let recovery = self.poll_degradation_tracker.recover(now).await;
-
-        if let Some(recovery) = recovery {
-            log_poll_recovery(self, reason, recovery);
-        }
     }
 
     async fn record_heartbeat_failure_at(
@@ -769,290 +289,6 @@ impl JobProvider for ApiProvider {
         Ok(())
     }
 
-    async fn discover(&self) -> Option<JobCandidate> {
-        let mut preceding_poll_deadline = None;
-        loop {
-            let due = match self
-                .wait_for_discovery_wakeup(preceding_poll_deadline.take())
-                .await?
-            {
-                DiscoveryWakeup::Direct(direct) => {
-                    let run_id = direct.run_id();
-                    let profile = direct.profile_name().to_owned();
-                    info!(
-                        run_id = %run_id,
-                        profile = %profile,
-                        "ably: direct job candidate discovered"
-                    );
-                    let mut candidate = direct.into_job_candidate();
-                    candidate.mark_provider_discovery_returned();
-                    return Some(candidate);
-                }
-                DiscoveryWakeup::Poll(due) => due,
-            };
-            let reason = due.reason();
-            let poll_due_started_at = Instant::now();
-            let cooldowns = self.claim_cooldowns.snapshot().await;
-            let admission = self.admission_deferrals.snapshot();
-            preceding_poll_deadline = admission.next_deadline;
-            let excluded_run_ids = self
-                .in_flight_claims
-                .poll_exclusions(&admission.run_ids, &cooldowns.run_ids);
-
-            let poll_result = tokio::select! {
-                biased;
-                () = self.cancel.cancelled() => {
-                    return None;
-                }
-                direct = self.wait_for_direct_candidate() => {
-                    if let Some(direct) = direct {
-                        self.poll_wakeups.request_immediate_poll();
-                        let run_id = direct.run_id();
-                        let profile = direct.profile_name().to_owned();
-                        info!(
-                            run_id = %run_id,
-                            profile = %profile,
-                            poll_reason = ?reason,
-                            "ably: direct job candidate interrupted poll"
-                        );
-                        let mut candidate = direct.into_job_candidate();
-                        candidate.mark_provider_discovery_returned();
-                        return Some(candidate);
-                    }
-                    return None;
-                }
-                result = self.api.poll(
-                    self.runner_identity.runner_id(),
-                    &self.group,
-                    &self.supported_profiles,
-                    &excluded_run_ids,
-                    reason,
-                ) => result,
-            };
-
-            if poll_result.is_ok() {
-                self.record_poll_success_at(reason, Instant::now()).await;
-            }
-
-            match poll_result {
-                Ok(PollApiResult {
-                    job: Some(job),
-                    http_request_elapsed,
-                }) => {
-                    if self.in_flight_claims.contains(job.run_id)
-                        || self.admission_deferrals.contains(job.run_id)
-                    {
-                        // Locally reject an outstanding claim even if an API
-                        // ignores exclusions or this poll raced registration.
-                        self.poll_wakeups.record_poll_result(
-                            due,
-                            PollOutcome::Empty,
-                            POLL_WAKEUP_RETRY,
-                        );
-                        self.schedule_claim_retry_after_poll(!excluded_run_ids.is_empty())
-                            .await;
-                        continue;
-                    }
-                    if let Some(retry_after) = self.claim_cooldowns.remaining(job.run_id).await {
-                        self.poll_wakeups.record_poll_result(
-                            due,
-                            PollOutcome::Empty,
-                            POLL_WAKEUP_RETRY,
-                        );
-                        warn!(
-                            run_id = %job.run_id,
-                            retry_after_ms = duration_ms(retry_after),
-                            excluded_run_count = excluded_run_ids.len(),
-                            "poll: API returned candidate excluded by claim cooldown"
-                        );
-                        self.schedule_claim_retry_after_poll(true).await;
-                        continue;
-                    }
-                    let record = self.poll_wakeups.record_poll_result(
-                        due,
-                        PollOutcome::JobFound,
-                        POLL_WAKEUP_RETRY,
-                    );
-                    if record.defer_job_return() {
-                        info!(
-                            run_id = %job.run_id,
-                            poll_reason = ?reason,
-                            "poll: job found while deferred poll arrived, retrying after defer"
-                        );
-                        continue;
-                    }
-                    if self.cancel.is_cancelled() {
-                        return None;
-                    }
-                    let run_id = job.run_id;
-                    let reuse_key = job.reuse_key().map(str::to_owned);
-                    let runner_preference_context =
-                        match parse_runner_preference(job.runner_preference) {
-                            Ok(context) => context,
-                            Err(error) => {
-                                warn!(
-                                    run_id = %run_id,
-                                    error = %error,
-                                    "poll: invalid runner preference, using ordinary admission"
-                                );
-                                None
-                            }
-                        };
-                    let profile = job.experimental_profile;
-                    info!(run_id = %run_id, %profile, poll_reason = ?reason, "poll: job found");
-                    let mut candidate = JobCandidate::new(run_id, profile)
-                        .with_reuse_key(reuse_key)
-                        .with_parsed_runner_preference_context(runner_preference_context)
-                        .with_discovery_source(JobDiscoverySource::Poll)
-                        .with_poll_reason(poll_reason_value(reason))
-                        .with_poll_timing(poll_due_started_at.elapsed(), http_request_elapsed);
-                    candidate.mark_provider_discovery_returned();
-                    return Some(candidate);
-                }
-                Ok(PollApiResult { job: None, .. }) => {
-                    self.poll_wakeups.record_poll_result(
-                        due,
-                        PollOutcome::Empty,
-                        POLL_WAKEUP_RETRY,
-                    );
-                    self.schedule_claim_retry_after_poll(!excluded_run_ids.is_empty())
-                        .await;
-                }
-                Err(e) => {
-                    self.poll_wakeups.record_poll_result(
-                        due,
-                        PollOutcome::Failure,
-                        POLL_WAKEUP_RETRY,
-                    );
-                    self.record_poll_failure_at(reason, &e, Instant::now())
-                        .await;
-                }
-            }
-        }
-    }
-
-    async fn try_discover_ready(&self) -> Option<JobCandidate> {
-        let direct = self.try_recv_direct_candidate().await?;
-        let run_id = direct.run_id();
-        let profile = direct.profile_name().to_owned();
-        info!(
-            run_id = %run_id,
-            profile = %profile,
-            "ably: ready direct job candidate drained"
-        );
-        let mut candidate = direct.into_job_candidate();
-        candidate.mark_provider_discovery_returned();
-        Some(candidate)
-    }
-
-    async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob> {
-        let run_id = candidate.run_id();
-        let _in_flight = self.in_flight_claims.register(run_id, &self.poll_wakeups);
-        self.admission_deferrals.release(run_id);
-        let cancellation_lookup_started_at = Instant::now();
-        let cancellation = self.cancel_tokens.handle(run_id).await;
-        info!(
-            run_id = %run_id,
-            cancellation_lookup_ms = duration_ms(cancellation_lookup_started_at.elapsed()),
-            "claim cancellation lookup completed"
-        );
-        // Only an HTTP poll can opt this candidate into the v4 claim protocol.
-        // Legacy/notification candidates omit the claim capability, so even a
-        // stale hint cannot claim a v4 Run without the durable barrier.
-        let claim_request_started_at = Instant::now();
-        let claim_result = self
-            .api
-            .claim(
-                &candidate,
-                &self.runner_identity,
-                self.runner_hostname.as_deref(),
-                self.installed_okou_cli.as_ref(),
-                self.claim_recovery_policy(&candidate),
-            )
-            .await;
-        let claim_request_elapsed = claim_request_started_at.elapsed();
-        match claim_result {
-            Ok(Some(SuccessfulClaimResponse {
-                context: ctx,
-                request_to_response_headers_elapsed,
-                response_body_read_elapsed,
-                response_first_body_chunk_wait_elapsed,
-                response_decode_elapsed,
-                response_attribution,
-            })) => {
-                let api_claim_timing = ApiClaimTiming::new(
-                    claim_request_elapsed,
-                    request_to_response_headers_elapsed,
-                    response_body_read_elapsed,
-                    response_first_body_chunk_wait_elapsed,
-                    response_decode_elapsed,
-                    response_attribution,
-                );
-                let active_input_source = supports_thread_active_input(ctx.reuse_key.as_deref())
-                    .then(|| {
-                        ActiveInputSource::api(
-                            self.api.clone(),
-                            run_id,
-                            ctx.sandbox_token.clone(),
-                            self.active_input_notifications.subscribe(run_id),
-                        )
-                    });
-                let claimed = match if let Some(active_input_source) = active_input_source {
-                    ClaimedJob::api_with_active_input_source(
-                        run_id,
-                        ctx,
-                        active_input_source,
-                        api_claim_timing,
-                    )
-                } else {
-                    ClaimedJob::api(run_id, ctx, api_claim_timing)
-                } {
-                    Ok(claimed) => claimed,
-                    Err(error) => {
-                        self.record_claim_failure(
-                            run_id,
-                            ClaimFailureDecision {
-                                class: ClaimFailureClass::ResponseInvariant,
-                                cooldown: CLAIM_DETERMINISTIC_COOLDOWN,
-                                status: None,
-                                transport_kind: None,
-                                response_run_id: Some(error.context_run_id),
-                            },
-                        )
-                        .await;
-                        return None;
-                    }
-                };
-                if let Some(handle) = cancellation {
-                    self.cancellation_reconciliation.observe(
-                        run_id,
-                        handle,
-                        claimed.context().sandbox_token.clone(),
-                    );
-                }
-                self.claim_cooldowns.remove(run_id).await;
-                info!(
-                    run_id = %run_id,
-                    runner_id = %self.runner_identity.runner_id(),
-                    heartbeat_generation = self.runner_identity.heartbeat_generation(),
-                    "job claimed"
-                );
-                Some(claimed)
-            }
-            Ok(None) => {
-                self.claim_cooldowns.remove(run_id).await;
-                info!(run_id = %run_id, "job unavailable, skipping");
-                self.poll_wakeups.request_immediate_poll();
-                None
-            }
-            Err(e) => {
-                self.record_claim_failure(run_id, classify_claim_failure(&e))
-                    .await;
-                None
-            }
-        }
-    }
-
     async fn bind_supplied(&self, context: ExecutionContext) -> ProviderResult<ClaimedJob> {
         let run_id = context.run_id;
         let source = supports_thread_active_input(context.reuse_key.as_deref()).then(|| {
@@ -1071,25 +307,6 @@ impl JobProvider for ApiProvider {
     }
 
     async fn heartbeat(&self, state: &HeartbeatState) -> ProviderResult<()> {
-        let has_admittable_reuse = state.mode == "running"
-            && (state.held_sandbox_states.iter().any(|held| {
-                state
-                    .admittable_profiles
-                    .contains(&held.reusable_sandbox.profile)
-            }) || state.held_home_states.iter().any(|held| {
-                held.home_caches
-                    .iter()
-                    .any(|cache| state.admittable_profiles.contains(&cache.profile))
-            }));
-        // Keep this local projection independent of HTTP delivery. A stalled
-        // heartbeat must not delay discovery of work for an available resource.
-        let stagger = Duration::from_millis(
-            u64::from(self.runner_identity.runner_id().as_bytes()[0]) % (POLL_REUSE_STAGGER_MS + 1),
-        );
-        self.poll_wakeups.update_reuse_polling(
-            (state.snapshot_generation, state.snapshot_sequence),
-            has_admittable_reuse.then_some(POLL_REUSE + stagger),
-        );
         let result = self.api.heartbeat(state).await;
         match &result {
             Ok(()) => {
@@ -1098,34 +315,10 @@ impl JobProvider for ApiProvider {
             }
             Err(error) => {
                 self.record_heartbeat_failure_at(state, error, Instant::now())
-                    .await;
+                    .await
             }
         }
         result
-    }
-
-    async fn defer_candidate_until(&self, run_id: RunId, deadline: Instant) {
-        match self.admission_deferrals.defer(run_id, deadline) {
-            AdmissionDeferralRecord::Changed => self.poll_wakeups.request_immediate_poll(),
-            AdmissionDeferralRecord::Unchanged => {}
-            AdmissionDeferralRecord::Saturated => {
-                warn!(%run_id, "admission discovery exclusion capacity reached");
-                self.poll_wakeups.request_deferred_poll_after(POLL_FAST);
-            }
-        }
-    }
-
-    async fn release_candidate_deferral(&self, run_id: RunId) {
-        self.admission_deferrals.release(run_id);
-        // Reactor's waiter ended even if lazy expiry already pruned the hold.
-        // Discovery may have been suspended behind full claim slots meanwhile.
-        self.poll_wakeups.request_immediate_poll();
-    }
-
-    async fn clear_candidate_deferrals(&self) {
-        if self.admission_deferrals.clear() {
-            self.poll_wakeups.request_immediate_poll();
-        }
     }
 
     async fn shutdown(&self) {
@@ -1172,224 +365,6 @@ impl JobProvider for ApiProvider {
             error!(run_id = %run_id, error = %error, status, failure_kind, "failed to report completion");
         }
     }
-}
-
-fn classify_claim_failure(error: &ClaimApiError) -> ClaimFailureDecision {
-    match error {
-        ClaimApiError::Request(ProviderError::ApiStatus(api_error)) => {
-            let status = api_error.status;
-            let transient = is_transient_http_status(status);
-            ClaimFailureDecision {
-                class: if transient {
-                    ClaimFailureClass::HttpTransient
-                } else {
-                    ClaimFailureClass::HttpDeterministic
-                },
-                cooldown: if transient {
-                    CLAIM_TRANSIENT_COOLDOWN
-                } else {
-                    CLAIM_DETERMINISTIC_COOLDOWN
-                },
-                status: Some(status),
-                transport_kind: None,
-                response_run_id: None,
-            }
-        }
-        ClaimApiError::Request(ProviderError::ApiTransport(api_error)) => ClaimFailureDecision {
-            class: ClaimFailureClass::Transport,
-            cooldown: CLAIM_TRANSIENT_COOLDOWN,
-            status: None,
-            transport_kind: Some(api_error.failure_kind.as_str()),
-            response_run_id: None,
-        },
-        ClaimApiError::Request(_) => ClaimFailureDecision {
-            class: ClaimFailureClass::Local,
-            cooldown: CLAIM_DETERMINISTIC_COOLDOWN,
-            status: None,
-            transport_kind: None,
-            response_run_id: None,
-        },
-        ClaimApiError::ResponseRead(_) => ClaimFailureDecision {
-            class: ClaimFailureClass::ResponseRead,
-            cooldown: CLAIM_TRANSIENT_COOLDOWN,
-            status: None,
-            transport_kind: None,
-            response_run_id: None,
-        },
-        ClaimApiError::ResponseDecode(_) => ClaimFailureDecision {
-            class: ClaimFailureClass::ResponseDecode,
-            cooldown: CLAIM_DETERMINISTIC_COOLDOWN,
-            status: None,
-            transport_kind: None,
-            response_run_id: None,
-        },
-    }
-}
-
-fn eligible_poll_transport_error(error: &ProviderError) -> Option<&ApiTransportError> {
-    let ProviderError::ApiTransport(api_error) = error else {
-        return None;
-    };
-    let retryable = matches!(
-        api_error.failure_kind,
-        ApiFailureKind::Timeout | ApiFailureKind::Connect
-    ) || matches!(
-        (api_error.failure_kind, api_error.failure_cause),
-        (
-            ApiFailureKind::Request,
-            ApiTransportCause::ConnectionReset
-                | ApiTransportCause::UnexpectedEof
-                | ApiTransportCause::HttpIncompleteMessage
-        )
-    );
-    retryable.then_some(api_error)
-}
-
-fn log_retryable_poll_failure(
-    reason: PollReason,
-    api_error: &ApiTransportError,
-    observation: DegradationObservation,
-) {
-    let request = &api_error.request;
-    let poll_reason = poll_reason_value(reason);
-    let failure_elapsed_ms = duration_ms(observation.failure_elapsed);
-
-    if observation.emit_degradation {
-        error!(
-            endpoint = request.endpoint_label,
-            method = %request.method,
-            host = %request.host,
-            path = %request.path,
-            client_request_id = %request.client_request_id,
-            client_session_id = %request.client_session_id,
-            client_version = %request.client_version,
-            failure_kind = api_error.failure_kind.as_str(),
-            failure_cause = api_error.failure_cause.as_str(),
-            error_summary = %api_error.summary,
-            poll_reason,
-            consecutive_failures = observation.consecutive_failures,
-            failure_elapsed_ms,
-            will_retry = true,
-            degraded = observation.degraded,
-            "poll fallback degraded"
-        );
-        return;
-    }
-
-    info!(
-        endpoint = request.endpoint_label,
-        method = %request.method,
-        host = %request.host,
-        path = %request.path,
-        client_request_id = %request.client_request_id,
-        client_session_id = %request.client_session_id,
-        client_version = %request.client_version,
-        failure_kind = api_error.failure_kind.as_str(),
-        failure_cause = api_error.failure_cause.as_str(),
-        error_summary = %api_error.summary,
-        poll_reason,
-        consecutive_failures = observation.consecutive_failures,
-        failure_elapsed_ms,
-        will_retry = true,
-        degraded = observation.degraded,
-        "poll failed, will retry"
-    );
-}
-
-fn log_poll_failure(
-    reason: PollReason,
-    error: &ProviderError,
-    observation: Option<DegradationObservation>,
-) {
-    let poll_reason = poll_reason_value(reason);
-    match error {
-        ProviderError::ApiTransport(api_error) => {
-            if let Some(observation) = observation {
-                log_retryable_poll_failure(reason, api_error, observation);
-                return;
-            }
-            let request = &api_error.request;
-            error!(
-                endpoint = request.endpoint_label,
-                method = %request.method,
-                host = %request.host,
-                path = %request.path,
-                client_request_id = %request.client_request_id,
-                client_session_id = %request.client_session_id,
-                client_version = %request.client_version,
-                failure_kind = api_error.failure_kind.as_str(),
-                failure_cause = api_error.failure_cause.as_str(),
-                error_summary = %api_error.summary,
-                poll_reason,
-                "poll failed"
-            );
-        }
-        ProviderError::ApiStatus(api_error) => {
-            if let Some(observation) = observation {
-                let failure_elapsed_ms = duration_ms(observation.failure_elapsed);
-                if observation.emit_degradation {
-                    error!(
-                        endpoint = api_error.endpoint_label,
-                        status = api_error.status.as_u16(),
-                        failure_kind = "http_status",
-                        poll_reason,
-                        consecutive_failures = observation.consecutive_failures,
-                        failure_elapsed_ms,
-                        will_retry = true,
-                        degraded = observation.degraded,
-                        "poll fallback degraded"
-                    );
-                } else {
-                    info!(
-                        endpoint = api_error.endpoint_label,
-                        status = api_error.status.as_u16(),
-                        failure_kind = "http_status",
-                        poll_reason,
-                        consecutive_failures = observation.consecutive_failures,
-                        failure_elapsed_ms,
-                        will_retry = true,
-                        degraded = observation.degraded,
-                        "poll failed, will retry"
-                    );
-                }
-                return;
-            }
-            error!(
-                endpoint = api_error.endpoint_label,
-                status = api_error.status.as_u16(),
-                failure_kind = "http_status",
-                poll_reason,
-                "poll failed"
-            );
-        }
-        ProviderError::Api(error_summary) => {
-            error!(
-                failure_kind = "api",
-                error_summary, poll_reason, "poll failed"
-            );
-        }
-        ProviderError::Internal(error_summary) => {
-            error!(
-                failure_kind = "local",
-                error_summary, poll_reason, "poll failed"
-            );
-        }
-        _ => {
-            error!(failure_kind = "local", poll_reason, "poll failed");
-        }
-    }
-}
-
-fn log_poll_recovery(provider: &ApiProvider, reason: PollReason, recovery: DegradationRecovery) {
-    info!(
-        runner_id = %provider.runner_identity.runner_id(),
-        runner_group = %provider.group,
-        poll_reason = poll_reason_value(reason),
-        recovered_after_failures = recovery.recovered_after_failures,
-        failure_elapsed_ms = duration_ms(recovery.failure_elapsed),
-        was_degraded = recovery.was_degraded,
-        "poll fallback recovered"
-    );
 }
 
 fn log_heartbeat_failure(
@@ -1631,41 +606,6 @@ impl ApiClient {
         decode_api_json(resp, "read next steerable input").await
     }
 
-    /// Poll for a pending job. The response contains `job: None` when no work is available.
-    async fn poll(
-        &self,
-        runner_id: uuid::Uuid,
-        group: &str,
-        supported_profiles: &[String],
-        excluded_run_ids: &[RunId],
-        reason: PollReason,
-    ) -> ProviderResult<PollApiResult> {
-        let body = poll_request_body(
-            runner_id,
-            group,
-            supported_profiles,
-            excluded_run_ids,
-            reason,
-        );
-        let poll_started_at = Instant::now();
-        let resp = send_api(
-            self.http
-                .request_route(routes::runners::poll::POLL, &self.token)
-                .json(&body)
-                .idempotent(),
-            "poll",
-        )
-        .await?;
-
-        let resp = check_api_status(resp, "poll").await?;
-        let poll: PollResponse = decode_api_json(resp, "poll").await?;
-
-        Ok(PollApiResult {
-            job: poll.job,
-            http_request_elapsed: poll_started_at.elapsed(),
-        })
-    }
-
     /// Send a heartbeat with runner state. The default API timeout allows for
     /// cold starts while bounding this request and lifecycle drain waits.
     async fn heartbeat(&self, state: &HeartbeatState) -> ProviderResult<()> {
@@ -1683,192 +623,6 @@ impl ApiClient {
         Ok(())
     }
 
-    /// Claim a job for execution. Treats HTTP 404 as an unavailable job so
-    /// callers can continue gracefully.
-    async fn claim(
-        &self,
-        candidate: &JobCandidate,
-        runner_identity: &RunnerProcessIdentity,
-        runner_hostname: Option<&str>,
-        installed_okou_cli: Option<&InstalledOkouCli>,
-        recovery: RecoveryPolicy,
-    ) -> Result<Option<SuccessfulClaimResponse>, ClaimApiError> {
-        let claim_started_at = Instant::now();
-        let run_id = candidate.run_id();
-        let body = claim_request_body(
-            candidate,
-            runner_identity,
-            runner_hostname,
-            installed_okou_cli,
-        );
-        let run_id_string = run_id.to_string();
-        let request = self.http.request_resolved_route(
-            routes::runners::jobs::by_id::claim::route(
-                routes::runners::jobs::by_id::claim::Params {
-                    id: run_id_string.as_str(),
-                },
-            ),
-            &self.token,
-        );
-        let request = request
-            .query(&[("workflowSkills", "2")])
-            .json(&body)
-            .recovery(recovery);
-        let request = request.prepare("claim").map_err(|error| match error {
-            ProviderError::Api(message) => ProviderError::Api(format!("claim: {message}")),
-            error => error,
-        })?;
-        let mut request_context = request.context().clone();
-        // This is the handoff to reqwest execution, not a physical socket write.
-        // Connection, transport, edge and server work are not split by this clock.
-        let execution_started_at = Instant::now();
-        info!(
-            run_id = %run_id,
-            client_request_id = %request_context.client_request_id,
-            client_session_id = %request_context.client_session_id,
-            client_version = %request_context.client_version,
-            discovery_source = body.telemetry.discovery_source,
-            job_discovered_to_execution_ms = duration_ms(candidate.job_discovered_elapsed()),
-            local_admission_to_execution_ms = candidate.local_admission_elapsed().map(duration_ms),
-            request_prepare_ms = duration_ms(claim_started_at.elapsed()),
-            direct_candidate_notification_to_enqueue_ms = body.telemetry.direct_candidate_notification_to_enqueue_ms,
-            direct_candidate_inbox_wait_ms = body.telemetry.direct_candidate_inbox_wait_ms,
-            provider_discovery_to_main_loop_ms = body.telemetry.provider_discovery_to_main_loop_ms,
-            main_loop_to_local_admission_ms = body.telemetry.main_loop_to_local_admission_ms,
-            poll_due_to_job_discovered_ms = body.telemetry.poll_due_to_job_discovered_ms,
-            poll_http_request_ms = body.telemetry.poll_http_request_ms,
-            "claim request execution started"
-        );
-        let mut status = None;
-        let mut headers_elapsed = None;
-        let mut body_read_elapsed = None;
-        let mut decode_elapsed = None;
-        let mut final_execution_started_at = execution_started_at;
-        // These are per-wire-request metrics consumed by the API. Keep their
-        // existing typed preparation without retaining a business retry loop.
-        let mut prepare_replay = |request: &mut reqwest::Request| {
-            let body = claim_request_body(
-                candidate,
-                runner_identity,
-                runner_hostname,
-                installed_okou_cli,
-            );
-            let bytes = serde_json::to_vec(&body)
-                .map_err(|_| ProviderError::Api("claim: serialize request body".into()))?;
-            *request.body_mut() = Some(bytes.into());
-            request
-                .headers_mut()
-                .remove(reqwest::header::CONTENT_LENGTH);
-            Ok(())
-        };
-        let result = async {
-            let attempt = request
-                .send_observed_claim(run_id, execution_started_at, Some(&mut prepare_replay))
-                .await;
-            request_context = attempt.context;
-            final_execution_started_at = attempt.started;
-            let resp = attempt.result?;
-            let headers_received_at = attempt.finished;
-            let request_to_response_headers_elapsed =
-                headers_received_at.duration_since(attempt.started);
-            let execution_to_response_headers_elapsed =
-                headers_received_at.duration_since(attempt.started);
-            headers_elapsed = Some(execution_to_response_headers_elapsed);
-            status = Some(resp.status().as_u16());
-
-            if resp.status() == StatusCode::NOT_FOUND {
-                return Ok(None);
-            }
-
-            let body_read_started_at = Instant::now();
-            let resp = check_api_status(resp, "claim").await;
-            if resp.is_err() {
-                body_read_elapsed = Some(body_read_started_at.elapsed());
-            }
-            let resp = resp?;
-            let content_encoding = resp
-                .headers()
-                .get(reqwest::header::CONTENT_ENCODING)
-                .cloned();
-            let body_read_started_at = Instant::now();
-            let body = read_claim_response_body(resp, || {}).await;
-            body_read_elapsed = Some(body_read_started_at.elapsed());
-            let (body, response_first_body_chunk_wait_elapsed, response_body_read_elapsed) = body?;
-            let response_decode_started_at = Instant::now();
-            let context = claim_inputs::decode_claim(&body).map_err(ClaimApiError::ResponseDecode);
-            let response_decode_elapsed = response_decode_started_at.elapsed();
-            decode_elapsed = Some(response_decode_elapsed);
-            let context = context?;
-            let response_attribution = ClaimResponseAttribution::from_body_and_encoding(
-                body.len(),
-                content_encoding.as_ref(),
-            );
-
-            Ok(Some(SuccessfulClaimResponse {
-                context,
-                request_to_response_headers_elapsed,
-                response_body_read_elapsed,
-                response_first_body_chunk_wait_elapsed,
-                response_decode_elapsed,
-                response_attribution,
-            }))
-        }
-        .await;
-        let outcome = match &result {
-            // The provider still validates the returned Run before accepting
-            // ownership; decoding alone must not report a successful claim.
-            Ok(Some(_)) => "response_decoded",
-            Ok(None) => "unavailable",
-            Err(ClaimApiError::Request(ProviderError::ApiStatus(_))) => "http_error",
-            Err(ClaimApiError::Request(ProviderError::ApiTransport(_))) => "transport_error",
-            Err(ClaimApiError::Request(_)) => "request_error",
-            Err(ClaimApiError::ResponseRead(_)) => "response_read_error",
-            Err(ClaimApiError::ResponseDecode(_)) => "response_decode_error",
-        };
-        let transport = match &result {
-            Err(ClaimApiError::Request(ProviderError::ApiTransport(error))) => Some(error),
-            _ => None,
-        };
-        let completed_at = Instant::now();
-        info!(
-            run_id = %run_id,
-            client_request_id = %request_context.client_request_id,
-            client_session_id = %request_context.client_session_id,
-            client_version = %request_context.client_version,
-            outcome,
-            response_run_id = result.as_ref().ok().and_then(Option::as_ref)
-                .map(|response| response.context.run_id.to_string()),
-            http_status = status,
-            response_headers_received = headers_elapsed.is_some(),
-            claim_elapsed_ms = duration_ms(completed_at.duration_since(claim_started_at)),
-            execution_to_completion_ms = duration_ms(completed_at.duration_since(final_execution_started_at)),
-            execution_to_response_headers_ms = headers_elapsed.map(duration_ms),
-            response_body_read_ms = body_read_elapsed.map(duration_ms),
-            response_decode_ms = decode_elapsed.map(duration_ms),
-            transport_failure_kind = transport.map(|error| error.failure_kind.as_str()),
-            transport_failure_cause = transport.map(|error| error.failure_cause.as_str()),
-            "claim request completed"
-        );
-        result
-    }
-
-    #[cfg(test)]
-    async fn claim_for_test(
-        &self,
-        candidate: &JobCandidate,
-    ) -> Result<Option<SuccessfulClaimResponse>, ClaimApiError> {
-        let runner_identity =
-            RunnerProcessIdentity::new("550e8400-e29b-41d4-a716-446655440000".parse().unwrap(), 7)
-                .unwrap();
-        self.claim(
-            candidate,
-            &runner_identity,
-            None,
-            None,
-            RecoveryPolicy::never(),
-        )
-        .await
-    }
     /// Report job completion. Uses the per-job **sandbox token** for auth.
     async fn complete(&self, sandbox_token: &str, request: &CompleteRequest) -> ProviderResult<()> {
         let resp = send_api(
@@ -2046,183 +800,6 @@ impl ApiClient {
             .timeout(BUILTIN_FIREWALL_CATALOG_RESOLVE_TIMEOUT)
             .json(&serde_json::json!({}))
             .idempotent()
-    }
-}
-
-// The callback is a no-op in production and lets raw-HTTP tests acknowledge the
-// actual first application-visible chunk before releasing the response tail.
-async fn read_claim_response_body(
-    mut resp: Response,
-    first_chunk_observed: impl FnOnce(),
-) -> Result<(Bytes, Duration, Duration), ClaimApiError> {
-    let response_body_read_started_at = Instant::now();
-    // This is not a physical wire-byte or server-flush boundary.
-    let first_chunk = loop {
-        match resp
-            .chunk()
-            .await
-            .map_err(|error| ClaimApiError::ResponseRead(error.to_string()))?
-        {
-            Some(chunk) if !chunk.is_empty() => break chunk,
-            Some(_) => continue,
-            None => break Bytes::new(),
-        }
-    };
-    let response_first_body_chunk_wait_elapsed = response_body_read_started_at.elapsed();
-    if !first_chunk.is_empty() {
-        first_chunk_observed();
-    }
-    // Group tiny fragments so retained descriptors and backing allocations do
-    // not scale with HTTP chunk count. Large chunks still avoid an extra copy.
-    // This is allocation organization, not a response-size or fragment limit.
-    const CHUNK_GROUP_BYTES: usize = 4 * 1024;
-    let mut tail = Vec::new();
-    let mut pending = Vec::new();
-    while let Some(chunk) = resp
-        .chunk()
-        .await
-        .map_err(|error| ClaimApiError::ResponseRead(error.to_string()))?
-    {
-        if chunk.is_empty() {
-            continue;
-        }
-        if chunk.len() < CHUNK_GROUP_BYTES {
-            pending.extend_from_slice(&chunk);
-            if pending.len() >= CHUNK_GROUP_BYTES {
-                tail.push(Bytes::from(std::mem::take(&mut pending)));
-            }
-        } else {
-            if !pending.is_empty() {
-                tail.push(Bytes::from(std::mem::take(&mut pending)));
-            }
-            tail.push(chunk);
-        }
-    }
-    if !pending.is_empty() {
-        tail.push(Bytes::from(pending));
-    }
-    // The common one-chunk case stays zero-copy; split input is coalesced once.
-    let body = if tail.is_empty() {
-        first_chunk
-    } else {
-        let body_len = first_chunk.len() + tail.iter().map(Bytes::len).sum::<usize>();
-        let mut combined = Vec::with_capacity(body_len);
-        combined.extend_from_slice(&first_chunk);
-        for chunk in tail {
-            combined.extend_from_slice(&chunk);
-        }
-        Bytes::from(combined)
-    };
-    let response_body_read_elapsed = response_body_read_started_at.elapsed();
-    Ok((
-        body,
-        response_first_body_chunk_wait_elapsed,
-        response_body_read_elapsed,
-    ))
-}
-
-fn claim_request_body<'a>(
-    candidate: &JobCandidate,
-    runner_identity: &'a RunnerProcessIdentity,
-    runner_hostname: Option<&'a str>,
-    installed_okou_cli: Option<&'a InstalledOkouCli>,
-) -> ClaimRequestBody<'a> {
-    let runner_preference_telemetry = candidate.runner_preference_claim_telemetry();
-    let is_ably_candidate = candidate.discovery_source() == Some(JobDiscoverySource::Ably);
-    let (
-        direct_candidate_notification_to_enqueue_ms,
-        direct_candidate_inbox_wait_ms,
-        provider_discovery_to_main_loop_ms,
-        main_loop_to_local_admission_ms,
-    ) = if is_ably_candidate {
-        (
-            candidate
-                .direct_candidate_notification_to_enqueue_elapsed()
-                .map(claim_telemetry_duration_ms),
-            candidate
-                .direct_candidate_inbox_wait_elapsed()
-                .map(claim_telemetry_duration_ms),
-            candidate
-                .provider_discovery_to_main_loop_elapsed()
-                .map(claim_telemetry_duration_ms),
-            candidate
-                .main_loop_to_local_admission_elapsed()
-                .map(claim_telemetry_duration_ms),
-        )
-    } else {
-        (None, None, None, None)
-    };
-
-    ClaimRequestBody {
-        runner_identity,
-        runner_hostname,
-        installed_versions: installed_okou_cli.map(|installed| &installed.versions),
-        capabilities: RunnerClaimCapabilities {
-            pi_model_config_generations: [
-                PI_MODEL_CONFIG_CURRENT_GENERATION,
-                PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-                PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
-            ],
-        },
-        telemetry: ClaimRequestTelemetry {
-            discovery_source: candidate.discovery_source().map(JobDiscoverySource::as_str),
-            job_discovered_to_claim_request_ms: claim_telemetry_duration_ms(
-                candidate.job_discovered_elapsed(),
-            ),
-            local_admission_to_claim_request_ms: candidate
-                .local_admission_elapsed()
-                .map(claim_telemetry_duration_ms),
-            direct_candidate_notification_to_enqueue_ms,
-            direct_candidate_inbox_wait_ms,
-            provider_discovery_to_main_loop_ms,
-            main_loop_to_local_admission_ms,
-            poll_due_to_job_discovered_ms: candidate
-                .poll_due_to_job_discovered_elapsed()
-                .map(claim_telemetry_duration_ms),
-            poll_http_request_ms: candidate
-                .poll_http_request_elapsed()
-                .map(claim_telemetry_duration_ms),
-            poll_reason: candidate.poll_reason().map(String::from),
-            runner_preference: runner_preference_telemetry
-                .as_ref()
-                .map(|telemetry| telemetry.runner_preference.clone()),
-            runner_preference_claim_state: runner_preference_telemetry
-                .and_then(|telemetry| telemetry.state),
-        },
-    }
-}
-
-fn claim_telemetry_duration_ms(duration: Duration) -> u64 {
-    // The TypeScript claim route validates these fields with z.number().int(),
-    // which rejects values above Number.MAX_SAFE_INTEGER.
-    duration_ms(duration).min(CLAIM_TELEMETRY_DURATION_MS_MAX)
-}
-
-fn poll_request_body<'a>(
-    runner_id: uuid::Uuid,
-    group: &'a str,
-    supported_profiles: &'a [String],
-    excluded_run_ids: &'a [RunId],
-    reason: PollReason,
-) -> PollRequestBody<'a> {
-    PollRequestBody {
-        runner_id,
-        group,
-        supported_profiles,
-        excluded_run_ids: (!excluded_run_ids.is_empty()).then_some(excluded_run_ids),
-        telemetry: PollRequestTelemetry {
-            poll_reason: poll_reason_value(reason),
-        },
-    }
-}
-
-fn poll_reason_value(reason: PollReason) -> &'static str {
-    match reason {
-        PollReason::Immediate => "immediate",
-        PollReason::Deferred => "deferred",
-        PollReason::WakeupRetry => "wakeup_retry",
-        PollReason::Slow => "slow",
-        PollReason::Fast => "fast",
     }
 }
 

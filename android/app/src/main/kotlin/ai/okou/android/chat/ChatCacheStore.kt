@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.api.generated.ApiHeaders
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEventsEventsItem
 import ai.okou.android.api.generated.ProjectArchive
@@ -40,6 +41,8 @@ data class CachedChats(
 )
 
 data class CachedProjects(val checkpoint: ProjectCheckpoint, val confirmedAt: Long)
+
+data class CachedHistory(val checkpoint: HistoryCheckpoint, val confirmedAt: Long)
 
 /** One application-owned Room database. Leases fence consumers, not database lifetime. */
 class ChatCacheStore
@@ -101,12 +104,116 @@ internal constructor(
         @Volatile internal var retired = false
         private var rebuild = false
         private var rebuildProjects = false
+        private val rebuildHistories = hashSetOf<String>()
 
         private fun current() = !retired && active.get() === this && authorized()
 
         private fun checkCurrent() {
             if (!current()) throw CancellationException("Chat cache owner retired")
         }
+
+        suspend fun loadHistory(threadId: String): CachedHistory? =
+            withContext(dispatcher) {
+                lock.withLock {
+                    checkCurrent()
+                    if (database == null && !file.exists()) return@withLock null
+                    try {
+                        database().useReaderConnection { connection ->
+                            connection.deferredTransaction {
+                                val dao = database().chats()
+                                val stored =
+                                    dao.historyScope(key, threadId)
+                                        ?: return@deferredTransaction null
+                                requireChatWire(
+                                    stored.authorization == authorization &&
+                                        stored.eventVersion == ApiHeaders.CHAT_EVENT_SCHEMA_VERSION
+                                )
+                                val rows =
+                                    dao.historyEvents(key, threadId).map { entry ->
+                                        HistoryEvent.decode(entry.payload).also {
+                                            requireChatWire(
+                                                it.id == entry.id && it.seqId == entry.seqId
+                                            )
+                                        }
+                                    }
+                                val checkpoint =
+                                    HistoryCheckpoint(
+                                        threadId,
+                                        rows,
+                                        HistoryCursor(stored.eventId, stored.seqId),
+                                    )
+                                checkpoint.validate()
+                                currentCoroutineContext().ensureActive()
+                                checkCurrent()
+                                CachedHistory(checkpoint, stored.confirmedAt)
+                            }
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        rebuildHistories.add(threadId)
+                        throw error
+                    }
+                }
+            }
+
+        suspend fun saveHistory(checkpoint: HistoryCheckpoint, confirmedAt: Long) =
+            withContext(dispatcher) {
+                checkpoint.validate()
+                require(confirmedAt > 0)
+                persist(
+                    clear = { it.deleteHistory(key, checkpoint.threadId) },
+                    saved = { rebuildHistories.remove(checkpoint.threadId) },
+                ) { dao ->
+                    val threadId = checkpoint.threadId
+                    val stored = dao.historyScope(key, threadId)
+                    val replacement =
+                        checkpoint.replaced ||
+                            threadId in rebuildHistories ||
+                            stored?.authorization != authorization ||
+                            stored.eventVersion != ApiHeaders.CHAT_EVENT_SCHEMA_VERSION
+                    if (!replacement && stored.seqId > checkpoint.cursor.seqId) return@persist false
+                    if (!replacement && stored.seqId == checkpoint.cursor.seqId)
+                        requireChatWire(stored.eventId == checkpoint.cursor.eventId)
+                    if (replacement) dao.clearHistoryEvents(key, threadId)
+                    dao.putHistoryScope(
+                        HistoryScopeRecord(
+                            key,
+                            threadId,
+                            authorization,
+                            ApiHeaders.CHAT_EVENT_SCHEMA_VERSION,
+                            confirmedAt,
+                            checkpoint.cursor.eventId,
+                            checkpoint.cursor.seqId,
+                        )
+                    )
+                    dao.putHistoryEvents(
+                        checkpoint.rows
+                            .filter { replacement || it.seqId > checkNotNull(stored).seqId }
+                            .map {
+                                HistoryEventRecord(
+                                    key,
+                                    threadId,
+                                    it.id,
+                                    it.seqId,
+                                    it.wire.toString(),
+                                )
+                            }
+                    )
+                    true
+                }
+            }
+
+        suspend fun deleteHistory(threadId: String) =
+            withContext(dispatcher) {
+                persist(
+                    clear = { it.deleteHistory(key, threadId) },
+                    saved = { rebuildHistories.remove(threadId) },
+                ) { dao ->
+                    dao.deleteHistory(key, threadId)
+                    true
+                }
+            }
 
         suspend fun load(): CachedChats? =
             withContext(dispatcher) {

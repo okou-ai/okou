@@ -72,6 +72,16 @@ class ChatListModel(
     val uiState = mutable.asStateFlow()
     @Volatile private var retired = false
     private val cache = cacheStore.open(identity) { current() }
+    val history =
+        ConversationHistoryModel(
+            service,
+            cache,
+            viewModelScope,
+            { current() },
+            onFailure,
+            { invalidateIndicators() },
+            dispatcher,
+        )
     private val sync = ChatListSync(service, dispatcher)
     private var confirmed: CachedChats? = null
     private var confirmedProjects: CachedProjects? = null
@@ -380,6 +390,12 @@ class ChatListModel(
         }
     }
 
+    private fun invalidateIndicators() {
+        indicatorsJob?.cancel()
+        indicatorsJob = null
+        refreshIndicators()
+    }
+
     fun refreshIndicators() {
         if (!current() || indicatorsJob?.isActive == true) return
         mutable.value = mutable.value.copy(indicatorsPhase = ChatReadPhase.Loading)
@@ -409,6 +425,7 @@ class ChatListModel(
 
     override fun onCleared() {
         retired = true
+        history.close()
         cache.close()
     }
 }

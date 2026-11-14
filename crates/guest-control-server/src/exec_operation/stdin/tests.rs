@@ -37,7 +37,7 @@ fn stdin_writer_cancel_unblocks_full_pipe() {
     // Keep the actual writer, full pipe, poll, and cancellation wakeup here.
     let (read_fd, write_fd) = rustix::pipe::pipe().unwrap();
     let mut write_file = File::from(write_fd);
-    set_nonblocking(write_file.as_raw_fd()).unwrap();
+    set_nonblocking(write_file.as_fd()).unwrap();
 
     let fill = [0u8; 4096];
     loop {

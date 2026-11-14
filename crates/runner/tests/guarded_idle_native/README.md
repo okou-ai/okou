@@ -354,110 +354,14 @@ consumer regressions are separate from opt-in native execution. Complete C/D/P4,
 bootstrap provenance, residency, calibrated RAM relief and OOM/production
 protection remain separate gates.
 
-## Provider failures and retained producer uncertainty
+## Retired acquisition corpora
 
-`native_provider_failures_preserve_guarded_rollback_and_required_saving` runs
-decode/disconnect × fresh/snapshot. The actual authenticated ApiProvider POST
-waits at an owned response gate; malformed HTTP200 JSON and a deliberate
-per-connection disconnect return None through the real provider. This means
-unavailable at the JobProvider boundary, not proof that a remote claim never
-happened. Actual Guest preparation, original repark/guarded restore and complete
-required saving use the C7 ownership/progress/data contract below. Add exact raw
-`native_claim_failure_policy_json` to the original collector metadata and replay
-`claim_failure_report.py <p1-directory>`.
-
-The separate ignored entry points are:
-
-```text
-native_claim_producer_loss_retains_original_fresh
-native_claim_producer_loss_retains_original_snapshot
-native_cancelled_claim_observer_retains_original_fresh
-native_cancelled_claim_observer_retains_original_snapshot
-```
-
-Each owns exactly one Guest and deliberately preserves its actual ProducerLost
-failure (Rust exit101, failed original P1 report). An accepted JobProvider task
-waits at an owned gate, then unwinds. This is an explicit trait-boundary fault;
-it does not claim ApiProvider itself panicked or returned an unreachable
-mismatched claim. The non-default Firecracker Restore checkpoint observes the
-actual successful fixed RPC before cancellation of only the borrowed response
-observers. Pool contention, independent real observer/acknowledged heartbeat,
-producer/native joins, receipt take, later wait, commit and rollback refusals,
-original promotion lock contention, empty inventory and exact full lease are
-required. Conversion to required cleanup still cannot clear claim uncertainty.
-Before releasing the producer, an inotify-backed wait observes a complete new
-sample in the owning P1 collector's `samples.jsonl` in its working directory.
-The strict reader binds that acknowledgement to the original sample and clocks;
-a fast transition cannot silently omit its native measurement window. This wait
-is bounded by the existing claim deadline and adds no fixed delay or new policy.
-
-The original private/home bytes and complete payload are verified and synced
-before the fault. Failed cases retain their original directory and capsule;
-they never enter successful terminal saving, lease release or factory teardown.
-Run each entry separately under unchanged P1 guards, with exact raw
-`native_claim_producer_policy_json`, artifact manifest and matching new snapshot.
-Preserve the original logs, nonzero driver/collector outcomes and any collector
-owned-child intervention. Such intervention is fixture containment, never
-required saving, cleanup completion, memory credit or physical relief proof.
-Keep all original case files; copy the positively identified original home image
-to `retained-home.ext4` beside that case's original P1 files after the collector
-has joined its owned children. Hash both originals and copy in the evidence
-archive. The strict reader reopens this regular ext4 file and verifies its
-original superblock and all seeded required bytes through read-only debugfs.
-The image filesystem root corresponds to `/home/user` inside the Guest:
-
-```sh
-python3 crates/runner/tests/guarded_idle_native/claim_producer_report.py <p1-directory>
-```
-
-The reader's success confirms retained-custody evidence while retaining
-`original_driver_exit_code=101`, `original_collector_success=false`,
-`required_saving_complete=false` and `cleanup_complete=false`. Never rewrite
-the original P1 failure or pass it to a successful terminal-saving validator.
-Native images/data and raw failure records remain preserved for reconciliation.
-Ordinary reader tests use synthetic logs and disposable real ext4 images with
-`/usr/sbin/mke2fs` and `/usr/sbin/debugfs`; they do not establish native execution.
-All C10/C11/full shutdown, complete session/history, numerical policy,
-residency/provenance and P4 gates remain separate. No production activation.
-
-## Actual provider claim rejection and guarded rollback
-
-`native_provider_claim_rejection_preserves_guarded_rollback_and_required_saving`
-runs fresh and newly matching snapshot cases. An actual ApiProvider sends its
-original authenticated POST to the invocation-owned HTTP peer. Only that claim's
-response waits at an owned gate; the original Guest/full lease remains in the
-external GuardedSpeculativeAdmission capsule while an independent observer and
-acknowledged heartbeat progress under held/released pool contention.
-
-Release returns HTTP 404 through the real provider. Actual Guest preparation
-must join, claim observation must return unavailable and commit must refuse.
-Production rollback physically reparks and guarded-restores the same original.
-Current regular status and an acknowledged heartbeat must preserve its original
-reuse/history/profile metadata. A newly captured batch then joins required
-original home saving across held post-exit IO and final status publication, with
-independent progress, full lease/growth custody and positive exit/release/joins.
-The common restoration verifies all original home bytes, 64 KiB payload and
-private-runtime removal. Error paths release owned gates and join accepted work
-outside the observation timeout, retaining unresolved owners explicitly.
-
-Build exact committed Host/all canonical Guests, verify installed rootfs bytes
-and create a new actual matching snapshot. Preserve supplied policy/P1 guards,
-adding exact raw `native_claim_loss_policy_json`, `native_terminal_artifacts`
-and matching `snapshot-preparation.json` to original collector evidence:
-
-```sh
-<native-test-binary> native_provider_claim_rejection_preserves_guarded_rollback_and_required_saving \
-  --ignored --exact --nocapture --test-threads=1
-python3 crates/runner/tests/guarded_idle_native/claim_loss_report.py <p1-directory>
-```
-
-Ordinary real-HTTP/consumer regressions remain separate from opt-in KVM proof.
-The peer supplies synthetic 404 only: API service/database competing-claimant
-arbitration, successful/mismatched/panicked claims, cancelled Guest preparation,
-full C/D/P4 and complete session/history matrices remain unproven. Historical
-base/bootstrap, unsigned/nonreproducible provenance and incomplete residency
-remain explicit limits. No calibrated RAM relief, OOM or production protection
-follows from this test-policy evidence.
+The remote Claim rejection, provider-failure and producer-loss acquisition
+corpora were retired with the Runner Claim/Poll client. Their
+historical receipt readers remain for preserved evidence; shared ext4 and
+retained-custody utilities are also used by the current Guest preparation and
+running-restore corpora. Ordinary native memory, Guest, retirement, pause,
+unpark, finalizing handoff and required-saving fixtures remain active.
 
 ## Same-key replacement against a captured batch
 
@@ -803,10 +707,8 @@ It verifies ordinary bytes survive and the previous private runtime directory
 does not. It repeats exact-prune, all-inventory drain/shutdown batches and logical
 substitution, atomic park replacement, reserved restore over blank inventory and
 aged exact-to-blank replenishment with fresh boot and the matching prepared
-snapshot (twenty-six owned cases, including independent job-free pressure,
-caller-owned cancellation before
-business activation, speculative guest restore failure, and cancelled parked
-and fenced running finalizing deliveries).
+snapshot. It also covers independent job-free pressure, caller-owned
+cancellation before business activation, and speculative guest restore failure.
 
 The fixture captures backing while the parked candidate is exclusively owned,
 then enters the real Lifecycle inventory and tracked Supervisor batch API. Both
@@ -861,9 +763,11 @@ running result. Both carry the original backing proof through
 in `GuardedFinalizingAdmission`. Required covered preparation, freeze, exact
 exit, publication and factory tail must complete before release of the full
 logical lease. Fresh and snapshot restores verify ordinary bytes and absence of
-the predecessor private runtime. The native seam carries a local fixture claim;
-ordinary provider-boundary tests verify preservation of real returned completion
-authorization. This opt-in fixture is compiled by ordinary checks and requires
+the predecessor private runtime. The native seam carries local fixture input;
+ordinary provider-boundary tests verify preservation of the original supplied
+completion authorization. Unexpected park/provider outcomes retain original
+data, the cache lock and the full logical lease until explicit disposal.
+This opt-in fixture is compiled by ordinary checks and requires
 separate execution on the specified KVM/NBD host to establish native acceptance.
 
 An accepted aged conversion transfers its full logical lease separately from
@@ -1015,11 +919,6 @@ native cancellation races remain the separate parent acceptance gate.
 Ordinary `cargo test -p runner --test guarded_idle_native` executes the report
 consumer's real-file regressions through Python 3 and compiles the opt-in native
 tests. The report regressions do not substitute for executing KVM/NBD cases.
-The ordinary provider-boundary refusal test also drives actual finalizing park
-with controlled external park errors, an unexpected parked return and an
-unexpected running handoff point. It verifies the original file bytes and cache
-lock remain owned, the complete logical lease stays allocated and no destruction
-occurs until explicit disposal of the ordinary mock fixture.
 
 ## Separately measured pressure paths
 
@@ -1061,7 +960,7 @@ python3 crates/runner/tests/guarded_idle_native/pressure_report.py "$P1_OUTPUT_D
 
 Each report requires its complete two-mode corpus, original data/backing/full
 lease/required IO and actual P1 windows, plus pressure or different-Guest/join
-witnesses. The original twelve-case terminal report remains separate and strict.
+witnesses. The twelve-case terminal report remains separate and strict.
 Ordinary Cargo/default Crates CI runs the pressure report's real-file and CLI
 regressions through its ordinary Rust wrapper; the native entries remain opt-in.
 

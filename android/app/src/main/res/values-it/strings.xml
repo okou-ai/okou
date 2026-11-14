@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="home">Home</string>
     <string name="settings">Impostazioni</string>
     <string name="back">Indietro</string>
     <string name="appearance">Aspetto</string>

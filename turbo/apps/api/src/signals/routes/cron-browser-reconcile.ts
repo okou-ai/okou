@@ -4,7 +4,7 @@ import { command } from "ccstate";
 import type { RouteEntry } from "../route-entry";
 import { joinAll } from "../utils";
 import { reconcileBrowserUserActions$ } from "../services/browser-user-actions.service";
-import { reconcileSharedBrowsers$ } from "../services/browser-shared-reconcile.service";
+import { reconcileBrowsers$ } from "../services/browser-reconcile.service";
 import { cleanupBrowserScreenshots$ } from "../services/browser-screenshot-cleanup.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
@@ -13,17 +13,17 @@ const reconcileBrowsersRoute$ = command(
     if (!get(hasValidCronSecret$)) {
       return cronUnauthorized();
     }
-    const [userActions, shared] = await joinAll([
+    const [userActions, browsers] = await joinAll([
       set(reconcileBrowserUserActions$, 20, signal),
-      set(reconcileSharedBrowsers$, null, signal),
+      set(reconcileBrowsers$, null, signal),
     ]);
     signal.throwIfAborted();
     const screenshots = await set(cleanupBrowserScreenshots$, 20, signal);
     signal.throwIfAborted();
     const body = {
-      checked: userActions + shared.checked + screenshots.checked,
-      stopped: shared.stopped + screenshots.cleaned,
-      errors: shared.errors + screenshots.errors,
+      checked: userActions + browsers.checked + screenshots.checked,
+      stopped: browsers.stopped + screenshots.cleaned,
+      errors: browsers.errors + screenshots.errors,
     };
     return { status: 200 as const, body };
   },

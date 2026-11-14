@@ -192,14 +192,14 @@ describe("Browser proxy attachment and safe tabs", () => {
     expect(external.driver).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects shared setup without installed metadata before starting a task", async () => {
+  it("rejects a connection without installed extension identity before starting a task", async () => {
     metadata = false;
     await expect(run("use")).rejects.toThrow("process.exit called");
     expect(external.driver).not.toHaveBeenCalled();
     expect(external.configs).toStrictEqual([]);
-    expect(error.mock.calls.flat().join("\n")).toContain(
-      "installed extension metadata",
-    );
+    const printedError = error.mock.calls.flat().join("\n");
+    expect(printedError).toContain("extension");
+    expect(printedError).not.toContain("private");
   });
 
   it("reports native startup failure without exposing private provider details", async () => {

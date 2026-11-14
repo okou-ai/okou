@@ -1,25 +1,14 @@
-//! Channel-driven mock [`JobProvider`] for integration testing.
+//! Channel-driven reporting provider and independent local job source.
 //!
-//! Reproduces the key main-loop stress cases that previously came from
-//! [`ApiProvider`]:
-//!
-//! - `discover()` can hold a resource for its entire duration and `shutdown()`
-//!   can wait on that resource, preserving the shutdown regression shape.
-//! - `discover()` has an optional pre-channel delay simulating the API provider's
-//!   poll timer that restarts from scratch when the future is cancelled.
-//! - `heartbeat()` can be blocked at the provider boundary while tests observe
-//!   request entry, release, and maximum concurrency.
-//!
-//! This lets integration tests catch:
-//! - **#8783**: heartbeat cancelling and recreating `discover()` each tick —
-//!   the poll delay restarts from scratch, so jobs are never discovered.
-//! - **#8898**: `shutdown()` deadlocking because `discover_fut` still holds
-//!   the Mutex when `provider.shutdown()` is called.
+//! Discovery holds a mutex through its wait and shutdown acquires the same
+//! mutex, exercising retained-future teardown. Its optional local wait must
+//! survive maintenance turns without being cancelled and restarted.
+//! Heartbeat and completion have independently controlled entry/release gates.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::sync::{Mutex, Notify, mpsc};
@@ -64,7 +53,6 @@ pub struct MockJobProvider {
     /// pinned), this delay restarts from scratch — jobs pushed during the
     /// delay won't be discovered until it completes.
     poll_delay: Option<Duration>,
-    ready_discovery: Arc<StdMutex<VecDeque<JobCandidate>>>,
     claim_results: StdMutex<HashMap<RunId, Option<MockClaim>>>,
     claim_controls: Arc<StdMutex<HashMap<RunId, Arc<MockOperationControl>>>>,
     claim_max_in_flight: Arc<AtomicUsize>,
@@ -72,8 +60,6 @@ pub struct MockJobProvider {
     claim_candidates: Arc<StdMutex<Vec<JobCandidate>>>,
     completions: Arc<StdMutex<Vec<Completion>>>,
     heartbeats: Arc<StdMutex<Vec<HeartbeatState>>>,
-    deferred_poll_deadlines: Arc<StdMutex<Vec<Instant>>>,
-    deferred_poll_notify: Arc<Notify>,
     cancel: CancellationToken,
     /// Fired each time `discover()` has reached its inner `select!` await
     /// point (lock + optional `poll_delay` complete, about to park on
@@ -115,12 +101,9 @@ pub struct MockProviderHandle {
     claim_controls: Arc<StdMutex<HashMap<RunId, Arc<MockOperationControl>>>>,
     claim_max_in_flight: Arc<AtomicUsize>,
     shutdown_with_claim_in_flight: Arc<AtomicBool>,
-    ready_discovery: Arc<StdMutex<VecDeque<JobCandidate>>>,
     claim_candidates: Arc<StdMutex<Vec<JobCandidate>>>,
     pub completions: Arc<StdMutex<Vec<Completion>>>,
     pub heartbeats: Arc<StdMutex<Vec<HeartbeatState>>>,
-    deferred_poll_deadlines: Arc<StdMutex<Vec<Instant>>>,
-    deferred_poll_notify: Arc<Notify>,
     /// See [`Self::wait_discover_entered`].
     discover_entered: Arc<Notify>,
     /// See [`MockJobProvider::completion_notify`].
@@ -314,12 +297,9 @@ impl MockJobProvider {
         poll_delay: Option<Duration>,
     ) -> (Arc<Self>, MockProviderHandle) {
         let (tx, rx) = mpsc::unbounded_channel();
-        let ready_discovery = Arc::new(StdMutex::new(VecDeque::new()));
         let claim_candidates = Arc::new(StdMutex::new(Vec::new()));
         let completions = Arc::new(StdMutex::new(Vec::new()));
         let heartbeats = Arc::new(StdMutex::new(Vec::new()));
-        let deferred_poll_deadlines = Arc::new(StdMutex::new(Vec::new()));
-        let deferred_poll_notify = Arc::new(Notify::new());
         let startup_readiness = Arc::new(MockStartupReadiness::default());
         let discover_entered = Arc::new(Notify::new());
         let completion_notify = Arc::new(Notify::new());
@@ -340,7 +320,6 @@ impl MockJobProvider {
             startup_readiness: Arc::clone(&startup_readiness),
             discovery: Mutex::new(rx),
             poll_delay,
-            ready_discovery: Arc::clone(&ready_discovery),
             claim_results: StdMutex::new(HashMap::new()),
             claim_controls: Arc::clone(&claim_controls),
             claim_max_in_flight: Arc::clone(&claim_max_in_flight),
@@ -348,8 +327,6 @@ impl MockJobProvider {
             claim_candidates: Arc::clone(&claim_candidates),
             completions: Arc::clone(&completions),
             heartbeats: Arc::clone(&heartbeats),
-            deferred_poll_deadlines: Arc::clone(&deferred_poll_deadlines),
-            deferred_poll_notify: Arc::clone(&deferred_poll_notify),
             cancel,
             discover_entered: Arc::clone(&discover_entered),
             completion_notify: Arc::clone(&completion_notify),
@@ -370,12 +347,9 @@ impl MockJobProvider {
             claim_controls,
             claim_max_in_flight,
             shutdown_with_claim_in_flight,
-            ready_discovery,
             claim_candidates,
             completions,
             heartbeats,
-            deferred_poll_deadlines,
-            deferred_poll_notify,
             discover_entered,
             completion_notify,
             discover_poll_started,
@@ -625,43 +599,6 @@ impl MockProviderHandle {
         self.shutdown_with_claim_in_flight.load(Ordering::SeqCst)
     }
 
-    pub fn deferred_poll_deadlines(&self) -> Vec<Instant> {
-        self.deferred_poll_deadlines
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
-    }
-
-    pub async fn wait_deferred_poll_count(&self, expected: usize, timeout: Duration) -> bool {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            let notified = self.deferred_poll_notify.notified();
-            tokio::pin!(notified);
-            notified.as_mut().enable();
-
-            if self
-                .deferred_poll_deadlines
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .len()
-                >= expected
-            {
-                return true;
-            }
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() || tokio::time::timeout(remaining, notified).await.is_err() {
-                return false;
-            }
-        }
-    }
-
-    pub fn push_ready_candidate(&self, candidate: JobCandidate) {
-        self.ready_discovery
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push_back(candidate);
-    }
-
     /// Wait until `heartbeat_count()` exceeds `baseline`, or return false on
     /// timeout. Uses the same subscribe-then-check pattern as
     /// [`wait_completion`](Self::wait_completion) — a heartbeat that lands
@@ -692,90 +629,18 @@ impl MockProviderHandle {
 
 #[async_trait]
 impl JobProvider for MockJobProvider {
+    fn local_source(
+        self: std::sync::Arc<Self>,
+    ) -> Option<std::sync::Arc<dyn runner_provider::LocalJobSource>> {
+        Some(self)
+    }
+
     async fn prepare_startup_readiness(&self) -> ProviderResult<()> {
         self.startup_readiness.prepare(&self.cancel).await
     }
 
-    /// Block until a job is pushed or the token is cancelled.
-    ///
-    /// Holds `self.discovery` Mutex for the entire call. This keeps the
-    /// historical API-provider deadlock shape available for regression tests:
-    ///
-    /// - If `poll_delay` is set, the delay must complete before checking
-    ///   the channel. Without pinning (#8783), heartbeat ticks cancel and
-    ///   recreate this future, restarting the delay from scratch.
-    /// - If the caller fails to drop this future before `shutdown()` (#8898),
-    ///   the Mutex deadlocks — exactly reproducing the production bug.
-    async fn discover(&self) -> Option<JobCandidate> {
-        self.discover_started_count.fetch_add(1, Ordering::SeqCst);
-        let mut rx = self.discovery.lock().await;
-        self.discover_poll_started.notify_one();
-        if let Some(delay) = self.poll_delay {
-            tokio::time::sleep(delay).await;
-        }
-        // Signal tests that the future has reached its await point — the
-        // main loop has polled `discover_fut`, the discovery Mutex is held,
-        // and we are about to park on `rx.recv()`. Tests ordering actions
-        // against this state use `handle.wait_discover_entered(...)`.
-        self.discover_entered.notify_one();
-        tokio::select! {
-            result = rx.recv() => result,
-            () = self.cancel.cancelled() => None,
-        }
-    }
-
-    async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob> {
-        let run_id = candidate.run_id();
-        self.claim_candidates
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(candidate.clone());
-        let _in_flight = self
-            .claim_control
-            .run_while_blocked(|count| {
-                self.claim_max_in_flight.fetch_max(count, Ordering::SeqCst);
-            })
-            .await;
-        let control = self
-            .claim_controls
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(&run_id)
-            .cloned();
-        if let Some(control) = control {
-            control.run_while_blocked(|_| {}).await;
-        }
-        let MockClaim {
-            context,
-            active_input_source,
-        } = self
-            .claim_results
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .remove(&run_id)
-            .flatten()?;
-        match ClaimedJob::local_with_active_input_source(run_id, context, active_input_source) {
-            Ok(claimed) => Some(claimed),
-            Err(err) => {
-                warn!(
-                    run_id = %err.expected_run_id,
-                    context_run_id = %err.context_run_id,
-                    "mock: claimed job run_id mismatch"
-                );
-                None
-            }
-        }
-    }
-
     async fn bind_supplied(&self, context: ExecutionContext) -> ProviderResult<ClaimedJob> {
         Ok(ClaimedJob::supplied(context, None))
-    }
-
-    async fn try_discover_ready(&self) -> Option<JobCandidate> {
-        self.ready_discovery
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .pop_front()
     }
 
     fn completion_report_timing(&self) -> CompletionReportTiming {
@@ -834,14 +699,6 @@ impl JobProvider for MockJobProvider {
         }
     }
 
-    async fn defer_candidate_until(&self, _run_id: RunId, deadline: Instant) {
-        self.deferred_poll_deadlines
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(deadline);
-        self.deferred_poll_notify.notify_waiters();
-    }
-
     /// Acquire the discovery Mutex to preserve the shutdown deadlock regression shape.
     ///
     /// If `discover()` is still alive and holding the Mutex, this deadlocks.
@@ -852,6 +709,79 @@ impl JobProvider for MockJobProvider {
                 .store(true, Ordering::SeqCst);
         }
         let _lock = self.discovery.lock().await;
+    }
+}
+
+#[async_trait::async_trait]
+impl runner_provider::LocalJobSource for MockJobProvider {
+    /// Block until a job is pushed or the token is cancelled.
+    ///
+    /// Holds `self.discovery` Mutex for the entire call. This keeps the
+    /// historical API-provider deadlock shape available for regression tests:
+    ///
+    /// - If `poll_delay` is set, the delay must complete before checking
+    ///   the channel. Without pinning (#8783), heartbeat ticks cancel and
+    ///   recreate this future, restarting the delay from scratch.
+    /// - If the caller fails to drop this future before `shutdown()` (#8898),
+    ///   the Mutex deadlocks — exactly reproducing the production bug.
+    async fn discover(&self) -> Option<JobCandidate> {
+        self.discover_started_count.fetch_add(1, Ordering::SeqCst);
+        let mut rx = self.discovery.lock().await;
+        self.discover_poll_started.notify_one();
+        if let Some(delay) = self.poll_delay {
+            tokio::time::sleep(delay).await;
+        }
+        // Signal tests that the future has reached its await point — the
+        // main loop has polled `discover_fut`, the discovery Mutex is held,
+        // and we are about to park on `rx.recv()`. Tests ordering actions
+        // against this state use `handle.wait_discover_entered(...)`.
+        self.discover_entered.notify_one();
+        tokio::select! {
+            result = rx.recv() => result,
+            () = self.cancel.cancelled() => None,
+        }
+    }
+    async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob> {
+        let run_id = candidate.run_id();
+        self.claim_candidates
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(candidate.clone());
+        let _in_flight = self
+            .claim_control
+            .run_while_blocked(|count| {
+                self.claim_max_in_flight.fetch_max(count, Ordering::SeqCst);
+            })
+            .await;
+        let control = self
+            .claim_controls
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&run_id)
+            .cloned();
+        if let Some(control) = control {
+            control.run_while_blocked(|_| {}).await;
+        }
+        let MockClaim {
+            context,
+            active_input_source,
+        } = self
+            .claim_results
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&run_id)
+            .flatten()?;
+        match ClaimedJob::local_with_active_input_source(run_id, context, active_input_source) {
+            Ok(claimed) => Some(claimed),
+            Err(err) => {
+                warn!(
+                    run_id = %err.expected_run_id,
+                    context_run_id = %err.context_run_id,
+                    "mock: claimed job run_id mismatch"
+                );
+                None
+            }
+        }
     }
 }
 

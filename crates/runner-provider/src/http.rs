@@ -18,8 +18,6 @@ use crate::error::{
     ProviderResult,
 };
 
-mod transport_timing;
-use transport_timing::{ConnectionTimingLayer, TimedResolver};
 mod transport_diagnostics;
 use transport_diagnostics::{ConnectionDiagnosticsLayer, TransportDiagnostics};
 mod recovery;
@@ -314,7 +312,7 @@ impl PreparedApiRequest {
     }
 
     pub async fn send(self) -> ProviderResult<Response> {
-        recovery::send(self, None, None, None).await.result
+        recovery::send(self, None).await
     }
 
     /// Keep the current wire-attempt identity available even if an outer
@@ -323,22 +321,7 @@ impl PreparedApiRequest {
         self,
         context: &mut ApiRequestContext,
     ) -> ProviderResult<Response> {
-        recovery::send(self, None, Some(context), None).await.result
-    }
-
-    pub(crate) async fn send_observed_claim(
-        self,
-        run_id: runner_types::ids::RunId,
-        execution_started_at: Instant,
-        prepare_replay: Option<&mut recovery::PrepareReplay<'_>>,
-    ) -> recovery::AttemptOutcome {
-        recovery::send(
-            self,
-            Some((run_id, execution_started_at)),
-            None,
-            prepare_replay,
-        )
-        .await
+        recovery::send(self, Some(context)).await
     }
 }
 

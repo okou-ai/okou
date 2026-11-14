@@ -1,4 +1,4 @@
-import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
+import { browserUserActionRequests } from "@okouai/db/schema/browser-user-action-request";
 import { command } from "ccstate";
 import { and, eq, or, sql } from "drizzle-orm";
 import { db$ } from "../external/db";

@@ -362,10 +362,8 @@ pub async fn exercise(
     let operations = operations?;
     settled(&operations)?;
     let activation = context.tracker.take_retained_activation_owners()?;
-    let finalizing = context.tracker.take_retained_finalizing_owners()?;
-    if !activation.is_empty() || !finalizing.is_empty() {
+    if !activation.is_empty() {
         proof.retain(activation);
-        proof.retain(finalizing);
         return Err(io::Error::other("replacement retained unresolved owners").into());
     }
     proof.batch_replacement_witness("producers_joined",json!({

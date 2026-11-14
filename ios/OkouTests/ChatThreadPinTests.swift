@@ -352,16 +352,19 @@ private final class PinOrderFixture: Sendable {
     let state = ServerBox()
     server = state
     http = ChatHTTPFixture { request in
+      if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      }
       let path = request.url?.path ?? ""
       switch path {
       case "/api/agents":
         return ChatHTTPResponse(
           body: "[{\"agentId\":\"\(Self.agent)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]"
         )
-      case "/api/projects":
+      case "/api/projects/snapshot":
         return ChatHTTPResponse(
           body:
-            "{\"projects\":[{\"id\":\"\(Self.project)\",\"name\":\"Launch\",\"createdAt\":\"2026-11-10T00:00:00Z\",\"updatedAt\":\"2026-11-10T00:00:00Z\"}]}"
+            "{\"latestEventId\":null,\"latestSeqId\":0,\"projects\":[{\"id\":\"\(Self.project)\",\"name\":\"Launch\",\"createdAt\":\"2026-11-10T00:00:00Z\",\"updatedAt\":\"2026-11-10T00:00:00Z\"}]}"
         )
       case "/api/chat-threads/snapshot":
         // Chats 4 and 5 are the project's; their ranks sit after the Agent's own pins.

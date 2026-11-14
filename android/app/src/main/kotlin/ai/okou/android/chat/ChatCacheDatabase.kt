@@ -134,8 +134,59 @@ internal data class ProjectEventRecord(
     val payload: String,
 )
 
+@Entity(tableName = "history_scopes", primaryKeys = ["scope", "threadId"])
+internal data class HistoryScopeRecord(
+    val scope: String,
+    val threadId: String,
+    val authorization: String,
+    val eventVersion: Int,
+    val confirmedAt: Long,
+    val eventId: String?,
+    val seqId: Long,
+)
+
+@Entity(
+    tableName = "history_events",
+    primaryKeys = ["scope", "threadId", "id"],
+    indices = [Index(value = ["scope", "threadId", "seqId"], unique = true)],
+    foreignKeys =
+        [
+            ForeignKey(
+                entity = HistoryScopeRecord::class,
+                parentColumns = ["scope", "threadId"],
+                childColumns = ["scope", "threadId"],
+                onDelete = ForeignKey.CASCADE,
+            )
+        ],
+)
+internal data class HistoryEventRecord(
+    val scope: String,
+    val threadId: String,
+    val id: String,
+    val seqId: Long,
+    val payload: String,
+)
+
 @Dao
 internal interface ChatCacheDao {
+    @Query("SELECT * FROM history_scopes WHERE scope = :scope AND threadId = :threadId")
+    suspend fun historyScope(scope: String, threadId: String): HistoryScopeRecord?
+
+    @Upsert suspend fun putHistoryScope(value: HistoryScopeRecord)
+
+    @Query(
+        "SELECT * FROM history_events WHERE scope = :scope AND threadId = :threadId ORDER BY seqId"
+    )
+    suspend fun historyEvents(scope: String, threadId: String): List<HistoryEventRecord>
+
+    @Insert suspend fun putHistoryEvents(rows: List<HistoryEventRecord>)
+
+    @Query("DELETE FROM history_scopes WHERE scope = :scope AND threadId = :threadId")
+    suspend fun deleteHistory(scope: String, threadId: String)
+
+    @Query("DELETE FROM history_events WHERE scope = :scope AND threadId = :threadId")
+    suspend fun clearHistoryEvents(scope: String, threadId: String)
+
     @Query("SELECT * FROM chat_scopes WHERE scope = :scope")
     suspend fun scope(scope: String): ChatScopeRecord?
 
@@ -207,8 +258,10 @@ internal interface ChatCacheDao {
             ChatProjectRecord::class,
             ProjectScopeRecord::class,
             ProjectEventRecord::class,
+            HistoryScopeRecord::class,
+            HistoryEventRecord::class,
         ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 internal abstract class ChatCacheDatabase : RoomDatabase() {

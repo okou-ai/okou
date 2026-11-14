@@ -2754,6 +2754,11 @@
       "ideasLabel": "시작 아이디어",
       "label": "시작할 작업",
       "more": "더 보기",
+      "presentationFormat": "프레젠테이션 형식",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "프레젠테이션 템플릿",
       "removeTask": "{{task}} 제거",
       "shelf": {

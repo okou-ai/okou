@@ -436,6 +436,8 @@ const iosContracts: readonly {
     route: platformRealtimeTokenContract.create,
   },
   { id: "ios.projectsContract.list", route: projectsContract.list },
+  { id: "ios.projectsContract.snapshot", route: projectsContract.snapshot },
+  { id: "ios.projectsContract.events", route: projectsContract.events },
   { id: "ios.projectsContract.create", route: projectsContract.create },
   { id: "ios.projectsContract.update", route: projectsContract.update },
   { id: "ios.projectsContract.delete", route: projectsContract.delete },

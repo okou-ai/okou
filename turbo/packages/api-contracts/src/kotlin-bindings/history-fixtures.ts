@@ -7,7 +7,7 @@ import {
 import { chatEventRowSchema } from "../contracts/chat-event-rows";
 import type { KotlinRouteBinding, KotlinTypeBinding } from "./bindings";
 
-/** Executable protocol proofs only; no installed history consumer yet. */
+/** Test-only protocol bindings; installed reader routes are registered separately. */
 export const kotlinHistoryFixtureRoutes: readonly KotlinRouteBinding[] = [
   {
     name: "snapshot",

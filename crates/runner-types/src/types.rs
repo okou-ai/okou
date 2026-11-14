@@ -26,25 +26,8 @@ fn is_false(value: &bool) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Poll
+// Execution reuse identity
 // ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PollResponse {
-    pub job: Option<Job>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Job {
-    pub run_id: RunId,
-    pub experimental_profile: String,
-    #[serde(default)]
-    pub reuse_key: Option<String>,
-    #[serde(default)]
-    pub runner_preference: Option<serde_json::Value>,
-}
 
 pub fn reuse_key_kind(reuse_key: &str) -> &'static str {
     if reuse_key.starts_with("thread:") {
@@ -54,23 +37,17 @@ pub fn reuse_key_kind(reuse_key: &str) -> &'static str {
     }
 }
 
-impl Job {
-    pub fn reuse_key(&self) -> Option<&str> {
-        self.reuse_key.as_deref()
-    }
-}
-
 // ---------------------------------------------------------------------------
-// Claim (execution context)
+// Complete execution input
 // ---------------------------------------------------------------------------
 
-/// Normalized inputs consumed by directly supplied, API-claimed and local jobs.
+/// Normalized inputs consumed by directly supplied and independent local jobs.
 ///
 /// The shared API publication normalizer constructs this type before execution.
 /// Deserialization handles shared scalar fields and ignores unknown fields for forward
 /// compatibility; Runner-only application metadata is never decoded from API JSON.
 /// The canonical producer schema is
-/// `runnersJobClaimContract.claim.responses[200]` in
+/// `executionContextSchema` in
 /// `turbo/packages/api-contracts/src/contracts/runners.ts`.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

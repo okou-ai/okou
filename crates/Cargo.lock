@@ -2120,6 +2120,7 @@ dependencies = [
  "chrono",
  "cli-test-support",
  "libc",
+ "nix",
  "serde",
  "serde_json",
  "tempfile",
@@ -2161,6 +2162,7 @@ dependencies = [
  "guest-contracts",
  "guest-control-proto",
  "libc",
+ "nix",
  "process-control-ipc",
  "process-launch",
  "rustix",
@@ -2233,6 +2235,7 @@ dependencies = [
  "httpmock",
  "libc",
  "linux-mountinfo",
+ "nix",
  "proptest",
  "roxmltree 0.21.2",
  "rustix",
@@ -2291,6 +2294,7 @@ dependencies = [
  "guest-contracts",
  "guest-control-proto",
  "libc",
+ "nix",
  "tempfile",
 ]
 
@@ -3659,6 +3663,7 @@ name = "process-launch"
 version = "0.1.6"
 dependencies = [
  "libc",
+ "nix",
  "rustix",
  "tempfile",
  "tokio",

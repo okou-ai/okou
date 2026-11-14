@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="home">홈</string>
     <string name="settings">설정</string>
     <string name="back">뒤로</string>
     <string name="appearance">화면 모드</string>

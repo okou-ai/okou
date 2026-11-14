@@ -1,5 +1,4 @@
 use std::io;
-use std::os::fd::AsRawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
@@ -240,33 +239,27 @@ fn secure_copy_temp_file(file: &tokio::fs::File, path: &Path) -> io::Result<()> 
             format!("copy temp file {} is group/other writable", path.display()),
         ));
     }
-    // SAFETY: `fchmod` operates on the live fd and does not affect Rust aliasing.
-    let result =
-        unsafe { nix::libc::fchmod(file.as_raw_fd(), COPY_TEMP_FILE_MODE as nix::libc::mode_t) };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::other(format!(
+    nix::sys::stat::fchmod(
+        file,
+        nix::sys::stat::Mode::from_bits_truncate(COPY_TEMP_FILE_MODE as nix::libc::mode_t),
+    )
+    .map_err(|error| {
+        io::Error::other(format!(
             "chmod copy temp file {}: {}",
             path.display(),
-            io::Error::last_os_error()
-        )))
-    }
+            io::Error::from(error)
+        ))
+    })
 }
 
 fn fstat_copy_temp_file(file: &tokio::fs::File, path: &Path) -> io::Result<nix::libc::stat> {
-    let mut stat = std::mem::MaybeUninit::<nix::libc::stat>::uninit();
-    // SAFETY: `stat` points to writable memory and `file` owns a live fd.
-    let result = unsafe { nix::libc::fstat(file.as_raw_fd(), stat.as_mut_ptr()) };
-    if result != 0 {
-        return Err(io::Error::other(format!(
+    nix::sys::stat::fstat(file).map_err(|error| {
+        io::Error::other(format!(
             "stat copy temp file {}: {}",
             path.display(),
-            io::Error::last_os_error()
-        )));
-    }
-    // SAFETY: successful `fstat` initialized the full struct.
-    Ok(unsafe { stat.assume_init() })
+            io::Error::from(error)
+        ))
+    })
 }
 
 async fn write_copy_stream_event(

@@ -9,6 +9,9 @@ guest-contracts.workspace = true
 libc = { workspace = true, features = ["std"] }
 guest-control-proto.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["fs"] }
+
 [dev-dependencies]
 cli-test-support = { workspace = true, features = ["test-support"] }
 tempfile = { workspace = true, features = ["getrandom"] }

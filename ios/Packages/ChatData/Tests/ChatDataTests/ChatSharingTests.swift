@@ -10,11 +10,18 @@ final class ChatSharingTests: XCTestCase {
   func testSharingUsesTheExistingWebVisibilityContract() async throws {
     let requests = Mutex<[URLRequest]>([])
     let fixture = ChatHTTPFixture { request in
-      requests.withLock { $0.append(request) }
-      if request.httpMethod == "POST" {
-        return ChatHTTPResponse(status: 201, body: #"{"id":"share"}"#)
+      let response: ChatHTTPResponse
+      switch (request.httpMethod, request.url?.path) {
+      case ("POST", "/api/chat-threads/thread/shared-threads/visibility"):
+        response = ChatHTTPResponse(status: 201, body: #"{"id":"share"}"#)
+      case ("PUT", "/api/shared-threads/share/visibility"):
+        response = ChatHTTPResponse(
+          body: #"{"id":"share","audience":"organization","revision":null}"#)
+      default:
+        throw URLError(.unsupportedURL)
       }
-      return ChatHTTPResponse(body: #"{"id":"share","audience":"organization","revision":null}"#)
+      requests.withLock { $0.append(request) }
+      return response
     }
     let id = try await fixture.client.shareThread(
       threadID: "thread", eventIDs: ["answer"], audience: .organization, id: "share")

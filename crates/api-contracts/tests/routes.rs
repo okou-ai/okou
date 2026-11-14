@@ -11,15 +11,12 @@ fn exposes_generated_webhook_route_constants() {
 
 #[test]
 fn exposes_generated_runner_route_constants() {
-    let poll = routes::runners::poll::POLL;
-    let claim: RouteTemplate = routes::runners::jobs::by_id::claim::CLAIM;
+    let cancellation: RouteTemplate = routes::runners::runs::by_run_id::cancellation::GET;
     let heartbeat = routes::runners::heartbeat::HEARTBEAT;
     let realtime_token = routes::runners::realtime::token::CREATE;
 
-    assert_eq!(poll.method, Method::Post);
-    assert_eq!(poll.path, "/api/runners/poll");
-    assert_eq!(claim.method, Method::Post);
-    assert_eq!(claim.path, "/api/runners/jobs/:id/claim");
+    assert_eq!(cancellation.method, Method::Get);
+    assert_eq!(cancellation.path, "/api/runners/runs/:runId/cancellation");
     assert_eq!(heartbeat.method, Method::Post);
     assert_eq!(heartbeat.path, "/api/runners/heartbeat");
     assert_eq!(realtime_token.method, Method::Post);
@@ -47,49 +44,56 @@ fn generated_routes_build_urls_from_base_api_url() {
 
 #[test]
 fn generated_routes_build_paths_with_params() {
-    let params = routes::runners::jobs::by_id::claim::Params {
-        id: "550e8400-e29b-41d4-a716-446655440000",
+    let params = routes::runners::runs::by_run_id::cancellation::Params {
+        run_id: "550e8400-e29b-41d4-a716-446655440000",
     };
 
     assert_eq!(
-        routes::runners::jobs::by_id::claim::path(params),
-        "/api/runners/jobs/550e8400-e29b-41d4-a716-446655440000/claim"
+        routes::runners::runs::by_run_id::cancellation::path(params),
+        "/api/runners/runs/550e8400-e29b-41d4-a716-446655440000/cancellation"
     );
     assert_eq!(
-        routes::runners::jobs::by_id::claim::path(routes::runners::jobs::by_id::claim::Params {
-            id: "space value",
-        }),
-        "/api/runners/jobs/space%20value/claim"
+        routes::runners::runs::by_run_id::cancellation::path(
+            routes::runners::runs::by_run_id::cancellation::Params {
+                run_id: "space value",
+            }
+        ),
+        "/api/runners/runs/space%20value/cancellation"
     );
     assert_eq!(
-        routes::runners::jobs::by_id::claim::path(routes::runners::jobs::by_id::claim::Params {
-            id: "nested/value",
-        }),
-        "/api/runners/jobs/nested%2Fvalue/claim"
+        routes::runners::runs::by_run_id::cancellation::path(
+            routes::runners::runs::by_run_id::cancellation::Params {
+                run_id: "nested/value",
+            }
+        ),
+        "/api/runners/runs/nested%2Fvalue/cancellation"
     );
     assert_eq!(
-        routes::runners::jobs::by_id::claim::path(routes::runners::jobs::by_id::claim::Params {
-            id: "query?fragment#percent%中文",
-        }),
-        "/api/runners/jobs/query%3Ffragment%23percent%25%E4%B8%AD%E6%96%87/claim"
+        routes::runners::runs::by_run_id::cancellation::path(
+            routes::runners::runs::by_run_id::cancellation::Params {
+                run_id: "query?fragment#percent%中文",
+            }
+        ),
+        "/api/runners/runs/query%3Ffragment%23percent%25%E4%B8%AD%E6%96%87/cancellation"
     );
 }
 
 #[test]
 fn generated_routes_build_resolved_routes_with_params() {
-    let resolved =
-        routes::runners::jobs::by_id::claim::route(routes::runners::jobs::by_id::claim::Params {
-            id: "550e8400-e29b-41d4-a716-446655440000",
-        });
+    let resolved = routes::runners::runs::by_run_id::cancellation::route(
+        routes::runners::runs::by_run_id::cancellation::Params {
+            run_id: "550e8400-e29b-41d4-a716-446655440000",
+        },
+    );
 
-    assert_eq!(resolved.method, Method::Post);
+    assert_eq!(resolved.method, Method::Get);
     assert_eq!(
         resolved.url("https://api.vm0.dev/"),
-        "https://api.vm0.dev/api/runners/jobs/550e8400-e29b-41d4-a716-446655440000/claim"
+        "https://api.vm0.dev/api/runners/runs/550e8400-e29b-41d4-a716-446655440000/cancellation"
     );
     assert_eq!(
         resolved.url(""),
-        "/api/runners/jobs/550e8400-e29b-41d4-a716-446655440000/claim",
+        "/api/runners/runs/550e8400-e29b-41d4-a716-446655440000/cancellation",
         "empty base URL must preserve the path-only behavior"
     );
 }
@@ -97,7 +101,7 @@ fn generated_routes_build_resolved_routes_with_params() {
 #[test]
 #[should_panic(expected = "api route path must start with '/'")]
 fn route_urls_reject_paths_without_leading_slash() {
-    let route = api_contracts::Route::new(Method::Post, "api/runners/poll");
+    let route = api_contracts::Route::new(Method::Post, "api/runners/heartbeat");
 
     let _ = route.url("https://api.vm0.dev");
 }
@@ -105,7 +109,7 @@ fn route_urls_reject_paths_without_leading_slash() {
 #[test]
 #[should_panic(expected = "api route path must start with '/'")]
 fn resolved_route_urls_reject_paths_without_leading_slash() {
-    let route = ResolvedRoute::new(Method::Post, "api/runners/poll".to_owned());
+    let route = ResolvedRoute::new(Method::Post, "api/runners/heartbeat".to_owned());
 
     let _ = route.url("https://api.vm0.dev");
 }

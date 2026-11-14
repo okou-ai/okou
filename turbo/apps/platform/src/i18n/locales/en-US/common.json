@@ -2766,6 +2766,11 @@
       "ideasLabel": "Ideas to get started",
       "label": "Tasks to get started",
       "more": "More",
+      "presentationFormat": "Presentation format",
+      "presentationFormats": {
+        "html": "HTML",
+        "pptx": "PPTX"
+      },
       "presentationTemplates": "Presentation templates",
       "removeTask": "Remove {{task}}",
       "shelf": {

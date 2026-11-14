@@ -62,9 +62,7 @@ import {
   PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
   RESUME_SESSION_HISTORY_MAX_BYTES,
   RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
-  RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX,
   RUNNER_HOSTNAME_MAX_LENGTH,
-  RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
   SESSION_HISTORY_ENCODING_GZIP,
   SESSION_HISTORY_ENCODING_IDENTITY,
   SESSION_HISTORY_ENCODING_ZSTD,
@@ -159,10 +157,6 @@ const connectorRuntimeSyncTargetsMaxDoc = [
 ] as const;
 const connectorRuntimeSyncRunTerminalErrorCodeDoc = [
   "API error code returned when connector runtime synchronization targets a terminal run.",
-] as const;
-const runnerPollExcludedRunIdsMaxDoc = [
-  "Maximum runner-local claim cooldown exclusions accepted by the poll endpoint.",
-  "Rust runners use this shared contract value to bound local cooldown state and poll request size.",
 ] as const;
 
 const runnerHostnameMaxLengthDoc = [
@@ -504,14 +498,6 @@ const expectedBindings = [
   },
   {
     rustModulePath: ["runners"],
-    rustConstName: "RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX",
-    value: rustU64(RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX),
-    rustDoc: [
-      "Maximum Pi model configuration generations advertised by one Runner claim.",
-    ],
-  },
-  {
-    rustModulePath: ["runners"],
     rustConstName: "RUNNER_CANCELLATION_RECOVERY_GRACE_MS",
     value: rustU64(RUNNER_CANCELLATION_RECOVERY_GRACE_MS),
     rustDoc: runnerCancellationRecoveryGraceMsDoc,
@@ -527,12 +513,6 @@ const expectedBindings = [
     rustConstName: "RUNNER_HOSTNAME_MAX_LENGTH",
     value: rustU64(RUNNER_HOSTNAME_MAX_LENGTH),
     rustDoc: runnerHostnameMaxLengthDoc,
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "RUNNER_POLL_EXCLUDED_RUN_IDS_MAX",
-    value: rustU64(RUNNER_POLL_EXCLUDED_RUN_IDS_MAX),
-    rustDoc: runnerPollExcludedRunIdsMaxDoc,
   },
   {
     rustModulePath: ["runners"],
@@ -797,9 +777,6 @@ describe("Rust constant bindings", () => {
     );
     expect(firstRender).toContain(
       `pub const RUNNER_HOSTNAME_MAX_LENGTH: u64 = ${RUNNER_HOSTNAME_MAX_LENGTH};`,
-    );
-    expect(firstRender).toContain(
-      `pub const RUNNER_POLL_EXCLUDED_RUN_IDS_MAX: u64 = ${RUNNER_POLL_EXCLUDED_RUN_IDS_MAX};`,
     );
     expect(firstRender).toContain(
       `pub const CONNECTOR_RUNTIME_SYNC_TARGETS_MAX: u64 = ${CONNECTOR_RUNTIME_SYNC_TARGETS_MAX};`,

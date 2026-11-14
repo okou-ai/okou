@@ -7,14 +7,14 @@ import { mockNow } from "../../../lib/time";
 import { browserRoutes } from "../browser";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import {
-  createSharedBrowserFixtures,
+  createBrowserFixtures,
   MINUTE,
   START,
-} from "./helpers/browser-shared-fixture";
+} from "./helpers/browser-fixture";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
 
 const context = testContext();
-const { fixture, open, renew, view } = createSharedBrowserFixtures(context);
+const { fixture, open, renew, view } = createBrowserFixtures(context);
 function client() {
   return setupApp({ context, routes: browserRoutes })(browserContract);
 }

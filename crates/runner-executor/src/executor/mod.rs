@@ -57,10 +57,9 @@ use reused_sandbox::{ReusedSandboxRun, execute_reused_sandbox};
 use runner_provider::ActiveInputSource;
 use sandbox_run::{FreshPreparation, NewSandboxHooks, execute_new_sandbox_with_prepared_notifier};
 pub use telemetry::{
-    BlankPoolSelection, BlankPoolSelectionReason, ExactReuseSpeculationTiming,
-    FinalizingDiagnostics, FinalizingExactIdleLookup, FinalizingHandoffOutcome,
-    FinalizingHandoffReason, HomeWaitOutcome, RunnerPreSpawnConcurrency,
-    RunnerPreSpawnOperationTiming, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
+    BlankPoolSelection, BlankPoolSelectionReason, FinalizingDiagnostics, FinalizingExactIdleLookup,
+    FinalizingHandoffOutcome, FinalizingHandoffReason, RunnerPreSpawnConcurrency,
+    RunnerPreSpawnPhase, RunnerPreSpawnTiming,
 };
 use telemetry::{RunnerSpawnTiming, record_api_latency};
 
@@ -209,7 +208,7 @@ pub struct ExecutorConfig {
 
 /// Per-job sandbox parameters resolved from the profile config.
 pub struct JobParams {
-    /// Producer selected by evidenced Home admission; checked under the entry lock.
+    /// Producer required by finalizing fallback; checked under the home entry lock.
     pub required_home_source_run_id: Option<RunId>,
     pub profile_name: String,
     pub vcpu: u32,
