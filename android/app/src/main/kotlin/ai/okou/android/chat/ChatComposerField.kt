@@ -15,9 +15,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -43,13 +43,23 @@ fun ChatComposerField(
     val focus = LocalFocusManager.current
     val entry = state.entry(target)
     var input by
-        rememberSaveable(target.key, stateSaver = TextFieldValue.Saver) {
+        rememberSaveable(
+            target.key,
+            stateSaver =
+                listSaver<TextFieldValue, Int>(
+                    // Draft text belongs to the journal, not the size-limited Activity bundle.
+                    save = {
+                        val selection = if (it.text == entry.text) it.selection else TextRange.Zero
+                        listOf(selection.start, selection.end)
+                    },
+                    restore = { TextFieldValue(entry.text, TextRange(it[0], it[1])) },
+                ),
+        ) {
             mutableStateOf(TextFieldValue(entry.text, TextRange(entry.text.length)))
         }
-    LaunchedEffect(entry.text, state.journal != null) {
-        if (state.journal != null && input.text != entry.text)
-            input = TextFieldValue(entry.text, TextRange(entry.text.length))
-    }
+    val presented =
+        if (input.text == entry.text) input
+        else TextFieldValue(entry.text, TextRange(entry.text.length))
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(model, target, lifecycle) {
         fun open() {
@@ -118,10 +128,10 @@ fun ChatComposerField(
         if (target.key in state.unobserved) Text(stringResource(R.string.composer_not_observed))
         if (target.key in state.failed) Text(stringResource(R.string.composer_request_failed))
         OutlinedTextField(
-            value = input,
+            value = presented,
             onValueChange = {
-                if (it.text != input.text) model.edit(target, it.text)
                 input = it
+                model.edit(target, it.text)
             },
             modifier = Modifier.fillMaxWidth().testTag("message_input"),
             enabled = state.journal != null,

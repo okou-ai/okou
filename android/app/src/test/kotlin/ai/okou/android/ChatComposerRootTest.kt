@@ -2,6 +2,9 @@ package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
+import android.os.Bundle
+import android.os.Parcel
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
@@ -12,14 +15,19 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextInputSelection
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.text.TextRange
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,16 +68,7 @@ class ChatComposerRootTest {
     private var listJob: Job? = null
     private var editor: ai.okou.android.chat.ChatComposerModel? = null
 
-    @Test
-    fun heldDefaultReadAndDisconnectedSendPreserveNavigationNewerEditingAndOriginalReceipt() {
-        val app = compose.activity.application as ComposerRootApplication
-        compose.onNodeWithText("New chat").performClick()
-        compose.onNodeWithText("Loading chat availability…").assertExists()
-        compose
-            .onNodeWithTag("message_input")
-            .assertIsEnabled()
-            .performTextInput("Original **message** 👋")
-        compose.onNodeWithText("Send").assertIsNotEnabled()
+    private fun captureOwners() {
         compose.runOnIdle {
             val ready =
                 checkNotNull(
@@ -82,6 +81,59 @@ class ChatComposerRootTest {
             editor = ready.composer
             listJob = ready.chats.viewModelScope.coroutineContext[Job]
         }
+    }
+
+    @Test
+    fun longDraftStaysOutOfActivityStateAndKeepsSelectionAcrossRecreation() {
+        compose.onNodeWithText("New chat").performClick()
+        val input = compose.onNodeWithTag("message_input")
+        val large = "Long chat draft 你好 👋 ".repeat(5_000)
+        input.performTextReplacement(large)
+        input.performTextInputSelection(TextRange(13, 29))
+        assertEquals(
+            TextRange(13, 29),
+            input.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
+        )
+        // Native focus loss collapses an active selection; preserve the cursor on recreation.
+        input.performTextInputSelection(TextRange(13))
+        captureOwners()
+        compose.runOnIdle {
+            val saved = Bundle()
+            InstrumentationRegistry.getInstrumentation()
+                .callActivityOnSaveInstanceState(compose.activity, saved)
+            val parcel = Parcel.obtain()
+            try {
+                parcel.writeBundle(saved)
+                assertTrue(
+                    "Chat drafts must not fill the Activity/Binder bundle",
+                    parcel.dataSize() < 64 * 1024,
+                )
+            } finally {
+                parcel.recycle()
+            }
+        }
+        compose.activityRule.scenario.recreate()
+        assertEquals(
+            large,
+            input.fetchSemanticsNode().config[SemanticsProperties.EditableText].text,
+        )
+        assertEquals(
+            TextRange(13),
+            input.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange],
+        )
+    }
+
+    @Test
+    fun heldDefaultReadAndDisconnectedSendPreserveNavigationNewerEditingAndOriginalReceipt() {
+        val app = compose.activity.application as ComposerRootApplication
+        compose.onNodeWithText("New chat").performClick()
+        compose.onNodeWithText("Loading chat availability…").assertExists()
+        compose
+            .onNodeWithTag("message_input")
+            .assertIsEnabled()
+            .performTextInput("Original **message** 👋")
+        compose.onNodeWithText("Send").assertIsNotEnabled()
+        captureOwners()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Chats").assertExists()
         compose.onNodeWithText("New chat").performClick()
