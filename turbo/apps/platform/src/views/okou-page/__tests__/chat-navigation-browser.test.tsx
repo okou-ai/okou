@@ -1177,7 +1177,9 @@ test("Browser tab admission narrows conservatively on the chat-list action befor
 
 test("Browser tab admission settles surviving shell motion after navigation cancels visibility paint", async () => {
   mockWideScreen();
-  const native = mockTabAdmissionGeometry(800, 1000);
+  // Start narrow; wide-to-narrow preparation is covered above. This case
+  // widens after navigation while the surviving native motions still own it.
+  const native = mockTabAdmissionGeometry(200, 400);
   const initial = await openManyTabBrowser();
   await selectLastBrowserTab(initial.sidebar);
   click(buttonByName("Hide chat list"));
