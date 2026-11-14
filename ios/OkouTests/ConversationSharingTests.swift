@@ -104,6 +104,32 @@ final class ConversationSharingTests: XCTestCase {
     XCTAssertEqual(sharing.visibility?.audience, .private)
   }
 
+  func testSelectedQuestionRemainsDeselectableWhenItsFirstPromptIsRevoked() throws {
+    let fixture = ChatHTTPFixture { _ in throw URLError(.unsupportedURL) }
+    let prompts = ["question", "context"].map { id in
+      ChatEvent(
+        id: id, runId: "run", createdAt: .now, eventType: .inputPrompt,
+        payload: .init(userMessage: .init(parts: [.init(type: "text", text: id)])))
+    }
+    var history = try ChatEventProjection.history(rows: prompts, recovering: false)
+    let sharing = ConversationSharing(
+      client: fixture.client, threadID: "thread", webURL: fixture.baseURL,
+      lifecycleTasks: LifecycleTasks(), history: { history }, didFail: { _ in })
+    defer { sharing.close() }
+    sharing.start()
+    sharing.toggle(try XCTUnwrap(sharing.groups.first))
+    history = try ChatEventProjection.history(
+      rows: prompts + [
+        ChatEvent(
+          id: "revoke", revokesEventId: "question", createdAt: .now, eventType: .controlRevoke)
+      ], recovering: false)
+    XCTAssertEqual(sharing.selectedIDs, ["context"])
+    XCTAssertEqual(sharing.selectedCount, 1)
+    sharing.toggle(try XCTUnwrap(sharing.groups.first))
+    XCTAssertTrue(sharing.selectedIDs.isEmpty)
+    XCTAssertEqual(sharing.selectedCount, 0)
+  }
+
   func testQuickShareUsesTheWebContractAndIncludesThePrecedingPromptGroup() async throws {
     let requests = Mutex<[URLRequest]>([])
     let fixture = ChatHTTPFixture { request in

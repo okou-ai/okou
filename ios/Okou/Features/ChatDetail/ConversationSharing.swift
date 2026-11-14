@@ -40,9 +40,9 @@ final class ConversationSharing {
 
   var groups: [ChatShareGroup] { ChatShareGroup.groups(in: history()) }
   private var currentSelection: [ChatShareGroup] {
-    let validIDs = Set(groups.flatMap(\.eventIDs))
-    return selectedGroups.values.compactMap { group in
-      let messages = group.messages.filter { validIDs.contains($0.id) }
+    let selectedIDs = Set(selectedGroups.values.flatMap(\.eventIDs))
+    return groups.compactMap { group in
+      let messages = group.messages.filter { selectedIDs.contains($0.id) }
       return messages.isEmpty ? nil : ChatShareGroup(id: group.id, messages: messages)
     }
   }
@@ -58,8 +58,8 @@ final class ConversationSharing {
 
   func toggle(_ group: ChatShareGroup) {
     guard !isBusy, visibility == nil else { return }
-    let storedIDs = Set(selectedGroups[group.id]?.eventIDs ?? [])
     var next = Dictionary(uniqueKeysWithValues: currentSelection.map { ($0.id, $0) })
+    let storedIDs = Set(next[group.id]?.eventIDs ?? [])
     if Set(group.eventIDs).isSubset(of: storedIDs) {
       next.removeValue(forKey: group.id)
     } else {
