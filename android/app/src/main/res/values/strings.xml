@@ -78,4 +78,20 @@
     <string name="instructions_reload">Reload latest and discard changes</string>
     <string name="instructions_discard">Discard changes</string>
     <string name="instructions_retry_save">Retry the same save</string>
+    <string name="composer_new">New chat</string>
+    <string name="composer_new_project">New chat in this Project</string>
+    <string name="composer_message">Message</string>
+    <string name="composer_send">Send</string>
+    <string name="composer_local_failed">Draft changes could not be saved on this device.</string>
+    <string name="composer_target_loading">Loading chat availability…</string>
+    <string name="composer_target_unavailable">A new chat is not available for this account.</string>
+    <string name="composer_unconfirmed">Message delivery is unconfirmed.</string>
+    <string name="composer_check">Check delivery</string>
+    <string name="composer_retry">Retry this same message</string>
+    <string name="composer_not_observed">The message is not yet observable. Its delivery remains unconfirmed.</string>
+    <string name="composer_request_failed">The request failed. Your draft and pending message are retained.</string>
+    <string name="composer_saving">Saving draft on this device…</string>
+    <string name="composer_accepted">Message accepted; waiting for processing.</string>
+    <string name="composer_consumed">Input was picked up; current execution state is unknown.</string>
+    <string name="composer_revoked">Message revoked</string>
 </resources>

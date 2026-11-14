@@ -5,19 +5,29 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.SignedTransferClient
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.ChatArchive
+import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.InitializePreferencesRequestLocale
+import ai.okou.android.api.generated.InputStatusVariant1
+import ai.okou.android.api.generated.InputStatusVariant2
+import ai.okou.android.api.generated.InputStatusVariant2Status
+import ai.okou.android.api.generated.InputStatusVariant3
+import ai.okou.android.api.generated.InputStatusVariant3Status
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectArchive
+import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ChatSnapshotUnavailable
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.HistoryPage
+import ai.okou.android.chat.InputObservation
+import ai.okou.android.chat.TextDisposition
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
 import ai.okou.android.instructions.PersonalInstructionsService
@@ -48,7 +58,8 @@ data class WorkspaceIdentity(
 
 data class WorkspaceBootstrap(val organization: Organization, val preferences: UserPreferences)
 
-interface WorkspaceSession : Closeable, ChatListService, PersonalInstructionsService {
+interface WorkspaceSession :
+    Closeable, ChatListService, PersonalInstructionsService, ChatComposerService {
     suspend fun bootstrap(): WorkspaceBootstrap
 
     suspend fun preferences(): UserPreferences
@@ -80,6 +91,51 @@ class CanonicalWorkspaceSession(
     override suspend fun indicators() = api.indicators()
 
     override suspend fun agents() = api.agents()
+
+    override suspend fun newChatAgent(): String? {
+        if (api.featureSwitches().effectiveSwitches["singleAgent"] != true) return null
+        val status = api.onboardingStatus()
+        return status.defaultAgentId?.takeIf {
+            status.hasOrg && status.hasDefaultAgent && status.onboardingComplete
+        }
+    }
+
+    override suspend fun createThread(request: CreateThreadRequest) = api.createThread(request)
+
+    override suspend fun sendInput(request: SendRequestVariant1) = api.sendInput(request)
+
+    override suspend fun observeInput(threadId: String, eventId: String): InputObservation {
+        val observed = api.inputStatus(threadId, eventId)
+        val result =
+            when (observed) {
+                is InputStatusVariant1 ->
+                    InputObservation(observed.threadId, observed.eventId, TextDisposition.Consumed)
+                is InputStatusVariant2 ->
+                    InputObservation(
+                        observed.threadId,
+                        observed.eventId,
+                        when (observed.status) {
+                            InputStatusVariant2Status.COMPLETED -> TextDisposition.Completed
+                            InputStatusVariant2Status.FAILED -> TextDisposition.Failed
+                            InputStatusVariant2Status.CANCELLED -> TextDisposition.Cancelled
+                        },
+                    )
+                is InputStatusVariant3 ->
+                    InputObservation(
+                        observed.threadId,
+                        observed.eventId,
+                        when (observed.status) {
+                            InputStatusVariant3Status.QUEUED -> TextDisposition.Queued
+                            InputStatusVariant3Status.REJECTED -> TextDisposition.Rejected
+                            InputStatusVariant3Status.REVOKED -> TextDisposition.Revoked
+                            InputStatusVariant3Status.UNAVAILABLE -> null
+                        },
+                    )
+            }
+        if (result.threadId != threadId || result.eventId != eventId)
+            throw ApiFailure.IncompatibleResponse()
+        return result
+    }
 
     override suspend fun projectSnapshot() = api.projectSnapshot()
 

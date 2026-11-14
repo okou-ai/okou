@@ -77,4 +77,20 @@
     <string name="instructions_reload">載入最新版本並捨棄變更</string>
     <string name="instructions_discard">捨棄變更</string>
     <string name="instructions_retry_save">重試同一次儲存</string>
+    <string name="composer_new">新對話</string>
+    <string name="composer_new_project">在此專案中新建對話</string>
+    <string name="composer_message">訊息</string>
+    <string name="composer_send">傳送</string>
+    <string name="composer_local_failed">草稿變更未能儲存到此裝置。</string>
+    <string name="composer_target_loading">正在載入對話可用狀態…</string>
+    <string name="composer_target_unavailable">此帳戶目前無法新建對話。</string>
+    <string name="composer_unconfirmed">訊息是否送達尚未確認。</string>
+    <string name="composer_check">查詢傳送結果</string>
+    <string name="composer_retry">重試傳送同一則訊息</string>
+    <string name="composer_not_observed">暫時查不到此訊息，傳送結果仍未確認。</string>
+    <string name="composer_request_failed">請求失敗，草稿和待確認訊息已保留。</string>
+    <string name="composer_saving">正在將草稿儲存到此裝置…</string>
+    <string name="composer_accepted">訊息已接受，等待處理。</string>
+    <string name="composer_consumed">訊息已被取用，目前執行狀態未知。</string>
+    <string name="composer_revoked">訊息已撤回</string>
 </resources>

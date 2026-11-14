@@ -53,8 +53,8 @@ The workspace presentation owner retains chat-list state across navigation and
 configuration changes. Switching account/workspace or signing out retires that owner.
 Authentication and canonical preferences/member-memory bootstrap use production
 by default; see [native authentication](AUTHENTICATION.md)
-for public staging overrides, provider setup and verification boundaries. Chat
-Send, push registration and store publication remain later delivery. Debug uses
+for public staging overrides, provider setup and verification boundaries.
+Push registration and store publication remain later delivery. Debug uses
 `ai.okou.android.debug`; the application namespace is `ai.okou.android`.
 
 Confirmed chat and Project navigation follows Web's snapshot/event-log model using an
@@ -200,7 +200,57 @@ independent Kotlin/JVM test entry could compile those same sources without an
 SDK, without splitting production modules. The command above uses the app's
 standard Android build configuration; the project maintains one test entry.
 
-Other focused commands, from `android/`:
+Text composer suites exercise the real private journal, shared controllers, frozen
+submission identity, duplicate taps, newer edits, disconnected acceptance and
+explicit original-ID recovery. `ChatComposerApiTest` uses the installed generated
+201 methods and bounded input-status read; `ChatComposerRootTest` holds default
+availability and write responses through the actual native route.
+`NativeTextSendTest` covers new/existing sends, IME/Back and Activity recreation
+on API 35. Its synthetic HTTP content and private temporary journal do not use
+production credentials or establish physical/OEM keyboard coverage.
+
+Meaningful drafts and pending text operations live in `noBackupFilesDir/chat-input`,
+scoped by origin/user/workspace, separately from the rebuildable confirmed cache.
+Native selection/composition stay with the text control. Accepted local writes
+outlive presentation controllers; dispatch requires a read-back durable copy of
+the same frozen operation and current authorization. Missing input observations
+do not prove rollback. Recovery reuses the original IDs and payload only after
+an explicit action. Draft durability is device-local, without cross-client sync.
+Unacknowledged new-chat creation results remain with their original draft target
+until native navigation opens the authoritative thread. Parallel targets cannot
+replace each other's handoff; late text before that handoff follows its created
+thread instead of becoming an unrelated new-chat draft.
+
+### Saved-state policy
+
+`state/SavedUiState.kt` owns first-party Bundle metadata and both journal-backed
+editor adapters. Text stays in its existing private journal; native selection is
+restored only after that body is available. Raw saveable APIs and provider writes
+outside this boundary fail `scripts/check-saved-state.py`, including aliases and
+qualified references. This source-policy check does not infer arbitrary Kotlin
+data flow or inspect dependencies' internal providers.
+
+`MainActivity` checks the entire app-owned saved Bundle after its superclass
+collects Jetpack providers on every Debug save. The shared budget is **less than
+50,000 bytes**, following Android's below-50-KB guidance, with room below the
+process-shared Binder buffer. This is not a platform success guarantee or a
+document-size limit. Release performs no additional serialization; excess Debug
+state reports byte counts and never discards data.
+
+Presentation restoration retains the **32 most recently opened conversations'**
+native scroll states and the **64 most recently collapsed Projects**. Reopening
+a retained target refreshes its recency. Older scroll/expansion choices return
+to their native defaults; draft text, pending sends and confirmed history are
+independent and are not evicted by this policy.
+
+`SavedStateBudgetTest` covers provider collection/restoration on host APIs 24 and 35. `SavedUiStateTest` covers delayed journal hydration, recent/evicted scroll
+restoration and thousands of Project presentation choices. Existing long-text
+Activity recreation cases run the same Debug budget check; there is no separate
+64-KiB assertion per feature.
+
+### Other focused commands
+
+From `android/`:
 
 ```bash
 ./gradlew spotlessApply
@@ -537,8 +587,10 @@ service; direct arbitrary HTTP in features is outside the transport contract.
 `ApiClient` binds an HTTPS origin, installed `BuildConfig.VERSION_NAME`, session
 identity and a suspending `WorkspaceTokenProvider` resolved for each request.
 The provider may reuse an unexpired token and refresh it when needed. Its ordinary methods
-cover workspace/member preferences, native chat-list and history reads, and visible
-read confirmation. The authentication
+cover workspace/member preferences, native chat-list/history reads, visible read
+confirmation, text creation/sending and original-input status observations.
+Body-bearing success codes are checked against the consumed canonical contract
+(201 for create/send, 200 for reads). The authentication
 owner captures the right origin/user/workspace, cancels retired consumers and
 closes their client; token renewal itself does not replace durable identity.
 Construction starts no token resolution or network work. The authenticated root

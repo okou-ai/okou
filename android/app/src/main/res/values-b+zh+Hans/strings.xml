@@ -77,4 +77,20 @@
     <string name="instructions_reload">加载最新版本并放弃更改</string>
     <string name="instructions_discard">放弃更改</string>
     <string name="instructions_retry_save">重试同一次保存</string>
+    <string name="composer_new">新对话</string>
+    <string name="composer_new_project">在此项目中新建对话</string>
+    <string name="composer_message">消息</string>
+    <string name="composer_send">发送</string>
+    <string name="composer_local_failed">草稿更改未能保存到此设备。</string>
+    <string name="composer_target_loading">正在加载对话可用状态…</string>
+    <string name="composer_target_unavailable">此账户目前无法新建对话。</string>
+    <string name="composer_unconfirmed">消息是否送达尚未确认。</string>
+    <string name="composer_check">查询发送结果</string>
+    <string name="composer_retry">重试发送同一条消息</string>
+    <string name="composer_not_observed">暂时查不到此消息，发送结果仍未确认。</string>
+    <string name="composer_request_failed">请求失败，草稿和待确认消息已保留。</string>
+    <string name="composer_saving">正在将草稿保存到此设备…</string>
+    <string name="composer_accepted">消息已接受，等待处理。</string>
+    <string name="composer_consumed">消息已被取用，当前执行状态未知。</string>
+    <string name="composer_revoked">消息已撤回</string>
 </resources>

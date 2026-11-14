@@ -2,6 +2,10 @@ package ai.okou.android.chat
 
 import ai.okou.android.R
 import ai.okou.android.api.generated.IndicatorsThreadsValue
+import ai.okou.android.state.rememberCollapsedProjects
+import ai.okou.android.state.rememberConversationUiState
+import ai.okou.android.state.rememberUiFlag
+import ai.okou.android.state.rememberUiTargetId
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,11 +33,8 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,13 +51,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 
 @Composable
-fun ChatListRoute(model: ChatListModel) {
+fun ChatListRoute(model: ChatListModel, composer: ChatComposerModel) {
     val state by model.uiState.collectAsStateWithLifecycle()
-    var selected by rememberSaveable { mutableStateOf<String?>(null) }
-    var collapsed by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    val inputState by composer.uiState.collectAsStateWithLifecycle()
+    var selected by rememberUiTargetId()
+    var composing by rememberUiFlag()
+    var newProject by rememberUiTargetId()
+    val collapsed = rememberCollapsedProjects()
     val listPosition = rememberLazyListState()
     val drawerPosition = rememberLazyListState()
-    val conversations = rememberSaveableStateHolder()
+    val conversations = rememberConversationUiState()
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val drawerVisible = selected != null && (drawer.isOpen || drawer.isAnimationRunning)
     val scope = rememberCoroutineScope()
@@ -70,16 +74,32 @@ fun ChatListRoute(model: ChatListModel) {
             selected = null
     }
     val open: (ConfirmedChat) -> Unit = { thread ->
+        conversations.open(thread.id)
+        composing = false
         selected = thread.id
+        composer.acknowledge(thread.id)
         model.history.open(thread)
         scope.launch { drawer.close() }
     }
-    val toggle: (String) -> Unit = { id ->
-        collapsed = if (id in collapsed) collapsed - id else collapsed + id
+    val toggle: (String) -> Unit = collapsed::toggle
+    val newChat: (String?) -> Unit = { projectId ->
+        composer.beginNew(projectId)
+        selected = null
+        newProject = projectId
+        composing = true
+        scope.launch { drawer.close() }
     }
-    BackHandler(selected != null) {
+    val createdThread = inputState.entry(ComposerTarget(projectId = newProject)).createdThreadId
+    LaunchedEffect(composing, newProject, createdThread, state.threads) {
+        if (composing && createdThread != null)
+            state.threads.firstOrNull { it.id == createdThread }?.let(open)
+    }
+    BackHandler(selected != null || composing) {
         if (drawer.isOpen || drawer.isAnimationRunning) scope.launch { drawer.close() }
-        else selected = null
+        else {
+            selected = null
+            composing = false
+        }
     }
     ModalNavigationDrawer(
         drawerState = drawer,
@@ -98,14 +118,30 @@ fun ChatListRoute(model: ChatListModel) {
                     model::refreshIndicators,
                     model::selectFilter,
                     open,
-                    collapsed,
+                    collapsed.values,
                     toggle,
                     drawerPosition,
+                    newChat,
                 )
             }
         },
     ) {
-        if (selected == null)
+        if (composing)
+            Column(Modifier.fillMaxSize()) {
+                ChatAction(R.string.back, { composing = false })
+                Text(
+                    state.projects.firstOrNull { it.id == newProject }?.name
+                        ?: stringResource(R.string.composer_new),
+                    Modifier.padding(16.dp),
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                Box(Modifier.weight(1f))
+                if (createdThread != null) {
+                    Text(stringResource(R.string.composer_accepted), Modifier.padding(16.dp))
+                    ChatAction(R.string.chat_refresh, model::refreshList)
+                } else ChatComposerField(composer, ComposerTarget(projectId = newProject))
+            }
+        else if (selected == null)
             ChatListScreen(
                 state,
                 model::refresh,
@@ -114,9 +150,10 @@ fun ChatListRoute(model: ChatListModel) {
                 model::refreshIndicators,
                 model::selectFilter,
                 open,
-                collapsed,
+                collapsed.values,
                 toggle,
                 listPosition,
+                newChat,
             )
         else
             Column(
@@ -127,7 +164,7 @@ fun ChatListRoute(model: ChatListModel) {
                     ChatAction(R.string.back, { selected = null })
                     ChatAction(R.string.history_sidebar, { scope.launch { drawer.open() } })
                 }
-                conversations.SaveableStateProvider(checkNotNull(selected)) {
+                conversations.Content(checkNotNull(selected)) {
                     ConversationRoute(
                         model.history,
                         checkNotNull(selected),
@@ -136,6 +173,17 @@ fun ChatListRoute(model: ChatListModel) {
                         visible = !drawer.isOpen && !drawer.isAnimationRunning,
                     )
                 }
+                state.threads
+                    .firstOrNull { it.id == selected }
+                    ?.let { thread ->
+                        ChatComposerField(
+                            composer,
+                            ComposerTarget(thread.id, thread.agentId, thread.projectId),
+                            Modifier.then(
+                                if (drawerVisible) Modifier.clearAndSetSemantics {} else Modifier
+                            ),
+                        )
+                    }
             }
     }
 }
@@ -152,6 +200,7 @@ private fun ChatListScreen(
     collapsed: List<String>,
     toggleProject: (String) -> Unit,
     listState: LazyListState,
+    newChat: (String?) -> Unit,
 ) {
     val groups =
         remember(
@@ -194,6 +243,7 @@ private fun ChatListScreen(
                     modifier = Modifier.semantics { heading() },
                 )
                 ChatAction(R.string.chat_refresh, refresh, state.listPhase != ChatReadPhase.Loading)
+                ChatAction(R.string.composer_new, { newChat(null) })
             }
             item {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -276,6 +326,8 @@ private fun ChatListScreen(
                                 )
                             if (group.threads.isEmpty())
                                 Text(stringResource(R.string.chat_project_empty))
+                            if (project != null)
+                                ChatAction(R.string.composer_new_project, { newChat(project.id) })
                         }
                         if (group.project?.id !in collapsed)
                             items(group.threads, key = { it.id }) { thread ->

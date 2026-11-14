@@ -9,6 +9,7 @@ import ai.okou.android.api.generated.CanonicalApi
 import ai.okou.android.api.generated.CanonicalZero
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
+import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.HistoryRowsQueryVariant1
 import ai.okou.android.api.generated.HistoryRowsQueryVariant2
@@ -18,6 +19,7 @@ import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
+import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
@@ -155,6 +157,17 @@ class ApiClient(
 
     suspend fun agents(): Agents = execute { api.agents(it) }
 
+    suspend fun createThread(body: CreateThreadRequest) =
+        execute(201) { api.createThread(it, body) }
+
+    suspend fun sendInput(body: SendRequestVariant1) = execute(201) { api.sendInput(it, body) }
+
+    suspend fun inputStatus(threadId: String, eventId: String) = execute {
+        api.inputStatus(it, threadId, eventId)
+    }
+
+    suspend fun onboardingStatus() = execute { api.onboardingStatus(it) }
+
     suspend fun projectSnapshot(): ProjectSnapshot = execute { api.projectSnapshot(it) }
 
     suspend fun projectEvents(since: Long): ProjectEvents = execute { api.projectEvents(it, since) }
@@ -191,7 +204,10 @@ class ApiClient(
         required.value?.let { throw ApiFailure.UpdateRequired(it) }
     }
 
-    private suspend fun <T> execute(request: suspend (String) -> Response<T>): T =
+    private suspend fun <T> execute(
+        success: Int = 200,
+        request: suspend (String) -> Response<T>,
+    ): T =
         withContext(dispatcher) {
             checkAccess()
             val token =
@@ -202,6 +218,7 @@ class ApiClient(
                 val response = request("Bearer $token")
                 currentCoroutineContext().ensureActive()
                 checkAccess()
+                if (response.code() != success) throw ApiFailure.IncompatibleResponse()
                 response.body() ?: throw ApiFailure.IncompatibleResponse()
             } catch (_: SerializationException) {
                 // Serializer diagnostics can contain response values or input snippets.

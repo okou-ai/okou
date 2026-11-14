@@ -77,4 +77,20 @@
     <string name="instructions_reload">Muat versi terbaru dan buang perubahan</string>
     <string name="instructions_discard">Buang perubahan</string>
     <string name="instructions_retry_save">Coba simpan yang sama lagi</string>
+    <string name="composer_new">Chat baru</string>
+    <string name="composer_new_project">Chat baru di Proyek ini</string>
+    <string name="composer_message">Pesan</string>
+    <string name="composer_send">Kirim</string>
+    <string name="composer_local_failed">Perubahan draf tidak dapat disimpan di perangkat ini.</string>
+    <string name="composer_target_loading">Memuat ketersediaan chat…</string>
+    <string name="composer_target_unavailable">Chat baru tidak tersedia untuk akun ini.</string>
+    <string name="composer_unconfirmed">Pengiriman pesan belum terkonfirmasi.</string>
+    <string name="composer_check">Periksa pengiriman</string>
+    <string name="composer_retry">Coba lagi pesan yang sama</string>
+    <string name="composer_not_observed">Pesan belum terlihat. Pengirimannya masih belum terkonfirmasi.</string>
+    <string name="composer_request_failed">Permintaan gagal. Draf dan pesan tertunda tetap disimpan.</string>
+    <string name="composer_saving">Menyimpan draf di perangkat ini…</string>
+    <string name="composer_accepted">Pesan diterima; menunggu pemrosesan.</string>
+    <string name="composer_consumed">Input telah diambil; status eksekusi saat ini tidak diketahui.</string>
+    <string name="composer_revoked">Pesan ditarik kembali</string>
 </resources>

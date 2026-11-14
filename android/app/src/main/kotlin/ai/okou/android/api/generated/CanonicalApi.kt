@@ -17,6 +17,30 @@ import retrofit2.http.Query
 import retrofit2.http.QueryMap
 
 internal interface CanonicalApi {
+    @POST("/api/chat-threads")
+    suspend fun `createThread`(
+        @Header("Authorization") token: String,
+        @Body body: CreateThreadRequest,
+    ): Response<CreatedThread>
+
+    @POST("/api/chat/events")
+    suspend fun `sendInput`(
+        @Header("Authorization") token: String,
+        @Body body: SendRequest,
+    ): Response<AcceptedInput>
+
+    @GET("/api/chat-threads/{threadId}/inputs/{eventId}/status")
+    suspend fun `inputStatus`(
+        @Header("Authorization") token: String,
+        @Path("threadId") `pathThreadId`: String,
+        @Path("eventId") `pathEventId`: String,
+    ): Response<InputStatus>
+
+    @GET("/api/onboarding/status")
+    suspend fun `onboardingStatus`(
+        @Header("Authorization") token: String
+    ): Response<OnboardingStatus>
+
     @GET("/api/instructions")
     suspend fun `personalInstructions`(
         @Header("Authorization") token: String

@@ -77,4 +77,20 @@
     <string name="instructions_reload">最新版を読み込み変更を破棄</string>
     <string name="instructions_discard">変更を破棄</string>
     <string name="instructions_retry_save">同じ保存を再試行</string>
+    <string name="composer_new">新しいチャット</string>
+    <string name="composer_new_project">このプロジェクトで新しいチャット</string>
+    <string name="composer_message">メッセージ</string>
+    <string name="composer_send">送信</string>
+    <string name="composer_local_failed">下書きの変更をこの端末に保存できませんでした。</string>
+    <string name="composer_target_loading">チャットの利用状況を確認中…</string>
+    <string name="composer_target_unavailable">このアカウントでは新しいチャットを利用できません。</string>
+    <string name="composer_unconfirmed">メッセージの送信結果は未確認です。</string>
+    <string name="composer_check">送信結果を確認</string>
+    <string name="composer_retry">同じメッセージを再送</string>
+    <string name="composer_not_observed">まだメッセージを確認できません。送信結果は未確定です。</string>
+    <string name="composer_request_failed">リクエストに失敗しました。下書きと未確認のメッセージは保持されています。</string>
+    <string name="composer_saving">この端末に下書きを保存中…</string>
+    <string name="composer_accepted">メッセージを受け付けました。処理を待っています。</string>
+    <string name="composer_consumed">入力は取得されました。現在の実行状況は不明です。</string>
+    <string name="composer_revoked">メッセージは取り消されました</string>
 </resources>
