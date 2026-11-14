@@ -119,7 +119,13 @@ function parseAddress(
 
 function normalizeHost(url: URL): string | null {
   // FixupHost removes leading dots and retains at most one trailing dot.
-  const host = url.hostname.replace(/^\.+/, "").replace(/\.{2,}$/, ".");
+  const hostname = url.hostname;
+  const host = hostname.replace(/\.+/g, (dots, offset: number) => {
+    if (offset === 0) {
+      return "";
+    }
+    return offset + dots.length === hostname.length ? "." : dots;
+  });
   if (
     !host ||
     host.includes("..") ||
@@ -205,8 +211,12 @@ function completedURL(candidate: string): URL | null {
   const port = /:\d*$/.exec(hostPort);
   const original = port ? hostPort.slice(0, port.index) : hostPort;
   const domain = original.replace(
-    /^[.\u3002\uff0e\uff61]+|[.\u3002\uff0e\uff61]+$/gu,
-    "",
+    /[.\u3002\uff0e\uff61]+/gu,
+    (dots, offset: number) => {
+      return offset === 0 || offset + dots.length === original.length
+        ? ""
+        : dots;
+    },
   );
   if (!domain) {
     return null;
