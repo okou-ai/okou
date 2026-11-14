@@ -233,7 +233,7 @@ test("Google search keeps Unicode and reserved characters in a single query para
   });
 });
 
-// Representative deterministic cases from Chromium's AutocompleteInput/URLFixer tests.
+// Supported URL and search forms, including heuristics informed by Chromium examples.
 test.each([
   ["site:example.com", "https://www.google.com/search?q=site%3Aexample.com"],
   [
@@ -267,6 +267,7 @@ test.each([
   ],
   ["intranet/path", "https://www.google.com/search?q=intranet%2Fpath"],
   ["intranet/path?q=1", "http://intranet/path?q=1"],
+  ["intranet/report\u2028part?q=1", "http://intranet/report%E2%80%A8part?q=1"],
   ["foo:80", "https://www.google.com/search?q=foo%3A80"],
   ["foo:81", "http://foo:81/"],
   ["foo:80/path", "http://foo/path"],
@@ -305,7 +306,7 @@ test.each([
     "例子.中国/季度报告",
     "http://xn--fsqu00a.xn--fiqs8s/%E5%AD%A3%E5%BA%A6%E6%8A%A5%E5%91%8A",
   ],
-])("The address bar resolves Chromium input %s", async (text, expected) => {
+])("The address bar resolves input %s", async (text, expected) => {
   const { address } = await openViewer();
   await fill(address, text);
   await userEvent.keyboard("{Enter}");
@@ -316,6 +317,10 @@ test.each([
 
 test.each([
   ["acmeportal", "http://www.acmeportal.com/"],
+  [
+    "acmeportal/report\u2029part?q=1",
+    "http://www.acmeportal.com/report%E2%80%A9part?q=1",
+  ],
   ["www", "http://www.com/"],
   [
     "www.acmeportal/report?q=a#summary",
@@ -346,17 +351,14 @@ test.each([
     "https://www.google.com/search?q=filetype%3Apdf+annual+report",
   ],
   ["?example.com", "https://www.google.com/search?q=example.com"],
-])(
-  "Ctrl+Enter completes eligible Chromium host input %s",
-  async (text, expected) => {
-    const { address } = await openViewer();
-    await fill(address, text);
-    await userEvent.keyboard("{Control>}{Enter}{/Control}");
-    await waitFor(() => {
-      expect(address).toHaveValue(expected);
-    });
-  },
-);
+])("Ctrl+Enter completes eligible host input %s", async (text, expected) => {
+  const { address } = await openViewer();
+  await fill(address, text);
+  await userEvent.keyboard("{Control>}{Enter}{/Control}");
+  await waitFor(() => {
+    expect(address).toHaveValue(expected);
+  });
+});
 
 test.each([
   [

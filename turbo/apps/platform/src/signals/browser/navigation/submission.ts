@@ -102,7 +102,7 @@ function parseAddress(
   const candidate = scheme
     ? value
     : "http:" + (value.startsWith("//") ? value : "//" + value);
-  const network = /^(https?|wss?):[/\\]*([^/\\?#]*)(.*)$/i.exec(candidate);
+  const network = /^(https?|wss?):[/\\]*([^/\\?#]*)(.*)$/is.exec(candidate);
   const authority = network ? network[2]! : authorityHint;
   const path = network ? network[3]!.split(/[?#]/, 1)[0]! : "";
   let url: URL | null;
