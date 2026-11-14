@@ -611,7 +611,7 @@ jobs:
               - type: section
                 text:
                   type: mrkdwn
-                  text: "*Android* ✅ APK published\n📦 Version: `${{ needs.release-please.outputs.android_version }}`\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.android_tag }}|View Release>\n📲 <${{ github.server_url }}/${{ github.repository }}/releases/download/${{ needs.release-please.outputs.android_tag }}/okou-android-${{ needs.release-please.outputs.android_version }}.apk|Download APK>"
+                  text: "*Android* ✅ APK published\n📦 Version: `${{ needs.release-please.outputs.android_version }}`\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.release-please.outputs.android_tag }}|View Release>"
 
       - name: Notify Slack - Failure
         if: ${{ failure() && steps.slack-start.outputs.ts }}
