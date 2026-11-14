@@ -9,7 +9,7 @@ mod artifacts;
 use std::ffi::OsString;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::os::fd::{AsFd, AsRawFd};
+use std::os::fd::AsFd;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::time::Duration;
@@ -497,18 +497,18 @@ fn validate_trusted_setup_owner(stat: &libc::stat, path: &Path, context: &str) -
     Ok(())
 }
 
-fn chmod_fd<Fd: AsRawFd>(file: &Fd, path: &Path, mode: u32, context: &str) -> RunnerResult<()> {
-    // SAFETY: `fchmod` operates on the live fd and does not affect Rust aliasing.
-    let result = unsafe { libc::fchmod(file.as_raw_fd(), mode as libc::mode_t) };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(RunnerError::Internal(format!(
+fn chmod_fd<Fd: AsFd>(file: &Fd, path: &Path, mode: u32, context: &str) -> RunnerResult<()> {
+    nix::sys::stat::fchmod(
+        file,
+        nix::sys::stat::Mode::from_bits_truncate(mode as libc::mode_t),
+    )
+    .map_err(|error| {
+        RunnerError::Internal(format!(
             "chmod {context} {}: {}",
             path.display(),
-            std::io::Error::last_os_error()
-        )))
-    }
+            std::io::Error::from(error)
+        ))
+    })
 }
 
 fn setup_file_open_flags() -> i32 {
