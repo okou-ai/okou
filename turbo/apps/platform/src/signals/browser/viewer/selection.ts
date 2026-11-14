@@ -18,6 +18,7 @@ export interface AttachedSelection {
   readonly owner: SelectionOwner;
   readonly client: CdpClient;
   readonly frames: CdpClient;
+  readonly maxFramesInFlight$: Computed<number>;
   readonly sessionId: string;
   readonly frameSessionId: string;
   readonly settings: CaptureSettings;

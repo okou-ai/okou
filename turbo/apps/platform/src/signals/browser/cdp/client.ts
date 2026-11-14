@@ -145,6 +145,7 @@ type ConnectionRole = "control" | "frames";
 
 function isReadMethod(method: string): boolean {
   switch (method) {
+    case "Browser.getVersion":
     case "Target.getTargets":
     case "Browser.getWindowForTarget":
     case "Page.getFrameTree":

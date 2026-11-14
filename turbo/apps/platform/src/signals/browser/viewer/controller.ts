@@ -90,6 +90,7 @@ import {
   type CaptureSettings,
 } from "./capture.ts";
 import { createScreencast } from "./screencast.ts";
+import { createFrameWindow } from "./frame-window.ts";
 import {
   createPresentationScope,
   createSelectedPresentation,
@@ -356,6 +357,7 @@ function createSelectedSession(
     {
       client: attached.frames,
       sessionId: attached.frameSessionId,
+      maxFramesInFlight$: attached.maxFramesInFlight$,
       sink: frameLease.sink,
       alive$,
       admitted$: active$,
@@ -632,6 +634,7 @@ interface ControllerLinks {
   readonly followActiveTarget$: Command<Promise<void>, [string, AbortSignal]>;
   readonly disconnected$: Command<void, [CdpFault, CdpClient]>;
   readonly createFrames$: Command<CdpClient, []>;
+  readonly sampleFrameLatency$: Command<void, []>;
   readonly ensureFrames$: Command<Promise<CdpClient>, [AbortSignal]>;
   readonly start$: Command<Promise<void>, [AbortSignal]>;
   readonly cancelCreation$: Command<void, [object]>;
@@ -826,6 +829,10 @@ function createControllerState(
   const settings$ = computed((get) => {
     return captureSettings(get(model.capture$), get(captureSize$));
   });
+  const frameWindow$ = computed((get) => {
+    const frames = get(atoms.framesState$);
+    return frames ? createFrameWindow(frames) : null;
+  });
   const capturePending$ = computed((get) => {
     const started = get(captureStartedState$);
     return !started || !sameCaptureSettings(started, get(settings$));
@@ -898,6 +905,7 @@ function createControllerState(
     available$,
     crashed$,
     settings$,
+    frameWindow$,
     capturePending$,
     wake$,
     waitEvent$,
@@ -2188,6 +2196,7 @@ type AttachmentContext = ControllerContext<
   | "available$"
   | "clientState$"
   | "directory$"
+  | "frameWindow$"
   | "nativeHost"
   | "selectedOwner$"
   | "selection"
@@ -2224,6 +2233,7 @@ function createAttachmentGraph(
       const client = get(clientState$)!;
       const frames = await set(get(links$).ensureFrames$, signal);
       set(assertCurrent$, owner, signal);
+      const frameWindow = get(context.frameWindow$)!;
       const directory = get(directory$)!;
       await set(activate$, owner, signal);
       let sessionId: string | null = null;
@@ -2307,6 +2317,7 @@ function createAttachmentGraph(
         owner,
         client,
         frames,
+        maxFramesInFlight$: frameWindow.maxFramesInFlight$,
         sessionId,
         frameSessionId,
         settings: get(settings$),
@@ -3428,11 +3439,26 @@ function createEventsGraph(
 
 function createFramesConnectionGraph(
   context: ControllerContext<
-    "assertAvailable$" | "clientState$" | "connection" | "framesState$"
+    | "assertAvailable$"
+    | "clientState$"
+    | "connection"
+    | "framesState$"
+    | "frameWindow$"
   >,
   links$: ControllerDependencies<"disconnected$" | "event$">,
-): Pick<ControllerLinks, "createFrames$" | "ensureFrames$"> {
+): Pick<
+  ControllerLinks,
+  "createFrames$" | "ensureFrames$" | "sampleFrameLatency$"
+> {
   const { connection, framesState$, clientState$, assertAvailable$ } = context;
+  const sampleFrameLatency$ = command(({ get, set }) => {
+    const window = get(context.frameWindow$)!;
+    detachBrowser(
+      set(window.measure$, window.client.signal),
+      Reason.Daemon,
+      "browser frame latency sampling",
+    );
+  });
   const createFrames$ = command(({ get, set }): CdpClient => {
     const lifetime = get(clientState$)!.signal;
     const frames = createCdpClient(
@@ -3451,6 +3477,7 @@ function createFramesConnectionGraph(
     frames.onDisconnected((fault) => {
       set(get(links$).disconnected$, fault, frames);
     });
+    set(sampleFrameLatency$);
     return frames;
   });
   const ensureFrames$ = command(
@@ -3479,7 +3506,7 @@ function createFramesConnectionGraph(
       return frames;
     },
   );
-  return { createFrames$, ensureFrames$ };
+  return { createFrames$, ensureFrames$, sampleFrameLatency$ };
 }
 
 /** Temporary admission loss parks startup; actual failure or owner end rejects. */
@@ -3545,6 +3572,7 @@ function createConnectionBootstrap(
   >,
   links$: ControllerDependencies<
     | "createFrames$"
+    | "sampleFrameLatency$"
     | "disconnected$"
     | "discovery$"
     | "displayGraph$"
@@ -3594,6 +3622,8 @@ function createConnectionBootstrap(
     });
     if (transport === "split") {
       set(get(links$).createFrames$);
+    } else {
+      set(get(links$).sampleFrameLatency$);
     }
     await Promise.all([client.opened, get(framesState$)!.opened]);
     signal.throwIfAborted();
@@ -3672,6 +3702,7 @@ function createConnectionGraph(
   >,
   links$: ControllerDependencies<
     | "createFrames$"
+    | "sampleFrameLatency$"
     | "disconnected$"
     | "discovery$"
     | "displayGraph$"
