@@ -4,6 +4,8 @@ import {
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
+import { projectsContract } from "@okouai/api-contracts/contracts/projects";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -20,6 +22,8 @@ import {
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
+import { pathname } from "../../../signals/location.ts";
+import { buttonByText } from "./sidebar-test-helpers.tsx";
 
 const context = testContext();
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
@@ -29,7 +33,7 @@ function threadId(index: number): string {
   return `b3200000-0000-4000-a000-${String(index).padStart(12, "0")}`;
 }
 
-function mockThreads(count: number): void {
+function mockThreads(count: number, projectId?: string): void {
   context.mocks.data.agents([
     {
       agentId: AGENT_ID,
@@ -61,6 +65,7 @@ function mockThreads(count: number): void {
             selectedModel: null,
             serviceTier: null,
             computerUseHostId: null,
+            ...(projectId && index < 2 ? { projectId } : {}),
           };
         }),
         latestEventId: null,
@@ -203,6 +208,68 @@ test("Keyboard navigation reveals an adjacent conversation outside the virtual w
     expect(viewport.scrollTop).toBe(ROW_HEIGHT);
   });
   expect(viewport).toHaveAttribute("tabindex", "0");
+});
+
+test("Collapse and expand a Project inside a scrolled virtual window", async () => {
+  const projects = Array.from({ length: 17 }, (_, index) => {
+    return {
+      id: `30000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+      name: `Project ${String(index + 1).padStart(2, "0")}`,
+      createdAt: "2026-03-10T00:00:00Z",
+      updatedAt: "2026-03-10T00:00:00Z",
+    };
+  });
+  mockThreads(32, projects[16].id);
+  context.mocks.api(projectsContract.snapshot, ({ respond }) => {
+    return respond(200, {
+      projects,
+      latestEventId: null,
+      latestSeqId: 1,
+    });
+  });
+  context.mocks.api(projectsContract.events, ({ respond }) => {
+    return respond(200, { events: [], hasMore: false });
+  });
+  mockViewportHeight(() => {
+    return 5 * ROW_HEIGHT;
+  }, projects.length + 32);
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  const sidebar = await screen.findByTestId("chat-list-column");
+  const viewport = await within(sidebar).findByTestId("sidebar-scroll-area");
+  await within(viewport).findByText("Project 01");
+
+  fireEvent.scroll(viewport, { target: { scrollTop: 16 * ROW_HEIGHT } });
+  const toggle = await within(viewport).findByLabelText(
+    "Show or hide chats in Project 17",
+  );
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  expect(within(viewport).queryByText("Project 01")).not.toBeInTheDocument();
+  click(toggle);
+  await within(viewport).findByText("History 1");
+  expect(within(viewport).getByText("History 2")).toBeInTheDocument();
+  expect(within(viewport).getByText("History 3")).toBeInTheDocument();
+
+  click(within(viewport).getByLabelText("Show or hide chats in Project 17"));
+  await waitFor(() => {
+    expect(
+      within(viewport).getByLabelText("Show or hide chats in Project 17"),
+    ).toHaveAttribute("aria-expanded", "false");
+  });
+  expect(within(viewport).queryByText("History 1")).not.toBeInTheDocument();
+  expect(within(viewport).queryByText("History 2")).not.toBeInTheDocument();
+  expect(within(viewport).getByText("History 3")).toBeInTheDocument();
+
+  click(within(viewport).getByLabelText("Show or hide chats in Project 17"));
+  const member = await within(viewport).findByText("History 1");
+  click(member);
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${threadId(0)}`);
+  });
+  await screen.findByRole("textbox", { name: "Message" });
 });
 
 test("Resize and navigate a loaded virtual viewport", async () => {
@@ -512,6 +579,55 @@ test("Measure the mobile chat list only after the main stylesheet bounds it", as
       screen.getAllByTestId("sidebar-chat-thread-virtual-row"),
     ).toHaveLength(13);
   });
+});
+
+test("Show all chats from the tail of a scrolled mobile unread list", async () => {
+  const unreadIndexes = Array.from({ length: 24 }, (_, index) => {
+    return index + 8;
+  });
+  context.mocks.browser.matchMedia(false);
+  mockThreads(40);
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    return respond(200, {
+      agents: { [AGENT_ID]: "unread" },
+      threads: Object.fromEntries(
+        unreadIndexes.map((index) => {
+          return [threadId(index), "unread" as const];
+        }),
+      ),
+      unreadAt: {},
+    });
+  });
+  mockPwaViewportHeight(() => {
+    return 5 * PWA_ROW_HEIGHT;
+  }, unreadIndexes.length + 1);
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  const list = await screen.findByRole("region", { name: "Chat threads" });
+  await within(list).findByText("History 1");
+
+  selectChatListFilter(document.body, "Unread");
+  await waitFor(() => {
+    const filtered = screen.getByRole("region", { name: "Chat threads" });
+    expect(within(filtered).getByText("History 9")).toBeInTheDocument();
+    expect(within(filtered).queryByText("History 1")).not.toBeInTheDocument();
+  });
+  const unreadList = screen.getByRole("region", { name: "Chat threads" });
+  expect(
+    within(unreadList).queryByText("Show all chats"),
+  ).not.toBeInTheDocument();
+
+  fireEvent.scroll(unreadList, {
+    target: { scrollTop: (unreadIndexes.length + 1 - 5) * PWA_ROW_HEIGHT },
+  });
+  await within(unreadList).findByText("History 32");
+  await within(unreadList).findByText("Show all chats");
+  click(buttonByText("Show all chats", unreadList));
+  const restored = await screen.findByText("History 1");
+  click(restored);
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${threadId(0)}`);
+  });
+  await screen.findByRole("textbox", { name: "Message" });
 });
 
 test("Restore the mobile chat-list scroll position after returning from a conversation", async () => {

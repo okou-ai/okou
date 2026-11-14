@@ -1849,7 +1849,7 @@ function ChatThreadListRowFrame({
 }: {
   row: SidebarChatThreadRow;
   index: number;
-  /** Virtual rows are positioned by height; a static list stays in flow. */
+  /** Virtual rows keep their fixed geometry while stacking in normal flow. */
   rowHeight: number | null;
   touch: boolean;
   moving: boolean;
@@ -1873,18 +1873,13 @@ function ChatThreadListRowFrame({
       data-project-drop-target={drop.targeted ? "" : undefined}
       className={cn(
         "w-full pb-1",
-        rowHeight !== null && "absolute left-0 top-0",
         row.projectId !== null && row.kind !== "project" && "pl-6",
         drop.targeted && "bg-state-hover",
         drop.targeted && row.projectId === null && "rounded-lg",
         drop.targeted && row.kind === "project" && "rounded-t-lg",
         drop.targeted && row.projectEnd && "rounded-b-lg",
       )}
-      style={
-        rowHeight === null
-          ? undefined
-          : { transform: `translateY(${index * rowHeight}px)` }
-      }
+      style={rowHeight === null ? undefined : { height: rowHeight }}
     >
       {children}
     </div>
@@ -1935,29 +1930,41 @@ function ChatThreadListRowsView({
         }
         style={height === undefined ? undefined : { height }}
       >
-        {rows.map((row, offset) => {
-          const index = startIndex + offset;
-          return (
-            <ChatThreadListRowFrame
-              key={row.key}
-              row={row}
-              index={index}
-              rowHeight={rowHeight}
-              touch={touch}
-              moving={moving.state === "loading"}
-              moveHere={moveHere}
-            >
-              <ChatThreadListRowContent
+        <div
+          className={cn(
+            "w-full",
+            rowHeight !== null && "absolute left-0 top-0",
+          )}
+          style={
+            rowHeight === null
+              ? undefined
+              : { transform: `translateY(${startIndex * rowHeight}px)` }
+          }
+        >
+          {rows.map((row, offset) => {
+            const index = startIndex + offset;
+            return (
+              <ChatThreadListRowFrame
+                key={row.key}
                 row={row}
                 index={index}
+                rowHeight={rowHeight}
                 touch={touch}
-                layout={layout}
-                shortcuts={shortcuts}
-              />
-            </ChatThreadListRowFrame>
-          );
-        })}
-        {children}
+                moving={moving.state === "loading"}
+                moveHere={moveHere}
+              >
+                <ChatThreadListRowContent
+                  row={row}
+                  index={index}
+                  touch={touch}
+                  layout={layout}
+                  shortcuts={shortcuts}
+                />
+              </ChatThreadListRowFrame>
+            );
+          })}
+          {children}
+        </div>
       </div>
       {moving.state === "hasError" && (
         <p role="alert" className="px-3 py-1 text-xs text-destructive">
@@ -1982,7 +1989,7 @@ export function ChatThreadListRows({
   listSignals: SidebarChatThreadListSignals;
   rowHeight: number;
   height: number;
-  /** Extra absolutely positioned rows that share the virtual geometry. */
+  /** Trailing visible rows that stack inside the same virtual window. */
   children?: ReactNode;
 }) {
   const window = useGet(listSignals.window$, {
