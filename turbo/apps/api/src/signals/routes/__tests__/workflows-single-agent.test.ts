@@ -391,6 +391,7 @@ test("keeps captured workspace Workflow scope after claim and a live switch chan
   const owned = await publicChatActor(context, { tier: "team" });
   const runs = createRunsApi(context);
   await owned.run(async () => {
+    await billing.updateFeatureSwitches(owned.actor, { singleAgent: false });
     installWorkflowVolumeS3Fixture(context);
     const { defaultAgentId } = await bdd.readOnboardingStatus(owned.actor);
     if (!defaultAgentId) {

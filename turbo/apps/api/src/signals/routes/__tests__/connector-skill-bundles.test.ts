@@ -144,6 +144,8 @@ describe("Connector Skill bundle delivery", () => {
           { ...owner.actor, orgId: owner.actor.orgId },
           {
             [FeatureSwitchKey.CodexExecution]: framework === "codex",
+            // These delivery cases override Skills with retained Agent Workflows.
+            [FeatureSwitchKey.SingleAgent]: false,
           },
         );
         const s3 = installWorkflowVolumeS3Fixture(context);

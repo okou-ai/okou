@@ -15,6 +15,7 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 describe("workflow skill storage presigned URL cache", () => {
   const context = testContext();
@@ -76,6 +77,15 @@ describe("workflow skill storage presigned URL cache", () => {
 
   async function workflowCacheFixture() {
     const { actor, agentId, runnerGroup } = await entitledWorkflowActor();
+    if (!actor.orgId) {
+      throw new Error("Expected a retained Agent workspace");
+    }
+    // Named-Agent Workflow mounts exercise a retained multi-Agent membership.
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { singleAgent: false },
+    );
     const misc = createMiscRoutesApi(context);
     const chats = createChatEventsFixture(context);
     installWorkflowVolumeS3Fixture(context);

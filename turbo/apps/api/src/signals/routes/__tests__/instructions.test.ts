@@ -206,6 +206,7 @@ describe("Personal Instructions", () => {
 
   it("leaves disabled member access gated", async () => {
     const user = actor();
+    await updateFeatureSwitchesForUser(context, user, { singleAgent: false });
     mocks.clerk.session(user.userId, user.orgId);
     const denied = await accept(client().get({ headers }), [403]);
     expect(denied.body.error.code).toBe("FORBIDDEN");

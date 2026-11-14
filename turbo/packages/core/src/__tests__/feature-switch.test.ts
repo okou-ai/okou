@@ -50,8 +50,21 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("defaults new workspace memberships to My Okou and honors retained overrides", () => {
+    const key = FeatureSwitchKey.SingleAgent;
+    for (const orgId of ["external-org", "org_3ANttyrbWYJk6JKRSTRLEsbsDLe"]) {
+      const identity = { userId: "existing-account", orgId };
+      expect(isFeatureEnabled(key, identity)).toBe(true);
+      expect(getAllFeatureStates(identity)[key]).toBe(true);
+      for (const enabled of [true, false]) {
+        const context = { ...identity, overrides: { [key]: enabled } };
+        expect(isFeatureEnabled(key, context)).toBe(enabled);
+        expect(getAllFeatureStates(context)[key]).toBe(enabled);
+      }
+    }
+  });
+
   it.each([
-    FeatureSwitchKey.SingleAgent,
     FeatureSwitchKey.Projects,
     FeatureSwitchKey.ConnectorChatAccountAccess,
     FeatureSwitchKey.SshChatApproval,

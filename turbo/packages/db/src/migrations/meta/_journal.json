@@ -3312,6 +3312,13 @@
       "when": 1794573848177,
       "tag": "1551_retire_legacy_browser_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 1552,
+      "version": "7",
+      "when": 1794613071206,
+      "tag": "1552_preserve_initialized_single_agent_members",
+      "breakpoints": true
     }
   ]
 }

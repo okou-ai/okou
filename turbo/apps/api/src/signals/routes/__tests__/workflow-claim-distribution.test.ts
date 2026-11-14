@@ -32,7 +32,13 @@ const webhooks = createWebhookCallbackApi(context);
 const mocks = createRouteMocks(context);
 const chatFixture = createChatEventsFixture(context);
 
-function headers(actor: ApiTestUser) {
+async function headers(actor: ApiTestUser) {
+  // This suite exercises per-Agent Workflow distribution and visibility.
+  await updateFeatureSwitchesForUser(
+    context,
+    { ...actor, orgId: requireOrgId(actor) },
+    { singleAgent: false },
+  );
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return { authorization: "Bearer clerk-session" };
 }
@@ -84,7 +90,7 @@ async function createWorkflow(
       setupApp({ context, routes: workflowsRoutes })(
         workflowsCollectionContract,
       ).create({
-        headers: headers(actor),
+        headers: await headers(actor),
         body: {
           agentId,
           name: `claim-${randomUUID().slice(0, 8)}`,
@@ -122,7 +128,7 @@ test.each([
     });
     await accept(
       detailClient().update({
-        headers: headers(actor),
+        headers: await headers(actor),
         params: { workflowId: workflow.id },
         body: {
           instruction: "claim-selected body",
@@ -179,7 +185,7 @@ test.each([
     ).toContain("newly available");
     await accept(
       detailClient().update({
-        headers: headers(actor),
+        headers: await headers(actor),
         params: { workflowId: workflow.id },
         body: {
           instruction: "later body",
@@ -304,14 +310,14 @@ test("withholds a prepared Workflow after its owner withdraws sharing", async ()
         setupApp({ context, routes: workflowsRoutes })(
           workflowVisibilityContract,
         ).demote({
-          headers: headers(author),
+          headers: await headers(author),
           params: { workflowId: workflow.id },
         }),
         [200],
       );
       await accept(
         detailClient().get({
-          headers: headers(actor),
+          headers: await headers(actor),
           params: { workflowId: workflow.id },
         }),
         [404],
@@ -394,7 +400,7 @@ test("runs a queued explicit invocation without its deleted Workflow", async () 
   });
   await accept(
     detailClient().delete({
-      headers: headers(actor),
+      headers: await headers(actor),
       params: { workflowId: workflow.id },
     }),
     [204],
@@ -420,7 +426,7 @@ test("mounts the current winner for a queued invocation whose slug is reused", a
   const renamed = `${workflow.name}-renamed`;
   await accept(
     detailClient().update({
-      headers: headers(actor),
+      headers: await headers(actor),
       params: { workflowId: workflow.id },
       body: { name: renamed },
     }),
@@ -484,7 +490,7 @@ test("preserves a running Agent after rejected completion and accepts cancellati
   const claim = await runs.executionInput(run.runId);
   await accept(
     detailClient().update({
-      headers: headers(actor),
+      headers: await headers(actor),
       params: { workflowId: workflow.id },
       body: { files: [] },
     }),
@@ -541,7 +547,7 @@ test("preserves another Agent's readable Workflow files after parent deletion", 
   await bdd.deleteAgent(actor, agent.agentId);
   const read = await accept(
     detailClient().get({
-      headers: headers(actor),
+      headers: await headers(actor),
       params: { workflowId: survivor.id },
     }),
     [200],
