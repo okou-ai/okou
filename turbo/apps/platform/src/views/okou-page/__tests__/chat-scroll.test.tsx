@@ -1522,6 +1522,41 @@ test("Repeated narrow reveals retain a logical glyph that no longer fits the sho
   }
 });
 
+test.each(["history", "tail"] as const)(
+  "Restore %s when viewport CSS reveals the transcript with automations still open",
+  async (intent) => {
+    context.mocks.browser.matchMedia(() => {
+      return false;
+    });
+    const fixture = await openSemanticReadingFixture();
+    const before = fixture.container.scrollTop;
+    if (intent === "tail") {
+      fixture.container.scrollTop = fixture.geometry.bottomScrollTop();
+      fireEvent.scroll(fixture.container);
+    }
+    await openUtilityAutomations();
+    fixture.setHeight(0);
+    fixture.reflow(275, 75);
+    const hiddenTop = fixture.container.scrollTop;
+    await act(() => {
+      fireEvent.resize(window);
+    });
+    expect(fixture.container.scrollTop).toBe(hiddenTop);
+    fixture.setHeight(INITIAL_VIEWPORT_HEIGHT_PX);
+    fixture.container.scrollTop = 0;
+    fireEvent.scroll(fixture.container);
+    await act(() => {
+      fireEvent.resize(window);
+    });
+    const expectedTop =
+      intent === "tail" ? fixture.geometry.bottomScrollTop() : before + 275;
+    await waitFor(() => {
+      expect(fixture.container.scrollTop).toBe(expectedTop);
+      expect(buttonByLabel("Close automations")).toBeVisible();
+    });
+  },
+);
+
 test.each(["font", "resize", "resource", "commit"] as const)(
   "Restore the same prose glyph after native reflow at a %s completion",
   async (cause) => {

@@ -1259,19 +1259,20 @@ function createHandleContainerScroll(
   );
 }
 
-function createAttachScrollContainer(
+function createScrollContainerOnRef(
   threadId: string,
   scroll: InternalScrollSignals,
   navigation: ScrollNavigationSignals,
   runtime: ScrollRuntime,
+  restoreHiddenLayout$: Command<Promise<void>, [AbortSignal]>,
 ) {
   const handleContainerScroll$ = createHandleContainerScroll(
     threadId,
     scroll,
     runtime,
   );
-  return command(
-    ({ get, set }, container: HTMLElement, signal: AbortSignal) => {
+  return onRef(
+    command(({ get, set }, container: HTMLElement, signal: AbortSignal) => {
       set(scroll.bindScrollContainer$, container);
       L.debug("container bound", {
         threadId,
@@ -1288,6 +1289,13 @@ function createAttachScrollContainer(
       });
       const restoreLayout = onDomEventFn(() => {
         return set(navigation.restoreScrollPositionForLayout$, signal);
+      });
+      const restoreViewportLayout = onDomEventFn(() => {
+        // CSS can reveal the transcript at xl while the utility stays open.
+        // Its existing hidden-layout owner must complete that reveal too.
+        return runtime.hiddenLayout
+          ? set(restoreHiddenLayout$, signal)
+          : set(navigation.restoreScrollPositionForLayout$, signal);
       });
       const handleScrollEnd = (event: Event) => {
         if (
@@ -1328,8 +1336,8 @@ function createAttachScrollContainer(
           signal,
         });
       }
-      view?.addEventListener("resize", restoreLayout, { signal });
-      view?.visualViewport?.addEventListener("resize", restoreLayout, {
+      view?.addEventListener("resize", restoreViewportLayout, { signal });
+      view?.visualViewport?.addEventListener("resize", restoreViewportLayout, {
         signal,
       });
       container.ownerDocument.fonts?.addEventListener(
@@ -1357,7 +1365,7 @@ function createAttachScrollContainer(
         },
         { once: true },
       );
-    },
+    }),
   );
 }
 
@@ -1538,13 +1546,18 @@ export function createChatThreadScrollSignals(
     runtime,
     render.pendingScrollAfterRenderRequest$,
   );
-  const scrollContainerOnRef$ = onRef(
-    createAttachScrollContainer(threadId, scroll, navigation, runtime),
-  );
-  const scrollContentOnRef$ = createScrollContentOnRef(threadId, navigation);
-  const isProgrammaticScrollEvent$ = createIsProgrammaticScrollEvent(
+  const hiddenLayout = createHiddenScrollLayoutSignals(
     scroll,
+    navigation,
     runtime,
+    render.pendingScrollAfterRenderRequest$,
+  );
+  const scrollContainerOnRef$ = createScrollContainerOnRef(
+    threadId,
+    scroll,
+    navigation,
+    runtime,
+    hiddenLayout.restoreHiddenLayout$,
   );
   const scrollToEvent$ = command(
     async (
@@ -1603,23 +1616,19 @@ export function createChatThreadScrollSignals(
     },
   );
 
-  const hiddenLayout = createHiddenScrollLayoutSignals(
-    scroll,
-    navigation,
-    runtime,
-    render.pendingScrollAfterRenderRequest$,
-  );
-
   return {
     ...hiddenLayout,
     scrollContainerOnRef$,
-    scrollContentOnRef$,
+    scrollContentOnRef$: createScrollContentOnRef(threadId, navigation),
     scrollCommitOnRef$: render.scrollCommitOnRef$,
     pendingScrollAfterRenderRequest$: render.pendingScrollAfterRenderRequest$,
     scrollContainer$: scroll.scrollContainer$,
     threadScrollPosition$: scroll.threadScrollPosition$,
     awayFromBottom$: scroll.awayFromBottom$,
-    isProgrammaticScrollEvent$,
+    isProgrammaticScrollEvent$: createIsProgrammaticScrollEvent(
+      scroll,
+      runtime,
+    ),
     readCapturedThreadScrollPosition$: scroll.readCapturedThreadScrollPosition$,
     readRenderedThreadScrollPosition$: scroll.readRenderedThreadScrollPosition$,
     autoScroll$: render.autoScroll$,
