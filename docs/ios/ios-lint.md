@@ -12,7 +12,7 @@ underlying ownership contracts. Setup commands belong in the
 | Rule                           | Contract                                                                                                                                                                                | Web counterpart                                                   |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | `okou_render_effects`          | No known imperative requests, graph writes/construction, Task launches, subscriptions, or external state assignments during native projection.                                          | `no-side-effect-in-render`                                        |
-| `okou_stable_graph`            | Construct graph definitions at the owner, not inside graph callbacks, UI actions, or repeatedly invoked operation methods.                                                              | `no-command-in-command` and signal identity guidance              |
+| `okou_stable_graph`            | Construct graph definitions at the owner, not in repeated getters, graph callbacks, UI actions, or operation methods, including visible same-file graph factories.                      | `no-command-in-command`, `computed-const-args-package-scope`      |
 | `okou_private_atoms`           | Keep mutable CCState atoms private or fileprivate, including their enclosing owner; expose read signals and semantic commands.                                                          | `no-export-state`                                                 |
 | `okou_accessor_escape`         | Do not pass, store, return, or capture graph accessors into known deferred callbacks; ordinary helper parameters cannot expose Getter/CommandContext.                                   | `no-accessor-escape`, `no-getter-setter-params`                   |
 | `okou_native_requests`         | Raw URLSession operations and method references belong at their transport definition sites.                                                                                             | `no-direct-fetch`                                                 |
@@ -47,6 +47,16 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
 - Graph definitions in owner initializers and returning factories are valid.
   A test invocation also owns fresh fixture graphs; graph callbacks and render
   bodies inside a test remain checked.
+  Repeated getters cannot construct another graph, directly or through a
+  visible factory. A getter returning an existing signal or lazy stored graph
+  preserves its identity and remains valid.
+  Same-file factory calls are checked in repeated execution when the matching
+  declarations return graph types and all visible returns directly construct
+  new graphs. This includes unqualified calls, `self`/`Self` methods, and static
+  methods on a visibly declared type. A function name alone is not evidence of
+  construction. Local bindings, parameters, receiver ownership, argument labels,
+  and ambiguous overloads retain their lexical meaning. Creating a new business
+  owner is different from rebuilding that owner's graph during an operation.
 - SwiftUI `@State` is not a CCState atom. Native focus, selection, gestures,
   editing, and other control-owned state remain valid. `fileprivate` sharing
   inside a private resource implementation is not a public feature interface.
@@ -217,6 +227,12 @@ These are syntax checks, not a whole-program ownership proof. They recognize
 direct graph/API spellings, local transport aliases, scoped accessor bindings,
 and known callback contracts. Cross-file type aliases, arbitrary wrappers,
 indirect helper effects, and custom callback execution semantics need review.
+Graph-factory checks require visible direct constructor returns. Forwarding
+factories, returned local aliases, closure-valued factories, default/trailing
+arguments, cross-extension method lookup, and arbitrary receiver types remain
+review responsibilities. Overloads sharing argument labels are checked only
+when all matching declarations visibly return fresh graphs; the rule does not
+infer argument types or dynamically dispatched implementations.
 Cancellation checks track direct local statement paths, recognized owner guards,
 and same-file helpers rather than proving every control-flow path, dynamic
 dispatch target, or cross-file teardown contract.

@@ -11,18 +11,35 @@ struct StableGraphRule: NativeRule {
 
   func validate(file: SwiftLintFile) -> [StyleViolation] {
     guard hasCCState(file) else { return [] }
-    let visitor = Visitor(viewMode: .sourceAccurate)
+    let visitor = Visitor(tree: file.syntaxTree)
     visitor.walk(file.syntaxTree)
     return findings(visitor.positions, in: file)
   }
 
   private final class Visitor: SyntaxVisitor {
     var positions: [AbsolutePosition] = []
+    let factories: NativeGraphFactories
+
+    init(tree: SourceFileSyntax) {
+      factories = NativeGraphFactories(tree: tree)
+      super.init(viewMode: .sourceAccurate)
+    }
 
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
-      guard isGraphCall(node, names: graphConstructors) else { return .visitChildren }
+      let direct = isGraphCall(node, names: graphConstructors)
+      guard direct || factories.constructsGraph(node) else { return .visitChildren }
+      if !direct, isRender(node) {
+        positions.append(node.positionAfterSkippingLeadingTrivia)
+        return .visitChildren
+      }
       for parent in ancestors(of: node) {
         if parent.is(InitializerDeclSyntax.self) { break }
+        if parent.is(AccessorBlockSyntax.self) {
+          positions.append(node.positionAfterSkippingLeadingTrivia)
+          break
+        }
+        // A stored property is owned even when its type is declared in a callback.
+        if parent.is(MemberBlockSyntax.self) || parent.is(SourceFileSyntax.self) { break }
         if let function = parent.as(FunctionDeclSyntax.self) {
           let result = function.signature.returnClause?.type.trimmedDescription
           let graphResult =
@@ -51,6 +68,8 @@ struct StableGraphRule: NativeRule {
           break
         }
         if let closure = parent.as(ClosureExprSyntax.self) {
+          // Capture initializers execute when the closure is acquired, not when called.
+          if node.position < closure.statements.position { continue }
           let graphCallback =
             closureCall(closure).map { isGraphCall($0.0, names: graphCallbacks) } ?? false
           if graphCallback || isDeferred(closure) {
