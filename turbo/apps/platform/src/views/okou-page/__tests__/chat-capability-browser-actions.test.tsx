@@ -910,6 +910,13 @@ test("Closing an inline form clears password and code drafts while preserving or
   await fill(passwordInput, "synthetic-password");
   await fill(codeInput, "123456");
 
+  expect(within(dialog).getAllByText("How to fill")).toHaveLength(1);
+  click(within(dialog).getByText("How to fill"));
+  expect(within(dialog).getByText(/^Chrome \(desktop\):/u)).toBeVisible();
+  expect(emailInput).toHaveValue("owner@example.test");
+  expect(passwordInput).toHaveValue("synthetic-password");
+  expect(codeInput).toHaveValue("123456");
+
   const close = buttonsByName("Close", dialog)[0];
   if (!close) {
     throw new Error("Missing Browser input close button");
