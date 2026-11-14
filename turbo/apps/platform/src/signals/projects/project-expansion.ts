@@ -3,7 +3,6 @@ import { boolean, record, string } from "zod";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { jsonParseOr } from "../utils.ts";
-import { animateProjectFold$ } from "./project-list-motion.ts";
 
 const expansionSchema = record(string(), boolean());
 const expansion$ = state<Readonly<Record<string, boolean>>>({});
@@ -56,21 +55,13 @@ export const expandProject$ = command(
     if (options.ifUnset && previous[id] !== undefined) {
       return;
     }
-    if (!previous[id]) {
-      set(animateProjectFold$, id, true);
-    }
     set(setProjectExpansion$, { ...previous, [id]: true });
   },
 );
 export const collapseProject$ = command(({ get, set }, id: string) => {
-  const previous = get(expansion$);
-  if (previous[id]) {
-    set(animateProjectFold$, id, false);
-  }
-  set(setProjectExpansion$, { ...previous, [id]: false });
+  set(setProjectExpansion$, { ...get(expansion$), [id]: false });
 });
 export const toggleProject$ = command(({ get, set }, id: string) => {
   const previous = get(expansion$);
-  set(animateProjectFold$, id, !previous[id]);
   set(setProjectExpansion$, { ...previous, [id]: !previous[id] });
 });
