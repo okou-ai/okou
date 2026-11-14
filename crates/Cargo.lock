@@ -4405,17 +4405,17 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test-support",
  "ts_bart",
- "ts_capabilityversion",
+ "ts_capabilityversion 0.6.1",
  "ts_control",
- "ts_control_noise",
+ "ts_control_noise 0.7.1",
  "ts_control_serde",
  "ts_dataplane",
  "ts_derp",
  "ts_http_util",
- "ts_keys",
+ "ts_keys 0.6.1",
  "ts_netstack_smoltcp_core",
  "ts_netstack_smoltcp_socket",
- "ts_noise",
+ "ts_noise 0.6.1",
  "ts_overlay_router",
  "ts_packet",
  "ts_packetfilter",
@@ -5962,6 +5962,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "ts_capabilityversion"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
+
+[[package]]
 name = "ts_control"
 version = "0.6.1"
 source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
@@ -5980,13 +5985,13 @@ dependencies = [
  "tokio-util",
  "tracing",
  "ts_bitset",
- "ts_capabilityversion",
- "ts_control_noise",
+ "ts_capabilityversion 0.6.1",
+ "ts_control_noise 0.6.1",
  "ts_control_serde",
  "ts_derp",
  "ts_dynbitset",
  "ts_http_util",
- "ts_keys",
+ "ts_keys 0.6.1",
  "ts_packet",
  "ts_packetfilter",
  "ts_packetfilter_state",
@@ -6010,10 +6015,32 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
- "ts_capabilityversion",
+ "ts_capabilityversion 0.6.1",
  "ts_hexdump",
- "ts_keys",
- "ts_noise",
+ "ts_keys 0.6.1",
+ "ts_noise 0.6.1",
+ "zerocopy",
+]
+
+[[package]]
+name = "ts_control_noise"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
+dependencies = [
+ "base64 0.22.1",
+ "bytes",
+ "chacha20poly1305",
+ "futures-util",
+ "pin-project-lite",
+ "static_assertions",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "ts_capabilityversion 0.7.1",
+ "ts_keys 0.7.1",
+ "ts_noise 0.7.1",
+ "ts_util",
  "zerocopy",
 ]
 
@@ -6029,8 +6056,8 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "serde_with",
- "ts_capabilityversion",
- "ts_keys",
+ "ts_capabilityversion 0.6.1",
+ "ts_keys 0.6.1",
  "ts_nodecapability",
  "ts_packetfilter_serde",
  "url",
@@ -6074,7 +6101,7 @@ dependencies = [
  "tracing",
  "ts_hexdump",
  "ts_http_util",
- "ts_keys",
+ "ts_keys 0.6.1",
  "ts_packet",
  "ts_tls_util",
  "ts_transport",
@@ -6094,7 +6121,7 @@ dependencies = [
  "num-traits",
  "thiserror",
  "ts_hexdump",
- "ts_keys",
+ "ts_keys 0.6.1",
  "zerocopy",
 ]
 
@@ -6149,6 +6176,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ts_keys"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
+dependencies = [
+ "crypto_box",
+ "thiserror",
+ "x25519-dalek",
+ "zerocopy",
+ "zeroize",
+]
+
+[[package]]
 name = "ts_netstack_smoltcp_core"
 version = "0.6.1"
 source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4593ae6df959aa93e9ee1e0457c6"
@@ -6192,7 +6231,23 @@ dependencies = [
  "chacha20poly1305",
  "hkdf 0.12.4",
  "itertools",
- "ts_keys",
+ "ts_keys 0.6.1",
+ "x25519-dalek",
+ "zerocopy",
+ "zeroize",
+]
+
+[[package]]
+name = "ts_noise"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
+dependencies = [
+ "aead 0.5.2",
+ "blake2 0.10.6",
+ "chacha20poly1305",
+ "hkdf 0.12.4",
+ "itertools",
+ "ts_keys 0.7.1",
  "x25519-dalek",
  "zerocopy",
  "zeroize",
@@ -6290,7 +6345,7 @@ dependencies = [
  "dyn-hash",
  "smallbox",
  "ts_hexdump",
- "ts_keys",
+ "ts_keys 0.6.1",
  "ts_packet",
  "zerocopy",
 ]
@@ -6306,8 +6361,8 @@ dependencies = [
  "itertools",
  "rand 0.10.3",
  "tracing",
- "ts_keys",
- "ts_noise",
+ "ts_keys 0.6.1",
+ "ts_noise 0.6.1",
  "ts_packet",
  "ts_time",
  "zerocopy",
@@ -6320,6 +6375,15 @@ source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.6.1#d34658bbb2eb4
 dependencies = [
  "ts_packet",
  "ts_transport",
+]
+
+[[package]]
+name = "ts_util"
+version = "0.7.1"
+source = "git+https://github.com/tailscale/tailscale-rs?tag=v0.7.1#a2a56c41b1db72d50d59d71d35c6669ff9639d14"
+dependencies = [
+ "heapless",
+ "pin-project-lite",
 ]
 
 [[package]]
