@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/okou-ai/okou/compare/android-v0.9.0...android-v0.10.0) (2026-11-14)
+
+
+### Features
+
+* **android:** prove canonical text-send bindings ([#47161](https://github.com/okou-ai/okou/issues/47161)) ([3c87809](https://github.com/okou-ai/okou/commit/3c87809234c9baf4d28117cca368e726b0945371))
+
 ## [0.9.0](https://github.com/okou-ai/okou/compare/android-v0.8.0...android-v0.9.0) (2026-11-14)
 
 
