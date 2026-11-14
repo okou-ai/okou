@@ -39,13 +39,14 @@ class PersonalInstructionsModelTest {
         var saved =
             PersonalInstructions("org-a", "user-a", "Original", "2026-11-14T00:00:00Z", "v1")
         val writes = mutableListOf<Pair<String, String>>()
+        var availability: suspend () -> Boolean = { true }
         var read: suspend () -> PersonalInstructions = { saved }
         var write: suspend (String, String) -> PersonalInstructions = { content, version ->
             if (version != saved.version) throw ApiFailure.Http(409, null, null, null)
             saved.copy(content = content, version = saved.version + "-next").also { saved = it }
         }
 
-        override suspend fun personalInstructionsEnabled() = true
+        override suspend fun personalInstructionsEnabled() = availability()
 
         override suspend fun personalInstructions() = read()
 
@@ -232,6 +233,39 @@ class PersonalInstructionsModelTest {
         }
 
     @Test
+    fun localIntentRestoresWhenTheOptionalAvailabilityRequestFails() =
+        check { service, store, create, failures ->
+            var model = create(false)
+            model.open()
+            runCurrent()
+            model.edit("Keep my offline draft 👋")
+            runCurrent()
+            model = create(true)
+            service.availability = { throw ApiFailure.Network(IOException("offline")) }
+            model.open()
+            runCurrent()
+            assertEquals(InstructionsPhase.Failed, model.uiState.value.phase)
+            assertEquals("Keep my offline draft 👋", model.uiState.value.content)
+            assertEquals("v1", model.uiState.value.draft?.base?.version)
+            model.edit(service.saved.content)
+            runCurrent()
+            assertEquals(service.saved.content, model.uiState.value.content)
+            assertTrue(model.uiState.value.canEdit)
+            model.edit("Continue editing offline")
+            runCurrent()
+            assertEquals("Continue editing offline", store.load(identity).draft?.content)
+            assertTrue(service.writes.isEmpty())
+            assertTrue(failures.isEmpty())
+            service.availability = { true }
+            model.refresh()
+            runCurrent()
+            model.save()
+            runCurrent()
+            assertEquals(listOf("Continue editing offline" to "v1"), service.writes)
+            assertNull(store.load(identity).draft)
+        }
+
+    @Test
     fun persistenceFailureKeepsTheOnlyIntentAndPreventsRemoteMutation() =
         check(true) { service, store, create, _ ->
             val model = create(false)
@@ -264,20 +298,25 @@ class PersonalInstructionsModelTest {
                     }
                 }
             }
-            old.save()
-            runCurrent()
-            val fresh = create(true)
-            fresh.open()
-            runCurrent()
-            assertEquals(InstructionsPhase.Uncertain, fresh.uiState.value.phase)
-            held.complete(Unit)
-            runCurrent()
-            assertTrue(checkNotNull(store.load(identity).draft).attempted)
-            fresh.refresh()
-            runCurrent()
-            assertEquals("Accepted later", fresh.uiState.value.content)
-            assertNull(fresh.uiState.value.draft)
-            assertNull(store.load(identity).draft)
-            assertEquals(1, service.writes.size)
+            try {
+                old.save()
+                runCurrent()
+                val fresh = create(true)
+                fresh.open()
+                runCurrent()
+                assertEquals(InstructionsPhase.Uncertain, fresh.uiState.value.phase)
+                held.complete(Unit)
+                runCurrent()
+                assertTrue(checkNotNull(store.load(identity).draft).attempted)
+                fresh.refresh()
+                runCurrent()
+                assertEquals("Accepted later", fresh.uiState.value.content)
+                assertNull(fresh.uiState.value.draft)
+                assertNull(store.load(identity).draft)
+                assertEquals(1, service.writes.size)
+            } finally {
+                held.complete(Unit)
+                runCurrent()
+            }
         }
 }

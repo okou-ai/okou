@@ -149,19 +149,23 @@ class PersonalInstructionsModel(
             mutable.value.copy(phase = InstructionsPhase.Loading, recoveryVersion = null)
         viewModelScope.launch {
             try {
+                if (!restored) {
+                    val local = store.load(identity)
+                    requireCurrent()
+                    restored = true
+                    mutable.value =
+                        mutable.value.copy(
+                            saved = local.draft?.base,
+                            draft = local.draft,
+                            localFailure = !local.durable,
+                        )
+                }
                 if (!service.personalInstructionsEnabled()) {
                     requireCurrent()
                     mutable.value = mutable.value.copy(phase = InstructionsPhase.Unavailable)
                     return@launch
                 }
                 requireCurrent()
-                if (!restored) {
-                    val local = store.load(identity)
-                    requireCurrent()
-                    restored = true
-                    mutable.value =
-                        mutable.value.copy(draft = local.draft, localFailure = !local.durable)
-                }
                 val saved = service.personalInstructions()
                 requireCurrent()
                 acceptRead(saved, discard)
@@ -173,21 +177,19 @@ class PersonalInstructionsModel(
         }
     }
 
-    private suspend fun replaceDraft(draft: InstructionsDraft?): Boolean {
+    private suspend fun replaceDraft(draft: InstructionsDraft?) {
         ++localRevision
         mutable.value = mutable.value.copy(persisting = true)
         val pending = store.persist(identity, draft)
-        return try {
+        try {
             pending.await()
             requireCurrent()
             mutable.value = mutable.value.copy(persisting = false, localFailure = false)
-            true
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
             requireCurrent()
             mutable.value = mutable.value.copy(persisting = false, localFailure = true)
-            false
         }
     }
 

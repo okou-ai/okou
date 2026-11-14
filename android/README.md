@@ -34,6 +34,8 @@ Format 1 contains content, the base response and attempt state, scoped by normal
 API origin/user/workspace. It contains no credentials and survives editor retirement
 and process restart independently of the rebuildable chat cache. Disk errors retain
 accepted edits in memory and expose retry; malformed files are never silently reset.
+Activity saved state carries only the native selection, keeping large text out of
+the size-limited Binder bundle.
 Feature-local 403/404 does not sign out the workspace. Visible/foreground/manual
 refresh checks other clients; automatic live Instructions updates remain later work.
 

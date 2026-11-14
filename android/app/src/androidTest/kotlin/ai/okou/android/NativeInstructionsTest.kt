@@ -61,12 +61,28 @@ class NativeInstructionsTest {
                     device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
                 )
             fun reveal(value: String) {
-                if (!device.hasObject(By.pkg(app.packageName).text(value)))
-                    assertTrue(
+                val target = By.pkg(app.packageName).text(value)
+                if (!device.hasObject(target)) {
+                    val scroll =
                         UiScrollable(UiSelector().packageName(app.packageName).scrollable(true))
                             .setAsVerticalList()
-                            .scrollTextIntoView(value)
-                    )
+                    // Compose can move without the legacy SDK receiving its scroll-event receipt.
+                    // Observe the actual Settings content instead of treating that receipt as an
+                    // end.
+                    for (step in 0 until 8) {
+                        if (
+                            device.hasObject(
+                                By.pkg(app.packageName).text(app.getString(R.string.appearance))
+                            )
+                        )
+                            break
+                        scroll.scrollBackward()
+                    }
+                    for (step in 0 until 8) {
+                        if (device.hasObject(target)) break
+                        scroll.scrollForward()
+                    }
+                }
                 text(value)
             }
             fun click(id: Int) {

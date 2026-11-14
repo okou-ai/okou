@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -26,6 +27,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -57,7 +59,19 @@ fun PersonalInstructionsSettings(model: PersonalInstructionsModel) {
         )
         if (state.saved != null || state.draft != null) {
             var editing by
-                rememberSaveable(stateSaver = TextFieldValue.Saver) {
+                rememberSaveable(
+                    stateSaver =
+                        listSaver<TextFieldValue, Int>(
+                            // Text belongs to the draft owner, never the size-limited Activity
+                            // bundle.
+                            save = {
+                                val selection =
+                                    if (it.text == state.content) it.selection else TextRange.Zero
+                                listOf(selection.start, selection.end)
+                            },
+                            restore = { TextFieldValue(state.content, TextRange(it[0], it[1])) },
+                        )
+                ) {
                     mutableStateOf(TextFieldValue(state.content))
                 }
             // Only a deliberate authoritative replacement changes native editing text.
