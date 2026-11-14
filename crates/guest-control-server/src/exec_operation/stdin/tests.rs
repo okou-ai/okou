@@ -35,14 +35,9 @@ fn stdin_writer_cancel_unblocks_full_pipe() {
     // The exec protocol cannot synchronize on this private worker's final
     // pre-poll check, and child cleanup can independently release stdin.
     // Keep the actual writer, full pipe, poll, and cancellation wakeup here.
-    let mut fds = [0; 2];
-    // SAFETY: `pipe` initializes two file descriptors in `fds` on success.
-    assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
-    // SAFETY: both descriptors were freshly returned by `pipe`.
-    let read_fd = unsafe { OwnedFd::from_raw_fd(fds[0]) };
-    // SAFETY: both descriptors were freshly returned by `pipe`.
-    let mut write_file = unsafe { File::from_raw_fd(fds[1]) };
-    set_nonblocking(write_file.as_raw_fd()).unwrap();
+    let (read_fd, write_fd) = rustix::pipe::pipe().unwrap();
+    let mut write_file = File::from(write_fd);
+    set_nonblocking(write_file.as_fd()).unwrap();
 
     let fill = [0u8; 4096];
     loop {

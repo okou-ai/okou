@@ -434,15 +434,28 @@ impl LocalQueue {
         if super::create_private_marker(&claim_file, "local claim marker").is_err() {
             return LocalClaimResult::NotClaimed;
         }
+        // Keep retirement with the acquisition owner: failure publication or
+        // retry backoff must finish before a rejected claim is released.
+        let claim = self.read_claimed_job_sync(run_id, partition_profile, job_file);
+        if matches!(&claim, LocalClaimResult::NotClaimed) {
+            let _ = std::fs::remove_file(&claim_file);
+        }
+        claim
+    }
+
+    fn read_claimed_job_sync(
+        &self,
+        run_id: RunId,
+        partition_profile: &str,
+        job_file: &Path,
+    ) -> LocalClaimResult {
         // Another queue clone may have recorded backoff and released its claim
         // after our first check but before this acquisition.
         if self.claim_retry_is_pending(run_id) {
-            let _ = std::fs::remove_file(&claim_file);
             return LocalClaimResult::NotClaimed;
         }
         if self.result_file_has_content(run_id) {
             info!(run_id = %run_id, "local: job already has result, skipping claim");
-            let _ = std::fs::remove_file(&claim_file);
             return LocalClaimResult::NotClaimed;
         }
 
@@ -454,16 +467,11 @@ impl LocalQueue {
             Ok(b) => b,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 warn!(run_id = %run_id, error = %e, "local: failed to read job file");
-                let _ = std::fs::remove_file(&claim_file);
                 return LocalClaimResult::NotClaimed;
             }
             Err(e) => {
                 warn!(run_id = %run_id, error = %e, "local: unreadable job file, marking job as failed");
-                self.fail_claimed_job_sync_with_claim(
-                    run_id,
-                    &claim_file,
-                    format!("failed to read job file: {e}"),
-                );
+                self.record_failed_claim_sync(run_id, format!("failed to read job file: {e}"));
                 return LocalClaimResult::NotClaimed;
             }
         };
@@ -479,11 +487,7 @@ impl LocalQueue {
                 // the claim so sequential admission cannot immediately retry.
                 // On success, the result becomes the durable terminal marker
                 // before the bad job is removed.
-                self.fail_claimed_job_sync_with_claim(
-                    run_id,
-                    &claim_file,
-                    format!("invalid job JSON: {e}"),
-                );
+                self.record_failed_claim_sync(run_id, format!("invalid job JSON: {e}"));
                 return LocalClaimResult::NotClaimed;
             }
         };
@@ -494,7 +498,7 @@ impl LocalQueue {
                 request.job_id
             );
             warn!(run_id = %run_id, error = %error, "local: invalid job id");
-            self.fail_claimed_job_sync_with_claim(run_id, &claim_file, error);
+            self.record_failed_claim_sync(run_id, error);
             return LocalClaimResult::NotClaimed;
         }
 
@@ -507,7 +511,7 @@ impl LocalQueue {
                 let error =
                     format!("missing job profile in non-default partition: {partition_profile}");
                 warn!(run_id = %run_id, error = %error, "local: invalid job profile");
-                self.fail_claimed_job_sync_with_claim(run_id, &claim_file, error);
+                self.record_failed_claim_sync(run_id, error);
                 return LocalClaimResult::NotClaimed;
             }
         };
@@ -516,7 +520,7 @@ impl LocalQueue {
                 "job profile mismatch: request={request_profile}, partition={partition_profile}"
             );
             warn!(run_id = %run_id, error = %error, "local: invalid job profile");
-            self.fail_claimed_job_sync_with_claim(run_id, &claim_file, error);
+            self.record_failed_claim_sync(run_id, error);
             return LocalClaimResult::NotClaimed;
         }
 
@@ -527,7 +531,8 @@ impl LocalQueue {
 
     pub fn fail_claimed_job_sync(&self, run_id: RunId, error: String) {
         let claim_file = super::claim_path(&self.group_dir, run_id);
-        self.fail_claimed_job_sync_with_claim(run_id, &claim_file, error);
+        self.record_failed_claim_sync(run_id, error);
+        let _ = std::fs::remove_file(&claim_file);
     }
 
     pub fn complete_job_sync(&self, run_id: RunId, exit_code: i32, error: Option<String>) {
@@ -916,7 +921,7 @@ impl LocalQueue {
         true
     }
 
-    fn fail_claimed_job_sync_with_claim(&self, run_id: RunId, claim_file: &Path, error: String) {
+    fn record_failed_claim_sync(&self, run_id: RunId, error: String) {
         if self.write_result_sync(run_id, 1, Some(&error)) {
             self.lock_claim_retries().remove(&run_id);
             let _ = self.remove_job_files_if_present(run_id);
@@ -929,7 +934,6 @@ impl LocalQueue {
             retries.retain(|_, deadline| *deadline > now);
             retries.insert(run_id, now + FAILED_CLAIM_RETRY_INTERVAL);
         }
-        let _ = std::fs::remove_file(claim_file);
     }
 
     fn lookup_job_files_for_cancel_targets(&self, run_ids: &[RunId]) -> JobPresenceScan {

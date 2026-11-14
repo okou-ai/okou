@@ -1,9 +1,19 @@
 import { command, computed, state } from "ccstate";
-import { commitLayoutUpdate } from "@okouai/ui";
+import {
+  refreshChatListLayout$,
+  refreshWorkspaceLayout$,
+} from "../chat-page/workspace-layout.ts";
 
 import { localStorageSignals } from "../external/local-storage.ts";
 import { pageSignal$ } from "../page-signal.ts";
-import { onRef, resetSignal } from "../utils.ts";
+import {
+  detach,
+  onDomEventFn,
+  onRef,
+  Reason,
+  resetSignal,
+  waitForBrowserPaint,
+} from "../utils.ts";
 
 // ---------------------------------------------------------------------------
 // Unified chat workspace. The chat list, the chat and its side panel share one
@@ -32,9 +42,19 @@ export const storedChatListHidden$ = computed((get) => {
 });
 
 export const setStoredChatListHidden$ = command(
-  ({ get, set }, hidden: boolean) => {
+  ({ get, set }, hidden: boolean, signal?: AbortSignal) => {
     if (get(storedChatListHidden$) !== hidden) {
       set(chatListHiddenStorage.set$, String(hidden));
+      // Preserve synchronous callers while the page or gesture owns geometry work.
+      detach(
+        set(
+          refreshChatListLayout$,
+          hidden ? 0 : get(chatListWidth$),
+          signal ?? get(pageSignal$),
+        ),
+        Reason.DomCallback,
+        "chat list visibility layout",
+      );
     }
   },
 );
@@ -55,10 +75,16 @@ export const chatListWidth$ = computed((get) => {
 });
 
 export const setLiveChatListWidth$ = command(
-  ({ set }, width: number | null) => {
-    set(
-      internalLiveChatListWidth$,
-      width === null ? null : clampChatListWidth(width),
+  ({ get, set }, width: number | null, signal?: AbortSignal) => {
+    const next = width === null ? null : clampChatListWidth(width);
+    if (get(internalLiveChatListWidth$) === next) {
+      return;
+    }
+    set(internalLiveChatListWidth$, next);
+    detach(
+      set(refreshWorkspaceLayout$, signal ?? get(pageSignal$)),
+      Reason.DomCallback,
+      "live chat list width layout",
     );
   },
 );
@@ -72,14 +98,19 @@ export const commitChatListWidth$ = command(({ get, set }) => {
   set(internalLiveChatListWidth$, null);
 });
 
-const setChatListWidth$ = command(({ set }, width: number) => {
-  set(internalLiveChatListWidth$, null);
-  set(chatListWidthStorage.set$, String(clampChatListWidth(width)));
-});
+const setChatListWidth$ = command(
+  async ({ set }, width: number, signal: AbortSignal) => {
+    set(internalLiveChatListWidth$, null);
+    set(chatListWidthStorage.set$, String(clampChatListWidth(width)));
+    await set(refreshWorkspaceLayout$, signal);
+  },
+);
 
-const resetChatListWidth$ = command(({ set }) => {
+const resetChatListWidth$ = command(async ({ set }, signal: AbortSignal) => {
   set(internalLiveChatListWidth$, null);
   set(chatListWidthStorage.clear$);
+  set(setStoredChatListHidden$, false, signal);
+  await set(refreshWorkspaceLayout$, signal);
 });
 
 const resetChatListResize$ = resetSignal();
@@ -115,24 +146,36 @@ export function resizePointerClientX(event: PointerEvent): number | null {
 }
 
 const resizeChatList$ = command(
-  ({ get, set }, desired: number, startedHidden: boolean) => {
+  (
+    { get, set },
+    desired: number,
+    startedHidden: boolean,
+    signal: AbortSignal,
+  ) => {
     // A gesture from the collapsed seam starts at zero; a visible list folds
     // as soon as its usable minimum is exhausted.
     const foldWidth = startedHidden ? 0 : CHAT_LIST_MIN_WIDTH;
     const threshold =
       foldWidth + (get(storedChatListHidden$) ? CHAT_LIST_RESTORE_DISTANCE : 0);
     const hidden = desired < threshold;
-    set(setLiveChatListWidth$, hidden ? null : desired);
-    set(setStoredChatListHidden$, hidden);
+    set(setLiveChatListWidth$, hidden ? null : desired, signal);
+    set(setStoredChatListHidden$, hidden, signal);
     return hidden;
   },
 );
 
-const finishChatListResize$ = command(({ set }) => {
-  // Release capture and the blocking mask before persistence can fail.
-  set(resetChatListResize$);
-  set(commitChatListWidth$);
-});
+const finishChatListResize$ = command(
+  async ({ set }, signal: AbortSignal, ownerSignal: AbortSignal) => {
+    // Persist the terminal sample before page cancellation can interrupt paint.
+    set(commitChatListWidth$);
+    // Paint the final coordinate while this gesture still owns transitions.
+    await waitForBrowserPaint(signal);
+    signal.throwIfAborted();
+    // Capture and the mask are already released; now relinquish transitions.
+    set(resetChatListResize$);
+    await set(refreshWorkspaceLayout$, ownerSignal);
+  },
+);
 
 const startChatListResize$ = command(
   (
@@ -149,12 +192,25 @@ const startChatListResize$ = command(
     handle.setPointerCapture(pointerId);
     const mask = createResizeMask("data-chat-list-resize-mask", "col-resize");
 
+    let finishing = false;
+    function finishResize(): Promise<void> | undefined {
+      if (dragSignal.aborted || finishing) {
+        return;
+      }
+      finishing = true;
+      mask.remove();
+      if (handle.hasPointerCapture(pointerId)) {
+        handle.releasePointerCapture(pointerId);
+      }
+      return set(finishChatListResize$, dragSignal, ownerSignal);
+    }
+
     function moveResize(pointerX: number): void {
-      if (dragSignal.aborted || !Number.isFinite(pointerX)) {
+      if (dragSignal.aborted || finishing || !Number.isFinite(pointerX)) {
         return;
       }
       const desired = startWidth + pointerX - startX;
-      const hidden = set(resizeChatList$, desired, startedHidden);
+      const hidden = set(resizeChatList$, desired, startedHidden, dragSignal);
       mask.style.cursor = hidden
         ? "e-resize"
         : desired >= CHAT_LIST_MAX_WIDTH
@@ -162,48 +218,44 @@ const startChatListResize$ = command(
           : "col-resize";
     }
 
-    function endResize(event: PointerEvent): void {
-      if (event.pointerId !== pointerId || dragSignal.aborted) {
+    function endResize(event: PointerEvent): Promise<void> | undefined {
+      if (event.pointerId !== pointerId || dragSignal.aborted || finishing) {
         return;
       }
       const pointerX =
         event.type === "pointerup" ? resizePointerClientX(event) : null;
       if (pointerX !== null) {
-        commitLayoutUpdate(() => {
-          moveResize(pointerX);
-        });
+        moveResize(pointerX);
       }
-      set(finishChatListResize$);
+      return finishResize();
     }
 
     handle.addEventListener(
       "pointermove",
-      (event) => {
-        if (event.pointerId !== pointerId || dragSignal.aborted) {
+      onDomEventFn<PointerEvent>((event) => {
+        if (event.pointerId !== pointerId || dragSignal.aborted || finishing) {
           return;
         }
         if (event.buttons === 0) {
-          set(finishChatListResize$);
-          return;
+          return finishResize();
         }
         moveResize(event.clientX);
-      },
+        return;
+      }),
       { signal: dragSignal },
     );
-    handle.addEventListener("pointerup", endResize, { signal: dragSignal });
-    handle.addEventListener("pointercancel", endResize, { signal: dragSignal });
-    handle.addEventListener("lostpointercapture", endResize, {
+    handle.addEventListener("pointerup", onDomEventFn(endResize), {
       signal: dragSignal,
     });
-    window.addEventListener(
-      "blur",
-      () => {
-        if (!dragSignal.aborted) {
-          set(finishChatListResize$);
-        }
-      },
-      { signal: dragSignal },
-    );
+    handle.addEventListener("pointercancel", onDomEventFn(endResize), {
+      signal: dragSignal,
+    });
+    handle.addEventListener("lostpointercapture", onDomEventFn(endResize), {
+      signal: dragSignal,
+    });
+    window.addEventListener("blur", onDomEventFn(finishResize), {
+      signal: dragSignal,
+    });
 
     dragSignal.addEventListener(
       "abort",
@@ -248,15 +300,18 @@ export const chatListResizeHandleRef$ = onRef(
     );
     handle.addEventListener(
       "dblclick",
-      () => {
-        set(resetChatListWidth$);
-        set(setStoredChatListHidden$, false);
-      },
+      onDomEventFn(() => {
+        return set(
+          resetChatListWidth$,
+          AbortSignal.any([mountSignal, get(pageSignal$)]),
+        );
+      }),
       { signal: mountSignal },
     );
     handle.addEventListener(
       "keydown",
-      (event) => {
+      onDomEventFn<KeyboardEvent>((event) => {
+        const signal = AbortSignal.any([mountSignal, get(pageSignal$)]);
         const width = get(chatListWidth$);
         const step = event.shiftKey ? KEYBOARD_LARGE_STEP : KEYBOARD_STEP;
         const next =
@@ -272,18 +327,16 @@ export const chatListResizeHandleRef$ = onRef(
         if (event.key === "Enter") {
           // The focused separator owns Enter as "restore the default width".
           event.preventDefault();
-          set(resetChatListWidth$);
-          set(setStoredChatListHidden$, false);
-          return;
+          return set(resetChatListWidth$, signal);
         }
         if (next === null) {
           return;
         }
         // Arrow, Home and End keys resize instead of scrolling the list.
         event.preventDefault();
-        set(setStoredChatListHidden$, false);
-        set(setChatListWidth$, next);
-      },
+        set(setStoredChatListHidden$, false, signal);
+        return set(setChatListWidth$, next, signal);
+      }),
       { signal: mountSignal },
     );
   }),

@@ -62,9 +62,7 @@ import {
   PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
   RESUME_SESSION_HISTORY_MAX_BYTES,
   RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
-  RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX,
   RUNNER_HOSTNAME_MAX_LENGTH,
-  RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
   SESSION_HISTORY_ENCODING_GZIP,
   SESSION_HISTORY_ENCODING_IDENTITY,
   SESSION_HISTORY_ENCODING_ZSTD,
@@ -74,6 +72,15 @@ import {
   STORAGE_MANIFEST_MAX_PATH_BYTES,
 } from "../../contracts/storages";
 import { DATA_ROUTER_REQUEST_BODY_MAX_BYTES } from "../../contracts/data-router";
+import {
+  DEFAULT_RUNNER_PROFILE,
+  DEFAULT_RUNNER_PROFILE_VCPU,
+  DEFAULT_RUNNER_PROFILE_MEMORY_MB,
+  DEFAULT_RUNNER_PROFILE_ROOTFS_DISK_MB,
+  DEFAULT_RUNNER_PROFILE_HOME_DISK_MB,
+  RUNNER_DISPATCH_MAX_BODY_BYTES,
+  RUNNER_DISPATCH_MAX_VALIDITY_MS,
+} from "../../contracts/runner-dispatch";
 
 const codexOauthPlaceholders =
   MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"].placeholders!;
@@ -151,10 +158,6 @@ const connectorRuntimeSyncTargetsMaxDoc = [
 const connectorRuntimeSyncRunTerminalErrorCodeDoc = [
   "API error code returned when connector runtime synchronization targets a terminal run.",
 ] as const;
-const runnerPollExcludedRunIdsMaxDoc = [
-  "Maximum runner-local claim cooldown exclusions accepted by the poll endpoint.",
-  "Rust runners use this shared contract value to bound local cooldown state and poll request size.",
-] as const;
 
 const runnerHostnameMaxLengthDoc = [
   "Maximum configured runner hostname length accepted by the runner-facing API.",
@@ -205,6 +208,48 @@ function placeholderRustDoc(name: string): readonly string[] {
 }
 
 const expectedBindings = [
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DEFAULT_PROFILE",
+    value: rustString(DEFAULT_RUNNER_PROFILE),
+    rustDoc: ["Canonical default Runner profile."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DEFAULT_PROFILE_VCPU",
+    value: rustU32(DEFAULT_RUNNER_PROFILE_VCPU),
+    rustDoc: ["Canonical complete-input Runner contract constant."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DEFAULT_PROFILE_MEMORY_MB",
+    value: rustU32(DEFAULT_RUNNER_PROFILE_MEMORY_MB),
+    rustDoc: ["Canonical complete-input Runner contract constant."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DEFAULT_PROFILE_ROOTFS_DISK_MB",
+    value: rustU32(DEFAULT_RUNNER_PROFILE_ROOTFS_DISK_MB),
+    rustDoc: ["Canonical complete-input Runner contract constant."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DEFAULT_PROFILE_HOME_DISK_MB",
+    value: rustU32(DEFAULT_RUNNER_PROFILE_HOME_DISK_MB),
+    rustDoc: ["Canonical complete-input Runner contract constant."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DISPATCH_MAX_BODY_BYTES",
+    value: rustU32(RUNNER_DISPATCH_MAX_BODY_BYTES),
+    rustDoc: ["Canonical complete-input Runner contract constant."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "DISPATCH_MAX_VALIDITY_MS",
+    value: rustU32(RUNNER_DISPATCH_MAX_VALIDITY_MS),
+    rustDoc: ["Canonical complete-input Runner contract constant."],
+  },
   {
     rustModulePath: ["data_router"],
     rustConstName: "DATA_ROUTER_REQUEST_BODY_MAX_BYTES",
@@ -453,14 +498,6 @@ const expectedBindings = [
   },
   {
     rustModulePath: ["runners"],
-    rustConstName: "RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX",
-    value: rustU64(RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX),
-    rustDoc: [
-      "Maximum Pi model configuration generations advertised by one Runner claim.",
-    ],
-  },
-  {
-    rustModulePath: ["runners"],
     rustConstName: "RUNNER_CANCELLATION_RECOVERY_GRACE_MS",
     value: rustU64(RUNNER_CANCELLATION_RECOVERY_GRACE_MS),
     rustDoc: runnerCancellationRecoveryGraceMsDoc,
@@ -476,12 +513,6 @@ const expectedBindings = [
     rustConstName: "RUNNER_HOSTNAME_MAX_LENGTH",
     value: rustU64(RUNNER_HOSTNAME_MAX_LENGTH),
     rustDoc: runnerHostnameMaxLengthDoc,
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "RUNNER_POLL_EXCLUDED_RUN_IDS_MAX",
-    value: rustU64(RUNNER_POLL_EXCLUDED_RUN_IDS_MAX),
-    rustDoc: runnerPollExcludedRunIdsMaxDoc,
   },
   {
     rustModulePath: ["runners"],
@@ -746,9 +777,6 @@ describe("Rust constant bindings", () => {
     );
     expect(firstRender).toContain(
       `pub const RUNNER_HOSTNAME_MAX_LENGTH: u64 = ${RUNNER_HOSTNAME_MAX_LENGTH};`,
-    );
-    expect(firstRender).toContain(
-      `pub const RUNNER_POLL_EXCLUDED_RUN_IDS_MAX: u64 = ${RUNNER_POLL_EXCLUDED_RUN_IDS_MAX};`,
     );
     expect(firstRender).toContain(
       `pub const CONNECTOR_RUNTIME_SYNC_TARGETS_MAX: u64 = ${CONNECTOR_RUNTIME_SYNC_TARGETS_MAX};`,

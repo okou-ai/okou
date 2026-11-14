@@ -3,7 +3,7 @@ import { command } from "ccstate";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { boolean, object } from "zod";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { browserAuthorizationRequests } from "@okouai/db/schema/browser-session";
+import { browserAuthorizationRequests } from "@okouai/db/schema/browser-authorization-request";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";

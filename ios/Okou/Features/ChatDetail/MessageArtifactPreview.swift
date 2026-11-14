@@ -58,6 +58,9 @@ private struct ArtifactPreviewContent: View {
   @LoadableValue private var download: Loadable<ChatAttachmentFile?>
   @State private var webError: String?
   @State private var webLoading = true
+  // Only the adjacent raster covers needed by UIKit's transient paging surface.
+  // The shared card resources retain ownership of their requests and errors.
+  @State private var imageCovers: [Int: Data] = [:]
 
   init(
     viewer: MessageArtifactStore, preview: MessageArtifactPreviewRead,
@@ -88,6 +91,7 @@ private struct ArtifactPreviewContent: View {
           ArtifactCatalogWarning(catalog: catalog, retry: viewer.refreshDetails)
         }
       }
+      .task(id: value.data?.artifact.id) { await prepareImageCovers() }
     } actions: {
       if artifact.kind == .image {
         Button {
@@ -154,14 +158,20 @@ private struct ArtifactPreviewContent: View {
     case .hasData(let content):
       resolvedContent(content)
     case .loading:
-      fileContent(nil)
+      if artifact.kind == .video {
+        MessageMediaPlayer(url: nil, autoplays: true, retry: viewer.retry)
+      } else {
+        fileContent(nil)
+      }
     }
   }
 
   @ViewBuilder private func resolvedContent(_ content: MessageArtifactPreviewRead.Content)
     -> some View
   {
-    if let url = content.contentURL {
+    if content.artifact.kind == .video {
+      MessageMediaPlayer(url: content.contentURL, autoplays: true, retry: viewer.retry)
+    } else if let url = content.contentURL {
       VStack(spacing: 0) {
         if let webError {
           OkouLoadErrorRow(message: webError, actionTitle: "Retry") {
@@ -206,8 +216,44 @@ private struct ArtifactPreviewContent: View {
     MessageFilePreview(
       kind: artifact.kind, symbol: artifact.symbol, file: file,
       thumbnail: preview.thumbnail.flatMap(UIImage.init(data:)), error: nil,
-      canRetry: true, retry: viewer.retry)
+      canRetry: true, retry: viewer.retry,
+      imageNavigation: imageNavigation)
   }
+
+  private var imageNavigation: MessageImageNavigation? {
+    guard let content = value.data, artifact.kind == .image,
+      content.image(-1) != nil || content.image(1) != nil
+    else { return nil }
+    return MessageImageNavigation(
+      canGoPrevious: content.image(-1) != nil, canGoNext: content.image(1) != nil,
+      previous: imageCovers[-1].flatMap(UIImage.init(data:)),
+      next: imageCovers[1].flatMap(UIImage.init(data:)),
+      select: { direction in
+        viewer.navigateImage(
+          direction, content: content, previewID: preview.id, thumbnail: imageCovers[direction])
+      })
+  }
+
+  private func prepareImageCovers() async {
+    guard let content = value.data, content.artifact.kind == .image else { return }
+    async let previous: Void = prepareImageCover(-1, content: content)
+    async let next: Void = prepareImageCover(1, content: content)
+    _ = await (previous, next)
+  }
+
+  private func prepareImageCover(_ direction: Int, content: MessageArtifactPreviewRead.Content)
+    async
+  {
+    guard let image = content.image(direction) else { return }
+    do {
+      let card = try await viewer.card(image, thumbnail: true)
+      guard !Task.isCancelled, viewer.preview?.id == preview.id else { return }
+      if let cover = card.thumbnail { imageCovers[direction] = cover }
+    } catch {
+      // A cover is optional; selecting the page still uses the normal preview/error path.
+    }
+  }
+
 }
 
 private struct ArtifactCatalogWarning: View {

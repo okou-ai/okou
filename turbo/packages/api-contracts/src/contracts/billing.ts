@@ -29,8 +29,8 @@ export {
   CHECKOUT_ABANDONED_SURVEY_ANSWERS,
   CREDITS_EXHAUSTED_SURVEY_ANSWERS,
   USAGE_PACKS_USD,
-  type UsagePackUsd,
   usagePackUsdSchema,
+  type UsagePackUsd,
 } from "../validators/billing";
 
 const c = initContract();
@@ -1358,9 +1358,8 @@ export type BillingRedeemContract = typeof billingRedeemContract;
 /**
  * Contract for POST /api/billing/redeem-code
  *
- * Proxies onboarding invite codes to the Atom redeem endpoint. The platform
- * waits for billing status to update through realtime before completing
- * onboarding.
+ * Retained for open App pages until the replacement App client floor is enforced.
+ * Codes are no longer accepted; callers receive a refresh instruction.
  */
 export const billingRedeemCodeContract = c.router({
   create: {

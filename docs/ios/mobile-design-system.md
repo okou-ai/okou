@@ -122,7 +122,7 @@ not copied from CSS and are not all mandated by Apple.
 | Text scaling | Use `Font.okou(.body)` and corresponding named styles. A fixed `size:` is only for already scaled measurements or constrained artwork; ordinary body text uses Dynamic Type                                                                                                                                                       |
 | Spacing      | Prefer 4, 8, 12, 16, 20, 24, 32, 40, 48 via `OkouSpace`; smaller named steps serve tight component internals                                                                                                                                                                                                                      |
 | Radius       | Inline code 4, thumbnail 6, small 8, control 14, chat 16, card 20, sheet 28; circles/capsules remain native shapes                                                                                                                                                                                                                |
-| Type roles   | One surface uses at most three sizes: body 17 for content and input, callout 16 for controls inside the composer (subheadline 15 for its model value, under the draft), footnote/caption for supporting text. Never shrink a control label below callout to make it fit                                                           |
+| Type roles   | One surface uses at most three sizes: body 17 for content and input, callout 16 for controls inside the composer, footnote 13 for its supporting model note above the input, footnote/caption for other supporting text. The model note retains a 44 pt target; never shrink a control label to make it fit                       |
 | Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
 | Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                         |
 | Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
@@ -614,7 +614,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `OkouTextFieldStyle`                        | First-party standalone native text fields; resting, focused, disabled; the caller supplies `isFocused` from the native field binding and owns labels/validation                                                        |
 | `okouValuePicker()`                         | Menu picker whose trailing value and chevron are `trailingValue` (gray-700), a step lighter than the label                                                                                                             |
-| `OkouComposerValueLabel`                    | A value the open composer changes (the chat's model): subheadline medium value, muted detail that gives way first, a chevron, on the 44 pt action height                                                               |
+| `OkouComposerValueLabel`                    | A quiet model note above the open composer: footnote muted text, optional Fast lightning mark and a chevron, with a 44 pt target                                                                                       |
 | `OkouChip` / `OkouChipRail`                 | Filter capsules in the web's colours, in a sideways-scrolling row starting on the content edge; selected takes `state-selected`                                                                                        |
 | `OkouSegmentControl`                        | Large segmented shape in the web's segment colours: grey track, white raised selection                                                                                                                                 |
 | `OkouAddIndicator`                          | A catalog card's trailing "+" (add now) or chevron (added; the card opens it), 32 pt in a 44 pt target                                                                                                                 |
@@ -696,13 +696,15 @@ feature; the catalog shows each one.
 - **Chat header** has no title: the menu glass circle on the left, the chat's "…" menu on
   the right, over a soft blur. The selected row in the sidebar says which chat
   is open. The "…" menu is titled with the chat and starts with Pin chat.
-- **The model control is in the open composer**, left of the mic and send, as Claude and
-  ChatGPT place it: `ChatModelPickerButton` draws an `OkouComposerValueLabel` with the
-  model's name in subheadline medium `foreground`, its thinking effort and Fast in
-  subheadline `muted-foreground` ("GPT 6.1 Sol High") and a chevron. It shows only while the
-  composer is open, where the next message is written, and is gone from the one-line
-  composer and while dictating. On the home screen it is the next new chat's model; in a
-  chat, that chat's. The composer presents the model sheet, and keeps itself open under it,
+- **The model control is a quiet note above the open composer**, aligned to its trailing
+  edge. `ChatModelPickerButton` draws an `OkouComposerValueLabel` with the model's name in
+  footnote `muted-foreground`, a small Lucide `zap` when Fast is enabled, and a chevron.
+  Thinking effort remains in the model sheet and VoiceOver value rather than the visual
+  summary. The supporting note keeps a 44 pt target and stays mounted as the editor
+  expands, so loading or refreshing its configuration does not replace the editor.
+  It shows only while the composer is open and is gone from the one-line composer and
+  while dictating. On the home screen it is the next new chat's model; in a chat, that
+  chat's. The composer presents the model sheet, and keeps itself open under it,
   so the sheet survives the keyboard going down and the keyboard comes back after it. The
   composer's only leading control is `+`, which opens **Add to
   chat** (`ComposerAddSheet`, after Manus and Claude): a sideways strip of 88 pt tiles —
@@ -815,7 +817,9 @@ feature; the catalog shows each one.
   The sidebar's back button and chat selection request native pushes to the chat;
   a swipe is never the only way back. Content that scrolls
   sideways (a code block or a table) participates in UIKit's native gesture arbitration.
-  UIKit owns the interactive pop and its recognition policy.
+  UIKit owns the interactive pop and its animation. Coordinate return gestures
+  with vertical scrolling through public delegate failure relationships;
+  preserve horizontal content arbitration.
   A page swipe never also taps the row under it. Dragging a chat row from left to right
   reveals Mark as read/unread; dragging it from right to left reveals Archive/Unarchive.
   Continuing either gesture to a full swipe executes that action; a shorter swipe leaves
@@ -882,11 +886,12 @@ feature; the catalog shows each one.
   controllers, and native Form/List row chrome retain platform interaction and
   material behavior. Product labels and supplied menu icons use the shared
   typography/assets where the public API permits it.
-- iOS can retain an empty composer's disabled Return key when automatic disabling
-  is turned off despite `reloadInputViews()`. The owning editor may restart its
-  active, empty input session without animation and return focus to the same
-  view. Defer this refresh until marked-text composition settles; preserve the
-  document and undo history rather than replacing text or overriding `hasText`.
+- iOS can retain a composer's disabled Return key after programmatic text insertion
+  or when automatic disabling is turned off, despite `reloadInputViews()`. The
+  owning editor may restart its active input session without animation and return
+  focus to the same view. Keep ordinary typing in its native session and defer this refresh until marked-text
+  composition settles; preserve the document, selection, and undo history rather
+  than replacing text or overriding `hasText`.
 - First-party authentication uses native provider, email, code, password, and
   required-profile steps, composed from shared controls. Provider availability,
   required fields, verification, transport, OAuth, and session authority come from

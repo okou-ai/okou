@@ -153,7 +153,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     let store = fixture.workspace()
     defer { store.close() }
     await store.refresh()
-    store.setForeground(true)
+    store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
     let conversation = try XCTUnwrap(store.selectedConversation)
     let refresh = Task { await conversation.refresh() }
@@ -190,7 +190,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     let store = fixture.workspace()
     defer { store.close() }
     await store.refresh()
-    store.setForeground(true)
+    store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
     await store.selectedConversation?.refresh()
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
@@ -225,7 +225,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     let store = fixture.workspace()
     defer { store.close() }
     await store.refresh()
-    store.setForeground(true)
+    store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
     await store.selectedConversation?.refresh()
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
@@ -454,19 +454,34 @@ final class ChatSearchUnreadTests: XCTestCase {
     store.search.present()
     let failed = await store.openSearchResult(SearchUnreadFixture.id(2))
     XCTAssertFalse(failed)
-    XCTAssertNotNil(store.list.error)
+    do {
+      try await store.list.stateStore.get(store.list.listValue).value
+      XCTFail("Search must retain the list failure instead of reporting a missing chat")
+    } catch {
+      XCTAssertEqual((error as? APIClientError)?.statusCode, 503)
+    }
     XCTAssertNil(store.search.openingError)
     XCTAssertNil(store.selectedThreadID)
     failing.withLock { $0 = false }
     let missing = await store.openSearchResult(SearchUnreadFixture.id(2))
     XCTAssertFalse(missing)
     XCTAssertNil(store.list.error)
+    do {
+      try await store.list.stateStore.get(store.list.listValue).value
+    } catch {
+      XCTFail("A missing chat follows a successful list read: \(error)")
+    }
     XCTAssertNotNil(store.search.openingError)
     XCTAssertNil(store.selectedThreadID)
     failing.withLock { $0 = true }
     let failedAgain = await store.openSearchResult(SearchUnreadFixture.id(2))
     XCTAssertFalse(failedAgain)
-    XCTAssertNotNil(store.list.error)
+    do {
+      try await store.list.stateStore.get(store.list.listValue).value
+      XCTFail("A later failed list read must remain available to the search status")
+    } catch {
+      XCTAssertEqual((error as? APIClientError)?.statusCode, 503)
+    }
     XCTAssertNil(store.search.openingError)
   }
 

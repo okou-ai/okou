@@ -1,9 +1,11 @@
 package ai.okou.android.auth
 
-import ai.okou.android.HomeModel
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.chat.ChatCacheStore
+import ai.okou.android.chat.ChatListModel
+import ai.okou.android.chat.chatScopeHash
 import ai.okou.android.preferences.MemberPreferencesModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -12,6 +14,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -35,7 +39,7 @@ data class ReadyWorkspace(
     val identity: WorkspaceIdentity,
     val organization: Organization,
     val preferences: MemberPreferencesModel,
-    val home: HomeModel,
+    val chats: ChatListModel,
 )
 
 data class SessionUiState(
@@ -51,6 +55,8 @@ class SessionModel(
     private val authentication: Authentication,
     private val factory: WorkspaceSessionFactory,
     private val apiOrigin: String,
+    private val chatCache: ChatCacheStore,
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     @Volatile private var generation = 0L
     private val mutable = MutableStateFlow(SessionUiState(generation))
@@ -117,6 +123,18 @@ class SessionModel(
                             session.userId,
                             session.sessionId,
                             session.workspaceId,
+                            chatScopeHash(
+                                listOf(memberships.first { it.id == session.workspaceId }.role) +
+                                    snapshot.membershipAccess
+                                        ?.firstOrNull { it.workspaceId == session.workspaceId }
+                                        ?.let {
+                                            listOf(
+                                                it.role,
+                                                if (it.permissions == null) "unknown" else "known",
+                                            ) + it.permissions.orEmpty().sorted()
+                                        }
+                                        .orEmpty()
+                            ),
                         )
                     val owner =
                         factory.create(
@@ -135,9 +153,6 @@ class SessionModel(
                     requireCurrent(ticket, snapshot)
                     val store = ViewModelStore()
                     presentation = store
-                    val home =
-                        ViewModelProvider(store, viewModelFactory { initializer { HomeModel() } })[
-                            HomeModel::class.java]
                     val preferences =
                         ViewModelProvider(
                             store,
@@ -154,13 +169,32 @@ class SessionModel(
                                 }
                             },
                         )[MemberPreferencesModel::class.java]
+                    val chats =
+                        ViewModelProvider(
+                            store,
+                            viewModelFactory {
+                                initializer {
+                                    ChatListModel(
+                                        owner,
+                                        chatCache,
+                                        identity,
+                                        authorized = { current(ticket, snapshot) },
+                                        onFailure = { error ->
+                                            workspaceFailure(ticket, snapshot, error)
+                                        },
+                                        dispatcher = dispatcher,
+                                    )
+                                }
+                            },
+                        )[ChatListModel::class.java]
                     mutable.value =
                         SessionUiState(
                             generation,
                             SessionStage.Ready,
                             memberships,
-                            ReadyWorkspace(identity, data.organization, preferences, home),
+                            ReadyWorkspace(identity, data.organization, preferences, chats),
                         )
+                    chats.refresh()
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -201,6 +235,7 @@ class SessionModel(
 
     fun refreshPreferences() {
         mutable.value.ready?.preferences?.refreshFromForeground()
+        mutable.value.ready?.chats?.refresh()
     }
 
     private fun workspaceFailure(ticket: Long, snapshot: AuthenticationState, error: Exception) {

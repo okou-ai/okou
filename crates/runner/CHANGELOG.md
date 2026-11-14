@@ -1,5 +1,114 @@
 # Changelog
 
+## [0.249.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.7...runner-rs-v0.249.8) (2026-11-14)
+
+
+### Refactoring
+
+* **python:** own native controller resources through failures ([#47188](https://github.com/okou-ai/okou/issues/47188)) ([5ef9174](https://github.com/okou-ai/okou/commit/5ef9174db8deca6ee59cc15605ac303dcb34e851))
+
+## [0.249.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.6...runner-rs-v0.249.7) (2026-11-14)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.5...runner-rs-v0.249.6) (2026-11-14)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.4...runner-rs-v0.249.5) (2026-11-14)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.3...runner-rs-v0.249.4) (2026-11-14)
+
+
+### Refactoring
+
+* **python:** reuse capped capture for catalog streams ([#47106](https://github.com/okou-ai/okou/issues/47106)) ([1a8bb03](https://github.com/okou-ai/okou/commit/1a8bb03205c21afd3d7cff7307bd755be038c473))
+* **runner:** retire legacy run acquisition clients ([#47100](https://github.com/okou-ai/okou/issues/47100)) ([a9904bc](https://github.com/okou-ai/okou/commit/a9904bc0c2405516d10168768e09a410f10541eb))
+* **rust:** type internal owned descriptor permission changes ([#47128](https://github.com/okou-ai/okou/issues/47128)) ([991e0d8](https://github.com/okou-ai/okou/commit/991e0d807829bc2e51169b17e18f9d618cc105a9))
+* **rust:** type internal owned descriptor stat checks ([#47124](https://github.com/okou-ai/okou/issues/47124)) ([5e36773](https://github.com/okou-ai/okou/commit/5e36773632938b2b6ba02fecd4768941a7ce3fd4))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.2...runner-rs-v0.249.3) (2026-11-13)
+
+
+### Refactoring
+
+* **python:** bind running restore control validation to its contract ([#47088](https://github.com/okou-ai/okou/issues/47088)) ([078a478](https://github.com/okou-ai/okou/commit/078a478d0e6ba24742343c035684a0a6918d73dc))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.1...runner-rs-v0.249.2) (2026-11-13)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.0...runner-rs-v0.249.1) (2026-11-13)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.8...runner-rs-v0.249.0) (2026-11-13)
+
+
+### Features
+
+* **api:** dispatch complete run inputs without queue persistence ([#46910](https://github.com/okou-ai/okou/issues/46910)) ([4862caf](https://github.com/okou-ai/okou/commit/4862caf28ec28fa86c88f0f66d8634a1598c6a06))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.248.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.7...runner-rs-v0.248.8) (2026-11-13)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.248.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.6...runner-rs-v0.248.7) (2026-11-13)
+
+
+### Refactoring
+
+* **python:** centralize native status wait counter checks ([#46942](https://github.com/okou-ai/okou/issues/46942)) ([491cef2](https://github.com/okou-ai/okou/commit/491cef2a87ca1852d0da82625fb120460d53d6dc))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.248.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.5...runner-rs-v0.248.6) (2026-11-13)
+
+
+### Bug Fixes
+
+* **runner:** initialize postgres directories in updated rootfs ([#46970](https://github.com/okou-ai/okou/issues/46970)) ([b896054](https://github.com/okou-ai/okou/commit/b8960548c4df22d0210ab232239b6fa01d2ef720))
+
+## [0.248.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.4...runner-rs-v0.248.5) (2026-11-13)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.248.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.3...runner-rs-v0.248.4) (2026-11-13)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.248.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.248.2...runner-rs-v0.248.3) (2026-11-13)
 
 ### Release Dependencies

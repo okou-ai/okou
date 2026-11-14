@@ -5,7 +5,7 @@ import {
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { Buffer } from "node:buffer";
-import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomInt } from "node:crypto";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 
 import {
@@ -467,8 +467,8 @@ async function postWebhook(args: {
   );
 }
 
-function configureCanonicalTelegramRunner(): string {
-  const runnerGroup = runsApi.configureRunnerGroup();
+async function configureCanonicalTelegramRunner(): Promise<string> {
+  const runnerGroup = await runsApi.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
   authOrgApi.acceptAgentStorageWrites();
   runsApi.acceptStorageDownloads();
@@ -767,7 +767,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it("keeps concurrent first Telegram DMs on one owner-scoped thread", async () => {
-    configureCanonicalTelegramRunner();
+    await configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
     const outsider = await createTelegramPostFixture();
     const actor = actorForFixture(fixture);
@@ -888,10 +888,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it("snapshots thread reuse inputs before a CLI session exists", async () => {
-    const runnerGroup = configureCanonicalTelegramRunner();
+    const runnerGroup = await configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
     telegramApiMocks();
-    const prompt = "reuse this Telegram thread";
+    const prompt = "create a Telegram thread before the CLI session starts";
     expect(
       (
         await postWebhook({
@@ -921,57 +921,69 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     }
     const threadId = await threadIdForRun(fixture, runId);
     const reuseKey = `thread:${threadId}`;
-    const runnerId = randomUUID();
-    await runsApi.requestHeartbeatRunner(true, [200], {
-      runnerId,
-      group: runnerGroup,
-      admittableProfiles: [],
-      heldSandboxStates: [
-        {
-          reuseKey,
-          lastCompletedAt: nowDate().toISOString(),
-          reusableSandbox: {
-            sourceRunId: "33333333-3333-4333-8333-333333333333",
-            profile: "vm0/default",
-          },
-        },
-      ],
-    });
-
-    const poll = await runsApi.requestPollRunner(
-      true,
-      {
-        runnerId,
-        group: runnerGroup,
-        supportedProfiles: ["vm0/default"],
-      },
+    const firstInput = await fixture.runs.claim(runId);
+    await webhooksApi.requestAgentComplete(
+      { runId, exitCode: 1, error: "CLI session did not start" },
+      { authorization: `Bearer ${firstInput.sandboxToken}` },
       [200],
     );
-    if (poll.status !== 200) {
-      throw new Error("Expected the same-thread reuse poll to succeed");
-    }
-    expect(poll.body.job).toMatchObject({
-      runId,
-      cliAgentSessionId: null,
-      reuseKey,
-      runnerPreference: {
-        kind: "preference",
-        runnerIdentity: {
-          runnerId,
-          heartbeatGeneration: 1,
-        },
-        tier: "reusableSandbox",
-        expiresAt: expect.any(String),
+    await flushWaitUntilForTest();
+    const runner = await runsApi.registerDirectRunner(runnerGroup, {
+      maxConcurrent: 1,
+      heartbeat: {
+        heldSandboxStates: [
+          {
+            reuseKey,
+            lastCompletedAt: nowDate().toISOString(),
+            reusableSandbox: { sourceRunId: runId, profile: "vm0/default" },
+          },
+        ],
       },
     });
-
-    const claim = await fixture.runs.claim(runId);
+    const followUpPrompt = "reuse this Telegram thread";
+    expect(
+      (
+        await postWebhook({
+          telegramBotId: fixture.telegramBotId,
+          secret: fixture.webhookSecret,
+          body: {
+            update_id: 212,
+            message: {
+              message_id: 2212,
+              chat: { id: 77_011, type: "private" },
+              from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
+              text: followUpPrompt,
+            },
+          },
+        })
+      ).status,
+    ).toBe(200);
+    await flushWaitUntilForTest();
+    const followUp = await runForPrompt(fixture, followUpPrompt);
+    if (!followUp) {
+      throw new Error("Expected the same-thread Telegram follow-up");
+    }
+    await expect(threadIdForRun(fixture, followUp.id)).resolves.toBe(threadId);
+    expect(runsApi.dispatchedRun(followUp.id)).toMatchObject({
+      runnerId: runner.runnerId,
+      heartbeatGeneration: runner.heartbeatGeneration,
+      executionContext: {
+        runId: followUp.id,
+        nativeContinuation: { sessionId: null, generationRunId: null },
+        reuseKey,
+      },
+    });
+    const claim = await fixture.runs.claim(followUp.id);
     expect(claim.reuseKey).toBe(reuseKey);
-    await runsApi.requestCancelRun(actorForFixture(fixture), runId, [200]);
+    await runsApi.requestCancelRun(
+      actorForFixture(fixture),
+      followUp.id,
+      [200],
+    );
   });
 
   it("rebuilds queued Telegram launch material from context", async () => {
-    const runnerGroup = configureCanonicalTelegramRunner();
+    const runnerGroup = await configureCanonicalTelegramRunner();
     configureOfficialBotEnv();
     const actor = authOrgApi.user();
     const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
@@ -1191,6 +1203,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   }
 
   async function prepareTelegramGroup() {
+    await configureCanonicalTelegramRunner();
     configureOfficialBotEnv();
     runsApi.acceptTelemetryIngest();
     const actor = authOrgApi.user();
@@ -1262,7 +1275,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   }
 
   async function prepareTelegramDm() {
-    const runnerGroup = configureCanonicalTelegramRunner();
+    const runnerGroup = await configureCanonicalTelegramRunner();
     configureOfficialBotEnv();
     const actor = authOrgApi.user();
     if (!actor.orgId) {
@@ -1612,7 +1625,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   async function runCanonicalTelegramForumScenario(
     phase: "callback" | "reply-chain" | "fresh-chain",
   ) {
-    const runnerGroup = configureCanonicalTelegramRunner();
+    const runnerGroup = await configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
     const telegramMocks = telegramApiMocks();
     const botUsername = OFFICIAL_BOT_USERNAME;
@@ -1866,7 +1879,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it("does not deliver a completed Telegram reply after public unlink", async () => {
-    const runnerGroup = configureCanonicalTelegramRunner();
+    const runnerGroup = await configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
     const telegramMocks = telegramApiMocks();
     const prompt = `@${OFFICIAL_BOT_USERNAME} complete after unlink`;
@@ -1929,7 +1942,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   ])(
     "keeps Telegram completion terminal after provider HTTP $providerStatus",
     async ({ providerStatus, expectedAttempts }) => {
-      const runnerGroup = configureCanonicalTelegramRunner();
+      const runnerGroup = await configureCanonicalTelegramRunner();
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
       telegramApiMocks();
       const attemptedMessages: TelegramSendMessageBody[] = [];
@@ -2029,7 +2042,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     "preserves a Telegram topic attachment and ignores duplicate delivery",
     { timeout: 120_000 },
     async () => {
-      const runnerGroup = configureCanonicalTelegramRunner();
+      const runnerGroup = await configureCanonicalTelegramRunner();
       configureOfficialBotEnv();
       const actor = authOrgApi.user();
       const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
@@ -2164,7 +2177,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   it("keeps Telegram callbacks typed when OKOU_API_BACKEND_URL is set", async () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://www.okou.ai");
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-    const runnerGroup = configureCanonicalTelegramRunner();
+    const runnerGroup = await configureCanonicalTelegramRunner();
     const fixture = await createTelegramPostFixture({ linkOfficial: true });
     const telegramMocks = telegramApiMocks();
 
@@ -2285,8 +2298,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         expect(run?.appendSystemPrompt).not.toContain("Root message ID:");
         expect(run?.appendSystemPrompt).not.toContain("Message thread ID:");
         expect(run?.appendSystemPrompt).toContain("Telegram username: @alice");
-        expect(run?.startedAt).toBeNull();
-        expect(["queued", "pending"]).toContain(run?.status);
+        expect(run?.startedAt).toStrictEqual(expect.any(String));
+        expect(run?.status).toBe("running");
       }),
       fixture.finish,
     );
@@ -2575,7 +2588,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     async (type) => {
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      const runnerGroup = configureCanonicalTelegramRunner();
+      const runnerGroup = await configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
       const bytes = Buffer.from(`telegram ${type} bytes`);
@@ -2737,7 +2750,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       );
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      const runnerGroup = configureCanonicalTelegramRunner();
+      const runnerGroup = await configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
       const bytes = Buffer.from("recovered Telegram attachment");
@@ -2850,7 +2863,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     async (failure) => {
       const fixture = await createTelegramPostFixture({ linkOfficial: true });
       const actor = actorForFixture(fixture);
-      const runnerGroup = configureCanonicalTelegramRunner();
+      const runnerGroup = await configureCanonicalTelegramRunner();
       telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
       context.mocks.telegram.getFile.mockResolvedValue({

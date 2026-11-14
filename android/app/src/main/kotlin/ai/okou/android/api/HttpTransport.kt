@@ -20,7 +20,6 @@ import okio.ForwardingSource
 import okio.GzipSource
 import okio.buffer
 
-internal const val MAX_API_RESPONSE_BYTES = 1024L * 1024L
 internal val DEFAULT_CALL_TIMEOUT = 30.seconds
 
 internal class ResponseLimitExceeded : IOException("Response exceeds the supported size")
@@ -123,7 +122,11 @@ internal fun ResponseBody.bounded(maximumBytes: Long): ResponseBody {
     }
 }
 
-internal suspend fun Call.awaitBytes(maximumBytes: Long): ByteArray =
+internal suspend fun Call.awaitBytes(maximumBytes: Long): ByteArray = awaitBody { body ->
+    body.bounded(maximumBytes).use { it.bytes() }
+}
+
+internal suspend fun <T> Call.awaitBody(read: (ResponseBody) -> T): T =
     suspendCancellableCoroutine { continuation ->
         continuation.invokeOnCancellation { cancel() }
         enqueue(
@@ -133,16 +136,10 @@ internal suspend fun Call.awaitBytes(maximumBytes: Long): ByteArray =
                 }
 
                 override fun onResponse(call: Call, response: Response) {
-                    // Keep the Call cancellable until bounded body consumption and cleanup finish.
+                    // Keep the Call cancellable until streamed body consumption and cleanup finish.
                     // This callback runs on OkHttp's IO executor, not the main thread.
                     continuation.resumeWith(
-                        runCatching {
-                            response.use {
-                                checkNotNull(it.body).bounded(maximumBytes).use { body ->
-                                    body.bytes()
-                                }
-                            }
-                        }
+                        runCatching { response.use { read(checkNotNull(it.body)) } }
                     )
                 }
             }

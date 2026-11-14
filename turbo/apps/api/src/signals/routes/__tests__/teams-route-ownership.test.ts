@@ -38,13 +38,13 @@ function authHeaders() {
   return { authorization: "Bearer clerk-session" };
 }
 
-function configureTeamsProvider(fixture: TeamsConnectFixture) {
+async function configureTeamsProvider(fixture: TeamsConnectFixture) {
   const deliveries: { readonly url: string; readonly body: unknown }[] = [];
   setupTeamsConnectTestEnv();
   mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", "test-teams-password");
   // Every test database has the managed Auto key, so a member's Teams message
   // launches a real run; give it an executor and storage downloads.
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   runs.acceptStorageDownloads();
   context.mocks.s3.send.mockResolvedValue({});
   context.mocks.ably.publish.mockResolvedValue(undefined);
@@ -152,7 +152,7 @@ async function connect(fixture: TeamsConnectFixture): Promise<void> {
 
 async function setupTeamsRoute() {
   const fixture = teamsConnectFixture();
-  const { deliveries, runnerGroup } = configureTeamsProvider(fixture);
+  const { deliveries, runnerGroup } = await configureTeamsProvider(fixture);
   mocks.clerk.session(fixture.userId, fixture.orgId);
   const app = await setupApp({
     context,
@@ -234,7 +234,7 @@ async function failClaimedRun(
     throw new Error("Expected a launched Teams run");
   }
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.claimRunnerJob(runId);
+  const claim = await runs.executionInput(runId);
   await webhooks.requestAgentComplete(
     { runId, exitCode: 1, error: "Agent exited" },
     { authorization: `Bearer ${claim.sandboxToken}` },

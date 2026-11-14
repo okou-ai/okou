@@ -1,10 +1,7 @@
 import { command } from "ccstate";
 import { and, asc, eq, notExists } from "drizzle-orm";
 import { uuid } from "zod";
-import {
-  browserSessionScreenshotDeletions,
-  browserSessionScreenshots,
-} from "@okouai/db/schema/browser-session";
+import { browserSessionScreenshotDeletions } from "@okouai/db/schema/browser-screenshot-deletion";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { browserChatSessions } from "@okouai/db/schema/browser-chat-session";
 
@@ -27,19 +24,11 @@ const retireBrowserScreenshot$ = command(
   ): Promise<boolean> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
-    const unreferenced = and(
-      notExists(
-        db
-          .select({ id: browserSessionScreenshots.chatThreadId })
-          .from(browserSessionScreenshots)
-          .where(eq(browserSessionScreenshots.objectKey, item.objectKey)),
-      ),
-      notExists(
-        db
-          .select({ id: browserChatSessions.chatThreadId })
-          .from(browserChatSessions)
-          .where(eq(browserChatSessions.screenshotObjectKey, item.objectKey)),
-      ),
+    const unreferenced = notExists(
+      db
+        .select({ id: browserChatSessions.chatThreadId })
+        .from(browserChatSessions)
+        .where(eq(browserChatSessions.screenshotObjectKey, item.objectKey)),
     );
     let bucket: string;
     let file: typeof runUploadedFiles.$inferSelect | undefined;
@@ -132,29 +121,16 @@ export const cleanupBrowserScreenshots$ = command(
       .select()
       .from(browserSessionScreenshotDeletions)
       .where(
-        and(
-          notExists(
-            db
-              .select({ id: browserSessionScreenshots.chatThreadId })
-              .from(browserSessionScreenshots)
-              .where(
-                eq(
-                  browserSessionScreenshots.objectKey,
-                  browserSessionScreenshotDeletions.objectKey,
-                ),
+        notExists(
+          db
+            .select({ id: browserChatSessions.chatThreadId })
+            .from(browserChatSessions)
+            .where(
+              eq(
+                browserChatSessions.screenshotObjectKey,
+                browserSessionScreenshotDeletions.objectKey,
               ),
-          ),
-          notExists(
-            db
-              .select({ id: browserChatSessions.chatThreadId })
-              .from(browserChatSessions)
-              .where(
-                eq(
-                  browserChatSessions.screenshotObjectKey,
-                  browserSessionScreenshotDeletions.objectKey,
-                ),
-              ),
-          ),
+            ),
         ),
       )
       .orderBy(

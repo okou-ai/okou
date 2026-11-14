@@ -37,6 +37,7 @@ use std::sync::Arc;
 #[cfg(test)]
 use std::time::Duration;
 
+use api_contracts::generated::constants::runners::OFFICIAL_RUNNER_TOKEN_PREFIX;
 use clap::Args;
 use sandbox::{RuntimeProvider, SandboxRuntime};
 use tokio::sync::mpsc;
@@ -382,6 +383,7 @@ async fn run_start_observed(
     }
 
     let server = validate_server_config_for_start(server)?;
+    validate_execution_transport(&server, args.local)?;
 
     let runner_host_env = runner_host::host_env::read_runner_host_env()?;
     let config::SandboxConfig {
@@ -457,17 +459,6 @@ async fn run_start_observed(
         touch_mtime(profile_paths.rootfs_paths().dir());
         touch_mtime(profile_paths.snapshot_paths().dir());
     }
-    let installed_okou_cli = resource_locks.uniform_installed_okou_cli().cloned();
-    match &installed_okou_cli {
-        Some(installed) => info!(
-            cli_version = %installed.versions.cli,
-            pi_agent_runtime_version = %installed.versions.pi_agent_runtime,
-            pi_sdk_version = %installed.versions.pi_sdk,
-            "installed Okou CLI advertised for claims"
-        ),
-        None => info!("no installed Okou CLI recorded for every profile; claims advertise none"),
-    }
-
     let log_paths = LogPaths::new(home.logs_dir());
     runner_host::log_file::ensure_log_dir(log_paths.dir()).map_err(|e| {
         RunnerError::Config(format!(
@@ -489,7 +480,8 @@ async fn run_start_observed(
     })?;
     let background_fill = crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()?;
     let hostname = runner_config.hostname;
-    let observe_ingress_service = !args.local && server.token.starts_with("vm0_official_");
+    let observe_ingress_service =
+        !args.local && server.token.starts_with(OFFICIAL_RUNNER_TOKEN_PREFIX);
     let ingress = if observe_ingress_service {
         Some(runner_supervisor::ingress::IngressConfig {
             directory: home.ingress_dir(),
@@ -731,7 +723,6 @@ async fn run_start_observed(
         (provider, group, None)
     } else {
         let group_name = group.clone();
-        let profiles: Vec<String> = runner_config.profiles.keys().cloned().collect();
         let provider = ApiProvider::new(
             http.clone(),
             server.token,
@@ -740,10 +731,7 @@ async fn run_start_observed(
                     Arc::new(runtime) as Arc<dyn runner_provider::AblySideMessageHandler>
                 }),
                 runner_identity,
-                runner_hostname: hostname.clone(),
                 group,
-                supported_profiles: profiles,
-                installed_okou_cli,
             },
             BuiltinFirewallCatalogCachePaths {
                 cache_path: paths.builtin_firewall_catalog_cache(),
@@ -952,3 +940,16 @@ fn validate_server_config_for_start(
 
 #[cfg(test)]
 mod tests;
+
+/// Remote execution requires the authenticated complete-input ingress.
+fn validate_execution_transport(
+    server: &config::ServerConfig,
+    local: bool,
+) -> Result<(), RunnerError> {
+    if !local && !server.token.starts_with(OFFICIAL_RUNNER_TOKEN_PREFIX) {
+        return Err(RunnerError::Config(
+            "remote Runner execution requires official direct-dispatch credentials; use --local for independent local submissions".into(),
+        ));
+    }
+    Ok(())
+}

@@ -201,34 +201,6 @@ describe("PUT /api/billing/auto-recharge", () => {
     expect(readBack).toStrictEqual(response.body);
   });
 
-  it("enables auto-recharge for custom tier org", async () => {
-    const admin = createActor();
-    const owner = createPublicBillingZeroFixture(context, admin, {
-      foreverCustom: {
-        priceId: `price_custom_${randomUUID()}`,
-        webhookSecret: `whsec_custom_${randomUUID()}`,
-      },
-    });
-    await owner.run(async () => {
-      await owner.initialize();
-      context.mocks.stripe.paymentMethods.list.mockResolvedValue({
-        data: [],
-        has_more: false,
-      });
-      const response = await billingApi.updateAutoRecharge(
-        admin,
-        { enabled: true, threshold: 1000, amount: 5000 },
-        [200],
-      );
-
-      expect(response.body).toStrictEqual({
-        enabled: true,
-        threshold: 1000,
-        amount: 5000,
-      });
-    });
-  });
-
   it("creates and pays an invoice when enabling auto-recharge below threshold", async () => {
     const { admin, entitlement } = await createProActor();
     const status = await billingApi.readBillingStatus(admin);
@@ -714,8 +686,7 @@ describe("PUT /api/billing/auto-recharge", () => {
 
       expect(response.body).toStrictEqual({
         error: {
-          message:
-            "Auto-recharge is only available for Pro, Team, or Custom workspaces",
+          message: "Auto-recharge is only available for Pro or Team workspaces",
           code: "BAD_REQUEST",
         },
       });

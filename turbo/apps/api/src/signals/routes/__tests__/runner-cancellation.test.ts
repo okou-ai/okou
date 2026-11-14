@@ -27,7 +27,13 @@ async function fixture(options: { orgId?: string; userId?: string } = {}) {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const identity = {
+    runnerId: randomUUID(),
+    heartbeatGeneration: 5_000_000_000,
+  };
+  const runnerGroup = await runs.configureRunnerGroup({
+    runnerIdentity: identity,
+  });
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
@@ -48,14 +54,8 @@ async function fixture(options: { orgId?: string; userId?: string } = {}) {
     await flushWaitUntilForTest();
     await bdd.requestDeleteAgent(actor, agent.agentId, [204, 404]);
   });
-  const identity = {
-    runnerId: randomUUID(),
-    heartbeatGeneration: 5_000_000_000,
-  };
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.claimRunnerJob(run.runId, {
-    runnerIdentity: identity,
-  });
+  const claim = await runs.executionInput(run.runId);
   return {
     bdd,
     runs,
@@ -84,7 +84,7 @@ async function read(f: Fixture) {
   );
 }
 
-async function patFixture(runCounts: readonly number[]) {
+async function directFixture(runCounts: readonly number[]) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const webhooks = createWebhookCallbackApi(context);
@@ -122,26 +122,27 @@ async function patFixture(runCounts: readonly number[]) {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
-  const query = {
-    runnerGroup,
+  const identity = {
     runnerId: randomUUID(),
     heartbeatGeneration: 5_000_000_000,
   };
+  const runnerGroup = await runs.configureRunnerGroup({
+    runnerIdentity: identity,
+  });
+  const query = { runnerGroup, ...identity };
 
   for (const [actorIndex, actor] of actors.entries()) {
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
-      displayName: "PAT cancellation agent",
-      description: "Exercises cancellation with a current PAT claim.",
+      displayName: "Direct cancellation agent",
+      description: "Exercises cancellation after direct process selection.",
       visibility: "private",
     });
-    const pat = await runs.createCliToken(actor);
     for (let index = 0; index < runCounts[actorIndex]!; index++) {
       const run = await runs.createThreadRun(actor, {
         agentId: agent.agentId,
-        prompt: "reconcile a PAT-claimed Run",
+        prompt: "reconcile a directly dispatched Run",
       });
       const owned: (typeof ownedRuns)[number] = {
         actor,
@@ -149,29 +150,19 @@ async function patFixture(runCounts: readonly number[]) {
         acknowledged: false,
       };
       ownedRuns.push(owned);
-      const claim = await runs.requestClaimRunnerJobAs(
-        `Bearer ${pat.token}`,
-        run.runId,
-        [200],
-        {
-          runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 13 },
-        },
-      );
-      if (claim.status !== 200) {
-        throw new Error("Expected public PAT claim to succeed");
-      }
-      owned.sandboxToken = claim.body.sandboxToken;
+      const claim = await runs.executionInput(run.runId);
+      owned.sandboxToken = claim.sandboxToken;
       const runner = await runs.requestRunRunner(actor, run.runId, [200]);
       expect(runner.body).toMatchObject({
-        runnerId: null,
-        runnerHeartbeatGeneration: null,
+        runnerId: identity.runnerId,
+        runnerHeartbeatGeneration: identity.heartbeatGeneration,
       });
     }
   }
 
   const [target] = ownedRuns;
   if (!target?.sandboxToken) {
-    throw new Error("Expected a publicly claimed PAT Run");
+    throw new Error("Expected a directly dispatched Run");
   }
   const headers = { authorization: `Bearer ${target.sandboxToken}` };
   const readTarget = async () => {
@@ -192,9 +183,9 @@ async function patFixture(runCounts: readonly number[]) {
 }
 
 describe("Run cancellation reconciliation", () => {
-  it("reconciles cooperative cancellation for a PAT claim without official attribution", async () => {
+  it("reconciles cooperative cancellation for a directly dispatched Run", async () => {
     const { target, headers, readTarget, query, runs, webhooks } =
-      await patFixture([1]);
+      await directFixture([1]);
     const healthy = await readTarget();
     expect(healthy.body).toStrictEqual({
       protocolVersion: 1,
@@ -244,10 +235,10 @@ describe("Run cancellation reconciliation", () => {
     { scope: "the same workspace", runCounts: [2] },
     { scope: "another workspace", runCounts: [1, 1] },
   ])(
-    "isolates PAT credentials and cancellation in $scope",
+    "isolates Run credentials and cancellation in $scope",
     async ({ runCounts }) => {
       const { target, peers, headers, readTarget, query, runs, webhooks } =
-        await patFixture(runCounts);
+        await directFixture(runCounts);
       const [peer] = peers;
       if (!peer?.sandboxToken) {
         throw new Error("Expected a separately claimed peer Run");

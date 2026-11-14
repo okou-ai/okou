@@ -94,8 +94,6 @@ function referenceCtes(requireDeleted: boolean) {
         WHERE j.kind<>'${JOB_KIND}' AND j.status NOT IN('completed','cancelled')
         AND (position(t.prefix IN j.input::text)>0 OR position(t.prefix IN j.checkpoint::text)>0
           OR ${capturedReference("j.input", "j.org_id")} OR ${capturedReference("j.checkpoint", "j.org_id")})) THEN 'background-consumer' END,
-      CASE WHEN EXISTS(SELECT 1 FROM runner_job_queue q JOIN agent_runs r ON r.id=q.run_id
-        WHERE ${capturedReference("q.execution_context", "r.org_id")}) THEN 'queued-consumer' END,
       CASE WHEN EXISTS(SELECT 1 FROM live_run_ids live JOIN agent_runs r ON r.id=live.id WHERE
         (${capturedReference("r.storage_mounts", "r.org_id")} OR ${capturedReference("r.official_workflow_provenance", "r.org_id")})) THEN 'execution-consumer' END,
       CASE WHEN EXISTS(SELECT 1 FROM workflows WHERE official_definition_name IS NULL AND attachments IS NULL) THEN 'unconverted-workflows' END

@@ -55,6 +55,7 @@ class ChangeSelectionTest(unittest.TestCase):
             commit()
             self.assertEqual(detect(current).stdout.strip(), "true")
             for path in ["turbo/packages/api-contracts/src/contracts/user-preferences.ts",
+                         ".github/workflows/android-screenshots.yml",
                          "turbo/apps/platform/src/views/css/index.css",
                          "ios/Okou/DesignSystem/Foundations/Lucide-LICENSE.txt",
                          "turbo/packages/api-contracts/src/kotlin-bindings/bindings.ts",

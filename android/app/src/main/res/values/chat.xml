@@ -1,0 +1,28 @@
+<resources>
+    <string name="chat_list_title">Chats</string>
+    <string name="chat_refresh">Refresh chats</string>
+    <string name="chat_loading">Loading chats…</string>
+    <string name="chat_refreshing">Refreshing chats…</string>
+    <string name="chat_load_failed">Could not load chats. Check your connection and try again.</string>
+    <string name="chat_refresh_failed">Could not refresh. Showing the last loaded chats.</string>
+    <string name="chat_cached">Showing saved chats.</string>
+    <string name="chat_cache_unavailable">Offline storage is unavailable. These chats may not be available after restarting.</string>
+    <string name="chat_metadata_loading">Loading Okou and Project names…</string>
+    <string name="chat_metadata_unavailable">Some Okou or Project information is unavailable.</string>
+    <string name="chat_status_observed">Activity and unread status are from the last refresh.</string>
+    <string name="chat_status_unavailable">Could not refresh status. Previous indicators may be out of date.</string>
+    <string name="chat_status_loading">Checking activity and unread status…</string>
+    <string name="chat_refresh_status">Refresh status</string>
+    <string name="chat_recent">Recent</string>
+    <string name="chat_unread">Unread</string>
+    <string name="chat_archived">Archived</string>
+    <string name="chat_muted">Muted</string>
+    <string name="chat_outside_projects">Chats outside Projects</string>
+    <string name="chat_project_empty">No chats in this Project.</string>
+    <string name="chat_empty">No chats in this view.</string>
+    <string name="chat_untitled">Untitled chat</string>
+    <string name="chat_agent_identity">Okou · %1$s</string>
+    <string name="chat_pinned">Pinned</string>
+    <string name="chat_active">Active</string>
+    <string name="chat_metadata_cached">Showing saved Okou and Project names.</string>
+</resources>

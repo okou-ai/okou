@@ -237,20 +237,8 @@ impl Case {
         self.write_event("NATIVE_DUAL_HISTORY_WITNESS ", phase, evidence)
     }
 
-    pub fn claim_loss_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_CLAIM_LOSS_WITNESS ", phase, evidence)
-    }
-
     pub fn speculative_fault_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
         self.write_event("NATIVE_SPECULATIVE_FAULT_WITNESS ", phase, evidence)
-    }
-
-    pub fn claim_producer_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_CLAIM_PRODUCER_WITNESS ", phase, evidence)
-    }
-
-    pub fn real_claim_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
-        self.write_event("NATIVE_REAL_API_CLAIM_WITNESS ", phase, evidence)
     }
 
     pub fn unpark_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {

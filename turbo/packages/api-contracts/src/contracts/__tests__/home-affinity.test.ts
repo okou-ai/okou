@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   heartbeatBodySchema,
   heldHomeStateSchema,
-  runnerClaimCapabilitiesSchema,
   runnerPreferenceSchema,
 } from "../runners";
 
@@ -174,19 +173,6 @@ describe("canonical home affinity contracts", () => {
             ],
           },
         ],
-      }).success,
-    ).toBe(false);
-  });
-
-  it("keeps claim capabilities closed", () => {
-    const capabilities = { piModelConfigGenerations: [1, 2, 3, 5] };
-    expect(runnerClaimCapabilitiesSchema.parse(capabilities)).toEqual(
-      capabilities,
-    );
-    expect(
-      runnerClaimCapabilitiesSchema.safeParse({
-        ...capabilities,
-        unknownCapability: 1,
       }).success,
     ).toBe(false);
   });

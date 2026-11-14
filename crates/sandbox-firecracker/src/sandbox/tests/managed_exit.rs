@@ -1,5 +1,5 @@
 use super::*;
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::OwnedFd;
 use std::os::unix::process::CommandExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -42,17 +42,9 @@ struct DescendantCleanup(OwnedFd);
 
 impl Drop for DescendantCleanup {
     fn drop(&mut self) {
-        // SAFETY: this pidfd identifies the test descendant even after exit;
+        // This pidfd identifies the test descendant even after exit;
         // failure cleanup must never signal a potentially reused numeric PID.
-        unsafe {
-            libc::syscall(
-                libc::SYS_pidfd_send_signal,
-                self.0.as_raw_fd(),
-                libc::SIGKILL,
-                std::ptr::null::<libc::siginfo_t>(),
-                0,
-            );
-        }
+        let _ = rustix::process::pidfd_send_signal(&self.0, rustix::process::Signal::KILL);
     }
 }
 

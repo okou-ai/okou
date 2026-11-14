@@ -16,7 +16,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  LayoutPanel,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -25,8 +24,6 @@ import {
 import { cn } from "@okouai/ui/lib/utils";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type { ComposerTask } from "../../signals/okou-page/composer-task-chips.ts";
-import { sidebarOff$ } from "../../signals/okou-page/nav.ts";
-import { chatListWidth$ } from "../../signals/okou-page/unified-chat-workspace.ts";
 
 const TASK_CHIP = "shrink-0 px-3";
 const TASK_ICONS = {
@@ -236,26 +233,10 @@ export function ComposerTaskChipRow({
     return hidden.includes(index);
   });
   const bindRoot = useSet(signals.taskChips.overflow.bindRoot$);
-  const measure = useSet(signals.taskChips.overflow.measure$);
   const selectTask = useSet(signals.taskChips.selectTask$);
   const finalFocus = useSet(signals.taskChips.taskMenuFinalFocus$);
-  const sidebarHidden = useGet(sidebarOff$);
-  const chatListWidth = useGet(chatListWidth$);
-  const layoutKey = JSON.stringify([
-    tasks.map((task) => {
-      return [task, labels[task]];
-    }),
-    sidebarHidden,
-    chatListWidth,
-  ]);
-
   return (
-    <LayoutPanel
-      active
-      layoutKey={layoutKey}
-      onLayoutCommit={measure}
-      className="-my-1 min-w-0"
-    >
+    <div className="-my-1 min-w-0">
       <div ref={bindRoot} className="relative min-w-0" data-task-choices="">
         {/* Inert spans share button geometry, including choices inside More. */}
         <TaskChipSizing tasks={tasks} labels={labels} />
@@ -293,6 +274,6 @@ export function ComposerTaskChipRow({
           )}
         </div>
       </div>
-    </LayoutPanel>
+    </div>
   );
 }

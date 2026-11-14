@@ -181,10 +181,7 @@ async fn heartbeat_failure(
         ApiProviderConfig {
             ably_side_message_handler: None,
             runner_identity: identity,
-            runner_hostname: None,
             group: "test".into(),
-            supported_profiles: vec![],
-            installed_okou_cli: None,
         },
         BuiltinFirewallCatalogCachePaths {
             cache_path: directory.path().join("catalog.json"),

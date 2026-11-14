@@ -5,7 +5,7 @@ import type {
   UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatEvent } from "./chat-event-types.ts";
-import type { RunIndicatorState } from "./chat-event-state.ts";
+import type { RunIndicatorState } from "@okouai/api-contracts/contracts/chat-run-state";
 import {
   createChatEventProjectionSignals,
   type ChatEventProjectionSignals,

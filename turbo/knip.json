@@ -35,14 +35,18 @@
         "src/signals/external/stripe-client.ts",
         "src/signals/external/env.ts",
         "src/scripts/**/*.ts",
-        "src/**/*.{test,spec}.ts",
-        "src/signals/routes/__tests__/runners-competing-claims.native.ts"
+        "src/**/*.{test,spec}.ts"
       ],
       "project": ["src/**/*.ts"],
       "ignoreDependencies": ["clerk", "cloudflare", "@sentry/cloudflare"],
       "ignoreBinaries": ["openssl"]
     },
     "apps/platform": {
+      "paths": {
+        "mermaid-lite-real": [
+          "../../packages/mermaid-lite/dist/mermaid.esm.min.mjs"
+        ]
+      },
       "entry": [
         "src/main.ts",
         "src/clerk-ui.ts",

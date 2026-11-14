@@ -14,11 +14,13 @@ import ai.okou.android.auth.WorkspaceBootstrap
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceMembership
 import ai.okou.android.auth.WorkspaceSession
+import ai.okou.android.chat.ChatListService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
 
 /** Compiled only into host/device tests. Production has no authentication bypass switch. */
 open class TestOkouApplication : OkouApplication() {
+    var chatService: ChatListService = TestChatService()
     // External API fixture data survives a new Activity/session owner, as the real server does.
     private val preferences = mutableMapOf<Triple<String, String, String>, UserPreferences>()
 
@@ -37,7 +39,7 @@ open class TestOkouApplication : OkouApplication() {
     ): WorkspaceSession {
         val key = Triple(identity.apiOrigin, identity.userId, identity.workspaceId)
         fun stored() = preferences.getOrPut(key) { testBootstrap(identity.workspaceId).preferences }
-        return object : WorkspaceSession {
+        return object : WorkspaceSession, ChatListService by chatService {
 
             override suspend fun bootstrap() =
                 testBootstrap(identity.workspaceId).copy(preferences = stored())

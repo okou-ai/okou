@@ -1,6 +1,6 @@
 import type { FormEvent, ReactNode } from "react";
 
-import { ChevronRight, Plus, Trash } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type {
   CreateCustomConnectorBody,
   UpdateCustomConnectorBody,
@@ -14,10 +14,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
   Select,
   SelectContent,
   SelectItem,
@@ -33,14 +29,13 @@ import { useTranslation } from "react-i18next";
 import { resolveApiBaseForTarget } from "../../../../signals/api-base.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
-  addCustomConnectorAuthMethod$,
+  selectCustomConnectorAuthMethod$,
   closeCustomConnectorEditConfirmationDialog$,
   closeCustomConnectorDialog$,
   createCustomConnector$,
   customConnectorCreateForm$,
   customConnectorEditConfirmation$,
   openCustomConnectorEditConfirmationDialog$,
-  removeCustomConnectorAuthMethod$,
   setCustomConnectorCreateField$,
   setCustomConnectorCreateKind$,
   type CustomConnectorAuthMethodType,
@@ -268,45 +263,18 @@ function BaseFields({
 function ApiAuthenticationFields({
   form,
   setField,
-  removable,
   editable = true,
-  onRemove,
 }: CreateFormFieldProps & {
-  readonly removable: boolean;
   readonly editable?: boolean;
-  readonly onRemove?: () => void;
 }) {
   const { t } = useTranslation();
   return (
-    <div className="rounded-xl border border-border p-4 flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-foreground">
-            {t(($) => {
-              return $.connectors.custom.create.apiAuthentication;
-            })}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {t(($) => {
-              return $.connectors.custom.create.apiAuthenticationDescription;
-            })}
-          </p>
-        </div>
-        {removable && (
-          <Button
-            showTooltip
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={t(($) => {
-              return $.connectors.custom.create.removeApiAuthentication;
-            })}
-            onClick={onRemove}
-          >
-            <Trash size={16} />
-          </Button>
-        )}
-      </div>
+    <div className="flex flex-col gap-4">
+      <p className="text-xs text-muted-foreground">
+        {t(($) => {
+          return $.connectors.custom.create.apiAuthenticationDescription;
+        })}
+      </p>
       {editable ? (
         <>
           <ConnectorField
@@ -455,19 +423,19 @@ function OAuth2AdvancedFields({ form, setField }: CreateFormFieldProps) {
     { value: "S256", label: "S256" },
   ];
   return (
-    <details className="group rounded-lg border border-border">
-      <summary className="flex cursor-default list-none items-center gap-2 px-3 py-2.5 text-sm font-medium text-foreground">
+    <details className="group">
+      <summary className="flex cursor-default list-none items-center gap-2 rounded-lg py-2.5 text-sm font-medium text-foreground hover:bg-state-hover">
         <ChevronRight
           size={16}
           className="shrink-0 transition-transform group-open:rotate-90"
         />
         <span>
           {t(($) => {
-            return $.connectors.custom.create.advancedSettings;
+            return $.connectors.custom.create.oauthOptions;
           })}
         </span>
       </summary>
-      <div className="flex flex-col gap-4 border-t border-border px-3 py-4">
+      <div className="mt-2 flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           <label className="text-sm font-medium text-foreground">PKCE</label>
           <Select
@@ -645,41 +613,18 @@ function OAuth2AuthenticationFields({
   form,
   setField,
   editing,
-  onRemove,
 }: CreateFormFieldProps & {
   readonly editing: boolean;
-  readonly onRemove: () => void;
 }) {
   const { t } = useTranslation();
 
   return (
-    <div className="rounded-xl border border-border p-4 flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-foreground">
-            {t(($) => {
-              return $.connectors.custom.create.customOauthApp;
-            })}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {t(($) => {
-              return $.connectors.custom.create.oauthDescription;
-            })}
-          </p>
-        </div>
-        <Button
-          showTooltip
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label={t(($) => {
-            return $.connectors.custom.create.removeOauth;
-          })}
-          onClick={onRemove}
-        >
-          <Trash size={16} />
-        </Button>
-      </div>
+    <div className="flex flex-col gap-4">
+      <p className="text-xs text-muted-foreground">
+        {t(($) => {
+          return $.connectors.custom.create.oauthDescription;
+        })}
+      </p>
       <OAuth2EndpointFields form={form} setField={setField} />
       <OAuth2ClientFields form={form} setField={setField} editing={editing} />
       <div className="flex flex-col gap-2">
@@ -717,83 +662,6 @@ function OAuth2AuthenticationFields({
           })}
         </p>
       )}
-    </div>
-  );
-}
-
-function NoAuthenticationFields({
-  onRemove,
-}: {
-  readonly onRemove: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="rounded-xl border border-border p-4 flex items-center justify-between gap-4">
-      <div>
-        <p className="text-sm font-medium text-foreground">
-          {t(($) => {
-            return $.connectors.custom.create.noAuthentication;
-          })}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {t(($) => {
-            return $.connectors.custom.create.noAuthenticationDescription;
-          })}
-        </p>
-      </div>
-      <Button
-        showTooltip
-        type="button"
-        variant="ghost"
-        size="icon"
-        aria-label={t(($) => {
-          return $.connectors.custom.create.removeNoAuthentication;
-        })}
-        onClick={onRemove}
-      >
-        <Trash size={16} />
-      </Button>
-    </div>
-  );
-}
-
-function AutomaticAuthenticationFields({
-  onRemove,
-}: {
-  readonly onRemove: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="rounded-xl border border-border p-4 flex items-center justify-between gap-4">
-      <div>
-        <p className="text-sm font-medium text-foreground">
-          {t(($) => {
-            return $.connectors.custom.create.automatic;
-          })}
-          <span className="ml-1 text-xs font-normal text-muted-foreground">
-            {t(($) => {
-              return $.connectors.custom.create.recommended;
-            })}
-          </span>
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {t(($) => {
-            return $.connectors.custom.create.automaticDescription;
-          })}
-        </p>
-      </div>
-      <Button
-        showTooltip
-        type="button"
-        variant="ghost"
-        size="icon"
-        aria-label={t(($) => {
-          return $.connectors.custom.create.removeAutomatic;
-        })}
-        onClick={onRemove}
-      >
-        <Trash size={16} />
-      </Button>
     </div>
   );
 }
@@ -1184,8 +1052,7 @@ function formCanSubmit(
 interface AuthenticationFieldsProps extends CreateFormFieldProps {
   readonly editing: boolean;
   readonly advancedApiDefinition: boolean;
-  readonly addAuthMethod: (type: CustomConnectorAuthMethodType) => void;
-  readonly removeAuthMethod: (type: CustomConnectorAuthMethodType) => void;
+  readonly selectAuthMethod: (type: CustomConnectorAuthMethodType) => void;
 }
 
 function AuthenticationFields({
@@ -1193,117 +1060,107 @@ function AuthenticationFields({
   setField,
   editing,
   advancedApiDefinition,
-  addAuthMethod,
-  removeAuthMethod,
+  selectAuthMethod,
 }: AuthenticationFieldsProps) {
   const { t } = useTranslation();
-  const supportedAuthMethods: readonly CustomConnectorAuthMethodType[] =
-    form.kind === "mcp"
-      ? ["none", "api", "automatic", "oauth2"]
-      : ["none", "api", "oauth2"];
-  const availableAuthMethods = supportedAuthMethods.filter((type) => {
-    return !form.authMethodTypes.includes(type);
-  });
+  const items = [
+    {
+      value: "none" as const,
+      label: t(($) => {
+        return $.connectors.custom.create.noAuthentication;
+      }),
+    },
+    {
+      value: "api" as const,
+      label: t(($) => {
+        return $.connectors.custom.create.apiAuthentication;
+      }),
+    },
+    ...(form.kind === "mcp"
+      ? [
+          {
+            value: "automatic" as const,
+            label: t(($) => {
+              return $.connectors.custom.create.automatic;
+            }),
+          },
+        ]
+      : []),
+    {
+      value: "oauth2" as const,
+      label: t(($) => {
+        return $.connectors.custom.create.customOauthApp;
+      }),
+    },
+  ];
   return (
     <>
-      {form.authMethodTypes.includes("none") && (
-        <NoAuthenticationFields
-          onRemove={() => {
-            removeAuthMethod("none");
+      <div className="flex flex-col gap-2">
+        <label
+          htmlFor="cc-authentication"
+          className="text-sm font-medium text-foreground"
+        >
+          {t(($) => {
+            return $.connectors.custom.create.authentication;
+          })}
+        </label>
+        <Select
+          items={items}
+          value={form.authMethodTypes[0] ?? null}
+          onValueChange={(value, details) => {
+            if (value === null) {
+              details.cancel();
+              return;
+            }
+            selectAuthMethod(value);
           }}
-        />
-      )}
+        >
+          <SelectTrigger id="cc-authentication" variant="neutral">
+            <SelectValue
+              placeholder={t(($) => {
+                return $.connectors.custom.create.selectAuthentication;
+              })}
+            />
+          </SelectTrigger>
+          <SelectContent>
+            {items.map((item) => {
+              return (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </div>
       {form.authMethodTypes.includes("api") && (
         <ApiAuthenticationFields
           form={form}
           setField={setField}
-          removable
           editable={!advancedApiDefinition}
-          onRemove={() => {
-            removeAuthMethod("api");
-          }}
         />
       )}
       {form.authMethodTypes.includes("automatic") && (
-        <AutomaticAuthenticationFields
-          onRemove={() => {
-            removeAuthMethod("automatic");
-          }}
-        />
+        <p className="text-xs text-muted-foreground">
+          <span>
+            {t(($) => {
+              return $.connectors.custom.create.recommended;
+            })}
+          </span>{" "}
+          <span>
+            {t(($) => {
+              return $.connectors.custom.create.automaticDescription;
+            })}
+          </span>
+        </p>
       )}
       {form.authMethodTypes.includes("oauth2") && (
         <OAuth2AuthenticationFields
           form={form}
           setField={setField}
           editing={editing}
-          onRemove={() => {
-            removeAuthMethod("oauth2");
-          }}
         />
       )}
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button
-              type="button"
-              variant="outline"
-              className="self-start"
-              disabled={availableAuthMethods.length === 0}
-            />
-          }
-        >
-          <Plus size={16} />
-          {t(($) => {
-            return $.connectors.custom.create.addAuthentication;
-          })}
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          {availableAuthMethods.includes("none") && (
-            <DropdownMenuItem
-              onClick={() => {
-                addAuthMethod("none");
-              }}
-            >
-              {t(($) => {
-                return $.connectors.custom.create.noAuthentication;
-              })}
-            </DropdownMenuItem>
-          )}
-          {availableAuthMethods.includes("api") && (
-            <DropdownMenuItem
-              onClick={() => {
-                addAuthMethod("api");
-              }}
-            >
-              {t(($) => {
-                return $.connectors.custom.create.apiAuthentication;
-              })}
-            </DropdownMenuItem>
-          )}
-          {availableAuthMethods.includes("automatic") && (
-            <DropdownMenuItem
-              onClick={() => {
-                addAuthMethod("automatic");
-              }}
-            >
-              {t(($) => {
-                return $.connectors.custom.create.automatic;
-              })}
-            </DropdownMenuItem>
-          )}
-          {availableAuthMethods.includes("oauth2") && (
-            <DropdownMenuItem
-              onClick={() => {
-                addAuthMethod("oauth2");
-              }}
-            >
-              {t(($) => {
-                return $.connectors.custom.create.customOauthApp;
-              })}
-            </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
     </>
   );
 }
@@ -1314,8 +1171,7 @@ function CustomConnectorForm({
   setKind,
   editing,
   advancedApiDefinition,
-  addAuthMethod,
-  removeAuthMethod,
+  selectAuthMethod,
   submitting,
   canSubmit,
   onSubmit,
@@ -1338,6 +1194,13 @@ function CustomConnectorForm({
         setKind={setKind}
         editing={editing}
       />
+      <AuthenticationFields
+        form={form}
+        setField={setField}
+        editing={editing}
+        advancedApiDefinition={advancedApiDefinition}
+        selectAuthMethod={selectAuthMethod}
+      />
       <CustomConnectorNetworkField
         connector={connector}
         configId={form.cloudflareConfigId}
@@ -1345,14 +1208,6 @@ function CustomConnectorForm({
           setField("cloudflareConfigId", value);
         }}
         disabled={submitting}
-      />
-      <AuthenticationFields
-        form={form}
-        setField={setField}
-        editing={editing}
-        advancedApiDefinition={advancedApiDefinition}
-        addAuthMethod={addAuthMethod}
-        removeAuthMethod={removeAuthMethod}
       />
       <DialogFooter>
         <Button
@@ -1411,8 +1266,7 @@ export function CustomConnectorCreateDialog({
   const form = useGet(customConnectorCreateForm$);
   const setField = useSet(setCustomConnectorCreateField$);
   const setKind = useSet(setCustomConnectorCreateKind$);
-  const addAuthMethod = useSet(addCustomConnectorAuthMethod$);
-  const removeAuthMethod = useSet(removeCustomConnectorAuthMethod$);
+  const selectAuthMethod = useSet(selectCustomConnectorAuthMethod$);
   const openEditConfirmation = useSet(
     openCustomConnectorEditConfirmationDialog$,
   );
@@ -1499,8 +1353,7 @@ export function CustomConnectorCreateDialog({
             setKind={setKind}
             editing={editing}
             advancedApiDefinition={advancedApiDefinition}
-            addAuthMethod={addAuthMethod}
-            removeAuthMethod={removeAuthMethod}
+            selectAuthMethod={selectAuthMethod}
             submitting={submitting}
             canSubmit={canSubmit}
             onSubmit={onSubmit}

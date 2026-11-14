@@ -8,7 +8,7 @@ import { getStripeClient } from "../external/stripe-client";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { knownBillingPlanPriceItem } from "./billing-checkout.service";
-import { archivedSubscriptionHasSurvivingPlan } from "./archived-allowance";
+import { archivedSubscriptionHasSurvivingPlan } from "./archived-billing-components";
 
 const L = logger("OrgBillingPeriod");
 
@@ -43,7 +43,7 @@ function resolveStoredBillingPeriod(args: {
 /**
  * Resolve an org's current billing period `{ start, end }`.
  *
- * Reads `orgPlanEntitlements`, including non-monthly Custom plan grants,
+ * Reads `orgPlanEntitlements`, including non-monthly grants,
  * and then
  * `orgMetadata.currentPeriodEnd`; if missing or expired AND a
  * `stripeSubscriptionId` exists, retrieves the Stripe subscription and writes

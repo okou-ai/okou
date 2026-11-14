@@ -6,7 +6,7 @@ public actor ChatSync {
   let client: APIClient
   private let chatEventSchemaVersion = 8
   private let threadEventRebaseThreshold = 100
-  private let cache: ChatCache?
+  let cache: ChatCache?
   private var indicatorState = ChatIndicatorCacheState()
   private var histories: [String: CachedHistory] = [:]
   private var readingHistories = Set<String>()
@@ -111,7 +111,7 @@ public actor ChatSync {
   public func threadsWithIndicators() async throws -> (
     threads: [ChatThread], indicators: Indicators?, eventIDs: Set<String>, cursor: ChatCacheCursor
   ) {
-    let result = try await synchronizeThreadList(requirePersistence: false)
+    let result = try await threadList()
     let indicators: Indicators?
     do {
       indicators = try await self.indicators()
@@ -132,6 +132,13 @@ public actor ChatSync {
       return updated
     }
     return (threads, indicators, result.eventIDs, result.cursor)
+  }
+
+  /// Synchronize list metadata independently of unread and running-state reads.
+  public func threadList() async throws -> (
+    threads: [ChatThread], eventIDs: Set<String>, cursor: ChatCacheCursor
+  ) {
+    try await synchronizeThreadList(requirePersistence: false)
   }
 
   /// Cache navigation without fetching indicators or marking any conversation read.

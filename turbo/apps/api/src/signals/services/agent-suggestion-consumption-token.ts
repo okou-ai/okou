@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   suggestionSchema,
   type Suggestion,
-} from "@okouai/api-contracts/contracts/suggestions";
+} from "@okouai/api-contracts/contracts/feed";
 
 import { env } from "../../lib/env";
 import { safeJsonParse } from "../utils";
@@ -13,18 +13,26 @@ interface Owner {
   readonly userId: string;
 }
 
-const snapshotSchema = suggestionSchema.omit({ consumeToken: true });
+// The public envelope can change without changing the domain's v1 signature bytes.
+function signedSuggestion(suggestion: Suggestion) {
+  const item = suggestionSchema.parse(suggestion);
+  return {
+    ...item.content,
+    ...item.state,
+    id: item.id,
+    priority: item.priority,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    expiresAt: item.expiresAt,
+  };
+}
 
 function consumptionSignature(owner: Owner, suggestion: Suggestion): Buffer {
   // A member may choose a displayed card after its storage lifetime. Bind the
   // cached content to its original owner without retaining expired server data.
   const payload = canonicalJsonString(
     safeJsonParse(
-      JSON.stringify([
-        owner.orgId,
-        owner.userId,
-        snapshotSchema.parse(suggestion),
-      ]),
+      JSON.stringify([owner.orgId, owner.userId, signedSuggestion(suggestion)]),
     ),
   );
   return createHmac("sha256", env("SECRETS_ENCRYPTION_KEY"))
@@ -47,7 +55,10 @@ export function hasValidSuggestionConsumeToken(
   owner: Owner,
   suggestion: Suggestion,
 ): boolean {
-  if (suggestion.consumeToken === undefined || suggestion.status !== "active") {
+  if (
+    suggestion.consumeToken === undefined ||
+    suggestion.state.status !== "active"
+  ) {
     return false;
   }
   const actual = Buffer.from(suggestion.consumeToken, "hex");

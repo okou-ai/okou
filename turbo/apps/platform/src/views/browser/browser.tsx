@@ -1,7 +1,7 @@
-import type { ReactNode } from "react";
+import type { ClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import { Field } from "@base-ui/react/field";
 import { flushSync } from "react-dom";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -14,6 +14,7 @@ import {
   Maximize2,
   Plus,
   RotateCw,
+  Search,
   Settings,
   X,
 } from "lucide-react";
@@ -23,8 +24,6 @@ import {
   IconButton,
   Input,
   Slider,
-  LayoutCommit,
-  RequestCommit,
   Textarea,
   TransientAlert,
   Tabs,
@@ -40,13 +39,21 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@okouai/ui";
 import {
   isBrowserOperationFailure,
-  type BrowserFocusHandoff,
   type BrowserSignals,
+  type BrowserTab as BrowserTabTarget,
 } from "../../signals/browser/browser.ts";
-import { NavigationFault } from "../../signals/browser/navigation/action.ts";
+import {
+  NavigationFault,
+  type BrowserAddressAction,
+} from "../../signals/browser/navigation/action.ts";
+import { addressPaste } from "../../signals/browser/input/address-paste.ts";
 import type { DisplayModeResult } from "../../signals/browser/display/sync.ts";
 import { captureResolutions } from "../../signals/browser/viewer/capture.ts";
 import { captureQualityPresets } from "../../signals/browser/capture-quality.ts";
@@ -660,6 +667,152 @@ function isCurrentNavigationFailure(error: unknown, scope: object | null) {
   );
 }
 
+function pasteAddress(event: ClipboardEvent<HTMLInputElement>) {
+  const pasted = event.clipboardData.getData("text/plain");
+  const text = addressPaste(pasted);
+  if (text === pasted) {
+    return;
+  }
+  // Native insertion retains undo history; assigning a controlled value does not.
+  // Sanitize before the single-line input discards clipboard line breaks.
+  event.preventDefault();
+  event.currentTarget.ownerDocument.execCommand("insertText", false, text);
+}
+
+function trackAddressControl(
+  event: KeyboardEvent<HTMLInputElement>,
+  arm: (armed: boolean) => void,
+) {
+  if (event.key === "Control" && !event.repeat) {
+    arm(true);
+  } else if (event.ctrlKey && !["Control", "Enter"].includes(event.key)) {
+    // Copy/paste/select-all consumes this Control gesture in Chromium.
+    arm(false);
+  }
+}
+
+function BrowserAddressInput({
+  signals,
+  canSubmit,
+  navigating,
+  onComplete,
+}: {
+  readonly signals: BrowserSignals;
+  readonly canSubmit: boolean;
+  readonly navigating: boolean;
+  readonly onComplete: () => void;
+}) {
+  const { t } = useTranslation();
+  const address = useGet(signals.address$);
+  const addressRef = useSet(signals.refs.address$);
+  const beginEdit = useSet(signals.beginAddressEdit$);
+  const blur = useSet(signals.blurAddress$);
+  const edit = useSet(signals.editAddress$);
+  const reset = useSet(signals.resetAddress$);
+  const notifySubmission = useSet(signals.notifyAddressSubmit$);
+  const kind = useGet(signals.addressSubmissionKind$);
+  const compose = useSet(signals.composeAddress$);
+  const composing = useGet(signals.addressComposing$);
+  const armCompletion = useSet(signals.armAddressCompletion$);
+  return (
+    <Input
+      ref={addressRef}
+      data-browser-address
+      aria-label={t(($) => {
+        return $.browserViewer.address;
+      })}
+      placeholder={t(($) => {
+        return $.browserViewer.addressSearchPlaceholder;
+      })}
+      className="h-8 min-w-0 flex-1"
+      value={address}
+      inputMode="text"
+      enterKeyHint={kind === "search" ? "search" : "go"}
+      autoComplete="off"
+      autoCapitalize="none"
+      autoCorrect="off"
+      spellCheck={false}
+      aria-busy={navigating}
+      onFocus={() => {
+        armCompletion(false);
+        beginEdit("focus");
+      }}
+      onPointerDown={() => {
+        armCompletion(false);
+        beginEdit("interaction");
+      }}
+      onBeforeInput={() => {
+        beginEdit("interaction");
+      }}
+      onCompositionStart={() => {
+        compose(true);
+        beginEdit("interaction");
+      }}
+      onCompositionEnd={() => {
+        compose(false);
+      }}
+      onBlur={() => {
+        compose(false);
+        blur();
+      }}
+      onChange={(event) => {
+        notifySubmission(null);
+        edit(event.currentTarget.value);
+      }}
+      onPaste={pasteAddress}
+      onKeyDown={(event) => {
+        trackAddressControl(event, armCompletion);
+        if (
+          composing ||
+          event.nativeEvent.isComposing ||
+          event.nativeEvent.keyCode === 229
+        ) {
+          if (event.key === "Enter") {
+            event.preventDefault();
+          }
+          beginEdit("interaction");
+          return;
+        }
+        if (event.key === "Enter" && (!canSubmit || navigating)) {
+          // A disabled submit button suppresses the form's implicit Enter.
+          // Keep keyboard feedback while input/navigation is unavailable.
+          event.preventDefault();
+          notifySubmission(navigating ? "opening" : "preparing");
+          return;
+        }
+        if (
+          event.key === "Enter" &&
+          event.ctrlKey &&
+          !event.altKey &&
+          !event.metaKey &&
+          !event.shiftKey
+        ) {
+          // Submit explicit completion intent through the shared navigation owner.
+          event.preventDefault();
+          onComplete();
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          // Select the reset value after React commits the controlled input.
+          flushSync(() => {
+            reset();
+            beginEdit("interaction");
+          });
+          event.currentTarget.select();
+        } else if (event.key !== "Enter") {
+          beginEdit("interaction");
+        }
+      }}
+      onKeyUp={(event) => {
+        if (event.key === "Control") {
+          armCompletion(false);
+        }
+      }}
+    />
+  );
+}
+
 function BrowserAddress({
   signals,
   canSubmit,
@@ -669,88 +822,55 @@ function BrowserAddress({
   readonly signals: BrowserSignals;
   readonly canSubmit: boolean;
   readonly navigating: boolean;
-  readonly onSubmit: () => void;
+  readonly onSubmit: (action: BrowserAddressAction) => void;
 }) {
   const { t } = useTranslation();
-  const address = useGet(signals.address$);
-  const addressRef = useSet(signals.refs.address$);
-  const beginEdit = useSet(signals.beginAddressEdit$);
-  const blur = useSet(signals.blurAddress$);
-  const edit = useSet(signals.editAddress$);
-  const reset = useSet(signals.resetAddress$);
   const blockedSubmission = useGet(signals.addressSubmitNotice$);
   const notifySubmission = useSet(signals.notifyAddressSubmit$);
+  const kind = useGet(signals.addressSubmissionKind$);
+  const composing = useGet(signals.addressComposing$);
+  const label = t(($) => {
+    return kind === "search"
+      ? $.browserViewer.searchGoogle
+      : $.browserViewer.openAddress;
+  });
+  const submit = (action: BrowserAddressAction) => {
+    if (composing) {
+      return;
+    }
+    if (canSubmit && !navigating) {
+      notifySubmission(null);
+      onSubmit(action);
+    } else {
+      notifySubmission(navigating ? "opening" : "preparing");
+    }
+  };
   return (
     <>
       <form
-        className="flex min-w-0 flex-1"
+        className="flex min-w-0 flex-1 items-center gap-1"
         onSubmit={(event) => {
           event.preventDefault();
-          if (canSubmit && !navigating) {
-            notifySubmission(null);
-            onSubmit();
-          } else {
-            notifySubmission(navigating ? "opening" : "preparing");
-          }
+          submit("submit-address");
         }}
       >
-        <Input
-          ref={addressRef}
-          data-browser-address
-          aria-label={t(($) => {
-            return $.browserViewer.address;
-          })}
-          placeholder={t(($) => {
-            return $.browserSession.addressPlaceholder;
-          })}
-          className="h-8 min-w-0 flex-1"
-          value={address}
-          inputMode="url"
-          enterKeyHint="go"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          aria-busy={navigating}
-          onFocus={() => {
-            return beginEdit("focus");
-          }}
-          onPointerDown={() => {
-            return beginEdit("interaction");
-          }}
-          onBeforeInput={() => {
-            return beginEdit("interaction");
-          }}
-          onCompositionStart={() => {
-            return beginEdit("interaction");
-          }}
-          onBlur={() => {
-            return blur();
-          }}
-          onChange={(event) => {
-            notifySubmission(null);
-            return edit(event.currentTarget.value);
-          }}
-          onKeyDown={(event) => {
-            if (
-              event.nativeEvent.isComposing ||
-              event.nativeEvent.keyCode === 229
-            ) {
-              beginEdit("interaction");
-              return;
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              // Select the reset value after React commits the controlled input.
-              flushSync(() => {
-                reset();
-                beginEdit("interaction");
-              });
-              event.currentTarget.select();
-            } else if (event.key !== "Enter") {
-              beginEdit("interaction");
-            }
+        <BrowserAddressInput
+          signals={signals}
+          canSubmit={canSubmit}
+          navigating={navigating}
+          onComplete={() => {
+            submit("complete-address");
           }}
         />
+        <IconButton
+          type="submit"
+          className="size-8"
+          aria-label={label}
+          title={label}
+          disabled={!canSubmit || navigating || composing || !kind}
+        >
+          {kind === "search" ? <Search size={16} /> : <ArrowRight size={16} />}
+        </IconButton>
       </form>
       <TransientAlert
         occurrences={
@@ -777,7 +897,7 @@ function BrowserNavigation({
   const { t } = useTranslation();
   const history = useLoadable(signals.history$);
   const scope = useGet(signals.navigationScope$);
-  const controls = useGet(signals.controls$);
+  const streaming = useGet(signals.streaming$);
   const canSubmitAddress = useGet(signals.canSubmitAddress$);
   const pageSignal = useGet(pageSignal$);
   const [operation, navigate] = useLoadableSet(signals.navigate$);
@@ -799,7 +919,7 @@ function BrowserNavigation({
         aria-label={t(($) => {
           return $.browserViewer.back;
         })}
-        disabled={!controls.streaming || !entries?.canGoBack || navigating}
+        disabled={!streaming || !entries?.canGoBack || navigating}
         onClick={() => {
           detach(navigate("back", pageSignal), Reason.DomCallback);
         }}
@@ -812,7 +932,7 @@ function BrowserNavigation({
         aria-label={t(($) => {
           return $.browserViewer.forward;
         })}
-        disabled={!controls.streaming || !entries?.canGoForward || navigating}
+        disabled={!streaming || !entries?.canGoForward || navigating}
         onClick={() => {
           detach(navigate("forward", pageSignal), Reason.DomCallback);
         }}
@@ -825,7 +945,7 @@ function BrowserNavigation({
         aria-label={t(($) => {
           return $.browserViewer.reload;
         })}
-        disabled={!controls.streaming || navigating}
+        disabled={!streaming || navigating}
         onClick={() => {
           detach(navigate("reload", pageSignal), Reason.DomCallback);
         }}
@@ -836,8 +956,8 @@ function BrowserNavigation({
         signals={signals}
         canSubmit={canSubmitAddress}
         navigating={navigating}
-        onSubmit={() => {
-          detach(navigate("submit-address", pageSignal), Reason.DomCallback);
+        onSubmit={(action) => {
+          detach(navigate(action, pageSignal), Reason.DomCallback);
         }}
       />
       <BrowserSettings signals={signals} disabled={settingsDisabled} />
@@ -850,97 +970,106 @@ function BrowserNavigation({
   );
 }
 
+function BrowserTabIcon({
+  signals,
+  target,
+}: {
+  readonly signals: BrowserSignals;
+  readonly target: BrowserTabTarget;
+}) {
+  const rejectFavicon = useSet(signals.rejectFavicon$);
+  return (
+    <span className="flex size-4 shrink-0 items-center justify-center">
+      {target.faviconUrl ? (
+        <img
+          src={target.faviconUrl}
+          alt=""
+          className="size-4 object-contain"
+          onError={() => {
+            if (target.faviconUrl) {
+              rejectFavicon(target.id, target.faviconUrl);
+            }
+          }}
+        />
+      ) : (
+        <Globe size={16} />
+      )}
+    </span>
+  );
+}
+
 function BrowserTab({
   signals,
   target,
   name,
   selected,
-  handoff,
   selecting,
 }: {
   readonly signals: BrowserSignals;
-  readonly target: {
-    readonly id: string;
-    readonly title: string;
-    readonly faviconUrl?: string;
-  };
+  readonly target: BrowserTabTarget;
   readonly name: string;
   readonly selected: boolean;
-  readonly handoff: Extract<BrowserFocusHandoff, { kind: "tab" }> | null;
   readonly selecting: boolean;
 }) {
   const { t } = useTranslation();
-  const controls = useGet(signals.controls$);
+  const tabsDisabled = useGet(signals.tabsDisabled$);
+  const canMutateTabs = useGet(signals.canMutateTabs$);
   const pageSignal = useGet(pageSignal$);
   const [closeOperation, closeTab] = useLoadableSet(signals.closeTab$);
-  const rejectFavicon = useSet(signals.rejectFavicon$);
-  const acknowledge = useSet(signals.acknowledgeFocusCommit$);
   const closing = closeOperation.state === "loading";
-  const triggerDisabled = controls.tabsDisabled || selecting || closing;
-  // Each tab owns its close loadable and therefore its actual enable commit.
+  const triggerDisabled = tabsDisabled || selecting || closing;
   return (
-    <RequestCommit
-      request={handoff}
-      commitKey={JSON.stringify([target.id, selected, triggerDisabled])}
-      onCommit={acknowledge}
+    <div
+      className={cn(
+        "@container/browser-tab relative flex h-9 min-w-14 max-w-56 flex-1 basis-0 items-center rounded-lg pr-1",
+        selected && "bg-state-selected",
+      )}
     >
-      <div
-        className={cn(
-          "group relative h-9 min-w-[32px] max-w-56 flex-1 basis-0",
-          selected && "min-w-[48px]",
-        )}
-      >
-        <TabsTrigger
-          value={target.id}
-          data-browser-tab-id={target.id}
-          aria-label={name}
-          disabled={triggerDisabled}
-          className="w-full justify-start rounded-lg px-2 pr-7 text-xs data-active:bg-state-selected data-active:shadow-none"
-        >
-          {target.faviconUrl ? (
-            <img
-              src={target.faviconUrl}
-              alt=""
-              className="size-3.5 shrink-0"
-              onError={() => {
-                if (target.faviconUrl) {
-                  rejectFavicon(target.id, target.faviconUrl);
-                }
-              }}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <TabsTrigger
+              value={target.id}
+              data-browser-tab-id={target.id}
+              aria-label={name}
+              disabled={triggerDisabled}
+              className="min-w-0 flex-1 justify-start rounded-lg px-1.5 text-xs data-active:bg-transparent data-active:shadow-none"
             />
-          ) : (
-            <Globe size={14} className="shrink-0" />
-          )}
-          <span className="truncate">{name}</span>
-        </TabsTrigger>
-        <IconButton
-          type="button"
-          data-close-target={target.id}
-          aria-label={t(
-            ($) => {
-              return $.browserViewer.closeTab;
-            },
-            { title: name },
-          )}
-          disabled={!controls.canMutateTabs || closing || selecting}
-          className="absolute right-0.5 top-1.5 size-6 rounded-md opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-          onClick={(event) => {
-            event.stopPropagation();
-            detach(closeTab(target.id, pageSignal), Reason.DomCallback);
-          }}
+          }
         >
-          <X size={12} />
-        </IconButton>
-        <BrowserOperationError
-          occurrences={[
-            closeOperation.state === "hasError" &&
-              isBrowserOperationFailure(closeOperation.error) &&
-              closeOperation,
-          ]}
-          className="absolute left-0 top-full z-20 w-56 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
-        />
-      </div>
-    </RequestCommit>
+          <BrowserTabIcon signals={signals} target={target} />
+          <span className="hidden truncate @min-[5rem]/browser-tab:block">
+            {name}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>{name}</TooltipContent>
+      </Tooltip>
+      <IconButton
+        type="button"
+        data-close-target={target.id}
+        aria-label={t(
+          ($) => {
+            return $.browserViewer.closeTab;
+          },
+          { title: name },
+        )}
+        disabled={!canMutateTabs || closing || selecting}
+        className="size-6 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+        onClick={() => {
+          detach(closeTab(target.id, pageSignal), Reason.DomCallback);
+        }}
+      >
+        <X size={12} />
+      </IconButton>
+      <BrowserOperationError
+        occurrences={[
+          closeOperation.state === "hasError" &&
+            isBrowserOperationFailure(closeOperation.error) &&
+            closeOperation,
+        ]}
+        className="absolute left-0 top-full z-20 w-56 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
+      />
+    </div>
   );
 }
 
@@ -958,7 +1087,7 @@ function BrowserTabPicker({
   const { t } = useTranslation();
   const tabs = useGet(signals.tabs$);
   const selectedTabId = useGet(signals.selectedTabId$);
-  const controls = useGet(signals.controls$);
+  const tabsDisabled = useGet(signals.tabsDisabled$);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -975,17 +1104,21 @@ function BrowserTabPicker({
       >
         <ChevronDown size={15} />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent
+        align="end"
+        className="w-72 max-w-[calc(100vw-1.5rem)]"
+      >
         {tabs.map((target) => {
           return (
             <DropdownMenuItem
               key={target.id}
-              disabled={controls.tabsDisabled || selecting}
+              disabled={tabsDisabled || selecting}
               onClick={() => {
                 detach(onSelect(target.id), Reason.DomCallback);
               }}
             >
-              <span className="max-w-60 flex-1 truncate">
+              <BrowserTabIcon signals={signals} target={target} />
+              <span className="min-w-0 flex-1 truncate">
                 {title(target.id, target.title)}
               </span>
               {selectedTabId === target.id && <Check size={14} />}
@@ -1017,14 +1150,11 @@ function BrowserTabs({
   const selectedTabId = useGet(signals.selectedTabId$);
   const navigation = useGet(signals.navigation$);
   const layout = useGet(signals.tabLayout$);
-  const controls = useGet(signals.controls$);
+  const canCreateTab = useGet(signals.canCreateTab$);
   const toolbarRef = useSet(signals.refs.toolbar$);
   const tabsRef = useSet(signals.refs.tabs$);
-  const handoff = useGet(signals.focusHandoff$);
-  const toolbarHandoff = handoff?.kind === "toolbar" ? handoff : null;
-  const acknowledge = useSet(signals.acknowledgeFocusCommit$);
-  const newTabDisabled = !controls.canCreate || creating;
-  const syncLayout = useSet(signals.syncLayout$);
+  const actionsRef = useSet(signals.refs.toolbarActions$);
+  const newTabDisabled = !canCreateTab || creating;
   const title = (id: string, value: string) => {
     return (selectedTabId === id && navigation?.url === "about:blank") ||
       value === "about:blank"
@@ -1037,82 +1167,68 @@ function BrowserTabs({
           });
   };
   return (
-    <RequestCommit
-      request={toolbarHandoff}
-      commitKey={JSON.stringify([
-        selectedTabId,
-        newTabDisabled,
-        layout.overflow,
-      ])}
-      onCommit={acknowledge}
+    <div
+      ref={toolbarRef}
+      data-browser-toolbar
+      className="flex min-w-0 shrink-0 items-center gap-1 border-b border-divider px-2 py-1"
     >
-      <LayoutCommit
-        layoutKey={String(Boolean(actions))}
-        onLayoutCommit={syncLayout}
+      <div
+        data-browser-tab-budget
+        className="flex min-w-0 flex-1 items-center gap-1"
       >
-        <div
-          ref={toolbarRef}
-          data-browser-toolbar
-          className="flex min-w-0 shrink-0 items-center gap-1 border-b border-divider px-2 py-1"
-        >
-          <div
-            data-browser-tab-budget
-            className="flex min-w-0 flex-1 items-center gap-1"
+        <TooltipProvider delay={200}>
+          <TabsList
+            ref={tabsRef}
+            className="h-9 min-w-0 flex-1 justify-start gap-1 rounded-none bg-transparent p-0"
           >
-            <TabsList
-              ref={tabsRef}
-              className="h-9 min-w-0 flex-1 justify-start gap-1 rounded-none bg-transparent p-0"
-            >
-              {layout.items.map(({ target }) => {
-                const name = title(target.id, target.title);
-                return (
-                  <BrowserTab
-                    key={target.id}
-                    signals={signals}
-                    target={
-                      tabs.find((tab) => {
-                        return tab.id === target.id;
-                      }) ?? target
-                    }
-                    name={name}
-                    selected={selectedTabId === target.id}
-                    handoff={
-                      handoff?.kind === "tab" && handoff.targetId === target.id
-                        ? handoff
-                        : null
-                    }
-                    selecting={selecting}
-                  />
-                );
-              })}
-            </TabsList>
-            {layout.overflow && (
-              <BrowserTabPicker
-                signals={signals}
-                selecting={selecting}
-                onSelect={onSelect}
-                title={title}
-              />
-            )}
-          </div>
-          <IconButton
-            data-browser-new-tab
-            type="button"
-            aria-label={t(($) => {
-              return $.browserViewer.newTab;
+            {layout.items.map(({ target }) => {
+              const name = title(target.id, target.title);
+              return (
+                <BrowserTab
+                  key={target.id}
+                  signals={signals}
+                  target={
+                    tabs.find((tab) => {
+                      return tab.id === target.id;
+                    }) ?? target
+                  }
+                  name={name}
+                  selected={selectedTabId === target.id}
+                  selecting={selecting}
+                />
+              );
             })}
-            disabled={newTabDisabled}
-            className="size-8"
-            onClick={() => {
-              detach(onCreate(), Reason.DomCallback);
-            }}
-          >
-            <Plus size={16} />
-          </IconButton>
+          </TabsList>
+        </TooltipProvider>
+        {layout.overflow && (
+          <BrowserTabPicker
+            signals={signals}
+            selecting={selecting}
+            onSelect={onSelect}
+            title={title}
+          />
+        )}
+      </div>
+      <IconButton
+        data-browser-new-tab
+        type="button"
+        aria-label={t(($) => {
+          return $.browserViewer.newTab;
+        })}
+        disabled={newTabDisabled}
+        className="size-8"
+        onClick={() => {
+          detach(onCreate(), Reason.DomCallback);
+        }}
+      >
+        <Plus size={16} />
+      </IconButton>
+      {actions && (
+        <div ref={actionsRef} className="flex shrink-0 items-center gap-1">
           {actions}
         </div>
-      </LayoutCommit>
-    </RequestCommit>
+      )}
+    </div>
   );
 }
 
@@ -1458,6 +1574,92 @@ function BrowserInput({ signals }: { readonly signals: BrowserSignals }) {
   );
 }
 
+function BrowserContent({
+  signals,
+  selectedTabId,
+  operations,
+  creating,
+  onCreate,
+  presence,
+  placeholder,
+}: {
+  readonly signals: BrowserSignals;
+  readonly selectedTabId: string | null;
+  readonly operations: readonly (
+    Loadable<unknown> | { readonly state: "idle" }
+  )[];
+  readonly creating: boolean;
+  readonly onCreate: () => Promise<string>;
+  readonly presence: ReactNode;
+  readonly placeholder?: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const canvasVisible = useGet(signals.canvasVisible$);
+  const contentVisible = useGet(signals.contentVisible$);
+  const showBlankPage = useGet(signals.showBlankPage$);
+  const streaming = useGet(signals.streaming$);
+  const imageRecovery = useGet(signals.imageRecovery$);
+  const surfaceRef = useSet(signals.refs.surface$);
+  const canvasRef = useSet(signals.refs.canvas$);
+  return (
+    <TabsContent
+      keepMounted
+      value={selectedTabId}
+      tabIndex={-1}
+      className="relative min-h-0 flex-1"
+    >
+      <BrowserOperationError
+        occurrences={operations.filter((operation) => {
+          return (
+            operation.state === "hasError" &&
+            isBrowserOperationFailure(
+              operation.error,
+              imageRecovery !== null || streaming,
+            )
+          );
+        })}
+        className="absolute inset-x-3 top-3 z-20 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
+      />
+      <div
+        ref={surfaceRef}
+        data-browser-surface
+        tabIndex={-1}
+        className="relative h-full w-full touch-none overflow-hidden"
+      >
+        <canvas
+          ref={canvasRef}
+          data-browser-canvas
+          role="img"
+          aria-label={t(($) => {
+            return $.browserViewer.liveView;
+          })}
+          aria-hidden={!canvasVisible}
+          className="block h-full w-full object-contain"
+        />
+        <BrowserInput signals={signals} />
+        <BrowserFrameRate signals={signals.frameRate} />
+      </div>
+      {placeholder ?? (
+        <BrowserStatus
+          signals={signals}
+          creating={creating}
+          contentVisible={contentVisible}
+          onCreate={onCreate}
+        />
+      )}
+      {showBlankPage && (
+        <div className="absolute inset-0 bg-background">
+          <BrowserBlankPage />
+        </div>
+      )}
+      <div className="pointer-events-none absolute inset-0 z-10">
+        {presence}
+      </div>
+      <BrowserClipboard signals={signals} />
+    </TabsContent>
+  );
+}
+
 export function Browser({
   signals,
   actions,
@@ -1472,13 +1674,8 @@ export function Browser({
 }) {
   const { t } = useTranslation();
   const selectedTabId = useGet(signals.selectedTabId$);
-  const presentation = useGet(signals.presentation$);
-  const controls = useGet(signals.controls$);
   const pageSignal = useGet(pageSignal$);
-  const imageRecovery = useGet(signals.imageRecovery$);
   const rootRef = useSet(signals.refs.root$);
-  const surfaceRef = useSet(signals.refs.surface$);
-  const canvasRef = useSet(signals.refs.canvas$);
   const [selectOperation, selectTab] = useLoadableSet(signals.selectTab$);
   // Both New tab entry points share one request owner to prevent duplicate creation.
   const [createOperation, createTab] = useLoadableSet(signals.createTab$);
@@ -1514,73 +1711,17 @@ export function Browser({
         signals={signals}
         settingsDisabled={placeholder !== undefined}
       />
-      <TabsContent
-        keepMounted
-        value={selectedTabId}
-        tabIndex={-1}
-        className="relative min-h-0 flex-1"
-      >
-        <BrowserOperationError
-          occurrences={[selectOperation, createOperation].filter(
-            (operation) => {
-              return (
-                operation.state === "hasError" &&
-                isBrowserOperationFailure(
-                  operation.error,
-                  imageRecovery !== null || controls.streaming,
-                )
-              );
-            },
-          )}
-          className="absolute inset-x-3 top-3 z-20 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
-        />
-        <div
-          ref={surfaceRef}
-          data-browser-surface
-          tabIndex={-1}
-          className="relative h-full w-full touch-none overflow-hidden"
-        >
-          <canvas
-            ref={canvasRef}
-            data-browser-canvas
-            role="img"
-            aria-label={t(($) => {
-              return $.browserViewer.liveView;
-            })}
-            aria-hidden={
-              presentation.status !== "streaming" &&
-              !presentation.retainedFrame &&
-              !presentation.loadingPreview
-            }
-            className="block h-full w-full object-contain"
-          />
-          <BrowserInput signals={signals} />
-          <BrowserFrameRate signals={signals.frameRate} />
-        </div>
-        {placeholder ?? (
-          <BrowserStatus
-            signals={signals}
-            creating={createOperation.state === "loading"}
-            contentVisible={
-              presentation.status === "streaming" ||
-              presentation.loadingPreview ||
-              presentation.blank
-            }
-            onCreate={() => {
-              return createTab(pageSignal);
-            }}
-          />
-        )}
-        {presentation.blank && (
-          <div className="absolute inset-0 bg-background">
-            <BrowserBlankPage />
-          </div>
-        )}
-        <div className="pointer-events-none absolute inset-0 z-10">
-          {presence}
-        </div>
-        <BrowserClipboard signals={signals} />
-      </TabsContent>
+      <BrowserContent
+        signals={signals}
+        selectedTabId={selectedTabId}
+        operations={[selectOperation, createOperation]}
+        creating={createOperation.state === "loading"}
+        onCreate={() => {
+          return createTab(pageSignal);
+        }}
+        presence={presence}
+        placeholder={placeholder}
+      />
     </Tabs>
   );
 }

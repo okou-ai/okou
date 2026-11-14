@@ -438,21 +438,36 @@ describe("okou mcp command", () => {
     },
   );
 
-  it.each(["modern", "legacy"] as const)(
-    "preserves the selected connector's endpoint query and intent with %s MCP",
-    async (era) => {
+  it.each(
+    (["modern", "legacy"] as const).flatMap((era) => {
+      return (["builtin", "custom"] as const).map((kind) => {
+        return { era, kind };
+      });
+    }),
+  )(
+    "preserves the selected $kind connector's endpoint query and intent with $era MCP",
+    async ({ era, kind }) => {
       const otherId = "55555555-5555-4555-8555-555555555555";
+      const siblingSlug = kind === "builtin" ? "query-a" : "_query-a";
+      const slug = kind === "builtin" ? "query-b" : "_query-b";
       const endpoint = `${MCP_ENDPOINT}?hl=en&tag=one&tag=two&empty=&encoded=a%20b&literal=a+b&slash=%2f`;
       server.use(
         stubRunMcpConnectors([
           runMcpConnector({
             endpoint: `${MCP_ENDPOINT}?hl=de`,
-            slug: "_query-a",
+            slug: siblingSlug,
+            target:
+              kind === "builtin"
+                ? { kind: "builtin", connectorSlug: siblingSlug }
+                : { kind: "custom", customConnectorId: CONNECTOR_ID },
           }),
           runMcpConnector({
             endpoint,
-            slug: "_query-b",
-            target: { kind: "custom", customConnectorId: otherId },
+            slug,
+            target:
+              kind === "builtin"
+                ? { kind: "builtin", connectorSlug: slug }
+                : { kind: "custom", customConnectorId: otherId },
           }),
         ]),
       );
@@ -462,12 +477,12 @@ describe("okou mcp command", () => {
         "node",
         "okou",
         "list-tools",
-        "_query-b",
+        slug,
         "--json",
       ]);
 
       expect(consoleLog).toHaveBeenCalledWith(
-        JSON.stringify({ connectorSlug: "_query-b", tools: [] }),
+        JSON.stringify({ connectorSlug: slug, tools: [] }),
       );
       expect(seen.length).toBeGreaterThan(0);
       expect(
@@ -483,7 +498,7 @@ describe("okou mcp command", () => {
             return request.intent;
           }),
         ),
-      ).toStrictEqual(new Set([otherId]));
+      ).toStrictEqual(new Set([kind === "builtin" ? slug : otherId]));
     },
   );
 

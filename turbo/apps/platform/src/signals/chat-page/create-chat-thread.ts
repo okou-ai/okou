@@ -131,6 +131,7 @@ import {
   messageDocumentToPrompt,
   textToMessageDocument,
 } from "../okou-page/user-message-document-codec.ts";
+import { parseComposerVisualizationPreferences } from "../okou-page/composer-additional-info.ts";
 import {
   createAgentReferenceSignalsRegistry,
   type AgentReferenceSignalsRegistry,
@@ -162,7 +163,7 @@ import {
   type SendChatEventInput,
   type SendInputChatEvent,
 } from "./chat-event-signals.ts";
-import type { RunIndicatorState } from "./chat-event-state.ts";
+import type { RunIndicatorState } from "@okouai/api-contracts/contracts/chat-run-state";
 import type {
   ChatEventGroup,
   EnrichedChatEvent,
@@ -1164,6 +1165,15 @@ const registerUserMessageRenderDocument$ = command(
     contextType: ChatEvent["contextType"],
   ): UserMessageRenderDocument => {
     const readableDocument = userMessageDocumentSchema.parse(document);
+    const visualizationPreferences = readableDocument.parts
+      .map((part) => {
+        return part.type === "additional_info"
+          ? parseComposerVisualizationPreferences(part.text)
+          : undefined;
+      })
+      .find((preferences) => {
+        return preferences !== undefined;
+      });
     const parts: UserMessageRenderPart[] = readableDocument.parts.flatMap(
       (part, index) => {
         if (part.type === "additional_info") {
@@ -1191,6 +1201,7 @@ const registerUserMessageRenderDocument$ = command(
       // Registration uses the raw document identity across window updates.
       document,
       parts,
+      ...(visualizationPreferences ? { visualizationPreferences } : {}),
     };
   },
 );
@@ -2310,11 +2321,16 @@ function createEventChangeEffects({
   const updateEventPresentation$ = command(
     async (
       { set },
-      scrollPosition: ThreadScrollPosition | null,
+      followLatest: boolean,
       signal: AbortSignal,
     ): Promise<void> => {
       await set(syncVisibleEventTrees$, true, signal);
       signal.throwIfAborted();
+      // Presentation can span reader input. Use its latest captured intent,
+      // not the stale atom or hidden DOM from the start of this batch.
+      const scrollPosition = followLatest
+        ? null
+        : set(scroll.readCapturedThreadScrollPosition$);
       await set(scroll.autoScroll$, scrollPosition, signal);
     },
   );
@@ -2328,15 +2344,11 @@ function createEventChangeEffects({
       const hasOptimisticUserMessage = get(
         chatEvents.hasOptimisticUserMessage$,
       );
-      // Scroll events own the DOM-aware decision: reaching the tail clears the
-      // held position there. An event batch can run while this thread's DOM is
-      // empty or stale, so restoration must read only the position already
-      // captured for the reader.
-      const scrollPosition = hasOptimisticUserMessage
-        ? null
-        : get(scroll.threadScrollPosition$);
+      // Only a local optimistic send explicitly requests the tail. Ordinary
+      // batches use current captured intent after presentation, without reading
+      // the empty or hidden DOM or assuming an older saved atom is still current.
       await Promise.all([
-        set(updateEventPresentation$, scrollPosition, signal),
+        set(updateEventPresentation$, hasOptimisticUserMessage, signal),
         set(markThreadReadIfNeeded$, signal),
       ]);
       signal.throwIfAborted();
@@ -3947,6 +3959,25 @@ const createChatForwardComposerSignals: ChatForwardComposerFactory = (
  * Creates the complete signal graph of one chat panel. The graph carries no
  * AbortSignal, so a pane can derive it from the thread it shows.
  */
+function publicChatThreadScrollSignals(scroll: ChatThreadScrollSignals) {
+  return {
+    scrollContainerOnRef$: scroll.scrollContainerOnRef$,
+    scrollContentOnRef$: scroll.scrollContentOnRef$,
+    scrollCommitOnRef$: scroll.scrollCommitOnRef$,
+    scrollContainer$: scroll.scrollContainer$,
+    threadScrollPosition$: scroll.threadScrollPosition$,
+    awayFromBottom$: scroll.awayFromBottom$,
+    scrollTo$: scroll.scrollTo$,
+    scrollToTop$: scroll.scrollToTop$,
+    scrollToBottom$: scroll.scrollToBottom$,
+    restoreScrollPosition$: scroll.restoreScrollPosition$,
+    restoreScrollPositionForLayout$: scroll.restoreScrollPositionForLayout$,
+    hasPreservedHiddenLayout$: scroll.hasPreservedHiddenLayout$,
+    preserveHiddenLayout$: scroll.preserveHiddenLayout$,
+    restoreHiddenLayout$: scroll.restoreHiddenLayout$,
+  };
+}
+
 export function createChatPanelSignals(
   threadId: string,
   agentId: string,
@@ -4035,20 +4066,11 @@ export function createChatPanelSignals(
     threadMeta$,
     optimisticCreateUnsettled$,
     ...threadMetadata,
-    scrollContainerOnRef$: messages.scroll.scrollContainerOnRef$,
-    scrollContentOnRef$: messages.scroll.scrollContentOnRef$,
+    ...publicChatThreadScrollSignals(messages.scroll),
     composerLayoutOnRef$: createChatComposerLayoutOnRef(
       composer.editor.editor,
       messages.scroll.restoreScrollPosition$,
     ),
-    scrollCommitOnRef$: messages.scroll.scrollCommitOnRef$,
-    scrollContainer$: messages.scroll.scrollContainer$,
-    threadScrollPosition$: messages.scroll.threadScrollPosition$,
-    awayFromBottom$: messages.scroll.awayFromBottom$,
-    scrollTo$: messages.scroll.scrollTo$,
-    scrollToTop$: messages.scroll.scrollToTop$,
-    scrollToBottom$: messages.scroll.scrollToBottom$,
-    restoreScrollPosition$: messages.scroll.restoreScrollPosition$,
     ...container,
     composer,
     feedback,

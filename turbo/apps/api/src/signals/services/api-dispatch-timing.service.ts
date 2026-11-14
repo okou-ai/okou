@@ -561,8 +561,8 @@ export class ApiDispatchTimingCollector {
   }
 }
 
-/** Publish runtime preparation only after the Claim wins durable ownership. */
-export function recordClaimPreparationTimings(args: {
+/** Publish actual preparation intervals for direct dispatch. */
+export function recordExecutionPreparationTimings(args: {
   readonly runId: string;
   readonly runnerGroup: string;
   readonly profile: string;
@@ -582,7 +582,7 @@ export function recordClaimPreparationTimings(args: {
           ...record.dimensions,
           runner_group: args.runnerGroup,
           profile: args.profile,
-          preparation_phase: "claim",
+          preparation_phase: "dispatch",
           span_kind: record.spanKind,
           ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
         },

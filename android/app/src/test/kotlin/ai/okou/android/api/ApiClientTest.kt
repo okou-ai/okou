@@ -162,7 +162,7 @@ class ApiClientTest {
                 """{"error":{"code":"ANDROID_UPDATE_REQUIRED","message":"Update"},"minimumSupportedVersion":"0.2.0"}""" to
                     "0.2.0",
                 "invalid" to null,
-                "x".repeat(MAX_API_RESPONSE_BYTES.toInt() + 1) to null,
+                "x".repeat(128 * 1024) to null,
                 """{"error":{"code":"IOS_UPDATE_REQUIRED","message":"Update"},"minimumSupportedVersion":"0.2.0"}""" to
                     null,
             )) {
@@ -283,9 +283,8 @@ class ApiClientTest {
     }
 
     @Test
-    fun boundsKnownLengthAndChunkedResponses() = runTest {
-        val oversized =
-            """{"id":"org_large","name":"${"x".repeat(MAX_API_RESPONSE_BYTES.toInt())}"}"""
+    fun streamsLargeKnownLengthChunkedAndCompressedCanonicalResponses() = runTest {
+        val oversized = """{"id":"org_large","name":"${"x".repeat(2 * 1024 * 1024)}"}"""
         client().use { api ->
             for (response in
                 listOf(
@@ -294,7 +293,9 @@ class ApiClientTest {
                     gzipResponse(oversized),
                 )) {
                 server.enqueue(response)
-                failure<ApiFailure.IncompatibleResponse> { api.organization() }
+                val organization = api.organization()
+                assertEquals("org_large", organization.id)
+                assertEquals(2 * 1024 * 1024, organization.name.length)
             }
         }
     }

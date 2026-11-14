@@ -2,27 +2,50 @@ package ai.okou.android.auth
 
 import ai.okou.android.api.ApiClient
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.SignedTransferClient
 import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.InitializePreferencesRequestLocale
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.chat.ChatListService
+import ai.okou.android.chat.ChatSnapshotUnavailable
+import ai.okou.android.chat.HistoryCursor
+import ai.okou.android.chat.HistoryEvent
+import ai.okou.android.chat.HistoryPage
+import ai.okou.android.chat.historyJson
+import ai.okou.android.chat.readHistoryNdjson
 import java.io.Closeable
 import java.util.Locale
 import java.util.TimeZone
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromStream
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 data class WorkspaceIdentity(
     val apiOrigin: String,
     val userId: String,
     val sessionId: String,
     val workspaceId: String,
+    val authorizationScope: String = "",
 )
 
 data class WorkspaceBootstrap(val organization: Organization, val preferences: UserPreferences)
 
-interface WorkspaceSession : Closeable {
+interface WorkspaceSession : Closeable, ChatListService {
     suspend fun bootstrap(): WorkspaceBootstrap
 
     suspend fun preferences(): UserPreferences
@@ -41,6 +64,80 @@ class CanonicalWorkspaceSession(
     private val timezone: String = TimeZone.getDefault().id,
 ) : WorkspaceSession {
     private val api = ApiClient(identity.apiOrigin.toHttpUrl(), tokens)
+    private val transfers = SignedTransferClient()
+    private val archiveJson = Json {
+        ignoreUnknownKeys = true
+        explicitNulls = true
+    }
+
+    override suspend fun chatSnapshot() = api.chatSnapshot()
+
+    override suspend fun chatEvents(since: Long?) = api.chatEvents(since)
+
+    override suspend fun indicators() = api.indicators()
+
+    override suspend fun agents() = api.agents()
+
+    override suspend fun projectSnapshot() = api.projectSnapshot()
+
+    override suspend fun projectEvents(since: Long) = api.projectEvents(since)
+
+    override suspend fun featureSwitches() = api.featureSwitches()
+
+    override suspend fun historySnapshot(threadId: String) = api.historySnapshot(threadId)
+
+    override suspend fun threadDetail(threadId: String) = api.threadDetail(threadId)
+
+    override suspend fun markRead(threadId: String) = api.markRead(threadId)
+
+    override suspend fun historyRows(threadId: String, cursor: HistoryCursor): HistoryPage =
+        withContext(Dispatchers.Default) {
+            val page = api.historyRows(threadId, cursor)
+            val next = historyJson.encodeToJsonElement(page.cursor).jsonObject
+            HistoryPage(
+                page.rows.map {
+                    HistoryEvent.decode(historyJson.encodeToJsonElement(it).jsonObject)
+                },
+                HistoryCursor(
+                    next.getValue("lastEventId").jsonPrimitive.contentOrNull,
+                    next.getValue("lastSeqId").jsonPrimitive.long,
+                ),
+                page.hasMore,
+            )
+        }
+
+    override suspend fun historyArchive(url: String): List<HistoryEvent> =
+        withContext(Dispatchers.IO) {
+            val address = url.toHttpUrlOrNull() ?: throw ApiFailure.IncompatibleResponse()
+            try {
+                transfers.download(address, ::readHistoryNdjson)
+            } catch (error: ApiFailure.Http) {
+                throw ChatSnapshotUnavailable(error.status)
+            } catch (_: SerializationException) {
+                throw ApiFailure.IncompatibleResponse()
+            } catch (_: IllegalArgumentException) {
+                throw ApiFailure.IncompatibleResponse()
+            }
+        }
+
+    override suspend fun chatArchive(url: String): ChatArchive = archive(url)
+
+    override suspend fun projectArchive(url: String): ProjectArchive = archive(url)
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private suspend inline fun <reified T> archive(url: String): T =
+        withContext(Dispatchers.IO) {
+            val address = url.toHttpUrlOrNull() ?: throw ApiFailure.IncompatibleResponse()
+            try {
+                transfers.download(address) { archiveJson.decodeFromStream<T>(it) }
+            } catch (error: ApiFailure.Http) {
+                throw ChatSnapshotUnavailable(error.status)
+            } catch (_: SerializationException) {
+                throw ApiFailure.IncompatibleResponse()
+            } catch (_: IllegalArgumentException) {
+                throw ApiFailure.IncompatibleResponse()
+            }
+        }
 
     override suspend fun bootstrap(): WorkspaceBootstrap {
         val organization = api.organization()
@@ -74,7 +171,10 @@ class CanonicalWorkspaceSession(
             check(it.initialized()) { "Workspace preferences are incomplete" }
         }
 
-    override fun close() = api.close()
+    override fun close() {
+        api.close()
+        transfers.close()
+    }
 }
 
 private fun UserPreferences.initialized(): Boolean =

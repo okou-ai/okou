@@ -1,5 +1,146 @@
 # Changelog
 
+## [8.839.3](https://github.com/okou-ai/okou/compare/core-v8.839.2...core-v8.839.3) (2026-11-14)
+
+
+### Refactoring
+
+* **api:** remove legacy runner acquisition and queue readers ([#47138](https://github.com/okou-ai/okou/issues/47138)) ([50c5853](https://github.com/okou-ai/okou/commit/50c5853b53188770b588d3f8a3df267830d295a3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.64.0
+
+## [8.839.2](https://github.com/okou-ai/okou/compare/core-v8.839.1...core-v8.839.2) (2026-11-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.63.2
+
+## [8.839.1](https://github.com/okou-ai/okou/compare/core-v8.839.0...core-v8.839.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** match existing web chat sharing behavior ([#47105](https://github.com/okou-ai/okou/issues/47105)) ([e25ad70](https://github.com/okou-ai/okou/commit/e25ad705a20e4cf55d75ade9c6dd7c0a9d45d0e5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.63.1
+
+## [8.839.0](https://github.com/okou-ai/okou/compare/core-v8.838.0...core-v8.839.0) (2026-11-14)
+
+
+### Features
+
+* **app:** add presentation output format preference ([#47056](https://github.com/okou-ai/okou/issues/47056)) ([0ade2b2](https://github.com/okou-ai/okou/commit/0ade2b212cae98fe96ece41f48f58e7d3b76005b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.63.0
+
+## [8.838.0](https://github.com/okou-ai/okou/compare/core-v8.837.0...core-v8.838.0) (2026-11-13)
+
+
+### Features
+
+* **app:** roll out the compact cloud browser header ([#47092](https://github.com/okou-ai/okou/issues/47092)) ([98ce97f](https://github.com/okou-ai/okou/commit/98ce97f96793753ad2276df83e96e8264d900d5c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.62.1
+
+## [8.837.0](https://github.com/okou-ai/okou/compare/core-v8.836.2...core-v8.837.0) (2026-11-13)
+
+
+### Features
+
+* align web and ios chat message sharing ([#47059](https://github.com/okou-ai/okou/issues/47059)) ([971a42f](https://github.com/okou-ai/okou/commit/971a42fa47c06591adb653265a8ce4055c40b266))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.62.0
+
+## [8.836.2](https://github.com/okou-ai/okou/compare/core-v8.836.1...core-v8.836.2) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.61.0
+
+## [8.836.1](https://github.com/okou-ai/okou/compare/core-v8.836.0...core-v8.836.1) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.60.0
+
+## [8.836.0](https://github.com/okou-ai/okou/compare/core-v8.835.2...core-v8.836.0) (2026-11-13)
+
+
+### Features
+
+* **connectors:** enable custom connector cloudflare access for staff ([#47024](https://github.com/okou-ai/okou/issues/47024)) ([13dd6f3](https://github.com/okou-ai/okou/commit/13dd6f3356edb2f199f1407c9c8285a48ae0797d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.59.1
+
+## [8.835.2](https://github.com/okou-ai/okou/compare/core-v8.835.1...core-v8.835.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **app:** unify home project and chat workspace layout ([#46999](https://github.com/okou-ai/okou/issues/46999)) ([37e65b4](https://github.com/okou-ai/okou/commit/37e65b47f9eeb8b1e58a3cf318b384dc0a63b6e6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.59.0
+
+## [8.835.1](https://github.com/okou-ai/okou/compare/core-v8.835.0...core-v8.835.1) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.58.1
+
+## [8.835.0](https://github.com/okou-ai/okou/compare/core-v8.834.2...core-v8.835.0) (2026-11-13)
+
+
+### Features
+
+* **app:** echo selected visualization preferences in chat ([#46849](https://github.com/okou-ai/okou/issues/46849)) ([a63f6b8](https://github.com/okou-ai/okou/commit/a63f6b83f1965d746f6de1f20993dbcd298094f6))
+
 ## [8.834.2](https://github.com/okou-ai/okou/compare/core-v8.834.1...core-v8.834.2) (2026-11-13)
 
 

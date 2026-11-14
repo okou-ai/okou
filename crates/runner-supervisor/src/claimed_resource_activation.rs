@@ -1,22 +1,18 @@
 //! Claimed sandbox selection, activation and fallback above the idle, provider and executor owners.
 
-use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Instant;
 
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
-use futures_util::{FutureExt, future::BoxFuture};
+use futures_util::future::BoxFuture;
 use runner_executor::executor::{
-    BlankPoolSelection, BlankPoolSelectionReason, ExactReuseSpeculationTiming,
-    GuestTimezoneSyncOutcome, RunnerPreSpawnOperationTiming, RunnerPreSpawnPhase,
-    RunnerPreSpawnTiming, try_sync_guest_timezone_intent,
+    BlankPoolSelection, BlankPoolSelectionReason, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
 };
 use runner_host::paths::short_digest;
-use runner_lifecycle::guest_timezone::{GuestTimezoneAssumption, GuestTimezoneIntent};
 use runner_lifecycle::home_image_cache::{HomeImageCache, snapshot::HomeCacheStateSnapshot};
 use runner_lifecycle::idle_pool::{
     BlankIdleReservationMiss, DestroyOutcome, IdlePoolSnapshot, IdleSandboxKind, IdleUnparkResult,
-    RestoreReservedIdleResult, ReusableIdleSandbox, SpeculativeIdleSandbox,
+    RestoreReservedIdleResult, ReusableIdleSandbox,
 };
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::StatusTracker;
@@ -37,11 +33,6 @@ use crate::idle_lifecycle::{
     spawn_idle_destroy_job,
 };
 use crate::orphan_reap::OrphanedActiveRuns;
-use crate::pre_claim_admission::{
-    ExactSpeculation, ExactSpeculationOutcome, PreClaimResources,
-    rollback_exact_speculation_outcome,
-};
-
 /// Concrete owner resources projected by Runner without importing its `SpawnContext`.
 pub struct ActivationResources<'a> {
     pub idle_pool: &'a SharedIdlePool,
@@ -66,7 +57,6 @@ impl ActivationResources<'_> {
 }
 
 pub struct ReuseAdmissionRequest<'a> {
-    pub required_home_source_run_id: Option<RunId>,
     pub profile_name: &'a str,
     pub rootfs_hash: &'a str,
     pub device_rate_limits: &'a Option<DeviceRateLimits>,
@@ -92,6 +82,7 @@ pub struct ReuseFromPoolReady {
 
 pub struct ReservedActivationRequest<'a> {
     pub run_id: RunId,
+    /// Observed producer home selected for this blank carrier.
     pub required_home_source_run_id: Option<RunId>,
     pub rootfs_hash: &'a str,
     pub profile_name: &'a str,
@@ -157,386 +148,6 @@ impl From<FreshFallbackActivation> for ReservedActivation {
     }
 }
 
-enum PendingExactActivation {
-    Prepared {
-        sandbox: Box<SpeculativeIdleSandbox>,
-        guest_state_prepared: bool,
-        idle_snapshot: IdlePoolSnapshot,
-    },
-    FreshFallback(FreshFallbackActivation),
-}
-
-impl From<FreshFallbackActivation> for PendingExactActivation {
-    fn from(activation: FreshFallbackActivation) -> Self {
-        Self::FreshFallback(activation)
-    }
-}
-
-/// Opaque failed transfer retained until Runner has completed the provider claim.
-/// A prepared sandbox cannot be committed by the caller after cancellation.
-pub struct CancelledExactResource(CancelledExactResourceKind);
-
-enum CancelledExactResourceKind {
-    Prepared(Box<SpeculativeIdleSandbox>),
-    Fresh(BudgetLease),
-}
-
-impl CancelledExactResource {
-    pub async fn rollback(
-        self,
-        run_id: RunId,
-        home_disk_mb: u32,
-        resources: &PreClaimResources<'_>,
-    ) {
-        match self.0 {
-            CancelledExactResourceKind::Prepared(sandbox) => {
-                rollback_exact_speculation_outcome(
-                    ExactSpeculationOutcome::Prepared(sandbox),
-                    run_id,
-                    home_disk_mb,
-                    resources,
-                )
-                .await;
-            }
-            CancelledExactResourceKind::Fresh(budget_lease) => drop(budget_lease),
-        }
-    }
-}
-
-pub enum ExactActivation {
-    Ready {
-        reuse_entry: Option<Box<ReusableIdleSandbox>>,
-        active_lease: BudgetLease,
-        reuse_result: SandboxReuseResult,
-        idle_snapshot: IdlePoolSnapshot,
-        transfer_guard: OwnedMutexGuard<()>,
-    },
-    Cancelled {
-        resource: CancelledExactResource,
-        reuse_result: Option<SandboxReuseResult>,
-    },
-    CannotStart {
-        budget_lease: BudgetLease,
-        reuse_result: SandboxReuseResult,
-        error: String,
-    },
-}
-
-/// Finish speculative activation under the cancellation transfer guard.
-pub async fn activate_speculated_exact(
-    speculation: ExactSpeculation,
-    request: ReservedActivationRequest<'_>,
-    ctx: &ActivationResources<'_>,
-    pre_spawn_timing: &mut RunnerPreSpawnTiming,
-    cancellation: &RunCancellationHandle,
-) -> ExactActivation {
-    let run_id = request.run_id;
-    let pending = prepare_speculated_exact(speculation, request, ctx, pre_spawn_timing).await;
-    finish_exact_activation(pending, cancellation, run_id).await
-}
-
-async fn prepare_speculated_exact(
-    speculation: ExactSpeculation,
-    request: ReservedActivationRequest<'_>,
-    ctx: &ActivationResources<'_>,
-    pre_spawn_timing: &mut RunnerPreSpawnTiming,
-) -> PendingExactActivation {
-    let ReservedActivationRequest {
-        run_id,
-        required_home_source_run_id: _,
-        rootfs_hash,
-        profile_name,
-        device_rate_limits: _,
-        home_disk_mb,
-        context,
-    } = request;
-    let ExactSpeculation {
-        outcome,
-        sandbox_id,
-        idle_snapshot,
-        preparation_started_at,
-        preparation_completed_at,
-        claim_started_at,
-        claim_returned_at,
-        unpark,
-        guest_restore,
-    } = speculation;
-    let overlap_started_at = preparation_started_at.max(claim_started_at);
-    let overlap_completed_at = preparation_completed_at.min(claim_returned_at);
-    let claim_overlap = overlap_completed_at.saturating_duration_since(overlap_started_at);
-    let post_claim_remainder =
-        preparation_completed_at.saturating_duration_since(claim_returned_at);
-    let mut speculation_timing = ExactReuseSpeculationTiming {
-        unpark,
-        guest_restore,
-        claim_overlap,
-        post_claim_remainder,
-        timezone_correction: None,
-        timezone_assumption: None,
-    };
-    pre_spawn_timing.record_exact_reuse_speculation(speculation_timing);
-    let sandbox = match outcome {
-        ExactSpeculationOutcome::Prepared(sandbox) => sandbox,
-        ExactSpeculationOutcome::Failed { destroy_job, error } => {
-            warn!(
-                run_id = %run_id,
-                error,
-                "speculative exact-reuse preparation failed, destroying before fresh fallback"
-            );
-            return cleanup_claimed_speculation_for_fresh_fallback(
-                *destroy_job,
-                SandboxReuseResult::UnparkFailed,
-                "speculative_exact_reuse_prepare_failed",
-                run_id,
-                sandbox_id,
-                &idle_snapshot,
-                ctx,
-            )
-            .await;
-        }
-    };
-
-    let reserved_reuse_key = sandbox.reuse_key().map(str::to_owned);
-    let requested_reuse_key = context.reuse_key();
-    if requested_reuse_key != reserved_reuse_key.as_deref() {
-        warn!(
-            run_id = %run_id,
-            reuse_key_fingerprint = reserved_reuse_key.as_deref().map(diagnostic_reuse_key_fingerprint),
-            reuse_key_kind = reserved_reuse_key.as_deref().map(reuse_key_kind),
-            "claimed reuse key does not match speculatively prepared idle sandbox"
-        );
-        return cleanup_claimed_speculation_for_fresh_fallback(
-            sandbox.into_destroy_job("speculative_reuse_session_mismatch"),
-            if requested_reuse_key.is_none() {
-                SandboxReuseResult::NoReuseKey
-            } else {
-                SandboxReuseResult::PoolMiss
-            },
-            "speculative_reuse_session_mismatch",
-            run_id,
-            sandbox_id,
-            &idle_snapshot,
-            ctx,
-        )
-        .await;
-    }
-
-    if sandbox.rootfs_hash() != rootfs_hash {
-        return cleanup_claimed_speculation_for_fresh_fallback(
-            sandbox.into_destroy_job("speculative_rootfs_identity_mismatch"),
-            SandboxReuseResult::ProfileMismatch,
-            "speculative_rootfs_identity_mismatch",
-            run_id,
-            sandbox_id,
-            &idle_snapshot,
-            ctx,
-        )
-        .await;
-    }
-
-    if let Some(cache) = ctx.home_cache {
-        let started_at = Instant::now();
-        let validation = sandbox.validate_home_promotion_identity(
-            cache,
-            rootfs_hash,
-            CANONICAL_WORKING_DIR,
-            u64::from(home_disk_mb) * 1024 * 1024,
-        );
-        pre_spawn_timing
-            .record_phase_elapsed(RunnerPreSpawnPhase::HomePromotionValidation, started_at);
-        if let Err(mismatch) = validation {
-            warn!(
-                run_id = %run_id,
-                reuse_key_fingerprint = reserved_reuse_key.as_deref().map(diagnostic_reuse_key_fingerprint),
-                reuse_key_kind = reserved_reuse_key.as_deref().map(reuse_key_kind),
-                profile = %profile_name,
-                mismatch = mismatch.as_str(),
-                "home promotion identity mismatch after speculative preparation"
-            );
-            return cleanup_claimed_speculation_for_fresh_fallback(
-                sandbox.into_destroy_job("speculative_home_promotion_mismatch"),
-                SandboxReuseResult::PoolMiss,
-                "speculative_home_promotion_mismatch",
-                run_id,
-                sandbox_id,
-                &idle_snapshot,
-                ctx,
-            )
-            .await;
-        }
-    }
-
-    let claimed_timezone = GuestTimezoneIntent::from_context(context);
-    let assumption = sandbox.guest_timezone_intent().compare(&claimed_timezone);
-    let mut correction_duration = None;
-    let mut correction_succeeded = false;
-    let guest_state_prepared = match assumption {
-        GuestTimezoneAssumption::Match => true,
-        GuestTimezoneAssumption::Mismatch => {
-            let correction_started_at = Instant::now();
-            let corrected = AssertUnwindSafe(try_sync_guest_timezone_intent(
-                sandbox.sandbox(),
-                run_id,
-                &claimed_timezone,
-            ))
-            .catch_unwind()
-            .await;
-            correction_duration = Some(correction_started_at.elapsed());
-            match corrected {
-                Ok(Ok(outcome)) => {
-                    correction_succeeded = outcome == GuestTimezoneSyncOutcome::Applied;
-                }
-                Ok(Err(error)) => {
-                    speculation_timing.timezone_correction =
-                        correction_duration.map(|duration| RunnerPreSpawnOperationTiming {
-                            duration,
-                            succeeded: false,
-                        });
-                    speculation_timing.timezone_assumption = Some(assumption);
-                    pre_spawn_timing.record_exact_reuse_speculation(speculation_timing);
-                    warn!(
-                        run_id = %run_id,
-                        error = %error,
-                        "speculative exact-reuse timezone correction transport failed"
-                    );
-                    return cleanup_claimed_speculation_for_fresh_fallback(
-                        sandbox.into_destroy_job("speculative_timezone_correction_failed"),
-                        SandboxReuseResult::UnparkFailed,
-                        "speculative_timezone_correction_failed",
-                        run_id,
-                        sandbox_id,
-                        &idle_snapshot,
-                        ctx,
-                    )
-                    .await;
-                }
-                Err(_) => {
-                    speculation_timing.timezone_correction =
-                        correction_duration.map(|duration| RunnerPreSpawnOperationTiming {
-                            duration,
-                            succeeded: false,
-                        });
-                    speculation_timing.timezone_assumption = Some(assumption);
-                    pre_spawn_timing.record_exact_reuse_speculation(speculation_timing);
-                    warn!(
-                        run_id = %run_id,
-                        "speculative exact-reuse timezone correction panicked"
-                    );
-                    return cleanup_claimed_speculation_for_fresh_fallback(
-                        sandbox.into_destroy_job("speculative_timezone_correction_panicked"),
-                        SandboxReuseResult::UnparkFailed,
-                        "speculative_timezone_correction_panicked",
-                        run_id,
-                        sandbox_id,
-                        &idle_snapshot,
-                        ctx,
-                    )
-                    .await;
-                }
-            }
-            true
-        }
-        GuestTimezoneAssumption::Unknown => false,
-    };
-    speculation_timing.timezone_correction =
-        correction_duration.map(|duration| RunnerPreSpawnOperationTiming {
-            duration,
-            succeeded: correction_succeeded,
-        });
-    speculation_timing.timezone_assumption = Some(assumption);
-    pre_spawn_timing.record_exact_reuse_speculation(speculation_timing);
-
-    PendingExactActivation::Prepared {
-        sandbox,
-        guest_state_prepared,
-        idle_snapshot,
-    }
-}
-
-async fn finish_exact_activation(
-    activation: PendingExactActivation,
-    cancellation: &RunCancellationHandle,
-    run_id: RunId,
-) -> ExactActivation {
-    match activation {
-        PendingExactActivation::Prepared {
-            sandbox,
-            guest_state_prepared,
-            idle_snapshot,
-        } => {
-            let transfer_guard = cancellation.transfer_guard().await;
-            if cancellation.is_cancelled() {
-                drop(transfer_guard);
-                return ExactActivation::Cancelled {
-                    resource: CancelledExactResource(CancelledExactResourceKind::Prepared(sandbox)),
-                    reuse_result: None,
-                };
-            }
-
-            let reuse_key = sandbox.reuse_key().map(str::to_owned);
-            let (reuse_entry, active_lease) = sandbox.commit(guest_state_prepared);
-            info!(
-                run_id = %run_id,
-                reuse_key_fingerprint = reuse_key.as_deref().map(diagnostic_reuse_key_fingerprint),
-                reuse_key_kind = reuse_key.as_deref().map(reuse_key_kind),
-                "committing speculatively prepared exact-reuse sandbox"
-            );
-            ExactActivation::Ready {
-                reuse_entry: Some(Box::new(reuse_entry)),
-                active_lease,
-                reuse_result: SandboxReuseResult::Reused,
-                idle_snapshot,
-                transfer_guard,
-            }
-        }
-        PendingExactActivation::FreshFallback(FreshFallbackActivation::Ready {
-            active_lease,
-            reuse_result,
-            idle_snapshot,
-        }) => {
-            let transfer_guard = cancellation.transfer_guard().await;
-            if cancellation.is_cancelled() {
-                drop(transfer_guard);
-                return ExactActivation::Cancelled {
-                    resource: CancelledExactResource(CancelledExactResourceKind::Fresh(
-                        active_lease,
-                    )),
-                    reuse_result: Some(reuse_result),
-                };
-            }
-            ExactActivation::Ready {
-                reuse_entry: None,
-                active_lease,
-                reuse_result,
-                idle_snapshot,
-                transfer_guard,
-            }
-        }
-        PendingExactActivation::FreshFallback(FreshFallbackActivation::CannotStart {
-            budget_lease,
-            reuse_result,
-            error,
-        }) => {
-            let transfer_guard = cancellation.transfer_guard().await;
-            if cancellation.is_cancelled() {
-                drop(transfer_guard);
-                return ExactActivation::Cancelled {
-                    resource: CancelledExactResource(CancelledExactResourceKind::Fresh(
-                        budget_lease,
-                    )),
-                    reuse_result: Some(reuse_result),
-                };
-            }
-            drop(transfer_guard);
-            ExactActivation::CannotStart {
-                budget_lease,
-                reuse_result,
-                error,
-            }
-        }
-    }
-}
-
 pub async fn activate_reserved_idle(
     reservation: ReservedIdleActivation,
     request: ReservedActivationRequest<'_>,
@@ -555,9 +166,8 @@ pub async fn activate_reserved_idle(
     } = request;
     let started_at = Instant::now();
     let requested_reuse_key = context.reuse_key();
-    // A matching exact sandbox can park while the provider claim is in
-    // flight. Ordinary reuse preserves exact-over-blank priority, but a selected
-    // Home source must not be displaced by a different VM's retained state.
+    // Ordinary reuse preserves exact-over-blank priority. A blank carrying an
+    // observed source home must not be replaced by a different VM's retained state.
     let (reservation, idle_snapshot) = match (
         reservation.kind(),
         requested_reuse_key,
@@ -793,45 +403,6 @@ async fn recover_failed_parked_activation_status(
     .await;
 }
 
-async fn cleanup_claimed_speculation_for_fresh_fallback(
-    destroy_job: runner_lifecycle::idle_pool::IdleDestroyJob,
-    reuse_result: SandboxReuseResult,
-    cleanup_context: &'static str,
-    run_id: RunId,
-    sandbox_id: SandboxId,
-    idle_snapshot: &IdlePoolSnapshot,
-    ctx: &ActivationResources<'_>,
-) -> PendingExactActivation {
-    let activation =
-        cleanup_reserved_for_fresh_fallback(destroy_job, reuse_result, cleanup_context, ctx).await;
-    if matches!(activation, FreshFallbackActivation::CannotStart { .. }) {
-        if let Err(error) = add_preparing_run_with_idle_status_snapshot(
-            ctx.status,
-            run_id,
-            sandbox_id,
-            idle_snapshot.clone(),
-        )
-        .await
-        {
-            warn!(
-                run_id = %run_id,
-                sandbox_id = %sandbox_id,
-                %error,
-                recovery_reason = cleanup_context,
-                "failed to persist uncertain speculative activation ownership"
-            );
-        }
-        retain_uncertain_activation_ownership(
-            ctx.status,
-            ctx.orphaned_active_runs,
-            run_id,
-            sandbox_id,
-            cleanup_context,
-        );
-    }
-    activation.into()
-}
-
 async fn cleanup_reserved_for_fresh_fallback(
     destroy_job: runner_lifecycle::idle_pool::IdleDestroyJob,
     reuse_result: SandboxReuseResult,
@@ -862,7 +433,6 @@ pub async fn try_reuse_from_pool(
     cancellation: &RunCancellationHandle,
 ) -> Result<ReuseFromPoolReady, ReuseFromPoolFailure> {
     let ReuseAdmissionRequest {
-        required_home_source_run_id,
         profile_name,
         rootfs_hash,
         device_rate_limits,
@@ -880,9 +450,7 @@ pub async fn try_reuse_from_pool(
     let started_at = Instant::now();
     // Take the entry under the pool lock, then drop the lock before any awaits
     // so unpark does not block other take/park operations.
-    let exact = if required_home_source_run_id.is_some() {
-        None
-    } else {
+    let exact = {
         let mut pool = ctx.idle_pool.lock().await;
         reuse_key
             .and_then(|reuse_key| pool.take_reserved(reuse_key))
@@ -891,24 +459,19 @@ pub async fn try_reuse_from_pool(
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::IdleReuseLookup, started_at);
     let started_at = Instant::now();
     let home_cache_possible = exact.is_none()
-        && (required_home_source_run_id.is_some()
-            || ctx.home_cache.is_some()
-                && reuse_key.is_some_and(|key| {
-                    ctx.home_cache_snapshot
-                        .has_compatible_home_hint(key, profile_name)
-                }));
+        && (ctx.home_cache.is_some()
+            && reuse_key.is_some_and(|key| {
+                ctx.home_cache_snapshot
+                    .has_compatible_home_hint(key, profile_name)
+            }));
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::HomeCacheStateLookup, started_at);
     let (taken, blank_pool_selection) = match exact {
         Some(exact) => (Some(exact), None),
         None => {
             let mut pool = ctx.idle_pool.lock().await;
-            let exact = if required_home_source_run_id.is_some() {
-                None
-            } else {
-                reuse_key
-                    .and_then(|reuse_key| pool.take_reserved(reuse_key))
-                    .map(|entry| (entry, pool.status_snapshot()))
-            };
+            let exact = reuse_key
+                .and_then(|reuse_key| pool.take_reserved(reuse_key))
+                .map(|entry| (entry, pool.status_snapshot()));
             if exact.is_some() {
                 (exact, None)
             } else {

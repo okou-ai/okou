@@ -81,7 +81,7 @@ async function prepareShare(content = selectedContent) {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  runs.configureRunnerGroup();
+  await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   // Sharing reads persisted chat events only. Fable keeps both sends queued
   // for the native Runner instead of starting unmocked Pi API-first turns.
@@ -267,7 +267,7 @@ describe("optional shared-thread titles", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",

@@ -7,8 +7,8 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
-import type { BrowserServiceError } from "../services/browser.service";
-import { createSharedBrowserGraph } from "../services/browser-shared.service";
+import type { BrowserServiceError } from "../services/browser-error";
+import { createBrowserGraph } from "../services/browser.service";
 
 function errorResponse(error: BrowserServiceError) {
   return {
@@ -34,7 +34,7 @@ function viewerModeError(tokenType: string, includeViewer: boolean) {
 }
 
 const createBody$ = bodyResultOf(browserContract.create);
-const sharedRunInput$ = computed((get) => {
+const runBrowserInput$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   return {
     orgId: auth.orgId,
@@ -42,28 +42,31 @@ const sharedRunInput$ = computed((get) => {
     ...("runId" in auth ? { runId: auth.runId } : {}),
   };
 });
-const sharedRun = createSharedBrowserGraph(sharedRunInput$);
-const sharedThreadParams$ = pathParamsOf(browserContract.get);
-const sharedThreadInput$ = computed(async (get) => {
+const runBrowser = createBrowserGraph(runBrowserInput$);
+const threadParams$ = pathParamsOf(browserContract.get);
+const threadBrowserInput$ = computed(async (get) => {
   return {
-    ...(await get(sharedRunInput$)),
-    chatThreadId: get(sharedThreadParams$).threadId,
+    ...(await get(runBrowserInput$)),
+    chatThreadId: get(threadParams$).threadId,
   };
 });
-const sharedThread = createSharedBrowserGraph(sharedThreadInput$);
-const sharedCreateInput$ = computed(async (get) => {
+const threadBrowser = createBrowserGraph(threadBrowserInput$);
+const createBrowserInput$ = computed(async (get) => {
   const body = await get(createBody$);
-  return body.ok ? { ...(await get(sharedRunInput$)), ...body.data } : null;
+  return body.ok ? { ...(await get(runBrowserInput$)), ...body.data } : null;
 });
-const sharedCreate = createSharedBrowserGraph(sharedCreateInput$);
-const sharedResizeBody$ = bodyResultOf(browserContract.resizeByThread);
-const sharedResizeInput$ = computed(async (get) => {
-  const body = await get(sharedResizeBody$);
+const createBrowser = createBrowserGraph(createBrowserInput$);
+const resizeByThreadBody$ = bodyResultOf(browserContract.resizeByThread);
+const resizeBrowserInput$ = computed(async (get) => {
+  const body = await get(resizeByThreadBody$);
   return body.ok
-    ? { ...(await get(sharedThreadInput$)), aspectRatio: body.data.aspectRatio }
+    ? {
+        ...(await get(threadBrowserInput$)),
+        aspectRatio: body.data.aspectRatio,
+      }
     : null;
 });
-const sharedResize = createSharedBrowserGraph(sharedResizeInput$);
+const resizeBrowser = createBrowserGraph(resizeBrowserInput$);
 const createBrowserInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const body = await get(createBody$);
@@ -71,10 +74,10 @@ const createBrowserInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const shared = await set(sharedCreate.open$, signal);
-    return shared.kind === "error"
-      ? errorResponse(shared)
-      : { status: 201 as const, body: shared.value };
+    const result = await set(createBrowser.open$, signal);
+    return result.kind === "error"
+      ? errorResponse(result)
+      : { status: 201 as const, body: result.value };
   },
 );
 
@@ -85,10 +88,10 @@ const useBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  const shared = await set(sharedRun.open$, signal);
-  return shared.kind === "error"
-    ? errorResponse(shared)
-    : { status: 200 as const, body: shared.value };
+  const result = await set(runBrowser.open$, signal);
+  return result.kind === "error"
+    ? errorResponse(result)
+    : { status: 200 as const, body: result.value };
 });
 
 const leaseBody$ = bodyResultOf(browserContract.lease);
@@ -99,10 +102,10 @@ const leaseBrowserInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const shared = await set(sharedRun.lease$, signal);
-    return shared.kind === "error"
-      ? errorResponse(shared)
-      : { status: 200 as const, body: { browser: shared.value } };
+    const result = await set(runBrowser.lease$, signal);
+    return result.kind === "error"
+      ? errorResponse(result)
+      : { status: 200 as const, body: { browser: result.value } };
   },
 );
 
@@ -114,16 +117,16 @@ const leaseBrowserByThreadInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const shared = await set(sharedThread.lease$, signal);
-    return shared.kind === "error"
-      ? errorResponse(shared)
-      : { status: 200 as const, body: { browser: shared.value } };
+    const result = await set(threadBrowser.lease$, signal);
+    return result.kind === "error"
+      ? errorResponse(result)
+      : { status: 200 as const, body: { browser: result.value } };
   },
 );
 
 const openBody$ = bodyResultOf(browserContract.open);
 const openQuery$ = queryOf(browserContract.open);
-const sharedOpenInput$ = computed(async (get) => {
+const openBrowserInput$ = computed(async (get) => {
   const body = await get(openBody$);
   if (!body.ok) {
     return null;
@@ -136,13 +139,13 @@ const sharedOpenInput$ = computed(async (get) => {
     throw new Error("Validated Browser display cannot fit the raster budget");
   }
   return {
-    ...(await get(sharedThreadInput$)),
+    ...(await get(threadBrowserInput$)),
     initialDisplay,
     viewer: get(openQuery$)?.viewer === "native",
     operationId: body.data.operationId,
   };
 });
-const sharedOpen = createSharedBrowserGraph(sharedOpenInput$);
+const openBrowser = createBrowserGraph(openBrowserInput$);
 const openBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(openBody$);
   signal.throwIfAborted();
@@ -158,14 +161,14 @@ const openBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (denied) {
     return denied;
   }
-  const shared = await set(sharedOpen.open$, signal);
-  return shared.kind === "error"
-    ? errorResponse(shared)
+  const result = await set(openBrowser.open$, signal);
+  return result.kind === "error"
+    ? errorResponse(result)
     : {
         status: 200 as const,
         body: {
-          browser: shared.value.browser,
-          ...(includeViewer ? { viewer: shared.value } : {}),
+          browser: result.value.browser,
+          ...(includeViewer ? { viewer: result.value } : {}),
         },
       };
 });
@@ -178,14 +181,13 @@ const closeBrowserInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const shared = await set(sharedThread.close$, signal);
-    return shared.kind === "error"
-      ? errorResponse(shared)
-      : { status: 200 as const, body: shared.value };
+    const result = await set(threadBrowser.close$, signal);
+    return result.kind === "error"
+      ? errorResponse(result)
+      : { status: 200 as const, body: result.value };
   },
 );
 
-const resizeByThreadBody$ = bodyResultOf(browserContract.resizeByThread);
 const resizeBrowserByThreadInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const body = await get(resizeByThreadBody$);
@@ -193,18 +195,18 @@ const resizeBrowserByThreadInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const shared = await set(sharedResize.resize$, signal);
-    return shared.kind === "error"
-      ? errorResponse(shared)
-      : { status: 200 as const, body: { browser: shared.value } };
+    const result = await set(resizeBrowser.resize$, signal);
+    return result.kind === "error"
+      ? errorResponse(result)
+      : { status: 200 as const, body: { browser: result.value } };
   },
 );
 
 const currentBrowserInner$ = command(async ({ set }, signal: AbortSignal) => {
-  const shared = await set(sharedRun.present$, false, signal);
-  return shared.kind === "error"
-    ? errorResponse(shared)
-    : { status: 200 as const, body: shared.value };
+  const result = await set(runBrowser.present$, false, signal);
+  return result.kind === "error"
+    ? errorResponse(result)
+    : { status: 200 as const, body: result.value };
 });
 
 const getQuery$ = queryOf(browserContract.get);
@@ -218,18 +220,10 @@ const getBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (denied) {
     return denied;
   }
-  const shared = await set(sharedThread.present$, includeViewer, signal);
-  return shared.kind === "error"
-    ? errorResponse(shared)
-    : { status: 200 as const, body: shared.value };
-});
-
-const viewerConnectionInner$ = command(async ({ set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "no-store");
-  const shared = await set(sharedThread.viewer$, signal);
-  return shared.kind === "error"
-    ? errorResponse(shared)
-    : { status: 200 as const, body: shared.value };
+  const result = await set(threadBrowser.present$, includeViewer, signal);
+  return result.kind === "error"
+    ? errorResponse(result)
+    : { status: 200 as const, body: result.value };
 });
 
 const browserReadAuth = Object.freeze({
@@ -298,16 +292,5 @@ export const browserRoutes: readonly RouteEntry[] = [
   {
     route: browserContract.get,
     handler: authRoute(browserReadAuth, getBrowserInner$),
-  },
-  {
-    route: browserContract.viewerConnection,
-    handler: authRoute(
-      {
-        requireOrganization: true,
-        missingOrganizationStatus: 401,
-        accept: ["session"],
-      },
-      viewerConnectionInner$,
-    ),
   },
 ];

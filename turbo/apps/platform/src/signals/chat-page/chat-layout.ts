@@ -1,13 +1,91 @@
 import type { Editor, EditorEvents } from "@tiptap/core";
 import { command, type Command } from "ccstate";
-import { animationFrame } from "signal-timers";
-import { onDomEventFn, onRef, resetSignal } from "../utils.ts";
+import {
+  onDomEventFn,
+  onRef,
+  resetSignal,
+  waitForBrowserPaint,
+} from "../utils.ts";
 import {
   currentLeftThread$,
   currentRightThread$,
 } from "./chat-thread-pane-state.ts";
 
-/** Both panes share the composer/sidebar layout, but keep separate reading anchors. */
+// Keep aligned with the shell's `hidden xl:flex` transcript visibility.
+const THREAD_SIDEBAR_SPLIT_MEDIA_QUERY = "(min-width: 80rem)";
+const resetHiddenLayoutRestore$ = resetSignal();
+
+/** Preserve before publication, while the narrow transcript still has geometry. */
+export const prepareNarrowSidebarScroll$ = command(({ get, set }) => {
+  set(resetHiddenLayoutRestore$);
+  if (window.matchMedia(THREAD_SIDEBAR_SPLIT_MEDIA_QUERY).matches) {
+    return;
+  }
+  for (const thread of new Set([
+    get(currentLeftThread$),
+    get(currentRightThread$),
+  ])) {
+    if (thread) {
+      set(thread.preserveHiddenLayout$);
+    }
+  }
+});
+
+/** The closing command owns the reveal; a reopen cancels only this await. */
+export const restoreNarrowSidebarScroll$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    signal.throwIfAborted();
+    const restoreSignal = set(resetHiddenLayoutRestore$, signal);
+    const threads = new Set([
+      get(currentLeftThread$),
+      get(currentRightThread$),
+    ]);
+    if (
+      !Array.from(threads).some((thread) => {
+        return thread !== null && set(thread.hasPreservedHiddenLayout$);
+      })
+    ) {
+      return;
+    }
+    const [paint] = await Promise.allSettled([
+      waitForBrowserPaint(restoreSignal),
+    ]);
+    signal.throwIfAborted();
+    if (paint.status === "rejected") {
+      // Reopen cancels this layout step without ending its adopting page.
+      if (restoreSignal.aborted && paint.reason === restoreSignal.reason) {
+        return;
+      }
+      throw paint.reason;
+    }
+    if (restoreSignal.aborted) {
+      return;
+    }
+    const currentThreads = new Set([
+      get(currentLeftThread$),
+      get(currentRightThread$),
+    ]);
+    const restorations = await Promise.allSettled(
+      Array.from(threads, async (thread) => {
+        if (thread && currentThreads.has(thread)) {
+          await set(thread.restoreHiddenLayout$, restoreSignal);
+        }
+      }),
+    );
+    signal.throwIfAborted();
+    for (const restoration of restorations) {
+      // Reopen supersedes only layout work, not the navigation that adopted it.
+      if (
+        restoration.status === "rejected" &&
+        (!restoreSignal.aborted || restoration.reason !== restoreSignal.reason)
+      ) {
+        throw restoration.reason;
+      }
+    }
+  },
+);
+
+/** Reflow keeps measured reading anchors and completes hidden initial requests. */
 export const restoreChatLayoutScroll$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     signal.throwIfAborted();
@@ -18,83 +96,12 @@ export const restoreChatLayoutScroll$ = command(
     await Promise.all(
       Array.from(threads, async (thread) => {
         if (thread) {
-          await set(thread.restoreScrollPosition$, signal);
+          await set(thread.restoreScrollPositionForLayout$, signal);
         }
       }),
     );
   },
 );
-
-export interface ChatLayoutSignals {
-  readonly transitionOnRef$: Command<
-    (() => void) | undefined,
-    [HTMLElement | null]
-  >;
-}
-
-/** Each mounted surface owns its overlapping sidebar transitions. */
-function createChatLayoutSignals(): ChatLayoutSignals {
-  const resetFrames$ = resetSignal();
-  const transitionOnRef$ = onRef(
-    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
-      const transitions = new Map<EventTarget, Set<string>>();
-      let frames: AbortSignal | null = null;
-      const startFrames = (frameSignal: AbortSignal) => {
-        animationFrame(
-          onDomEventFn(async () => {
-            await set(restoreChatLayoutScroll$, frameSignal);
-            if (!frameSignal.aborted) {
-              startFrames(frameSignal);
-            }
-          }),
-          { signal: frameSignal },
-        );
-      };
-      const handleTransition = onDomEventFn(async (event: TransitionEvent) => {
-        if (
-          !(event.target instanceof HTMLElement) ||
-          !event.target.matches("[data-sidebar-layout-owner]") ||
-          !["width", "flex-basis"].includes(event.propertyName)
-        ) {
-          return;
-        }
-        if (event.type === "transitionrun") {
-          const properties = transitions.get(event.target) ?? new Set<string>();
-          properties.add(event.propertyName);
-          transitions.set(event.target, properties);
-          if (!frames) {
-            frames = set(resetFrames$, signal);
-            startFrames(frames);
-          }
-        } else {
-          const properties = transitions.get(event.target);
-          properties?.delete(event.propertyName);
-          if (properties?.size === 0) {
-            transitions.delete(event.target);
-          }
-          if (transitions.size === 0) {
-            if (frames && !frames.aborted) {
-              set(resetFrames$);
-            }
-            frames = null;
-          }
-        }
-        await set(restoreChatLayoutScroll$, signal);
-      });
-      for (const type of [
-        "transitionrun",
-        "transitionend",
-        "transitioncancel",
-      ] as const) {
-        element.addEventListener(type, handleTransition, { signal });
-      }
-    }),
-  );
-  return { transitionOnRef$ };
-}
-
-// The shell-owned sidebar keeps its transition lifetime across thread navigation.
-export const chatLayout = createChatLayoutSignals();
 
 /** Transactions acknowledge the editor DOM even when draft sync suppresses onUpdate. */
 export function createChatComposerLayoutOnRef(

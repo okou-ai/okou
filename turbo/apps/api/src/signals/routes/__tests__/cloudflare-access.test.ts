@@ -10,7 +10,6 @@ import {
   sshConnectionResponseSchema,
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
-import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import {
   agentsMainContract,
   agentsByIdContract,
@@ -24,12 +23,12 @@ import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { agentsRoutes } from "../agents";
 import { runnerSshRoutes } from "../runner-ssh";
-import { runnersRoutes } from "../runners";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { sshAccessRoutes } from "../ssh-access";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createBddApi } from "./helpers/api-bdd";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 
@@ -446,7 +445,7 @@ function useClaimedFixture() {
     }
   });
 
-  /** Ordinary chat Runs use production launch/claim. */
+  /** Ordinary chat Runs use production launch and dispatch. */
   return async function claimedFixture() {
     const o = owner();
     const bdd = createBddApi(context);
@@ -455,7 +454,17 @@ function useClaimedFixture() {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const group = runs.configureRunnerGroup();
+    const runnerIdentity: {
+      runnerId: string;
+      heartbeatGeneration: number;
+    } = {
+      runnerId: randomUUID(),
+      heartbeatGeneration: 5_000_000_000,
+    };
+    await runs.configureRunnerGroup({
+      runnerIdentity,
+      heartbeatAuthorization: runnerHeaders.authorization,
+    });
     await runs.grantProEntitlement(bootstrapActor);
     await runs.ensurePersonalSubscriptionModel(bootstrapActor, {
       model: "claude-fable-5-1",
@@ -472,38 +481,20 @@ function useClaimedFixture() {
       agentId,
       prompt: "Use my configured Cloudflare Access SSH host",
     });
+    const input = await runs.executionInput(runId);
     claimedRunCleanups.push(async () => {
       // Restore test-owned external failures after assertions, without hiding cleanup errors.
       authenticate(o);
       useSecretKmsProbe();
       context.mocks.ably.publish.mockResolvedValue(undefined);
       await runs.requestCancelRun(actor, runId, [200]);
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId: runId, exitCode: 137 },
+        { authorization: `Bearer ${input.sandboxToken}` },
+        [200],
+      );
     });
-    const runnerIdentity = {
-      runnerId: randomUUID(),
-      heartbeatGeneration: 5_000_000_000,
-    };
-    await runs.requestHeartbeatRunnerAs(runnerHeaders.authorization, [200], {
-      group,
-      runnerId: runnerIdentity.runnerId,
-      snapshotGeneration: runnerIdentity.heartbeatGeneration,
-    });
-    const claim = await accept(
-      setupApp({ context, routes: runnersRoutes })(
-        runnersJobClaimContract,
-      ).claim({
-        query: { workflowSkills: "2" },
-        headers: runnerHeaders,
-        extraHeaders: { "X-Client-Version": "0.234.18" },
-        params: { id: runId },
-        body: {
-          runnerIdentity,
-          capabilities: { piModelConfigGenerations: [1, 2, 3] },
-        },
-      }),
-      [200],
-    );
-    const agentToken = claim.body.platformEnvironment.OKOU_TOKEN;
+    const agentToken = input.platformEnvironment.OKOU_TOKEN;
     if (!agentToken) {
       throw new Error("Expected the Runner claim to issue its Agent token");
     }

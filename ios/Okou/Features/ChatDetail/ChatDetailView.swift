@@ -43,6 +43,16 @@ struct ChatDetailView: View {
   }
   private var rows: [ConversationCollectionRow] {
     let items = conversation.visibleItems
+    if conversation.sharing.isSelecting {
+      let sharing = conversation.sharing
+      let visibleIDs = Set(items.compactMap(\.message).map(\.id))
+      var rows: [ConversationCollectionRow] = conversation.hasEarlierMessages ? [.earlier] : []
+      rows += sharing.groups.filter { !$0.eventIDs.allSatisfy { !visibleIDs.contains($0) } }
+        .enumerated().map { index, group in
+          .share(group, topSpacing: index == 0 ? 20 : 24)
+        }
+      return rows
+    }
     var result: [ConversationCollectionRow] = []
     if conversation.hasEarlierMessages {
       result.append(.earlier)
@@ -85,7 +95,8 @@ struct ChatDetailView: View {
             message, showsAvatar: !continuesGroup, topSpacing: spacing,
             pendingRetry: pendingRetry,
             isSending: pendingRetry == true && conversation.isSending, isWorkHistory: isWorkHistory,
-            showsActions: !isWorkHistory && pendingRetry == nil && endsTurn(at: index, in: items))
+            showsActions: !conversation.sharing.isSelecting && !isWorkHistory
+              && pendingRetry == nil && endsTurn(at: index, in: items))
         )
       case .usage(let runID):
         result.append(.usage(runID: runID))
@@ -252,6 +263,7 @@ struct ChatDetailView: View {
       if let request { scrolling.reveal(request.position) }
     }
     .onDisappear {
+      conversation.cancelSharing()
       scrolling.deactivate()
       conversation.connectorActions.cancel()
       conversation.setDetailVisible(false, owner: activityOwner)
@@ -273,6 +285,13 @@ struct ChatDetailView: View {
       MessageArtifactPreview(viewer: conversation.artifacts, markdown: conversation.messageMarkdown)
     }
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
+    .sheet(isPresented: $conversation.sharing.showsCreatedLink) {
+      ChatSharingCreatedView(sharing: conversation.sharing)
+        .presentationDetents([.medium, .large])
+    }
+    .onChange(of: conversation.sharing.isSelecting) { _, _ in
+      if let position = scrolling.scroll.captureReadingPosition() { scrolling.reveal(position) }
+    }
     .sheet(item: $usageDetails) { selection in
       ConversationRunUsageDetails(
         usage: conversation.runUsage, runID: selection.id,
@@ -320,29 +339,34 @@ struct ChatDetailView: View {
           .padding(.horizontal, OkouSpace.lg)
           .padding(.bottom, OkouSpace.xs)
         }
-        ChatComposerView(
-          draft: $conversation.draft,
-          isBusy: conversation.isSending || conversation.isStopping
-            || conversation.isRecoveringFailure,
-          showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
-          error: conversation.error,
-          attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
-          attachments: conversation.attachmentDraft,
-          draftState: conversation.composer,
-          submit: {
-            if history.canStop && !conversation.composer.hasContent {
-              await conversation.stop()
-            } else {
-              await scrolling.send()
-              await didSend?()
-            }
-          }, refresh: { await conversation.refresh() }, modelSelection: conversation.modelSelection,
-          connectorSelection: conversation.modelSelection?.connectors,
-          mentionSource: mentionSource,
-          workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID,
-          sendTransition: scrolling.sendTransition,
-          placeholder: agentName.map { String(localized: "Message \($0)") }
-        )
+        if conversation.sharing.isSelecting {
+          ChatSharingFooter(sharing: conversation.sharing)
+        } else {
+          ChatComposerView(
+            draft: $conversation.draft,
+            isBusy: conversation.isSending || conversation.isStopping
+              || conversation.isRecoveringFailure,
+            showsProgress: false, canStop: history.canStop, needsUpgrade: conversation.needsUpgrade,
+            error: conversation.error,
+            attachmentURL: conversation.webURL.appending(path: "chats/\(thread.id)"),
+            attachments: conversation.attachmentDraft,
+            draftState: conversation.composer,
+            submit: {
+              if history.canStop && !conversation.composer.hasContent {
+                await conversation.stop()
+              } else {
+                await scrolling.send()
+                await didSend?()
+              }
+            }, refresh: { await conversation.refresh() },
+            modelSelection: conversation.modelSelection,
+            connectorSelection: conversation.modelSelection?.connectors,
+            mentionSource: mentionSource,
+            workflowSource: conversation.workflowSource, agentID: conversation.thread.agentID,
+            sendTransition: scrolling.sendTransition,
+            placeholder: agentName.map { String(localized: "Message \($0)") }
+          )
+        }
       }
       .onGeometryChange(for: CGFloat.self) {
         $0.size.height
@@ -370,6 +394,21 @@ struct ChatDetailView: View {
     -> some View
   {
     switch row {
+    case .share(let group, let topSpacing):
+      ChatSharingRow(group: group, sharing: conversation.sharing) {
+        VStack(alignment: .leading, spacing: OkouSpace.sm) {
+          ForEach(Array(group.messages.enumerated()), id: \.element.id) { index, message in
+            messageRow(
+              message, showsAvatar: index == 0, pendingRetry: nil, isSending: false,
+              isWorkHistory: false, showsActions: false, loadsAttachments: anchor != nil)
+          }
+        }
+      }
+      .background {
+        if let anchor { ConversationRowAnchor(messageID: group.id, anchor: anchor) }
+      }
+      .padding(.horizontal, ConversationCollectionRow.messageHorizontalInset)
+      .padding(.top, topSpacing)
     case .failure(let message, let state, let topSpacing, let providerMessage):
       AssistantFailureRecoveryCard(
         failure: state.failure, conversation: conversation, providerMessage: providerMessage
@@ -488,7 +527,9 @@ struct ChatDetailView: View {
     isWorkHistory: Bool = false, showsActions: Bool = false, loadsAttachments: Bool = false
   ) -> some View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
-      if message.role == .assistant && showsAvatar { assistantAvatar }
+      if message.role == .assistant && showsAvatar {
+        assistantAvatar.opacity(conversation.sharing.isSelecting ? 0 : 1)
+      }
       if message.role == .system {
         Label(message.text, okouSymbol: message.isError ? "circle-alert" : "circle-stop")
           .font(.okou(.subheadline))

@@ -98,7 +98,7 @@ describe("GitHub file integration routes", () => {
       await api.ensurePersonalSubscriptionModel(fixture.actor);
       api.acceptStorageDownloads();
       api.acceptTelemetryIngest();
-      const runnerGroup = api.configureRunnerGroup();
+      const runnerGroup = await api.configureRunnerGroup();
       const run = await api.createThreadRun(fixture.actor, {
         agentId: fixture.composeId,
         prompt: "deliver github file",

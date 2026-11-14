@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.109.81](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.80...guest-agent-v0.109.81) (2026-11-14)
+
+## [0.109.80](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.79...guest-agent-v0.109.80) (2026-11-14)
+
+## [0.109.79](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.78...guest-agent-v0.109.79) (2026-11-13)
+
+## [0.109.78](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.77...guest-agent-v0.109.78) (2026-11-13)
+
+## [0.109.77](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.76...guest-agent-v0.109.77) (2026-11-13)
+
+## [0.109.76](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.75...guest-agent-v0.109.76) (2026-11-13)
+
+## [0.109.75](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.74...guest-agent-v0.109.75) (2026-11-13)
+
 ## [0.109.74](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.73...guest-agent-v0.109.74) (2026-11-13)
 
 ## [0.109.73](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.72...guest-agent-v0.109.73) (2026-11-12)

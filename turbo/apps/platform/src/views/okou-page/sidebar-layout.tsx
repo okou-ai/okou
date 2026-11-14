@@ -1,12 +1,12 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { UserNotificationsEntry } from "./user-notifications.tsx";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
-import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import {
   activeThreadSidebar$,
   activeThreadSidebarFullscreen$,
-  commitWorkspaceLayout$,
   threadSidebarLayoutRootRef$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { ChatThreadSidebarShell } from "./chat-thread-sidebar-shell.tsx";
@@ -387,18 +387,18 @@ function ChatWorkspace({
   readonly footer: ReactNode;
   readonly pwaNavigation: boolean;
 }) {
-  const active = useGet(activeThreadSidebar$);
-  const fullscreen = useGet(activeThreadSidebarFullscreen$);
-  const syncSidebarLayout = useSet(commitWorkspaceLayout$);
+  const route = useGet(activeRoute$);
+  const threadSidebar = useGet(activeThreadSidebar$);
+  const threadFullscreen = useGet(activeThreadSidebarFullscreen$);
+  // A route can change before its setup releases the previous thread graph.
+  const active = route === "chat" ? threadSidebar : null;
+  const fullscreen = active !== null && threadFullscreen;
   const joinedToChatList = beside === "chat-list";
   return (
     <ChatThreadSidebarShell
-      layout={chatLayout}
       animateEntry={active?.animateEntry ?? true}
       open={active !== null}
-      onWorkspaceLayoutCommit={syncSidebarLayout}
-      ownerKey={active ? `${active.thread.threadId}:${active.target.type}` : ""}
-      sidebar={<ChatThreadSidebarPane />}
+      sidebar={active ? <ChatThreadSidebarPane /> : null}
       // The browser scales a 1440px screen into the panel and wants room;
       // every other panel shares one remembered width.
       widthKey={active?.target.type === "browser" ? "browser" : "panel"}
@@ -437,8 +437,13 @@ function SidebarWorkspaceFrame({
   const chatListHidden = useGet(sidebarOff$);
   const activeRoute = useGet(activeRoute$);
   const beside = chatListHidden ? "nav-rail" : "chat-list";
+  const agentChatPage = useGet(agentChatPageActive$);
+  const capabilitiesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.HomeCapabilities];
+  const sharedWorkspace =
+    capabilitiesEnabled && (agentChatPage || activeRoute === "project");
 
-  return activeRoute === "chat" ? (
+  return activeRoute === "chat" || sharedWorkspace ? (
     <ChatWorkspace
       beside={beside}
       header={header}
@@ -476,12 +481,17 @@ function SidebarWorkspace({
         !(agentChatPage && chatListVisible) && <MobileTopBar />}
     </>
   );
-  const workspaceContent = pwaNavigation ? (
-    <div className="flex min-h-0 flex-1 flex-col [--okou-safe-b:0px]">
+  // Keep the transcript mounted when rotation crosses the mobile breakpoint.
+  // Native scroll anchoring needs the same reading DOM on both sides.
+  const workspaceContent = (
+    <div
+      className={cn(
+        "flex min-h-0 flex-1 flex-col",
+        pwaNavigation && "[--okou-safe-b:0px]",
+      )}
+    >
       {children}
     </div>
-  ) : (
-    children
   );
   const workspaceFooter = pwaNavigation ? <PwaBottomNavigation /> : null;
   return (
@@ -527,8 +537,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <SkillImportDialogMount />
       <CreateAgentDialogContainer />
       <QueueDrawer />
-      {/* Workspace content remounts when mobile navigation adds its wrapper.
-          Keep in-flight remote permission actions outside that subtree. */}
+      {/* Keep in-flight remote permission actions with the workspace owner. */}
       <ThreadComposerDialogsMount />
       {pwaNavigation ? (
         <>

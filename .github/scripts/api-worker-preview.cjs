@@ -358,9 +358,17 @@ async function main(mode) {
   };
   await assertCurrentPreview();
 
-  const hyperdrives = await cf("GET", "/hyperdrive/configs");
-  if (!Array.isArray(hyperdrives))
-    throw new Error("Invalid Hyperdrive inventory");
+  const hyperdrives = [];
+  for (let page = 1; ; page++) {
+    const pageConfigs = await cf(
+      "GET",
+      `/hyperdrive/configs?per_page=100&page=${page}`,
+    );
+    if (!Array.isArray(pageConfigs))
+      throw new Error("Invalid Hyperdrive inventory");
+    hyperdrives.push(...pageConfigs);
+    if (pageConfigs.length < 100) break;
+  }
   const configs = hyperdrives.filter((config) => config.name === names.worker);
   if (configs.length > 1) throw new Error("Ambiguous Hyperdrive identity");
   let hyperdrive = configs[0];

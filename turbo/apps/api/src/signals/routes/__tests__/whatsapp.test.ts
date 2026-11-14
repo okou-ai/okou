@@ -140,7 +140,7 @@ async function startWhatsappTask(setup: Awaited<ReturnType<typeof configure>>) {
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(setup.actor);
   await runs.ensurePersonalSubscriptionModel(setup.actor);
   await runs.updateUserModelPreference(setup.actor, "claude-fable-5-1");
@@ -153,12 +153,12 @@ async function startWhatsappTask(setup: Awaited<ReturnType<typeof configure>>) {
   });
   await flushWaitUntilForTest();
   await runs.heartbeatRunner(runnerGroup);
-  const polled = await runs.pollRunner(runnerGroup);
-  const runId = polled.body.job?.runId;
+  const runId = runs.receivedDispatches(runnerGroup).at(-1)
+    ?.executionContext.runId;
   if (!runId) {
-    throw new Error("Expected a queued WhatsApp run");
+    throw new Error("Expected a dispatched WhatsApp run");
   }
-  const run = await runs.claimRunnerJob(runId);
+  const run = await runs.executionInput(runId);
   const threadId = run.platformEnvironment.OKOU_CHAT_THREAD_ID;
   if (!threadId) {
     throw new Error("Expected the run's chat thread");
@@ -699,7 +699,7 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
       context.mocks.ably.publish.mockResolvedValue(undefined);
-      const runnerGroup = runs.configureRunnerGroup();
+      const runnerGroup = await runs.configureRunnerGroup();
       await runs.grantProEntitlement(setup.actor);
       await runs.ensurePersonalSubscriptionModel(setup.actor);
       await runs.updateUserModelPreference(setup.actor, "claude-fable-5-1");
@@ -752,13 +752,13 @@ describe("WhatsApp through the shared AgentPhone number", () => {
         scenario === "typing-recovery" ? [] : [conversationId],
       );
       await runs.heartbeatRunner(runnerGroup);
-      const polled = await runs.pollRunner(runnerGroup);
-      const runId = polled.body.job?.runId;
+      const runId = runs.receivedDispatches(runnerGroup).at(-1)
+        ?.executionContext.runId;
       expect(runId).toBeTruthy();
       if (!runId) {
-        throw new Error("Expected a queued WhatsApp run");
+        throw new Error("Expected a dispatched WhatsApp run");
       }
-      const run = await runs.claimRunnerJob(runId);
+      const run = await runs.executionInput(runId);
       if (scenario === "window-closed") {
         await createChatFilesBddApi(context).renameThread(
           setup.actor,

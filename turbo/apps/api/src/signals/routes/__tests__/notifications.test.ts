@@ -45,7 +45,7 @@ async function runningAgent(options: ApiTestUserOptions = {}) {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
@@ -60,8 +60,8 @@ async function runningAgent(options: ApiTestUserOptions = {}) {
     model: "claude-fable-5-1",
     prompt: "Notify me about a useful update",
   });
-  expect(run).toMatchObject({ status: "pending" });
-  const claim = await runs.claimRunnerJob(run.runId);
+  expect(run).toMatchObject({ status: "running" });
+  const claim = await runs.executionInput(run.runId);
   mockClerkUsers(context, [
     {
       id: actor.userId,
@@ -229,7 +229,7 @@ describe("agent mail notifications", () => {
     const workflows = createWorkflowsBddApi(context);
     const runs = createRunsApi(context);
     const automationRuns = createPublicAutomationRunApi(context);
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     const { actor } = await workflows.setupWorkflowOrg({
       model: "claude-fable-5-1",
     });
@@ -257,7 +257,7 @@ describe("agent mail notifications", () => {
       automation.body.id,
       runnerGroup,
     );
-    const claim = await runs.claimRunnerJob(runId);
+    const claim = await runs.executionInput(runId);
     automationRuns.track(actor, runId, runnerGroup).sandboxToken =
       claim.sandboxToken;
     const headers = { authorization: `Bearer ${okouTokenFromClaim(claim)}` };

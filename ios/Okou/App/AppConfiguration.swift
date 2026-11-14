@@ -6,10 +6,23 @@ struct AppConfiguration {
   /// Marketing version sent as `X-Client-Version`. `CFBundleVersion` is a constant build number.
   let appVersion: String
 
-  init(bundle: Bundle = .main) throws {
-    guard let api = bundle.object(forInfoDictionaryKey: "APIBaseURL") as? String,
+  init(bundle: Bundle = .main, environment: [String: String] = ProcessInfo.processInfo.environment)
+    throws
+  {
+    var apiOrigin = bundle.object(forInfoDictionaryKey: "APIBaseURL") as? String
+    var webOrigin = bundle.object(forInfoDictionaryKey: "WebBaseURL") as? String
+    #if DEBUG || STAGING
+      // PR QA uses the same Clerk TEST instance, and only fixed preview hosts.
+      if let number = environment["OKOU_PREVIEW_PR_NUMBER"],
+        number.wholeMatch(of: #/[1-9][0-9]*/#) != nil
+      {
+        apiOrigin = "https://pr-\(number)-api.vm6.ai"
+        webOrigin = "https://pr-\(number)-app-okou-app-preview.vm0.workers.dev"
+      }
+    #endif
+    guard let api = apiOrigin,
       let apiURL = URL(string: api), apiURL.scheme == "https",
-      let web = bundle.object(forInfoDictionaryKey: "WebBaseURL") as? String,
+      let web = webOrigin,
       let webURL = URL(string: web), webURL.scheme == "https"
     else {
       throw ConfigurationError.invalidOrigins

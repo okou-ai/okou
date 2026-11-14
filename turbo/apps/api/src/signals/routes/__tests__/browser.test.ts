@@ -41,7 +41,7 @@ import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { mockNow, withMockNowForTest } from "../../../lib/time";
+import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -66,7 +66,7 @@ const TEST_APP_ROUTES = Object.freeze([
 
 const context = testContext();
 const BROWSER_USE_API_URL = "https://api.browser-use.com/api/v3";
-const STARTED_AT_MS = Date.parse("2026-07-24T10:00:00.000Z");
+const STARTED_AT_MS = now();
 const MINUTE_MS = 60_000;
 
 function browserInputWrites() {
@@ -1112,8 +1112,7 @@ async function setupNativeScalarGuardScenario(laterType = "password") {
             },
           };
         }
-        // The external provider executes the JavaScript actually sent by apply,
-        // including the legacy writer on the red-before-green baseline.
+        // The external provider executes the JavaScript actually sent by apply.
         const value: unknown = runInNewContext(
           `(${declaration}).apply(control, args)`,
           {
@@ -7184,7 +7183,7 @@ async function claimChatRun(
   runId: string,
 ) {
   await flushWaitUntilForTest();
-  const claim = await runs.claimRunnerJob(runId);
+  const claim = await runs.executionInput(runId);
   const okouToken = claim.platformEnvironment.OKOU_TOKEN;
   if (!okouToken) {
     throw new Error("Expected the runner claim to include OKOU_TOKEN");
@@ -7224,7 +7223,7 @@ async function setupBrowserScenario() {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.heartbeatRunner(runnerGroup);
   await runs.grantProEntitlement(orgActor);
   await runs.ensurePersonalSubscriptionModel(orgActor);
@@ -7511,7 +7510,7 @@ describe("okou browser route", () => {
         chat.readThreadMetadata(actor, sent.threadId),
       ).resolves.toMatchObject({ cloudBrowserEnabled: enabled });
       await flushWaitUntilForTest();
-      const claim = await runs.claimRunnerJob(sent.runId);
+      const claim = await runs.executionInput(sent.runId);
       const browser = await accept(
         client().get({
           headers: {
@@ -7580,7 +7579,7 @@ describe("okou browser route", () => {
       cloudBrowserEnabled: false,
     });
     await flushWaitUntilForTest();
-    const claim = await runs.claimRunnerJob(sent.runId);
+    const claim = await runs.executionInput(sent.runId);
     expect(claim.appendSystemPrompt ?? "").toContain(
       "Okou Browser is currently off for this chat thread",
     );
@@ -7618,7 +7617,7 @@ describe("okou browser route", () => {
     });
 
     await flushWaitUntilForTest();
-    const claim = await runs.claimRunnerJob(sent.runId);
+    const claim = await runs.executionInput(sent.runId);
     const appendSystemPrompt = claim.appendSystemPrompt ?? "";
     expect(appendSystemPrompt).toContain("this chat's managed Browser");
     expect(appendSystemPrompt).toContain(
@@ -7655,7 +7654,7 @@ describe("okou browser route", () => {
     });
 
     await flushWaitUntilForTest();
-    const claim = await runs.claimRunnerJob(sent.runId);
+    const claim = await runs.executionInput(sent.runId);
     const appendSystemPrompt = claim.appendSystemPrompt ?? "";
     expect(appendSystemPrompt).toContain(
       "prefer `okou browser input-request` over direct Browser takeover",

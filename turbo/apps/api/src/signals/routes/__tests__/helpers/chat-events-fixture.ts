@@ -36,7 +36,6 @@ import { webhooksWorkflowAutomationsRoutes } from "../../webhooks-workflow-autom
 import { workflowAutomationsRoutes } from "../../workflow-automations";
 import {
   createBddApi,
-  expectApiError,
   type ApiTestUser,
   type ApiTestUserOptions,
 } from "./api-bdd";
@@ -105,7 +104,7 @@ export type PromptMessage = Extract<ChatEvent, { eventType: "input.prompt" }>;
 type OutputMessage = Extract<ChatEvent, { eventType: "output.message" }>;
 
 export type RunnerClaim = Awaited<
-  ReturnType<ReturnType<typeof createRunsApi>["claimRunnerJob"]>
+  ReturnType<ReturnType<typeof createRunsApi>["executionInput"]>
 >;
 
 export interface EntitledChatActor {
@@ -370,7 +369,7 @@ export function createChatEventsFixture(context: TestContext) {
     api.acceptTelemetryIngest();
     mockOptionalEnv("OPENROUTER_API_KEY", undefined);
     chatCallbacks.disableVapid();
-    const runnerGroup = api.configureRunnerGroup();
+    const runnerGroup = await api.configureRunnerGroup();
     const { customerId } = await api.grantProEntitlement(actor, {
       ...(options.orgId === STAFF_ORG_ID
         ? {
@@ -626,14 +625,13 @@ export function createChatEventsFixture(context: TestContext) {
   }
 
   async function claimChatRun(
-    runnerGroup: string,
+    _runnerGroup: string,
     runId: string,
   ): Promise<{
     readonly claim: RunnerClaim;
     readonly sandboxHeaders: { readonly authorization: string };
   }> {
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(runId);
+    const claim = await api.executionInput(runId);
     const sandboxHeaders = {
       authorization: `Bearer ${claim.sandboxToken}`,
     };
@@ -743,6 +741,48 @@ export function createChatEventsFixture(context: TestContext) {
       await failChatRun(runId, sandboxHeaders, "Run cancelled");
       await flushWaitUntilForTest();
     }
+  }
+
+  async function cancelAndCompleteChatRun(actor: ApiTestUser, runId: string) {
+    const claim = await api.executionInput(runId);
+    await cancelChatRun(actor, runId, {
+      authorization: `Bearer ${claim.sandboxToken}`,
+    });
+  }
+
+  /** Hold a real Thread input behind an executing Run until the caller launches it. */
+  async function queueChatRun(
+    actor: ApiTestUser,
+    body: ChatRunSendBody,
+    onBlocker?: (receipt: {
+      readonly runId: string;
+      readonly threadId: string;
+      readonly sandboxToken: string;
+    }) => void,
+  ) {
+    const blocker = await sendChatRun(actor, {
+      agentId: body.agentId,
+      model: body.model,
+      prompt: "Hold the following input until its configuration is ready",
+    });
+    const claim = await api.executionInput(blocker.runId);
+    const receipt = {
+      runId: blocker.runId,
+      threadId: blocker.threadId,
+      sandboxToken: claim.sandboxToken,
+    };
+    onBlocker?.(receipt);
+    const waiting = await sendWaitingChatInput(actor, {
+      ...body,
+      threadId: blocker.threadId,
+    });
+    return {
+      blocker: receipt,
+      async launch() {
+        await cancelAndCompleteChatRun(actor, blocker.runId);
+        return await waiting.launchedRun();
+      },
+    };
   }
 
   function chatEventsClient() {
@@ -955,20 +995,14 @@ export function createChatEventsFixture(context: TestContext) {
     runId: string,
     tier: "fast" | undefined,
   ) {
-    if (tier === "fast") {
-      const oldClaim = await api.requestClaimRunnerJob(true, runId, [404], {
-        capabilities: { piModelConfigGenerations: [1, 2] },
-      });
-      expectApiError(oldClaim.body);
-      await expect(api.readRun(actor, runId)).resolves.toMatchObject({
-        status: "pending",
-      });
-    }
-    return await api.claimRunnerJob(runId, {
-      capabilities: {
-        piModelConfigGenerations: tier === "fast" ? [1, 2, 3] : [1, 2],
-      },
+    const input = await api.executionInput(runId);
+    await expect(api.readRun(actor, runId)).resolves.toMatchObject({
+      status: "running",
     });
+    if (tier === "fast") {
+      expect(input.piModelConfig).toMatchObject({ serviceTier: tier });
+    }
+    return input;
   }
 
   function mockPiObjectStore(): Map<string, Buffer> {
@@ -1108,7 +1142,7 @@ export function createChatEventsFixture(context: TestContext) {
     api: {
       acceptStorageDownloads: api.acceptStorageDownloads,
       acceptTelemetryIngest: api.acceptTelemetryIngest,
-      claimRunnerJob: api.claimRunnerJob,
+      executionInput: api.executionInput,
       configureRunnerGroup: api.configureRunnerGroup,
       createCliToken: api.createCliToken,
       createPersonalModelProvider: api.createPersonalModelProvider,
@@ -1123,8 +1157,6 @@ export function createChatEventsFixture(context: TestContext) {
       readRun: api.readRun,
       readRunQueue: api.readRunQueue,
       requestCancelRun: api.requestCancelRun,
-      requestClaimRunnerJob: api.requestClaimRunnerJob,
-      requestClaimRunnerJobAs: api.requestClaimRunnerJobAs,
       requestDeclareSteeredInputAs: api.requestDeclareSteeredInputAs,
       requestNextSteerableInputAs: api.requestNextSteerableInputAs,
       updateUserModelPreference: api.updateUserModelPreference,
@@ -1155,6 +1187,7 @@ export function createChatEventsFixture(context: TestContext) {
     sendChatRun,
     sendChatRunAfterPick,
     sendWaitingChatInput,
+    queueChatRun,
     expectThreadCreatedModelEvent,
     expectNoThreadModelUpdateEvent,
     claimChatRun,
@@ -1164,6 +1197,7 @@ export function createChatEventsFixture(context: TestContext) {
     completeChatRunOk,
     failChatRun,
     cancelChatRun,
+    cancelAndCompleteChatRun,
     chatEventsClient,
     chatThreadsClient,
     sessionHeaders,

@@ -228,12 +228,7 @@ function PwaChatThreads({
         height={rowCount * PWA_CHAT_THREAD_ROW_HEIGHT}
       >
         {window.showAllChatsRow ? (
-          <div
-            className="absolute left-0 top-0 flex h-14 w-full items-center"
-            style={{
-              transform: `translateY(${(rowCount - 1) * PWA_CHAT_THREAD_ROW_HEIGHT}px)`,
-            }}
-          >
+          <div className="flex h-15 w-full items-center pb-1">
             <ShowAllChatsButton />
           </div>
         ) : null}

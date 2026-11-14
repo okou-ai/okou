@@ -32,7 +32,7 @@ run_auto_steer() {
     local expected_output="$1"
     local after_complete_prompt="$2"
     local initial_prompt='Run `sleep 10` with Bash, then follow the instruction in the next message received during this run. If no follow-up is received, reply only MISSING_STEER.'
-    local steer_prompt="Reply with only this token: $expected_output"
+    local steer_prompt="Reply with only the word: $expected_output"
     local steer_result run_id thread_id steer_output successor_result
     local successor_run_id successor_output
 
@@ -53,7 +53,7 @@ run_auto_steer() {
         "$RUNNER_AGENT_ID" \
         "$thread_id" \
         "$run_id" \
-        "Now reply with a different token: $after_complete_prompt" \
+        "Now reply with a different word: $after_complete_prompt" \
         "$after_complete_prompt" \
         150)" || return 1
     successor_run_id="$(jq -er '.runId' <<< "$successor_result")" || return 1

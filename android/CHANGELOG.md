@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.10.0](https://github.com/okou-ai/okou/compare/android-v0.9.0...android-v0.10.0) (2026-11-14)
+
+
+### Features
+
+* **android:** prove canonical text-send bindings ([#47161](https://github.com/okou-ai/okou/issues/47161)) ([3c87809](https://github.com/okou-ai/okou/commit/3c87809234c9baf4d28117cca368e726b0945371))
+
+## [0.9.0](https://github.com/okou-ai/okou/compare/android-v0.8.0...android-v0.9.0) (2026-11-14)
+
+
+### Features
+
+* **android:** add commit-addressed screenshot acceptance ([#47136](https://github.com/okou-ai/okou/issues/47136)) ([336d2a4](https://github.com/okou-ai/okou/commit/336d2a4ea9bf158919a5d7f932f50d29770a59d8))
+
+## [0.8.0](https://github.com/okou-ai/okou/compare/android-v0.7.0...android-v0.8.0) (2026-11-14)
+
+
+### Features
+
+* **android:** add native conversation history ([#47084](https://github.com/okou-ai/okou/issues/47084)) ([ceff05b](https://github.com/okou-ai/okou/commit/ceff05bf314bda810b8fd0203f50bba4ead15048))
+
+## [0.7.0](https://github.com/okou-ai/okou/compare/android-v0.6.0...android-v0.7.0) (2026-11-13)
+
+
+### Features
+
+* **android:** prove canonical conversation history bindings ([#47058](https://github.com/okou-ai/okou/issues/47058)) ([d62e358](https://github.com/okou-ai/okou/commit/d62e3581fa036a5b330c76bdd053e773bc0ac5bd))
+
+## [0.6.0](https://github.com/okou-ai/okou/compare/android-v0.5.0...android-v0.6.0) (2026-11-13)
+
+
+### Features
+
+* **android:** add the confirmed native chat list ([#46918](https://github.com/okou-ai/okou/issues/46918)) ([e0745ae](https://github.com/okou-ai/okou/commit/e0745ae12d3248abc3eefb7484eaa48b94ea3e6b))
+
 ## [0.5.0](https://github.com/okou-ai/okou/compare/android-v0.4.0...android-v0.5.0) (2026-11-13)
 
 

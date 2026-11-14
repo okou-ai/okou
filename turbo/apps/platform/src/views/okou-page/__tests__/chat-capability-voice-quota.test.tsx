@@ -24,7 +24,7 @@ import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts"
 const context = testContext();
 const { installRunChat } = createChatRunFixtures(context);
 
-type VoicePlan = "limited-free-1" | "pro" | "team" | "custom";
+type VoicePlan = "limited-free-1" | "pro" | "team";
 type WorkspaceRole = "admin" | "member";
 
 function billingStatus(tier: VoicePlan): BillingStatusResponse {

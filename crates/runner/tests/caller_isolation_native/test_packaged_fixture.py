@@ -1,6 +1,7 @@
 import concurrent.futures
 import contextlib
 import copy
+import errno
 import http.client
 import io
 import json
@@ -22,6 +23,75 @@ import packaged_guest
 import packaged_run as fixture
 import packaged_snapshot
 import test_fixture as primitive_tests
+
+
+class ControllerResourceOwnershipTest(unittest.TestCase):
+    def test_selector_registration_failure_retires_selector_and_actual_child(self):
+        original_selector = fixture.selectors.DefaultSelector
+        observed = []
+        failure = OSError(errno.ENOSPC, "selector registration failed")
+
+        class FailingSelector(original_selector):
+            def __init__(self):
+                super().__init__()
+                observed.append((self, self.fileno()))
+
+            def register(self, *args, **kwargs):
+                super().register(*args, **kwargs)
+                raise failure
+
+        receipt = {}
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                with patch.object(
+                    fixture.selectors, "DefaultSelector", FailingSelector
+                ):
+                    with self.assertRaises(OSError) as raised:
+                        fixture.vm(
+                            [sys.executable, "-c", "import signal; signal.pause()"],
+                            Path(directory) / "console.log",
+                            receipt,
+                            timeout=5,
+                        )
+                self.assertIs(raised.exception, failure)
+                self.assertEqual(receipt["cleanup"], "vmm_joined")
+                with self.assertRaises(ChildProcessError):
+                    os.waitpid(receipt["vmmPid"], os.WNOHANG)
+                self.assertEqual(len(observed), 1)
+                with self.assertRaises(OSError) as closed:
+                    os.fstat(observed[0][1])
+                self.assertEqual(closed.exception.errno, errno.EBADF)
+        finally:
+            for selector, _ in observed:
+                selector.close()
+
+    def test_snapshot_receipt_failure_restores_original_signal_handlers(self):
+        previous = {sig: signal.getsignal(sig) for sig in packaged_snapshot.SIGNALS}
+        failure = OSError(errno.EIO, "snapshot receipt persistence failed")
+        original_write = Path.write_text
+
+        def write_receipt(path, *args, **kwargs):
+            if path.name == "snapshot-receipt.json":
+                raise failure
+            return original_write(path, *args, **kwargs)
+
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                with (
+                    io.BytesIO() as raw,
+                    io.TextIOWrapper(raw) as output,
+                    contextlib.redirect_stdout(output),
+                    patch.object(Path, "write_text", write_receipt),
+                ):
+                    with self.assertRaises(OSError) as raised:
+                        packaged_snapshot.run(Path(directory))
+                self.assertIs(raised.exception, failure)
+                self.assertEqual(
+                    {sig: signal.getsignal(sig) for sig in previous}, previous
+                )
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
 
 
 class GatewayHttpTest(unittest.TestCase):
@@ -46,12 +116,16 @@ class GatewayHttpTest(unittest.TestCase):
                 self.end_headers()
                 self.wfile.write(raw)
 
-        self.upstream = ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
-        self.gateway = packaged_gateway.Gateway(
-            ("127.0.0.1", 0),
-            packaged_gateway.Handler,
-            "synthetic-fixed-owner",
-            self.upstream.server_address,
+        self.upstream = self.enterContext(
+            ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
+        )
+        self.gateway = self.enterContext(
+            packaged_gateway.Gateway(
+                ("127.0.0.1", 0),
+                packaged_gateway.Handler,
+                "synthetic-fixed-owner",
+                self.upstream.server_address,
+            )
         )
         for server in (self.upstream, self.gateway):
             worker = threading.Thread(
@@ -66,7 +140,6 @@ class GatewayHttpTest(unittest.TestCase):
             server.socket.shutdown(socket.SHUT_RDWR)
         finally:
             server.shutdown()
-            server.server_close()
             worker.join(timeout=2)
             if worker.is_alive():
                 raise AssertionError("owned HTTP server did not join")
@@ -127,6 +200,80 @@ class GatewayHttpTest(unittest.TestCase):
                 finally:
                     peer.close()
         self.assertEqual(self.observations, [])
+
+
+class GatewayStartupOwnershipTest(unittest.TestCase):
+    def test_failed_setup_retires_every_acquired_listener(self):
+        for point in ("second-listener", "first-thread", "second-thread"):
+            with self.subTest(point=point):
+                self.assert_startup_failure(point)
+
+    def assert_startup_failure(self, point):
+        upstream_factory = ThreadingHTTPServer
+        gateway_factory = packaged_gateway.Gateway
+        start = threading.Thread.start
+        servers, workers, failures = [], [], []
+        failure = (
+            OSError("injected second listener failure")
+            if point == "second-listener"
+            else RuntimeError("injected thread start failure")
+        )
+
+        class Result(unittest.TestResult):
+            def addError(self, test, error):
+                failures.append(error[1])
+                super().addError(test, error)
+
+        def upstream(*args, **kwargs):
+            server = upstream_factory(*args, **kwargs)
+            servers.append(server)
+            return server
+
+        def gateway(*args, **kwargs):
+            if point == "second-listener":
+                raise failure
+            server = gateway_factory(*args, **kwargs)
+            servers.append(server)
+            return server
+
+        def start_thread(worker):
+            workers.append(worker)
+            if (point == "first-thread" and len(workers) == 1) or (
+                point == "second-thread" and len(workers) == 2
+            ):
+                raise failure
+            start(worker)
+
+        case = GatewayHttpTest(
+            "test_fixed_upstream_owns_auth_and_ignores_caller_routing_headers"
+        )
+        result = Result()
+        try:
+            with (
+                patch(__name__ + ".ThreadingHTTPServer", side_effect=upstream),
+                patch.object(packaged_gateway, "Gateway", side_effect=gateway),
+                patch.object(threading.Thread, "start", start_thread),
+            ):
+                case.run(result)
+
+            self.assertEqual(result.testsRun, 1)
+            self.assertEqual(len(failures), 1)
+            self.assertIs(failures[0], failure)
+            self.assertFalse(result.failures)
+            self.assertTrue(servers)
+            self.assertEqual(
+                [server.socket.fileno() for server in servers],
+                [-1] * len(servers),
+            )
+            self.assertFalse(any(worker.is_alive() for worker in workers))
+        finally:
+            for server, worker in zip(servers, workers):
+                if worker.is_alive():
+                    server.shutdown()
+                if worker.ident is not None:
+                    worker.join(timeout=2)
+            for server in servers:
+                server.server_close()
 
 
 def summary():

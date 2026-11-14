@@ -30,18 +30,15 @@ import {
 import { settle, settleIncludingAbort, tapError } from "../utils";
 import { expireRunTimeBudgetInput$ } from "./active-input-delivery.service";
 import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
-import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
-import {
-  cancelRun$,
-  commitStaleRunTimeout$,
-} from "./agent-run-terminal-transition.service";
+import { scheduleReleasedSlotPicks$ } from "./pick-chat-run.service";
+import { cancelRun$ } from "./agent-run-cancellation.service";
+import { commitStaleRunTimeout$ } from "./agent-run-terminal-transition.service";
 import { drainStaleCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import { drainStaleCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
 import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { pickAllQueuedOrgs$ } from "./chat-thread-queue-drain.service";
 import { retryPendingFeishuConnectWelcomes$ } from "./feishu-welcome.service";
 import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
-import { cleanupExpiredRunnerJobs$ } from "./runner-job-queue-lifecycle.service";
 import {
   deleteThreadlessRunIfStillEligible$,
   type ThreadlessRunCandidate,
@@ -617,8 +614,6 @@ export const cleanupSandboxes$ = command(
     const threadlessRuns = await set(cleanupThreadlessRuns$, signal);
     signal.throwIfAborted();
 
-    await set(cleanupExpiredRunnerJobs$, signal);
-    signal.throwIfAborted();
     await (async (signal: AbortSignal): Promise<number> => {
       const candidates = db
         .select({ runId: agentRunConnectorDiagnosticRegistrations.runId })

@@ -9,6 +9,71 @@ import XCTest
 
 @MainActor
 final class AppLifecycleTests: XCTestCase {
+  func testInactiveRoundTripReusesLoadedWorkspaceReads() async throws {
+    let identity = try AuthenticationHTTPFixture()
+    addTeardownBlock { await identity.close() }
+    let authentication = try await identity.authentication()
+    await authentication.refresh()
+    let fixture = LifecycleHTTPFixture()
+    let lifecycle = try lifecycle(authentication, fixture)
+    await lifecycle.setPhase(.active)?.value
+    await lifecycle.updateScope()
+    let workspace = try XCTUnwrap(lifecycle.workspace)
+    await workspace.start()
+    await workspace.store.newModelSelection.open()
+    await workspace.store.projects.activate()
+    await workspace.store.newComposer.synchronize()
+    let reads = fixture.history.requests.values.withLock { $0.filter { $0.hasPrefix("GET ") } }
+
+    lifecycle.setPhase(.inactive)
+    await lifecycle.setPhase(.active)?.value
+
+    XCTAssertEqual(workspace.store.newModelSelection.selection.model, "codex-model")
+    XCTAssertTrue(workspace.store.newModelSelection.canSend)
+    XCTAssertEqual(workspace.store.list.threads.map(\.id), [ConversationHistoryFixture.threadID])
+    XCTAssertEqual(
+      fixture.history.requests.values.withLock { $0.filter { $0.hasPrefix("GET ") } }, reads)
+  }
+
+  func testInactiveScenePreservesAnInFlightMessageRefresh() async throws {
+    let identity = try AuthenticationHTTPFixture()
+    addTeardownBlock { await identity.close() }
+    let authentication = try await identity.authentication()
+    await authentication.refresh()
+    let held = expectation(description: "The message response is pending")
+    let gate = ModelResponseGate()
+    let holding = Mutex(false)
+    let fixture = LifecycleHTTPFixture(beforeEventRows: { _ in
+      if holding.withLock({ $0 }) {
+        held.fulfill()
+        await gate.wait()
+      }
+    })
+    let lifecycle = try lifecycle(authentication, fixture)
+    addTeardownBlock { gate.open() }
+    await lifecycle.setPhase(.active)?.value
+    await lifecycle.updateScope()
+    let workspace = try XCTUnwrap(lifecycle.workspace)
+    workspace.store.selectedThreadID = ConversationHistoryFixture.threadID
+    await workspace.start()
+    let conversation = try XCTUnwrap(workspace.store.selectedConversation)
+    XCTAssertEqual(conversation.messages.count, 2)
+    let path = "GET /api/chat-threads/\(ConversationHistoryFixture.threadID)/event-rows"
+    let reads = fixture.history.requests.values.withLock { $0.filter { $0 == path }.count }
+    fixture.history.appendMessage()
+    holding.withLock { $0 = true }
+    workspace.store.requestRefresh(.history(threadID: ConversationHistoryFixture.threadID))
+    await fulfillment(of: [held], timeout: 3)
+
+    lifecycle.setPhase(.inactive)
+    gate.open()
+    await lifecycle.setPhase(.active)?.value
+
+    XCTAssertEqual(conversation.messages.count, 3)
+    XCTAssertEqual(
+      fixture.history.requests.values.withLock { $0.filter { $0 == path }.count }, reads + 1)
+  }
+
   func testCancelledPresentationWaiterDoesNotRetireWorkspaceStartup() async throws {
     let identity = try AuthenticationHTTPFixture()
     addTeardownBlock { await identity.close() }
@@ -59,10 +124,12 @@ final class AppLifecycleTests: XCTestCase {
     XCTAssertEqual(conversation.messages.count, 2)
     conversation.draft = "Unsent draft survives lifecycle changes"
 
+    lifecycle.setPhase(.inactive)
     lifecycle.setPhase(.background)
     fixture.history.appendMessage()
-    lifecycle.setPhase(.active)
-    try await waitForBusinessResult { conversation.messages.count == 3 }
+    lifecycle.setPhase(.inactive)
+    await lifecycle.setPhase(.active)?.value
+    XCTAssertEqual(conversation.messages.count, 3)
     await lifecycle.reduceMemory()
 
     XCTAssertEqual(workspace.store.selectedThreadID, ConversationHistoryFixture.threadID)
@@ -286,10 +353,14 @@ private final class LifecycleHTTPFixture: Sendable {
   private let state = LifecycleHTTPState()
   var navigationWorkspaces: [String] { state.navigationWorkspaces.withLock { $0 } }
 
-  init(beforeNavigation: (@Sendable () async -> Void)? = nil) {
+  init(
+    beforeNavigation: (@Sendable () async -> Void)? = nil,
+    beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil
+  ) {
     let state = state
     history = ConversationHistoryFixture(
       count: 2,
+      beforeEventRows: beforeEventRows,
       detail: { request in
         if request.httpMethod == "PATCH" {
           let key = try Self.workspace(request) + request.url!.path + "/draft"
@@ -314,6 +385,10 @@ private final class LifecycleHTTPFixture: Sendable {
           return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
         case "/api/chat-thread-drafts":
           return ChatHTTPResponse(body: #"{"draftThreadIds":[]}"#)
+        case "/api/projects/events":
+          return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+        case "/api/projects/snapshot":
+          return ChatHTTPResponse(body: #"{"latestEventId":null,"latestSeqId":0,"projects":[]}"#)
         case "/api/agents/\(ConversationHistoryFixture.agentID)/draft",
           "/api/chat-threads/\(ConversationHistoryFixture.threadID)/draft":
           let key = try Self.workspace(request) + request.url!.path

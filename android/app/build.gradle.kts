@@ -4,6 +4,8 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.room)
 }
 
 val appVersion = rootProject.file("version.txt").readText().trim()
@@ -69,6 +71,15 @@ android {
     }
     sourceSets["test"].kotlin.directories.add("src/sharedTest/kotlin")
     sourceSets["androidTest"].kotlin.directories.add("src/sharedTest/kotlin")
+    providers.gradleProperty("okou.screenshotScenarioDir").orNull?.let { value ->
+        val directory = file(value).canonicalFile
+        val allowed = rootProject.file("screenshots").canonicalFile.toPath()
+        require(directory.toPath().startsWith(allowed) && directory.toPath() != allowed) {
+            "Screenshot scenario must be inside android/screenshots/"
+        }
+        require(directory.resolve("src").isDirectory) { "Screenshot scenario has no src directory" }
+        sourceSets["androidTest"].kotlin.directories.add(directory.resolve("src").absolutePath)
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -88,6 +99,8 @@ android {
 }
 
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
+
+room { schemaDirectory("$projectDir/schemas") }
 
 abstract class PrepareBrandFiles : DefaultTask() {
     @get:InputFiles
@@ -162,10 +175,16 @@ dependencies {
     implementation(libs.retrofit.serialization)
     implementation(libs.okhttp)
     implementation(libs.serialization.json)
+    implementation(libs.commonmark)
+    implementation(libs.room.runtime)
+    implementation(libs.sqlite.bundled)
+    ksp(libs.room.compiler)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.mockwebserver)
     testImplementation(libs.robolectric)
+    // The same SQLite release with host-native libraries for Robolectric's JVM.
+    testImplementation(libs.sqlite.host)
     testImplementation(libs.compose.ui.test)
     testImplementation(libs.lifecycle.runtime.testing)
     debugImplementation(libs.compose.ui.test.manifest)
@@ -174,5 +193,6 @@ dependencies {
     androidTestImplementation(libs.test.runner)
     androidTestImplementation(libs.test.uiautomator)
     androidTestImplementation(libs.test.storage)
+    androidTestImplementation(libs.mockwebserver)
     androidTestUtil(libs.test.services)
 }

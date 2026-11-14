@@ -1,9 +1,5 @@
 import { createHash } from "node:crypto";
 import { browserOwnerProfiles } from "@okouai/db/schema/browser-owner";
-import {
-  browserProfiles,
-  browserThreadProfiles,
-} from "@okouai/db/schema/browser-session";
 import { command } from "ccstate";
 import { and, eq, or } from "drizzle-orm";
 import { env } from "../../lib/env";
@@ -51,22 +47,6 @@ const cleanupProfileCandidate$ = command(
             eq(browserOwnerProfiles.userId, owner.userId),
           ),
         ),
-      )
-      .unionAll(
-        db
-          .select({ providerProfileId: browserProfiles.providerProfileId })
-          .from(browserProfiles)
-          .where(eq(browserProfiles.providerProfileId, providerProfileId)),
-      )
-      .unionAll(
-        db
-          .select({
-            providerProfileId: browserThreadProfiles.providerProfileId,
-          })
-          .from(browserThreadProfiles)
-          .where(
-            eq(browserThreadProfiles.providerProfileId, providerProfileId),
-          ),
       );
     if (signal.aborted) {
       throw new BrowserUseProviderError(

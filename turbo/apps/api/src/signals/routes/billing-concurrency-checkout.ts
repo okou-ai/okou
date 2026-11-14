@@ -89,8 +89,7 @@ const loadConcurrencyPurchaseTarget$ = command(
     if (capabilities?.canBuyConcurrency !== true) {
       return {
         ok: false,
-        message:
-          "Additional concurrency is only available for Team or Custom workspaces",
+        message: "Additional concurrency is only available for Team workspaces",
       };
     }
     const priceId = activeConcurrencyPriceId();

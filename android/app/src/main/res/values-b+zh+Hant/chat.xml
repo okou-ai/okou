@@ -1,0 +1,28 @@
+<resources>
+    <string name="chat_list_title">聊天</string>
+    <string name="chat_refresh">重新整理聊天</string>
+    <string name="chat_loading">正在載入聊天…</string>
+    <string name="chat_refreshing">正在重新整理聊天…</string>
+    <string name="chat_load_failed">無法載入聊天，請檢查網路後重試。</string>
+    <string name="chat_refresh_failed">無法重新整理，正在顯示上次載入的聊天。</string>
+    <string name="chat_cached">正在顯示已儲存的聊天。</string>
+    <string name="chat_cache_unavailable">離線儲存空間無法使用，重新啟動後可能無法查看這些聊天。</string>
+    <string name="chat_metadata_loading">正在載入 Okou 和專案名稱…</string>
+    <string name="chat_metadata_unavailable">部分 Okou 或專案資訊無法使用。</string>
+    <string name="chat_status_observed">活躍和未讀狀態來自上次重新整理。</string>
+    <string name="chat_status_unavailable">無法更新狀態，先前的標記可能已過時。</string>
+    <string name="chat_status_loading">正在檢查活躍和未讀狀態…</string>
+    <string name="chat_refresh_status">重新整理狀態</string>
+    <string name="chat_recent">最近</string>
+    <string name="chat_unread">未讀</string>
+    <string name="chat_archived">已封存</string>
+    <string name="chat_muted">已靜音</string>
+    <string name="chat_outside_projects">專案外的聊天</string>
+    <string name="chat_project_empty">此專案尚無聊天。</string>
+    <string name="chat_empty">此檢視尚無聊天。</string>
+    <string name="chat_untitled">未命名聊天</string>
+    <string name="chat_agent_identity">Okou · %1$s</string>
+    <string name="chat_pinned">已置頂</string>
+    <string name="chat_active">活躍</string>
+    <string name="chat_metadata_cached">正在顯示已儲存的 Okou 和專案名稱。</string>
+</resources>

@@ -1,12 +1,12 @@
 import { aroundEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { withMockNowForTest } from "../../../lib/time";
+import { now, withMockNowForTest } from "../../../lib/time";
 import { settleIncludingAbort } from "../../utils";
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 
 const context = testContext();
-const STARTED_AT_MS = Date.parse("2026-09-19T02:00:00.000Z");
+const STARTED_AT_MS = now();
 
 aroundEach(async (runTest) => {
   await withMockNowForTest(STARTED_AT_MS, runTest);

@@ -62,7 +62,7 @@ async function owner(enabled = true) {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
   if (enabled) {
@@ -97,7 +97,7 @@ async function start(value: Awaited<ReturnType<typeof owner>>) {
     }
   });
   await runs.heartbeatRunner(value.runnerGroup);
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.executionInput(run.runId);
   receipt.sandboxToken = claim.sandboxToken;
   const token = claim.platformEnvironment.OKOU_TOKEN;
   if (!token) {

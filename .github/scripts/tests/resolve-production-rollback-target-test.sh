@@ -15,6 +15,7 @@ fail() {
 
 target_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 connector_resource_split_floor=$(<"${repo_root}/.github/rollback-floors/connector-resource-split")
+retired_billing_issuance_floor=$(<"${repo_root}/.github/rollback-floors/retired-billing-issuance")
 decoded_storage_reader_floor=$(<"${repo_root}/.github/rollback-floors/decoded-storage-capacity-reader")
 data_router_response_id_floor=$(<"${repo_root}/.github/rollback-floors/data-router-response-id")
 connector_diagnostic_targets_floor=$(<"${repo_root}/.github/rollback-floors/connector-diagnostic-targets")
@@ -135,6 +136,12 @@ case "${1:-}" in
         [ "${MOCK_DECODED_STORAGE_READER_ON_MAIN:-1}" = "1" ]
       elif [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_DECODED_STORAGE_READER_RUNNER_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "$MOCK_RETIRED_BILLING_ISSUANCE_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_RETIRED_BILLING_ISSUANCE_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_RETIRED_BILLING_ISSUANCE_TARGET_VALID:-1}" = "1" ]
       fi
     elif [ "${3:-}" = "$MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
@@ -524,6 +531,11 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_COMMIT-$MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_FLOOR}"
       exit 0
     fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/retired-billing-issuance" ]; then
+      [ "${MOCK_RETIRED_BILLING_ISSUANCE_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_RETIRED_BILLING_ISSUANCE_COMMIT-$MOCK_RETIRED_BILLING_ISSUANCE_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/connector-resource-split" ]; then
       [ "${MOCK_CONNECTOR_RESOURCE_SPLIT_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_CONNECTOR_RESOURCE_SPLIT_COMMIT-$MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR}"
@@ -607,6 +619,7 @@ run_resolver() {
     METAL_USER=ci \
     MOCK_BOUNDARY_LOG="${tmp_dir}/boundaries.log" \
     MOCK_CONNECTOR_RESOURCE_SPLIT_FLOOR="$connector_resource_split_floor" \
+    MOCK_RETIRED_BILLING_ISSUANCE_FLOOR="$retired_billing_issuance_floor" \
     MOCK_DECODED_STORAGE_READER_FLOOR="$decoded_storage_reader_floor" \
     MOCK_DATA_ROUTER_RESPONSE_ID_FLOOR="$data_router_response_id_floor" \
     MOCK_CONNECTOR_DIAGNOSTIC_TARGETS_FLOOR="$connector_diagnostic_targets_floor" \
@@ -797,6 +810,22 @@ for data_router_mcp_case in \
   [ ! -s "${tmp_dir}/data-router-stateless-mcp.output" ] || fail "pre-stateless Data Router API must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "Data Router stateless MCP policy must reject before provider or host access"
+  fi
+done
+
+# An API rollback cannot recreate Custom plans after their read contract retires.
+for retired_billing_case in \
+  "MOCK_RETIRED_BILLING_ISSUANCE_AVAILABLE=0|Cannot read the retired billing issuance rollback floor from main" \
+  "MOCK_RETIRED_BILLING_ISSUANCE_COMMIT=|Missing or invalid retired billing issuance rollback floor" \
+  "MOCK_RETIRED_BILLING_ISSUANCE_COMMIT=not-a-commit|Missing or invalid retired billing issuance rollback floor" \
+  "MOCK_RETIRED_BILLING_ISSUANCE_ON_MAIN=0|Retired billing issuance rollback floor is not on main" \
+  "MOCK_RETIRED_BILLING_ISSUANCE_TARGET_VALID=0|Rollback target predates Custom/Atom issuance retirement"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${retired_billing_case#*|}" \
+    run_resolver "${tmp_dir}/retired-billing-issuance.output" "${retired_billing_case%%|*}"
+  [ ! -s "${tmp_dir}/retired-billing-issuance.output" ] || fail "retired billing writer must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "retired billing issuance policy must reject before artifact or host access"
   fi
 done
 

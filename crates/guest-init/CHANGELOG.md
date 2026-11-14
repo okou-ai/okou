@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.20.91](https://github.com/okou-ai/okou/compare/guest-init-v0.20.90...guest-init-v0.20.91) (2026-11-14)
+
+## [0.20.90](https://github.com/okou-ai/okou/compare/guest-init-v0.20.89...guest-init-v0.20.90) (2026-11-13)
+
+## [0.20.89](https://github.com/okou-ai/okou/compare/guest-init-v0.20.88...guest-init-v0.20.89) (2026-11-13)
+
+## [0.20.88](https://github.com/okou-ai/okou/compare/guest-init-v0.20.87...guest-init-v0.20.88) (2026-11-13)
+
+## [0.20.87](https://github.com/okou-ai/okou/compare/guest-init-v0.20.86...guest-init-v0.20.87) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** delegate remaining pipe acquisition to owned apis ([#47006](https://github.com/okou-ai/okou/issues/47006)) ([60f6b48](https://github.com/okou-ai/okou/commit/60f6b48ab2773eb2e8acb79516cd479826492daa))
+
+## [0.20.86](https://github.com/okou-ai/okou/compare/guest-init-v0.20.85...guest-init-v0.20.86) (2026-11-13)
+
 ## [0.20.85](https://github.com/okou-ai/okou/compare/guest-init-v0.20.84...guest-init-v0.20.85) (2026-11-13)
 
 ## [0.20.84](https://github.com/okou-ai/okou/compare/guest-init-v0.20.83...guest-init-v0.20.84) (2026-11-12)

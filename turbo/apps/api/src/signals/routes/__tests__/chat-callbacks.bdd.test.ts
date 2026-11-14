@@ -26,6 +26,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { WebPushError } from "web-push";
 import { testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 
@@ -47,6 +48,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
+import { agentsRoutes } from "../agents";
 const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
@@ -101,7 +103,7 @@ async function entitledChatActor(
   api.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   chatCallbacks.disableVapid();
-  const runnerGroup = api.configureRunnerGroup();
+  const runnerGroup = await api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
   const { providerId } = await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
@@ -236,19 +238,10 @@ async function queueChatEvent(
 }
 
 async function claimChatRunJob(runnerGroup: string, runId: string) {
+  const input = await api.executionInput(runId);
+  expect(api.dispatchedRun(runId).profile).toBe("vm0/default");
   await api.heartbeatRunner(runnerGroup);
-  let claim: Awaited<ReturnType<typeof api.requestClaimRunnerJob>> | undefined;
-  await flushWaitUntilForTest();
-  await expect(
-    (async () => {
-      claim = await api.requestClaimRunnerJob(true, runId, [200, 404]);
-      return claim.status;
-    })(),
-  ).resolves.toBe(200);
-  if (!claim || claim.status !== 200) {
-    throw new Error("Expected the chat run to be claimable");
-  }
-  return claim.body;
+  return input;
 }
 
 async function claimChatRun(
@@ -257,6 +250,16 @@ async function claimChatRun(
 ): Promise<{ readonly authorization: string }> {
   const claim = await claimChatRunJob(runnerGroup, runId);
   return { authorization: `Bearer ${claim.sandboxToken}` };
+}
+
+async function acknowledgeCancelledRun(runId: string): Promise<void> {
+  const input = await api.executionInput(runId);
+  await webhooks.requestAgentComplete(
+    { runId, exitCode: 137 },
+    { authorization: `Bearer ${input.sandboxToken}` },
+    [200],
+  );
+  await flushWaitUntilForTest();
 }
 
 function cliAgentSessionIdForChatRun(runId: string): string {
@@ -1643,11 +1646,12 @@ describe("CHAT-02: completed chat callback", () => {
     });
     await flushWaitUntilForTest();
     await api.heartbeatRunner(runnerGroup);
-    const runId = (await api.pollRunner(runnerGroup)).body.job?.runId;
+    const runId = api.receivedDispatches(runnerGroup).at(-1)
+      ?.executionContext.runId;
     if (!runId) {
       throw new Error("Expected a Slack run");
     }
-    const claim = await api.claimRunnerJob(runId);
+    const claim = await api.executionInput(runId);
     const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
     if (!threadId) {
       throw new Error("Expected a Slack chat thread");
@@ -1697,11 +1701,12 @@ describe("CHAT-02: completed chat callback", () => {
       });
       await flushWaitUntilForTest();
       await api.heartbeatRunner(runnerGroup);
-      const initialRunId = (await api.pollRunner(runnerGroup)).body.job?.runId;
+      const initialRunId = api.receivedDispatches(runnerGroup).at(-1)
+        ?.executionContext.runId;
       if (!initialRunId) {
         throw new Error("Expected a Slack run");
       }
-      const claim = await api.claimRunnerJob(initialRunId);
+      const claim = await api.executionInput(initialRunId);
       const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
       if (!threadId) {
         throw new Error("Expected the canonical chat thread identity");
@@ -1748,11 +1753,12 @@ describe("CHAT-02: completed chat callback", () => {
         ts: "4000.000200",
       });
       await flushWaitUntilForTest();
-      const externalRunId = (await api.pollRunner(runnerGroup)).body.job?.runId;
+      const externalRunId = api.receivedDispatches(runnerGroup).at(-1)
+        ?.executionContext.runId;
       if (!externalRunId) {
         throw new Error("Expected the second Slack run");
       }
-      const externalClaim = await api.claimRunnerJob(externalRunId);
+      const externalClaim = await api.executionInput(externalRunId);
       expect(externalClaim.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
         threadId,
       );
@@ -2211,8 +2217,8 @@ describe("CHAT-02: completed chat callback", () => {
       agentId,
       prompt: "hold org concurrency open",
     });
-    await waitForRunStatus(actor, first.runId, "pending");
-    await waitForRunStatus(actor, blocker.runId, "pending");
+    await waitForRunStatus(actor, first.runId, "running");
+    await waitForRunStatus(actor, blocker.runId, "running");
 
     const queuedEventId = await queueChatEvent(actor, {
       agentId,
@@ -2246,6 +2252,7 @@ describe("CHAT-02: completed chat callback", () => {
     // Freeing the org slot picks the waiting thread and launches its input.
     await api.requestCancelRun(actor, blocker.runId, [200]);
     await waitForRunStatus(actor, blocker.runId, "cancelled");
+    await acknowledgeCancelledRun(blocker.runId);
     await flushWaitUntilForTest();
     const pickedRunId = await waitForQueuedEventReplacement(
       actor,
@@ -2253,7 +2260,7 @@ describe("CHAT-02: completed chat callback", () => {
       queuedEventId,
     );
     expect(pickedRunId).not.toBe(first.runId);
-    await waitForRunStatus(actor, pickedRunId, "pending");
+    await waitForRunStatus(actor, pickedRunId, "running");
     await api.requestCancelRun(actor, pickedRunId, [200]);
     await waitForRunStatus(actor, pickedRunId, "cancelled");
     await flushWaitUntilForTest();
@@ -2261,33 +2268,6 @@ describe("CHAT-02: completed chat callback", () => {
 });
 
 describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
-  it("preserves immediate release when a pending run is cancelled", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    const run = await startChatRun(actor, {
-      agentId,
-      prompt: "cancel before runner claim",
-    });
-    await waitForRunStatus(actor, run.runId, "pending");
-    const queuedEventId = await queueChatEvent(actor, {
-      agentId,
-      threadId: run.threadId,
-      prompt: "continue after pending cancellation",
-    });
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-    const replacementRunId = await waitForQueuedEventReplacement(
-      actor,
-      run.threadId,
-      queuedEventId,
-    );
-    expect(replacementRunId).not.toBe(run.runId);
-    await expectCancellationRecoveryPending(actor, run.threadId, false);
-
-    await api.requestCancelRun(actor, replacementRunId, [200]);
-    await waitForRunStatus(actor, replacementRunId, "cancelled");
-    await flushWaitUntilForTest();
-  }, 90_000);
-
   it("redrives lifecycle-first recovery after a partial side-effect failure", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const run = await startChatRun(actor, {
@@ -3665,12 +3645,13 @@ describe("CHAT-02: failed chat callbacks", () => {
         });
         await flushWaitUntilForTest();
         await api.heartbeatRunner(runnerGroup);
-        const queuedRunId = (await api.pollRunner(runnerGroup)).body.job?.runId;
+        const queuedRunId = api.receivedDispatches(runnerGroup).at(-1)
+          ?.executionContext.runId;
         if (!queuedRunId) {
           throw new Error("Expected the Slack subscription run");
         }
         runId = queuedRunId;
-        const claim = await api.claimRunnerJob(runId);
+        const claim = await api.executionInput(runId);
         const chatThreadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
         if (!chatThreadId) {
           throw new Error("Expected the Slack subscription thread");
@@ -4895,6 +4876,7 @@ describe("CHAT-02: auto-send after failures", () => {
       } else {
         await api.requestCancelRun(actor, round.runId, [200]);
         await waitForRunStatus(actor, round.runId, "cancelled");
+        await acknowledgeCancelledRun(round.runId);
       }
     }
     await flushWaitUntilForTest();
@@ -5206,6 +5188,9 @@ describe("CHAT-02: thread deletion while a run is active", () => {
 
 describe("CHAT-02: push notification gating", () => {
   it("reuses the native signing token until its fifty-minute lifetime ends", async () => {
+    // Serving heartbeats at minute 49/50 prune the global fleet. Keep that
+    // operator in this case's database so parallel Runs retain their receiver.
+    await setupApp({ context, routes: agentsRoutes, isolatePg: true });
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context);
     await registerIosPush(context, { ...actor, orgId: actor.orgId! });
@@ -5213,6 +5198,7 @@ describe("CHAT-02: push notification gating", () => {
 
     for (const minutes of [0, 49, 50]) {
       mockNow(startedAt + minutes * 60_000);
+      await api.registerDirectRunner(runnerGroup);
       const run = await startChatRun(actor, {
         agentId,
         prompt: `Native signing token at minute ${minutes}`,

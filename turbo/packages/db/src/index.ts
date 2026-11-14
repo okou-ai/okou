@@ -13,7 +13,7 @@ import * as userNotificationSchema from "./schema/user-notification";
 import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as activeAgentRunSchema from "./schema/active-agent-run";
-import * as agentSuggestionSchema from "./schema/agent-suggestion";
+import * as agentSuggestionSchema from "./schema/feed-item";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
 import * as featureGuideSchema from "./schema/feature-guide";
@@ -29,7 +29,6 @@ import * as systemStoragePresignedUrlCacheSchema from "./runtime/system-storage-
 import * as blobSchema from "./schema/blob";
 
 import * as sandboxTelemetrySchema from "./schema/sandbox-telemetry";
-import * as runnerSchema from "./schema/runner-job-queue";
 import * as runnerStateSchema from "./runtime/runner-state";
 import * as chatAgentRunContextSchema from "./schema/chat-agent-run-context";
 import * as chatRelationSchema from "./schema/chat-relation";
@@ -164,7 +163,9 @@ import * as googleWorkspaceEventSchema from "./schema/google-workspace-event";
 import * as connectorCatalogSchema from "./runtime/connector-catalog";
 import * as officialWorkflowCatalogSchema from "./schema/official-workflow-catalog";
 import * as mailDraftSchema from "./schema/mail-draft";
-import * as browserSessionSchema from "./schema/browser-session";
+import * as browserAuthorizationRequestSchema from "./schema/browser-authorization-request";
+import * as browserUserActionRequestSchema from "./schema/browser-user-action-request";
+import * as browserScreenshotDeletionSchema from "./schema/browser-screenshot-deletion";
 import * as browserOwnerSchema from "./schema/browser-owner";
 import * as browserChatSessionSchema from "./schema/browser-chat-session";
 import * as presentationTemplateSchema from "./schema/presentation-template";
@@ -207,7 +208,6 @@ export const schema = {
   ...blobSchema,
 
   ...sandboxTelemetrySchema,
-  ...runnerSchema,
   ...runnerStateSchema,
   ...chatAgentRunContextSchema,
   ...chatRelationSchema,
@@ -343,7 +343,9 @@ export const schema = {
   ...connectorCatalogSchema,
   ...officialWorkflowCatalogSchema,
   ...mailDraftSchema,
-  ...browserSessionSchema,
+  ...browserAuthorizationRequestSchema,
+  ...browserUserActionRequestSchema,
+  ...browserScreenshotDeletionSchema,
   ...browserOwnerSchema,
   ...browserChatSessionSchema,
   ...presentationTemplateSchema,

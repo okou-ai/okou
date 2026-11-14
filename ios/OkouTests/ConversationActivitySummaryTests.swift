@@ -256,7 +256,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
     defer { workspace.close() }
     await workspace.refreshNavigation()
     await workspace.refresh()
-    workspace.setForeground(true)
+    workspace.setPhase(.active)
     workspace.selectedThreadID = ActivityScenario.thread
     let conversation = try XCTUnwrap(workspace.selectedConversation)
     await conversation.refresh()
@@ -345,16 +345,16 @@ final class ConversationActivitySummaryTests: XCTestCase {
     await workspace.refreshNavigation()
     await workspace.refresh()
     XCTAssertEqual(scenario.state.requests.withLock { $0 }, 0)
-    workspace.setForeground(true)
+    workspace.setPhase(.active)
     workspace.selectedThreadID = ActivityScenario.thread
     let conversation = try XCTUnwrap(workspace.selectedConversation)
     await conversation.refresh()
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
     let initial = try await read(conversation)
     XCTAssertNotNil(conversation.activitySummary.text(in: initial))
-    workspace.setForeground(false)
+    workspace.setPhase(.background)
     assertHidden(conversation, batch: initial)
-    workspace.setForeground(true)
+    workspace.setPhase(.active)
     let foreground = try await read(conversation)
     XCTAssertNotNil(conversation.activitySummary.text(in: foreground))
     workspace.selectedThreadID = nil

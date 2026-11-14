@@ -114,13 +114,13 @@ CACHE_TMP_TAR=""
 # Pinned versions (changes here invalidate the template cache via script hash)
 NODE_VERSION="26.13.1"
 GO_VERSION="1.27.4"
-CLAUDE_CODE_VERSION="2.1.322"
-CODEX_CLI_VERSION="0.167.2"
+CLAUDE_CODE_VERSION="2.1.325"
+CODEX_CLI_VERSION="0.169.0"
 GWS_CLI_VERSION="0.22.5"
 XURL_VERSION="1.3.4"
 AGENT_BROWSER_VERSION="0.39.4-vm0.1"
 PNPM_VERSION="12.18.0"
-UV_VERSION="0.13.7"
+UV_VERSION="0.13.8"
 CHROMIUM_VERSION="156.0.8078.79-1~deb12u1"
 CHROMIUM_SECURITY_SNAPSHOT_URL="https://snapshot.debian.org/archive/debian-security/20261103T160100Z"
 
@@ -365,6 +365,10 @@ install_packages() {
     postgresql-18 postgresql-contrib-18 postgresql-18-pgvector \
     redis-server \
     gh
+
+  # Package hooks may run tmpfiles before creating the postgres user. Apply the
+  # directory rules after APT completes; guests boot without systemd-tmpfiles.
+  systemd-tmpfiles --create postgresql-common.conf
 
   test "$(/usr/bin/node --version)" = "v${NODE_VERSION}"
 

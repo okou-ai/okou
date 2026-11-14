@@ -153,7 +153,7 @@ test("A pending permission read shows loading rather than exposing default permi
   const ready = context.mocks.deferred<void>();
   inventory({ accessReady: ready.promise });
   const dialog = await open();
-  await within(dialog).findByText("Loading remote access…");
+  await within(dialog).findByRole("status", { name: "Loading remote access…" });
   ready.resolve();
   const control = await within(dialog).findByRole("combobox", {
     name: "SSH Host 1",

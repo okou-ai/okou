@@ -1,0 +1,201 @@
+{
+  "createDefaults": {
+    "agentId": "22222222-2222-4222-8222-222222222222",
+    "clientThreadId": "11111111-1111-4111-8111-111111111111",
+    "eventId": "55555555-5555-4555-8555-555555555555"
+  },
+  "createAuto": {
+    "agentId": "22222222-2222-4222-8222-222222222222",
+    "clientThreadId": "11111111-1111-4111-8111-111111111111",
+    "eventId": "55555555-5555-4555-8555-555555555555",
+    "projectId": "33333333-3333-4333-8333-333333333333",
+    "model": null,
+    "serviceTier": null,
+    "title": "项目 🧪"
+  },
+  "createPinned": {
+    "agentId": "22222222-2222-4222-8222-222222222222",
+    "clientThreadId": "11111111-1111-4111-8111-111111111111",
+    "model": "gpt-6.1-sol",
+    "serviceTier": "priority",
+    "reasoningEffort": "high"
+  },
+  "created": {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "projectId": "33333333-3333-4333-8333-333333333333",
+    "title": null,
+    "createdAt": "2026-11-14T00:00:00.000Z",
+    "selectedModel": null,
+    "serviceTier": null
+  },
+  "newInput": {
+    "agentId": "22222222-2222-4222-8222-222222222222",
+    "prompt": "你好 Android 👋\nKeep **Markdown** and native input verbatim.",
+    "clientEventId": "44444444-4444-4444-8444-444444444444",
+    "chatThreadSortEventId": "66666666-6666-4666-8666-666666666666",
+    "userMessage": {
+      "version": 1,
+      "parts": [
+        {
+          "type": "text",
+          "text": "你好 Android 👋\nKeep **Markdown** and native input verbatim."
+        }
+      ]
+    },
+    "hasTextContent": true,
+    "clientThreadId": "11111111-1111-4111-8111-111111111111",
+    "chatThreadEventId": "55555555-5555-4555-8555-555555555555"
+  },
+  "existingInput": {
+    "agentId": "22222222-2222-4222-8222-222222222222",
+    "prompt": "你好 Android 👋\nKeep **Markdown** and native input verbatim.",
+    "clientEventId": "44444444-4444-4444-8444-444444444444",
+    "chatThreadSortEventId": "66666666-6666-4666-8666-666666666666",
+    "userMessage": {
+      "version": 1,
+      "parts": [
+        {
+          "type": "text",
+          "text": "你好 Android 👋\nKeep **Markdown** and native input verbatim."
+        }
+      ]
+    },
+    "hasTextContent": true,
+    "threadId": "11111111-1111-4111-8111-111111111111"
+  },
+  "explicitInput": {
+    "agentId": "22222222-2222-4222-8222-222222222222",
+    "prompt": "你好 Android 👋\nKeep **Markdown** and native input verbatim.",
+    "clientEventId": "44444444-4444-4444-8444-444444444444",
+    "chatThreadSortEventId": "66666666-6666-4666-8666-666666666666",
+    "userMessage": {
+      "version": 1,
+      "parts": [
+        {
+          "type": "text",
+          "text": "你好 Android 👋\nKeep **Markdown** and native input verbatim."
+        }
+      ]
+    },
+    "hasTextContent": true,
+    "threadId": "11111111-1111-4111-8111-111111111111",
+    "model": null,
+    "computerUseHostId": null,
+    "cloudBrowserEnabled": false
+  },
+  "pinnedInput": {
+    "agentId": "22222222-2222-4222-8222-222222222222",
+    "prompt": "你好 Android 👋\nKeep **Markdown** and native input verbatim.",
+    "clientEventId": "44444444-4444-4444-8444-444444444444",
+    "chatThreadSortEventId": "66666666-6666-4666-8666-666666666666",
+    "userMessage": {
+      "version": 1,
+      "parts": [
+        {
+          "type": "text",
+          "text": "你好 Android 👋\nKeep **Markdown** and native input verbatim."
+        }
+      ]
+    },
+    "hasTextContent": true,
+    "threadId": "11111111-1111-4111-8111-111111111111",
+    "model": "gpt-6.1-sol",
+    "runOptions": {
+      "reasoningEffort": "high"
+    }
+  },
+  "sourcedInput": {
+    "agentId": "22222222-2222-4222-8222-222222222222",
+    "prompt": "你好 Android 👋\nKeep **Markdown** and native input verbatim.",
+    "clientEventId": "44444444-4444-4444-8444-444444444444",
+    "chatThreadSortEventId": "66666666-6666-4666-8666-666666666666",
+    "userMessage": {
+      "version": 1,
+      "parts": [
+        {
+          "type": "text",
+          "text": "你好 Android 👋\nKeep **Markdown** and native input verbatim."
+        },
+        {
+          "type": "source",
+          "kind": "mcp",
+          "clientId": "fixture-client"
+        },
+        {
+          "type": "model",
+          "selectedModel": "fixture-model",
+          "serviceTier": "priority"
+        }
+      ]
+    },
+    "hasTextContent": true,
+    "threadId": "11111111-1111-4111-8111-111111111111"
+  },
+  "externalInput": {
+    "agentId": "22222222-2222-4222-8222-222222222222",
+    "prompt": "你好 Android 👋\nKeep **Markdown** and native input verbatim.",
+    "clientEventId": "44444444-4444-4444-8444-444444444444",
+    "chatThreadSortEventId": "66666666-6666-4666-8666-666666666666",
+    "userMessage": {
+      "version": 1,
+      "parts": [
+        {
+          "type": "text",
+          "text": "你好 Android 👋\nKeep **Markdown** and native input verbatim."
+        },
+        {
+          "type": "source",
+          "kind": "slack",
+          "href": "https://source.example/message"
+        }
+      ]
+    },
+    "hasTextContent": true,
+    "threadId": "11111111-1111-4111-8111-111111111111"
+  },
+  "forwardedInput": {
+    "agentId": "22222222-2222-4222-8222-222222222222",
+    "prompt": "你好 Android 👋\nKeep **Markdown** and native input verbatim.",
+    "clientEventId": "44444444-4444-4444-8444-444444444444",
+    "chatThreadSortEventId": "66666666-6666-4666-8666-666666666666",
+    "userMessage": {
+      "version": 1,
+      "parts": [
+        {
+          "type": "text",
+          "text": "你好 Android 👋\nKeep **Markdown** and native input verbatim."
+        },
+        {
+          "type": "source",
+          "kind": "agent",
+          "runId": "77777777-7777-4777-8777-777777777777",
+          "threadId": "11111111-1111-4111-8111-111111111111",
+          "agentId": "22222222-2222-4222-8222-222222222222",
+          "titleSnapshot": "Source conversation",
+          "href": "https://app.example/chat"
+        }
+      ]
+    },
+    "hasTextContent": true,
+    "threadId": "11111111-1111-4111-8111-111111111111"
+  },
+  "revoke": {
+    "agentId": "22222222-2222-4222-8222-222222222222",
+    "threadId": "11111111-1111-4111-8111-111111111111",
+    "revokesEventId": "44444444-4444-4444-8444-444444444444",
+    "clientEventId": "55555555-5555-4555-8555-555555555555"
+  },
+  "interrupt": {
+    "agentId": "22222222-2222-4222-8222-222222222222",
+    "threadId": "11111111-1111-4111-8111-111111111111",
+    "interruptsRunId": "77777777-7777-4777-8777-777777777777",
+    "clientEventId": "55555555-5555-4555-8555-555555555555"
+  },
+  "accepted": {
+    "threadId": "11111111-1111-4111-8111-111111111111",
+    "createdAt": "2026-11-14T00:00:00.000Z"
+  },
+  "acceptedWithoutDate": {
+    "threadId": "11111111-1111-4111-8111-111111111111"
+  }
+}

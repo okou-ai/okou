@@ -70,10 +70,8 @@ import {
   persistChatThreadDraft$,
 } from "./chat-thread-draft-write.service";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
-import {
-  cancelRun$,
-  type CancelRunResult,
-} from "./agent-run-terminal-transition.service";
+import { cancelRun$ } from "./agent-run-cancellation.service";
+import type { CancelRunResult } from "./agent-run-terminal-transition.service";
 import { cancellationRecoveryPendingForThread } from "./chat-active-run.service";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import {

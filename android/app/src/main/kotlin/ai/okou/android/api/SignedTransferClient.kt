@@ -2,6 +2,7 @@ package ai.okou.android.api
 
 import java.io.Closeable
 import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
 import kotlinx.coroutines.CoroutineDispatcher
@@ -25,6 +26,23 @@ class SignedTransferClient(
         withContext(dispatcher) {
             require(maximumBytes in 1..Int.MAX_VALUE.toLong())
             execute(Request.Builder().url(url).build(), maximumBytes)
+        }
+
+    /** Stream canonical archives without an Android-only data-size cutoff or byte/string copies. */
+    suspend fun <T> download(url: HttpUrl, read: (InputStream) -> T): T =
+        withContext(dispatcher) {
+            check(!closed.get()) { "Transfer owner has closed" }
+            validateTransportUrl(url)
+            currentCoroutineContext().ensureActive()
+            try {
+                http.newCall(Request.Builder().url(url).build()).awaitBody { body ->
+                    body.byteStream().use(read)
+                }
+            } catch (error: IOException) {
+                currentCoroutineContext().ensureActive()
+                error.httpRejection()?.let { throw ApiFailure.Http(it.status, null, null, null) }
+                throw error
+            }
         }
 
     suspend fun upload(url: HttpUrl, bytes: ByteArray, headers: Map<String, String> = emptyMap()) =

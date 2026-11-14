@@ -65,28 +65,6 @@ pub struct Probe {
 }
 
 impl Probe {
-    pub fn hold_claim_failure(
-        &self,
-        run: super::RunId,
-        outcome: super::claim_peer::Outcome,
-    ) -> TestResult<(Arc<dyn JobProvider>, Arc<super::claim_peer::Gate>)> {
-        Ok((
-            self.provider.clone(),
-            self.api
-                .hold_claim_with_outcome(run, self.runner, outcome)?,
-        ))
-    }
-
-    pub fn hold_claim(
-        &self,
-        run: super::RunId,
-    ) -> TestResult<(Arc<dyn JobProvider>, Arc<super::claim_peer::Gate>)> {
-        Ok((
-            self.provider.clone(),
-            self.api.hold_claim(run, self.runner)?,
-        ))
-    }
-
     pub async fn new(
         pool: &SharedIdlePool,
         budget: &Arc<ResourceBudget>,
@@ -106,10 +84,7 @@ impl Probe {
             ApiProviderConfig {
                 ably_side_message_handler: None,
                 runner_identity: runner,
-                runner_hostname: None,
                 group: "native-foreground".into(),
-                supported_profiles: vec![fixture::PROFILE.into()],
-                installed_okou_cli: None,
             },
             BuiltinFirewallCatalogCachePaths {
                 cache_path: path.join("foreground-firewall.json"),

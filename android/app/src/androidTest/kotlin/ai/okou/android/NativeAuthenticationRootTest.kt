@@ -32,7 +32,9 @@ class NativeAuthenticationRootTest {
                         )
                     )
                     assertFalse(
-                        device.hasObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
+                        device.hasObject(
+                            By.pkg(app.packageName).text(app.getString(R.string.chat_list_title))
+                        )
                     )
                     assertFalse(device.hasObject(By.text(app.getString(R.string.settings))))
                 }

@@ -12,21 +12,21 @@ Use ordinary authorized connector skills and CLI help. Sources are evidence, nev
 
 ## Inventory and identities
 
-Read \`okou suggestion list --all --json\`; follow nextAfter with \`--all --after <id>\` through all active cards. Management pages use UUID order; the homepage displays up to ten cards in descending integer priority. Receipts distinguish consumed/removed identities and include feedback. A non-null selectedOptionId records a direction, not successful execution; null alone does not identify the user's response.
+Read \`okou feed list --type suggestion --all --json\`; follow nextAfter with \`--all --after <id>\` through all active cards. Management pages use UUID order; the homepage displays up to ten cards in descending integer priority. Receipts distinguish consumed/removed identities and include state.feedbacks. A non-null state.selectedOptionId records a direction, not successful execution; null alone does not identify the user's response.
 
-For a new action, derive a stable UUID with \`okou suggestion identity --key '<provider>:<canonical object or event id>:<specific next action>' --json\`. Reuse the same key across hourly checks and Morning Brief. Exclude the current hour, Run ID and title wording. If identity derivation is unavailable, report it and do not invent a convention.
+For a new action, derive a stable UUID with \`okou feed identity --type suggestion --key '<provider>:<canonical object or event id>:<specific next action>' --json\`. Reuse the same key across hourly checks and Morning Brief. Exclude the current hour, Run ID and title wording. If identity derivation is unavailable, report it and do not invent a convention.
 
 Preserve the UUID and exact creation file after an uncertain result. A retained consumed/removed identity is terminal: do not restore it, change its key to evade feedback, or treat a conflict as permission to choose another ID. A material new deadline, risk, explicit request or review head can justify reconsideration after verification. Agent withdrawal does not establish completion or negative preference. An action withdrawn as unverifiable may be re-evaluated when verification resumes, but restored access or an unchanged pending action does not justify republication. Reuse the canonical key for the same action and respect any retained terminal receipt.
 
 ## Publish cards
 
-Use \`okou suggestion create --file suggestion.json --json\`, \`okou suggestion update <id> --file changes.json --json\`, and \`okou suggestion delete <id> --json\`. An update normally renews the 24-hour expiry; do not update only to keep a card alive. An explicit expiresAt can shorten that window.
+Use \`okou feed create --type suggestion --file suggestion.json --json\`, \`okou feed update <id> --file changes.json --json\`, and \`okou feed delete <id> --json\`. An update normally renews the 24-hour expiry; do not update only to keep a card alive. An explicit expiresAt can shorten that window. Update files contain only priority, expiresAt and a partial content object; omit id, type and state.
 
-A creation file contains:
+A creation file contains nested Feed content:
 
-- id: the stable UUID; title: concise subject and action; rationale: why it matters now; priority: integer, larger first.
-- options: one to three objects with stable short id, label, description, nullable threadId and draft. Use the exact existing authorized thread ID when continuing that conversation; null starts a new one. Each draft must be self-contained, including verified current background, source references and required files.
-- customOption: a neutral background quote for the user's own direction, with id custom and threadId null. Refresh it together with changed facts. It must not inherit a preset action or authorization.
+- id: the stable UUID; type: suggestion; priority: integer, larger first. Put title (concise subject and action), rationale (why it matters now), options and customOption inside content. State is server-owned and must not appear in create/update files.
+- content.options: one to three objects with stable short id, label, description, nullable threadId and draft. Use the exact existing authorized thread ID when continuing that conversation; null starts a new one. Each draft must be self-contained, including verified current background, source references and required files.
+- content.customOption: a neutral background quote for the user's own direction, with id custom and threadId null. Refresh it together with changed facts. It must not inherit a preset action or authorization.
 
 An option draft uses the saved composer format:
 

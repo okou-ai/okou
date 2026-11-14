@@ -189,6 +189,34 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
   }
 
+  func testListArchiveAndUndoKeepTheCurrentPageAndDraft() async throws {
+    let fixture = ThreadActionsFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refreshNavigation()
+    await store.refresh()
+    store.selectChat(ThreadActionsFixture.thread)
+    try XCTUnwrap(store.selectedConversation).draft = "Keep the conversation draft"
+    store.sidebar.select(.unread)
+    store.sidebarInteraction.setOpen(true)
+
+    let archived = await store.setArchived(ThreadActionsFixture.thread, archived: true)
+
+    XCTAssertTrue(archived)
+    XCTAssertTrue(store.sidebarInteraction.isOpen)
+    XCTAssertEqual(store.sidebar.filter, .unread)
+    XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
+    XCTAssertEqual(store.selectedConversation?.draft, "Keep the conversation draft")
+    let undo = try XCTUnwrap(store.threadFeedback)
+    XCTAssertFalse(undo.requiresNavigation)
+    XCTAssertEqual(undo.actionTitle, "Undo")
+    await undo.action()
+    XCTAssertTrue(store.sidebarInteraction.isOpen)
+    XCTAssertEqual(store.sidebar.filter, .unread)
+    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isArchived)
+    XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
+  }
+
   func testDetailArchiveWaitsForNewChatCreationToReleaseNavigation() async throws {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
@@ -196,9 +224,14 @@ final class ChatThreadActionsTests: XCTestCase {
     await store.refreshNavigation()
     await store.refresh()
     store.selectChat(ThreadActionsFixture.thread)
-    await store.setArchived(ThreadActionsFixture.thread, archived: true, leaveDetail: true)
+    let menu = ChatThreadMenu(
+      workspace: store, threadID: ThreadActionsFixture.thread, moveToProject: { _ in })
+    await menu.perform(.archive)
     let undo = try XCTUnwrap(store.threadFeedback)
     XCTAssertTrue(undo.requiresNavigation)
+    XCTAssertTrue(store.sidebarInteraction.isOpen)
+    store.startNewChat()
+    store.sidebarInteraction.setOpen(false)
     let gate = ThreadActionGate()
     defer { gate.open() }
     let requested = expectation(description: "Write reached the HTTP boundary")
@@ -233,8 +266,12 @@ final class ChatThreadActionsTests: XCTestCase {
     let saved = await store.setArchived(
       ThreadActionsFixture.thread, archived: true, leaveDetail: true)
     XCTAssertTrue(saved)
-    XCTAssertNil(store.selectedThreadID)
+    XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
     XCTAssertEqual(fixture.writes.map(\.action), ["archive", "create", "unarchive", "archive"])
+    XCTAssertTrue(store.sidebarInteraction.isOpen)
+    await (try XCTUnwrap(store.threadFeedback)).action()
+    XCTAssertFalse(store.sidebarInteraction.isOpen)
+    XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
   }
 
   func testRenameTrimsSkipsUnchangedTitlesAndKeepsInputForExplicitRetry() async throws {
@@ -335,6 +372,7 @@ final class ChatThreadActionsTests: XCTestCase {
     await store.refreshNavigation()
     await store.refresh()
     store.selectChat(ThreadActionsFixture.thread)
+    store.sidebar.select(.unread)
     try XCTUnwrap(store.selectedConversation).draft = "Keep my reply after undo"
     let gate = ThreadActionGate()
     defer { gate.open() }
@@ -352,12 +390,21 @@ final class ChatThreadActionsTests: XCTestCase {
       _ = await archiving.value
     }
     await fulfillment(of: [requested], timeout: 3)
-    XCTAssertNil(store.selectedThreadID)
+    XCTAssertTrue(store.sidebarInteraction.isOpen)
+    XCTAssertTrue(store.threadFeedback?.isWorking == true)
+    XCTAssertNil(store.threadFeedback?.actionTitle)
+    XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
+    XCTAssertEqual(store.selectedConversation?.draft, "Keep my reply after undo")
     XCTAssertEqual(store.selectedAgentID, ThreadActionsFixture.agent)
     XCTAssertTrue(store.list.threads(agentID: ThreadActionsFixture.agent, archived: false).isEmpty)
     XCTAssertEqual(
       store.list.threads(agentID: ThreadActionsFixture.agent, archived: true).map(\.id),
       [ThreadActionsFixture.thread])
+    XCTAssertEqual(store.sidebar.filter, .unread)
+    // The user can start unrelated work before the archive confirmation arrives.
+    store.startNewChat()
+    store.sidebarInteraction.setOpen(false)
+    store.newChatDraft = "Continue a different task"
     // Ending the initiating detail task must not revoke the workspace-owned command.
     archiving.cancel()
     let duplicate = await store.setArchived(ThreadActionsFixture.thread, archived: true)
@@ -365,15 +412,20 @@ final class ChatThreadActionsTests: XCTestCase {
     gate.open()
     let archived = await archiving.value
     XCTAssertTrue(archived)
-    XCTAssertEqual(store.threadFeedback?.actionTitle, "Undo")
+    XCTAssertFalse(store.sidebarInteraction.isOpen)
+    XCTAssertNil(store.selectedThreadID)
+    XCTAssertEqual(store.newChatDraft, "Continue a different task")
+    XCTAssertEqual(store.threadFeedback?.actionTitle, "Undo and return to chat")
+    XCTAssertTrue(store.threadFeedback?.isWorking == false)
     await (try XCTUnwrap(store.threadFeedback)).action()
+    XCTAssertFalse(store.sidebarInteraction.isOpen)
     XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
     XCTAssertEqual(store.selectedConversation?.draft, "Keep my reply after undo")
     XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isArchived)
     XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
   }
 
-  func testFailedArchiveRetryReusesEventAndRetainsDetailUndoDestinationFromNewChat()
+  func testFailedArchiveRetryReusesEventAndRetainsDetailUndoDestinationAfterNavigation()
     async throws
   {
     let fixture = ThreadActionsFixture(muted: true)
@@ -384,10 +436,36 @@ final class ChatThreadActionsTests: XCTestCase {
     store.selectChat(ThreadActionsFixture.thread)
     fixture.state.value.withLock { $0.failNext["archive"] = 503 }
     await store.setArchived(ThreadActionsFixture.thread, archived: true, leaveDetail: true)
-    XCTAssertNil(store.selectedThreadID)
+    XCTAssertTrue(store.sidebarInteraction.isOpen)
+    XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
     XCTAssertEqual(store.threadFeedback?.actionTitle, "Retry")
     store.startNewChat()
-    await (try XCTUnwrap(store.threadFeedback)).action()
+    store.sidebarInteraction.setOpen(false)
+    store.newChatDraft = "A separate task"
+    let gate = ThreadActionGate()
+    defer { gate.open() }
+    let requested = expectation(description: "Archive retry reached HTTP")
+    fixture.state.value.withLock {
+      $0.nextGate = gate
+      $0.nextWriteRequested = { requested.fulfill() }
+    }
+    let retry = try XCTUnwrap(store.threadFeedback)
+    let retrying = Task { await retry.action() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      retrying.cancel()
+      gate.open()
+      await retrying.value
+    }
+    await fulfillment(of: [requested], timeout: 3)
+    XCTAssertTrue(store.threadFeedback?.isWorking == true)
+    XCTAssertNil(store.threadFeedback?.actionTitle)
+    XCTAssertFalse(store.sidebarInteraction.isOpen)
+    gate.open()
+    await retrying.value
+    XCTAssertFalse(store.sidebarInteraction.isOpen)
+    XCTAssertNil(store.selectedThreadID)
+    XCTAssertEqual(store.newChatDraft, "A separate task")
     XCTAssertEqual(store.selectedAgentID, ThreadActionsFixture.agent)
     XCTAssertEqual(
       fixture.writes.filter { $0.action == "archive" }.map(\.eventID),
@@ -399,6 +477,7 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertEqual(store.threadFeedback?.actionTitle, "Retry")
     XCTAssertTrue(store.threadFeedback?.persists == true)
     await (try XCTUnwrap(store.threadFeedback)).action()
+    XCTAssertFalse(store.sidebarInteraction.isOpen)
     XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
     XCTAssertEqual(store.selectedAgentID, ThreadActionsFixture.agent)
     // Opening an archived chat (including via a deep link) and unarchiving keeps it open.
@@ -409,6 +488,32 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertTrue(opened)
     await store.setArchived(ThreadActionsFixture.thread, archived: false, leaveDetail: true)
     XCTAssertEqual(store.selectedThreadID, ThreadActionsFixture.thread)
+  }
+
+  func testArchivedDetailDoesNotReadRepliesBehindTheList() async throws {
+    let fixture = ThreadActionsFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refreshNavigation()
+    await store.refresh()
+    store.selectChat(ThreadActionsFixture.thread)
+    await store.setArchived(ThreadActionsFixture.thread, archived: true, leaveDetail: true)
+    let undo = try XCTUnwrap(store.threadFeedback)
+    store.setPhase(.active)
+
+    // A reply can bring the retained chat back while the user is still choosing work.
+    fixture.remote(kind: "unarchived")
+    await store.refresh()
+    await store.selectedConversation?.refresh()
+    XCTAssertTrue(store.sidebarInteraction.isOpen)
+    XCTAssertTrue(try XCTUnwrap(store.list.threads.first).isUnread)
+    XCTAssertEqual(fixture.writes.map(\.action), ["archive"])
+
+    await undo.action()
+    await store.selectedConversation?.refresh()
+    XCTAssertFalse(store.sidebarInteraction.isOpen)
+    XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
+    XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive", "mark-read"])
   }
 
   func testClosingWorkspaceCancelsMutationsAndDiscardsEditorsFeedbackAndUndo() async throws {

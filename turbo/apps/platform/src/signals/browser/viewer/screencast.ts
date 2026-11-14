@@ -18,6 +18,7 @@ import { maximumEncodedFrameLength } from "../display/limits.ts";
 interface ScreencastOwner {
   readonly client: CdpClient;
   readonly sessionId: string;
+  readonly maxFramesInFlight$: Computed<number>;
   readonly sink: FrameSink;
   /** Resource ownership survives a temporary input/presentation admission gate. */
   readonly alive$: Computed<boolean>;
@@ -423,6 +424,7 @@ function createCaptureBegin(
         {
           ...image,
           ...(next.format === "png" ? {} : { quality }),
+          maxFramesInFlight: get(owner.maxFramesInFlight$),
           sendLastFrame: true,
         },
         owner.sessionId,

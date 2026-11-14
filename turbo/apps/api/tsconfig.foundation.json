@@ -62,7 +62,6 @@
     "src/signals/services/pending-launch-sql.ts",
     "src/signals/services/pending-launch-tail-plan.ts",
     "src/signals/services/run-thread-remote-access.service.ts",
-    "src/signals/services/runner-job-queue-lifecycle.service.ts",
     "src/signals/services/slack-installation-reward.ts",
     "src/signals/services/slack-workspace-write-plan.ts",
     "src/signals/services/storage-s3-prefix.utils.ts",
@@ -86,7 +85,7 @@
     "src/signals/external/clerk-organization-lists.ts",
     "src/signals/external/db.ts",
     "src/signals/external/realtime.ts",
-    "src/signals/services/archived-allowance.ts",
+    "src/signals/services/archived-billing-components.ts",
     "src/signals/services/billing-checkout.service.ts",
     "src/signals/services/billing-clerk-directory.service.ts",
     "src/signals/services/billing-concurrency-subscription.service.ts",
@@ -339,7 +338,6 @@
     "src/signals/services/private-artifact-storage.service.ts",
     "src/signals/services/provider-usage-publication.service.ts",
     "src/signals/services/run-uploaded-files.service.ts",
-    "src/signals/services/runner-dispatch.service.ts",
     "src/signals/services/runner-reuse-preference.ts",
     "src/signals/services/runner-reuse-timing.service.ts",
     "src/signals/services/runner-vnc-authority.service.ts",
@@ -365,7 +363,8 @@
     "src/signals/services/workflow-attachment-cleanup.service.ts",
     "src/signals/services/background-job-command.service.ts",
     "src/signals/services/background-job.service.ts",
-    "src/signals/services/personal-instructions.service.ts"
+    "src/signals/services/personal-instructions.service.ts",
+    "src/lib/invocation-budget.ts"
   ],
   "exclude": ["node_modules", "dist"],
   "references": [

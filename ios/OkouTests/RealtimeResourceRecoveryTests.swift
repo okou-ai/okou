@@ -222,8 +222,11 @@ private final class RealtimeResourceHarness {
     },
     onChange: { [weak self] change in
       guard let self else { return }
+      if change == .realtimeResume || change == .realtimeGap {
+        modelBootstrap?.beginRecovery()
+      }
       tasks.append(
-        Task.immediate { @MainActor [self] in
+        Task { @MainActor [self] in
           await models.refresh([change])
           if let (model, expectation) = publication,
             models.configuration?.defaultSelection.model == model
@@ -235,13 +238,12 @@ private final class RealtimeResourceHarness {
     },
     onConnection: { [weak self] status in
       guard let self else { return }
+      modelBootstrap?.connectionChanged(status)
       if status == .connected {
-        _ = modelBootstrap?.subscriptionsReady()
         let expectation = connected
         connected = nil
         expectation?.fulfill()
       } else if status == .unavailable {
-        modelBootstrap?.allowHTTP()
         let expectation = unavailable
         unavailable = nil
         expectation?.fulfill()
@@ -282,7 +284,8 @@ private final class RealtimeResourceHarness {
         return result
       })
     let resources = WorkspaceResources(
-      client: http.client, sleep: { try await Task.sleep(for: $0) }, modelBootstrap: modelBootstrap)
+      client: http.client, sync: ChatSync(client: http.client),
+      sleep: { try await Task.sleep(for: $0) }, modelBootstrap: modelBootstrap)
     self.resources = resources
     models = ChatModelStore(
       client: http.client, webURL: http.baseURL, resources: resources,
@@ -338,4 +341,244 @@ private final class RealtimeResourceHarness {
 private final class RealtimeMetadataFixture: Sendable {
   let requests = Mutex<[String: Int]>([:])
   let remoteModel = Mutex("codex-model")
+}
+
+@MainActor
+final class WorkspaceModelRecoveryTests: XCTestCase {
+  func testForegroundAndTransportRecoveryReadOneModelBaseline() async throws {
+    let initialDeadline = ModelResponseGate()
+    let recoveryDeadline = ModelResponseGate()
+    let recovering = Mutex(false)
+    let waiting = expectation(description: "Recovery model reads await subscriptions")
+    let bootstrap = WorkspaceModelBootstrap {
+      if recovering.withLock({ $0 }) {
+        waiting.fulfill()
+        await recoveryDeadline.wait()
+      } else {
+        await initialDeadline.wait()
+      }
+    }
+    let fixture = try ModelRecoveryFixture(bootstrap: bootstrap)
+    addTeardownBlock {
+      initialDeadline.open()
+      recoveryDeadline.open()
+      await fixture.close()
+    }
+    try await fixture.start()
+    let sdk = try XCTUnwrap(fixture.sdk)
+    let disconnected = expectation(description: "Transport is disconnected")
+    sdk.connection.once(.disconnected) { _ in disconnected.fulfill() }
+    fixture.workspace.setPhase(.background)
+    try fixture.server.disconnect()
+    await fulfillment(of: [disconnected], timeout: 3)
+    recovering.withLock { $0 = true }
+    fixture.http.setRemoteModel("claude-model")
+
+    fixture.workspace.setPhase(.active)
+    let refresh = try XCTUnwrap(fixture.workspace.resumePendingRefresh())
+    await fulfillment(of: [waiting], timeout: 3)
+    sdk.connect()
+    await refresh.value
+
+    XCTAssertEqual(fixture.workspace.newModelSelection.selection.model, "claude-model")
+    XCTAssertTrue(fixture.workspace.newModelSelection.canSend)
+    XCTAssertEqual(fixture.http.modelRequests, fixture.http.expectedModelRequests(rounds: 2))
+  }
+
+  func testEarlyHTTPReadRevalidatesAChangeMissedBeforeTransportRecovery() async throws {
+    let initialDeadline = ModelResponseGate()
+    let recoveryDeadline = ModelResponseGate()
+    let recovering = Mutex(false)
+    let waiting = expectation(description: "Recovery's bounded wait has started")
+    let bootstrap = WorkspaceModelBootstrap {
+      if recovering.withLock({ $0 }) {
+        waiting.fulfill()
+        await recoveryDeadline.wait()
+      } else {
+        await initialDeadline.wait()
+      }
+    }
+    let fixture = try ModelRecoveryFixture(bootstrap: bootstrap)
+    addTeardownBlock {
+      initialDeadline.open()
+      recoveryDeadline.open()
+      await fixture.close()
+    }
+    try await fixture.start()
+    let sdk = try XCTUnwrap(fixture.sdk)
+    let disconnected = expectation(description: "Transport is unavailable")
+    sdk.connection.once(.disconnected) { _ in disconnected.fulfill() }
+    fixture.workspace.setPhase(.background)
+    try fixture.server.disconnect()
+    await fulfillment(of: [disconnected], timeout: 3)
+    recovering.withLock { $0 = true }
+    fixture.workspace.setPhase(.active)
+    let refresh = try XCTUnwrap(fixture.workspace.resumePendingRefresh())
+    await fulfillment(of: [waiting], timeout: 3)
+    recoveryDeadline.open()
+    await refresh.value
+    XCTAssertEqual(fixture.workspace.newModelSelection.selection.model, "codex-model")
+    XCTAssertEqual(fixture.http.modelRequests, fixture.http.expectedModelRequests(rounds: 2))
+
+    fixture.http.setRemoteModel("claude-model")
+    sdk.connect()
+    try await waitForBusinessResult {
+      fixture.workspace.newModelSelection.selection.model == "claude-model"
+    }
+
+    XCTAssertEqual(fixture.http.modelRequests, fixture.http.expectedModelRequests(rounds: 3))
+  }
+
+  func testForegroundWithHealthySubscriptionsRevalidatesOnce() async throws {
+    let fixture = try ModelRecoveryFixture(bootstrap: WorkspaceModelBootstrap())
+    addTeardownBlock { await fixture.close() }
+    try await fixture.start()
+    await fixture.workspace.resumePendingRefresh()?.value
+    let listReads = fixture.http.history.requests.values.withLock {
+      $0.filter { $0 == "GET /api/chat-threads/events" }.count
+    }
+    XCTAssertEqual(listReads, 1)
+    fixture.workspace.setPhase(.background)
+    fixture.http.setRemoteModel("claude-model")
+
+    fixture.workspace.setPhase(.active)
+    await fixture.workspace.resumePendingRefresh()?.value
+
+    XCTAssertEqual(fixture.workspace.newModelSelection.selection.model, "claude-model")
+    XCTAssertTrue(fixture.workspace.newModelSelection.canSend)
+    XCTAssertEqual(fixture.http.modelRequests, fixture.http.expectedModelRequests(rounds: 2))
+    XCTAssertEqual(
+      fixture.http.history.requests.values.withLock {
+        $0.filter { $0 == "GET /api/chat-threads/events" }.count
+      }, listReads)
+  }
+
+  func testResumedChannelPreservesTheBaselineAndStillAppliesPreferenceNotifications() async throws {
+    let fixture = try ModelRecoveryFixture(bootstrap: WorkspaceModelBootstrap())
+    addTeardownBlock { await fixture.close() }
+    try await fixture.start()
+    fixture.http.setRemoteModel("claude-model")
+
+    try fixture.server.attached(fixture.channel, resumed: true)
+    try fixture.server.notify("userPreferenceChanged", channel: fixture.channel)
+    try await waitForBusinessResult {
+      fixture.workspace.newModelSelection.selection.model == "claude-model"
+    }
+
+    var expected = fixture.http.expectedModelRequests(rounds: 1)
+    expected["/api/user-model-preference"] = 2
+    XCTAssertEqual(fixture.http.modelRequests, expected)
+  }
+}
+
+@MainActor
+final class WorkspaceIndicatorRecoveryTests: XCTestCase {
+  func testDedicatedIndicatorReadCursorAndContinuitySignalsRefreshTheirAuthoritativeState()
+    async throws
+  {
+    let remote = Mutex("active")
+    let fixture = try ModelRecoveryFixture(
+      bootstrap: WorkspaceModelBootstrap(),
+      indicators: { _ in
+        let state = remote.withLock { $0 }
+        let thread = ConversationHistoryFixture.threadID
+        let agent = ConversationHistoryFixture.agentID
+        let threads = state == "none" ? "{}" : "{\"\(thread)\":\"\(state)\"}"
+        let unread = state == "unread"
+        return ChatHTTPResponse(
+          body: """
+            {"threads":\(threads),"agents":\(unread ? "{\"\(agent)\":\"unread\"}" : "{}"),\
+            "unreadAt":\(unread ? "{\"\(thread)\":\"2026-11-13T00:00:00Z\"}" : "{}")}
+            """)
+      })
+    addTeardownBlock { await fixture.close() }
+    try await fixture.start()
+    await fixture.workspace.resumePendingRefresh()?.value
+    XCTAssertEqual(fixture.workspace.list.threads.first?.indicator, .active)
+    let initial = fixture.http.history.requests.values.withLock { $0 }
+    let indicatorReads = initial.filter { $0 == "GET /api/indicators" }.count
+    let listReads = initial.filter { $0 == "GET /api/chat-threads/events" }.count
+
+    remote.withLock { $0 = "unread" }
+    try fixture.server.notify("chatIndicatorsChanged", channel: fixture.channel)
+    try await waitForBusinessResult { fixture.workspace.list.hasUnreadThreads }
+    XCTAssertEqual(fixture.workspace.list.unreadAgentIDs, [ConversationHistoryFixture.agentID])
+
+    remote.withLock { $0 = "none" }
+    try fixture.server.notify("chatThreadReadCursorUpdated", channel: fixture.channel)
+    try await waitForBusinessResult { !fixture.workspace.list.hasUnreadThreads }
+    XCTAssertEqual(fixture.workspace.list.unreadAgentIDs, [])
+    XCTAssertEqual(
+      fixture.http.history.requests.values.withLock {
+        $0.filter { $0 == "GET /api/chat-threads/events" }.count
+      }, listReads)
+
+    remote.withLock { $0 = "active" }
+    try fixture.server.attached(fixture.channel)
+    try await waitForBusinessResult {
+      fixture.workspace.list.threads.first?.indicator == .active
+    }
+    XCTAssertEqual(
+      fixture.http.history.requests.values.withLock {
+        $0.filter { $0 == "GET /api/indicators" }.count
+      }, indicatorReads + 3)
+  }
+}
+
+@MainActor
+private final class ModelRecoveryFixture {
+  let server: RealtimeHTTPFixture
+  let http: WorkspaceStartupFixture
+  private let bootstrap: WorkspaceModelBootstrap
+  private let userID = "recovery-user-\(UUID().uuidString)"
+  private let workspaceID = "recovery-workspace-\(UUID().uuidString)"
+  private var port: UInt16 = 0
+  var sdk: ARTRealtime?
+  var channel: String { "user-org:\(userID):\(workspaceID)" }
+
+  lazy var workspace = http.workspace(modelBootstrap: bootstrap) { [unowned self] options in
+    options.realtimeHost = "127.0.0.1"
+    options.restHost = "127.0.0.1"
+    options.port = Int(port)
+    options.tls = false
+    options.useBinaryProtocol = false
+    options.fallbackHosts = []
+    options.disconnectedRetryTimeout = 60
+    let realtime = ARTRealtime(options: options)
+    sdk = realtime
+    return realtime
+  }
+
+  init(
+    bootstrap: WorkspaceModelBootstrap,
+    indicators: ChatHTTPFixture.Handler? = nil
+  ) throws {
+    self.bootstrap = bootstrap
+    server = try RealtimeHTTPFixture(clientID: userID, onProtocol: { _, _ in })
+    let token = try JSONSerialization.data(withJSONObject: [
+      "keyName": "fixture.key", "timestamp": Int64(Date().timeIntervalSince1970 * 1000),
+      "ttl": 3_600_000, "nonce": "fixture-nonce", "mac": "ZmFrZQ==",
+      "clientId": userID, "capability": "{\"*\":[\"subscribe\"]}",
+    ])
+    http = WorkspaceStartupFixture(
+      realtimeToken: String(decoding: token, as: UTF8.self), indicators: indicators)
+  }
+
+  func start() async throws {
+    port = try await server.start()
+    server.attachAutomatically()
+    workspace.setPhase(.active)
+    async let models: Void = workspace.newModelSelection.open()
+    await workspace.start(userID: userID, workspaceID: workspaceID)
+    await models
+    XCTAssertEqual(workspace.newModelSelection.selection.model, "codex-model")
+    XCTAssertEqual(http.modelRequests, http.expectedModelRequests(rounds: 1))
+  }
+
+  func close() async {
+    await workspace.close().value
+    server.stop()
+    sdk = nil
+    XCTAssertEqual(server.errors, [])
+  }
 }

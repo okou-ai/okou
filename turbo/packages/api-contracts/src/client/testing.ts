@@ -35,8 +35,6 @@ import { artifactReferencesContract as OriginalArtifactReferencesContract } from
 import { artifactReferencesContract } from "./artifact-references";
 import { artifactSharesContract as OriginalArtifactSharesContract } from "../contracts/artifact-shares";
 import { artifactSharesContract } from "./artifact-shares";
-import { atomSubscriptionGrantsContract as OriginalAtomSubscriptionGrantsContract } from "../contracts/atom-subscription-grants";
-import { atomSubscriptionGrantsContract } from "./atom-subscription-grants";
 import { authContract as OriginalAuthContract } from "../contracts/auth";
 import { authContract } from "./auth";
 import {
@@ -337,6 +335,8 @@ import { featureGuidesContract as OriginalFeatureGuidesContract } from "../contr
 import { featureGuidesContract } from "./feature-guides";
 import { featureSwitchesContract as OriginalFeatureSwitchesContract } from "../contracts/feature-switches";
 import { featureSwitchesContract } from "./feature-switches";
+import { feedContract as OriginalFeedContract } from "../contracts/feed";
+import { feedContract } from "./feed";
 import { feishuBrowserConnectContract as OriginalFeishuBrowserConnectContract } from "../contracts/feishu-browser-connect";
 import { feishuBrowserConnectContract } from "./feishu-browser-connect";
 import {
@@ -621,8 +621,6 @@ import {
   runnersCancellationContract as OriginalRunnersCancellationContract,
   runnersConnectorRuntimeSyncContract as OriginalRunnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract as OriginalRunnersHeartbeatContract,
-  runnersJobClaimContract as OriginalRunnersJobClaimContract,
-  runnersPollContract as OriginalRunnersPollContract,
   runnersSteerContract as OriginalRunnersSteerContract,
 } from "../contracts/runners";
 import {
@@ -630,8 +628,6 @@ import {
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
-  runnersJobClaimContract,
-  runnersPollContract,
   runnersSteerContract,
 } from "./runners";
 import { sharedThreadVisibilityContract as OriginalSharedThreadVisibilityContract } from "../contracts/shared-thread-visibility";
@@ -668,8 +664,6 @@ import { sshConnectionsContract as OriginalSshConnectionsContract } from "../con
 import { sshConnectionsContract } from "./ssh-connections";
 import { sshCredentialsContract as OriginalSshCredentialsContract } from "../contracts/ssh-credentials";
 import { sshCredentialsContract } from "./ssh-credentials";
-import { suggestionsContract as OriginalSuggestionsContract } from "../contracts/suggestions";
-import { suggestionsContract } from "./suggestions";
 import { tailscaleContract as OriginalTailscaleContract } from "../contracts/tailscale";
 import { tailscaleContract } from "./tailscale";
 import { teamsBotContract as OriginalTeamsBotContract } from "../contracts/teams-bot";
@@ -806,7 +800,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [artifactOgContract, OriginalArtifactOgContract],
   [artifactReferencesContract, OriginalArtifactReferencesContract],
   [artifactSharesContract, OriginalArtifactSharesContract],
-  [atomSubscriptionGrantsContract, OriginalAtomSubscriptionGrantsContract],
   [authContract, OriginalAuthContract],
   [bankingContract, OriginalBankingContract],
   [bankingPublicContract, OriginalBankingPublicContract],
@@ -1042,6 +1035,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [emailInboundContract, OriginalEmailInboundContract],
   [featureGuidesContract, OriginalFeatureGuidesContract],
   [featureSwitchesContract, OriginalFeatureSwitchesContract],
+  [feedContract, OriginalFeedContract],
   [feishuBrowserConnectContract, OriginalFeishuBrowserConnectContract],
   [feishuConnectContract, OriginalFeishuConnectContract],
   [larkConnectContract, OriginalLarkConnectContract],
@@ -1281,8 +1275,6 @@ export const clientDescriptorContracts: readonly (readonly [
     OriginalRunnersConnectorRuntimeSyncContract,
   ],
   [runnersHeartbeatContract, OriginalRunnersHeartbeatContract],
-  [runnersJobClaimContract, OriginalRunnersJobClaimContract],
-  [runnersPollContract, OriginalRunnersPollContract],
   [runnersSteerContract, OriginalRunnersSteerContract],
   [sharedThreadVisibilityContract, OriginalSharedThreadVisibilityContract],
   [sharedThreadsContract, OriginalSharedThreadsContract],
@@ -1299,7 +1291,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [sshAuthorizationContract, OriginalSshAuthorizationContract],
   [sshConnectionsContract, OriginalSshConnectionsContract],
   [sshCredentialsContract, OriginalSshCredentialsContract],
-  [suggestionsContract, OriginalSuggestionsContract],
   [tailscaleContract, OriginalTailscaleContract],
   [teamsBotContract, OriginalTeamsBotContract],
   [teamsBrowserConnectContract, OriginalTeamsBrowserConnectContract],

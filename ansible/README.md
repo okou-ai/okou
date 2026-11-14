@@ -84,3 +84,79 @@ Ansible, passwordless sudo and a running systemd instance.
 ansible-playbook -i 'runner.example.org,' playbooks/provision-runner.yml \
   -e 'ansible_user=ubuntu'
 ```
+
+## Ingress monitoring
+
+`provision-monitoring.yml` installs one Python implementation,
+`vm0-monitoring-runner-collect`, with two independently scheduled roles:
+
+- `status`: the existing lifecycle service/timer collects local state every
+  15 seconds and writes `runner-status.prom`.
+- `ingress --hostname=<inventory hostname>`: a separate oneshot service/timer
+  writes `runner-ingress.prom`. Its timer uses `OnBootSec=15s` for the first
+  activation and `OnUnitInactiveSec=60s` thereafter, including after failure.
+  Enabling it after the boot deadline starts the first round immediately.
+
+systemd prevents another activation of the ingress unit while it is running;
+its processes have a separate 35-second start timeout and kill group. Local
+status collection does not wait for HTTP. Direct script invocation performs one
+diagnostic round; production cadence belongs to the timer, without a Python
+cooldown file or background scheduler.
+
+The ingress role reads the existing private managed `runner.yaml`, `runner_id`,
+`heartbeat_generation` and lifecycle status in each version directory. It does
+not require Runner executable or status format changes. Running and draining
+official targets are checked separately; prepared, stopped and nonofficial
+instances are excluded. Hostname must match inventory before sending a credential.
+Manual credential overrides or config drift can make configured health fail;
+the collector does not read live-process credentials. The status role retains
+its broader lifecycle input contract without requiring private health config.
+
+Each target receives one request per collection, with a ten-second timeout and
+no retries or redirects. Up to four requests run concurrently within a
+30-second collection budget. A failed health publication does not immediately
+restart its service or block lifecycle output. The existing 15-second Alloy
+scrape only reads the results and never triggers network probes.
+
+The collector atomically replaces `runner-ingress.prom` with two host gauges:
+
+- `vm0_runner_ingress_success_count`: unique Runner targets whose authenticated
+  HTTPS health succeeded in the latest round, requiring ordinary TLS validation,
+  HTTP 200, the exact `ok` body and unchanged process identity.
+- `vm0_runner_ingress_failure_count`: unique Runner targets for which that round
+  did not establish healthy ingress, including failed requests and known-target
+  input errors. Conflicting duplicate identities count once as failed.
+
+These are current counts, not cumulative counters; they can decrease each round.
+They use only the existing Alloy `env` and `instance` labels, so Runner replacement
+does not create additional series. UUIDs and generations stay internal to route,
+deduplicate and validate probes. Successful discovery with no eligible targets
+publishes `0/0`; whole-discovery failure publishes no count samples. Neither means
+healthy ingress. The counts do not identify an individual failing Runner.
+
+The observation checks HTTPS/Caddy/Runner routing from the host, not dispatch
+admission or API-origin network policy. Credentials stay in private input files
+and a curl stdin pipe, never in metrics, command arguments, diagnostics or Alloy
+configuration.
+
+Always gate the display on the ingress file's own freshness. Repeated Alloy
+scrapes can keep old count samples current after the collector stops. This query
+applies the guard to both counts:
+
+```promql
+{__name__=~"vm0_runner_ingress_(success|failure)_count"}
+and on (env, instance)
+  (time() - node_textfile_mtime_seconds{file=~".*runner-ingress[.]prom"} < 180)
+and on (env, instance)
+  (node_textfile_mtime_seconds{file=~".*runner-ingress[.]prom"} <= time())
+```
+
+Missing/stale data, `0/0`, or a zero failure count alone must not display as healthy.
+Normal host provisioning applies
+collector changes through the existing Ansible-tree hash; merged source alone
+does not prove the host was provisioned or Grafana received the new series.
+Run the real-files/curl/TLS fixtures with
+`.github/scripts/tests/vm0-monitoring-runner-ingress-collect-test.sh`.
+The Linux fixture requires Python/PyYAML, curl, OpenSSL and `systemd-analyze`.
+It exercises both modes, strict health/count behavior, isolation during blocked
+HTTP and failure, and verifies the rendered service/timer pairs.

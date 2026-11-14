@@ -41,6 +41,7 @@ import {
 import { useCustomTemplateRecommendations } from "./use-custom-template-recommendations.ts";
 import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendations.tsx";
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
+import { ComposerPresentationOutputPicker } from "./composer-presentation-output-picker.tsx";
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 import { ComposerTaskChipRow } from "./composer-task-chip-row.tsx";
 import { ComposerTemplatePickerButton } from "./composer-template-picker-button.tsx";
@@ -646,11 +647,14 @@ export function ComposerTaskTemplates({
 }) {
   if (selected === "presentation") {
     return (
-      <ComposerPresentationRecommendations
-        signals={signals}
-        headerAction={headerAction}
-        headerless={headerless}
-      />
+      <div className="flex min-w-0 snap-start flex-col gap-6">
+        <ComposerPresentationOutputPicker />
+        <ComposerPresentationRecommendations
+          signals={signals}
+          headerAction={headerAction}
+          headerless={headerless}
+        />
+      </div>
     );
   }
   if (selected === "document") {

@@ -5,7 +5,7 @@ import { orgRoleSchema } from "./org-members";
 /**
  * Org tier values
  */
-export const orgTierSchema = zEnum(["limited-free-1", "pro", "team", "custom"]);
+export const orgTierSchema = zEnum(["limited-free-1", "pro", "team"]);
 export type OrgTier = zInfer<typeof orgTierSchema>;
 
 const ORG_TIER_SET: ReadonlySet<string> = new Set(orgTierSchema.options);

@@ -71,7 +71,6 @@ import {
 } from "./agentphone-chat-callback-payload";
 import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
 import { integrationCompletionFallbackEventIdForRun } from "./assistant-event-id";
-import { releaseThreadBrowsersForRun$ } from "./browser.service";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
   loadCompletedRunOutput$,
@@ -3156,33 +3155,6 @@ function terminalIntegrationDeliveries(
   };
 }
 
-const releaseManagedBrowsersForTerminalCallback$ = command(
-  async (
-    { set },
-    args: TerminalChatCallbackArgs,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    // The window stays live after the run so the user can keep using it; this only
-    // restarts its idle lease. Browser resources outlive thread deletion, so use
-    // the callback payload rather than loading the thread first.
-    const released = await settle(
-      set(
-        releaseThreadBrowsersForRun$,
-        { chatThreadId: args.payload.threadId },
-        signal,
-      ),
-      signal,
-    );
-    if (!released.ok) {
-      log.error("Failed to extend managed browser leases for terminal run", {
-        runId: args.callback.runId,
-        chatThreadId: args.payload.threadId,
-        error: released.error,
-      });
-    }
-  },
-);
-
 const clearTerminalIntegrationStatus$ = command(
   async (
     { set },
@@ -3331,8 +3303,6 @@ const processTerminalChatCallback$ = command(
       return;
     }
     const timing = new ChatCallbackPreCreateTimingCollector();
-
-    await set(releaseManagedBrowsersForTerminalCallback$, args, signal);
 
     let persistedThreadId: string | undefined;
     const prepared = await settle(

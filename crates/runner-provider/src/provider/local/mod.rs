@@ -211,6 +211,44 @@ fn job_candidate_from_discovered(discovered: LocalDiscoveredJob) -> JobCandidate
 
 #[async_trait::async_trait]
 impl JobProvider for LocalProvider {
+    fn local_source(self: Arc<Self>) -> Option<Arc<dyn super::LocalJobSource>> {
+        Some(self)
+    }
+
+    fn completion_report_timing(&self) -> CompletionReportTiming {
+        // Writing the result unblocks `runner local submit`, whose next turn
+        // may immediately depend on the finalized sandbox being reusable.
+        CompletionReportTiming::AfterFinalization
+    }
+
+    async fn complete(&self, request: CompleteRequest, _completion_auth: CompletionAuth) {
+        let CompleteRequest {
+            run_id,
+            exit_code,
+            error,
+            ..
+        } = request;
+        self.cancel_scanner.remove_owned_claim(run_id).await;
+        let queue = self.queue.clone();
+        if let Err(e) =
+            tokio::task::spawn_blocking(move || queue.complete_job_sync(run_id, exit_code, error))
+                .await
+        {
+            warn!(run_id = %run_id, error = %e, "local: blocking completion failed");
+        }
+    }
+
+    async fn heartbeat(&self, _state: &HeartbeatState) -> ProviderResult<()> {
+        Ok(())
+    }
+
+    async fn shutdown(&self) {
+        self.cancel_watcher.shutdown().await;
+    }
+}
+
+#[async_trait::async_trait]
+impl super::LocalJobSource for LocalProvider {
     async fn discover(&self) -> Option<JobCandidate> {
         let watch_paths = self.job_watch_paths();
         let mut watcher = None;
@@ -241,7 +279,6 @@ impl JobProvider for LocalProvider {
             }
         }
     }
-
     async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob> {
         let run_id = candidate.run_id();
         let partition_profile = candidate.profile_name().to_owned();
@@ -334,37 +371,6 @@ impl JobProvider for LocalProvider {
                 None
             }
         }
-    }
-
-    fn completion_report_timing(&self) -> CompletionReportTiming {
-        // Writing the result unblocks `runner local submit`, whose next turn
-        // may immediately depend on the finalized sandbox being reusable.
-        CompletionReportTiming::AfterFinalization
-    }
-
-    async fn complete(&self, request: CompleteRequest, _completion_auth: CompletionAuth) {
-        let CompleteRequest {
-            run_id,
-            exit_code,
-            error,
-            ..
-        } = request;
-        self.cancel_scanner.remove_owned_claim(run_id).await;
-        let queue = self.queue.clone();
-        if let Err(e) =
-            tokio::task::spawn_blocking(move || queue.complete_job_sync(run_id, exit_code, error))
-                .await
-        {
-            warn!(run_id = %run_id, error = %e, "local: blocking completion failed");
-        }
-    }
-
-    async fn heartbeat(&self, _state: &HeartbeatState) -> ProviderResult<()> {
-        Ok(())
-    }
-
-    async fn shutdown(&self) {
-        self.cancel_watcher.shutdown().await;
     }
 }
 

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="history_sidebar">会話</string>
+    <string name="history_loading">会話を読み込み中…</string>
+    <string name="history_failed">会話を更新できませんでした。もう一度お試しください。</string>
+    <string name="history_missing">この会話は削除されたか、利用できません。</string>
+    <string name="history_read_failed">既読を確認できませんでした。更新して再試行してください。</string>
+    <string name="history_empty">メッセージはまだありません。</string>
+    <string name="history_you">あなた</string>
+    <string name="history_work">作業</string>
+    <string name="history_work_steps">応答ステップ: %1$d</string>
+    <string name="history_queued">待機中</string>
+    <string name="history_rejected">未送信</string>
+    <string name="history_unsupported">このコンテンツは元の形式で表示されます。</string>
+    <string name="history_reference">参照</string>
+    <string name="history_completed">完了</string>
+    <string name="history_cancelled">停止済み</string>
+    <string name="history_run_failed">失敗</string>
+    <string name="history_idle">履歴</string>
+    <string name="history_running">実行中</string>
+</resources>

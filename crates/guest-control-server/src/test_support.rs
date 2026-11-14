@@ -65,33 +65,20 @@ pub(crate) fn wait_for_pidfd_exit(
 }
 
 #[cfg(target_os = "linux")]
-fn signal_pidfd(pidfd: &std::os::fd::OwnedFd, signal: libc::c_int) -> std::io::Result<()> {
-    use std::os::fd::AsRawFd;
-
-    // SAFETY: best-effort cleanup of a test-owned background process.
-    let result = unsafe {
-        libc::syscall(
-            libc::SYS_pidfd_send_signal,
-            pidfd.as_raw_fd(),
-            signal,
-            std::ptr::null::<libc::siginfo_t>(),
-            0,
-        )
-    };
-    if result == 0 {
-        return Ok(());
+fn signal_pidfd(
+    pidfd: &std::os::fd::OwnedFd,
+    signal: rustix::process::Signal,
+) -> std::io::Result<()> {
+    match rustix::process::pidfd_send_signal(pidfd, signal) {
+        Ok(()) => Ok(()),
+        Err(error) if error == rustix::io::Errno::SRCH => Ok(()),
+        Err(error) => Err(error.into()),
     }
-
-    let err = std::io::Error::last_os_error();
-    if err.raw_os_error() == Some(libc::ESRCH) {
-        return Ok(());
-    }
-    Err(err)
 }
 
 #[cfg(target_os = "linux")]
 pub(crate) fn kill_pidfd_and_wait(pidfd: &std::os::fd::OwnedFd) -> std::io::Result<()> {
-    signal_pidfd(pidfd, libc::SIGKILL)?;
+    signal_pidfd(pidfd, rustix::process::Signal::KILL)?;
     if wait_for_pidfd_exit(pidfd, std::time::Duration::from_secs(1))? {
         return Ok(());
     }

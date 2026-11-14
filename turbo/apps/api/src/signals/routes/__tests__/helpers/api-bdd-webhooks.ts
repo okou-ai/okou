@@ -229,7 +229,6 @@ export function createWebhookCallbackApi(context: TestContext) {
       mockStripeClient(context.mocks.stripe as unknown as StripeSDK);
       mockEnv("OKOU_PRICE_PRO", "price_bdd_pro");
       mockEnv("OKOU_PRICE_TEAM", "price_bdd_team");
-      mockEnv("ATOM_GRANT_PRICE", "price_bdd_atom_grant");
       mockEnv("OKOU_PRICE_CONCURRENCY", "price_bdd_concurrency");
       mockEnv(
         "OKOU_ONE_TIME_CAMPAIGN",

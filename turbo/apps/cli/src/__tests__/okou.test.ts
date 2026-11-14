@@ -50,7 +50,7 @@ describe("Okou CLI program", () => {
 
   it("should register all expected Okou commands", () => {
     const expectedCommands = [
-      "suggestion",
+      "feed",
       "model",
       "agent",
       "connector",
@@ -135,12 +135,12 @@ describe("Okou CLI lazy command loading", () => {
   });
 
   it.each([[], ["suggestion:read"], ["suggestion:write"]])(
-    "advertises suggestions only with an authorized capability: %j",
+    "advertises Feed only with an authorized suggestion capability: %j",
     (...capabilities) => {
       vi.stubEnv("OKOU_TOKEN", buildOkouToken(capabilities));
       const cli = new Command("okou");
       registerCommands(cli);
-      expect(cli.helpInformation().includes("suggestion")).toBe(
+      expect(cli.helpInformation().includes("feed")).toBe(
         capabilities.length > 0,
       );
     },
@@ -222,9 +222,9 @@ describe("Okou CLI lazy command loading", () => {
 
   it.each([
     {
-      label: "suggestion help invocation",
-      argv: ["node", "okou", "suggestion", "--help"],
-      expectedName: "suggestion",
+      label: "feed help invocation",
+      argv: ["node", "okou", "feed", "--help"],
+      expectedName: "feed",
       expectedHelpCode: "commander.helpDisplayed",
     },
     {
@@ -263,7 +263,7 @@ describe("Okou CLI lazy command loading", () => {
       vi.stubEnv(
         "OKOU_TOKEN",
         buildOkouToken([
-          expectedName === "suggestion"
+          expectedName === "feed"
             ? "suggestion:read"
             : expectedName === "lark"
               ? "lark:write"

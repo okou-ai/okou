@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import type { WhatsappLinkCodeResponse } from "@okouai/api-contracts/contracts/integrations-whatsapp";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -58,11 +59,12 @@ export function WhatsappConnectContent({
         </DialogDescription>
       </DialogHeader>
       {loading ? (
-        <p className="text-sm text-muted-foreground" role="status">
-          {t(($) => {
+        <LoadingSkeleton
+          label={t(($) => {
             return $.works.whatsapp.loading;
           })}
-        </p>
+          variant="text"
+        />
       ) : null}
       {failed ? (
         <p className="text-sm text-destructive" role="alert">

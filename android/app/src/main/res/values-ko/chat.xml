@@ -1,0 +1,28 @@
+<resources>
+    <string name="chat_list_title">채팅</string>
+    <string name="chat_refresh">채팅 새로고침</string>
+    <string name="chat_loading">채팅을 불러오는 중…</string>
+    <string name="chat_refreshing">채팅을 새로고침하는 중…</string>
+    <string name="chat_load_failed">채팅을 불러올 수 없습니다. 연결을 확인하고 다시 시도하세요.</string>
+    <string name="chat_refresh_failed">새로고침하지 못했습니다. 마지막으로 불러온 채팅을 표시합니다.</string>
+    <string name="chat_cached">저장된 채팅을 표시합니다.</string>
+    <string name="chat_cache_unavailable">오프라인 저장소를 사용할 수 없습니다. 다시 시작한 후에는 이 채팅을 볼 수 없을 수 있습니다.</string>
+    <string name="chat_metadata_loading">Okou 및 프로젝트 이름을 불러오는 중…</string>
+    <string name="chat_metadata_unavailable">일부 Okou 또는 프로젝트 정보를 사용할 수 없습니다.</string>
+    <string name="chat_status_observed">활성 및 읽지 않음 상태는 마지막 새로고침 시점의 정보입니다.</string>
+    <string name="chat_status_unavailable">상태를 새로고침하지 못했습니다. 이전 표시는 오래된 정보일 수 있습니다.</string>
+    <string name="chat_status_loading">활성 및 읽지 않음 상태를 확인하는 중…</string>
+    <string name="chat_refresh_status">상태 새로고침</string>
+    <string name="chat_recent">최근</string>
+    <string name="chat_unread">읽지 않음</string>
+    <string name="chat_archived">보관됨</string>
+    <string name="chat_muted">음소거됨</string>
+    <string name="chat_outside_projects">프로젝트 밖의 채팅</string>
+    <string name="chat_project_empty">이 프로젝트에 채팅이 없습니다.</string>
+    <string name="chat_empty">이 보기에 채팅이 없습니다.</string>
+    <string name="chat_untitled">제목 없는 채팅</string>
+    <string name="chat_agent_identity">Okou · %1$s</string>
+    <string name="chat_pinned">고정됨</string>
+    <string name="chat_active">활성</string>
+    <string name="chat_metadata_cached">저장된 Okou 및 프로젝트 이름을 표시합니다.</string>
+</resources>

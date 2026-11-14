@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.32.7](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.6...guest-contracts-v0.32.7) (2026-11-14)
+
+
+### Refactoring
+
+* **rust:** type internal owned descriptor permission changes ([#47128](https://github.com/okou-ai/okou/issues/47128)) ([991e0d8](https://github.com/okou-ai/okou/commit/991e0d807829bc2e51169b17e18f9d618cc105a9))
+* **rust:** type internal owned descriptor stat checks ([#47124](https://github.com/okou-ai/okou/issues/47124)) ([5e36773](https://github.com/okou-ai/okou/commit/5e36773632938b2b6ba02fecd4768941a7ce3fd4))
+
+## [0.32.6](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.5...guest-contracts-v0.32.6) (2026-11-13)
+
 ## [0.32.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.4...guest-contracts-v0.32.5) (2026-11-12)
 
 

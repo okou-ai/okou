@@ -1,18 +1,20 @@
 import type { ReactNode } from "react";
 import { useLastResolved } from "ccstate-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { CalendarClock, Repeat2, Rss, Webhook } from "lucide-react";
 import { cn } from "@okouai/ui/lib/utils";
 import {
   workflowRecommendationConnectors$,
+  type WorkflowCoverGlyph,
   type WorkflowCoverKind,
+  type WorkflowCoverMark,
   type WorkflowCoverTone,
-  type WorkflowRecommendation,
+  type WorkflowShelfCover,
 } from "../../signals/okou-page/composer-workflow-recommendations.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 
 /**
- * The shelf cover of a recommended workflow: the connector marks it reads and
- * writes, drawn the way the onboarding diagram draws them, over a very faint
+ * The shelf cover of a workflow: the connector marks it reads and writes, drawn the way the onboarding diagram draws them, over a very faint
  * sketch of the result. Nothing in the cover is text; the caption under it
  * carries the title.
  *
@@ -179,7 +181,7 @@ function WorkflowSketch({ kind }: { readonly kind: WorkflowCoverKind }) {
   return <Sketch />;
 }
 
-function CoverMark({
+function ConnectorMark({
   slug,
   size,
 }: {
@@ -192,13 +194,58 @@ function CoverMark({
   return <ConnectorIcon icon={icon} size={size} />;
 }
 
+/* The glyphs for sources no catalog connector stands for. RSS keeps the feed
+   icon's own orange, as the trigger card that first drew it did. */
+const COVER_GLYPHS = {
+  webhook: { Icon: Webhook, className: "text-muted-foreground" },
+  rss: { Icon: Rss, className: "text-[#ed8b36]" },
+  "calendar-clock": { Icon: CalendarClock, className: "text-muted-foreground" },
+  repeat: { Icon: Repeat2, className: "text-muted-foreground" },
+} as const satisfies Record<
+  WorkflowCoverGlyph,
+  { readonly Icon: typeof Webhook; readonly className: string }
+>;
+
+/* The size is inline because a shelf tile is a `Button`, whose
+   `[&_svg]:size-4` would otherwise shrink every glyph to 16px. */
+function CoverMark({
+  mark,
+  size,
+}: {
+  readonly mark: WorkflowCoverMark;
+  readonly size: number;
+}) {
+  if (typeof mark === "string") {
+    return <ConnectorMark slug={mark} size={size} />;
+  }
+  const { Icon, className } = COVER_GLYPHS[mark.glyph];
+  const glyph = Math.round(size * 0.86);
+  return (
+    <span
+      className="inline-flex shrink-0 items-center justify-center"
+      style={{ width: size, height: size }}
+    >
+      <Icon
+        strokeWidth={1.8}
+        className={className}
+        style={{ width: glyph, height: glyph }}
+        aria-hidden
+      />
+    </span>
+  );
+}
+
+function markKey(mark: WorkflowCoverMark): string {
+  return typeof mark === "string" ? mark : mark.glyph;
+}
+
 /* One end of the flow: a single mark, or the marks a workflow reads stacked
    two-up. `size` is the tile; the mark inside is 58% of it. */
 function CoverNode({
-  slugs,
+  marks,
   size,
 }: {
-  readonly slugs: readonly [ConnectorSlug, ...ConnectorSlug[]];
+  readonly marks: readonly [WorkflowCoverMark, ...WorkflowCoverMark[]];
   readonly size: number;
 }) {
   const stack = Math.round(size * 0.75);
@@ -211,15 +258,15 @@ function CoverNode({
       )}
       style={{ width: size, height: size }}
     >
-      {slugs.length > 1 ? (
+      {marks.length > 1 ? (
         <span
           className="relative block"
           style={{ width: stack, height: stack }}
         >
-          {slugs.slice(0, STACK_POSITIONS.length).map((slug, index) => {
+          {marks.slice(0, STACK_POSITIONS.length).map((mark, index) => {
             return (
               <span
-                key={slug}
+                key={markKey(mark)}
                 className={cn(
                   "absolute inline-flex items-center justify-center rounded-md",
                   COVER_TILE,
@@ -227,13 +274,13 @@ function CoverNode({
                 )}
                 style={{ width: item, height: item }}
               >
-                <CoverMark slug={slug} size={item - 6} />
+                <CoverMark mark={mark} size={item - 6} />
               </span>
             );
           })}
         </span>
       ) : (
-        <CoverMark slug={slugs[0]} size={Math.round(size * 0.58)} />
+        <CoverMark mark={marks[0]} size={Math.round(size * 0.58)} />
       )}
     </span>
   );
@@ -246,11 +293,10 @@ function CoverNode({
  * whatever width a shelf gives it.
  */
 export function WorkflowCover({
-  item,
+  cover,
 }: {
-  readonly item: WorkflowRecommendation;
+  readonly cover: WorkflowShelfCover;
 }) {
-  const { cover } = item;
   const flow = cover.destination !== null;
   const size = flow ? 34 : 40;
   return (
@@ -266,13 +312,13 @@ export function WorkflowCover({
         <WorkflowSketch kind={cover.kind} />
       </span>
       <span className="absolute top-[48%] left-[11%] flex items-center">
-        <CoverNode slugs={cover.sources} size={size} />
+        <CoverNode marks={cover.sources} size={size} />
         {cover.destination !== null && (
           <>
             <span className={COVER_DOT} />
             <span className={COVER_LINK} />
             <span className={COVER_DOT} />
-            <CoverNode slugs={[cover.destination]} size={size} />
+            <CoverNode marks={[cover.destination]} size={size} />
           </>
         )}
       </span>

@@ -4,6 +4,7 @@ import ChatDomain
 import Foundation
 import OSLog
 import Observation
+import SwiftUI
 
 /// One immutable network/cache scope, with independently observed feature state.
 @MainActor @Observable
@@ -14,6 +15,7 @@ final class WorkspaceStore {
   private let projectDisclosure: ProjectDisclosureStorage?
   private let resources: WorkspaceResources
   private let modelBootstrap: WorkspaceModelBootstrap?
+  private let createRealtime: RealtimeService.ClientFactory?
   private let commands: ChatCommands
   private let conversationLimit: Int
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
@@ -21,6 +23,8 @@ final class WorkspaceStore {
   private let didRefreshReadState: @MainActor () -> Void
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
+  var settingsResources: WorkspaceResources { resources }
+  var billingURL: URL { webURL.appending(path: "settings/billing") }
   private(set) var needsUpgrade = false
   private(set) var isCreating = false
   private(set) var newChatSubmission: NewChatSubmission?
@@ -28,6 +32,7 @@ final class WorkspaceStore {
   private(set) var chatLinkError: String?
   private(set) var threadFeedback: ChatThreadFeedback?
   private(set) var threadPreview: ChatThreadPreviewResources?
+  let sidebarInteraction = SidebarInteraction()
   private var chatLinkRequestID = UUID()
   @ObservationIgnored private var chatLinkThreadID: String?
   @ObservationIgnored private let selectedThread = CCState.State<String?>(nil)
@@ -69,14 +74,14 @@ final class WorkspaceStore {
   private let draftRepository: ChatDraftRepository?
   private var draftAgentID: String?
   private var agentDraftTask: Task<Void, Never>?
-  /// Chats the API last reported with an unsent draft, updated as this device lets a chat go.
-  private var draftThreadIDs: Set<String> = []
-  @ObservationIgnored private var draftsRevision = 0
+  @ObservationIgnored private lazy var sidebarDrafts = SidebarDraftStore(
+    resources: resources, lifecycleTasks: lifecycleTasks,
+    didFail: { [weak self] in self?.handle($0) })
   private(set) var connectionStatus = RealtimeConnectionStatus.connecting
 
   var synchronizationState: ChatSynchronizationState? {
     guard !closed else { return nil }
-    if list.isLoading || selectedConversation?.isLoading == true { return .updating }
+    if selectedConversation?.isLoading == true { return .updating }
     if list.syncError != nil
       || selectedConversation?.syncError != nil
     {
@@ -93,8 +98,11 @@ final class WorkspaceStore {
   func retrySynchronization() async {
     guard !closed, !needsUpgrade, !Task.isCancelled else { return }
     realtime?.retry()
+    do { try resources.retrySidebarDrafts() } catch { handle(error) }
+    async let drafts: Void = activateDrafts()
     await refreshNavigation()
     await refresh()
+    await drafts
   }
 
   @ObservationIgnored lazy var modelStore = ChatModelStore(
@@ -155,6 +163,7 @@ final class WorkspaceStore {
       try await Task.sleep(for: $0)
     },
     modelBootstrap: WorkspaceModelBootstrap? = nil,
+    createRealtime: RealtimeService.ClientFactory? = nil,
     didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
     let lifecycleTasks = LifecycleTasks()
@@ -165,9 +174,12 @@ final class WorkspaceStore {
       try context.set(selectedThread, value)
     }
     self.client = client
+    let sync = sharedSync ?? ChatSync(client: client, cache: cache)
+    self.sync = sync
     self.modelBootstrap = modelBootstrap
+    self.createRealtime = createRealtime
     resources = WorkspaceResources(
-      client: client, sleep: readRetrySleep, modelBootstrap: modelBootstrap,
+      client: client, sync: sync, sleep: readRetrySleep, modelBootstrap: modelBootstrap,
       lifecycleTasks: lifecycleTasks)
     self.readRetrySleep = readRetrySleep
     self.historyWarmingSleep = historyWarmingSleep
@@ -177,8 +189,6 @@ final class WorkspaceStore {
     self.measurementScope = measurementScope
     self.voiceCapture = voiceCapture
     draftRepository = draftStorage.map { _ in ChatDraftRepository(client: client) }
-    let sync = sharedSync ?? ChatSync(client: client, cache: cache)
-    self.sync = sync
     let commands = ChatCommands(client: client, sync: sync)
     self.commands = commands
     self.webURL = webURL
@@ -217,13 +227,9 @@ final class WorkspaceStore {
         onChange: { [weak self] in self?.requestRefresh($0) },
         onConnection: { [weak self] status in
           self?.connectionStatus = status
-          if status == .connected {
-            _ = self?.modelBootstrap?.subscriptionsReady()
-          } else if status == .unavailable || status == .disconnected {
-            self?.modelBootstrap?.allowHTTP()
-          }
+          self?.modelBootstrap?.connectionChanged(status)
         },
-        lifecycleTasks: lifecycleTasks)
+        createRealtime: createRealtime, lifecycleTasks: lifecycleTasks)
       self.realtime = realtime
       realtime.setForeground(isForeground)
       realtime.start()
@@ -268,7 +274,7 @@ final class WorkspaceStore {
       return conversation.composer.hasContent
     }
     if let composer = conversations[threadID]?.composer { return composer.hasContent }
-    return draftThreadIDs.contains(threadID)
+    return sidebarDrafts.threadIDs.contains(threadID)
   }
 
   func conversation(for id: String) -> ConversationStore? {
@@ -279,7 +285,10 @@ final class WorkspaceStore {
     let conversation = ConversationStore(
       thread: thread, sync: sync, commands: commands, webURL: webURL,
       messageMarkdown: messageMarkdown,
-      isVisible: { [weak self] in self?.isForeground == true && self?.selectedThreadID == id },
+      isVisible: { [weak self] in
+        self?.isForeground == true && self?.selectedThreadID == id
+          && self?.sidebarInteraction.isOpen == false
+      },
       didMarkRead: { [weak self] watermark in self?.list.markRead(id, through: watermark) },
       didSend: { [weak self] in self?.requestRefresh(.threadList) },
       didFail: { [weak self] in self?.handle($0) },
@@ -288,6 +297,7 @@ final class WorkspaceStore {
         models: modelStore, thread: thread, lifecycleTasks: lifecycleTasks),
       workflowSource: composerWorkflows,
       draftRepository: draftRepository, draftStorage: draftStorage,
+      didSaveDraft: { [weak self] draft in await self?.sidebarDrafts.didSave(draft, threadID: id) },
       measurementScope: measurementScope,
       didRequestNewChat: { [weak self] in self?.startNewChat() },
       readRetrySleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
@@ -322,6 +332,7 @@ final class WorkspaceStore {
 
   @discardableResult
   func close() -> Task<Void, Never> {
+    sidebarDrafts.close()
     threadPreview?.close()
     threadPreview = nil
     closed = true
@@ -357,28 +368,36 @@ final class WorkspaceStore {
     }
   }
 
-  func setForeground(_ active: Bool) {
+  func setPhase(_ phase: ScenePhase) {
     guard !closed else { return }
-    let suspended = !active
-    guard isForeground != active || refreshSuspended != suspended else { return }
+    let active = phase == .active
+    // Background suspension survives the intermediate inactive phase on the way back.
+    let resuming = refreshSuspended
+    guard isForeground != active || (phase == .background && !refreshSuspended) else { return }
     isForeground = active
     realtime?.setForeground(active)
-    refreshSuspended = suspended
-    if suspended {
+    if phase == .background {
+      modelBootstrap?.beginRecovery()
+      refreshSuspended = true
       refreshGeneration = UUID()
       refreshTask?.cancel()
       refreshTask = nil
       warmingTask?.cancel()
       warmingTask = nil
-      list.cancelRefresh()
+      if list.cancelRefresh() { invalidations.insert(.threadList) }
       for conversation in conversations.values { conversation.cancelRefresh() }
-      // Reconnect with a complete catch-up, including invalidations received while suspended.
-      invalidations.insert(.reconnected)
+      // Other resources revalidate on return; list reads retain only unfinished or new work.
+      invalidations.insert(.foregroundResume)
+    } else if active {
+      refreshSuspended = false
+      if resuming, connectionStatus == .connected {
+        _ = modelBootstrap?.subscriptionsReady()
+      }
     }
     newComposer.setForeground(active)
     for conversation in conversations.values { conversation.composer.setForeground(active) }
     selectedConversation?.reconcileVisibility()
-    if active {
+    if active && resuming {
       (selectedConversation?.composer ?? newComposer).requestSync()
     }
   }
@@ -406,8 +425,18 @@ final class WorkspaceStore {
 
   func requestRefresh(_ invalidation: ChatInvalidation = .reconnected) {
     guard !closed, !needsUpgrade else { return }
+    if invalidation == .realtimeResume || invalidation == .realtimeGap {
+      modelBootstrap?.beginRecovery()
+    }
     invalidations.insert(invalidation)
-    guard !refreshSuspended, refreshTask == nil else { return }
+    resumePendingRefresh()
+  }
+
+  @discardableResult
+  func resumePendingRefresh() -> Task<Void, Never>? {
+    guard !closed, !needsUpgrade, !refreshSuspended else { return nil }
+    if let refreshTask { return refreshTask }
+    guard !invalidations.isEmpty else { return nil }
     let generation = refreshGeneration
     refreshTask = Task { [weak self] in
       guard let self else { return }
@@ -423,11 +452,16 @@ final class WorkspaceStore {
       }
     }
     if let refreshTask { lifecycleTasks.track(refreshTask) }
+    return refreshTask
   }
 
   /// Awaitable refresh boundary used by manual refresh and deterministic HTTP tests.
   func refresh(_ batch: Set<ChatInvalidation> = [.reconnected]) async {
-    guard !closed, !needsUpgrade, !refreshSuspended, !Task.isCancelled else { return }
+    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    if refreshSuspended {
+      invalidations.formUnion(batch.filter(\.refreshesThreadList))
+      return
+    }
     let generation = refreshGeneration
     let full = batch.contains(where: \.requiresFullRefresh)
     let selectedBeforeRefresh = selectedThreadID
@@ -437,18 +471,10 @@ final class WorkspaceStore {
     async let accessRefresh: Void = refreshComputerAuthorizations(batch)
     async let modelRefresh: Void = refreshModels(batch)
     async let projectRefresh: Void = refreshProjects(batch)
+    async let indicatorsRefresh: Void = refreshIndicators(batch)
     guard refreshGeneration == generation, !Task.isCancelled else { return }
-    if full || batch.contains(.threadList) {
-      async let drafts: Void = refreshDrafts()
-      await list.refresh()
-      await drafts
-    } else if batch.contains(.readCursor)
-      || batch.contains(where: {
-        if case .history = $0 { return true }
-        return false
-      })
-    {
-      await list.refreshIndicators()
+    if batch.contains(where: \.refreshesThreadList) {
+      await list.refresh(includingIndicators: false)
     }
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     await historyRefresh
@@ -458,6 +484,7 @@ final class WorkspaceStore {
     await accessRefresh
     await modelRefresh
     await projectRefresh
+    await indicatorsRefresh
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     if modelStore.configuration != nil,
       full || selectedConversation?.modelSelection?.needsThreadReadback == true
@@ -480,11 +507,21 @@ final class WorkspaceStore {
 
   private func refreshModels(_ batch: Set<ChatInvalidation>) async {
     let full = batch.contains(where: \.requiresFullRefresh)
-    if modelStore.active && (full || batch.contains(.runModels) || batch.contains(.modelPreference))
+    if modelStore.active
+      && (full || batch.contains(.runModels) || batch.contains(.modelPreference)
+        || batch.contains(.realtimeResume))
     {
       await modelStore.refresh(batch)
-    } else if full {
+    } else if full || batch.contains(.realtimeResume) {
       do { try resources.invalidate(batch) } catch { handle(error) }
+    }
+  }
+
+  private func refreshIndicators(_ batch: Set<ChatInvalidation>) async {
+    if batch.contains(where: \.requiresFullRefresh) || batch.contains(.indicators)
+      || batch.contains(.readCursor)
+    {
+      await list.refreshIndicators()
     }
   }
 
@@ -620,8 +657,8 @@ final class WorkspaceStore {
       await list.restoreCached()
       guard ownsRequest() else { return false }
       if !list.threads.contains(where: { $0.id == id }) {
-        await list.refresh(waitForCurrent: true)
-        guard ownsRequest(), list.error == nil else { return false }
+        let refreshed = await list.refresh(waitForCurrent: true)
+        guard ownsRequest(), refreshed, list.error == nil else { return false }
       }
       guard ownsRequest() else { return false }
       // Keep the destination resident while its history resolves the run anchor.
@@ -658,7 +695,9 @@ final class WorkspaceStore {
     guard search.ownsPresentation(searchID) else { return false }
     search.setOpeningError(nil)
     let needsRefresh = !list.threads.contains(where: { $0.id == id })
-    if needsRefresh { await list.refresh(waitForCurrent: true) }
+    if needsRefresh {
+      guard await list.refresh(waitForCurrent: true) else { return false }
+    }
     guard !closed, !Task.isCancelled else { return false }
     guard search.ownsPresentation(searchID) else { return false }
     guard !needsRefresh || list.error == nil else { return false }
@@ -719,15 +758,29 @@ final class WorkspaceStore {
     guard !isCreating || (!leaving && !reopenOnSuccess) else { return false }
     let restore = leaving || restoreOnUndo
     var failure: String?
+    var pendingFeedbackID: UUID?
     let succeeded = await list.setArchived(
       thread, archived: archived, eventID: eventID, onFailure: { failure = $0 },
       didBegin: {
         // The list owns the write, so leaving the detail cannot cancel it.
-        if leaving { self.startNewChat() }
+        if leaving { self.sidebarInteraction.setOpen(true) }
+        let pending = ChatThreadFeedback(
+          threadID: id,
+          message: archived
+            ? String(localized: "Archiving chat…") : String(localized: "Unarchiving chat…"),
+          actionTitle: nil, persists: true, isWorking: true
+        ) {}
+        pendingFeedbackID = pending.id
+        self.threadFeedback = pending
       })
     guard !closed, !needsUpgrade else { return false }
+    // A late acknowledgement must not replace feedback from a newer action or dismissal.
+    guard let pendingFeedbackID, threadFeedback?.id == pendingFeedbackID else { return succeeded }
     if succeeded {
-      if reopenOnSuccess { selectChat(id) }
+      if reopenOnSuccess {
+        selectChat(id)
+        sidebarInteraction.setOpen(false)
+      }
       let message =
         archived
         ? (thread.isMuted
@@ -735,7 +788,9 @@ final class WorkspaceStore {
           : "Chat archived. A new reply will bring it back.")
         : "Chat unarchived."
       threadFeedback = ChatThreadFeedback(
-        threadID: id, message: message, actionTitle: "Undo", requiresNavigation: restore
+        threadID: id, message: message,
+        actionTitle: restore ? String(localized: "Undo and return to chat") : "Undo",
+        requiresNavigation: restore
       ) {
         [weak self] in
         guard let self else { return }
@@ -994,38 +1049,39 @@ final class WorkspaceStore {
         chatLinkThreadID != id,
         conversation.canRelease, conversations[id] === conversation
       else { continue }
-      noteDraft(id, conversation.composer.hasContent)
+      sidebarDrafts.noteReleased(id, hasDraft: conversation.composer.hasContent)
       conversation.close()
       conversations[id] = nil
       lastUse[id] = nil
     }
   }
 
-  /// The draft list never gates the chat list: a failed read keeps the last one until the
-  /// next list refresh, and a read that overlaps a local change is dropped.
-  private func refreshDrafts() async {
-    guard let draftRepository else { return }
-    let revision = draftsRevision
-    do {
-      let ids = try await draftRepository.threadIDs()
-      guard !closed, !Task.isCancelled, revision == draftsRevision else { return }
-      draftThreadIDs = ids
-    } catch {
-      handle(error)
-    }
-  }
-
-  /// What this device knew about a chat's draft when it released the chat's composer.
-  private func noteDraft(_ id: String, _ hasDraft: Bool) {
-    draftsRevision &+= 1
-    guard draftThreadIDs.contains(id) != hasDraft else { return }
-    if hasDraft { draftThreadIDs.insert(id) } else { draftThreadIDs.remove(id) }
+  /// Sidebar activation observes the cached draft resource without invalidating it.
+  func activateDrafts() async {
+    guard !closed, !needsUpgrade, !Task.isCancelled, draftRepository != nil else { return }
+    await sidebarDrafts.activate()
   }
 
   private func handle(_ failure: Error) {
     guard !closed, (failure as? APIClientError)?.statusCode == 426 else { return }
     needsUpgrade = true
     close()
+  }
+
+  func prepareSettings() {
+    guard !closed, !needsUpgrade else { return }
+    do { try resources.prepareSettings() } catch { handle(error) }
+  }
+
+  func loadSettingsBilling() async {
+    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    do { try await resources.loadSettingsBilling() } catch is CancellationError {
+    } catch { handle(error) }
+  }
+
+  func refreshSettingsBilling() async {
+    prepareSettings()
+    await loadSettingsBilling()
   }
 
 }

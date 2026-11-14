@@ -54,8 +54,7 @@ export const connectorMcpSchema = object({
       !url.username &&
       !url.password &&
       !url.hash &&
-      !url.search &&
-      !/[{}?#]/u.test(value) &&
+      !/[{}#]/u.test(value) &&
       /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z][a-z0-9-]*$/u.test(
         url.hostname,
       ) &&

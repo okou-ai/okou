@@ -507,6 +507,51 @@ test.each([true, false])(
   },
 );
 
+test.each(["username", "password", "one_time_code", "text"] as const)(
+  "Saved-password help preserves credential input and is scoped to %s requests",
+  async (fieldKind) => {
+    const pending = sensitiveAction("pending");
+    const request = {
+      ...pending,
+      fields: pending.fields.filter((field) => {
+        return field.fieldKind === fieldKind;
+      }),
+    };
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, request);
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(200, request);
+    });
+    await setupPage({ context, path: route(), host: "app.okou.ai" });
+    const form = await screen.findByRole("form", {
+      name: "Sign in to download invoices",
+    });
+    const credentialRequest =
+      fieldKind === "username" || fieldKind === "password";
+    expect(within(form).queryAllByText("How to fill")).toHaveLength(
+      credentialRequest ? 1 : 0,
+    );
+    if (!credentialRequest) {
+      return;
+    }
+    const label = fieldKind === "username" ? "Email" : "Password";
+    const input = within(form).getByLabelText(label);
+    await fill(input, "owner@example.test");
+    const instructions = within(form).getByText(/^Chrome \(desktop\):/u);
+    expect(instructions).not.toBeVisible();
+    click(within(form).getByText("How to fill"));
+    expect(instructions).toBeVisible();
+    expect(input).toHaveValue("owner@example.test");
+    click(within(form).getByText("How to fill"));
+    expect(instructions).not.toBeVisible();
+    expect(within(form).getByLabelText(label)).toHaveValue(
+      "owner@example.test",
+    );
+    expect(form).toBeVisible();
+  },
+);
+
 test("A required native slider starts at the website position and needs deliberate confirmation", async () => {
   let sent: unknown = null;
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -1013,7 +1058,9 @@ test("The standalone form accepts input and submission while its background chec
     name: "Sign in to download invoices",
   });
   await checkStarted.promise;
-  expect(screen.getByText("Checking this request…")).toBeVisible();
+  expect(
+    screen.getByRole("status", { name: "Checking this request…" }),
+  ).toHaveAttribute("aria-busy", "true");
   expect(button("Add to browser")).toBeEnabled();
   await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
   click(button("Add to browser"));

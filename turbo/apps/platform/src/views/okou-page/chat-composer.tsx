@@ -25,6 +25,7 @@ import {
   type ComposerConnectorActions,
 } from "./composer-connector-actions.ts";
 import { ComposerTaskControls } from "./composer-create.tsx";
+import { useComposerCapabilities } from "./composer-capabilities.ts";
 import {
   ComposerProjectControl,
   useComposerProjectMenuItem,
@@ -322,6 +323,7 @@ interface ChatComposerProps {
   readonly signals: ComposerSignals;
   readonly showPendingItems?: boolean;
   readonly layout?: ComposerLayout;
+  readonly discovery?: ReactNode;
 }
 
 interface ComposerComputerUseHost {
@@ -4764,18 +4766,15 @@ function ComposerConnectorAccountMenuContent({
               variant="outline"
               size="sm"
               className="w-full"
+              pending={loadMoreLoadable.state === "loading"}
               disabled={saving || loadMoreLoadable.state === "loading"}
               onClick={() => {
                 return detach(loadMore(signal), Reason.DomCallback);
               }}
             >
-              {loadMoreLoadable.state === "loading"
-                ? t(($) => {
-                    return $.connectors.accounts.loadingMore;
-                  })
-                : t(($) => {
-                    return $.connectors.accounts.loadMore;
-                  })}
+              {t(($) => {
+                return $.connectors.accounts.loadMore;
+              })}
             </Button>
           </div>
         ) : null}
@@ -5645,16 +5644,7 @@ function VoiceDraftFooter({
   );
 }
 
-/**
- * Group attachments, the new chat's Project and templates separately from
- * importing skills, which brings workflows in from the user's Claude Code or
- * Codex.
- *
- * Starting a presentation, image, website or visualization deliberately
- * stays out: the task chips sit directly under the composer and already reach
- * every one of them in a single click, so a second copy behind the `+` would be
- * the longer route to the same place.
- */
+/** Attachments, home capabilities and skill imports share the add menu. */
 function useComposerAddMenuGroups(
   signals: ComposerSignals,
 ): readonly ComposerAddMenuGroup[] {
@@ -5663,6 +5653,19 @@ function useComposerAddMenuGroups(
   const template = useTemplatePickerTrigger(signals);
   const openSkillImportDialog = useSet(openSkillImportDialog$);
   const project = useComposerProjectMenuItem(signals);
+  const capabilities = useComposerCapabilities(signals);
+  const capabilityItem = (
+    capability: NonNullable<typeof capabilities>[number],
+  ) => {
+    return {
+      ...capability,
+      onSelect: () => {
+        capability.run();
+        // The capability panel keeps the draft's caret, not the menu trigger.
+        return false as const;
+      },
+    };
+  };
   return [
     [
       {
@@ -5683,6 +5686,14 @@ function useComposerAddMenuGroups(
         onSelect: template.open,
       },
     ],
+    ...(capabilities
+      ? [
+          [
+            capabilityItem(capabilities[0]),
+            ...capabilities.slice(1).map(capabilityItem),
+          ] satisfies ComposerAddMenuGroup,
+        ]
+      : []),
     [
       {
         id: "import-skills",
@@ -5702,7 +5713,7 @@ function ComposerAddMenuSlot({ signals }: { signals: ComposerSignals }) {
   const groups = useComposerAddMenuGroups(signals);
   return (
     <>
-      <ComposerAddMenu groups={groups} />
+      <ComposerAddMenu signals={signals.addMenu} groups={groups} />
       {/* Menu.Item owns keyboard activation through showPicker(). Keep its
           input outside the popup so selection survives the menu closing. */}
       <ComposerFileInput signals={signals} />
@@ -7065,10 +7076,9 @@ export function ChatComposer({
   signals,
   showPendingItems = true,
   layout = "default",
+  discovery,
 }: ChatComposerProps) {
-  const setImageAnnotationLifecycleRef = useSet(
-    signals.setImageAnnotationLifecycleRef$,
-  );
+  const setLifecycleRef = useSet(signals.setLifecycleRef$);
   return (
     <>
       {(!signals.threadId || signals.editor.forwardComposer) && (
@@ -7079,11 +7089,12 @@ export function ChatComposer({
           siblings at exactly this width, and a control that reads a width it is
           not inside reads the window instead. */}
       <div
-        ref={setImageAnnotationLifecycleRef}
+        ref={setLifecycleRef}
         className="@container/composer relative flex w-full min-w-0 flex-col"
       >
         <ComposerNoticeSlot signals={signals} />
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
+        {discovery}
         <ComposerCard signals={signals} layout={layout} />
         <ImageAnnotationEditor signals={signals.imageAnnotation} />
       </div>

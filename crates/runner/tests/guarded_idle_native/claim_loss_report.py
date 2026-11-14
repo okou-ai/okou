@@ -165,7 +165,7 @@ def validate(directory, *, cases=CASES, policy_key="native_claim_loss_policy_jso
         released = batch.clock(status.get("io_released_ns"), held, terminal[4]["monotonic_ns"])
         polled = batch.clock(status.get("status_wait_polled_ns"), terminal[4]["monotonic_ns"], events[7]["monotonic_ns"])
         before, after = status.get("status_waits_before"), status.get("status_waits_after")
-        if not pressure.integer(before) or not pressure.integer(after) or after != before+1:
+        if not failure.status_wait_advanced(before, after):
             raise ValueError("claim final status wait not positively observed")
         if foreground.heartbeat(status.get("heartbeat"), 4, polled, events[7]["monotonic_ns"], (0,0)) != (runner, 1):
             raise ValueError("claim final heartbeat Runner changed")

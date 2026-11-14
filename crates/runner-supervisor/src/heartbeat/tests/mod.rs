@@ -19,15 +19,10 @@ struct RecordingProvider {
 
 #[async_trait::async_trait]
 impl JobProvider for RecordingProvider {
-    async fn discover(&self) -> Option<runner_provider::JobCandidate> {
-        None
-    }
-
-    async fn claim(
-        &self,
-        _candidate: runner_provider::JobCandidate,
-    ) -> Option<runner_provider::ClaimedJob> {
-        None
+    fn local_source(
+        self: std::sync::Arc<Self>,
+    ) -> Option<std::sync::Arc<dyn runner_provider::LocalJobSource>> {
+        Some(self)
     }
 
     async fn complete(
@@ -46,6 +41,19 @@ impl JobProvider for RecordingProvider {
     }
 
     async fn shutdown(&self) {}
+}
+
+#[async_trait::async_trait]
+impl runner_provider::LocalJobSource for RecordingProvider {
+    async fn discover(&self) -> Option<runner_provider::JobCandidate> {
+        None
+    }
+    async fn claim(
+        &self,
+        _candidate: runner_provider::JobCandidate,
+    ) -> Option<runner_provider::ClaimedJob> {
+        None
+    }
 }
 
 fn test_runner_identity() -> RunnerProcessIdentity {

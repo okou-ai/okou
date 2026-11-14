@@ -20,7 +20,7 @@ const chat = createChatFilesBddApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 const host = createHostBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
-type RunnerClaim = Awaited<ReturnType<typeof api.claimRunnerJob>>;
+type RunnerClaim = Awaited<ReturnType<typeof api.executionInput>>;
 
 interface ArtifactActor {
   readonly actor: ApiTestUser;
@@ -38,7 +38,7 @@ async function artifactActor(
   api.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   chatCallbacks.disableVapid();
-  const runnerGroup = api.configureRunnerGroup();
+  const runnerGroup = await api.configureRunnerGroup();
   await api.grantProEntitlement(actor, { tier });
   // Artifact scenarios claim the chat run through the native Runner; Fable
   // stays off Pi while Sonnet 5 would run API-first.
@@ -72,7 +72,7 @@ async function claimChatRun(
   readonly sandboxHeaders: { readonly authorization: string };
 }> {
   await api.heartbeatRunner(runnerGroup);
-  const claim = await api.claimRunnerJob(runId);
+  const claim = await api.executionInput(runId);
   return {
     claim,
     sandboxHeaders: { authorization: `Bearer ${claim.sandboxToken}` },

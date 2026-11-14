@@ -164,12 +164,10 @@ struct CompletionAuthProvider {
 
 #[async_trait]
 impl JobProvider for CompletionAuthProvider {
-    async fn discover(&self) -> Option<JobCandidate> {
-        None
-    }
-
-    async fn claim(&self, _candidate: JobCandidate) -> Option<ClaimedJob> {
-        None
+    fn local_source(
+        self: std::sync::Arc<Self>,
+    ) -> Option<std::sync::Arc<dyn runner_provider::LocalJobSource>> {
+        Some(self)
     }
 
     async fn complete(&self, request: CompleteRequest, completion_auth: CompletionAuth) {
@@ -189,6 +187,16 @@ impl JobProvider for CompletionAuthProvider {
     async fn shutdown(&self) {}
 }
 
+#[async_trait::async_trait]
+impl runner_provider::LocalJobSource for CompletionAuthProvider {
+    async fn discover(&self) -> Option<JobCandidate> {
+        None
+    }
+    async fn claim(&self, _candidate: JobCandidate) -> Option<ClaimedJob> {
+        None
+    }
+}
+
 struct SequencingProvider {
     timing: CompletionReportTiming,
     events: Arc<std::sync::Mutex<Vec<&'static str>>>,
@@ -200,12 +208,12 @@ struct SequencingProvider {
 
 #[async_trait]
 impl JobProvider for SequencingProvider {
-    async fn discover(&self) -> Option<JobCandidate> {
-        None
+    fn local_source(
+        self: std::sync::Arc<Self>,
+    ) -> Option<std::sync::Arc<dyn runner_provider::LocalJobSource>> {
+        Some(self)
     }
-    async fn claim(&self, _candidate: JobCandidate) -> Option<ClaimedJob> {
-        None
-    }
+
     async fn complete(&self, _request: CompleteRequest, _auth: CompletionAuth) {
         self.reports.fetch_add(1, Ordering::SeqCst);
         self.events.lock().unwrap().push("report_started");
@@ -228,6 +236,16 @@ impl JobProvider for SequencingProvider {
         Ok(())
     }
     async fn shutdown(&self) {}
+}
+
+#[async_trait::async_trait]
+impl runner_provider::LocalJobSource for SequencingProvider {
+    async fn discover(&self) -> Option<JobCandidate> {
+        None
+    }
+    async fn claim(&self, _candidate: JobCandidate) -> Option<ClaimedJob> {
+        None
+    }
 }
 
 async fn assert_completion_order(timing: CompletionReportTiming) {

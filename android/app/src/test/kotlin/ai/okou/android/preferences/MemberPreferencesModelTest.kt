@@ -1,5 +1,6 @@
 package ai.okou.android.preferences
 
+import ai.okou.android.TestChatService
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.UserPreferencesColorTheme
@@ -7,6 +8,7 @@ import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesSupportedLocalesItem
 import ai.okou.android.auth.WorkspaceBootstrap
 import ai.okou.android.auth.WorkspaceSession
+import ai.okou.android.chat.ChatListService
 import ai.okou.android.testBootstrap
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -28,7 +30,7 @@ import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MemberPreferencesModelTest {
-    private class Service : WorkspaceSession {
+    private class Service : WorkspaceSession, ChatListService by TestChatService() {
         var stored = testBootstrap().preferences
         val requests = mutableListOf<UpdatePreferencesRequest>()
         var load: suspend () -> UserPreferences = { stored }

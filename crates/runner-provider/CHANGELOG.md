@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.20.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.6...runner-provider-v0.20.7) (2026-11-14)
+
+
+### Refactoring
+
+* **api:** remove legacy runner acquisition and queue readers ([#47138](https://github.com/okou-ai/okou/issues/47138)) ([50c5853](https://github.com/okou-ai/okou/commit/50c5853b53188770b588d3f8a3df267830d295a3))
+* **runner-provider:** centralize local claim marker release ([#47170](https://github.com/okou-ai/okou/issues/47170)) ([583e0e9](https://github.com/okou-ai/okou/commit/583e0e9e5fc4ecbc6a8001bfe9a9444abf30fbba))
+
+## [0.20.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.5...runner-provider-v0.20.6) (2026-11-14)
+
+
+### Bug Fixes
+
+* **runner:** preserve sandbox and home reuse on direct dispatch ([#47101](https://github.com/okou-ai/okou/issues/47101)) ([abd8ffa](https://github.com/okou-ai/okou/commit/abd8ffa4ac9930964ae4844bd017991daa1138af))
+
+
+### Refactoring
+
+* **runner:** retire legacy run acquisition clients ([#47100](https://github.com/okou-ai/okou/issues/47100)) ([a9904bc](https://github.com/okou-ai/okou/commit/a9904bc0c2405516d10168768e09a410f10541eb))
+
+## [0.20.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.4...runner-provider-v0.20.5) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** delegate raw socket creation to owned apis ([#47077](https://github.com/okou-ai/okou/issues/47077)) ([355af4a](https://github.com/okou-ai/okou/commit/355af4a8b3e17e8fc02b8caf5b4cad30eb94e0cd))
+
+## [0.20.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.3...runner-provider-v0.20.4) (2026-11-13)
+
+## [0.20.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.2...runner-provider-v0.20.3) (2026-11-13)
+
+
+### Bug Fixes
+
+* **runner:** replace reset api pools without interrupting active requests ([#46994](https://github.com/okou-ai/okou/issues/46994)) ([98a6490](https://github.com/okou-ai/okou/commit/98a6490a3e076724b96f9b31a1fad3b9357c17f4))
+
+## [0.20.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.1...runner-provider-v0.20.2) (2026-11-13)
+
 ## [0.20.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.0...runner-provider-v0.20.1) (2026-11-13)
 
 ## [0.20.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.19.1...runner-provider-v0.20.0) (2026-11-12)

@@ -37,7 +37,7 @@ describe("system storage presigned URL cache", () => {
     bdd.acceptAgentStorageWrites();
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
-    const runnerGroup = api.configureRunnerGroup();
+    const runnerGroup = await api.configureRunnerGroup();
     await api.grantProEntitlement(actor);
     // The Claude Code route mounts skills under /home/user/.claude/skills.
     await api.ensurePersonalSubscriptionModel(actor, {
@@ -97,6 +97,9 @@ describe("system storage presigned URL cache", () => {
       },
       signedCount,
       async claim(prompt: string) {
+        await owned.run(() => {
+          return api.registerDirectRunner(owned.runnerGroup);
+        });
         const run = await owned.sendChatRun(owned.actor, {
           agentId: owned.agentId,
           prompt,
@@ -272,7 +275,7 @@ describe("system storage presigned URL cache", () => {
         await api.requestCancelRun(actor, run.runId, [200, 404]);
       });
       await api.heartbeatRunner(runFixture.runnerGroup);
-      const claim = await api.claimRunnerJob(run.runId);
+      const claim = await api.executionInput(run.runId);
       // The post-commit cache write completes before the run is cancelled.
       await flushWaitUntilForTest();
       const mounts = claim.contentBundles.skills.filter((mount) => {

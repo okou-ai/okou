@@ -97,7 +97,7 @@ export function createPublicRunnerMemory(
     bdd.acceptAgentStorageWrites();
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
-    api.configureRunnerGroup();
+    await api.configureRunnerGroup();
     mockOptionalEnv("OPENROUTER_API_KEY", undefined);
     const admin =
       fixture.actor.orgRole === "org:member"
@@ -135,7 +135,7 @@ export function createPublicRunnerMemory(
     return run;
   }
   async function claimQueued(run: Awaited<ReturnType<typeof enqueue>>) {
-    const execution = await api.claimRunnerJob(run.runId);
+    const execution = await api.executionInput(run.runId);
     fixture.registerClaim(run.runId, execution.sandboxToken);
     const manifest = expectCanonicalStorageManifest(execution.storageManifest);
     const memories =

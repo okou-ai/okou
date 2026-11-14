@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { commitLayoutUpdate } from "@okouai/ui";
+import { refreshWorkspaceLayout$ } from "./workspace-layout.ts";
 
 import { localStorageSignals } from "../external/local-storage.ts";
 import {
@@ -14,7 +14,16 @@ import {
   storedChatListHidden$,
 } from "../okou-page/unified-chat-workspace.ts";
 import { pageSignal$ } from "../page-signal.ts";
-import { isNonArrayRecord, jsonParseOr, onRef, resetSignal } from "../utils.ts";
+import {
+  detach,
+  isNonArrayRecord,
+  jsonParseOr,
+  onDomEventFn,
+  onRef,
+  Reason,
+  resetSignal,
+  waitForBrowserPaint,
+} from "../utils.ts";
 
 // Smallest the sidebar may shrink to before its content stops being usable.
 export const CHAT_THREAD_SIDEBAR_MIN_WIDTH = 400;
@@ -154,16 +163,23 @@ const resizeSidebar$ = command(
     key: string,
     next: SidebarDragResult,
     initialListWidth: number,
+    signal: AbortSignal,
   ) => {
-    set(setStoredChatListHidden$, next.listHidden);
+    set(setStoredChatListHidden$, next.listHidden, signal);
     set(
       setLiveChatListWidth$,
       next.listWidth === initialListWidth ? null : next.listWidth,
+      signal,
     );
     const width = Math.round(next.width);
     const live = get(internalLiveSidebarWidth$);
     if (!live || live.key !== key || live.width !== width) {
       set(internalLiveSidebarWidth$, { key, width });
+      detach(
+        set(refreshWorkspaceLayout$, signal),
+        Reason.DomCallback,
+        "live utility sidebar width layout",
+      );
     }
   },
 );
@@ -186,12 +202,26 @@ export const chatThreadSidebarResizing$ = computed((get) => {
 
 const resetChatThreadSidebarResize$ = resetSignal();
 
-const finishChatThreadSidebarResize$ = command(({ set }) => {
-  // The final coordinate is already live; release before persisting it.
-  set(resetChatThreadSidebarResize$);
-  set(commitLiveSidebarWidth$);
-  set(commitChatListWidth$);
-});
+const finishChatThreadSidebarResize$ = command(
+  async ({ set }, signal: AbortSignal, ownerSignal: AbortSignal) => {
+    // Persist the terminal sample before page cancellation can interrupt paint.
+    set(commitLiveSidebarWidth$);
+    set(commitChatListWidth$);
+    // Paint the final coordinate while this gesture still owns transitions.
+    await waitForBrowserPaint(signal);
+    signal.throwIfAborted();
+    // Capture and the mask are already released; now relinquish transitions.
+    set(resetChatThreadSidebarResize$);
+    await set(refreshWorkspaceLayout$, ownerSignal);
+  },
+);
+
+const changeSidebarWidth$ = command(
+  async ({ set }, key: string, width: number | null, signal: AbortSignal) => {
+    set(writeSidebarWidth$, key, width);
+    await set(refreshWorkspaceLayout$, signal);
+  },
+);
 
 const chatThreadSidebarDragMaskEl$ = computed(() => {
   return createResizeMask("data-chat-thread-sidebar-resize-mask", "col-resize");
@@ -232,14 +262,21 @@ const startChatThreadSidebarResize$ = command(
     handle.setPointerCapture(pointerId);
     const dragMaskEl = get(chatThreadSidebarDragMaskEl$);
 
-    function resetResize(): void {
-      if (!dragSignal.aborted) {
-        set(finishChatThreadSidebarResize$);
+    let finishing = false;
+    function resetResize(): Promise<void> | undefined {
+      if (dragSignal.aborted || finishing) {
+        return;
       }
+      finishing = true;
+      dragMaskEl.remove();
+      if (handle.hasPointerCapture(pointerId)) {
+        handle.releasePointerCapture(pointerId);
+      }
+      return set(finishChatThreadSidebarResize$, dragSignal, ownerSignal);
     }
 
     function moveResize(pointerX: number): void {
-      if (dragSignal.aborted || !Number.isFinite(pointerX)) {
+      if (dragSignal.aborted || finishing || !Number.isFinite(pointerX)) {
         return;
       }
       const next = sidebarDragLayout(
@@ -254,47 +291,51 @@ const startChatThreadSidebarResize$ = command(
         : next.atMin
           ? "w-resize"
           : "col-resize";
-      set(resizeSidebar$, widthKey, next, geometry.listWidth);
+      set(resizeSidebar$, widthKey, next, geometry.listWidth, dragSignal);
     }
 
-    function endPointerResize(event: PointerEvent): void {
-      if (event.pointerId !== pointerId || dragSignal.aborted) {
+    function endPointerResize(event: PointerEvent): Promise<void> | undefined {
+      if (event.pointerId !== pointerId || dragSignal.aborted || finishing) {
         return;
       }
       const pointerX =
         event.type === "pointerup" ? resizePointerClientX(event) : null;
       if (pointerX !== null) {
-        commitLayoutUpdate(() => {
-          moveResize(pointerX);
-        });
+        moveResize(pointerX);
       }
-      resetResize();
+      return resetResize();
     }
 
     handle.addEventListener(
       "pointermove",
-      (event) => {
-        if (event.pointerId !== pointerId || dragSignal.aborted) {
+      onDomEventFn<PointerEvent>((event) => {
+        if (event.pointerId !== pointerId || dragSignal.aborted || finishing) {
           return;
         }
         if (event.buttons === 0) {
-          resetResize();
-          return;
+          return resetResize();
         }
         moveResize(event.clientX);
-      },
+        return;
+      }),
       { signal: dragSignal },
     );
-    handle.addEventListener("pointerup", endPointerResize, {
+    handle.addEventListener("pointerup", onDomEventFn(endPointerResize), {
       signal: dragSignal,
     });
-    handle.addEventListener("pointercancel", endPointerResize, {
+    handle.addEventListener("pointercancel", onDomEventFn(endPointerResize), {
       signal: dragSignal,
     });
-    handle.addEventListener("lostpointercapture", endPointerResize, {
+    handle.addEventListener(
+      "lostpointercapture",
+      onDomEventFn(endPointerResize),
+      {
+        signal: dragSignal,
+      },
+    );
+    window.addEventListener("blur", onDomEventFn(resetResize), {
       signal: dragSignal,
     });
-    window.addEventListener("blur", resetResize, { signal: dragSignal });
 
     dragSignal.addEventListener(
       "abort",
@@ -348,18 +389,24 @@ export const chatThreadSidebarResizeHandleRef$ = onRef(
     );
     handle.addEventListener(
       "dblclick",
-      () => {
-        set(writeSidebarWidth$, handle.dataset.widthKey ?? "", null);
-      },
+      onDomEventFn(() => {
+        return set(
+          changeSidebarWidth$,
+          handle.dataset.widthKey ?? "",
+          null,
+          AbortSignal.any([mountSignal, get(pageSignal$)]),
+        );
+      }),
       { signal: mountSignal },
     );
     handle.addEventListener(
       "keydown",
-      (event) => {
+      onDomEventFn<KeyboardEvent>((event) => {
         const container = handle.parentElement;
         if (!container) {
           return;
         }
+        const signal = AbortSignal.any([mountSignal, get(pageSignal$)]);
         const key = handle.dataset.widthKey ?? "";
         const containerWidth = container.getBoundingClientRect().width;
         const maxWidth = Math.max(
@@ -386,20 +433,20 @@ export const chatThreadSidebarResizeHandleRef$ = onRef(
         if (event.key === "Enter") {
           // The focused separator owns Enter as "restore the default width".
           event.preventDefault();
-          set(writeSidebarWidth$, key, null);
-          return;
+          return set(changeSidebarWidth$, key, null, signal);
         }
         if (next === null) {
           return;
         }
         // Arrow, Home and End keys resize instead of scrolling the page.
         event.preventDefault();
-        set(
-          writeSidebarWidth$,
+        return set(
+          changeSidebarWidth$,
           key,
           Math.min(Math.max(next, CHAT_THREAD_SIDEBAR_MIN_WIDTH), maxWidth),
+          signal,
         );
-      },
+      }),
       { signal: mountSignal },
     );
   }),

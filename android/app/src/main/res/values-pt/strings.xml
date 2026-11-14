@@ -1,14 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="home">Início</string>
     <string name="settings">Configurações</string>
     <string name="back">Voltar</string>
-    <string name="home_title">Abra espaço para sua próxima ideia</string>
-    <string name="home_description">Escreva um rascunho e visualize neste dispositivo.</string>
-    <string name="draft_label">Rascunho</string>
-    <string name="draft_hint">No que você está pensando?</string>
-    <string name="local_preview">Visualizar rascunho</string>
-    <string name="preview_title">Prévia</string>
     <string name="appearance">Aparência</string>
     <string name="appearance_description">Escolha a aparência do Okou neste dispositivo.</string>
     <string name="appearance_system">Seguir o sistema</string>
@@ -21,11 +14,6 @@
     <string name="appearance_read_failed">Não foi possível carregar a aparência. Tente novamente.</string>
     <string name="appearance_write_failed">Não foi possível salvar a aparência. Tente novamente.</string>
     <string name="retry">Tentar novamente</string>
-    <plurals name="draft_lines">
-        <item quantity="one">%1$d linha</item>
-        <item quantity="many">%1$d linhas</item>
-        <item quantity="other">%1$d linhas</item>
-    </plurals>
     <string name="auth_welcome">Boas-vindas ao Okou</string>
     <string name="auth_restoring">Restaurando sua sessão…</string>
     <string name="auth_preparing_workspace">Preparando seu espaço de trabalho…</string>

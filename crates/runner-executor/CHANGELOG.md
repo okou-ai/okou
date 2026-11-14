@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.21.31](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.30...runner-executor-v0.21.31) (2026-11-14)
+
+## [0.21.30](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.29...runner-executor-v0.21.30) (2026-11-14)
+
+## [0.21.29](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.28...runner-executor-v0.21.29) (2026-11-14)
+
+
+### Refactoring
+
+* **runner:** retire legacy run acquisition clients ([#47100](https://github.com/okou-ai/okou/issues/47100)) ([a9904bc](https://github.com/okou-ai/okou/commit/a9904bc0c2405516d10168768e09a410f10541eb))
+
+## [0.21.28](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.27...runner-executor-v0.21.28) (2026-11-13)
+
+## [0.21.27](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.26...runner-executor-v0.21.27) (2026-11-13)
+
+## [0.21.26](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.25...runner-executor-v0.21.26) (2026-11-13)
+
+## [0.21.25](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.24...runner-executor-v0.21.25) (2026-11-13)
+
+## [0.21.24](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.23...runner-executor-v0.21.24) (2026-11-13)
+
 ## [0.21.23](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.22...runner-executor-v0.21.23) (2026-11-13)
 
 ## [0.21.22](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.21...runner-executor-v0.21.22) (2026-11-12)

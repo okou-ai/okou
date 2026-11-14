@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -96,11 +97,13 @@ export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
       {configs.state === "hasError" ? (
         <CloudflareAccessLoadError />
       ) : configs.state === "loading" ? (
-        <p role="status">
-          {t(($) => {
+        <LoadingSkeleton
+          label={t(($) => {
             return $.cloudflareAccess.loading;
           })}
-        </p>
+          variant="fields"
+          count={1}
+        />
       ) : configs.data ? (
         <div className="grid gap-2">
           <label htmlFor="ssh-access-config">

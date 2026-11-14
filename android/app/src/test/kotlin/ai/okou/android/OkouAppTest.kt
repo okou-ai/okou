@@ -2,6 +2,8 @@ package ai.okou.android
 
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.chat.ChatListModel
+import ai.okou.android.chat.ChatListRoute
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.MemberPreferencesSettings
 import android.content.res.Configuration
@@ -15,27 +17,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.SemanticsMatcher
-import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.ui.test.assertTextContains
-import androidx.compose.ui.test.hasSetTextAction
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performTextInput
-import androidx.compose.ui.test.performTextInputSelection
-import androidx.compose.ui.test.performTextReplacement
-import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.Density
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -70,7 +60,20 @@ class OkouAppTest {
                     ViewModelProvider(
                         owners,
                         viewModelFactory {
-                            initializer { HomeModel() }
+                            initializer {
+                                ChatListModel(
+                                    TestChatService(),
+                                    (compose.activity.application as TestOkouApplication).chatCache,
+                                    WorkspaceIdentity(
+                                        "https://api.okou.ai",
+                                        "shell-user",
+                                        "shell-session",
+                                        "shell-org",
+                                    ),
+                                    { true },
+                                    {},
+                                )
+                            }
                             initializer { AppearanceModel(store) }
                             initializer {
                                 MemberPreferencesModel(
@@ -92,7 +95,7 @@ class OkouAppTest {
                         },
                     )
                 Triple(
-                    provider[HomeModel::class.java],
+                    provider[ChatListModel::class.java].apply { refresh() },
                     provider[AppearanceModel::class.java],
                     if (withWorkspacePreferences) provider[MemberPreferencesModel::class.java]
                     else null,
@@ -109,13 +112,13 @@ class OkouAppTest {
                     val color = MaterialTheme.colorScheme.background
                     SideEffect { background = color }
                     OkouApp(
-                        models.first,
                         state,
                         models.second::selectMode,
                         models.second::retry,
                         workspacePreferences = {
                             models.third?.let { MemberPreferencesSettings(it) }
                         },
+                        homeContent = { ChatListRoute(models.first) },
                     )
                 }
             }
@@ -130,43 +133,28 @@ class OkouAppTest {
     @Test
     fun workspaceLanguageChoicesRemainReachableWithLargeText() {
         render(fontScale = 2f, withWorkspacePreferences = true)
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("English").performScrollTo().performClick()
         compose.onNodeWithText("繁體中文").performScrollTo().assertIsDisplayed()
     }
 
     @Test
-    @OptIn(ExperimentalTestApi::class)
-    fun localDraftPreviewAndNativeSelectionSurviveTabNavigationAndBack() {
+    fun chatFilterSurvivesAvatarNavigationAndBack() {
         render()
-        compose.onNodeWithTag("bottom_navigation").assertExists()
-        compose.onNodeWithText("Preview draft").assertIsNotEnabled()
-        compose.onNode(hasSetTextAction()).performTextInput("  Hello Okou\n你好 👋  ")
-        compose.onNodeWithText("2 lines").assertExists()
-        compose.onNodeWithText("Preview draft").performScrollTo().performClick()
-        compose.onNode(hasText("  Hello Okou\n你好 👋  ") and !hasSetTextAction()).assertExists()
-        compose.onNode(hasSetTextAction()).performTextInputSelection(TextRange(3))
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithText("Archived").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Appearance").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNode(hasSetTextAction()).assertTextContains("  Hello Okou\n你好 👋  ")
-        compose
-            .onNode(hasSetTextAction())
-            .assert(
-                SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(3))
-            )
-        compose.onNode(hasSetTextAction()).performTextReplacement("   ")
-        compose.onNodeWithText("Preview draft").assertIsNotEnabled()
-        compose.onNode(hasText("  Hello Okou\n你好 👋  ") and !hasSetTextAction()).assertExists()
+        compose.onNodeWithText("Archived").assertIsSelected()
     }
 
     @Test
     fun homeIsUsableBeforeAppearanceStorageReturns() {
         render(TestPreferencesStore().apply { initialRead = CompletableDeferred() })
-        compose.onNode(hasSetTextAction()).performTextInput("Ready without settings IO")
-        compose.onNodeWithText("Preview draft").performScrollTo().performClick()
-        compose.onNode(hasText("Ready without settings IO") and !hasSetTextAction()).assertExists()
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithText("Chats").assertExists()
+        compose.onNodeWithText("Archived").performClick().assertIsSelected()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Loading appearance…").assertExists()
         compose.onNodeWithText("Dark").assertIsNotEnabled()
     }
@@ -175,7 +163,7 @@ class OkouAppTest {
     fun preferenceFailuresAreVisibleAndRetryRestoresNativeSelection() {
         val storage = TestPreferencesStore().apply { readFailure = true }
         render(storage)
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Could not load appearance. Try again.").assertExists()
         compose.onNodeWithText("Light").assertIsNotEnabled()
         compose.runOnIdle { storage.readFailure = false }
@@ -197,7 +185,7 @@ class OkouAppTest {
     fun manualAppearanceAndLiveSystemChangesRetainTheActiveDestination() {
         render()
         val light = compose.runOnIdle { background }
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Dark").performClick()
         compose.onNodeWithText("Dark").assertIsSelected()
         compose.runOnIdle { org.junit.Assert.assertNotEquals(light, background) }
@@ -221,30 +209,24 @@ class OkouAppTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w900dp-h900dp")
-    fun expandedWindowUsesRailAndRetainsTheSameDestinations() {
+    fun expandedWindowRetainsAvatarAndConversationDestinations() {
         render()
-        compose.onNodeWithTag("navigation_rail").assertExists()
-        compose.onNodeWithText("Settings").performClick()
+        compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Follow system").assertExists()
-        compose.onNodeWithText("Home").performClick()
-        compose.onNode(hasSetTextAction()).assertExists()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("Chats").assertExists()
     }
 
     @Test
     @Config(qualifiers = "de-rDE-w400dp-h800dp")
     fun longLocalizedLabelsRemainOperableAtLargeFontScale() {
         render(fontScale = 2f)
-        compose.onNodeWithText("Einstellungen").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("Einstellungen").assertIsDisplayed().performClick()
         compose.onNodeWithText("Dunkel").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("Dunkel").assertIsSelected()
         compose.onNodeWithText("Auf diesem Gerät").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Start").assertIsDisplayed().performClick()
-        compose.onNode(hasSetTextAction()).performScrollTo().performTextInput("Große Schrift — 你好")
-        compose
-            .onNodeWithText("Entwurf ansehen")
-            .performScrollTo()
-            .assertIsDisplayed()
-            .performClick()
-        compose.onNode(hasText("Große Schrift — 你好") and !hasSetTextAction()).assertExists()
+        compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Chats").assertIsDisplayed()
+        compose.onNodeWithText("Chats aktualisieren").assertIsDisplayed().performClick()
     }
 }

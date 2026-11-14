@@ -72,7 +72,7 @@ export async function chargePublicDataUsage(
     displayName: "Data billing fixture",
     visibility: "private",
   });
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   const clientEventId = randomUUID();
   const sent = await createChatFilesBddApi(context).requestSendEvent(
     actor,
@@ -114,7 +114,7 @@ export async function chargePublicDataUsage(
   }
   const runId = observed.body.runId;
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.claimRunnerJob(runId);
+  const claim = await runs.executionInput(runId);
   // Run setup authenticates its actor and installs a single-member directory.
   // Restore the caller's provider fixture before the debit refreshes membership.
   if (memberships) {

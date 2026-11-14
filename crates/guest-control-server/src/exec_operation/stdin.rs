@@ -4,10 +4,12 @@
 //! containment cleanup. Completion notification never replaces physical join.
 
 use std::io::{self, Write};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread::JoinHandle;
+
+use nix::fcntl::{FcntlArg, OFlag, fcntl};
 
 use super::THREAD_EXEC_OPERATION_STDIN;
 use crate::log::log;
@@ -26,10 +28,10 @@ pub(super) struct StdinWriter {
 impl StdinWriter {
     pub(super) fn spawn<W, S>(mut stdin: W, stdin_bytes: Vec<u8>, spawner: S) -> io::Result<Self>
     where
-        W: AsRawFd + Write + Send + 'static,
+        W: AsFd + AsRawFd + Write + Send + 'static,
         S: ThreadSpawner,
     {
-        set_nonblocking(stdin.as_raw_fd())?;
+        set_nonblocking(stdin.as_fd())?;
         let (cancel_wake_reader, cancel_wake_writer) = stdin_cancel_pipe()?;
         let cancel = Arc::new(AtomicBool::new(false));
         let writer_cancel = Arc::clone(&cancel);
@@ -132,32 +134,16 @@ impl StdinWriter {
 }
 
 fn stdin_cancel_pipe() -> io::Result<(OwnedFd, OwnedFd)> {
-    let mut fds = [0; 2];
-    // SAFETY: `pipe2` initializes two file descriptors in `fds` on success.
-    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK | libc::O_CLOEXEC) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: both descriptors were freshly returned by `pipe`.
-    let read_fd = unsafe { OwnedFd::from_raw_fd(fds[0]) };
-    // SAFETY: both descriptors were freshly returned by `pipe`.
-    let write_fd = unsafe { OwnedFd::from_raw_fd(fds[1]) };
-    Ok((read_fd, write_fd))
+    rustix::pipe::pipe_with(rustix::pipe::PipeFlags::NONBLOCK | rustix::pipe::PipeFlags::CLOEXEC)
+        .map_err(io::Error::from)
 }
 
-fn set_nonblocking(fd: RawFd) -> io::Result<()> {
-    // SAFETY: `fcntl` reads flags for an open file descriptor owned by the caller.
-    let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
-    if flags < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    if flags & libc::O_NONBLOCK != 0 {
+fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
+    let flags = OFlag::from_bits_retain(fcntl(fd, FcntlArg::F_GETFL)?);
+    if flags.contains(OFlag::O_NONBLOCK) {
         return Ok(());
     }
-    // SAFETY: `fcntl` updates flags for the same open file descriptor.
-    let ret = unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) };
-    if ret < 0 {
-        return Err(io::Error::last_os_error());
-    }
+    fcntl(fd, FcntlArg::F_SETFL(flags | OFlag::O_NONBLOCK))?;
     Ok(())
 }
 

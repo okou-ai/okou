@@ -13,6 +13,7 @@ struct ChatSidebarView: View {
   let close: () -> Void
   let newChat: () -> Void
   @LoadableValue private var projectRead: Loadable<[ChatProject]>
+  @LoadableValue private var listRead: Loadable<Void>
   @LoadableValue private var presentation: Loadable<ChatSidebarPresentation>
 
   init(
@@ -29,6 +30,7 @@ struct ChatSidebarView: View {
     self.close = close
     self.newChat = newChat
     _projectRead = LoadableValue(task: store.projects.listValue, keepLast: true)
+    _listRead = LoadableValue(task: store.list.listValue)
     _presentation = LoadableValue(store.sidebar.presentation)
   }
 
@@ -42,6 +44,7 @@ struct ChatSidebarView: View {
   @State private var membershipThread: ChatThread?
   @State private var deletingProject: ChatProject?
   @State private var projectAction: Task<Void, Never>?
+  @State private var fadingThreadIDs: Set<String> = []
   @State private var showsSettings = false
   /// Rows have scrolled under the top bar, so the workspace name gives way to them.
   @State private var isScrolled = false
@@ -66,15 +69,26 @@ struct ChatSidebarView: View {
     Binding(get: { store.sidebar.filter }, set: { store.sidebar.select($0) })
   }
 
+  private var listError: String? {
+    listRead.error?.localizedDescription ?? store.list.error
+  }
+
+  /// Animate membership changes from the same presentation the list renders, without
+  /// animating title or live indicator updates.
+  private var threadRowIDs: [[String]] {
+    guard case .hasData(let contents) = presentation else { return [] }
+    return contents.projects.map { $0.section.rows.map(\.id) } + [contents.chats.rows.map(\.id)]
+  }
+
   var body: some View {
     List {
-      if store.list.isLoading && !store.list.hasLoadedThreads {
+      if listRead.state == .loading && !store.list.hasLoadedThreads {
         OkouLoadingRow("Loading chats…")
           .frame(maxWidth: .infinity)
           .listRowInsets(.horizontal, 0)
           .listRowSeparator(.hidden)
           .listRowBackground(Color.clear)
-      } else if !store.list.hasLoadedThreads && store.list.syncError != nil {
+      } else if !store.list.hasLoadedThreads && listError != nil {
         Text("Your chats could not be loaded. Try updating again.")
           .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
           .listRowInsets(.horizontal, rowInset)
@@ -89,7 +103,7 @@ struct ChatSidebarView: View {
       } else if case .hasData(let presentation) = presentation {
         threadSection(presentation)
         // The inbox explains itself inside the section, below its projects.
-        if !presentation.isInbox && presentation.isEmpty && store.list.error == nil
+        if !presentation.isInbox && presentation.isEmpty && listError == nil
           && store.error == nil
         {
           Text(emptyMessage(presentation.filter))
@@ -101,6 +115,16 @@ struct ChatSidebarView: View {
         }
         if !presentation.isInbox {
           showAllChatsRow
+        }
+      }
+    }
+    .transaction(value: threadRowIDs) { transaction in
+      transaction.animation = reduceMotion ? nil : OkouMotion.transition
+      // Keep removed content invisible until the native list finishes closing its space.
+      let removed = fadingThreadIDs.subtracting(threadRowIDs.flatMap { $0 })
+      if !removed.isEmpty {
+        transaction.addAnimationCompletion(criteria: .removed) {
+          fadingThreadIDs.subtract(removed)
         }
       }
     }
@@ -161,6 +185,7 @@ struct ChatSidebarView: View {
       Text("Your chats will be kept and moved out of this project.")
     }
     .onChange(of: newChatActivation) { _, _ in showsSettings = false }
+    .onChange(of: store.sidebar.filter) { _, _ in fadingThreadIDs.removeAll() }
     .sheet(
       isPresented: Binding(
         get: { store.search.isPresented },
@@ -291,7 +316,7 @@ struct ChatSidebarView: View {
         }
       }
       let inboxEmpty =
-        contents.isInbox && chats.isEmpty && store.list.error == nil && store.error == nil
+        contents.isInbox && chats.isEmpty && listError == nil && store.error == nil
       if !contents.projects.isEmpty && (!chats.isEmpty || inboxEmpty) {
         // A hairline closes the projects, so their chats never run into the list below.
         OkouListDivider()
@@ -490,6 +515,7 @@ struct ChatSidebarView: View {
     pinNeighbors: ChatSidebarPresentation.PinNeighbors? = nil
   ) -> some View {
     let thread = row.thread
+    let isFading = fadingThreadIDs.contains(thread.id)
     return Button {
       store.selectChat(thread.id)
       close()
@@ -497,6 +523,8 @@ struct ChatSidebarView: View {
       ChatSidebarThreadLabel(row: row, workspace: store, showsStatusColumn: showsStatusColumn)
     }
     .buttonStyle(.plain)
+    .opacity(isFading ? 0 : 1)
+    .allowsHitTesting(!isFading)
     .listRowInsets(
       EdgeInsets(top: 0, leading: rowInset + indentation, bottom: 0, trailing: rowInset)
     )
@@ -509,6 +537,7 @@ struct ChatSidebarView: View {
         )
         .padding(.leading, OkouSpace.md + indentation)
         .padding(.trailing, OkouSpace.md)
+        .opacity(isFading ? 0 : 1)
     )
     .accessibilityIdentifier("chat-\(thread.id)")
     .accessibilityAddTraits(store.selectedThreadID == thread.id ? .isSelected : [])
@@ -520,7 +549,7 @@ struct ChatSidebarView: View {
       ChatThreadMenuContent(
         menu: ChatThreadMenu(
           workspace: store, threadID: thread.id, moveToProject: { membershipThread = $0 },
-          pinNeighbors: pinNeighbors))
+          pinNeighbors: pinNeighbors, archive: { archiveThread($0.id) }))
     } preview: {
       ChatThreadPreview(thread: thread, workspace: store)
     }
@@ -532,14 +561,47 @@ struct ChatSidebarView: View {
     }
     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
       Button {
-        Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
+        archiveThread(thread.id)
       } label: {
         Label(thread.isArchived ? "Unarchive" : "Archive", okouSymbol: "archive")
       }
       .tint(OkouSwipeTint.neutral)
-      .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
+      .disabled(isFading || !store.list.canUpdate(thread.id) || store.needsUpgrade)
     }
 
+  }
+
+  private func archiveThread(_ id: String) {
+    guard !store.needsUpgrade, store.list.canUpdate(id), !fadingThreadIDs.contains(id),
+      let thread = store.list.threads.first(where: { $0.id == id })
+    else { return }
+    let archived = !thread.isArchived
+    let removesRow =
+      (store.sidebar.filter == .recent && archived)
+      || (store.sidebar.filter == .archived && !archived)
+    let commit: () -> Void = {
+      Task {
+        await store.setArchived(id, archived: archived)
+        guard !Task.isCancelled else { return }
+        // A rejected action leaves the row in place; restore its content without collapsing it.
+        if store.list.threads.first(where: { $0.id == id })?.isArchived != archived {
+          withAnimation(reduceMotion ? nil : OkouMotion.press) {
+            fadingThreadIDs.subtract([id])
+          }
+        }
+      }
+    }
+    guard removesRow, !reduceMotion else {
+      commit()
+      return
+    }
+    // A List can close a swiped row's gap while its old label is still visible. Finish the
+    // opacity animation before publishing the removal, rather than racing those animations.
+    withAnimation(OkouMotion.press, completionCriteria: .removed) {
+      fadingThreadIDs.formUnion([id])
+    } completion: {
+      commit()
+    }
   }
 
   /// Top right, one glass capsule as iOS groups related bar buttons: the chat list menu on the
@@ -579,6 +641,7 @@ struct ChatSidebarView: View {
   private var footer: some View {
     HStack(spacing: OkouSpace.md) {
       Button {
+        store.prepareSettings()
         showsSettings = true
       } label: {
         let profile = authentication.profile
@@ -641,12 +704,15 @@ private struct ChatSidebarThreadLabel: View {
       } else {
         .none
       }
-    if showsStatusColumn {
-      OkouChatRowLabel(row.title, isWorking: row.isWorking, trailing: trailing) {
-        OkouChatStatusMark(emoji: row.emoji)
+    Group {
+      if showsStatusColumn {
+        OkouChatRowLabel(row.title, isWorking: row.isWorking, trailing: trailing) {
+          OkouChatStatusMark(emoji: row.emoji)
+        }
+      } else {
+        OkouChatRowLabel(row.title, isWorking: row.isWorking, trailing: trailing)
       }
-    } else {
-      OkouChatRowLabel(row.title, isWorking: row.isWorking, trailing: trailing)
     }
+    .task { await workspace.activateDrafts() }
   }
 }

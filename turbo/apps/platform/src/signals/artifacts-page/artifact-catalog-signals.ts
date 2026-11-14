@@ -1,7 +1,10 @@
 import { command } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { createArtifactCatalogSidebarSignals } from "./artifact-catalog-sidebar.ts";
+import {
+  pageCatalog,
+  artifactCatalogSidebar,
+} from "./artifact-catalog-instance.ts";
 import { artifactIdPathParamsSchema } from "@okouai/api-contracts/validators/artifact-catalog";
 import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { isTextPreviewKind } from "../text-preview.ts";
@@ -23,16 +26,6 @@ import {
 import { ROUTES } from "../route-paths.ts";
 import { onRef, resetSignal } from "../utils.ts";
 import { artifactDetailPreview } from "./artifact-catalog-preview.ts";
-import { createArtifactCatalogSignals } from "./create-artifact-catalog-signals.ts";
-
-/**
- * The `/artifacts` page instance over the whole org catalog. Chat thread
- * sidebars create their own thread-scoped instances.
- */
-const pageCatalog = createArtifactCatalogSignals();
-
-export const artifactCatalogSidebar =
-  createArtifactCatalogSidebarSignals(pageCatalog);
 
 export const selectedArtifactCatalogKind$ = pageCatalog.selectedKind$;
 

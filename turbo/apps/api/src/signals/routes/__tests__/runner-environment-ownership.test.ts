@@ -33,7 +33,7 @@ describe("runner environment ownership", () => {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -47,7 +47,7 @@ describe("runner environment ownership", () => {
       prompt: "exercise environment ownership",
     });
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(run.runId);
+    const claim = await runs.executionInput(run.runId);
 
     // Platform-owned values reach the Runner only as trusted platform
     // environment, never as Agent environment entries.

@@ -13,8 +13,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 
-pub(super) const MAX_BODY: usize = 4 * 1024 * 1024;
-const MAX_VALIDITY_MS: u64 = 60_000;
+pub(super) const MAX_BODY: usize =
+    api_contracts::generated::constants::runners::DISPATCH_MAX_BODY_BYTES as usize;
+const MAX_VALIDITY_MS: u64 =
+    api_contracts::generated::constants::runners::DISPATCH_MAX_VALIDITY_MS as u64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]

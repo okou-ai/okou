@@ -729,7 +729,7 @@ async function completeRunThroughSandbox(
   runId: string,
 ): Promise<void> {
   await runsApi.heartbeatRunner(runnerGroup);
-  const claim = await runsApi.claimRunnerJob(runId);
+  const claim = await runsApi.executionInput(runId);
   const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
   await webhooksApi.requestAgentComplete(
     {
@@ -1288,7 +1288,7 @@ describe("POST /api/webhooks/gmail", () => {
     "retries history pagination after $name without losing or duplicating events",
     async ({ failure }) => {
       configureGmailEnv();
-      runsApi.configureRunnerGroup();
+      await runsApi.configureRunnerGroup();
       configureGmailWatchMock();
       const { actor, workflowId } = await setupFixture();
       const gmailEmail = uniqueGmailEmail();
@@ -1432,7 +1432,7 @@ describe("POST /api/webhooks/gmail", () => {
     "dispatches matching new inbound messages and de-duplicates retries (Chat access: %s)",
     async (chatAccountAccess) => {
       configureGmailEnv();
-      const runnerGroup = runsApi.configureRunnerGroup();
+      const runnerGroup = await runsApi.configureRunnerGroup();
       configureGmailWatchMock();
 
       const { actor, workflowId, firstEmail, secondEmail, secondConnectorId } =
@@ -1553,7 +1553,7 @@ describe("POST /api/webhooks/gmail", () => {
         throw new Error("Expected a dispatched Gmail workflow run");
       }
       await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await runsApi.claimRunnerJob(runId);
+      const claim = await runsApi.executionInput(runId);
       expect(claim.prompt).toContain("Not included below: the email body.");
       expect(claim.prompt).not.toContain("Please draft a helpful reply.");
       expectGmailEventContextInPrompt(claim.prompt, {
@@ -1990,7 +1990,7 @@ describe("POST /api/webhooks/gmail", () => {
 
   it("binds an unbound Gmail automation when the member's first account connects", async () => {
     configureGmailEnv();
-    const runnerGroup = runsApi.configureRunnerGroup();
+    const runnerGroup = await runsApi.configureRunnerGroup();
     const watch = configureGmailWatchLifecycleMock();
     const { actor, agentId, workflowId } = await setupFixture();
     await updateFeatureSwitchesForUser(context, actor, {});
@@ -2076,7 +2076,7 @@ describe("POST /api/webhooks/gmail", () => {
       );
     }
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.claimRunnerJob(runId);
+    const claim = await runsApi.executionInput(runId);
     expectGmailEventContextInPrompt(claim.prompt, {
       automationId: created.body.id,
       event: "new_message",
@@ -2148,8 +2148,8 @@ describe("POST /api/webhooks/gmail", () => {
 
   it("dispatches label applied events after refreshing a recreated label id", async () => {
     const gmailEmail = uniqueGmailEmail();
-    const runnerGroup = runsApi.configureRunnerGroup();
     configureGmailEnv();
+    const runnerGroup = await runsApi.configureRunnerGroup();
     configureGmailWatchMock();
     configureGmailLabelsMockSequence([
       [{ id: "Label_support_old", name: "Support" }],
@@ -2248,7 +2248,7 @@ describe("POST /api/webhooks/gmail", () => {
     async function prepareScenario() {
       const gmailEmail = uniqueGmailEmail();
       configureGmailEnv();
-      const runnerGroup = runsApi.configureRunnerGroup();
+      const runnerGroup = await runsApi.configureRunnerGroup();
       configureGmailWatchMock();
       configureGmailMessageMocks(gmailEmail);
 
@@ -2316,7 +2316,7 @@ describe("POST /api/webhooks/gmail", () => {
       }
 
       await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await runsApi.claimRunnerJob(queuedRunId);
+      const claim = await runsApi.executionInput(queuedRunId);
       const appendSystemPrompt = claim.appendSystemPrompt;
       if (typeof appendSystemPrompt !== "string") {
         throw new Error("Expected appendSystemPrompt on the queued run");

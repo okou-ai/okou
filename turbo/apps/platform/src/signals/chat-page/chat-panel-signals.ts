@@ -185,6 +185,13 @@ export interface ChatPanelSignals {
   readonly scrollTo$: Command<void, [ThreadScrollPosition]>;
   readonly scrollToBottom$: Command<Promise<void>, [AbortSignal]>;
   readonly restoreScrollPosition$: Command<Promise<void>, [AbortSignal]>;
+  readonly restoreScrollPositionForLayout$: Command<
+    Promise<void>,
+    [AbortSignal]
+  >;
+  readonly hasPreservedHiddenLayout$: Command<boolean, []>;
+  readonly preserveHiddenLayout$: Command<void, []>;
+  readonly restoreHiddenLayout$: Command<Promise<void>, [AbortSignal]>;
   readonly scrollToTop$: Command<Promise<void>, [AbortSignal]>;
   readonly containerEl$: Computed<HTMLElement | null>;
   readonly setContainerRef$: Command<

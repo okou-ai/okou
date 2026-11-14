@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -337,11 +338,12 @@ function SourcesConnectorGrid({
 
   if (connectorCatalogItemsLoadable.state === "loading") {
     return (
-      <p role="status" className="text-sm text-muted-foreground">
-        {t(($) => {
+      <LoadingSkeleton
+        label={t(($) => {
           return $.connectors.catalog.directory.loading;
         })}
-      </p>
+        variant="cards"
+      />
     );
   }
 
@@ -472,11 +474,12 @@ function ListConnectorSetup({ connectorSlugs }: ListConnectorSetupProps) {
 
   if (connectorCatalogItemsLoadable.state === "loading") {
     return (
-      <p role="status" className="text-sm text-muted-foreground">
-        {t(($) => {
+      <LoadingSkeleton
+        label={t(($) => {
           return $.connectors.catalog.directory.loading;
         })}
-      </p>
+        variant="cards"
+      />
     );
   }
 

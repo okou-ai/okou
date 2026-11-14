@@ -105,7 +105,9 @@ describe("new chat event member defaults", () => {
         modelSettings: { "claude-fable-5-1": { effort: "high" } },
         cloudBrowserEnabled: enabled,
       });
-      await cancelChatRun(actor, first.runId);
+      await cancelChatRun(actor, first.runId, {
+        authorization: `Bearer ${(await api.executionInput(first.runId)).sandboxToken}`,
+      });
 
       await misc.updatePreferences(
         actor,
@@ -134,7 +136,9 @@ describe("new chat event member defaults", () => {
         modelSettings: { "claude-fable-5-1": { effort: "high" } },
         cloudBrowserEnabled: enabled,
       });
-      await cancelChatRun(actor, continued.runId);
+      await cancelChatRun(actor, continued.runId, {
+        authorization: `Bearer ${(await api.executionInput(continued.runId)).sandboxToken}`,
+      });
 
       const next = await sendChatRun(actor, {
         agentId,
@@ -146,7 +150,9 @@ describe("new chat event member defaults", () => {
         modelSettings: { "claude-fable-5-1": { effort: "low" } },
         cloudBrowserEnabled: !enabled,
       });
-      await cancelChatRun(actor, next.runId);
+      await cancelChatRun(actor, next.runId, {
+        authorization: `Bearer ${(await api.executionInput(next.runId)).sandboxToken}`,
+      });
     },
   );
 });

@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_fixtures::execution_context::execution_context_for_test;
+use runner_provider::LocalJobSource;
 
 fn minimal_context(run_id: RunId) -> ExecutionContext {
     execution_context_for_test(run_id)

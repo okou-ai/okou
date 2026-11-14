@@ -2,6 +2,7 @@ import build from "@hono/vite-build/vercel";
 import { defineConfig } from "vite";
 
 import vercelConfig from "./vercel.json";
+import { API_INVOCATION_MAX_DURATION_SECONDS } from "./src/lib/invocation-budget";
 
 export default defineConfig({
   build: {
@@ -31,7 +32,7 @@ export default defineConfig({
         // Hono currently builds one function for all routes. Its independent
         // Morning Brief waitUntil invocations need a platform deadline beyond
         // the 180s per-owner budget; the cron retains its own 45s bound.
-        function: { maxDuration: 300 },
+        function: { maxDuration: API_INVOCATION_MAX_DURATION_SECONDS },
         config: {
           crons: vercelConfig.crons,
         },

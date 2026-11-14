@@ -6,12 +6,13 @@ import { publicChatActor } from "./helpers/public-chat-actor";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 
 const context = testContext();
 const api = createRunsApi(context);
 
-describe("Runner claim-time Agent instructions", () => {
-  it("pins published instruction bytes at claim and selects later edits only for later claims", async () => {
+describe("API dispatch-time Agent instructions", () => {
+  it("pins published instruction bytes at dispatch and selects later edits for later Runs", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
@@ -37,7 +38,7 @@ describe("Runner claim-time Agent instructions", () => {
         readClaimedContentBundle(s3.objects, selected)
           .get("instructions.md")
           ?.toString(),
-      ).toBe(current);
+      ).toBe("A at queue time");
       await bdd.updateAgentInstructions(
         owned.actor,
         owned.agentId,
@@ -47,7 +48,7 @@ describe("Runner claim-time Agent instructions", () => {
         readClaimedContentBundle(s3.objects, selected)
           .get("instructions.md")
           ?.toString(),
-      ).toBe(current);
+      ).toBe("A at queue time");
       const next = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "claim the later edit",
@@ -70,7 +71,7 @@ describe("Runner claim-time Agent instructions", () => {
     });
   });
 
-  it("claims an empty-file package when instructions are cleared before claim", async () => {
+  it("dispatches an empty-file package when instructions are cleared before launch", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
@@ -80,12 +81,12 @@ describe("Runner claim-time Agent instructions", () => {
         owned.agentId,
         "Old managed file",
       );
+      await bdd.updateAgentInstructions(owned.actor, owned.agentId, "");
       const queued = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "clear instructions",
         model: "auto",
       });
-      await bdd.updateAgentInstructions(owned.actor, owned.agentId, "");
       const { claim } = await owned.claimChatRun(
         owned.runnerGroup,
         queued.runId,
@@ -99,7 +100,7 @@ describe("Runner claim-time Agent instructions", () => {
     });
   });
 
-  it("refuses a now-private Agent without consuming the queued claim", async () => {
+  it("rejects later member inputs after the Agent becomes private and retains published instructions", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
@@ -122,13 +123,17 @@ describe("Runner claim-time Agent instructions", () => {
       await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
         visibility: "private",
       });
-      const rejected = await api.requestClaimRunnerJob(
-        true,
-        queued.runId,
-        [404],
+      const rejected = await createChatFilesBddApi(context).requestSendEvent(
+        member,
+        {
+          agentId: owned.agentId,
+          model: "gpt-6-luna",
+          prompt: "Require current private Agent authority",
+        },
+        [403],
       );
       expect(rejected.body).toMatchObject({
-        error: { message: "Agent not found" },
+        error: { message: "Only the private agent owner can run this agent" },
       });
       await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
         visibility: "public",

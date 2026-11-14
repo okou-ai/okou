@@ -1,5 +1,157 @@
 # Changelog
 
+## [10.26.6](https://github.com/okou-ai/okou/compare/cli-v10.26.5...cli-v10.26.6) (2026-11-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.64.0
+    * @okouai/core bumped to 8.839.3
+    * @okouai/pi-agent-runtime bumped to 1.51.125
+
+## [10.26.5](https://github.com/okou-ai/okou/compare/cli-v10.26.4...cli-v10.26.5) (2026-11-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.63.2
+    * @okouai/core bumped to 8.839.2
+    * @okouai/pi-agent-runtime bumped to 1.51.124
+
+## [10.26.4](https://github.com/okou-ai/okou/compare/cli-v10.26.3...cli-v10.26.4) (2026-11-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.63.1
+    * @okouai/core bumped to 8.839.1
+    * @okouai/pi-agent-runtime bumped to 1.51.123
+
+## [10.26.3](https://github.com/okou-ai/okou/compare/cli-v10.26.2...cli-v10.26.3) (2026-11-14)
+
+
+### Refactoring
+
+* **browser:** enforce native connections and retire viewer endpoint ([#47114](https://github.com/okou-ai/okou/issues/47114)) ([78e6915](https://github.com/okou-ai/okou/commit/78e6915a86aad95ad10b91b3552adc49328a2c42))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.63.0
+    * @okouai/core bumped to 8.839.0
+    * @okouai/pi-agent-runtime bumped to 1.51.122
+
+## [10.26.2](https://github.com/okou-ai/okou/compare/cli-v10.26.1...cli-v10.26.2) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.62.1
+    * @okouai/core bumped to 8.838.0
+    * @okouai/pi-agent-runtime bumped to 1.51.121
+
+## [10.26.1](https://github.com/okou-ai/okou/compare/cli-v10.26.0...cli-v10.26.1) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.62.0
+    * @okouai/core bumped to 8.837.0
+    * @okouai/pi-agent-runtime bumped to 1.51.120
+
+## [10.26.0](https://github.com/okou-ai/okou/compare/cli-v10.25.7...cli-v10.26.0) (2026-11-13)
+
+
+### Features
+
+* introduce typed feed items under suggestions rollout ([#47053](https://github.com/okou-ai/okou/issues/47053)) ([e052b90](https://github.com/okou-ai/okou/commit/e052b90b3ed950ce46c7fc51235e87c1c3034164))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.61.0
+    * @okouai/core bumped to 8.836.2
+    * @okouai/pi-agent-runtime bumped to 1.51.119
+
+## [10.25.7](https://github.com/okou-ai/okou/compare/cli-v10.25.6...cli-v10.25.7) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.60.0
+    * @okouai/core bumped to 8.836.1
+    * @okouai/pi-agent-runtime bumped to 1.51.118
+
+## [10.25.6](https://github.com/okou-ai/okou/compare/cli-v10.25.5...cli-v10.25.6) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.59.1
+    * @okouai/core bumped to 8.836.0
+    * @okouai/pi-agent-runtime bumped to 1.51.117
+
+## [10.25.5](https://github.com/okou-ai/okou/compare/cli-v10.25.4...cli-v10.25.5) (2026-11-13)
+
+
+### Refactoring
+
+* **api:** remove legacy browser country and screen fields ([#46995](https://github.com/okou-ai/okou/issues/46995)) ([d4e7cac](https://github.com/okou-ai/okou/commit/d4e7cac108098cbf988f7e6944f3f24054b5e5d9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.59.0
+    * @okouai/core bumped to 8.835.2
+    * @okouai/pi-agent-runtime bumped to 1.51.116
+
+## [10.25.4](https://github.com/okou-ai/okou/compare/cli-v10.25.3...cli-v10.25.4) (2026-11-13)
+
+
+### Bug Fixes
+
+* **connectors:** preserve builtin mcp endpoint queries ([#46959](https://github.com/okou-ai/okou/issues/46959)) ([b82ba36](https://github.com/okou-ai/okou/commit/b82ba3634f5ce631f814989078d2809aaf6b9fa0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.58.1
+    * @okouai/connectors bumped to 3.23.1
+    * @okouai/core bumped to 8.835.1
+    * @okouai/pi-agent-runtime bumped to 1.51.115
+
+## [10.25.3](https://github.com/okou-ai/okou/compare/cli-v10.25.2...cli-v10.25.3) (2026-11-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.835.0
+    * @okouai/pi-agent-runtime bumped to 1.51.114
+
 ## [10.25.2](https://github.com/okou-ai/okou/compare/cli-v10.25.1...cli-v10.25.2) (2026-11-13)
 
 

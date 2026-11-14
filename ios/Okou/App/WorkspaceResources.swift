@@ -14,47 +14,55 @@ final class WorkspaceResources {
   let reloadNavigation: Command<Void, Void>
   let projectList: Computed<Task<[ChatProject], Error>>
   let reloadProjects: Command<Void, Void>
+  let sidebarDraftThreadIDs: Computed<Task<Set<String>, Error>>
+  let reloadSidebarDrafts: Command<Void, Void>
   private let preference: WorkspaceRead<ModelPreference>
   private let available: WorkspaceRead<AvailableRunModels>
   private let catalog: WorkspaceRead<ModelCatalog>
   private let features: WorkspaceRead<SidebarFeatureSwitches>
   private let agents: WorkspaceRead<[AgentRecord]>
   private let projects: WorkspaceRead<[ChatProject]>
+  private let sidebarDrafts: WorkspaceRead<Set<String>>
+  private let billing: WorkspaceRead<WorkspaceBilling>
+  let billingValue: Computed<Task<WorkspaceBilling, Error>>
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
   init(
-    client: APIClient, sleep: @escaping @Sendable (Duration) async throws -> Void,
+    client: APIClient, sync: ChatSync, sleep: @escaping @Sendable (Duration) async throws -> Void,
     modelBootstrap: WorkspaceModelBootstrap? = nil,
     lifecycleTasks: LifecycleTasks? = nil
   ) {
     self.modelBootstrap = modelBootstrap
     let lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     let lifetime = lifetime
-    let initialModelRead: Computed<Task<Void, Error>>? = modelBootstrap.map { bootstrap in
-      computedTask { get, options in
-        guard try get(lifetime) else { throw CancellationError() }
-        try await bootstrap.wait()
-        try Task.checkCancellation()
-        try options.signal.checkCancellation()
-      }
+    let modelReadiness: (@MainActor () async throws -> Void)?
+    if let modelBootstrap {
+      modelReadiness = { try await modelBootstrap.wait() }
+    } else {
+      modelReadiness = nil
     }
     let service = ChatModelService(client: client)
     let preference = WorkspaceRead(
       "model preference", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      readiness: initialModelRead, read: service.preference)
+      readiness: modelReadiness, read: service.preference)
     let available = WorkspaceRead(
       "available models", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      readiness: initialModelRead, read: service.availableModels)
+      readiness: modelReadiness, read: service.availableModels)
     let catalog = WorkspaceRead(
       "model catalog", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      readiness: initialModelRead, read: service.catalog)
+      readiness: modelReadiness, read: service.catalog)
     let features = WorkspaceRead(
       "model feature switches", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      readiness: initialModelRead, read: service.featureSwitches)
+      readiness: modelReadiness, read: service.featureSwitches)
     self.preference = preference
     self.available = available
     self.catalog = catalog
     self.features = features
+    let billing = WorkspaceRead(
+      "billing", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      read: WorkspaceBillingService(client: client).status)
+    self.billing = billing
+    billingValue = billing.value
     let agents = WorkspaceRead<[AgentRecord]>(
       "agents", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks
     ) {
@@ -65,10 +73,16 @@ final class WorkspaceResources {
     reloadNavigation = agents.reload
     let projects = WorkspaceRead(
       "Projects", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      read: ChatProjects(client: client).list)
+      read: sync.projectList)
     self.projects = projects
     projectList = projects.value
     reloadProjects = projects.reload
+    let sidebarDrafts = WorkspaceRead(
+      "sidebar drafts", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      read: ChatDraftRepository(client: client).threadIDs)
+    self.sidebarDrafts = sidebarDrafts
+    sidebarDraftThreadIDs = sidebarDrafts.value
+    reloadSidebarDrafts = sidebarDrafts.reload
     let preferenceValue = preference.value
     let availableValue = available.value
     let catalogValue = catalog.value
@@ -82,6 +96,10 @@ final class WorkspaceResources {
       if changes.contains(.initialSubscriptions) {
         full = (modelBootstrap?.subscriptionsReady() ?? true) || full
       }
+      if changes.contains(where: \.coordinatesModelRecovery) {
+        full = (modelBootstrap?.needsRecoveryRead ?? true) || full
+      }
+      if full { modelBootstrap?.didScheduleRead() }
       if full || changes.contains(.modelPreference) {
         try context.set(preference.reload)
       }
@@ -123,6 +141,21 @@ final class WorkspaceResources {
     try store.set(invalidateReads, changes)
   }
 
+  func retrySidebarDrafts() throws {
+    try sidebarDrafts.retryFailed(in: store)
+  }
+
+  func prepareSettings() throws {
+    try store.set(billing.reload)
+  }
+
+  func loadSettingsBilling() async throws {
+    try Task.checkCancellation()
+    guard try store.get(lifetime) else { throw CancellationError() }
+    try billing.retryFailed(in: store)
+    _ = try await store.get(billingValue).value
+  }
+
   func close() {
     modelBootstrap?.close()
     preference.close()
@@ -131,6 +164,8 @@ final class WorkspaceResources {
     features.close()
     agents.close()
     projects.close()
+    sidebarDrafts.close()
+    billing.close()
     do { try store.set(lifetime, false) } catch {
       Logger(subsystem: "ai.okou.ios", category: "WorkspaceResources")
         .error(
@@ -146,7 +181,7 @@ private final class WorkspaceRead<Value: Sendable> {
   private let lifecycleTasks: LifecycleTasks
   private let revision = CCState.State(0)
   private let lifetime: CCState.State<Bool>
-  private let readiness: Computed<Task<Void, Error>>?
+  private let readiness: (@MainActor () async throws -> Void)?
   private let operation: String
   private let sleep: @Sendable (Duration) async throws -> Void
   private let read: @MainActor () async throws -> Value
@@ -157,7 +192,7 @@ private final class WorkspaceRead<Value: Sendable> {
   init(
     _ operation: String, sleep: @escaping @Sendable (Duration) async throws -> Void,
     lifetime: CCState.State<Bool>, lifecycleTasks: LifecycleTasks,
-    readiness: Computed<Task<Void, Error>>? = nil,
+    readiness: (@MainActor () async throws -> Void)? = nil,
     read: @escaping @MainActor () async throws -> Value
   ) {
     self.operation = operation
@@ -171,12 +206,12 @@ private final class WorkspaceRead<Value: Sendable> {
   lazy var value = Computed<Task<Value, Error>> { [weak self] get, options in
     guard let self, try get(lifetime), !closed else { throw CancellationError() }
     _ = try get(revision)
-    let ready = try readiness.map { try get($0) }
+    let readiness = readiness
     failed = false
     let signal = options.signal
-    let task = Task.immediate { @MainActor [weak self, operation, sleep, read] in
+    let task = Task.immediate { @MainActor [weak self, operation, sleep, read, readiness] in
       do {
-        if let ready { try await ready.value }
+        try await readiness?()
         try Task.checkCancellation()
         try signal.checkCancellation()
         let value = try await ChatReadRecovery.read(operation, sleep: sleep, body: read)

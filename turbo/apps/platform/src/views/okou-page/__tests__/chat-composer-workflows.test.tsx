@@ -279,7 +279,7 @@ test("Reopen workflow suggestions after clearing a pending draft", async () => {
   const editor = await findComposerEditor();
   await fill(editor, "/pr");
   await expect(
-    screen.findByText("Loading workflows..."),
+    screen.findByRole("status", { name: "Loading workflows..." }),
   ).resolves.toBeInTheDocument();
 
   await fill(editor, "");

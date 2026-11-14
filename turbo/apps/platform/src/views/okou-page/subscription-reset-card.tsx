@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import {
@@ -280,7 +281,9 @@ function SubscriptionResetIdentityContent({
           ) : null}
         </div>
         <div className="mt-0.5 flex h-5 min-w-0 items-center gap-1 text-xs leading-5 text-muted-foreground">
-          {notice ? (
+          {loading ? (
+            <LoadingSkeleton variant="text" label={notice ?? title} />
+          ) : notice ? (
             <Tooltip>
               <TooltipTrigger
                 render={

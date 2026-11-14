@@ -308,7 +308,26 @@ test("The pill deletes the open mark and is dead until one is", async () => {
   expect(screen.getByText("0 marks")).toBeVisible();
 });
 
-test("A confirmed annotation blocks sending while its image uploads", async () => {
+test("The editor takes over from the preview without a frame between them", async () => {
+  // The preview leaves without an exit the moment the pencil is pressed. The
+  // editor used to wait a tick for its image URL before rendering anything,
+  // so for that tick the screen had no modal at all.
+  const image = draftAttachment("hand-off.png");
+  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  click(await findNamedButton("Open image preview for hand-off.png"));
+  click(await findNamedButton("Annotate"));
+
+  expect(screen.getByTestId("image-annotation-editor")).toBeInTheDocument();
+  expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
+  await expect(
+    screen.findByTestId("image-annotation-surface"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Attaching marks closes the editor at once and blocks sending until the copy uploads", async () => {
   const image = draftAttachment("billing-page.png");
   mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
   context.mocks.http.get(image.url, () => {
@@ -341,11 +360,92 @@ test("A confirmed annotation blocks sending while its image uploads", async () =
   drawBox(surface);
   click(await findNamedButton("Attach marks"));
 
-  const attachMarks = await findNamedButton("Attach marks");
-  await waitFor(() => {
-    expect(screen.getByTestId("image-annotation-editor")).toBeVisible();
-    expect(attachMarks).toBeDisabled();
+  expect(
+    screen.getByTestId("composer-attachment-mark-count"),
+  ).toHaveTextContent("1");
+  expect(screen.queryByTestId("image-annotation-editor")).toBeNull();
+  await expect(
+    screen.findByLabelText("Preparing the marked-up copy of billing-page.png"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByLabelText("Send")).toBeDisabled();
+});
+
+test("Attached marks are saved while their copy is still uploading", async () => {
+  // The editor no longer waits for the copy, so the user can leave the chat
+  // before it exists. The marks have to be in the draft by then; restoring a
+  // draft rebuilds a missing copy.
+  const image = draftAttachment("leave-early.png");
+  const saved =
+    context.mocks.deferred<Extract<UserMessageInputPart, { type: "file" }>>();
+  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+  context.mocks.http.get(image.url, () => {
+    return HttpResponse.arrayBuffer(new Uint8Array([1, 2, 3]).buffer, {
+      headers: { "Content-Type": "image/png" },
+    });
   });
+  context.mocks.browser.imageDimensions({ width: 800, height: 500 });
+  context.mocks.browser.canvasRendering();
+  context.mocks.upload.pending({
+    id: "draft-leave-early-annotated",
+    filename: "leave-early.annotated.png",
+    contentType: "image/png",
+    size: 11,
+    url: "https://cdn.vm7.io/artifacts/tests/chat-attachments/leave-early.annotated.png",
+  });
+  context.mocks.api(chatThreadByIdContract.patch, ({ body, respond }) => {
+    const part = body.draftUserMessage?.parts.find((candidate) => {
+      return candidate.type === "file" && candidate.fileId === image.id;
+    });
+    if (part?.type === "file" && part.annotations) {
+      saved.resolve(part);
+    }
+    return respond(204);
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  drawBox(await openAnnotationEditor("leave-early.png"));
+  click(await findNamedButton("Attach marks"));
+
+  const savedPart = await saved.promise;
+  expect(savedPart.annotations?.marks).toHaveLength(1);
+  expect(savedPart.annotatedFileId).toBeUndefined();
+});
+
+test("A copy that fails to upload can be retried from its chip", async () => {
+  const image = draftAttachment("flaky-copy.png");
+  let failNextRead = true;
+  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+  context.mocks.http.get(image.url, () => {
+    if (failNextRead) {
+      failNextRead = false;
+      return HttpResponse.error();
+    }
+    return HttpResponse.arrayBuffer(new Uint8Array([1, 2, 3]).buffer, {
+      headers: { "Content-Type": "image/png" },
+    });
+  });
+  context.mocks.browser.imageDimensions({ width: 800, height: 500 });
+  context.mocks.browser.canvasRendering();
+  context.mocks.upload.success({
+    id: "a0000000-0000-4000-a000-000000000096",
+    filename: "flaky-copy.annotated.png",
+    contentType: "image/png",
+    size: 11,
+    url: "https://files.example.test/flaky-copy.annotated.png",
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  drawBox(await openAnnotationEditor("flaky-copy.png"));
+  click(await findNamedButton("Attach marks"));
+
+  click(await findNamedButton("Retry the marked-up copy of flaky-copy.png"));
+
+  await waitFor(() => {
+    expect(screen.getByLabelText("Send")).toBeEnabled();
+  });
+  expect(
+    screen.queryByLabelText("Retry the marked-up copy of flaky-copy.png"),
+  ).toBeNull();
 });
 
 test("A user can attach marks to a private image through its public URL", async () => {
@@ -422,7 +522,8 @@ test("Confirmed marks persist with their completed annotated file", async () => 
     const part = body.draftUserMessage?.parts.find((candidate) => {
       return candidate.type === "file" && candidate.fileId === image.id;
     });
-    if (part?.type === "file" && part.annotations) {
+    // The marks are saved once on attaching and again when their copy exists.
+    if (part?.type === "file" && part.annotatedFileId) {
       saved.resolve(part);
     }
     return respond(204);

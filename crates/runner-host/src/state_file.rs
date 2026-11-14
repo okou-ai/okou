@@ -158,23 +158,18 @@ async fn read_open_file_bytes(
 }
 
 #[cfg(unix)]
-fn validate_open_state_file<Fd: std::os::fd::AsRawFd>(
+fn validate_open_state_file<Fd: std::os::fd::AsFd>(
     file: &Fd,
     path: &Path,
     owner_check: OwnerCheck,
 ) -> HostResult<()> {
-    let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
-    // SAFETY: `stat` points to valid writable memory and `file` owns a live fd.
-    let result = unsafe { libc::fstat(file.as_raw_fd(), stat.as_mut_ptr()) };
-    if result != 0 {
-        return Err(HostError::Internal(format!(
+    let stat = nix::sys::stat::fstat(file).map_err(|error| {
+        HostError::Internal(format!(
             "stat state file {}: {}",
             path.display(),
-            std::io::Error::last_os_error()
-        )));
-    }
-    // SAFETY: successful `fstat` initialized the full `stat` struct.
-    let stat = unsafe { stat.assume_init() };
+            std::io::Error::from(error)
+        ))
+    })?;
     let file_type = stat.st_mode & libc::S_IFMT;
     if file_type != libc::S_IFREG {
         return Err(HostError::Internal(format!(

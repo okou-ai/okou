@@ -19,6 +19,22 @@ final class MentionNavigationFixture: Sendable {
     String(format: "74000000-0000-4000-8000-%012d", index)
   }
 
+  static var inlineReferenceDraft: ChatDraftDocument {
+    ChatDraftDocument(parts: [
+      .object(["type": .string("text"), "text": .string("Before ")]),
+      .object([
+        "type": .string("chat_thread"), "threadId": .string(thread(31)),
+        "titleSnapshot": .string("Cross Agent archived plan"),
+      ]),
+      .object(["type": .string("text"), "text": .string(" and ")]),
+      .object([
+        "type": .string("chat_thread"), "threadId": .string(thread(30)),
+        "titleSnapshot": .string("Project 30"),
+      ]),
+      .object(["type": .string("text"), "text": .string(" after 🌷")]),
+    ])
+  }
+
   init(workflows: (@Sendable (URLRequest) async throws -> ChatHTTPResponse)? = nil) {
     let paths = MentionRequestLog()
     self.paths = paths

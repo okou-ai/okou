@@ -148,7 +148,9 @@ final class WorkspaceStartupFixture: Sendable {
 
   init(
     beforeModelRead: (@Sendable (String) async throws -> Void)? = nil,
-    beforeNavigationRead: (@Sendable () async throws -> Void)? = nil
+    beforeNavigationRead: (@Sendable () async throws -> Void)? = nil,
+    realtimeToken: String? = nil,
+    indicators: ChatHTTPFixture.Handler? = nil
   ) {
     let state = state
     history = ConversationHistoryFixture(
@@ -179,17 +181,22 @@ final class WorkspaceStartupFixture: Sendable {
           return ChatHTTPResponse(
             body: #"{"revision":"0","document":null,"clientMutationId":null}"#)
         case "/api/realtime/token":
+          if let realtimeToken { return ChatHTTPResponse(body: realtimeToken) }
           // Exercise startup's HTTP fallback without connecting the SDK to a live service.
           return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Fixture offline"}}"#)
         default: throw URLError(.unsupportedURL)
         }
-      })
+      }, indicators: indicators)
   }
 
   @MainActor
-  func workspace(modelBootstrap: WorkspaceModelBootstrap? = nil) -> WorkspaceStore {
+  func workspace(
+    modelBootstrap: WorkspaceModelBootstrap? = nil,
+    createRealtime: RealtimeService.ClientFactory? = nil
+  ) -> WorkspaceStore {
     WorkspaceStore(
-      client: history.http.client, webURL: history.http.baseURL, modelBootstrap: modelBootstrap)
+      client: history.http.client, webURL: history.http.baseURL, modelBootstrap: modelBootstrap,
+      createRealtime: createRealtime)
   }
 
   var modelRequests: [String: Int] { state.requests.withLock { $0 } }

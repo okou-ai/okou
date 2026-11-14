@@ -4,10 +4,14 @@ import Foundation
 enum ChatInvalidation: Hashable, Sendable {
   case startup
   case initialSubscriptions
+  case foregroundResume
+  case realtimeResume
+  case realtimeGap
   case computerAccess
   case runModels
   case modelPreference
   case threadList
+  case indicators
   case history(threadID: String)
   case detail(threadID: String)
   case readCursor
@@ -15,6 +19,16 @@ enum ChatInvalidation: Hashable, Sendable {
 
   var requiresFullRefresh: Bool {
     self == .startup || self == .initialSubscriptions || self == .reconnected
+      || self == .foregroundResume || self == .realtimeGap
+  }
+
+  /// Match Web's list baseline: startup, explicit changes, manual retry, and lost continuity.
+  var refreshesThreadList: Bool {
+    self == .startup || self == .threadList || self == .reconnected || self == .realtimeGap
+  }
+
+  var coordinatesModelRecovery: Bool {
+    self == .foregroundResume || self == .realtimeResume || self == .realtimeGap
   }
 
   init?(notification: String) {
@@ -25,6 +39,7 @@ enum ChatInvalidation: Hashable, Sendable {
     case "runModelsChanged": self = .runModels
     case "userPreferenceChanged": self = .modelPreference
     case "threadListChanged": self = .threadList
+    case "chatIndicatorsChanged": self = .indicators
     case "chatThreadReadCursorUpdated": self = .readCursor
     default:
       let prefixes = ["chatThreadMessageCreated:", "chatThreadDetailChanged:"]

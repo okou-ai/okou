@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { mockMonotonicNow } from "../../../lib/time.ts";
 import {
   createTestRuntime,
   testContext,
@@ -11,6 +12,40 @@ import { createCanvasRenderer, type DecodedFrame } from "../render/canvas.ts";
 
 const context = testContext();
 const endpoint = "wss://browser.example/cdp";
+
+test("a version-probe deadline leaves the CDP connection usable", async () => {
+  let elapsed = 0;
+  mockMonotonicNow(() => {
+    return elapsed;
+  }, context.signal);
+  const requested = context.mocks.deferred<void>();
+  context.mocks.browser.webSocket((data) => {
+    const request: unknown = JSON.parse(data);
+    if (!isRecord(request) || typeof request.id !== "number") {
+      throw new Error("Invalid fixture request");
+    }
+    if (request.method === "Browser.getVersion") {
+      requested.resolve();
+      return null;
+    }
+    return JSON.stringify({ id: request.id, result: { targetInfos: [] } });
+  });
+  const client = createCdpClient(endpoint, {}, context.signal);
+  await client.opened;
+  const probe = client.request("Browser.getVersion", undefined);
+  await requested.promise;
+  elapsed = 31_000;
+  await expect(probe).rejects.toMatchObject({
+    kind: "protocol",
+    readOnly: true,
+  });
+  await expect(
+    client.request("Target.getTargets", undefined),
+  ).resolves.toStrictEqual({
+    targetInfos: [],
+  });
+  client.close();
+});
 
 test("closing a viewer rejects pending requests without closing the remote browser", async () => {
   const received: string[] = [];

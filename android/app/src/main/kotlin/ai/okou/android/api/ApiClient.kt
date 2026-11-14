@@ -1,14 +1,26 @@
 package ai.okou.android.api
 
 import ai.okou.android.BuildConfig
+import ai.okou.android.api.generated.Agents
 import ai.okou.android.api.generated.AndroidUpgradeRequired
 import ai.okou.android.api.generated.ApiError
 import ai.okou.android.api.generated.ApiHeaders
 import ai.okou.android.api.generated.CanonicalApi
+import ai.okou.android.api.generated.CanonicalZero
+import ai.okou.android.api.generated.ChatEvents
+import ai.okou.android.api.generated.ChatSnapshot
+import ai.okou.android.api.generated.FeatureSwitches
+import ai.okou.android.api.generated.HistoryRowsQueryVariant1
+import ai.okou.android.api.generated.HistoryRowsQueryVariant2
+import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.api.generated.ProjectEvents
+import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.api.generated.historyRows
+import ai.okou.android.chat.HistoryCursor
 import java.io.Closeable
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -111,26 +123,46 @@ class ApiClient(
                             .build()
                     )
                 }
-                .addInterceptor { chain ->
-                    val response = chain.proceed(chain.request())
-                    if (response.isSuccessful) {
-                        response
-                            .newBuilder()
-                            .body(checkNotNull(response.body).bounded(MAX_API_RESPONSE_BYTES))
-                            .build()
-                    } else response
-                }
                 .build()
         api =
             Retrofit.Builder()
                 .baseUrl(origin)
                 .client(http)
+                .addConverterFactory(StreamingJsonConverterFactory(json))
                 .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
                 .build()
                 .create(CanonicalApi::class.java)
     }
 
     suspend fun organization(): Organization = execute { api.organization(it) }
+
+    suspend fun chatSnapshot(): ChatSnapshot = execute { api.chatSnapshot(it) }
+
+    suspend fun chatEvents(since: Long?): ChatEvents = execute { api.chatEvents(it, since) }
+
+    suspend fun indicators(): Indicators = execute { api.indicators(it) }
+
+    suspend fun agents(): Agents = execute { api.agents(it) }
+
+    suspend fun projectSnapshot(): ProjectSnapshot = execute { api.projectSnapshot(it) }
+
+    suspend fun projectEvents(since: Long): ProjectEvents = execute { api.projectEvents(it, since) }
+
+    suspend fun featureSwitches(): FeatureSwitches = execute { api.featureSwitches(it) }
+
+    suspend fun historySnapshot(threadId: String) = execute { api.historySnapshot(it, threadId) }
+
+    suspend fun historyRows(threadId: String, cursor: HistoryCursor) = execute {
+        cursor.validate()
+        val query =
+            if (cursor.eventId == null) HistoryRowsQueryVariant1(CanonicalZero, 50.0)
+            else HistoryRowsQueryVariant2(cursor.seqId, cursor.eventId, 50.0)
+        api.historyRows(it, threadId, query)
+    }
+
+    suspend fun threadDetail(threadId: String) = execute { api.threadDetail(it, threadId) }
+
+    suspend fun markRead(threadId: String) = execute { api.markRead(it, threadId) }
 
     suspend fun preferences(): UserPreferences = execute { api.preferences(it) }
 
@@ -166,7 +198,6 @@ class ApiClient(
             } catch (error: IOException) {
                 currentCoroutineContext().ensureActive()
                 error.httpRejection()?.let { reject(it) }
-                if (error is ResponseLimitExceeded) throw ApiFailure.IncompatibleResponse(error)
                 throw ApiFailure.Network(error)
             }
         }

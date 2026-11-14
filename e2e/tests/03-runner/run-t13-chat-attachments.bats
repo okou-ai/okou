@@ -100,7 +100,6 @@ EOF
     run runner_wait_for_run "$first_run_id" 180
     echo "$output"
     assert_success
-    local first_run_response="$output"
     run runner_e2e_wait_for_chat_text \
         "$THREAD_ID" \
         "$first_run_id" \
@@ -114,8 +113,18 @@ EOF
     local continuation_prompt
     continuation_prompt=$(cat <<'EOF'
 set -euo pipefail
-# Continuation can restore session history in a fresh sandbox, so re-download
-# the attachments instead of depending on runner-local files from the first run.
+# Continuation can start a fresh native session while the predecessor is still
+# finalizing. Verify durable history and attachments without requiring cache reuse.
+history=$(okou chat messages --thread-id '__THREAD_ID__' \
+    --output-dir /tmp/runner-attachment-history --json)
+mapfile -t history_files < <(jq -r '.files[]' <<<"$history")
+test "${#history_files[@]}" -gt 0
+jq -se --arg runId '__FIRST_RUN_ID__' --arg marker '__FIRST_MARKER__' '
+    any(.[];
+        .eventType == "output.message" and .runId == $runId and
+        (.payload.content | strings | contains($marker))
+    )
+' "${history_files[@]}"
 okou web download-file '__CONTENT_ID__' -o /tmp/runner-content-continuation.txt
 okou web download-file '__EMPTY_ID__' -o /tmp/runner-empty-continuation.txt
 grep -F '__CONTENT_MARKER__' /tmp/runner-content-continuation.txt
@@ -123,6 +132,9 @@ test ! -s /tmp/runner-empty-continuation.txt
 printf '__CONTINUATION_MARKER__\n'
 EOF
 )
+    continuation_prompt=${continuation_prompt//__THREAD_ID__/$THREAD_ID}
+    continuation_prompt=${continuation_prompt//__FIRST_RUN_ID__/$first_run_id}
+    continuation_prompt=${continuation_prompt//__FIRST_MARKER__/$first_marker}
     continuation_prompt=${continuation_prompt//__CONTENT_ID__/$content_id}
     continuation_prompt=${continuation_prompt//__EMPTY_ID__/$empty_id}
     continuation_prompt=${continuation_prompt//__CONTENT_MARKER__/$content_marker}
@@ -138,7 +150,6 @@ EOF
     run runner_wait_for_run "$RUN_ID" 180
     echo "$output"
     assert_success
-    local continuation_run_response="$output"
     run runner_e2e_wait_for_chat_text \
         "$THREAD_ID" \
         "$RUN_ID" \
@@ -146,7 +157,5 @@ EOF
     echo "$output"
     assert_success
     assert_output --partial "$content_marker"
-
-    [[ "$(jq -er '.result.frameworkSessionId' <<<"$continuation_run_response")" == \
-        "$(jq -er '.result.frameworkSessionId' <<<"$first_run_response")" ]]
+    refute_output --partial "mock shell exited with"
 }

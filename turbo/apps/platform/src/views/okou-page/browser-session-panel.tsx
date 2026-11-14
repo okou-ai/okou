@@ -1,7 +1,7 @@
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
 import { AppWindow, AppWindowMac, Loader2, Play } from "lucide-react";
-import { Button, cn, LayoutPanel } from "@okouai/ui";
+import { Button, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -19,8 +19,8 @@ import { Browser, BrowserLoadingStatus } from "../browser/browser.tsx";
 interface BrowserSessionPanelProps {
   readonly signals: BrowserSessionSignals;
   /**
-   * Panel actions for a host without its own header. The live viewer places
-   * them at the end of its tab row; other states give them a row of their own.
+   * Panel actions for a host without its own header. Live and paused viewers
+   * place them in the tab row; placeholders without a viewer use their own row.
    */
   readonly actions?: ReactNode;
   /** Status layered over the live viewer, such as who is in control. */
@@ -148,20 +148,19 @@ function BrowserCdpViewer({
   readonly liveUrl: string | null;
   readonly instanceId?: string;
   readonly windowId?: number;
-  /** The Cloud browser panel switch: app tokens and presence. */
+  /** The Cloud browser panel switch's floating loading status. */
   readonly refined: boolean;
   readonly actions: ReactNode;
   readonly overlay: ReactNode;
 }) {
   const connection = useLastLoadable(signals.viewerConnection$);
-  const controls = useGet(signals.browser.controls$);
-  const syncLayout = useSet(signals.browser.syncLayout$);
+  const recovering = useGet(signals.browser.recovering$);
   // Keep the DOM during same-identity revalidation. The graph revokes input
   // immediately while pending and owns endpoint changes without a React remount.
   // Conceal a known replacement while preserving the graph until its actual
   // endpoint/window identity is confirmed. A provider URL alone is not that identity.
   const connecting =
-    !controls.recovery &&
+    !recovering &&
     connection.state === "hasData" &&
     connection.data !== null &&
     !isBrowserUnauthorized(connection.data) &&
@@ -171,41 +170,36 @@ function BrowserCdpViewer({
   // The mounted root owns descriptor deadlines and recovery, including initial
   // loading and failed HTTP reads. Removing it would cancel its own receipt.
   return (
-    <>
-      {refined ? null : <PanelActions actions={actions} />}
-      <div className="relative flex min-h-0 flex-1">
-        {connecting && (
-          <div className="absolute inset-0 flex">
-            <LoadingBody />
-          </div>
+    <div className="relative flex min-h-0 flex-1">
+      {connecting && (
+        <div className="absolute inset-0 flex flex-col">
+          <PanelActions actions={actions} />
+          <LoadingBody />
+        </div>
+      )}
+      {/* Preserve geometry so concealment cannot pause its own connection wait. */}
+      <div
+        aria-hidden={connecting}
+        inert={connecting}
+        data-browser-session-cdp-viewer
+        className={cn(
+          "relative isolate flex min-h-0 min-w-0 flex-1",
+          connecting && "invisible",
         )}
-        {/* Preserve geometry so concealment cannot pause its own connection wait. */}
-        <LayoutPanel
-          active={!connecting}
-          layoutKey="browser-viewer"
-          onLayoutCommit={syncLayout}
-          aria-hidden={connecting}
-          inert={connecting}
-          data-browser-session-cdp-viewer
-          className={cn(
-            "relative isolate flex min-h-0 min-w-0 flex-1",
-            connecting && "invisible",
-          )}
-        >
-          <Browser
+      >
+        <Browser
+          signals={signals.browser}
+          actions={actions}
+          presence={overlay}
+        />
+        {refined && (
+          <BrowserLoadingStatus
             signals={signals.browser}
-            actions={refined ? actions : null}
-            presence={overlay}
+            className="pointer-events-none absolute bottom-2 right-3 rounded border border-divider bg-popover px-2 py-1 text-[11px] leading-4 text-muted-foreground shadow-sm"
           />
-          {refined && (
-            <BrowserLoadingStatus
-              signals={signals.browser}
-              className="pointer-events-none absolute bottom-2 right-3 rounded border border-divider bg-popover px-2 py-1 text-[11px] leading-4 text-muted-foreground shadow-sm"
-            />
-          )}
-        </LayoutPanel>
+        )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -278,10 +272,9 @@ function PausedBrowserSession({
   );
   return (
     <PanelFrame>
-      {refined ? null : <PanelActions actions={actions} />}
       <Browser
         signals={signals.browser}
-        actions={refined ? actions : null}
+        actions={actions}
         presence={null}
         placeholder={pausedMessage}
       />

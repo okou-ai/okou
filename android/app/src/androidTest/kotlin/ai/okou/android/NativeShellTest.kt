@@ -3,13 +3,8 @@ package ai.okou.android
 import android.app.LocaleManager
 import android.app.UiModeManager
 import android.content.res.Configuration
-import android.os.Bundle
-import android.provider.Settings
 import android.view.KeyEvent
-import android.view.accessibility.AccessibilityNodeInfo
-import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.takeScreenshot
@@ -29,13 +24,12 @@ import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.model.MultipleFailureException
 
-/** Actual framework/window/input coverage on the API 35 managed phone; no test input adapter. */
+/** Actual navigation/configuration coverage on the API 35 managed phone. */
 @RunWith(AndroidJUnit4::class)
 @SdkSuppress(minSdkVersion = 35)
 class NativeShellTest {
@@ -44,40 +38,6 @@ class NativeShellTest {
     private val device = UiDevice.getInstance(instrumentation)
     private val app = instrumentation.targetContext.applicationContext as OkouApplication
     private var scenario: ActivityScenario<MainActivity>? = null
-
-    @Test
-    fun imeBackAndActivityRecreationRetainTheNativeEditor() =
-        onIsolatedDevice("editor") {
-            launch()
-            editor().click()
-            awaitActivity("IME becomes visible") { imeVisible(it) }
-            val draft = "Native CI draft"
-            editor().text = draft
-            // Observe the actual outcome instead of pressBack()'s short accessibility-event wait.
-            assertTrue("System Back key injected", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            awaitActivity("Back dismisses the IME") { !imeVisible(it) }
-            editor(draft)
-            val selection =
-                Bundle().apply {
-                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 3)
-                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, 3)
-                }
-            assertTrue(
-                editorNode(draft)
-                    .performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, selection)
-            )
-            await("Native caret moves") { editorNode(draft).textSelectionStart == 3 }
-            click(R.string.settings)
-            text(R.string.appearance)
-            requireNotNull(scenario).recreate()
-            text(R.string.appearance)
-            assertTrue("System Back key injected", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            editor(draft)
-            assertEquals(3, editorNode(draft).textSelectionStart)
-            assertEquals(3, editorNode(draft).textSelectionEnd)
-            click(R.string.local_preview)
-            text(R.string.preview_title)
-        }
 
     @Test
     fun manualAppearanceRestoresWithANewActivityOwnerAndNativeBars() =
@@ -109,7 +69,6 @@ class NativeShellTest {
             launch()
             awaitActivity("Android initial light configuration applies") { !isNight(it) }
             awaitBars(light = true)
-            editor().text = "Retained during platform configuration changes"
             click(R.string.settings)
             awaitSelectable(R.string.appearance_system)
             mode.nightMode = UiModeManager.MODE_NIGHT_YES
@@ -121,11 +80,11 @@ class NativeShellTest {
             awaitSelected(R.string.appearance_system)
             awaitBars(light = true)
             assertTrue("System Back key injected", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            editor("Retained during platform configuration changes")
+            text(R.string.chat_list_title)
         }
 
     @Test
-    fun paletteAndLanguageChangesRetainTheDraftAndReloadMemberPreferences() =
+    fun paletteAndLanguageChangesRecreateTheListAndReloadMemberPreferences() =
         onIsolatedDevice("member-preferences") {
             fun select(value: String) {
                 val target = By.pkg(app.packageName).text(value)
@@ -150,13 +109,15 @@ class NativeShellTest {
                     }
                     .click()
             }
+            fun dismissRestoredPicker(firstChoice: Int) {
+                // The restored selection may be offscreen; the first choice identifies the picker.
+                fun option() =
+                    By.pkg(app.packageName).checkable(true).hasDescendant(label(firstChoice))
+                await("Restored preference picker is open") { device.hasObject(option()) }
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+                await("Preference picker is dismissed") { !device.hasObject(option()) }
+            }
             launch()
-            val draft = "Preserve my draft across language changes"
-            editor().click()
-            awaitActivity("IME becomes visible before changing preferences") { imeVisible(it) }
-            editor().text = draft
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            awaitActivity("IME is dismissed before opening settings") { !imeVisible(it) }
             click(R.string.settings)
             select("Default")
             select("Blue horizon")
@@ -165,38 +126,26 @@ class NativeShellTest {
             awaitActivity("Traditional Chinese is applied by Android") {
                 it.resources.configuration.locales[0].toLanguageTag() == "zh-Hant"
             }
-            click(R.string.home)
-            editor(draft)
+            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            text(R.string.chat_list_title)
             closeActivity()
             launch()
             click(R.string.settings)
             select("藍色地平線")
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            dismissRestoredPicker(R.string.palette_default)
             select("繁體中文")
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            dismissRestoredPicker(R.string.language_en_us)
         }
 
     private fun launch() {
         check(scenario == null)
         scenario = ActivityScenario.launch(MainActivity::class.java)
-        editor()
+        text(R.string.chat_list_title)
     }
 
     private fun closeActivity() {
         scenario?.close()
         scenario = null
-    }
-
-    private fun editor(value: String? = null): UiObject2 {
-        val selector = By.pkg(app.packageName).clazz("android.widget.EditText")
-        return requireNotNull(
-            device.wait(
-                Until.findObject(if (value == null) selector else selector.text(value)),
-                WAIT,
-            )
-        ) {
-            "Native draft editor not found: $value"
-        }
     }
 
     private fun text(id: Int): UiObject2 =
@@ -206,7 +155,10 @@ class NativeShellTest {
 
     private fun label(id: Int): BySelector = By.pkg(app.packageName).text(app.getString(id))
 
-    private fun click(id: Int) = text(id).click()
+    private fun click(id: Int) =
+        if (id == R.string.settings)
+            checkNotNull(device.wait(Until.findObject(By.desc(app.getString(id))), WAIT)).click()
+        else text(id).click()
 
     // Compose exposes the label as a child of the native checkable option.
     private fun appearanceOption(id: Int): BySelector =
@@ -256,29 +208,6 @@ class NativeShellTest {
         )
     }
 
-    private fun editorNode(value: String): AccessibilityNodeInfo {
-        // Walk the real virtual nodes: Compose does not implement the provider's text search.
-        val pending = ArrayDeque<AccessibilityNodeInfo>()
-        pending.add(requireNotNull(automation.rootInActiveWindow))
-        while (pending.isNotEmpty()) {
-            val node = pending.removeFirst()
-            if (
-                node.packageName?.toString() == app.packageName &&
-                    node.className?.toString() == "android.widget.EditText" &&
-                    node.text?.toString() == value &&
-                    node.isEditable
-            ) {
-                return node
-            }
-            repeat(node.childCount) { index -> node.getChild(index)?.let(pending::addLast) }
-        }
-        error("Native editable draft not found: $value")
-    }
-
-    private fun imeVisible(activity: MainActivity): Boolean =
-        ViewCompat.getRootWindowInsets(activity.window.decorView)
-            ?.isVisible(WindowInsetsCompat.Type.ime()) == true
-
     private fun isNight(activity: MainActivity): Boolean =
         activity.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
             Configuration.UI_MODE_NIGHT_YES
@@ -289,19 +218,15 @@ class NativeShellTest {
         val preferences = runBlocking { store.data.first() }
         val apiFixture = app as TestOkouApplication
         val apiPreferences = apiFixture.snapshotApiPreferences()
+        val cacheSnapshot =
+            ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
         val locales = requireNotNull(app.getSystemService(LocaleManager::class.java))
         val applicationLocales = locales.applicationLocales
-        val resolver = app.contentResolver
-        val keyboard = Settings.Secure.getString(resolver, SHOW_IME_WITH_HARD_KEYBOARD)
         val mode = requireNotNull(app.getSystemService(UiModeManager::class.java))
         val nightMode = mode.nightMode
         val failures = mutableListOf<Throwable>()
         try {
-            automation.adoptShellPermissionIdentity(
-                "android.permission.MODIFY_DAY_NIGHT_MODE",
-                "android.permission.WRITE_SECURE_SETTINGS",
-            )
-            assertTrue(Settings.Secure.putString(resolver, SHOW_IME_WITH_HARD_KEYBOARD, "1"))
+            automation.adoptShellPermissionIdentity("android.permission.MODIFY_DAY_NIGHT_MODE")
             runBlocking { store.updateData { emptyPreferences() } }
             test()
         } catch (failure: Throwable) {
@@ -327,14 +252,10 @@ class NativeShellTest {
                 }
             }
             restore { closeActivity() }
+            restore { cacheSnapshot.restore() }
             restore { apiFixture.restoreApiPreferences(apiPreferences) }
             restore { locales.applicationLocales = applicationLocales }
             restore { runBlocking { store.updateData { preferences } } }
-            restore {
-                assertTrue(
-                    Settings.Secure.putString(resolver, SHOW_IME_WITH_HARD_KEYBOARD, keyboard)
-                )
-            }
             restore { mode.nightMode = nightMode }
             restore { automation.dropShellPermissionIdentity() }
         }
@@ -343,6 +264,5 @@ class NativeShellTest {
 
     private companion object {
         const val WAIT = 10_000L
-        const val SHOW_IME_WITH_HARD_KEYBOARD = "show_ime_with_hard_keyboard"
     }
 }

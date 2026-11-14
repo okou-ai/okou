@@ -22,6 +22,9 @@ final class ChatProjectStoreTests: XCTestCase {
     let server = Mutex(Server())
     let projectID = Self.project
     let fixture = ChatHTTPFixture { request in
+      if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      }
       let record: @Sendable (String) -> String = { name in
         "{\"id\":\"\(projectID)\",\"name\":\"\(name)\",\"createdAt\":\"2026-11-09T01:00:00Z\",\"updatedAt\":\"2026-11-09T01:00:00Z\"}"
       }
@@ -38,12 +41,16 @@ final class ChatProjectStoreTests: XCTestCase {
         }
         return ChatHTTPResponse(body: record(body.name))
       }
-      guard request.httpMethod == "GET", request.url?.path == "/api/projects" else {
+      guard request.httpMethod == "GET", request.url?.path == "/api/projects/snapshot" else {
         throw URLError(.unsupportedURL)
       }
-      return ChatHTTPResponse(body: "{\"projects\":[\(record(server.withLock { $0.name }))]}")
+      return ChatHTTPResponse(
+        body:
+          "{\"latestEventId\":null,\"latestSeqId\":0,\"projects\":[\(record(server.withLock { $0.name }))]}"
+      )
     }
-    let resources = WorkspaceResources(client: fixture.client, sleep: { _ in })
+    let resources = WorkspaceResources(
+      client: fixture.client, sync: ChatSync(client: fixture.client), sleep: { _ in })
     let store = ChatProjectStore(
       client: fixture.client, resources: resources,
       sync: ChatSync(client: fixture.client), didFail: { _ in }, didChangeMembership: {})
@@ -68,15 +75,18 @@ final class ChatProjectStoreTests: XCTestCase {
   func testProjectsCollectOtherAgentsAndRespectUnreadAndArchiveFilters() async throws {
     let projectID = Self.project
     let fixture = ChatHTTPFixture { request in
-      guard request.httpMethod == "GET", request.url?.path == "/api/projects" else {
+      if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      }
+      guard request.httpMethod == "GET", request.url?.path == "/api/projects/snapshot" else {
         throw URLError(.unsupportedURL)
       }
       return ChatHTTPResponse(
         body:
-          "{\"projects\":[{\"id\":\"\(projectID)\",\"name\":\"Launch\",\"createdAt\":\"2026-11-09T01:00:00Z\",\"updatedAt\":\"2026-11-09T01:00:00Z\"}]}"
+          "{\"latestEventId\":null,\"latestSeqId\":0,\"projects\":[{\"id\":\"\(projectID)\",\"name\":\"Launch\",\"createdAt\":\"2026-11-09T01:00:00Z\",\"updatedAt\":\"2026-11-09T01:00:00Z\"}]}"
       )
     }
-    let projects = try await ChatProjects(client: fixture.client).list()
+    let projects = try await ChatSync(client: fixture.client).projectList()
     let ordinary = thread("ordinary", agent: Self.agent)
     var member = thread("member", agent: "another-agent")
     member.projectId = Self.project
@@ -105,7 +115,13 @@ final class ChatProjectStoreTests: XCTestCase {
     let directory = CacheTestDirectory(owner: self)
     let phase = Mutex(0)
     let fixture = ChatHTTPFixture { request in
-      guard request.url?.path == "/api/projects" else { throw URLError(.unsupportedURL) }
+      if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
+        if phase.withLock({ $0 }) == 1 {
+          return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Try again"}}"#)
+        }
+        return projectTail(request, name: phase.withLock { $0 } == 0 ? "Launch" : "Release")
+      }
+      guard request.url?.path == "/api/projects/snapshot" else { throw URLError(.unsupportedURL) }
       if phase.withLock({ $0 }) == 1 {
         return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Try again"}}"#)
       }
@@ -153,22 +169,25 @@ final class ChatProjectStoreTests: XCTestCase {
     let began = expectation(description: "The older Project read is pending")
     let returned = expectation(description: "The older HTTP handler completed")
     let fixture = ChatHTTPFixture { request in
+      if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
+        let response = server.withLock { ($0.name, $0.holdRead) }
+        if response.1 {
+          server.withLock { $0.holdRead = false }
+          began.fulfill()
+          await gate.wait()
+          returned.fulfill()
+        }
+        return projectTail(request, name: response.0)
+      }
       if request.httpMethod == "PATCH", request.url?.path == "/api/projects/\(projectID)" {
         let body = try JSONDecoder().decode(RenameBody.self, from: chatRequestBody(request))
         server.withLock { $0.name = body.name }
         return ChatHTTPResponse(body: projectRecord(name: body.name))
       }
-      guard request.httpMethod == "GET", request.url?.path == "/api/projects" else {
+      guard request.httpMethod == "GET", request.url?.path == "/api/projects/snapshot" else {
         throw URLError(.unsupportedURL)
       }
-      let response = server.withLock { ($0.name, $0.holdRead) }
-      if response.1 {
-        server.withLock { $0.holdRead = false }
-        began.fulfill()
-        await gate.wait()
-        returned.fulfill()
-      }
-      return projectList(name: response.0)
+      return projectList(name: server.withLock { $0.name })
     }
     let scope = ChatCacheScope(
       apiBaseURL: fixture.baseURL, userID: "project-writer", workspaceID: "project-workspace")
@@ -202,13 +221,17 @@ final class ChatProjectStoreTests: XCTestCase {
     let began = expectation(description: "The shared Project request is pending")
     let requests = Mutex(0)
     let fixture = ChatHTTPFixture { request in
-      guard request.url?.path == "/api/projects" else { throw URLError(.unsupportedURL) }
+      if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      }
+      guard request.url?.path == "/api/projects/snapshot" else { throw URLError(.unsupportedURL) }
       requests.withLock { $0 += 1 }
       began.fulfill()
       await gate.wait()
       return projectList(name: "Shared project")
     }
-    let resources = WorkspaceResources(client: fixture.client, sleep: { _ in })
+    let resources = WorkspaceResources(
+      client: fixture.client, sync: ChatSync(client: fixture.client), sleep: { _ in })
     let store = ChatProjectStore(
       client: fixture.client, resources: resources, sync: ChatSync(client: fixture.client),
       didFail: { XCTFail("Unexpected failure: \($0)") }, didChangeMembership: {})
@@ -239,7 +262,10 @@ final class ChatProjectStoreTests: XCTestCase {
     let began = expectation(description: "Project HTTP read started")
     let cancelled = expectation(description: "Original Project HTTP read was cancelled")
     let fixture = ChatHTTPFixture { request in
-      guard request.url?.path == "/api/projects" else { throw URLError(.unsupportedURL) }
+      if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      }
+      guard request.url?.path == "/api/projects/snapshot" else { throw URLError(.unsupportedURL) }
       began.fulfill()
       await withTaskCancellationHandler {
         await gate.wait()
@@ -277,6 +303,9 @@ final class ChatProjectStoreTests: XCTestCase {
     let gate = ProjectResponseGate()
     let began = expectation(description: "The first deletion is pending")
     let fixture = ChatHTTPFixture { request in
+      if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      }
       if request.httpMethod == "DELETE" {
         guard let url = request.url,
           url.path == "/api/projects/\(projectID)" || url.path == "/api/projects/\(other)"
@@ -291,11 +320,14 @@ final class ChatProjectStoreTests: XCTestCase {
       }
       guard request.httpMethod == "GET" else { throw URLError(.unsupportedURL) }
       switch request.url?.path {
-      case "/api/projects":
+      case "/api/projects/snapshot":
         let records = [(projectID, "Launch"), (other, "Release")]
           .filter { id, _ in !deleted.withLock { $0.contains(id) } }
           .map { id, name in projectRecord(name: name, id: id) }
-        return ChatHTTPResponse(body: "{\"projects\":[\(records.joined(separator: ","))]}")
+        return ChatHTTPResponse(
+          body:
+            "{\"latestEventId\":null,\"latestSeqId\":0,\"projects\":[\(records.joined(separator: ","))]}"
+        )
       case "/api/chat-threads/snapshot":
         return ChatHTTPResponse(
           body: #"{"chatThreads":[],"latestEventId":null,"latestSeqId":null}"#)
@@ -338,6 +370,9 @@ final class ChatProjectStoreTests: XCTestCase {
     let began = expectation(description: "Rename reached the external service")
     let gate = ProjectResponseGate()
     let fixture = ChatHTTPFixture { request in
+      if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
+        return projectTail(request, name: name.withLock { $0 })
+      }
       if request.httpMethod == "PATCH", request.url?.path == "/api/projects/\(projectID)" {
         let body = try JSONDecoder().decode(RenameBody.self, from: chatRequestBody(request))
         began.fulfill()
@@ -345,7 +380,7 @@ final class ChatProjectStoreTests: XCTestCase {
         name.withLock { $0 = body.name }
         return ChatHTTPResponse(body: projectRecord(name: body.name))
       }
-      guard request.httpMethod == "GET", request.url?.path == "/api/projects" else {
+      guard request.httpMethod == "GET", request.url?.path == "/api/projects/snapshot" else {
         throw URLError(.unsupportedURL)
       }
       return projectList(name: name.withLock { $0 })
@@ -380,7 +415,10 @@ final class ChatProjectStoreTests: XCTestCase {
     for status in [401, 403, 426] {
       let denied = Mutex(false)
       let fixture = ChatHTTPFixture { request in
-        guard request.url?.path == "/api/projects" else { throw URLError(.unsupportedURL) }
+        if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
+          return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+        }
+        guard request.url?.path == "/api/projects/snapshot" else { throw URLError(.unsupportedURL) }
         if denied.withLock({ $0 }) {
           return ChatHTTPResponse(status: status, body: #"{"error":{"message":"Denied"}}"#)
         }
@@ -424,7 +462,8 @@ private func projectRecord(
 }
 
 private func projectList(name: String) -> ChatHTTPResponse {
-  ChatHTTPResponse(body: "{\"projects\":[\(projectRecord(name: name))]}")
+  ChatHTTPResponse(
+    body: "{\"latestEventId\":null,\"latestSeqId\":0,\"projects\":[\(projectRecord(name: name))]}")
 }
 
 private final class ProjectResponseGate: Sendable {
@@ -440,4 +479,18 @@ private final class ProjectResponseGate: Sendable {
   func open() { continuation.finish() }
 
   func wait() async { for await _ in stream { return } }
+}
+
+private func projectTail(_ request: URLRequest, name: String) -> ChatHTTPResponse {
+  let since = request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?
+    .queryItems?.first { $0.name == "sinceSeqId" }?.value
+  guard name != "Launch", since == "0" else {
+    return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+  }
+  return ChatHTTPResponse(
+    body: """
+      {"events":[{"id":"30000000-0000-4000-8000-000000000081","seqId":1,
+      "projectId":"30000000-0000-4000-8000-000000000071","kind":"renamed",
+      "name":"\(name)","createdAt":"2026-11-09T02:00:00Z"}],"hasMore":false}
+      """)
 }

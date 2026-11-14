@@ -1,8 +1,21 @@
 import type { ZodType } from "zod";
+import type { NoBodyMarker } from "../contracts/trpc-contract";
 import { orgContract } from "../contracts/org-routes";
 import { userPreferencesContract } from "../contracts/user-preferences";
 import { apiErrorSchema } from "../contracts/api-error";
 import { androidUpgradeRequiredSchema } from "../contracts/android-client-compatibility";
+import {
+  chatThreadsContract,
+  chatThreadSnapshotArchiveSchema,
+  chatThreadEventsContract,
+  chatThreadByIdContract,
+  chatThreadMarkReadContract,
+} from "../contracts/chat-threads";
+import { chatEventRowSchema } from "../contracts/chat-event-rows";
+import { agentsMainContract } from "../contracts/agents";
+import { projectsContract } from "../contracts/projects";
+import { projectSnapshotArchiveSchema } from "../validators/projects";
+import { featureSwitchesContract } from "../contracts/feature-switches";
 
 export interface KotlinRouteBinding {
   readonly name: string;
@@ -11,14 +24,71 @@ export interface KotlinRouteBinding {
   readonly route: {
     readonly method: string;
     readonly path: string;
-    readonly body?: ZodType;
+    readonly body?: ZodType | NoBodyMarker;
     readonly query?: ZodType;
-    readonly pathParams?: unknown;
+    readonly pathParams?: ZodType;
     readonly responses: Readonly<Record<number, ZodType>>;
   };
 }
 
-/** The selected native workspace/preferences surface, not an export of every Web contract. */
+const chatReadBindings: readonly KotlinRouteBinding[] = [
+  {
+    name: "chatSnapshot",
+    response: "ChatSnapshot",
+    route: chatThreadsContract.snapshot,
+  },
+  {
+    name: "chatEvents",
+    response: "ChatEvents",
+    route: chatThreadsContract.events,
+  },
+  {
+    name: "indicators",
+    response: "Indicators",
+    route: chatThreadsContract.indicators,
+  },
+  { name: "agents", response: "Agents", route: agentsMainContract.list },
+  {
+    name: "projectSnapshot",
+    response: "ProjectSnapshot",
+    route: projectsContract.snapshot,
+  },
+  {
+    name: "projectEvents",
+    response: "ProjectEvents",
+    route: projectsContract.events,
+  },
+  {
+    name: "featureSwitches",
+    response: "FeatureSwitches",
+    route: featureSwitchesContract.get,
+  },
+];
+
+const historyReadBindings: readonly KotlinRouteBinding[] = [
+  {
+    name: "historySnapshot",
+    response: "HistorySnapshot",
+    route: chatThreadEventsContract.snapshot,
+  },
+  {
+    name: "historyRows",
+    response: "HistoryRows",
+    route: chatThreadEventsContract.rows,
+  },
+  {
+    name: "threadDetail",
+    response: "ThreadDetail",
+    route: chatThreadByIdContract.get,
+  },
+  {
+    name: "markRead",
+    response: "ReadState",
+    route: chatThreadMarkReadContract.markRead,
+  },
+];
+
+/** Only routes used by the installed native client, not every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   { name: "organization", response: "Organization", route: orgContract.get },
   {
@@ -38,6 +108,8 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     request: "UpdatePreferencesRequest",
     route: userPreferencesContract.update,
   },
+  ...chatReadBindings,
+  ...historyReadBindings,
 ];
 
 export interface KotlinTypeBinding {
@@ -72,5 +144,30 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     name: "AndroidUpgradeRequired",
     schema: androidUpgradeRequiredSchema,
     direction: "output",
+  },
+  ...chatReadBindings.map(({ response, route }) => {
+    return {
+      name: response,
+      schema: route.responses[200]!,
+      direction: "output" as const,
+    };
+  }),
+  ...historyReadBindings.map(({ response, route }) => {
+    return {
+      name: response,
+      schema: route.responses[200]!,
+      direction: "output" as const,
+    };
+  }),
+  { name: "RawHistoryRow", schema: chatEventRowSchema, direction: "output" },
+  {
+    name: "ChatArchive",
+    schema: chatThreadSnapshotArchiveSchema,
+    direction: "input",
+  },
+  {
+    name: "ProjectArchive",
+    schema: projectSnapshotArchiveSchema,
+    direction: "input",
   },
 ];

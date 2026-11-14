@@ -1,5 +1,5 @@
 {
-  "sourceCommit": "c65b6bf584305f5f06e89c7e66efaedecee5177b",
+  "sourceCommit": "c2897a7a777db6c6b8cfb0675b3442c404a220e0",
   "method": "existing acyclic partition extended from resolved production dependency layers; generated, do not hand-classify packages",
   "packages": {
     "@axiomhq/js": 3,
@@ -144,6 +144,8 @@
     "style-to-js": 1,
     "style-to-object": 1,
     "tailwind-merge": 3,
+    "tldts": 1,
+    "tldts-core": 1,
     "trough": 1,
     "unified": 1,
     "unist-util-filter": 1,

@@ -33,7 +33,7 @@ export function createPublicFirewallConnections(context: TestContext) {
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
+    const runnerGroup = await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
@@ -74,7 +74,7 @@ export function createPublicFirewallConnections(context: TestContext) {
       throw new Error("Expected an active Run for firewall authorization");
     }
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.claimRunnerJob(created.runId);
+    const claim = await runs.executionInput(created.runId);
     credential.token = claim.sandboxToken;
     return {
       actor,

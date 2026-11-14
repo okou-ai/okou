@@ -21,9 +21,7 @@ use runner_lifecycle::idle_pool::{
 use runner_lifecycle::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
 use runner_lifecycle::resource_budget::ResourceBudget;
 use runner_lifecycle::test_fixtures::memory_observation::FileMemoryObservationSource as Source;
-use runner_provider::{
-    ApiClaimTiming, ClaimResponseAttribution, CompletionAuth, JobCandidate, JobProvider,
-};
+use runner_provider::{CompletionAuth, JobProvider};
 use runner_types::storage_fingerprints::StorageFingerprints;
 use runner_types::types::{CompleteRequest, HeartbeatState};
 use sandbox::{SandboxBackingProcess, SandboxFactory};
@@ -70,33 +68,26 @@ impl SandboxBackingProcess for PanicOnceBacking {
     }
 }
 
-/// External provider verifies the exact authorization returned by its claim.
+/// External provider verifies the original supplied Run authorization.
 #[derive(Default)]
 struct Provider {
     completed: Mutex<Vec<(RunId, String)>>,
 }
+impl Provider {
+    async fn bind_execution(&self, run: RunId, key: Option<&str>) -> ClaimedJob {
+        let mut context = execution_context_for_test(run);
+        context.reuse_key = key.map(str::to_owned);
+        context.sandbox_token = format!("original-claim-{run}");
+        self.bind_supplied(context).await.unwrap()
+    }
+}
 #[async_trait::async_trait]
 impl JobProvider for Provider {
-    async fn discover(&self) -> Option<JobCandidate> {
-        None
-    }
-    async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob> {
-        let mut context = execution_context_for_test(candidate.run_id());
-        context.reuse_key = candidate.reuse_key().map(str::to_owned);
-        context.sandbox_token = format!("original-claim-{}", candidate.run_id());
-        ClaimedJob::api(
-            candidate.run_id(),
-            context,
-            ApiClaimTiming::new(
-                Duration::ZERO,
-                Duration::ZERO,
-                Duration::ZERO,
-                Duration::ZERO,
-                Duration::ZERO,
-                ClaimResponseAttribution::from_body_and_encoding(1, None),
-            ),
-        )
-        .ok()
+    async fn bind_supplied(
+        &self,
+        context: runner_types::types::ExecutionContext,
+    ) -> runner_provider::ProviderResult<ClaimedJob> {
+        Ok(ClaimedJob::supplied(context, None))
     }
     async fn complete(&self, request: CompleteRequest, auth: CompletionAuth) {
         let token = auth.into_sandbox_token(request.run_id).unwrap();
@@ -234,13 +225,7 @@ impl Fixture {
         .unwrap();
         let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
         let provider = Provider::default();
-        let claimed = provider
-            .claim(
-                JobCandidate::new(run, "vm0/default".into())
-                    .with_reuse_key(claim_key.map(str::to_owned)),
-            )
-            .await
-            .unwrap();
+        let claimed = provider.bind_execution(run, claim_key).await;
         Self {
             active_image: home.cache.paths().active_home_image(&home.sandbox_id),
             _dir: home._dir,
@@ -494,11 +479,7 @@ async fn finalizing_mismatched_claim_and_predecessor_retain_resource_and_origina
             admission.predecessor = RunId::new_v4();
             None
         } else {
-            let other = f
-                .provider
-                .claim(JobCandidate::new(RunId::new_v4(), "vm0/default".into()))
-                .await
-                .unwrap();
+            let other = f.provider.bind_execution(RunId::new_v4(), None).await;
             admission.claimed.replace(other)
         };
         assert!(admission.activate().await.is_err());

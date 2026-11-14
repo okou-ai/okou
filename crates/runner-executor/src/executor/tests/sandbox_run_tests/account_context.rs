@@ -20,10 +20,7 @@ async fn runtime_account_binding_updates_the_private_guest_context() {
                 1,
             )
             .unwrap(),
-            runner_hostname: None,
             group: "test".into(),
-            supported_profiles: vec!["vm0/default".into()],
-            installed_okou_cli: None,
         },
         BuiltinFirewallCatalogCachePaths {
             cache_path: dir.path().join("catalog.json"),

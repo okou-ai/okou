@@ -86,19 +86,6 @@ export interface BrowserControls {
   readonly retryingImage: boolean;
 }
 
-/** A successful action or displaced user-focus origin awaits this exact DOM commit. */
-export type BrowserFocusHandoff = {
-  readonly request: object;
-  readonly mount: object;
-  readonly selection: object;
-} & (
-  | { readonly kind: "tab"; readonly targetId: string }
-  | {
-      readonly kind: "toolbar";
-      readonly destination: "picker" | "new-tab";
-    }
-);
-
 type Ref<E extends HTMLElement> = Command<(() => void) | undefined, [E | null]>;
 
 export interface AddressSubmitNotice {
@@ -114,6 +101,10 @@ export interface BrowserSignals {
   readonly history$: Computed<Promise<ViewerHistory | null>>;
   readonly navigationScope$: Computed<object | null>;
   readonly address$: Computed<string>;
+  readonly addressSubmissionKind$: Computed<"navigate" | "search" | null>;
+  readonly addressComposing$: Computed<boolean>;
+  readonly composeAddress$: Command<void, [boolean]>;
+  readonly armAddressCompletion$: Command<void, [boolean]>;
   readonly canSubmitAddress$: Computed<boolean>;
   readonly addressSubmitNotice$: Computed<AddressSubmitNotice | null>;
   readonly notifyAddressSubmit$: Command<
@@ -121,8 +112,16 @@ export interface BrowserSignals {
     [AddressSubmitNotice["kind"] | null]
   >;
   readonly presentation$: Computed<BrowserPresentation>;
+  readonly canvasVisible$: Computed<boolean>;
+  readonly contentVisible$: Computed<boolean>;
+  readonly showBlankPage$: Computed<boolean>;
   readonly imageRecovery$: Computed<ImageRecovery | null>;
   readonly controls$: Computed<BrowserControls>;
+  readonly tabsDisabled$: Computed<boolean>;
+  readonly canMutateTabs$: Computed<boolean>;
+  readonly canCreateTab$: Computed<boolean>;
+  readonly recovering$: Computed<boolean>;
+  readonly streaming$: Computed<boolean>;
   readonly proxyType$: Computed<"text" | "password">;
   readonly capture$: Computed<ViewerCaptureOptions>;
   readonly quality: CaptureQualitySignals;
@@ -133,8 +132,6 @@ export interface BrowserSignals {
   readonly displayRecovery$: Computed<ViewerError | null>;
   readonly clipboardRecovery$: Computed<ClipboardRecovery | null>;
   readonly tabLayout$: Computed<ReturnType<typeof layoutTabs>>;
-  readonly focusHandoff$: Computed<BrowserFocusHandoff | null>;
-  readonly acknowledgeFocusCommit$: Command<void, [BrowserFocusHandoff]>;
   readonly rejectFavicon$: Command<void, [targetId: string, url: string]>;
   readonly selectTab$: Command<Promise<void>, [string, AbortSignal]>;
   readonly createTab$: Command<Promise<string>, [AbortSignal]>;
@@ -175,6 +172,7 @@ export interface BrowserSignals {
     readonly canvas$: Ref<HTMLCanvasElement>;
     readonly input$: Ref<HTMLInputElement>;
     readonly toolbar$: Ref<HTMLDivElement>;
+    readonly toolbarActions$: Ref<HTMLDivElement>;
     readonly tabs$: Ref<HTMLDivElement>;
     readonly address$: Ref<HTMLInputElement>;
     readonly surface$: Ref<HTMLDivElement>;

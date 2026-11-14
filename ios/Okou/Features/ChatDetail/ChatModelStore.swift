@@ -34,7 +34,9 @@ final class ChatModelStore {
     self.webURL = webURL
     let service = ChatModelService(client: client)
     self.service = service
-    self.resources = resources ?? WorkspaceResources(client: client, sleep: readRetrySleep)
+    self.resources =
+      resources
+      ?? WorkspaceResources(client: client, sync: ChatSync(client: client), sleep: readRetrySleep)
     ownsResources = resources == nil
     connectorAccess = ChatComposerAccess(client: client)
     connectorAuthorization = ChatConnectorService(client: client)

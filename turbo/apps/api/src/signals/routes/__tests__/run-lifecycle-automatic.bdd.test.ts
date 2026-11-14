@@ -1,6 +1,7 @@
 import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
+import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import type { ExecutionFirewallEntry } from "@okouai/connectors/firewall-types";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -16,6 +17,7 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCheckRoutes } from "../connector-check";
+import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { automaticMcpCatalogFixture } from "./helpers/connector-automatic-catalog";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -140,13 +142,15 @@ function builtinConnectorRuntimeRegistration(
 }
 
 describe("RUN-02: custom connectors, grants, and network policies", () => {
-  it.each(["none", "oauth"] as const)(
+  it.each(["none", "oauth", "query"] as const)(
     "admits the exact builtin Automatic %s account and injects auth outside the sandbox",
-    async (resolution) => {
-      const catalog = automaticMcpCatalogFixture(resolution);
+    async (variant) => {
+      const resolution = variant === "query" ? "oauth" : variant;
+      const catalog = automaticMcpCatalogFixture(variant);
       const provider = mockAutomaticMcpOAuthProvider(context, {
         registration: "cimd",
         authentication: resolution,
+        endpoint: catalog.endpoint,
         initialExpiresIn: 3600,
       });
       const api = createRunsApi(context);
@@ -156,7 +160,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       bdd.acceptAgentStorageWrites();
       api.acceptStorageDownloads();
       api.acceptTelemetryIngest();
-      const runnerGroup = api.configureRunnerGroup();
+      const runnerGroup = await api.configureRunnerGroup();
       await api.grantProEntitlement(actor);
       await api.ensurePersonalSubscriptionModel(actor);
       const { agentId } = await bdd.createAgent(actor, {
@@ -210,10 +214,27 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         }
       });
       await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(run.runId);
+      const claim = await api.executionInput(run.runId);
       runOwner.sandboxToken = claim.sandboxToken;
       const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
       expect(target.sourceId).toBe(connectionId);
+      const discovery = await accept(
+        setupApp({ context, routes: mcpConnectorsRoutes })(
+          mcpConnectorsContract,
+        ).list({
+          headers: {
+            authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+          },
+        }),
+        [200],
+      );
+      expect(discovery.body.connectors).toContainEqual(
+        expect.objectContaining({
+          target: catalog.target,
+          connectionId,
+          endpoint: catalog.endpoint,
+        }),
+      );
       const firewall = builtinFirewallEntry(claim.firewalls, catalog.slug);
       expect(firewall).toMatchObject({
         kind: "builtin",
@@ -265,7 +286,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         matchedFirewall: {
           name: catalog.slug,
           apiId: `${catalog.slug}:0`,
-          base: catalog.endpoint,
+          base: catalog.firewallBase,
           connectorSlug: catalog.slug,
           sourceId: connectionId,
           routingVariables: {},
@@ -287,6 +308,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         mockAutomaticMcpOAuthProvider(context, {
           registration: "none",
           authentication: "none",
+          endpoint: catalog.endpoint,
         });
         await expect(
           connectAutomaticRuntime({

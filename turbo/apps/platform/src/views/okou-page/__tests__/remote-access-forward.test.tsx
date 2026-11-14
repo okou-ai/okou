@@ -7,6 +7,7 @@ import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import {
   CAPABILITY_AGENT_ID,
   completedConversation,
@@ -116,7 +117,13 @@ test("A forward to an existing chat keeps its own remote permissions and pending
   click(await screen.findByRole("option", { name: "Off" }));
   await within(remote).findByText("Saving…");
   act(() => {
-    media.setMatches(false);
+    media.setMatches((query) => {
+      return (
+        query !== SIDEBAR_DESKTOP_MEDIA_QUERY &&
+        query !== "(min-width: 640px)" &&
+        query !== "(min-width: 768px)"
+      );
+    });
   });
   const resized = await screen.findByRole("dialog", { name: "Remote access" });
   const pendingChoice = await within(resized).findByRole("combobox", {

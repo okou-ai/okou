@@ -4,8 +4,9 @@ import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.auth.WorkspaceBootstrap
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
-import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.After
@@ -50,12 +51,12 @@ class PendingWorkspaceRootTest {
     @Test
     fun pendingPreferencesKeepTheNativeRootVisibleAcrossRecreation() {
         compose.onNodeWithText("Preparing your workspace…").assertExists()
-        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNodeWithTag("chat_list").assertDoesNotExist()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Preparing your workspace…").assertExists()
-        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNodeWithTag("chat_list").assertDoesNotExist()
         releaseResponse()
-        compose.onNode(hasSetTextAction()).assertExists()
-        compose.onNodeWithText("Settings").assertExists()
+        compose.onNodeWithTag("chat_list").assertExists()
+        compose.onNodeWithContentDescription("Settings").assertExists()
     }
 }

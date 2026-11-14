@@ -1,0 +1,28 @@
+<resources>
+    <string name="chat_list_title">चैट</string>
+    <string name="chat_refresh">चैट रीफ़्रेश करें</string>
+    <string name="chat_loading">चैट लोड हो रही हैं…</string>
+    <string name="chat_refreshing">चैट रीफ़्रेश हो रही हैं…</string>
+    <string name="chat_load_failed">चैट लोड नहीं हो सकीं। अपना कनेक्शन जाँचें और फिर कोशिश करें।</string>
+    <string name="chat_refresh_failed">रीफ़्रेश नहीं हो सका। पिछली लोड की गई चैट दिखाई जा रही हैं।</string>
+    <string name="chat_cached">सहेजी गई चैट दिखाई जा रही हैं।</string>
+    <string name="chat_cache_unavailable">ऑफ़लाइन स्टोरेज उपलब्ध नहीं है। दोबारा शुरू करने के बाद ये चैट उपलब्ध न हों।</string>
+    <string name="chat_metadata_loading">Okou और प्रोजेक्ट के नाम लोड हो रहे हैं…</string>
+    <string name="chat_metadata_unavailable">कुछ Okou या प्रोजेक्ट की जानकारी उपलब्ध नहीं है।</string>
+    <string name="chat_status_observed">सक्रिय और अपठित स्थिति पिछले रीफ़्रेश के समय की है।</string>
+    <string name="chat_status_unavailable">स्थिति रीफ़्रेश नहीं हो सकी। पुराने संकेतक पुराने पड़ सकते हैं।</string>
+    <string name="chat_status_loading">सक्रिय और अपठित स्थिति जाँची जा रही है…</string>
+    <string name="chat_refresh_status">स्थिति रीफ़्रेश करें</string>
+    <string name="chat_recent">हाल की</string>
+    <string name="chat_unread">अपठित</string>
+    <string name="chat_archived">संग्रहीत</string>
+    <string name="chat_muted">म्यूट</string>
+    <string name="chat_outside_projects">प्रोजेक्ट के बाहर की चैट</string>
+    <string name="chat_project_empty">इस प्रोजेक्ट में कोई चैट नहीं है।</string>
+    <string name="chat_empty">इस दृश्य में कोई चैट नहीं है।</string>
+    <string name="chat_untitled">बिना शीर्षक की चैट</string>
+    <string name="chat_agent_identity">Okou · %1$s</string>
+    <string name="chat_pinned">पिन की गई</string>
+    <string name="chat_active">सक्रिय</string>
+    <string name="chat_metadata_cached">सहेजे गए Okou और प्रोजेक्ट के नाम दिखाई जा रहे हैं।</string>
+</resources>

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-
-import { jobSchema, runnersJobClaimContract } from "../runners";
+import { runnerPreferenceSchema } from "../runners";
 
 const predecessorRunId = "11111111-1111-4111-8111-111111111111";
 const preference = {
@@ -12,13 +11,6 @@ const preference = {
   tier: "finalizingPredecessor" as const,
   expiresAt: "2026-10-20T00:00:49.000Z",
   predecessorRunId,
-};
-const job = {
-  runId: "33333333-3333-4333-8333-333333333333",
-  prompt: "continue with another framework",
-  appendSystemPrompt: null,
-  vars: null,
-  experimentalProfile: "vm0/default",
 };
 
 describe("independent predecessor preference contract", () => {
@@ -38,31 +30,15 @@ describe("independent predecessor preference contract", () => {
         home,
       };
     }),
-  ])(
-    "preserves source and independent wait policy without native history: $tier",
-    (runnerPreference) => {
-      const parsed = jobSchema.parse({ ...job, runnerPreference });
-      expect(parsed.runnerPreference).toStrictEqual(runnerPreference);
-      const telemetry = {
-        runnerPreference,
-        runnerPreferenceClaimState: "active",
-      };
-      expect(
-        runnersJobClaimContract.claim.body.parse({
-          capabilities: { piModelConfigGenerations: [1, 2, 3] },
-          telemetry,
-        }).telemetry,
-      ).toStrictEqual(telemetry);
-    },
-  );
+  ])("preserves the direct routing source and wait policy: $tier", (input) => {
+    expect(runnerPreferenceSchema.parse(input)).toStrictEqual(input);
+  });
 
-  it("rejects malformed predecessor identity at the discovery boundary", () => {
+  it("rejects malformed predecessor identity in direct routing preferences", () => {
     for (const predecessorRunId of ["invalid", null]) {
       expect(
-        jobSchema.safeParse({
-          ...job,
-          runnerPreference: { ...preference, predecessorRunId },
-        }).success,
+        runnerPreferenceSchema.safeParse({ ...preference, predecessorRunId })
+          .success,
       ).toBe(false);
     }
   });

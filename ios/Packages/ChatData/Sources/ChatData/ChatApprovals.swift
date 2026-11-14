@@ -47,7 +47,7 @@ public struct ChatShellAuthorization: Decodable, Equatable, Sendable {
   public let grantExpiresAt: Date?
 }
 
-public enum ChatShareAudience: String, Encodable, Sendable {
+public enum ChatShareAudience: String, Codable, Sendable {
   case `private`, organization, `public`
 }
 
@@ -98,7 +98,8 @@ extension APIClient {
   /// Shares the given transcript events and returns the share's id; the web serves it at
   /// `/share/threads/<id>`. The id is chosen here so the link can be built at once.
   public func shareThread(
-    threadID: String, eventIDs: [String], audience: ChatShareAudience
+    threadID: String, eventIDs: [String], audience: ChatShareAudience,
+    id: String = UUID().uuidString.lowercased()
   ) async throws -> String {
     struct Demand: Encodable {
       let eventIds: [String]
@@ -106,7 +107,6 @@ extension APIClient {
       let audience: ChatShareAudience
     }
     struct Created: Decodable { let id: String }
-    let id = UUID().uuidString.lowercased()
     let created: Created = try await request(
       "/api/chat-threads/\(threadID)/shared-threads/visibility", method: "POST",
       body: JSONEncoder().encode(Demand(eventIds: eventIDs, id: id, audience: audience)))

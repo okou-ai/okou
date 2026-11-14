@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import { Info } from "lucide-react";
 import { RemoteSecretInput } from "./remote-secret-input.tsx";
 import { RemoteCredentialReplacement } from "./remote-credential-card.tsx";
@@ -29,6 +30,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Skeleton,
 } from "@okouai/ui";
 import {
   VNC_CA_BUNDLE_MAX_LENGTH,
@@ -62,6 +64,11 @@ import {
   vncDialog$,
   vncProfile$,
   vncTransport$,
+  vncDestinationHost$,
+  vncLoopbackHost$,
+  vncTrust$,
+  vncCaBundle$,
+  vncAuthenticationReplacement$,
   vncCredentialSelection$,
   vncCredentials$,
   mountVncSecret$,
@@ -76,7 +83,7 @@ import {
   RSA_AES_PROFILES,
   isRsaAesProfile,
 } from "../../signals/vnc-rsa-aes.ts";
-import { useRsaAesProfileLabels } from "./vnc-rsa-aes-labels.ts";
+import { rsaAesProfileLabels } from "./vnc-rsa-aes-labels.ts";
 import {
   VNC_RSA_AES_FIELD_MAX_BYTES,
   VNC_RSA_PUBLIC_KEY_MAX_BYTES,
@@ -88,6 +95,7 @@ import { isVncKerberosMethod } from "@okouai/api-contracts/contracts/vnc-kerbero
 import { VncNetworkFields } from "./vnc-network-fields.tsx";
 import {
   KerberosCredentialInputs,
+  kerberosProfileItems,
   useKerberosProfileItems,
 } from "./vnc-kerberos-fields.tsx";
 
@@ -157,7 +165,7 @@ export function VncDisplayNameField({
 }) {
   const { t } = useTranslation();
   const setup = useGet(remoteSetup$);
-  const editor = useGet(vncEditor$);
+  const destinationHost = useGet(vncDestinationHost$);
   if (!connection && setup?.fromComputer && setup.protocol === "vnc") {
     return (
       <details className="text-sm">
@@ -176,7 +184,7 @@ export function VncDisplayNameField({
             })}
             aria-describedby="vnc-connection-name-help"
             placeholder={
-              editor.destinationHost ||
+              destinationHost ||
               t(($) => {
                 return $.remoteControlSetup.namePlaceholder;
               })
@@ -222,15 +230,15 @@ export function VncEndpointFields({
   readonly connection: VncConnectionResponse | null;
 }) {
   const { t } = useTranslation();
-  const editor = useGet(vncEditor$);
+  const profile = useGet(vncProfile$);
+  const transport = useGet(vncTransport$);
+  const loopbackHost = useGet(vncLoopbackHost$);
+  const destinationHost = useGet(vncDestinationHost$);
   const chooseLoopback = useSet(chooseVncLoopbackHost$);
   const editDestination = useSet(editVncDestinationHost$);
-  const apple =
-    requiresVncProtectiveRoute(editor.profile) && editor.transport === "ssh";
+  const apple = requiresVncProtectiveRoute(profile) && transport === "ssh";
   const privateDirect =
-    !apple &&
-    editor.transport === "direct" &&
-    isPrivateVncLiteral(editor.destinationHost);
+    !apple && transport === "direct" && isPrivateVncLiteral(destinationHost);
   const loopbackItems = [
     { value: "127.0.0.1", label: "127.0.0.1" },
     { value: "::1", label: "::1" },
@@ -247,7 +255,7 @@ export function VncEndpointFields({
             </label>
             <Select
               items={loopbackItems}
-              value={editor.loopbackHost}
+              value={loopbackHost}
               onValueChange={(value, details) => {
                 if (value !== "127.0.0.1" && value !== "::1") {
                   details.cancel();
@@ -278,14 +286,14 @@ export function VncEndpointFields({
                   return $.remoteControlSetup.deviceAddress;
                 })}
               </label>
-              <RemoteAddressHelp route={editor.transport} />
+              <RemoteAddressHelp route={transport} />
             </div>
             <Input
               id="vnc-destination-host"
               name="host"
               required
               maxLength={VNC_HOST_MAX_LENGTH}
-              value={editor.destinationHost}
+              value={destinationHost}
               onChange={(event) => {
                 editDestination(event.currentTarget.value);
               }}
@@ -491,20 +499,59 @@ function VncSecurityProfileHelp({ profile }: { readonly profile: VncProfile }) {
   );
 }
 
-function useVncSecurityProfileItems() {
+function useVncSecurityProfileItems(group: ReturnType<typeof profileGroup>) {
   const { t } = useTranslation();
-  const rsaAesLabels = useRsaAesProfileLabels();
-  const kerberosItems = useKerberosProfileItems();
-  return [
-    ...kerberosItems,
-    ...Object.keys(RSA_AES_PROFILES)
+  if (group === "company") {
+    return [
+      ...kerberosProfileItems(t),
+      {
+        value: "qemu_x509_sasl",
+        label: t(($) => {
+          return $.vnc.security.qemuX509Sasl;
+        }),
+      },
+    ];
+  }
+  if (group === "rsa") {
+    const labels = rsaAesProfileLabels(t);
+    return Object.keys(RSA_AES_PROFILES)
       .filter(isRsaAesProfile)
       .map((value) => {
         return {
           value,
-          label: rsaAesLabels[value],
+          label: labels[value],
         };
-      }),
+      });
+  }
+  if (group === "apple") {
+    return [
+      {
+        value: "apple_vnc_password",
+        label: t(($) => {
+          return $.vnc.security.appleVncPassword;
+        }),
+      },
+      {
+        value: "apple_dh",
+        label: t(($) => {
+          return $.vnc.security.appleDh;
+        }),
+      },
+      {
+        value: "apple_srp",
+        label: t(($) => {
+          return $.vnc.security.appleSrp;
+        }),
+      },
+      {
+        value: "apple_rsa_srp",
+        label: t(($) => {
+          return $.vnc.security.appleRsaSrp;
+        }),
+      },
+    ];
+  }
+  return [
     {
       value: "x509_none",
       label: t(($) => {
@@ -533,36 +580,6 @@ function useVncSecurityProfileItems() {
       value: "x509_plain",
       label: t(($) => {
         return $.vnc.security.x509Plain;
-      }),
-    },
-    {
-      value: "qemu_x509_sasl",
-      label: t(($) => {
-        return $.vnc.security.qemuX509Sasl;
-      }),
-    },
-    {
-      value: "apple_vnc_password",
-      label: t(($) => {
-        return $.vnc.security.appleVncPassword;
-      }),
-    },
-    {
-      value: "apple_dh",
-      label: t(($) => {
-        return $.vnc.security.appleDh;
-      }),
-    },
-    {
-      value: "apple_srp",
-      label: t(($) => {
-        return $.vnc.security.appleSrp;
-      }),
-    },
-    {
-      value: "apple_rsa_srp",
-      label: t(($) => {
-        return $.vnc.security.appleRsaSrp;
       }),
     },
   ];
@@ -862,11 +879,8 @@ export function VncSecurityProfileField({
 }) {
   const { t } = useTranslation();
   const chooseProfile = useSet(chooseVncProfile$);
-  const allItems = useVncSecurityProfileItems();
   const group = profileGroup(profile);
-  const profileItems = allItems.filter((item) => {
-    return profileGroup(item.value) === group;
-  });
+  const profileItems = useVncSecurityProfileItems(group);
   const groups = useVncServiceGroups();
   return (
     <>
@@ -1031,11 +1045,14 @@ function VncSshConnectionFields({ disabled }: { readonly disabled: boolean }) {
           </p>
         </div>
       ) : connections.state === "loading" ? (
-        <p role="status" className="text-sm">
-          {t(($) => {
+        <Skeleton
+          role="status"
+          aria-busy="true"
+          aria-label={t(($) => {
             return $.vnc.transport.loading;
           })}
-        </p>
+          className="h-9 w-full"
+        />
       ) : connections.data === null ? (
         <p role="alert" className="text-sm">
           {t(($) => {
@@ -1232,7 +1249,9 @@ function VncCertificateNameField() {
 
 export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
-  const editor = useGet(vncEditor$);
+  const profile = useGet(vncProfile$);
+  const trust = useGet(vncTrust$);
+  const caBundle = useGet(vncCaBundle$);
   const choose = useSet(chooseVncTrust$);
   const editCaBundle = useSet(editVncCaBundle$);
   const trustItems = [
@@ -1249,10 +1268,10 @@ export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
       }),
     },
   ];
-  if (isRsaAesProfile(editor.profile)) {
+  if (isRsaAesProfile(profile)) {
     return <VncRsaPinFields disabled={disabled} />;
   }
-  if (requiresVncProtectiveRoute(editor.profile)) {
+  if (requiresVncProtectiveRoute(profile)) {
     return null;
   }
   return (
@@ -1265,7 +1284,7 @@ export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
       </label>
       <Select
         items={trustItems}
-        value={editor.trust}
+        value={trust}
         onValueChange={(value, details) => {
           if (value !== "system" && value !== "custom_ca") {
             details.cancel();
@@ -1293,7 +1312,7 @@ export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
           return $.remoteConnectionHelp.certificateTrust;
         })}
       </p>
-      {editor.trust === "custom_ca" && (
+      {trust === "custom_ca" && (
         <div className="grid gap-2 text-sm">
           <label htmlFor="vnc-ca-bundle">
             {t(($) => {
@@ -1306,7 +1325,7 @@ export function VncTlsFields({ disabled }: { readonly disabled: boolean }) {
             required
             maxLength={VNC_CA_BUNDLE_MAX_LENGTH}
             aria-describedby="vnc-ca-help"
-            value={editor.caBundle}
+            value={caBundle}
             onChange={(event) => {
               editCaBundle(event.currentTarget.value);
             }}
@@ -1691,10 +1710,11 @@ export function VncCredentialFields({
   readonly connectionLogin?: boolean;
 }) {
   const { t } = useTranslation();
-  const editor = useGet(vncEditor$);
+  const profile = useGet(vncProfile$);
+  const replace = useGet(vncAuthenticationReplacement$);
   const setup = useGet(remoteSetup$);
   const guided = connectionLogin || (setup !== null && !credential);
-  const method = savedVncAuthenticationMethod(credential, editor.profile);
+  const method = savedVncAuthenticationMethod(credential, profile);
   return (
     <div className="grid gap-5">
       {guided ? (
@@ -1724,7 +1744,7 @@ export function VncCredentialFields({
       {showMethodSelection && !credential && (
         <VncAuthenticationMethodSelector
           disabled={disabled}
-          profile={editor.profile}
+          profile={profile}
         />
       )}
       {credential && connectionLogin && (
@@ -1751,12 +1771,9 @@ export function VncCredentialFields({
         </div>
       )}
       {credential && !connectionLogin && (
-        <VncAuthenticationReplacement
-          disabled={disabled}
-          replace={editor.replace}
-        />
+        <VncAuthenticationReplacement disabled={disabled} replace={replace} />
       )}
-      {(!credential || editor.replace || connectionLogin) && (
+      {(!credential || replace || connectionLogin) && (
         <VncAuthenticationInputs
           credential={credential}
           method={method}
@@ -1827,7 +1844,20 @@ function VncSavedLoginPicker({
   readonly disabled: boolean;
   readonly credentials: readonly VncCredentialResponse[];
 }) {
+  const { t } = useTranslation();
+  const saved = useLoadable(vncCredentials$);
   const choose = useSet(chooseVncCredential$);
+  if (saved.state === "loading") {
+    return (
+      <LoadingSkeleton
+        variant="text"
+        className="min-w-0 max-w-28 flex-1 w-auto"
+        label={t(($) => {
+          return $.vnc.loading;
+        })}
+      />
+    );
+  }
   return (
     <RemoteLoginPicker
       protocol="vnc"
@@ -1863,13 +1893,7 @@ function VncCredentialStatus() {
     return <VncCredentialLoadError />;
   }
   if (credentials.state === "loading") {
-    return (
-      <p role="status" className="text-sm">
-        {t(($) => {
-          return $.vnc.loading;
-        })}
-      </p>
-    );
+    return null;
   }
   if (credentials.data === null) {
     return (
@@ -1901,7 +1925,7 @@ export function VncCredentialSelection({
   });
   return (
     <fieldset className="grid min-w-0 gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex min-h-9 flex-wrap items-center justify-between gap-2">
         <h3 className="font-semibold">
           {t(($) => {
             return $.remoteControlSetup.loginHeading;

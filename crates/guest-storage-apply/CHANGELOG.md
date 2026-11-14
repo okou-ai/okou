@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.32.4](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.3...guest-storage-apply-v0.32.4) (2026-11-14)
+
+## [0.32.3](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.2...guest-storage-apply-v0.32.3) (2026-11-14)
+
+
+### Refactoring
+
+* **rust:** type internal owned descriptor stat checks ([#47124](https://github.com/okou-ai/okou/issues/47124)) ([5e36773](https://github.com/okou-ai/okou/commit/5e36773632938b2b6ba02fecd4768941a7ce3fd4))
+
+## [0.32.2](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.1...guest-storage-apply-v0.32.2) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** use owned notification descriptor constructors ([#47098](https://github.com/okou-ai/okou/issues/47098)) ([bf69ae3](https://github.com/okou-ai/okou/commit/bf69ae388ed442b23479f99bbf78bebd2c1723af))
+
+## [0.32.1](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.0...guest-storage-apply-v0.32.1) (2026-11-13)
+
 ## [0.32.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.31.6...guest-storage-apply-v0.32.0) (2026-11-12)
 
 

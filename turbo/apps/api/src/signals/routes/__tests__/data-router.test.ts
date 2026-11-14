@@ -44,13 +44,13 @@ async function createRun(actor = bdd.user()) {
     displayName: "Router accounting",
     visibility: "private",
   });
-  const runnerGroup = runs.configureRunnerGroup();
+  const runnerGroup = await runs.configureRunnerGroup();
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Read data",
   });
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.claimRunnerJob(run.runId);
+  const claim = await runs.executionInput(run.runId);
   return {
     actor,
     agentId: agent.agentId,

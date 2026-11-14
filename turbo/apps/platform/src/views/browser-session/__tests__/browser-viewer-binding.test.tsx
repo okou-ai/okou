@@ -22,7 +22,10 @@ const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
 const endpoint = "wss://browser.example/replacement";
 
-function session(instanceId: string, windowId: number): BrowserSession {
+function session(
+  instanceId: string,
+  windowId: number,
+): BrowserViewerConnection["browser"] {
   return {
     threadId,
     name: "booking",
@@ -30,7 +33,6 @@ function session(instanceId: string, windowId: number): BrowserSession {
     viewerUrl: `https://viewer.example/browsers/${threadId}`,
     liveUrl: null,
     screenshotUrl: null,
-    proxyCountryCode: null,
     timeoutMinutes: 240,
     idleExpiresAt: "2026-09-01T10:10:00.000Z",
     suspendedAt: null,
@@ -90,23 +92,6 @@ async function expectReplacement(browser: ReturnType<typeof mockReplacement>) {
     );
   });
 }
-
-test("A viewer without an assigned window cannot expose the shared browser", async () => {
-  const browser = { ...replacementSession, window: undefined };
-  const native = mockReplacement();
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, {
-      browser,
-      viewer: { browser, cdpUrl: endpoint, extension: TEST_BROWSER_EXTENSION },
-    });
-  });
-  await setupPage({ context, path: `/browsers/${threadId}` });
-
-  await screen.findByText("Browser view unavailable");
-  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-  expect(queryAllByRoleFast("tab")).toHaveLength(0);
-  expect(native.connections()).toBe(0);
-});
 
 test("An instance replaced during acquisition uses the viewer response's native window", async () => {
   mockSessionLease(() => {

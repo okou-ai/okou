@@ -1,5 +1,102 @@
 # Changelog
 
+## [0.43.5](https://github.com/okou-ai/okou/compare/ios-v0.43.4...ios-v0.43.5) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** make chat sharing responsive and selectable by row ([#47166](https://github.com/okou-ai/okou/issues/47166)) ([e8fa864](https://github.com/okou-ai/okou/commit/e8fa86470cbf3d6adaf67c1ca47176b64d53e012))
+
+## [0.43.4](https://github.com/okou-ai/okou/compare/ios-v0.43.3...ios-v0.43.4) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** enable keyboard send after selecting a follow-up ([#47143](https://github.com/okou-ai/okou/issues/47143)) ([d2c090f](https://github.com/okou-ai/okou/commit/d2c090fd685bae44dc9ccfb79675a74092e15e7f))
+* **ios:** return to the chat list after archiving ([#47169](https://github.com/okou-ai/okou/issues/47169)) ([8374e88](https://github.com/okou-ai/okou/commit/8374e8835c8a4ae4ab12ec9a887bddf15c3f8094))
+
+## [0.43.3](https://github.com/okou-ai/okou/compare/ios-v0.43.2...ios-v0.43.3) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** match existing web chat sharing behavior ([#47105](https://github.com/okou-ai/okou/issues/47105)) ([e25ad70](https://github.com/okou-ai/okou/commit/e25ad705a20e4cf55d75ade9c6dd7c0a9d45d0e5))
+
+## [0.43.2](https://github.com/okou-ai/okou/compare/ios-v0.43.1...ios-v0.43.2) (2026-11-14)
+
+
+### Performance Improvements
+
+* **ios:** sync projects incrementally ([#47111](https://github.com/okou-ai/okou/issues/47111)) ([ebe2e3d](https://github.com/okou-ai/okou/commit/ebe2e3dfd4be9b8c0593f9289cd17e80681bba37))
+
+## [0.43.1](https://github.com/okou-ai/okou/compare/ios-v0.43.0...ios-v0.43.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **ios:** allow native swipe back during chat scrolling ([#47081](https://github.com/okou-ai/okou/issues/47081)) ([5068feb](https://github.com/okou-ai/okou/commit/5068febc06c6f171186ed0cf4143e9b400a6867d))
+* **ios:** avoid quadratic chat list refreshes ([#47096](https://github.com/okou-ai/okou/issues/47096)) ([6711ba3](https://github.com/okou-ai/okou/commit/6711ba3a97144a99268929e4c1bdadd94f76626a))
+* **ios:** cache sidebar draft membership independently ([#47083](https://github.com/okou-ai/okou/issues/47083)) ([51d2a15](https://github.com/okou-ai/okou/commit/51d2a15501c9388fdd471a713352b1e15cd38e2c))
+
+## [0.43.0](https://github.com/okou-ai/okou/compare/ios-v0.42.1...ios-v0.43.0) (2026-11-13)
+
+
+### Features
+
+* align web and ios chat message sharing ([#47059](https://github.com/okou-ai/okou/issues/47059)) ([971a42f](https://github.com/okou-ai/okou/commit/971a42fa47c06591adb653265a8ce4055c40b266))
+
+## [0.42.1](https://github.com/okou-ai/okou/compare/ios-v0.42.0...ios-v0.42.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **ios:** move model selection above the composer ([#47046](https://github.com/okou-ai/okou/issues/47046)) ([e3b7d1f](https://github.com/okou-ai/okou/commit/e3b7d1fbd5952883db4b88f8ea13adf93778ac15))
+
+## [0.42.0](https://github.com/okou-ai/okou/compare/ios-v0.41.1...ios-v0.42.0) (2026-11-13)
+
+
+### Features
+
+* **ios:** add plan and billing management to settings ([#47013](https://github.com/okou-ai/okou/issues/47013)) ([441cd8e](https://github.com/okou-ai/okou/commit/441cd8e0a323e3aa9b6f2b0863fed86b888c7de7))
+
+## [0.41.1](https://github.com/okou-ai/okou/compare/ios-v0.41.0...ios-v0.41.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **ios:** coordinate foreground model recovery with realtime ([#46997](https://github.com/okou-ai/okou/issues/46997)) ([68c1605](https://github.com/okou-ai/okou/commit/68c1605c029aa34ac48bac4f51df3b3e467c14b1))
+
+## [0.41.0](https://github.com/okou-ai/okou/compare/ios-v0.40.0...ios-v0.41.0) (2026-11-13)
+
+
+### Features
+
+* **ios:** give every widget state one header and fill rows to the foot ([#46973](https://github.com/okou-ai/okou/issues/46973)) ([37da565](https://github.com/okou-ai/okou/commit/37da56509445dfb7b6905aa6efd48d75db80137a))
+* **ios:** put unread widget chats first with one new-chat button ([#46960](https://github.com/okou-ai/okou/issues/46960)) ([f37af98](https://github.com/okou-ai/okou/commit/f37af98d68eea19d1ec38234fae680285a459ccc))
+
+
+### Bug Fixes
+
+* **ios:** add interactive paging to image previews ([#46944](https://github.com/okou-ai/okou/issues/46944)) ([958faaf](https://github.com/okou-ai/okou/commit/958faaf46aa5df1439bba1607141f5bbfa007adf))
+* **ios:** open the project picker at half height ([#46965](https://github.com/okou-ai/okou/issues/46965)) ([03b8c57](https://github.com/okou-ai/okou/commit/03b8c573bf5a7e8b1a09929c0fd23cfe9383992e))
+
+
+### Refactoring
+
+* **ios:** share thread list reads ([#46949](https://github.com/okou-ai/okou/issues/46949)) ([31100e0](https://github.com/okou-ai/okou/commit/31100e02c26c5e7c75d4d88bbb5009ff604b2a1f))
+
+## [0.40.0](https://github.com/okou-ai/okou/compare/ios-v0.39.0...ios-v0.40.0) (2026-11-13)
+
+
+### Features
+
+* **ios:** enable full-swipe chat actions ([#46943](https://github.com/okou-ai/okou/issues/46943)) ([618b52a](https://github.com/okou-ai/okou/commit/618b52ac577d8d47c063e742fdf1f945c6af2912))
+
+
+### Bug Fixes
+
+* **ios:** distinguish inactive scenes from background resumes ([#46941](https://github.com/okou-ai/okou/issues/46941)) ([3379228](https://github.com/okou-ai/okou/commit/33792284c46bdf265f0787500ea953a59baab136))
+
 ## [0.39.0](https://github.com/okou-ai/okou/compare/ios-v0.38.0...ios-v0.39.0) (2026-11-13)
 
 

@@ -6,6 +6,8 @@ import Foundation
 /// run's text output, which streams on its own channel until the durable event replaces it.
 @MainActor
 final class RealtimeService {
+  typealias ClientFactory = (ARTClientOptions) -> ARTRealtime
+
   private let lifecycleTasks: LifecycleTasks
   private var tokenRequests: [UUID: Task<Void, Never>] = [:]
   /// One chunk of an assistant message while its run is live (`sessionOutputDeltaSchema`).
@@ -22,13 +24,14 @@ final class RealtimeService {
   private let tokenProvider: @Sendable () async throws -> Data
   private let onChange: @MainActor (ChatInvalidation) -> Void
   private let onConnection: @MainActor (RealtimeConnectionStatus) -> Void
-  private let createRealtime: (ARTClientOptions) -> ARTRealtime
+  private let createRealtime: ClientFactory
   private var isForeground = false
   private var realtime: ARTRealtime?
   private var generation = UUID()
   private var connectionAvailability = Availability.connecting
   private var channelAvailability: [String: Availability] = [:]
   private var catchUpPending = false
+  private var transportRecoveryPending = false
   private var initialSubscriptionsReported = false
 
   private enum Availability {
@@ -44,7 +47,7 @@ final class RealtimeService {
     tokenProvider: @escaping @Sendable () async throws -> Data,
     onChange: @escaping @MainActor (ChatInvalidation) -> Void,
     onConnection: @escaping @MainActor (RealtimeConnectionStatus) -> Void,
-    createRealtime: @escaping (ARTClientOptions) -> ARTRealtime = { ARTRealtime(options: $0) },
+    createRealtime: ClientFactory? = nil,
     lifecycleTasks: LifecycleTasks? = nil
   ) {
     self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
@@ -53,7 +56,7 @@ final class RealtimeService {
     self.tokenProvider = tokenProvider
     self.onChange = onChange
     self.onConnection = onConnection
-    self.createRealtime = createRealtime
+    self.createRealtime = createRealtime ?? { ARTRealtime(options: $0) }
   }
 
   func start() {
@@ -94,6 +97,7 @@ final class RealtimeService {
     self.realtime = realtime
     realtime.connection.on { [weak self] change in
       let state = change.current
+      let restored = state == .connected && change.previous != .connected
       Task { @MainActor [weak self] in
         guard let self, self.generation == generation else { return }
         switch state {
@@ -104,7 +108,8 @@ final class RealtimeService {
         @unknown default: connectionAvailability = .connecting
         }
         if state == .connected {
-          catchUpPending = true
+          if !initialSubscriptionsReported { catchUpPending = true }
+          if restored, initialSubscriptionsReported { transportRecoveryPending = true }
           reconcilePresence()
         }
         reportAvailability()
@@ -121,6 +126,7 @@ final class RealtimeService {
       }
       channel.on { [weak self] change in
         let state = change.current
+        let continuityLost = state == .attached && !change.resumed
         Task { @MainActor [weak self] in
           guard let self, self.generation == generation else { return }
           switch state {
@@ -131,7 +137,7 @@ final class RealtimeService {
           @unknown default: channelAvailability[name] = .unavailable
           }
           // This also covers SDK updates when an attached channel loses continuity.
-          if state == .attached { catchUpPending = true }
+          if continuityLost { catchUpPending = true }
           reportAvailability()
         }
       }
@@ -157,6 +163,24 @@ final class RealtimeService {
   }
 
   private func reportAvailability() {
+    let attached = channelNames.allSatisfy({ channelAvailability[$0] == .connected })
+    let unavailable = channelAvailability.values.contains(.unavailable)
+    // Register the recovery intent before releasing model readers through onConnection.
+    if connectionAvailability == .connected, attached || unavailable {
+      if catchUpPending {
+        catchUpPending = false
+        transportRecoveryPending = false
+        if attached, !initialSubscriptionsReported {
+          initialSubscriptionsReported = true
+          onChange(.initialSubscriptions)
+        } else {
+          onChange(initialSubscriptionsReported ? .realtimeGap : .reconnected)
+        }
+      } else if transportRecoveryPending {
+        transportRecoveryPending = false
+        onChange(.realtimeResume)
+      }
+    }
     switch connectionAvailability {
     case .disconnected:
       onConnection(.disconnected)
@@ -171,19 +195,6 @@ final class RealtimeService {
         onConnection(.unavailable)
       } else {
         onConnection(.connecting)
-      }
-    }
-    let attached = channelNames.allSatisfy({ channelAvailability[$0] == .connected })
-    let unavailable = channelAvailability.values.contains(.unavailable)
-    // Healthy startup waits for both subscriptions. A failed channel must not
-    // indefinitely delay catch-up for the other channel; its restoration reads again.
-    if catchUpPending, connectionAvailability == .connected, attached || unavailable {
-      catchUpPending = false
-      if attached, !initialSubscriptionsReported {
-        initialSubscriptionsReported = true
-        onChange(.initialSubscriptions)
-      } else {
-        onChange(.reconnected)
       }
     }
   }
@@ -245,6 +256,7 @@ final class RealtimeService {
     generation = UUID()
     for task in tokenRequests.values { task.cancel() }
     catchUpPending = false
+    transportRecoveryPending = false
     initialSubscriptionsReported = false
     realtime?.close()
     realtime = nil

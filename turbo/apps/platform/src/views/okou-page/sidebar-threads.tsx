@@ -20,7 +20,12 @@ import {
   projectDialog$,
   projectThreadMenuOpenChanged$,
 } from "../../signals/projects/project-ui.ts";
-import type { ComponentProps, ReactNode } from "react";
+import type {
+  CSSProperties,
+  ComponentProps,
+  ReactNode,
+  RefCallback,
+} from "react";
 import {
   useGet,
   useLastLoadable,
@@ -1798,6 +1803,8 @@ function equalChatThreadListWindows(
   return (
     previous.startIndex === next.startIndex &&
     previous.showAllChatsRow === next.showAllChatsRow &&
+    previous.motion === next.motion &&
+    previous.indexes === next.indexes &&
     equalArrays(previous.rows, next.rows, equalRows)
   );
 }
@@ -1849,7 +1856,7 @@ function ChatThreadListRowFrame({
 }: {
   row: SidebarChatThreadRow;
   index: number;
-  /** Virtual rows are positioned by height; a static list stays in flow. */
+  /** Virtual rows keep their fixed geometry while stacking in normal flow. */
   rowHeight: number | null;
   touch: boolean;
   moving: boolean;
@@ -1873,28 +1880,122 @@ function ChatThreadListRowFrame({
       data-project-drop-target={drop.targeted ? "" : undefined}
       className={cn(
         "w-full pb-1",
-        rowHeight !== null && "absolute left-0 top-0",
         row.projectId !== null && row.kind !== "project" && "pl-6",
         drop.targeted && "bg-state-hover",
         drop.targeted && row.projectId === null && "rounded-lg",
         drop.targeted && row.kind === "project" && "rounded-t-lg",
         drop.targeted && row.projectEnd && "rounded-b-lg",
       )}
-      style={
-        rowHeight === null
-          ? undefined
-          : { transform: `translateY(${index * rowHeight}px)` }
-      }
+      style={rowHeight === null ? undefined : { height: rowHeight }}
     >
       {children}
     </div>
   );
 }
 
+interface RenderedChatThreadGroup {
+  readonly key: string;
+  readonly projectId: string | null;
+  readonly rows: {
+    readonly row: SidebarChatThreadRow;
+    readonly index: number;
+  }[];
+}
+
+/** Keep each visible child slice under the same parent before/during motion. */
+function groupRenderedChatRows(
+  rows: readonly SidebarChatThreadRow[],
+  startIndex: number,
+  indexes?: readonly number[],
+) {
+  const groups: RenderedChatThreadGroup[] = [];
+  for (const [offset, row] of rows.entries()) {
+    const index = indexes?.[offset] ?? startIndex + offset;
+    const projectId = row.kind !== "project" ? row.projectId : null;
+    const previous = groups.at(-1);
+    if (projectId !== null && previous?.projectId === projectId) {
+      previous.rows.push({ row, index });
+    } else {
+      groups.push({
+        key: projectId === null ? row.key : `project-children:${projectId}`,
+        projectId,
+        rows: [{ row, index }],
+      });
+    }
+  }
+  return groups;
+}
+
 interface ChatThreadListRowsOptions {
   touch: boolean;
   layout: ProjectRowLayout;
   shortcuts: boolean;
+}
+
+function ChatThreadListRowGroup({
+  group,
+  rowHeight,
+  touch,
+  layout,
+  shortcuts,
+  moving,
+  moveHere,
+  motion,
+}: ChatThreadListRowsOptions & {
+  group: RenderedChatThreadGroup;
+  rowHeight: number | null;
+  moving: boolean;
+  moveHere: (projectId: string | null) => void;
+  motion?: SidebarChatThreadWindow["motion"];
+}) {
+  const active = motion?.projectId === group.projectId ? motion : undefined;
+  const content = group.rows.map(({ row, index }) => {
+    return (
+      <ChatThreadListRowFrame
+        key={row.key}
+        row={row}
+        index={index}
+        rowHeight={rowHeight}
+        touch={touch}
+        moving={moving}
+        moveHere={moveHere}
+      >
+        <ChatThreadListRowContent
+          row={row}
+          index={index}
+          touch={touch}
+          layout={layout}
+          shortcuts={shortcuts}
+        />
+      </ChatThreadListRowFrame>
+    );
+  });
+  return group.projectId === null ? (
+    content[0]
+  ) : (
+    <div
+      data-project-children-id={group.projectId}
+      data-project-fold-id={active?.id}
+      data-project-fold-state={
+        active ? (active.running ? "running" : "prepared") : undefined
+      }
+      inert={active?.geometry.toHeight === 0}
+      aria-hidden={active?.geometry.toHeight === 0 ? true : undefined}
+      className={cn(
+        "w-full transition-none",
+        active && "h-(--okou-project-fold-height) overflow-hidden",
+      )}
+      style={
+        active
+          ? {
+              paddingTop: active.range.childStart * (rowHeight ?? 0),
+            }
+          : undefined
+      }
+    >
+      {content}
+    </div>
+  );
 }
 
 /**
@@ -1906,6 +2007,9 @@ function ChatThreadListRowsView({
   startIndex,
   rowHeight,
   height,
+  motion,
+  indexes,
+  motionHostRef,
   touch,
   layout,
   shortcuts,
@@ -1915,6 +2019,9 @@ function ChatThreadListRowsView({
   startIndex: number;
   rowHeight: number | null;
   height?: number;
+  motion?: SidebarChatThreadWindow["motion"];
+  indexes?: readonly number[];
+  motionHostRef?: RefCallback<HTMLDivElement>;
   children?: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -1924,40 +2031,66 @@ function ChatThreadListRowsView({
   function moveHere(projectId: string | null) {
     detach(move(projectId, signal), Reason.DomCallback);
   }
+  const listStyle:
+    (CSSProperties & { "--okou-project-fold-height"?: string }) | undefined =
+    height === undefined
+      ? undefined
+      : motion
+        ? {
+            height: `calc(${height - motion.geometry.toHeight}px + var(--okou-project-fold-height))`,
+            "--okou-project-fold-height": `${motion.running ? motion.geometry.toHeight : motion.geometry.fromHeight}px`,
+          }
+        : { height };
 
   return (
     <>
       <div
-        ref={touch ? undefined : dragEventsRef}
-        className={cn("w-full", rowHeight !== null && "relative")}
+        ref={motionHostRef ?? (touch ? undefined : dragEventsRef)}
+        className={cn(
+          "w-full [overflow-anchor:none]",
+          rowHeight !== null && "relative",
+          motion?.running
+            ? "motion-safe:transition-[--okou-project-fold-height] motion-safe:duration-200 motion-safe:ease-out"
+            : "transition-none",
+        )}
         data-testid={
           rowHeight === null ? undefined : "sidebar-chat-threads-virtual-list"
         }
-        style={height === undefined ? undefined : { height }}
+        data-project-fold-id={motion?.id}
+        data-project-fold-state={
+          motion ? (motion.running ? "running" : "prepared") : undefined
+        }
+        style={listStyle}
       >
-        {rows.map((row, offset) => {
-          const index = startIndex + offset;
-          return (
-            <ChatThreadListRowFrame
-              key={row.key}
-              row={row}
-              index={index}
-              rowHeight={rowHeight}
-              touch={touch}
-              moving={moving.state === "loading"}
-              moveHere={moveHere}
-            >
-              <ChatThreadListRowContent
-                row={row}
-                index={index}
+        <div
+          ref={motionHostRef && !touch ? dragEventsRef : undefined}
+          className={cn(
+            "w-full",
+            rowHeight !== null && "absolute left-0 top-0",
+          )}
+          style={
+            rowHeight === null
+              ? undefined
+              : { transform: `translateY(${startIndex * rowHeight}px)` }
+          }
+        >
+          {groupRenderedChatRows(rows, startIndex, indexes).map((group) => {
+            return (
+              <ChatThreadListRowGroup
+                key={group.key}
+                group={group}
+                rowHeight={rowHeight}
                 touch={touch}
                 layout={layout}
                 shortcuts={shortcuts}
+                moving={moving.state === "loading"}
+                moveHere={moveHere}
+                motion={motion}
               />
-            </ChatThreadListRowFrame>
-          );
-        })}
-        {children}
+            );
+          })}
+          {children}
+        </div>
       </div>
       {moving.state === "hasError" && (
         <p role="alert" className="px-3 py-1 text-xs text-destructive">
@@ -1982,17 +2115,21 @@ export function ChatThreadListRows({
   listSignals: SidebarChatThreadListSignals;
   rowHeight: number;
   height: number;
-  /** Extra absolutely positioned rows that share the virtual geometry. */
+  /** Trailing visible rows that stack inside the same virtual window. */
   children?: ReactNode;
 }) {
   const window = useGet(listSignals.window$, {
     equalityFn: equalChatThreadListWindows,
   });
+  const motionHostRef = useSet(listSignals.motionHostRef$);
   return (
     <ChatThreadListRowsView
       {...options}
       rows={window.rows}
       startIndex={window.startIndex}
+      indexes={window.indexes}
+      motion={window.motion}
+      motionHostRef={motionHostRef}
       rowHeight={rowHeight}
       height={height}
     >

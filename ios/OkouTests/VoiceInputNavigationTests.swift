@@ -26,7 +26,7 @@ final class VoiceInputNavigationTests: XCTestCase {
     await workspace.refreshNavigation()
     await workspace.list.refresh()
     XCTAssertNil(workspace.list.error)
-    workspace.setForeground(true)
+    workspace.setPhase(.active)
     workspace.newChatDraft = "Existing notes: "
     await workspace.newComposer.synchronize()
     workspace.selectChat(AttachmentFlowFixture.threadID)
@@ -59,7 +59,7 @@ final class VoiceInputNavigationTests: XCTestCase {
     capture.speak(seconds: 1)
     try await eventually { voice.duration == 2 }
 
-    workspace.setForeground(false)
+    workspace.setPhase(.background)
     try await eventually { voice.phase == .saved }
     workspace.selectChat(AttachmentFlowFixture.threadID)
     NewChatSceneDelegate().windowScene(
@@ -67,7 +67,7 @@ final class VoiceInputNavigationTests: XCTestCase {
       performActionFor: UIApplicationShortcutItem(
         type: NewChatRequests.voiceShortcutType, localizedTitle: "Voice Input")
     ) { XCTAssertTrue($0) }
-    workspace.setForeground(true)
+    workspace.setPhase(.active)
     try await eventually { workspace.selectedThreadID == nil }
     XCTAssertEqual(voice.phase, .saved)
     XCTAssertEqual(voice.duration, 2, accuracy: 0.0001)
@@ -92,7 +92,7 @@ final class VoiceInputNavigationTests: XCTestCase {
     let workspace = fixture.workspace(capture: capture)
     addTeardownBlock { @MainActor in workspace.close() }
     await workspace.refreshNavigation()
-    workspace.setForeground(true)
+    workspace.setPhase(.active)
     workspace.newChatDraft = "Keep these notes"
     await workspace.newComposer.synchronize()
     let voice = try XCTUnwrap(workspace.newComposer.voice)
@@ -133,7 +133,7 @@ final class VoiceInputNavigationTests: XCTestCase {
     let workspace = fixture.workspace(capture: capture)
     addTeardownBlock { @MainActor in workspace.close() }
     await workspace.refreshNavigation()
-    workspace.setForeground(true)
+    workspace.setPhase(.active)
     workspace.newChatDraft = "Retain this draft"
     await workspace.newComposer.synchronize()
     let voice = try XCTUnwrap(workspace.newComposer.voice)
@@ -172,7 +172,7 @@ final class VoiceInputNavigationTests: XCTestCase {
     await workspace.refreshNavigation()
     await workspace.list.refresh()
     XCTAssertNil(workspace.list.error)
-    workspace.setForeground(true)
+    workspace.setPhase(.active)
     workspace.selectChat(AttachmentFlowFixture.threadID)
     XCTAssertEqual(workspace.selectedThreadID, AttachmentFlowFixture.threadID)
     workspace.newChatDraft = "Keep the pending draft"

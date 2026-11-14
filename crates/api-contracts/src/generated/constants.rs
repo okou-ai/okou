@@ -147,6 +147,27 @@ pub mod runners {
     /// Rust runners use this shared contract value to split target batches before calling the API.
     pub const CONNECTOR_RUNTIME_SYNC_TARGETS_MAX: u64 = 256;
 
+    /// Canonical default Runner profile.
+    pub const DEFAULT_PROFILE: &str = "vm0/default";
+
+    /// Canonical complete-input Runner contract constant.
+    pub const DEFAULT_PROFILE_HOME_DISK_MB: u32 = 24576;
+
+    /// Canonical complete-input Runner contract constant.
+    pub const DEFAULT_PROFILE_MEMORY_MB: u32 = 4096;
+
+    /// Canonical complete-input Runner contract constant.
+    pub const DEFAULT_PROFILE_ROOTFS_DISK_MB: u32 = 12288;
+
+    /// Canonical complete-input Runner contract constant.
+    pub const DEFAULT_PROFILE_VCPU: u32 = 2;
+
+    /// Canonical complete-input Runner contract constant.
+    pub const DISPATCH_MAX_BODY_BYTES: u32 = 4194304;
+
+    /// Canonical complete-input Runner contract constant.
+    pub const DISPATCH_MAX_VALIDITY_MS: u32 = 60000;
+
     /// Maximum Guest stdout/stderr drain time after child exit.
     pub const GUEST_EXEC_OUTPUT_DRAIN_DEADLINE_MS: u64 = 5000;
 
@@ -182,9 +203,6 @@ pub mod runners {
     /// The API stale barrier remains longer than this runner-owned deadline so delivery latency cannot release a healthy recovery early.
     pub const RUNNER_CANCELLATION_RECOVERY_GRACE_MS: u64 = 90000;
 
-    /// Maximum Pi model configuration generations advertised by one Runner claim.
-    pub const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX: u64 = 8;
-
     /// Handoff acceptance grace after both predecessor finalization and successor waiting begin.
     pub const RUNNER_FINALIZING_HANDOFF_ACCEPTANCE_GRACE_MS: u64 = 1500;
 
@@ -200,10 +218,6 @@ pub mod runners {
 
     /// Host scheduling, observation, and terminal proof delivery allowance.
     pub const RUNNER_JOB_TERMINAL_HOST_SLACK_MS: u64 = 3250;
-
-    /// Maximum runner-local claim cooldown exclusions accepted by the poll endpoint.
-    /// Rust runners use this shared contract value to bound local cooldown state and poll request size.
-    pub const RUNNER_POLL_EXCLUDED_RUN_IDS_MAX: u64 = 128;
 
     /// Wire and blob metadata value for gzip-compressed resume session history.
     /// Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.

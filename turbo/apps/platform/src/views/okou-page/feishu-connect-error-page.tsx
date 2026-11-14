@@ -3,22 +3,26 @@ import { useGet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 
 import { feishuPlatform$ } from "../../signals/okou-page/feishu.ts";
-import { ConnectErrorState, PageShell } from "./connect-page-shell.tsx";
+import { BrandedErrorPage } from "../components/branded-error-page.tsx";
+import { SettingsBackLink } from "./connect-page-shell.tsx";
 
 export function FeishuConnectErrorPage(): React.JSX.Element {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
 
   return (
-    <PageShell>
-      <ConnectErrorState
-        message={t(
-          ($) => {
-            return $.connectors.providerConnect.common.invalidBotConnectLink;
-          },
-          { provider: FEISHU_PLATFORMS[platform].name },
-        )}
-      />
-    </PageShell>
+    <BrandedErrorPage
+      title={t(($) => {
+        return $.connectors.providerConnect.common.connectionFailed;
+      })}
+      description={t(
+        ($) => {
+          return $.connectors.providerConnect.common.invalidBotConnectLink;
+        },
+        { provider: FEISHU_PLATFORMS[platform].name },
+      )}
+    >
+      <SettingsBackLink />
+    </BrandedErrorPage>
   );
 }

@@ -60,6 +60,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Use organization Cloudflare Access for custom HTTP API and MCP connectors.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ComposerMediaPreviews]: {
     maintainer: "yuma@okou.ai",
@@ -85,9 +86,16 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Home capabilities",
     description:
-      "Explore people, research, creation, and workflow capabilities above a bottom-aligned composer.",
+      "Explore capabilities in a shared home, project, and chat layout with a bottom-aligned composer.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.PresentationOutputFormat]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Presentation output format",
+    description:
+      "Choose HTML or PPTX for presentations and remember the preference on this device. Requires Home capabilities.",
+    enabled: false,
   },
   [FeatureSwitchKey.PastedTextAttachments]: {
     maintainer: "bingjie@okou.ai",
@@ -200,11 +208,20 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Open each chat reply with the agent's avatar and name inside the reading column, and pick messages to share from a checkbox column beside them.",
     enabled: false,
   },
+  [FeatureSwitchKey.ChatMessageVisualizationSummary]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Chat visualization summaries",
+    description:
+      "Show selected output formats and chart types on user messages.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.CloudBrowserPanel]: {
     maintainer: "tongx@okou.ai",
     displayName: "Cloud browser panel",
     description:
-      "Theme the cloud browser with app tokens, put its actions in the tab row, and show who is in control with Take over and Hand back.",
+      "Show who is in control with Take over and Hand back, use a floating loading status instead of the permanent footer, and refine the start button.",
     enabled: false,
   },
   [FeatureSwitchKey.ShareAudienceDescriptions]: {

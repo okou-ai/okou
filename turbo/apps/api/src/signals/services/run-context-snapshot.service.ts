@@ -125,13 +125,13 @@ export type RunContextAxiomSnapshot = Omit<
     readonly featureFlagEntries: readonly RunContextFeatureFlagEntry[];
   };
 
-/** Record the exact winning Claim, after all configuration has been resolved. */
-export function recordClaimedRunContextSnapshot(args: {
+/** Record resolved execution input when its process ownership is published. */
+export function recordRunContextSnapshot(args: {
   readonly runId: string;
   readonly userId: string;
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
-  readonly claimedAt: Date;
+  readonly recordedAt: Date;
   readonly context: PreparedExecutionContext;
   readonly secretNames: readonly string[];
   readonly secretValues: readonly string[] | null;
@@ -147,7 +147,7 @@ export function recordClaimedRunContextSnapshot(args: {
     }),
   );
   const snapshot: RunContextAxiomSnapshot = {
-    _time: args.claimedAt.toISOString(),
+    _time: args.recordedAt.toISOString(),
     runId: args.runId,
     userId: args.userId,
     prompt: args.prompt,
@@ -175,7 +175,7 @@ export function recordClaimedRunContextSnapshot(args: {
       ? { templateGuidanceBundles: context.templateGuidanceBundles }
       : {}),
   };
-  // Diagnostic ingestion is best effort and cannot change Claim ownership.
+  // Diagnostic ingestion is best effort and cannot change Run ownership.
   safeSync(() => {
     return ingestToAxiom(getDatasetName("run-context"), [
       {

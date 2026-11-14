@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.292](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.291...guest-write-file-v0.1.292) (2026-11-14)
+
+
+### Refactoring
+
+* **rust:** type internal owned descriptor stat checks ([#47124](https://github.com/okou-ai/okou/issues/47124)) ([5e36773](https://github.com/okou-ai/okou/commit/5e36773632938b2b6ba02fecd4768941a7ce3fd4))
+* **rust:** type owned blocking-mode updates ([#47120](https://github.com/okou-ai/okou/issues/47120)) ([5006b06](https://github.com/okou-ai/okou/commit/5006b0632614308a23d1368980b502aedfc11e29))
+
+## [0.1.291](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.290...guest-write-file-v0.1.291) (2026-11-13)
+
 ## [0.1.290](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.289...guest-write-file-v0.1.290) (2026-11-12)
 
 ## [0.1.289](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.288...guest-write-file-v0.1.289) (2026-11-11)

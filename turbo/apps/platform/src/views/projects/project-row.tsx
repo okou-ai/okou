@@ -3,7 +3,6 @@ import {
   type ProjectIndicatorState,
 } from "../../signals/projects/project-threads.ts";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
@@ -18,6 +17,7 @@ import {
 } from "lucide-react";
 import {
   Button,
+  buttonVariants,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -28,35 +28,27 @@ import {
   TooltipProvider,
   TooltipTrigger,
   cn,
-  getShortcutLabel,
 } from "@okouai/ui";
 import type { Project } from "@okouai/api-contracts/validators/projects";
 import { projectsEnabled$ } from "../../signals/projects/projects.ts";
-import { newProjectThread$ } from "../../signals/projects/project-new-thread.ts";
 import {
   openProjectEditor$,
   setProjectDialog$,
   projectDialog$,
 } from "../../signals/projects/project-ui.ts";
 import {
-  collapseProject$,
-  expandProject$,
-  toggleProject$,
-} from "../../signals/projects/project-expansion.ts";
+  setProjectExpandedWithMotion$,
+  toggleProjectWithMotion$,
+} from "../../signals/projects/project-fold.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { ChatThreadMenuShortcut } from "../okou-page/chat-thread-menu-shortcut.tsx";
 import type {
   ChatThreadListRow,
   ProjectChatThreadListRow,
 } from "../../signals/chat-page/chat-thread-list-rows.ts";
-import { rootSignal$ } from "../../signals/root-signal.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { selectChatThreadFilter$ } from "../../signals/okou-page/chat-thread-filter-selection.ts";
-import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
-import {
-  clickProjectName$,
-  selectedProjectId$,
-} from "../../signals/projects/project-navigation.ts";
+import { selectedProjectId$ } from "../../signals/projects/project-navigation.ts";
 import { Link } from "../router/link.tsx";
 import { ProjectFolderIcon, projectNameParts } from "./project-icon.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -81,8 +73,8 @@ function ProjectFoldMenuItem({
   expanded: boolean;
 }) {
   const { t } = useTranslation();
-  const collapse = useSet(collapseProject$);
-  const expand = useSet(expandProject$);
+  const fold = useSet(setProjectExpandedWithMotion$);
+  const signal = useGet(pageSignal$);
   const shortcut = expanded
     ? GLOBAL_KEYBOARD_SHORTCUTS.collapseProject
     : GLOBAL_KEYBOARD_SHORTCUTS.expandProject;
@@ -99,11 +91,7 @@ function ProjectFoldMenuItem({
       aria-label={label}
       aria-keyshortcuts={shortcut.ariaKeyShortcuts}
       onClick={() => {
-        if (expanded) {
-          collapse(project.id);
-        } else {
-          expand(project.id);
-        }
+        detach(fold(project.id, !expanded, signal), Reason.DomCallback);
       }}
     >
       <Icon size={16} />
@@ -209,48 +197,59 @@ function ProjectActions({
   indicator,
   rowIndex,
   expanded,
-  creating,
-  onNewChat,
+  active,
 }: ProjectRowProps & {
   indicator: ProjectIndicatorState | null;
   rowIndex: number;
   expanded: boolean;
-  creating: boolean;
-  /** Null when the row only carries its menu, as in My Okou's chat list. */
-  onNewChat: (() => void) | null;
+  active: boolean;
 }) {
   const { t } = useTranslation();
   // The state glyph stands where the menu dots would, so it keeps the menu
   // visible at rest and only the other actions wait for hover or focus.
   const resting = indicator !== null;
+  const label = t(
+    ($) => {
+      return $.projects.openHome;
+    },
+    { name: project.name },
+  );
   return (
     <div
       className={cn(
-        "group/project-actions flex shrink-0 items-center group-hover/project:opacity-100 focus-within:opacity-100 has-[[data-popup-open]]:opacity-100",
+        "group/project-actions flex shrink-0 items-center group-hover/project:opacity-100 group-focus-within/project:opacity-100 has-[[data-popup-open]]:opacity-100",
         !resting && "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0",
         layout === "list" ? "gap-1" : "gap-0.5",
       )}
     >
-      {onNewChat ? (
-        <Button
-          variant="quiet"
-          size="icon-sm"
-          iconSize="md"
-          className={cn(
-            "shrink-0",
-            touch && "min-h-11 min-w-11",
-            resting &&
-              "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 group-focus-within/project-actions:opacity-100 group-has-[[data-popup-open]]/project:opacity-100",
-          )}
-          aria-label={t(($) => {
-            return $.projects.newChat;
-          })}
-          disabled={creating}
-          onClick={onNewChat}
-        >
-          <Plus />
-        </Button>
-      ) : null}
+      <TooltipProvider delay={200}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Link
+                pathname="/projects/:projectId"
+                options={{ pathParams: { projectId: project.id } }}
+                aria-label={label}
+                aria-current={active ? "page" : undefined}
+                className={cn(
+                  buttonVariants({
+                    variant: "quiet",
+                    size: "icon-sm",
+                    iconSize: "md",
+                  }),
+                  "shrink-0",
+                  touch && "min-h-11 min-w-11",
+                  resting &&
+                    "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 group-focus-within/project:opacity-100 group-has-[[data-popup-open]]/project:opacity-100",
+                )}
+              />
+            }
+          >
+            <Plus />
+          </TooltipTrigger>
+          <TooltipContent>{label}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <ProjectMenu
         project={project}
         touch={touch}
@@ -259,86 +258,6 @@ function ProjectActions({
         expanded={expanded}
       />
     </div>
-  );
-}
-
-/**
- * The folder folds the Project's chats. Hovering the row turns it into the fold
- * arrow, and its tooltip names the action and shortcut. The folder wears the
- * name's emoji as a badge.
- */
-function ProjectFoldToggle({
-  project,
-  layout,
-  expanded,
-}: {
-  readonly project: Project;
-  readonly layout: ProjectRowLayout;
-  readonly expanded: boolean;
-}) {
-  const { t } = useTranslation();
-  const toggle = useSet(toggleProject$);
-  const Chevron = expanded ? ChevronDown : ChevronRight;
-  const shortcut = expanded
-    ? GLOBAL_KEYBOARD_SHORTCUTS.collapseProject
-    : GLOBAL_KEYBOARD_SHORTCUTS.expandProject;
-  const label = expanded
-    ? t(($) => {
-        return $.projects.collapse;
-      })
-    : t(($) => {
-        return $.projects.expand;
-      });
-  return (
-    <TooltipProvider delay={200}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              aria-expanded={expanded}
-              aria-label={t(
-                ($) => {
-                  return $.projects.toggle;
-                },
-                { name: project.name },
-              )}
-              aria-keyshortcuts={shortcut.ariaKeyShortcuts}
-              onClick={() => {
-                return toggle(project.id);
-              }}
-              className={cn(
-                "group/project-fold flex shrink-0 items-center justify-center rounded-lg text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                layout === "list" ? "h-14 w-10 pl-3 pr-1" : "h-8 w-8 px-1",
-              )}
-            >
-              <span className="flex size-6 shrink-0 items-center justify-center rounded-md group-hover/project-fold:bg-nested-fill">
-                <ProjectFolderIcon
-                  name={project.name}
-                  open={expanded}
-                  className="md:group-hover/project:hidden group-focus-visible/project-fold:hidden"
-                  folderClassName="opacity-70 group-hover/project-fold:opacity-100"
-                />
-                <Chevron
-                  size={16}
-                  className="hidden opacity-70 group-hover/project-fold:opacity-100 md:group-hover/project:block group-focus-visible/project-fold:block"
-                />
-              </span>
-            </button>
-          }
-        />
-        <TooltipContent
-          role="tooltip"
-          side="bottom"
-          className="flex flex-col items-center gap-1 py-1.5"
-        >
-          <span>{label}</span>
-          <kbd className="whitespace-nowrap font-sans text-xs opacity-70">
-            {getShortcutLabel(shortcut.binding)}
-          </kbd>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
   );
 }
 
@@ -355,39 +274,65 @@ function ProjectTrigger({
   readonly active: boolean;
   readonly indicator: ProjectIndicatorState | null;
 }) {
-  const clickName = useSet(clickProjectName$);
+  const { t } = useTranslation();
+  const toggle = useSet(toggleProjectWithMotion$);
+  const signal = useGet(pageSignal$);
+  const Chevron = expanded ? ChevronDown : ChevronRight;
+  const stateId = `project-state-${layout}-${project.id}`;
+  const shortcut = expanded
+    ? GLOBAL_KEYBOARD_SHORTCUTS.collapseProject
+    : GLOBAL_KEYBOARD_SHORTCUTS.expandProject;
   return (
-    <div className="flex min-w-0 flex-1 items-center">
-      {/* The folder folds the Project's chats. The name opens its page and
-          unfolds its chats; on that page, clicking it again folds or
-          unfolds them. */}
-      <ProjectFoldToggle
-        project={project}
-        layout={layout}
-        expanded={expanded}
-      />
-      <Link
-        pathname="/projects/:projectId"
-        options={{ pathParams: { projectId: project.id } }}
-        data-project-trigger=""
-        aria-current={active ? "page" : undefined}
-        onClick={(event) => {
-          clickName(project.id, event);
-        }}
+    <button
+      type="button"
+      data-project-trigger=""
+      aria-expanded={expanded}
+      aria-label={t(
+        ($) => {
+          return $.projects.toggle;
+        },
+        { name: project.name },
+      )}
+      aria-describedby={indicator !== null ? stateId : undefined}
+      aria-keyshortcuts={shortcut.ariaKeyShortcuts}
+      onClick={() => {
+        detach(toggle(project.id, signal), Reason.DomCallback);
+      }}
+      className={cn(
+        "group/project-fold flex min-w-0 flex-1 items-center rounded-lg pr-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        layout === "list" ? "h-14 gap-2 text-base leading-5" : "h-8",
+        active && "font-medium",
+      )}
+    >
+      <span
+        aria-hidden="true"
         className={cn(
-          "flex min-w-0 flex-1 items-center gap-2 rounded-lg pr-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-          layout === "list" ? "h-14 pl-2 text-base leading-5" : "h-8",
-          active && "font-medium",
+          "flex shrink-0 items-center justify-center",
+          layout === "list" ? "w-10 pl-3 pr-1" : "w-8 px-1",
         )}
       >
-        <span className="truncate">{projectNameParts(project.name).text}</span>
-        <ChatThreadStateText state={indicator} />
-      </Link>
-    </div>
+        <ProjectFolderIcon
+          name={project.name}
+          open={expanded}
+          className="md:group-hover/project:hidden group-focus-visible/project-fold:hidden"
+          folderClassName="opacity-70"
+        />
+        <Chevron
+          size={16}
+          className="hidden opacity-70 md:group-hover/project:block group-focus-visible/project-fold:block"
+        />
+      </span>
+      <span className="truncate">{projectNameParts(project.name).text}</span>
+      {indicator !== null && (
+        <span id={stateId}>
+          <ChatThreadStateText state={indicator} />
+        </span>
+      )}
+    </button>
   );
 }
 
-/** A Project's own row: it folds its chats and starts new ones inside it. */
+/** A Project's row folds its chats and links to its home. */
 export function ProjectRow({
   row,
   rowIndex,
@@ -400,7 +345,6 @@ export function ProjectRow({
   readonly touch: boolean;
   readonly layout: ProjectRowLayout;
 }) {
-  const { t } = useTranslation();
   const { project, expanded } = row;
   // A Project's page makes its row the list's current item.
   const active = useGet(selectedProjectId$) === project.id;
@@ -408,14 +352,6 @@ export function ProjectRow({
     useLastResolved(projectIndicatorStates$)?.get(project.id) ?? null;
   // An unfolded Project leaves each state to the chat row that owns it.
   const indicator = expanded ? null : state;
-  const [creation, create] = useLoadableSet(newProjectThread$);
-  const signal = useGet(rootSignal$);
-  // My Okou starts chats from the list's New chat row, so a Project row keeps
-  // only its menu.
-  const singleAgent = useGet(singleAgentEnabled$);
-  function newChat() {
-    detach(create(project.id, signal), Reason.DomCallback);
-  }
   return (
     <div
       className={cn(
@@ -430,13 +366,6 @@ export function ProjectRow({
         active={active}
         indicator={indicator}
       />
-      {creation.state === "hasError" && (
-        <span role="alert" className="shrink-0 px-1 text-xs text-destructive">
-          {t(($) => {
-            return $.projects.createChatError;
-          })}
-        </span>
-      )}
       <ProjectActions
         project={project}
         touch={touch}
@@ -444,8 +373,7 @@ export function ProjectRow({
         indicator={indicator}
         rowIndex={rowIndex}
         expanded={expanded}
-        creating={creation.state === "loading"}
-        onNewChat={singleAgent ? null : newChat}
+        active={active}
       />
     </div>
   );

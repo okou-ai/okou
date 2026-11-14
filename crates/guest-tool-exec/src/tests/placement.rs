@@ -1,7 +1,8 @@
 use super::*;
 use cli_test_support::child::KillAndWaitChild as TestChild;
+use rustix::net::{AddressFamily, SocketFlags, SocketType, socket_with};
 use std::mem::{MaybeUninit, size_of};
-use std::os::fd::{AsFd, AsRawFd, FromRawFd};
+use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::net::UnixListener;
 use std::thread;
 use std::time::Instant;
@@ -24,17 +25,13 @@ fn fill_accept_queue(listener: &UnixListener) -> Vec<OwnedFd> {
     assert_eq!(result, 0);
     let mut queued = Vec::new();
     for _ in 0..1024 {
-        // SAFETY: the arguments create a nonblocking, close-on-exec Unix socket.
-        let raw_fd = unsafe {
-            libc::socket(
-                libc::AF_UNIX,
-                libc::SOCK_STREAM | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
-                0,
-            )
-        };
-        assert!(raw_fd >= 0);
-        // SAFETY: raw_fd is newly created and ownership is transferred once.
-        let socket = unsafe { OwnedFd::from_raw_fd(raw_fd) };
+        let socket = socket_with(
+            AddressFamily::UNIX,
+            SocketType::STREAM,
+            SocketFlags::CLOEXEC | SocketFlags::NONBLOCK,
+            None,
+        )
+        .expect("create nonblocking queue socket");
         // SAFETY: getsockname initialized address_len bytes of the address and
         // socket owns a valid AF_UNIX descriptor for the entire call.
         let result =

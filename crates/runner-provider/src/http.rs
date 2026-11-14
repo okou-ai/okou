@@ -8,7 +8,7 @@ use api_contracts::generated::constants::client::headers::{
 use api_contracts::generated::constants::client::types::CLIENT_TYPE_RUNNER;
 use api_contracts::{Method, ResolvedRoute, Route};
 use reqwest::header::{HeaderMap, HeaderValue};
-use reqwest::{Client, Request, Response};
+use reqwest::{Request, Response};
 use serde::Serialize;
 use tracing::info;
 use uuid::Uuid;
@@ -18,12 +18,12 @@ use crate::error::{
     ProviderResult,
 };
 
-mod transport_timing;
-use transport_timing::{ConnectionTimingLayer, TimedResolver};
 mod transport_diagnostics;
 use transport_diagnostics::{ConnectionDiagnosticsLayer, TransportDiagnostics};
 mod recovery;
 pub(crate) use recovery::{RecoveryPolicy, RetryConditions};
+mod pool;
+use pool::ClientPool;
 
 // Retain only the bounded provider-issued identifier, never arbitrary headers.
 pub(crate) fn response_cf_ray(headers: &HeaderMap) -> Option<&str> {
@@ -144,7 +144,7 @@ pub struct HttpClient {
 }
 
 struct Inner {
-    client: Client,
+    client: Arc<ClientPool>,
     diagnostics: TransportDiagnostics,
     api_url: String,
     vercel_bypass: Option<String>,
@@ -173,7 +173,7 @@ struct FinalizedApiRequest {
 
 /// Finalized API request whose correlation context is available before transport execution.
 pub struct PreparedApiRequest {
-    client: Client,
+    client: Arc<ClientPool>,
     diagnostics: TransportDiagnostics,
     request: Request,
     context: ApiRequestContext,
@@ -187,7 +187,7 @@ pub struct PreparedApiRequest {
 /// Generated client headers are finalized in `send`/`build` so caller-side
 /// request customization cannot accidentally override them.
 pub struct ApiRequestBuilder {
-    client: Client,
+    client: Arc<ClientPool>,
     diagnostics: TransportDiagnostics,
     builder: reqwest::RequestBuilder,
     client_headers: ClientHeaders,
@@ -312,7 +312,7 @@ impl PreparedApiRequest {
     }
 
     pub async fn send(self) -> ProviderResult<Response> {
-        recovery::send(self, None, None, None).await.result
+        recovery::send(self, None).await
     }
 
     /// Keep the current wire-attempt identity available even if an outer
@@ -321,22 +321,7 @@ impl PreparedApiRequest {
         self,
         context: &mut ApiRequestContext,
     ) -> ProviderResult<Response> {
-        recovery::send(self, None, Some(context), None).await.result
-    }
-
-    pub(crate) async fn send_observed_claim(
-        self,
-        run_id: runner_types::ids::RunId,
-        execution_started_at: Instant,
-        prepare_replay: Option<&mut recovery::PrepareReplay<'_>>,
-    ) -> recovery::AttemptOutcome {
-        recovery::send(
-            self,
-            Some((run_id, execution_started_at)),
-            None,
-            prepare_replay,
-        )
-        .await
+        recovery::send(self, Some(context)).await
     }
 }
 
@@ -399,17 +384,7 @@ impl HttpClient {
         let api_url = normalize_api_base_url(&raw_api_url)?;
         let diagnostics = TransportDiagnostics::new();
 
-        let client = Client::builder()
-            .gzip(true)
-            .no_brotli()
-            .no_deflate()
-            .no_zstd()
-            .timeout(DEFAULT_TIMEOUT)
-            .dns_resolver(TimedResolver::default())
-            .connector_layer(ConnectionTimingLayer)
-            .connector_layer(ConnectionDiagnosticsLayer)
-            .build()
-            .map_err(|e| ProviderError::Internal(format!("http client: {e}")))?;
+        let client = Arc::new(ClientPool::new(pool::build_client)?);
 
         info!(
             api_url = %api_url,
@@ -451,7 +426,7 @@ impl HttpClient {
     }
 
     pub fn get(&self, url: &str) -> reqwest::RequestBuilder {
-        self.inner.client.get(url)
+        self.inner.client.current().get(url)
     }
 
     pub fn runner_version(&self) -> &'static str {
@@ -474,7 +449,12 @@ impl HttpClient {
         url: String,
         token: &str,
     ) -> ApiRequestBuilder {
-        let mut req = self.inner.client.request(method, url).bearer_auth(token);
+        let mut req = self
+            .inner
+            .client
+            .current()
+            .request(method, url)
+            .bearer_auth(token);
 
         if let Some(bypass) = &self.inner.vercel_bypass {
             req = req.header(VERCEL_BYPASS_HEADER, bypass);

@@ -1,0 +1,28 @@
+<resources>
+    <string name="chat_list_title">Chat</string>
+    <string name="chat_refresh">Muat ulang chat</string>
+    <string name="chat_loading">Memuat chat…</string>
+    <string name="chat_refreshing">Memperbarui chat…</string>
+    <string name="chat_load_failed">Chat tidak dapat dimuat. Periksa koneksi lalu coba lagi.</string>
+    <string name="chat_refresh_failed">Tidak dapat memperbarui. Menampilkan chat terakhir yang dimuat.</string>
+    <string name="chat_cached">Menampilkan chat tersimpan.</string>
+    <string name="chat_cache_unavailable">Penyimpanan offline tidak tersedia. Chat ini mungkin tidak tersedia setelah aplikasi dimulai ulang.</string>
+    <string name="chat_metadata_loading">Memuat nama Okou dan Proyek…</string>
+    <string name="chat_metadata_unavailable">Sebagian informasi Okou atau Proyek tidak tersedia.</string>
+    <string name="chat_status_observed">Status aktif dan belum dibaca berasal dari pembaruan terakhir.</string>
+    <string name="chat_status_unavailable">Status tidak dapat diperbarui. Indikator sebelumnya mungkin sudah tidak akurat.</string>
+    <string name="chat_status_loading">Memeriksa status aktif dan belum dibaca…</string>
+    <string name="chat_refresh_status">Perbarui status</string>
+    <string name="chat_recent">Terbaru</string>
+    <string name="chat_unread">Belum dibaca</string>
+    <string name="chat_archived">Diarsipkan</string>
+    <string name="chat_muted">Dibisukan</string>
+    <string name="chat_outside_projects">Chat di luar Proyek</string>
+    <string name="chat_project_empty">Belum ada chat dalam Proyek ini.</string>
+    <string name="chat_empty">Tidak ada chat dalam tampilan ini.</string>
+    <string name="chat_untitled">Chat tanpa judul</string>
+    <string name="chat_agent_identity">Okou · %1$s</string>
+    <string name="chat_pinned">Disematkan</string>
+    <string name="chat_active">Aktif</string>
+    <string name="chat_metadata_cached">Menampilkan nama Okou dan Proyek yang tersimpan.</string>
+</resources>

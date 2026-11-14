@@ -17,6 +17,35 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.CodexExecution).toBe("_codexExecution");
+    expect(FeatureSwitchKey.ChatMessageVisualizationSummary).toBe(
+      "_chatMessageVisualizationSummary",
+    );
+  });
+
+  it("keeps chat visualization summaries internal to the staff audience", () => {
+    const key = FeatureSwitchKey.ChatMessageVisualizationSummary;
+    const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+
+    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");
+    expect(isFeatureEnabled(key, { orgId: staffOrgId })).toBe(true);
+    expect(
+      isFeatureEnabled(key, {
+        orgId: staffOrgId,
+        overrides: { [key]: false },
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(key, {
+        orgId: "external-org",
+        overrides: { [key]: true },
+      }),
+    ).toBe(false);
+    expect(
+      getAllFeatureStates({
+        orgId: "external-org",
+        overrides: { [key]: true },
+      })[key],
+    ).toBe(false);
   });
 });
 

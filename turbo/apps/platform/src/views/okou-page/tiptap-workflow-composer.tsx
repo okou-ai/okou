@@ -11,6 +11,8 @@ import { useEditorState } from "@tiptap/react";
 import { Popover, useMediaQuery, type KeyboardEventLike } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -404,7 +406,9 @@ function useSlashTemplateCategorySuggestions(
   query: string | undefined,
 ): readonly SlashTemplateCategory[] {
   useTranslation();
-  if (query === undefined) {
+  const capabilitiesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.HomeCapabilities];
+  if (query === undefined || capabilitiesEnabled) {
     return [];
   }
   const normalized = query.toLowerCase().trim();
@@ -977,7 +981,7 @@ function ComposerSuggestionSession({
                 overview={suggestionMenu.actionsOverview}
                 workflows={suggestionMenu.workflows}
                 workflowsLoading={suggestionMenu.workflowsLoading}
-                categories={suggestionMenu.panelCategories}
+                categories={SLASH_TEMPLATE_CATEGORIES}
                 selectedIndex={suggestionMenu.selectedIndex}
                 previewIndex={suggestionMenu.previewIndex}
                 onPreview={suggestionMenu.previewSuggestion}

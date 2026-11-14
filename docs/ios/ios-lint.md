@@ -110,6 +110,14 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   Same-owner synchronous check helpers are accepted only when their bodies
   establish the check; their names alone grant nothing. Local projections and
   deferred teardown are different from publishing resource data.
+  Direct mutations of explicitly typed owner `Array`, `ContiguousArray`,
+  `Dictionary`, and `Set` properties are publication too: `append`, `updateValue`,
+  removal, and in-place ordering/algebra need the same post-suspension check.
+  Qualified and optional collection types retain this contract. Local value
+  copies, shadowed bindings, read-only methods, retained Task/subscription
+  collections, and deferred cleanup keep their existing semantics. Inferred or
+  aliased collection types, nested receivers, and custom mutation helpers remain
+  review boundaries; a method named `append` alone is not proof of publication.
 - A new asynchronous Task constructed directly in a `Computed`/`computedTask` callback, or in
   a Task factory taking `EvaluationSignal`, connects that signal's `onCancel`
   to the original immutable Task binding or a local alias. Registration and

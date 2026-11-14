@@ -91,17 +91,20 @@ describe("iOS runtime API contract gate", () => {
           return route.owner;
         })
         .sort(),
-    ).toEqual(["desktop", "ios"]);
+    ).toEqual(["android", "desktop", "ios"]);
     const findings = compareRuntimeApiSchemas(
       { ...schemaDocument, routes },
       { ...schemaDocument, routes: [] },
     );
     const result = gate({
       findings,
+      blockingOwners: new Set(["android", "desktop", "ios"]),
+      androidFloor: { floor: null, baseFloor: null },
       iosFloor: { floor: "0.22.6", baseFloor: "0.22.5" },
     });
     expect(result.findings).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ owner: "android", outcome: "blocking" }),
         expect.objectContaining({ owner: "ios", outcome: "proven" }),
         expect.objectContaining({ owner: "desktop", outcome: "blocking" }),
       ]),

@@ -1,7 +1,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { toJSONSchema } from "zod";
+import { isNoBody } from "../contracts/trpc-contract";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../contracts/chat-event-schema-version";
 import {
   CLIENT_TYPE_ANDROID,
   CLIENT_TYPE_HEADER,
@@ -21,10 +22,21 @@ import {
   kotlinIdentifier as identifier,
   kotlinQuote as quote,
   kotlinTypeName as typeName,
-  renderKotlinModels,
-  schemaObject,
-} from "./models";
+} from "./syntax";
+import { renderKotlinModels } from "./models";
+import { pathBinding, queryBinding, successResponse } from "./routes";
+import {
+  kotlinHistoryFixtureJson,
+  kotlinHistoryFixtureRoutes,
+  kotlinHistoryFixtureTypes,
+} from "./history-fixtures";
 import { kotlinTokens } from "./source-tokens";
+import { kotlinHistorySemanticsFixtureJson } from "./history-semantics-fixtures";
+import {
+  kotlinCommandFixtureJson,
+  kotlinCommandFixtureRoutes,
+  kotlinCommandFixtureTypes,
+} from "./command-fixtures";
 import {
   kotlinFixtureJson,
   kotlinFixtureRoutes,
@@ -39,58 +51,9 @@ const repositoryRoot = fileURLToPath(
 export function renderKotlinTypes(
   bindings: readonly KotlinTypeBinding[] = kotlinTypeBindings,
   packageName = defaultKotlinPackage,
+  requestTypes: ReadonlySet<string> = new Set(),
 ): string {
-  return renderKotlinModels(bindings, packageName);
-}
-
-function queryParameters(route: KotlinRouteBinding["route"]): string[] {
-  if (!route.query) return [];
-  // Retrofit serializes typed scalars into query strings; Zod's output captures
-  // the post-coercion scalar type rather than the unknown coercion input.
-  const schema = toJSONSchema(route.query, { io: "output" });
-  if (
-    !schemaObject(schema) ||
-    schema.type !== "object" ||
-    !schemaObject(schema.properties) ||
-    (schema.additionalProperties !== undefined &&
-      schema.additionalProperties !== false)
-  )
-    throw new Error("Unsupported Retrofit query schema");
-  const required = new Set(
-    Array.isArray(schema.required) ? schema.required : [],
-  );
-  const names = new Set<string>();
-  return Object.entries(schema.properties).map(([field, value]) => {
-    identifier(field);
-    if (
-      !schemaObject(value) ||
-      value.anyOf ||
-      value.enum ||
-      value.default !== undefined ||
-      value.const !== undefined
-    )
-      throw new Error("Unsupported Retrofit query field");
-    const scalar = (() => {
-      switch (value.type) {
-        case "string":
-          return "String";
-        case "integer":
-          return "Long";
-        case "number":
-          return "Double";
-        case "boolean":
-          return "Boolean";
-        default:
-          return undefined;
-      }
-    })();
-    if (!scalar) throw new Error("Unsupported Retrofit query field");
-    const name = identifier(`query${field[0]!.toUpperCase()}${field.slice(1)}`);
-    if (names.has(name)) throw new Error("Duplicate Retrofit query parameter");
-    names.add(name);
-    const optional = !required.has(field);
-    return `@Query(${quote(field)}) ${name}: ${scalar}${optional ? "? = null" : ""}`;
-  });
+  return renderKotlinModels(bindings, packageName, requestTypes);
 }
 
 export function renderKotlinFiles(
@@ -106,15 +69,28 @@ export function renderKotlinFiles(
     packageName = defaultKotlinPackage,
   } = config;
   const header = kotlinHeader(packageName);
-  const methods = routes.map(({ name, response, request, route }) => {
-    if (
-      !/^(GET|POST|PUT|PATCH|DELETE)$/u.test(route.method) ||
-      !/^\/api\/[A-Za-z0-9/-]+$/u.test(route.path) ||
-      route.pathParams
-    ) {
+  const queries = routes.map(({ name, route }) => {
+    return queryBinding(name, route);
+  });
+  const helpers: string[] = [];
+  const modelTypes = [
+    ...types,
+    ...queries.flatMap((query) => {
+      return query.type ? [query.type] : [];
+    }),
+  ];
+  const names = routes.flatMap(({ name }, index) => {
+    return queries[index]!.type ? [name, `${name}Wire`] : [name];
+  });
+  if (new Set(names).size !== names.length)
+    throw new Error("Duplicate Retrofit method");
+  const methods = routes.map(({ name, response, request, route }, index) => {
+    if (!/^(GET|POST|PUT|PATCH|DELETE)$/u.test(route.method)) {
       throw new Error(`${name}: unsupported Retrofit route`);
     }
-    if (Boolean(request) !== Boolean(route.body) || !route.responses[200])
+    if (
+      Boolean(request) !== (route.body !== undefined && !isNoBody(route.body))
+    )
       throw new Error(`${name}: unsupported request/response binding`);
     const responseType = types.find((binding) => {
       return binding.name === response;
@@ -124,7 +100,7 @@ export function renderKotlinFiles(
     });
     if (
       !responseType ||
-      responseType.schema !== route.responses[200] ||
+      responseType.schema !== successResponse(route) ||
       responseType.direction !== "output" ||
       (request &&
         (!requestType ||
@@ -135,12 +111,27 @@ export function renderKotlinFiles(
         `${name}: DTO binding does not match the canonical route schema`,
       );
     }
+    const path = pathBinding(route);
+    const query = queries[index]!;
     const parameters = [
       '@Header("Authorization") token: String',
+      ...path.parameters,
       ...(request ? [`@Body body: ${typeName(request)}`] : []),
-      ...queryParameters(route),
+      ...query.parameters,
     ];
-    return `    @${route.method}(${quote(route.path)})\n    suspend fun ${identifier(name)}(${parameters.join(", ")}): Response<${typeName(response)}>`;
+    if (query.type) {
+      helpers.push(`internal suspend fun CanonicalApi.${identifier(name)}(${[
+        "token: String",
+        ...path.arguments.map((argument) => {
+          return `${argument}: String`;
+        }),
+        ...(request ? [`body: ${typeName(request)}`] : []),
+        `query: ${typeName(query.type.name)}`,
+      ].join(", ")}): Response<${typeName(response)}> =
+    ${identifier(`${name}Wire`)}(${["token", ...path.arguments, ...(request ? ["body"] : []), "query.toQueryParameters()"].join(", ")})`);
+      helpers.push(query.helper!);
+    }
+    return `    @${route.method}(${quote(path.path)})\n    suspend fun ${identifier(query.type ? `${name}Wire` : name)}(${parameters.join(", ")}): Response<${typeName(response)}>`;
   });
   const constants = {
     CLIENT_TYPE: CLIENT_TYPE_ANDROID,
@@ -150,10 +141,28 @@ export function renderKotlinFiles(
     REQUEST_HEADER: CLIENT_REQUEST_ID_HEADER,
   };
   const imports = new Set(["retrofit2.Response", "retrofit2.http.Header"]);
-  for (const { route, request } of routes) {
+  for (const [index, { route, request }] of routes.entries()) {
     imports.add(`retrofit2.http.${route.method}`);
     if (request) imports.add("retrofit2.http.Body");
-    if (route.query) imports.add("retrofit2.http.Query");
+    if (route.pathParams) imports.add("retrofit2.http.Path");
+    if (route.query)
+      imports.add(
+        queries[index]!.type
+          ? "retrofit2.http.QueryMap"
+          : "retrofit2.http.Query",
+      );
+  }
+  if (helpers.length > 0) {
+    for (const item of ["Json", "JsonObject", "JsonPrimitive"])
+      imports.add(`kotlinx.serialization.json.${item}`);
+    for (const extension of ["doubleOrNull", "booleanOrNull"]) {
+      if (
+        helpers.some((helper) => {
+          return helper.includes(`.${extension}`);
+        })
+      )
+        imports.add(`kotlinx.serialization.json.${extension}`);
+    }
   }
   const routeImports = [...imports]
     .sort()
@@ -162,10 +171,21 @@ export function renderKotlinFiles(
     })
     .join("\n");
   return new Map([
-    ["ApiModels.kt", renderKotlinTypes(types, packageName)],
+    [
+      "ApiModels.kt",
+      renderKotlinTypes(
+        modelTypes,
+        packageName,
+        new Set(
+          routes.flatMap(({ request }) => {
+            return request ? [request] : [];
+          }),
+        ),
+      ),
+    ],
     [
       "CanonicalApi.kt",
-      `${header}\n${routeImports}\n\ninternal interface CanonicalApi {\n${methods.join("\n\n")}\n}\n`,
+      `${header}\n${routeImports}\n\ninternal interface CanonicalApi {\n${methods.join("\n\n")}\n}\n${helpers.length ? `\n${helpers.join("\n\n")}\n` : ""}`,
     ],
     [
       "ApiHeaders.kt",
@@ -173,7 +193,9 @@ export function renderKotlinFiles(
         .map(([name, value]) => {
           return `    const val ${name} = ${quote(value)}`;
         })
-        .join("\n")}\n}\n`,
+        .join(
+          "\n",
+        )}\n    const val CHAT_EVENT_SCHEMA_VERSION = ${CURRENT_CHAT_EVENT_SCHEMA_VERSION}\n}\n`,
     ],
   ]);
 }
@@ -191,6 +213,46 @@ export function renderKotlinTestFiles(): ReadonlyMap<string, string> {
   files.set(
     "android/app/src/test/resources/api-bindings/chat-list.json",
     kotlinFixtureJson(),
+  );
+  for (const [file, source] of renderKotlinFiles({
+    routes: kotlinHistoryFixtureRoutes,
+    types: kotlinHistoryFixtureTypes,
+    packageName: "ai.okou.android.api.historyfixtures",
+  })) {
+    if (file !== "ApiHeaders.kt")
+      files.set(
+        join(
+          "android/app/src/test/kotlin/ai/okou/android/api/historyfixtures",
+          file,
+        ),
+        source,
+      );
+  }
+  files.set(
+    "android/app/src/test/resources/api-bindings/chat-history.json",
+    kotlinHistoryFixtureJson(),
+  );
+  files.set(
+    "android/app/src/test/resources/api-bindings/chat-history-semantics.json",
+    kotlinHistorySemanticsFixtureJson(),
+  );
+  for (const [file, source] of renderKotlinFiles({
+    routes: kotlinCommandFixtureRoutes,
+    types: kotlinCommandFixtureTypes,
+    packageName: "ai.okou.android.api.commandfixtures",
+  })) {
+    if (file !== "ApiHeaders.kt")
+      files.set(
+        join(
+          "android/app/src/test/kotlin/ai/okou/android/api/commandfixtures",
+          file,
+        ),
+        source,
+      );
+  }
+  files.set(
+    "android/app/src/test/resources/api-bindings/chat-commands.json",
+    kotlinCommandFixtureJson(),
   );
   return files;
 }

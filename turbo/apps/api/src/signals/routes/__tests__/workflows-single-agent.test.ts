@@ -439,7 +439,7 @@ test("keeps captured workspace Workflow scope after claim and a live switch chan
         prompt: "Make my private Workflow copy",
         model: "auto",
       });
-      const claim = await runs.claimRunnerJob(queued.runId);
+      const claim = await runs.executionInput(queued.runId);
       owner.rememberClaim(queued.runId, claim.sandboxToken);
       await billing.updateFeatureSwitches(member, { singleAgent: false });
       const runHeaders = {
@@ -491,7 +491,7 @@ test("keeps captured workspace Workflow scope after claim and a live switch chan
         model: "auto",
       });
       await billing.updateFeatureSwitches(member, { singleAgent: true });
-      const retainedClaim = await runs.claimRunnerJob(retained.runId);
+      const retainedClaim = await runs.executionInput(retained.runId);
       owner.rememberClaim(retained.runId, retainedClaim.sandboxToken);
       await accept(
         detail().copy({

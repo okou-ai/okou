@@ -44,6 +44,7 @@ function accounts() {
 function fixture(
   variant:
     | "oauth"
+    | "query"
     | "declared-scopes"
     | "provider-prompt"
     | "explicit-prompt" = "oauth",
@@ -130,6 +131,42 @@ function receipt(f: Fixture, attemptId: string) {
 }
 
 describe("builtin MCP automatic authentication", () => {
+  it.each(["cimd", "dcr"] as const)(
+    "preserves a builtin endpoint query through %s OAuth and account creation",
+    async (registration) => {
+      const f = fixture("query");
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration,
+        endpoint: f.endpoint,
+      });
+      const started = await beginOAuth(f);
+      expect(started.url.searchParams.get("resource")).toBe(f.endpoint);
+      expect(started.url.searchParams.get("redirect_uri")).toBe(
+        "https://api.okou.ai/api/connectors/automatic/callback",
+      );
+      expect(new Set(provider.endpointRequests)).toStrictEqual(
+        new Set([f.endpoint]),
+      );
+      expect((await callback(started.state, provider.issuer)).body.status).toBe(
+        "success",
+      );
+      const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
+      const account = await accept(
+        accounts().connection({
+          headers,
+          params: { connectionId: completed.body.connectionId },
+          query: f.target,
+        }),
+        [200],
+      );
+      expect(account.body).toMatchObject({
+        connectionStatus: "connected",
+        authMethod: f.methodId,
+      });
+      expect(provider.tokenBodies[0]?.get("resource")).toBe(f.endpoint);
+    },
+  );
+
   it.each(
     (["cimd", "dcr"] as const).flatMap((registration) => {
       return [

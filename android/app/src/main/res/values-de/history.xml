@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="history_sidebar">Unterhaltungen</string>
+    <string name="history_loading">Unterhaltung wird geladen…</string>
+    <string name="history_failed">Die Unterhaltung konnte nicht aktualisiert werden. Bitte erneut versuchen.</string>
+    <string name="history_missing">Diese Unterhaltung wurde gelöscht oder ist nicht verfügbar.</string>
+    <string name="history_read_failed">Lesestatus konnte nicht bestätigt werden. Zum Wiederholen aktualisieren.</string>
+    <string name="history_empty">Noch keine Nachrichten.</string>
+    <string name="history_you">Du</string>
+    <string name="history_work">Arbeit</string>
+    <string name="history_work_steps">Antwortschritte: %1$d</string>
+    <string name="history_queued">In Warteschlange</string>
+    <string name="history_rejected">Nicht gesendet</string>
+    <string name="history_unsupported">Dieser Inhalt wird in seiner ursprünglichen Form angezeigt.</string>
+    <string name="history_reference">Verweis</string>
+    <string name="history_completed">Abgeschlossen</string>
+    <string name="history_cancelled">Gestoppt</string>
+    <string name="history_run_failed">Fehlgeschlagen</string>
+    <string name="history_idle">Verlauf</string>
+    <string name="history_running">Wird ausgeführt</string>
+</resources>

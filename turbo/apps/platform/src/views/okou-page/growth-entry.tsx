@@ -1,3 +1,4 @@
+import { ChatPageHeader } from "./chat-page-layout.tsx";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -297,8 +298,10 @@ function useGetStartedShown(): boolean {
 
 export function GrowthEntryHeader({
   children,
+  inFlow = false,
 }: {
   children?: React.ReactNode;
+  inFlow?: boolean;
 }) {
   const isAdminLoadable = useLastLoadable(isOrgAdmin$);
   const isAdmin = isAdminLoadable.state === "hasData" && isAdminLoadable.data;
@@ -313,13 +316,20 @@ export function GrowthEntryHeader({
   // icon pair at the far end of a row reads as stray chrome hung off a
   // labelled control rather than as part of the corner, and the corner is
   // what the entry's `align="end"` menu is drawn against.
-  return (
-    <CornerHeader>
+  const entries = (
+    <>
       {children}
       <FriendReferralEntry />
       <UserNotificationsEntry desktop />
       <GetStartedEntry />
       {showGrowthEntry ? <AdminGrowthEntry /> : null}
-    </CornerHeader>
+    </>
+  );
+  return inFlow ? (
+    <ChatPageHeader className="hidden justify-end gap-2 md:flex">
+      {entries}
+    </ChatPageHeader>
+  ) : (
+    <CornerHeader>{entries}</CornerHeader>
   );
 }

@@ -684,7 +684,7 @@ try {
   await apply(changedAgain, 2);
   assert.equal(await versionCount(changed.id), 1);
 
-  // Expired queue context and terminal Runs with live owners remain consumers.
+  // Terminal Runs with live slots or retained producers remain consumers.
   const protectedSource = await seed();
   const protectedPlan = await review(protectedSource.id);
   const mount = JSON.stringify([
@@ -695,39 +695,10 @@ try {
     [runId, orgId, mount],
   );
   await db.query(
-    "INSERT INTO runner_job_queue(run_id,runner_group,execution_context,expires_at) VALUES($1,'fixture',$2,now()-interval '1 day')",
-    [
-      runId,
-      JSON.stringify({
-        storageMounts: [
-          { storageId: protectedSource.id, versionId: protectedSource.version },
-        ],
-      }),
-    ],
-  );
-  assert.ok(
-    (await review(protectedSource.id, 2)).plan.blocked[0]?.reasons.includes(
-      "queued-consumer",
-    ),
-  );
-  await apply(protectedPlan, 2);
-  await db.query(
-    "UPDATE runner_job_queue SET execution_context=$2 WHERE run_id=$1",
-    [
-      runId,
-      JSON.stringify({ artifacts: [{ versionId: protectedSource.version }] }),
-    ],
-  );
-  assert.ok(
-    (await review(protectedSource.id, 2)).plan.blocked[0]?.reasons.includes(
-      "queued-consumer",
-    ),
-  );
-  await db.query("DELETE FROM runner_job_queue WHERE run_id=$1", [runId]);
-  await db.query(
     "INSERT INTO active_agent_runs(run_id,org_id,user_id,last_heartbeat_at) VALUES($1,$2,'owner',now())",
     [runId, orgId],
   );
+  await apply(protectedPlan, 2);
   assert.ok(
     (await review(protectedSource.id, 2)).plan.blocked[0]?.reasons.includes(
       "execution-consumer",
@@ -758,13 +729,17 @@ try {
   );
   const namedPlan = await review(namedSource.id);
   const storageName = string().parse(namedPlan.plan.ready[0]?.source.name);
+  await db.query("UPDATE agent_runs SET storage_mounts=$2 WHERE id=$1", [
+    runId,
+    JSON.stringify([{ name: storageName }]),
+  ]);
   await db.query(
-    "INSERT INTO runner_job_queue(run_id,runner_group,execution_context,expires_at) VALUES($1,'fixture',$2,now()-interval '1 day')",
-    [runId, JSON.stringify({ storageMounts: [{ name: storageName }] })],
+    "INSERT INTO active_agent_runs(run_id,org_id,user_id,last_heartbeat_at) VALUES($1,$2,'owner',now())",
+    [runId, orgId],
   );
   assert.ok(
     (await review(namedSource.id, 2)).plan.blocked[0]?.reasons.includes(
-      "queued-consumer",
+      "execution-consumer",
     ),
   );
   await apply(namedPlan, 2);
@@ -775,26 +750,18 @@ try {
   ]);
   assert.equal((await review(namedSource.id)).plan.ready.length, 1);
   // UUID/version references remain global even when the consumer is in another org.
-  await db.query(
-    "UPDATE runner_job_queue SET execution_context=$2 WHERE run_id=$1",
-    [
-      runId,
-      JSON.stringify({ artifacts: [{ versionId: namedSource.version }] }),
-    ],
-  );
+  await db.query("UPDATE agent_runs SET storage_mounts=$2 WHERE id=$1", [
+    runId,
+    JSON.stringify([{ versionId: namedSource.version }]),
+  ]);
   assert.ok(
     (await review(namedSource.id, 2)).plan.blocked[0]?.reasons.includes(
-      "queued-consumer",
+      "execution-consumer",
     ),
   );
-  await db.query("DELETE FROM runner_job_queue WHERE run_id=$1", [runId]);
   await db.query(
     "UPDATE agent_runs SET org_id=$2,storage_mounts=$3 WHERE id=$1",
     [runId, orgId, JSON.stringify([{ name: storageName }])],
-  );
-  await db.query(
-    "INSERT INTO active_agent_runs(run_id,org_id,user_id,last_heartbeat_at) VALUES($1,$2,'owner',now())",
-    [runId, orgId],
   );
   assert.ok(
     (await review(namedSource.id, 2)).plan.blocked[0]?.reasons.includes(
@@ -816,15 +783,15 @@ try {
   await apply(namedPlan);
   beforeList = async () => {
     await db.query(
-      "INSERT INTO runner_job_queue(run_id,runner_group,execution_context,expires_at) VALUES($1,'fixture',$2,now()-interval '1 day')",
-      [runId, JSON.stringify({ storageMounts: [{ name: storageName }] })],
+      "INSERT INTO active_agent_runs(run_id,org_id,user_id,last_heartbeat_at) VALUES($1,$2,'owner',now())",
+      [runId, orgId],
     );
   };
   const namedDeletesBefore = deleteCount;
   await processJobs(namedPlan, 1);
   assert.equal(deleteCount, namedDeletesBefore);
   assert.equal(objects.has(`${namedSource.directory}/archive.tar.gz`), true);
-  await db.query("DELETE FROM runner_job_queue WHERE run_id=$1", [runId]);
+  await db.query("DELETE FROM active_agent_runs WHERE run_id=$1", [runId]);
   await processJobs(namedPlan);
   await audit(namedPlan);
 
@@ -1076,10 +1043,6 @@ try {
       });
     });
   await db.query("DELETE FROM runner_state WHERE runner_id=$1", [runnerId]);
-  await db.query(
-    "DELETE FROM runner_job_queue WHERE run_id=$2 OR run_id IN(SELECT id FROM agent_runs WHERE org_id=$1)",
-    [orgId, runId],
-  );
   await db.query("DELETE FROM active_agent_runs WHERE org_id=$1 OR run_id=$2", [
     orgId,
     runId,

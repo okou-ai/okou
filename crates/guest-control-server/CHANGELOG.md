@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.24.105](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.104...guest-control-server-v0.24.105) (2026-11-14)
+
+
+### Refactoring
+
+* **rust:** type owned blocking-mode updates ([#47120](https://github.com/okou-ai/okou/issues/47120)) ([5006b06](https://github.com/okou-ai/okou/commit/5006b0632614308a23d1368980b502aedfc11e29))
+
+## [0.24.104](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.103...guest-control-server-v0.24.104) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** use owned notification descriptor constructors ([#47098](https://github.com/okou-ai/okou/issues/47098)) ([bf69ae3](https://github.com/okou-ai/okou/commit/bf69ae388ed442b23479f99bbf78bebd2c1723af))
+
+## [0.24.103](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.102...guest-control-server-v0.24.103) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** delegate raw socket creation to owned apis ([#47077](https://github.com/okou-ai/okou/issues/47077)) ([355af4a](https://github.com/okou-ai/okou/commit/355af4a8b3e17e8fc02b8caf5b4cad30eb94e0cd))
+
+## [0.24.102](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.101...guest-control-server-v0.24.102) (2026-11-13)
+
+## [0.24.101](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.100...guest-control-server-v0.24.101) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** delegate remaining pipe acquisition to owned apis ([#47006](https://github.com/okou-ai/okou/issues/47006)) ([60f6b48](https://github.com/okou-ai/okou/commit/60f6b48ab2773eb2e8acb79516cd479826492daa))
+
+## [0.24.100](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.99...guest-control-server-v0.24.100) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** use typed safe pidfd signaling across remaining owners ([#46923](https://github.com/okou-ai/okou/issues/46923)) ([61626b9](https://github.com/okou-ai/okou/commit/61626b96421ba142b3eb9738157fba20b1ad2256))
+
 ## [0.24.99](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.98...guest-control-server-v0.24.99) (2026-11-13)
 
 

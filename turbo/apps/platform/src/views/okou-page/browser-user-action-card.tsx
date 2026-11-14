@@ -1,3 +1,4 @@
+import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
 import {
   BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
   BROWSER_USER_ACTION_MAX_FILE_BYTES,
@@ -361,6 +362,54 @@ function PendingFormDestination({
         </p>
       )}
     </>
+  );
+}
+
+function BrowserSavedPasswordHelp({
+  action,
+}: {
+  readonly action: PendingBrowserInputAction;
+}) {
+  const { t } = useTranslation();
+  if (
+    !action.fields.some((field) => {
+      return field.fieldKind === "username" || field.fieldKind === "password";
+    })
+  ) {
+    return null;
+  }
+  return (
+    <div className="flex min-w-0 flex-col gap-1 break-words text-xs leading-5 text-muted-foreground">
+      <p>
+        {t(($) => {
+          return $.chat.browserInput.savedPasswordsHint;
+        })}
+      </p>
+      <details>
+        <summary className="w-fit cursor-default rounded-md py-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          {t(($) => {
+            return $.chat.browserInput.savedPasswordsHelp;
+          })}
+        </summary>
+        <div className="flex flex-col gap-2 pt-2">
+          <p>
+            {t(($) => {
+              return $.chat.browserInput.savedPasswordsChrome;
+            })}
+          </p>
+          <p>
+            {t(($) => {
+              return $.chat.browserInput.savedPasswordsSafari;
+            })}
+          </p>
+          <p>
+            {t(($) => {
+              return $.chat.browserInput.savedPasswordsSite;
+            })}
+          </p>
+        </div>
+      </details>
+    </div>
   );
 }
 
@@ -1534,15 +1583,12 @@ function PendingFormPreflight({
   const { t } = useTranslation();
   if (entry.state === "loading") {
     return (
-      <p
-        role="status"
-        className="flex items-center gap-2 text-sm text-muted-foreground"
-      >
-        <Loader2 size={16} className="animate-spin" />
-        {t(($) => {
+      <LoadingSkeleton
+        label={t(($) => {
           return $.chat.browserInput.loadingDescription;
         })}
-      </p>
+        variant="rows"
+      />
     );
   }
   if (entry.state === "hasError" || entry.data.kind !== "ready") {
@@ -1671,6 +1717,7 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
       onSubmit={submitForm}
     >
       <PendingFormDestination action={activeAction} showTitle={showTitle} />
+      <BrowserSavedPasswordHelp action={activeAction} />
       <BrowserInputFields
         action={activeAction}
         draft={draft}
@@ -1839,12 +1886,15 @@ function BrowserUserActionCardContent({
     content = <ApplyingState variant={variant} />;
   } else if (requestLoadable.state === "loading") {
     content = (
-      <ActionState
-        icon={<Loader2 size={20} className="animate-spin" />}
-        title={t(($) => {
+      <LoadingSkeleton
+        variant={variant === "inline" ? "rows" : "fields"}
+        count={variant === "inline" ? 1 : 2}
+        className={
+          variant === "inline" ? "grid h-full content-center" : "w-full p-4"
+        }
+        label={t(($) => {
           return $.chat.browserAction.loading;
         })}
-        variant={variant}
       />
     );
   } else if (requestLoadable.state === "hasError") {

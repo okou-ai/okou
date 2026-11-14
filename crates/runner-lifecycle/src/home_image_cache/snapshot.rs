@@ -5,7 +5,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
-use tokio::sync::watch;
 
 use tracing::info;
 
@@ -15,19 +14,9 @@ use runner_types::types::{HeldHomeState, MAX_HELD_HOME_STATES};
 use super::inventory::{cap_inventory_entries, project_inventory_entries};
 use super::{HomeCacheChange, HomeCacheInventory, HomeCacheKeyUpdates, cap_held_home_states};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct HomeCacheStateSnapshot {
     inner: Arc<Mutex<HomeCacheStateSnapshotInner>>,
-    committed: watch::Sender<()>,
-}
-
-impl Default for HomeCacheStateSnapshot {
-    fn default() -> Self {
-        Self {
-            inner: Arc::default(),
-            committed: watch::channel(()).0,
-        }
-    }
 }
 
 #[derive(Default)]
@@ -98,11 +87,6 @@ impl HomeCacheStateSnapshotInner {
 impl HomeCacheStateSnapshot {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Subscribe before inspecting readiness so a concurrent commit cannot be lost.
-    pub fn subscribe_committed(&self) -> watch::Receiver<()> {
-        self.committed.subscribe()
     }
 
     /// Validated local readiness, independent of advertised caps/active-key filtering.
@@ -195,10 +179,7 @@ impl HomeCacheStateSnapshot {
             inner.touch(&key);
         }
         inner.reproject();
-        let outcome = inner.outcome(&before, false);
-        drop(inner);
-        self.committed.send_replace(());
-        outcome
+        inner.outcome(&before, false)
     }
 
     pub fn finish_home_cache_key_updates(
@@ -241,10 +222,7 @@ impl HomeCacheStateSnapshot {
         let truncated = inner.cap_entries();
         inner.truncated |= truncated;
         inner.reproject();
-        let outcome = inner.outcome(&before, needs_reconcile);
-        drop(inner);
-        self.committed.send_replace(());
-        outcome
+        inner.outcome(&before, needs_reconcile)
     }
 
     /// Called only after generation-owned publication has succeeded.
@@ -256,8 +234,6 @@ impl HomeCacheStateSnapshot {
         let truncated = inner.cap_entries();
         inner.truncated |= truncated;
         inner.reproject();
-        drop(inner);
-        self.committed.send_replace(());
     }
 
     /// Positive observed evidence, including entries omitted from the wire projection.

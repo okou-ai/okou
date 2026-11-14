@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="history_sidebar">Conversas</string>
+    <string name="history_loading">Carregando conversa…</string>
+    <string name="history_failed">Não foi possível atualizar a conversa. Tente novamente.</string>
+    <string name="history_missing">Esta conversa foi excluída ou está indisponível.</string>
+    <string name="history_read_failed">Não foi possível confirmar a leitura. Atualize para tentar novamente.</string>
+    <string name="history_empty">Nenhuma mensagem ainda.</string>
+    <string name="history_you">Você</string>
+    <string name="history_work">Trabalho</string>
+    <string name="history_work_steps">Etapas de resposta: %1$d</string>
+    <string name="history_queued">Na fila</string>
+    <string name="history_rejected">Não enviado</string>
+    <string name="history_unsupported">Este conteúdo é exibido em sua forma original.</string>
+    <string name="history_reference">Referência</string>
+    <string name="history_completed">Concluído</string>
+    <string name="history_cancelled">Interrompido</string>
+    <string name="history_run_failed">Falha</string>
+    <string name="history_idle">Histórico</string>
+    <string name="history_running">Em execução</string>
+</resources>

@@ -185,34 +185,35 @@ function managedBrowserSession(args: {
   readonly screenshotUrl: string;
   readonly liveUrl: string | null;
 }): BrowserSession {
-  return {
+  const metadata = {
     threadId: RUN_THREAD_ID,
     name: "Research",
-    status: args.status,
     viewerUrl: `https://browser.example.test/view/${RUN_THREAD_ID}`,
     liveUrl: args.liveUrl,
     screenshotUrl: args.screenshotUrl,
-    proxyCountryCode: null,
     timeoutMinutes: 240,
-    ...(args.status === "active"
-      ? {
-          screen: { width: 1440, height: 900, resizable: true },
-          window: {
-            instanceId: "20000000-0000-4000-a000-000000001108",
-            primaryWindowId: 0,
-          },
-          idleExpiresAt: "2026-08-18T12:10:00.000Z",
-          suspendedAt: null,
-          suspensionReason: null,
-        }
-      : {
-          idleExpiresAt: null,
-          suspendedAt: "2026-08-18T12:05:00.000Z",
-          suspensionReason: "idle" as const,
-        }),
     createdAt: "2026-08-18T11:00:00.000Z",
     updatedAt: "2026-08-18T12:05:00.000Z",
   };
+  return args.status === "active"
+    ? {
+        ...metadata,
+        status: "active",
+        window: {
+          instanceId: "20000000-0000-4000-a000-000000001108",
+          primaryWindowId: 0,
+        },
+        idleExpiresAt: "2026-08-18T12:10:00.000Z",
+        suspendedAt: null,
+        suspensionReason: null,
+      }
+    : {
+        ...metadata,
+        status: "suspended",
+        idleExpiresAt: null,
+        suspendedAt: "2026-08-18T12:05:00.000Z",
+        suspensionReason: "idle" as const,
+      };
 }
 
 function planActionUrl(origin: string): string {
@@ -494,6 +495,15 @@ test.each([false, true])(
       within(sidebar).findByText("Browser not live"),
     ).resolves.toBeInTheDocument();
     expect(buttonsByName("Start browser", sidebar)[0]).toBeEnabled();
+    const tabRow = within(sidebar)
+      .getByLabelText("New tab")
+      .closest("[data-browser-toolbar]");
+    expect(tabRow).toContainElement(
+      buttonsByName("Close cloud browser", sidebar)[0],
+    );
+    expect(tabRow).toContainElement(
+      within(sidebar).getByLabelText("Open this browser in a new page"),
+    );
     expect(
       within(sidebar).getByLabelText("Remote browser input"),
     ).toBeDisabled();
@@ -899,6 +909,13 @@ test("Closing an inline form clears password and code drafts while preserving or
   await fill(emailInput, "owner@example.test");
   await fill(passwordInput, "synthetic-password");
   await fill(codeInput, "123456");
+
+  expect(within(dialog).getAllByText("How to fill")).toHaveLength(1);
+  click(within(dialog).getByText("How to fill"));
+  expect(within(dialog).getByText(/^Chrome \(desktop\):/u)).toBeVisible();
+  expect(emailInput).toHaveValue("owner@example.test");
+  expect(passwordInput).toHaveValue("synthetic-password");
+  expect(codeInput).toHaveValue("123456");
 
   const close = buttonsByName("Close", dialog)[0];
   if (!close) {

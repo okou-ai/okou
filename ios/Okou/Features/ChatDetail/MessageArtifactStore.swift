@@ -90,10 +90,11 @@ final class MessageArtifactStore {
   }
 
   func navigateImage(
-    _ direction: Int, content: MessageArtifactPreviewRead.Content, previewID: UUID
+    _ direction: Int, content: MessageArtifactPreviewRead.Content, previewID: UUID,
+    thumbnail: Data? = nil
   ) {
     guard !closed, preview?.id == previewID, let image = content.image(direction) else { return }
-    open(image, images: content.images)
+    open(image, images: content.images, thumbnail: thumbnail)
   }
 
   func share(_ file: ChatAttachmentFile, previewID: UUID) {

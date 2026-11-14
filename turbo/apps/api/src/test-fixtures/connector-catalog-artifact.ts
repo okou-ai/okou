@@ -10,6 +10,7 @@ import type {
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 
 import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
+import { mcpEndpointFirewallBase } from "@okouai/connectors/connector-catalog/artifacts/mcp-endpoint";
 
 type ManualField = Extract<
   ConnectorCatalogAuthMethod["grant"],
@@ -2424,10 +2425,10 @@ const connectors = [
 ] satisfies readonly ConnectorCatalogArtifactConnector[];
 
 function automaticMcpConnector(
-  firewallAuth: "none" | "oauth",
-  tokenPrefix = firewallAuth === "oauth"
+  variant: "none" | "oauth" | "query",
+  tokenPrefix = variant === "oauth"
     ? "AUTOMATIC"
-    : `AUTOMATIC_${firewallAuth.toUpperCase()}`,
+    : `AUTOMATIC_${variant.toUpperCase()}`,
   staticHeaders: Readonly<Record<string, string>> = {},
   scopes?: readonly string[],
   authorizationPrompt?: string | null,
@@ -2438,7 +2439,11 @@ function automaticMcpConnector(
   if (!template) {
     throw new Error("Expected the fixed public MCP connector");
   }
-  const endpoint = "https://automatic-mcp.example.test/server";
+  const endpoint =
+    "https://automatic-mcp.example.test/server" +
+    (variant === "query"
+      ? "?login&tag=one&tag=two&empty=&encoded=a%20b&literal=a+b&slash=%2f"
+      : "");
   const accessToken = `${tokenPrefix}_ACCESS_TOKEN`;
   const refreshToken = `${tokenPrefix}_REFRESH_TOKEN`;
   const outputs = {
@@ -2447,7 +2452,7 @@ function automaticMcpConnector(
   };
   return {
     ...template,
-    slug: `automatic-mcp-${firewallAuth}`,
+    slug: `automatic-mcp-${variant}`,
     label: "Automatic Tools",
     mcp: { transport: "streamable-http", endpoint },
     authMethods: [
@@ -2479,9 +2484,9 @@ function automaticMcpConnector(
         description: "Automatic Tools",
         apis: [
           {
-            base: endpoint,
+            base: mcpEndpointFirewallBase(endpoint),
             auth:
-              firewallAuth === "none"
+              variant === "none"
                 ? {}
                 : {
                     headers: {
@@ -2534,6 +2539,7 @@ export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
     ...connectors,
     automaticMcpConnector("none"),
     automaticMcpConnector("oauth"),
+    automaticMcpConnector("query"),
     {
       ...automaticMcpConnector("oauth", "AUTOMATIC_SCOPED", {}, [
         "read",

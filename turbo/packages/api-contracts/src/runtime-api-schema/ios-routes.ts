@@ -435,6 +435,8 @@ const iosContracts: readonly {
     route: platformRealtimeTokenContract.create,
   },
   { id: "ios.projectsContract.list", route: projectsContract.list },
+  { id: "ios.projectsContract.snapshot", route: projectsContract.snapshot },
+  { id: "ios.projectsContract.events", route: projectsContract.events },
   { id: "ios.projectsContract.create", route: projectsContract.create },
   { id: "ios.projectsContract.update", route: projectsContract.update },
   { id: "ios.projectsContract.delete", route: projectsContract.delete },
@@ -539,6 +541,14 @@ const iosContracts: readonly {
   { id: "ios.mailContract.getDraft", route: mailContract.getDraft },
   { id: "ios.mailContract.sendDraft", route: mailContract.sendDraft },
   { id: "ios.mailContract.deleteDraft", route: mailContract.deleteDraft },
+  {
+    id: "ios.sharedThreadVisibilityContract.get",
+    route: sharedThreadVisibilityContract.get,
+  },
+  {
+    id: "ios.sharedThreadVisibilityContract.update",
+    route: sharedThreadVisibilityContract.update,
+  },
   {
     id: "ios.sharedThreadVisibilityContract.create",
     route: sharedThreadVisibilityContract.create,

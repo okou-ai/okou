@@ -1,14 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="home">होम</string>
     <string name="settings">सेटिंग</string>
     <string name="back">वापस</string>
-    <string name="home_title">आपके अगले विचार के लिए जगह</string>
-    <string name="home_description">ड्राफ़्ट लिखें और इस डिवाइस पर उसका पूर्वावलोकन देखें।</string>
-    <string name="draft_label">ड्राफ़्ट</string>
-    <string name="draft_hint">आप क्या सोच रहे हैं?</string>
-    <string name="local_preview">ड्राफ़्ट का पूर्वावलोकन</string>
-    <string name="preview_title">पूर्वावलोकन</string>
     <string name="appearance">दिखावट</string>
     <string name="appearance_description">इस डिवाइस पर Okou की दिखावट चुनें।</string>
     <string name="appearance_system">सिस्टम के अनुसार</string>
@@ -21,10 +14,6 @@
     <string name="appearance_read_failed">दिखावट लोड नहीं हो सकी। फिर से कोशिश करें।</string>
     <string name="appearance_write_failed">दिखावट सहेजी नहीं जा सकी। फिर से कोशिश करें।</string>
     <string name="retry">फिर से कोशिश करें</string>
-    <plurals name="draft_lines">
-        <item quantity="one">%1$d पंक्ति</item>
-        <item quantity="other">%1$d पंक्तियाँ</item>
-    </plurals>
     <string name="auth_welcome">Okou में आपका स्वागत है</string>
     <string name="auth_restoring">आपका सत्र बहाल हो रहा है…</string>
     <string name="auth_preparing_workspace">आपका कार्यक्षेत्र तैयार हो रहा है…</string>

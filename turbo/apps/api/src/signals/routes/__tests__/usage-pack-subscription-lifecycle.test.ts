@@ -9,7 +9,6 @@ import { getStartedRoutes } from "../get-started";
 import { billingAutoRechargeRoutes } from "../billing-auto-recharge";
 import { billingRedeemRoutes } from "../billing-redeem";
 import { randomUUID } from "node:crypto";
-import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 
 import {
@@ -27,7 +26,7 @@ import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
-import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { mockStripeClient } from "../../external/stripe-client";
 import {
@@ -93,7 +92,6 @@ const TEST_PRICE_PACK_20 = "price_usage_pack_lifecycle_20";
 const TEST_PRICE_PACK_50 = "price_usage_pack_lifecycle_50";
 const TEST_PRICE_PACK_100 = "price_usage_pack_lifecycle_100";
 const TEST_PRICE_PACK_200 = "price_usage_pack_lifecycle_200";
-const TEST_PRICE_ATOM_GRANT = "price_usage_pack_lifecycle_atom_grant";
 
 type UsagePackUsd = 20 | 50 | 100 | 200;
 
@@ -171,7 +169,6 @@ function configureUsagePackEnvironment(): void {
   mockEnv("OKOU_PRICE_USAGE_PACK_50", TEST_PRICE_PACK_50);
   mockEnv("OKOU_PRICE_USAGE_PACK_100", TEST_PRICE_PACK_100);
   mockEnv("OKOU_PRICE_USAGE_PACK_200", TEST_PRICE_PACK_200);
-  mockEnv("ATOM_GRANT_PRICE", TEST_PRICE_ATOM_GRANT);
   mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_usage_pack_lifecycle");
 }
 
@@ -540,11 +537,7 @@ function mockUsagePackPriceCatalog(
       [TEST_PRICE_TEAM, 10_000],
       [TEST_PRICE_PLAN_PRO, 0],
       [TEST_PRICE_PLAN_TEAM, 0],
-      [TEST_PRICE_ATOM_GRANT, 0],
     ]);
-    for (const customPriceId of env("OKOU_PRICE_CUSTOM") ?? []) {
-      fixedAmounts.set(customPriceId, 0);
-    }
     const concurrencyPriceId = env("OKOU_PRICE_CONCURRENCY")?.[0];
     if (concurrencyPriceId) {
       fixedAmounts.set(concurrencyPriceId, 2000);
@@ -1004,631 +997,6 @@ describe("usage pack subscription Stripe lifecycle", () => {
       });
     },
   );
-
-  it.each([
-    {
-      tier: "pro",
-      planVersion: "usagePack",
-      showUsagePack: true,
-      expectedCredits: 0,
-    },
-    {
-      tier: "team",
-      planVersion: "usagePack",
-      showUsagePack: true,
-      expectedCredits: 0,
-    },
-    {
-      tier: "pro",
-      planVersion: "legacy",
-      showUsagePack: false,
-      expectedCredits: 20_000,
-    },
-    {
-      tier: "team",
-      planVersion: "legacy",
-      showUsagePack: false,
-      expectedCredits: 120_000,
-    },
-  ] as const)(
-    "sets package visibility and credits for an Atom $planVersion $tier grant",
-    async ({ tier, planVersion, showUsagePack, expectedCredits }) => {
-      await runBillingCase(async () => {
-        const fixture: UsagePackLifecycleFixture = {
-          orgId: `org_atom_visibility_${randomUUID()}`,
-          tier,
-          customerId: `cus_${randomUUID()}`,
-          subscriptionId: `unused_sub_${randomUUID()}`,
-          usagePackSubscriptionId: randomUUID(),
-          checkoutSessionId: `cs_${randomUUID()}`,
-          userId: `user_${randomUUID()}`,
-          invitationId: null,
-        };
-        let restoreBillingEnvironment: (() => void) | undefined;
-        const owner = createPublicBillingZeroFixture(
-          context,
-          {
-            orgId: fixture.orgId,
-            userId: fixture.userId,
-            email: `${fixture.userId}@example.com`,
-            orgRole: "org:admin",
-          },
-          {
-            beforeOrganizationCleanup() {
-              // Snapshot after the global test teardown clears its environment,
-              // immediately before public deletion configures its own catalog.
-              const billingEnvironment = {
-                pro: env("OKOU_PRICE_PRO")?.join(","),
-                team: env("OKOU_PRICE_TEAM")?.join(","),
-                atom: env("ATOM_GRANT_PRICE"),
-                concurrency: env("OKOU_PRICE_CONCURRENCY")?.join(","),
-                campaign: JSON.stringify(env("OKOU_ONE_TIME_CAMPAIGN")),
-                stripeSecret: optionalEnv("STRIPE_WEBHOOK_SECRET"),
-                clerkSecret: optionalEnv("CLERK_WEBHOOK_SIGNING_SECRET"),
-              };
-              restoreBillingEnvironment = () => {
-                mockEnv("OKOU_PRICE_PRO", billingEnvironment.pro);
-                mockEnv("OKOU_PRICE_TEAM", billingEnvironment.team);
-                mockEnv("ATOM_GRANT_PRICE", billingEnvironment.atom);
-                mockEnv(
-                  "OKOU_PRICE_CONCURRENCY",
-                  billingEnvironment.concurrency,
-                );
-                mockEnv("OKOU_ONE_TIME_CAMPAIGN", billingEnvironment.campaign);
-                mockOptionalEnv(
-                  "STRIPE_WEBHOOK_SECRET",
-                  billingEnvironment.stripeSecret,
-                );
-                mockOptionalEnv(
-                  "CLERK_WEBHOOK_SIGNING_SECRET",
-                  billingEnvironment.clerkSecret,
-                );
-              };
-              return Promise.resolve();
-            },
-            afterOrganizationCleanup() {
-              restoreBillingEnvironment?.();
-              return Promise.resolve();
-            },
-          },
-        );
-        await owner.run(async () => {
-          await owner.initialize();
-          const grantPeriod = period(0);
-          await postStripeEvent(
-            stripeEvent("invoice.paid", {
-              id: `in_${randomUUID()}`,
-              customer: fixture.customerId,
-              status: "paid",
-              paid: true,
-              parent: null,
-              metadata: {
-                type: "atom_grant",
-                purpose: "atom_grant",
-                source: "atom_entitlement",
-                planVersion,
-                operationId: `sub_${randomUUID()}`,
-                orgId: fixture.orgId,
-                tier,
-                planId: tier,
-                duration: "30d",
-                atomGrantExpiresAt: new Date(
-                  grantPeriod.end * 1000,
-                ).toISOString(),
-              },
-              lines: {
-                has_more: false,
-                data: [
-                  {
-                    id: `il_${randomUUID()}`,
-                    amount: 0,
-                    subtotal: 0,
-                    quantity: 1,
-                    price: { id: TEST_PRICE_ATOM_GRANT },
-                    period: grantPeriod,
-                    parent: { type: "invoice_item_details" },
-                  },
-                ],
-              },
-            }),
-            200,
-          );
-
-          await expect(readBillingStatus(fixture)).resolves.toMatchObject({
-            tier,
-            showUsagePack,
-            subscriptionStatus: "atom_grant",
-            credits: expectedCredits,
-            hasSubscription: false,
-          });
-        });
-      });
-    },
-  );
-
-  it("grants independent one-time Atom member credits for Atom and subscribed plans", async () => {
-    await runBillingCase(async () => {
-      const orgId = `org_atom_usage_pack_${randomUUID()}`;
-      const customerId = `cus_${randomUUID()}`;
-      const subscriptionId = `unused_sub_${randomUUID()}`;
-      const usagePackSubscriptionId = randomUUID();
-      const grantedUserId = `user_${randomUUID()}`;
-      const delayedRedeemUserId = `user_${randomUUID()}`;
-      const paidPeriod = period(0);
-      const grantPeriod = {
-        start: paidPeriod.start,
-        end: paidPeriod.start + 7 * 86_400,
-      };
-      const creditPeriod = {
-        start: paidPeriod.start,
-        end: paidPeriod.start + 3 * 86_400,
-      };
-      const fixture: UsagePackLifecycleFixture = {
-        orgId,
-        tier: "pro",
-        customerId,
-        subscriptionId,
-        usagePackSubscriptionId,
-        checkoutSessionId: `cs_${randomUUID()}`,
-        userId: grantedUserId,
-        invitationId: null,
-      };
-      routeMocks.clerk.session(grantedUserId, orgId, "org:admin");
-      const planInvoiceId = `in_atom_usage_pack_plan_${randomUUID()}`;
-      const metadata = {
-        type: "atom_grant",
-        purpose: "atom_grant",
-        source: "atom_redeem_code",
-        planVersion: "usagePack",
-        operationId: `sub_${randomUUID()}`,
-        orgId,
-        tier: "pro",
-        planId: "pro",
-        duration: "7d",
-        atomGrantExpiresAt: new Date(grantPeriod.end * 1000).toISOString(),
-        userId: grantedUserId,
-        creditsAmount: "20000",
-        creditsExpiresAt: new Date(grantPeriod.end * 1000).toISOString(),
-      };
-      const planInvoice = {
-        id: planInvoiceId,
-        customer: customerId,
-        metadata,
-        status: "paid",
-        paid: true,
-        parent: null,
-        lines: {
-          has_more: false,
-          data: [
-            {
-              id: `il_${randomUUID()}`,
-              amount: 0,
-              subtotal: 0,
-              quantity: 1,
-              price: { id: TEST_PRICE_ATOM_GRANT },
-              period: grantPeriod,
-              parent: { type: "invoice_item_details" },
-            },
-          ],
-        },
-      };
-      const grantInvoiceId = `in_atom_member_pack_${randomUUID()}`;
-      const grantInvoice = {
-        id: grantInvoiceId,
-        customer: customerId,
-        subtotal: 0,
-        metadata: {
-          type: "atom_grant",
-          purpose: "atom_grant",
-          source: "atom_usage_pack_credits",
-          grantType: "usage_pack_credits",
-          orgId,
-          userId: grantedUserId,
-          creditsAmount: "6000",
-          creditsExpiresAt: new Date(creditPeriod.end * 1000).toISOString(),
-        },
-        parent: null,
-        lines: {
-          has_more: false,
-          data: [
-            {
-              id: `il_${randomUUID()}`,
-              quantity: 1,
-              price: { id: TEST_PRICE_ATOM_GRANT },
-              period: creditPeriod,
-              parent: { type: "invoice_item_details" },
-            },
-          ],
-        },
-      };
-      await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 500);
-      await expect(grantRows(fixture)).resolves.toStrictEqual([]);
-
-      await postStripeEvent(stripeEvent("invoice.paid", planInvoice), 200);
-      await postStripeEvent(stripeEvent("invoice.paid", planInvoice), 200);
-
-      const planState = await readLifecycleSnapshot(fixture);
-      expect(planState.grants).toStrictEqual([
-        {
-          userId: grantedUserId,
-          grantType: "bonus",
-          originalAmount: 20_000,
-          expiresAt: new Date(grantPeriod.end * 1000).toISOString(),
-        },
-      ]);
-      expect(planState.billing).toStrictEqual(
-        expect.objectContaining({
-          tier: "pro",
-          credits: 0,
-          hasSubscription: false,
-          subscriptionStatus: "atom_grant",
-          currentPeriodEnd: new Date(grantPeriod.end * 1000).toISOString(),
-          showUsagePack: true,
-        }),
-      );
-      expect(planState.billing.creditGrants).toStrictEqual([]);
-      const atomBillingStatus = await readBillingStatus(fixture);
-      expect(atomBillingStatus.showUsagePack).toBeTruthy();
-      expect(atomBillingStatus.scheduledChange).toStrictEqual({
-        type: "cancel",
-        targetTier: "limited-free-1",
-        effectiveDate: new Date(grantPeriod.end * 1000).toISOString(),
-      });
-      expect(atomBillingStatus.canRestorePlan).toBeFalsy();
-
-      const renewedGrantPeriod = {
-        start: grantPeriod.start,
-        end: grantPeriod.start + 14 * 86_400,
-      };
-      const renewedPlanInvoice = {
-        ...planInvoice,
-        id: `in_atom_usage_pack_plan_${randomUUID()}`,
-        metadata: {
-          type: "atom_grant",
-          purpose: "atom_grant",
-          source: "atom_entitlement",
-          planVersion: "usagePack",
-          operationId: metadata.operationId,
-          orgId,
-          tier: "pro",
-          planId: "pro",
-          duration: "14d",
-          atomGrantExpiresAt: new Date(
-            renewedGrantPeriod.end * 1000,
-          ).toISOString(),
-        },
-        lines: {
-          has_more: false,
-          data: [
-            {
-              ...planInvoice.lines.data[0],
-              id: `il_${randomUUID()}`,
-              period: renewedGrantPeriod,
-            },
-          ],
-        },
-      };
-      const delayedRedeemPlanInvoice = {
-        ...planInvoice,
-        id: `in_atom_usage_pack_plan_${randomUUID()}`,
-        metadata: {
-          ...metadata,
-          operationId: `sub_${randomUUID()}`,
-          userId: delayedRedeemUserId,
-        },
-        lines: {
-          has_more: false,
-          data: [
-            {
-              ...planInvoice.lines.data[0],
-              id: `il_${randomUUID()}`,
-            },
-          ],
-        },
-      };
-      await postStripeEvent(
-        stripeEvent("invoice.paid", renewedPlanInvoice),
-        200,
-      );
-      await postStripeEvent(stripeEvent("invoice.paid", planInvoice), 200);
-      await postStripeEvent(
-        stripeEvent("invoice.paid", delayedRedeemPlanInvoice),
-        200,
-      );
-      await postStripeEvent(
-        stripeEvent("invoice.paid", delayedRedeemPlanInvoice),
-        200,
-      );
-      const renewedState = await readLifecycleSnapshot(fixture);
-      expect(renewedState.billing).toStrictEqual(
-        expect.objectContaining({
-          currentPeriodEnd: new Date(
-            renewedGrantPeriod.end * 1000,
-          ).toISOString(),
-        }),
-      );
-      expect(renewedState.grants).toHaveLength(2);
-      expect(renewedState.grants).toStrictEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ userId: grantedUserId }),
-          expect.objectContaining({ userId: delayedRedeemUserId }),
-        ]),
-      );
-
-      await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200);
-      await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200);
-
-      await Promise.all([
-        postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200),
-        postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200),
-        postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200),
-      ]);
-      await postStripeEvent(
-        stripeEvent("invoice.paid", {
-          ...grantInvoice,
-          metadata: { ...grantInvoice.metadata, creditsAmount: "6001" },
-        }),
-        500,
-      );
-      await postStripeEvent(
-        stripeEvent("invoice.paid", {
-          ...grantInvoice,
-          id: `in_wrong_customer_${randomUUID()}`,
-          customer: `cus_${randomUUID()}`,
-        }),
-        500,
-      );
-      await postStripeEvent(stripeEvent("invoice.paid", grantInvoice), 200);
-
-      const grantedState = await readLifecycleSnapshot(fixture);
-      expect(grantedState.grants).toHaveLength(3);
-      expect(grantedState.grants).toStrictEqual(
-        expect.arrayContaining([
-          {
-            userId: grantedUserId,
-            grantType: "bonus",
-            originalAmount: 20_000,
-            expiresAt: new Date(grantPeriod.end * 1000).toISOString(),
-          },
-          {
-            userId: delayedRedeemUserId,
-            grantType: "bonus",
-            originalAmount: 20_000,
-            expiresAt: new Date(grantPeriod.end * 1000).toISOString(),
-          },
-          {
-            userId: grantedUserId,
-            grantType: "bonus",
-            originalAmount: 6000,
-            expiresAt: new Date(creditPeriod.end * 1000).toISOString(),
-          },
-        ]),
-      );
-      expect(grantedState.billing?.credits).toBe(0);
-      expect(grantedState.billing.creditGrants).toStrictEqual([]);
-
-      const checkoutSessionId = `cs_${randomUUID()}`;
-      const subscribedFixture = await checkoutUsagePackLifecycle(
-        grantedUserId,
-        20,
-        "team",
-        undefined,
-        {
-          additionalSelections: [
-            { userId: delayedRedeemUserId, usagePackUsd: 0 },
-          ],
-          existingOrganization: {
-            orgId,
-            customerId,
-            checkoutSessionId,
-          },
-        },
-      );
-      const subscriptionPeriod = period(0);
-      const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
-      const subscription = stripeSubscription(
-        subscribedFixture,
-        subscriptionPeriod,
-        quantities,
-      );
-      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-        subscription,
-      );
-
-      await postStripeEvent(
-        stripeEvent("checkout.session.completed", {
-          id: checkoutSessionId,
-          customer: customerId,
-          subscription: subscribedFixture.subscriptionId,
-          metadata: usagePackMetadata(subscribedFixture),
-        }),
-        200,
-      );
-      await postStripeEvent(
-        stripeEvent("customer.subscription.created", subscription),
-        200,
-      );
-      await postStripeEvent(
-        stripeEvent(
-          "invoice.paid",
-          paidInvoice(subscribedFixture, {
-            invoiceId: `in_${randomUUID()}`,
-            paidPeriod: subscriptionPeriod,
-            quantities,
-          }),
-        ),
-        200,
-      );
-
-      const subscriptionBillingStatus =
-        await readBillingStatus(subscribedFixture);
-      expect(subscriptionBillingStatus.tier).toBe("team");
-      expect(subscriptionBillingStatus.hasSubscription).toBeTruthy();
-      expect(subscriptionBillingStatus.scheduledChange).toBeNull();
-      expect(subscriptionBillingStatus.canRestorePlan).toBeFalsy();
-
-      const subscribedCreditPeriod = {
-        start: subscriptionPeriod.start,
-        end: subscriptionPeriod.start + 15 * 86_400,
-      };
-      await postStripeEvent(
-        stripeEvent("invoice.paid", {
-          ...grantInvoice,
-          id: `in_atom_subscribed_member_pack_${randomUUID()}`,
-          metadata: {
-            ...grantInvoice.metadata,
-            creditsAmount: "7000",
-            creditsExpiresAt: new Date(
-              subscribedCreditPeriod.end * 1000,
-            ).toISOString(),
-          },
-          lines: {
-            has_more: false,
-            data: [
-              {
-                ...grantInvoice.lines.data[0],
-                id: `il_${randomUUID()}`,
-                period: subscribedCreditPeriod,
-              },
-            ],
-          },
-        }),
-        200,
-      );
-      await expect(grantRows(subscribedFixture)).resolves.toStrictEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            userId: grantedUserId,
-            grantType: "bonus",
-            originalAmount: 7000,
-            expiresAt: new Date(
-              subscribedCreditPeriod.end * 1000,
-            ).toISOString(),
-          }),
-        ]),
-      );
-    });
-  });
-
-  it("retries a one-time Atom usage-pack grant after the old Team subscription is deleted", async () => {
-    const grantedUserId = `user_${randomUUID()}`;
-    const fixture = await checkoutUsagePackLifecycle(
-      grantedUserId,
-      20,
-      "team",
-      0,
-    );
-    const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
-    const paidPeriod = period(0);
-    const currentSubscription = stripeSubscription(
-      fixture,
-      paidPeriod,
-      quantities,
-    );
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-      currentSubscription,
-    );
-
-    await postStripeEvent(
-      stripeEvent("checkout.session.completed", {
-        id: fixture.checkoutSessionId,
-        customer: fixture.customerId,
-        subscription: fixture.subscriptionId,
-        metadata: usagePackMetadata(fixture),
-      }),
-      200,
-    );
-    await postStripeEvent(
-      stripeEvent("customer.subscription.created", currentSubscription),
-      200,
-    );
-    await postStripeEvent(
-      stripeEvent(
-        "invoice.paid",
-        paidInvoice(fixture, {
-          invoiceId: `in_team_${randomUUID()}`,
-          paidPeriod,
-          quantities,
-        }),
-      ),
-      200,
-    );
-
-    const grantPeriod = {
-      start: paidPeriod.start,
-      end: paidPeriod.start + 7 * 86_400,
-    };
-    const planInvoiceId = `in_atom_usage_pack_plan_${randomUUID()}`;
-    const metadata = {
-      type: "atom_grant",
-      purpose: "atom_grant",
-      source: "atom_entitlement",
-      planVersion: "usagePack",
-      operationId: `sub_${randomUUID()}`,
-      orgId: fixture.orgId,
-      tier: "pro",
-      planId: "pro",
-      duration: "7d",
-      atomGrantExpiresAt: new Date(grantPeriod.end * 1000).toISOString(),
-    };
-    const planInvoice = {
-      id: planInvoiceId,
-      customer: fixture.customerId,
-      metadata,
-      status: "paid",
-      paid: true,
-      parent: null,
-      lines: {
-        has_more: false,
-        data: [
-          {
-            id: `il_${randomUUID()}`,
-            amount: 0,
-            subtotal: 0,
-            quantity: 1,
-            price: { id: TEST_PRICE_ATOM_GRANT },
-            period: grantPeriod,
-            parent: { type: "invoice_item_details" },
-          },
-        ],
-      },
-    };
-
-    await postStripeEvent(stripeEvent("invoice.paid", planInvoice), 500);
-    expect((await readLifecycleSnapshot(fixture)).billing).toStrictEqual(
-      expect.objectContaining({
-        tier: "team",
-        hasSubscription: true,
-        showUsagePack: true,
-      }),
-    );
-
-    await postStripeEvent(
-      stripeEvent("customer.subscription.deleted", {
-        id: fixture.subscriptionId,
-        metadata: usagePackMetadata(fixture),
-      }),
-      200,
-    );
-    expect((await readLifecycleSnapshot(fixture)).billing).toStrictEqual(
-      expect.objectContaining({
-        tier: "limited-free-1",
-        hasSubscription: false,
-      }),
-    );
-
-    await postStripeEvent(stripeEvent("invoice.paid", planInvoice), 200);
-    const retriedState = await readLifecycleSnapshot(fixture);
-    expect(retriedState.billing).toStrictEqual(
-      expect.objectContaining({
-        tier: "pro",
-        hasSubscription: false,
-        subscriptionStatus: "atom_grant",
-        currentPeriodEnd: new Date(grantPeriod.end * 1000).toISOString(),
-        showUsagePack: true,
-      }),
-    );
-  });
 
   it("rejects an invoice line that extends beyond the current Stripe period", async () => {
     const userId = `user_${randomUUID()}`;
@@ -2478,85 +1846,85 @@ describe("usage pack subscription Stripe lifecycle", () => {
     });
   });
 
-  it.each(["pro", "custom"])(
-    "preserves debt for a returning legacy %s subscriber after its old billing period",
-    async (tier) => {
-      // Fix the calendar: the old period ends April 15 and its monthly credit
-      // expires exactly on May 15, independently of CI's current month length.
-      mockNow(new Date("2035-05-15T00:00:00.000Z"));
-      const fixture = await checkoutUsagePackLifecycle(
-        `user_${randomUUID()}`,
-        20,
-        "pro",
-        0,
-      );
-      const legacyPriceId =
-        tier === "pro" ? TEST_PRICE_PRO : `price_custom_${randomUUID()}`;
-      mockEnv("OKOU_PRICE_CUSTOM", legacyPriceId);
-      const legacySubscriptionId = `sub_legacy_${randomUUID()}`;
-      const legacyPeriod = period(-60);
-      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+  it("preserves debt for a returning legacy Pro subscriber after its old billing period", async () => {
+    const tier = "pro";
+    // Clock-shifted Runner heartbeats prune the global serving fleet.
+    await setupApp({ context, routes: billingStatusRoutes, isolatePg: true });
+    // Fix the calendar: the old period ends April 15 and its monthly credit
+    // expires exactly on May 15, independently of CI's current month length.
+    mockNow(new Date("2035-05-15T00:00:00.000Z"));
+    const fixture = await checkoutUsagePackLifecycle(
+      `user_${randomUUID()}`,
+      20,
+      "pro",
+      0,
+    );
+    const legacyPriceId = TEST_PRICE_PRO;
+    const legacySubscriptionId = `sub_legacy_${randomUUID()}`;
+    const legacyPeriod = period(-60);
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      id: legacySubscriptionId,
+      customer: fixture.customerId,
+      status: "active",
+      cancel_at: null,
+      cancel_at_period_end: false,
+      schedule: null,
+      trial_end: null,
+      metadata: { orgId: fixture.orgId, tier },
+      items: {
+        data: [{ price: { id: legacyPriceId }, quantity: 1 }],
+      },
+    });
+    await postStripeEvent(
+      stripeEvent("invoice.paid", {
+        id: `in_legacy_${randomUUID()}`,
+        customer: fixture.customerId,
+        status: "paid",
+        paid: true,
+        metadata: { orgId: fixture.orgId },
+        parent: {
+          subscription_details: { subscription: legacySubscriptionId },
+        },
+        lines: {
+          has_more: false,
+          data: [
+            {
+              price: { id: legacyPriceId },
+              quantity: 1,
+              period: legacyPeriod,
+              parent: { type: "subscription_item_details" },
+            },
+          ],
+        },
+      }),
+      200,
+    );
+    const legacyState = await readLifecycleSnapshot(fixture);
+    expect(legacyState.billing?.tier).toBe(tier);
+    expect(legacyState.billing.creditGrants).toStrictEqual([]);
+    await postStripeEvent(
+      stripeEvent("customer.subscription.deleted", {
         id: legacySubscriptionId,
         customer: fixture.customerId,
-        status: "active",
-        cancel_at: null,
-        cancel_at_period_end: false,
-        schedule: null,
-        trial_end: null,
-        metadata: { orgId: fixture.orgId, tier },
-        items: {
-          data: [{ price: { id: legacyPriceId }, quantity: 1 }],
-        },
-      });
-      await postStripeEvent(
-        stripeEvent("invoice.paid", {
-          id: `in_legacy_${randomUUID()}`,
-          customer: fixture.customerId,
-          status: "paid",
-          paid: true,
-          metadata: { orgId: fixture.orgId },
-          parent: {
-            subscription_details: { subscription: legacySubscriptionId },
-          },
-          lines: {
-            has_more: false,
-            data: [
-              {
-                price: { id: legacyPriceId },
-                quantity: 1,
-                period: legacyPeriod,
-                parent: { type: "subscription_item_details" },
-              },
-            ],
-          },
-        }),
-        200,
-      );
-      const legacyState = await readLifecycleSnapshot(fixture);
-      expect(legacyState.billing?.tier).toBe(tier);
-      expect(legacyState.billing.creditGrants).toStrictEqual([]);
-      await postStripeEvent(
-        stripeEvent("customer.subscription.deleted", {
-          id: legacySubscriptionId,
-          customer: fixture.customerId,
-          status: "canceled",
-          metadata: { orgId: fixture.orgId },
-        }),
-        200,
-      );
-      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
-        tier: "limited-free-1",
-      });
-      await spendToOrgDebt(fixture, -5000);
+        status: "canceled",
+        metadata: { orgId: fixture.orgId },
+      }),
+      200,
+    );
+    await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+      tier: "limited-free-1",
+    });
+    await spendToOrgDebt(fixture, -5000);
 
-      const state = await fulfillFirstUsagePackInvoice(fixture);
+    const state = await fulfillFirstUsagePackInvoice(fixture);
 
-      expect(state.billing).toMatchObject({ tier: "pro", credits: -5000 });
-      expect(state.grants).toHaveLength(2);
-    },
-  );
+    expect(state.billing).toMatchObject({ tier: "pro", credits: -5000 });
+    expect(state.grants).toHaveLength(2);
+  });
 
   it("preserves debt after a one-time credit purchase has expired", async () => {
+    // Clock-shifted Runner heartbeats prune the global serving fleet.
+    await setupApp({ context, routes: billingStatusRoutes, isolatePg: true });
     const fixture = await checkoutUsagePackLifecycle(
       `user_${randomUUID()}`,
       20,

@@ -5,6 +5,7 @@ import Textual
 /// Presentation revisions include every input that can change a row's measured size.
 enum ConversationCollectionRow: Equatable, Identifiable {
   case earlier
+  case share(ChatShareGroup, topSpacing: CGFloat)
   case message(
     ChatMessage, showsAvatar: Bool, topSpacing: CGFloat, pendingRetry: Bool?, isSending: Bool,
     isWorkHistory: Bool = false, showsActions: Bool = false)
@@ -21,6 +22,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
 
   var id: String {
     switch self {
+    case .share(let group, _): group.id
     case .earlier: "conversation-earlier"
     case .message(let message, _, _, _, _, _, _): message.id
     case .work(let section, _, _, _, _): section.id
@@ -34,12 +36,13 @@ enum ConversationCollectionRow: Equatable, Identifiable {
   var message: ChatMessage? {
     if case .message(let message, _, _, _, _, _, _) = self { return message }
     if case .failure(let message, _, _, _) = self { return message }
+    if case .share(let group, _) = self { return group.messages.first }
     return nil
   }
 
   var isMessageContent: Bool {
     switch self {
-    case .message, .failure, .work: true
+    case .message, .failure, .work, .share: true
     case .earlier, .footer, .followups, .usage: false
     }
   }
@@ -47,11 +50,28 @@ enum ConversationCollectionRow: Equatable, Identifiable {
   var readingContentTopSpacing: CGFloat? {
     switch self {
     case .message(_, _, let spacing, _, _, _, _), .work(_, _, _, let spacing, _),
-      .failure(_, _, let spacing, _):
+      .failure(_, _, let spacing, _), .share(_, let spacing):
       spacing
     case .usage: 0
     case .earlier, .footer, .followups: nil
     }
+  }
+
+  /// Sharing replaces a work header with a selection mark above the answer.
+  /// Keep the body, rather than that changing header, at the reader's offset.
+  var sharingBodyInset: CGFloat {
+    switch self {
+    case .share(let group, _) where group.messages.first?.role == .assistant:
+      OkouAvatarSize.message + OkouSpace.sm
+    case .message(let message, true, _, _, _, _, _) where message.role == .assistant:
+      OkouAvatarSize.message + OkouSpace.sm
+    default: 0
+    }
+  }
+
+  var isShareSelection: Bool {
+    if case .share = self { return true }
+    return false
   }
 }
 
@@ -186,6 +206,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private var preparedRows: PreparedRows?
   private var appliesRows = false
   private var pendingScroll: (String, UnitPoint, Bool)?
+  private var sharingTrailingSpace: CGFloat = 0
   private var lastMetrics: ConversationCollectionMetrics?
   private var publishesMetrics = false
   private var lastViewportSize = CGSize.zero
@@ -955,7 +976,21 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     appliesRows = true
     let rows = prepared.rows
     let ids = Set(rows.map(\.id))
-    let position = source.anchor.preservedPosition ?? captureReadingPosition(retaining: ids)
+    // Work summaries and follow-ups disappear in selection mode. An anchor for
+    // one of those removed rows cannot override a surviving message's position.
+    let preserved = source.anchor.preservedPosition.flatMap {
+      ids.contains($0.messageID) ? $0 : nil
+    }
+    var position = preserved ?? captureReadingPosition(retaining: ids)
+    if let current = position,
+      let previous = displayedRows[current.messageID],
+      let next = rows.first(where: { $0.id == current.messageID }),
+      previous.isShareSelection != next.isShareSelection
+    {
+      position = ConversationReadingPosition(
+        messageID: current.messageID,
+        offset: current.offset + previous.sharingBodyInset - next.sharingBodyInset)
+    }
     if !source.followsBottom, let position { source.anchor.preserve(position) }
     let oldIDs = Set(dataSource.snapshot().itemIdentifiers)
     var updatedMeasurements = prepared.measurements
@@ -987,6 +1022,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       appliesRows = false
       displayedRows = displayedRows.filter { ids.contains($0.key) }
       measurements = measurements.filter { ids.contains($0.key) }
+      if sharingTrailingSpace > 0, !rows.contains(where: \.isShareSelection) {
+        setSharingTrailingSpace(0)
+      }
       collection.layoutIfNeeded()
       updateLoading()
       let firstItemID = rows.first(where: { $0.readingContentTopSpacing != nil })?.id
@@ -1058,17 +1096,40 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       let frame = layout.layoutAttributesForItem(at: index)?.frame
     else { return }
     let insets = collection.adjustedContentInset
+    let requested = frame.minY + spacing - insets.top - position.offset
+    if displayedRows[position.messageID]?.isShareSelection == true {
+      // Hidden work/usage/follow-up rows can shorten the transcript below the
+      // reader. Retain only the trailing room needed to avoid clamping them away.
+      let maximum = max(
+        -insets.top, collection.contentSize.height - collection.bounds.height + insets.bottom)
+      if requested > maximum {
+        setSharingTrailingSpace(sharingTrailingSpace + requested - maximum)
+      }
+    }
     let minimum = -insets.top
     let maximum = max(
       minimum, collection.contentSize.height - collection.bounds.height + insets.bottom)
-    let y = min(maximum, max(minimum, frame.minY + spacing - insets.top - position.offset))
+    let y = min(maximum, max(minimum, requested))
     guard abs(y - collection.contentOffset.y) > 0.5 else { return }
     collection.setContentOffset(CGPoint(x: collection.contentOffset.x, y: y), animated: false)
   }
 
+  private func setSharingTrailingSpace(_ height: CGFloat) {
+    sharingTrailingSpace = height
+    // This is scrollable empty content, not an occluding bar or safe area.
+    layout.sectionInset.bottom = height
+    layout.invalidateLayout()
+    collection.layoutIfNeeded()
+  }
+
   func scrollTo(_ id: String, anchor: UnitPoint, animated: Bool) {
     guard source.sendTransition?.isActive != true else { return }
-    guard isViewLoaded, let index = dataSource.indexPath(for: id) else {
+    let lastShareID = source.rows.last.flatMap { $0.isShareSelection ? $0.id : nil }
+    let targetID = id == "conversation-bottom" ? lastShareID ?? id : id
+    if isViewLoaded, id == "conversation-bottom", sharingTrailingSpace > 0 {
+      setSharingTrailingSpace(0)
+    }
+    guard isViewLoaded, let index = dataSource.indexPath(for: targetID) else {
       pendingScroll = (id, anchor, animated)
       return
     }

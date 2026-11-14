@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.53.100](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.99...sandbox-firecracker-v0.53.100) (2026-11-14)
+
+## [0.53.99](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.98...sandbox-firecracker-v0.53.99) (2026-11-13)
+
+## [0.53.98](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.97...sandbox-firecracker-v0.53.98) (2026-11-13)
+
+## [0.53.97](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.96...sandbox-firecracker-v0.53.97) (2026-11-13)
+
+
+### Refactoring
+
+* **rust:** use typed safe pidfd signaling across remaining owners ([#46923](https://github.com/okou-ai/okou/issues/46923)) ([61626b9](https://github.com/okou-ai/okou/commit/61626b96421ba142b3eb9738157fba20b1ad2256))
+
 ## [0.53.96](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.95...sandbox-firecracker-v0.53.96) (2026-11-13)
 
 ## [0.53.95](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.94...sandbox-firecracker-v0.53.95) (2026-11-12)

@@ -95,6 +95,8 @@ describe.each(["feishu", "lark"] as const)(
       expect(
         screen.getByRole("heading", { name: "Connection failed" }),
       ).toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent("Connection failed");
+      expect(screen.getByRole("img", { name: "Okou" })).toBeInTheDocument();
       expect(
         screen.getByText(
           `This connection link is invalid or has expired. Return to ${provider.name} and message the bot for a new link.`,

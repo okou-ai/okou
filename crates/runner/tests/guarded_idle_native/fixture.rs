@@ -288,3 +288,27 @@ pub async fn exec(sandbox: &dyn Sandbox, cmd: &str) -> TestResult<Vec<u8>> {
     }
     Ok(result.stdout)
 }
+
+pub(super) fn retained_home(
+    directory: &std::path::Path,
+    id: &str,
+) -> TestResult<serde_json::Value> {
+    let path = sandbox_firecracker::FactoryPaths::new(directory.into())
+        .workspace(id)
+        .join("home.ext4");
+    if !std::fs::symlink_metadata(&path)?.is_file() {
+        return Err(std::io::Error::other("retained original home is not a regular file").into());
+    }
+    let mut file = std::fs::File::open(&path)?;
+    let bytes = file.metadata()?.len();
+    let mut block = [0; 1024];
+    std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(1024))?;
+    std::io::Read::read_exact(&mut file, &mut block)?;
+    if bytes != IMAGE_BYTES || block[56..58] != [0x53, 0xef] {
+        return Err(std::io::Error::other("retained original home lost its ext4 identity").into());
+    }
+    Ok(
+        serde_json::json!({"path":path,"bytes":bytes,"filesystem_uuid":hex::encode(&block[104..120]),
+        "superblock_sha256":super::continuation::digest(&block)}),
+    )
+}

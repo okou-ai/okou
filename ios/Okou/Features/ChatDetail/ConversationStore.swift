@@ -148,24 +148,38 @@ final class ConversationStore {
   private let sync: ChatSync
   private let readResources: ConversationReadResources
   private let commands: ChatCommands
+  private var quickShare: (id: UUID, task: Task<String, Error>)?
+  @ObservationIgnored lazy var sharing = ConversationSharing(
+    client: commands.approvalClient, threadID: thread.id, webURL: webURL,
+    lifecycleTasks: lifecycleTasks, history: { [weak self] in self?.history ?? .empty },
+    didFail: didFail)
+
+  func startSharing() {
+    guard !closed else { return }
+    quickShare?.task.cancel()
+    composer.editor.dismissKeyboard()
+    sharing.start()
+  }
+
+  func cancelSharing() {
+    quickShare?.task.cancel()
+    sharing.cancel()
+  }
+
   /// Shares one answer together with the request that led to it, as the web does for a
   /// single message: the answer's event plus the user's prompts directly before its turn.
   func shareAnswer(_ messageID: String, audience: ChatShareAudience) async throws -> String {
-    guard let index = items.firstIndex(where: { $0.id == messageID }) else {
-      throw ChatError.invalidContract("This message is no longer available.")
+    quickShare?.task.cancel()
+    let id = UUID()
+    let task = Task { @MainActor [sharing] in
+      let link = try await sharing.singleAnswerLink(messageID, audience: audience)
+      try Task.checkCancellation()
+      return link.lastPathComponent
     }
-    var prompts: [String] = []
-    var cursor = index - 1
-    while cursor >= 0 {
-      if let message = items[cursor].message, message.role == .user {
-        if !pending.contains(where: { $0.id == message.id }) { prompts.insert(message.id, at: 0) }
-      } else if !prompts.isEmpty {
-        break
-      }
-      cursor -= 1
-    }
-    return try await commands.approvalClient.shareThread(
-      threadID: thread.id, eventIDs: prompts + [messageID], audience: audience)
+    quickShare = (id, task)
+    lifecycleTasks.track(task)
+    defer { if quickShare?.id == id { quickShare = nil } }
+    return try await task.value
   }
 
   @ObservationIgnored lazy var approvals = ApprovalCardRegistry(
@@ -214,6 +228,7 @@ final class ConversationStore {
       try await Task.sleep(for: $0)
     },
     draftRepository: ChatDraftRepository? = nil, draftStorage: ChatDraftStorage? = nil,
+    didSaveDraft: @escaping @MainActor (ComposerDraft) async -> Void = { _ in },
     measurementScope: ChatCacheScope? = nil,
     didRequestNewChat: @escaping @MainActor () -> Void = {},
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
@@ -243,6 +258,7 @@ final class ConversationStore {
     composer = ComposerDraftStore(
       target: draftTarget, commands: commands,
       repository: draftRepository, storage: draftStorage, didFail: didFail,
+      didSave: didSaveDraft,
       syncSleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
     self.sync = sync
     self.commands = commands
@@ -762,6 +778,8 @@ final class ConversationStore {
   }
 
   func close() {
+    quickShare?.task.cancel()
+    sharing.close()
     closed = true
     streamStop?()
     streamStop = nil

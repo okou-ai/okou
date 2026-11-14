@@ -412,7 +412,7 @@ describe("DELETE /api/agents/:id", () => {
     bdd.acceptAgentStorageWrites();
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
-    api.configureRunnerGroup();
+    await api.configureRunnerGroup();
     await api.grantProEntitlement(actor);
     await api.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor);

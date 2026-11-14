@@ -9,6 +9,7 @@ import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { browserRoutes } from "../browser";
@@ -19,8 +20,9 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const PROVIDER_URL = "https://api.browser-use.com/api/v3";
-const STARTED_AT = Date.parse("2026-07-24T10:00:00.000Z");
+const STARTED_AT = now();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+const query = Object.freeze({ viewer: "native" as const });
 
 function client() {
   return setupApp({ context, routes: browserRoutes })(browserContract);
@@ -138,10 +140,10 @@ test("retrieves a viewer connection for its signed-in owner", async () => {
       scenario.actor.orgId,
     );
     const connected = await accept(
-      client().viewerConnection({ headers, params }),
+      client().get({ headers, params, query }),
       [200],
     );
-    expect(connected.body).toStrictEqual({
+    expect(connected.body.viewer).toStrictEqual({
       browser: expect.objectContaining({
         threadId: params.threadId,
         status: "active",
@@ -152,17 +154,19 @@ test("retrieves a viewer connection for its signed-in owner", async () => {
       extension: TEST_BROWSER_EXTENSION,
     });
     expect(connected.headers.get("cache-control")).toBe("no-store");
-    const deniedRun = await client().viewerConnection({
+    const deniedRun = await client().get({
       headers: scenario.runHeaders,
       params,
+      query,
     });
     expect(deniedRun.status).toBe(403);
 
     const foreign = { userId: `user_${randomUUID()}`, orgId: scenario.orgId };
     createRouteMocks(context).clerk.session(foreign.userId, foreign.orgId);
-    const foreignResponse = await client().viewerConnection({
+    const foreignResponse = await client().get({
       headers,
       params,
+      query,
     });
     expect(foreignResponse).toMatchObject({
       status: 404,
@@ -173,10 +177,10 @@ test("retrieves a viewer connection for its signed-in owner", async () => {
       scenario.actor.orgId,
     );
     scenario.provider.status = "stopped";
-    const stopped = await client().viewerConnection({ headers, params });
+    const stopped = await client().get({ headers, params, query });
     expect(stopped).toMatchObject({
-      status: 409,
-      body: { error: { code: "BROWSER_RECLAIMING" } },
+      status: 200,
+      body: { browser: { status: "suspended" }, viewer: null },
     });
   });
 });
@@ -198,10 +202,10 @@ test.each(["provider WSS", "live WSS", "double-encoded live WSS"] as const)(
         scenario.provider.liveUrl = `https://live.browser-use.com/?wss=${encodeURIComponent(endpoint)}`;
       }
       const connected = await accept(
-        client().viewerConnection({ headers, params: scenario.params }),
+        client().get({ headers, params: scenario.params, query }),
         [200],
       );
-      expect(connected.body).toStrictEqual({
+      expect(connected.body.viewer).toStrictEqual({
         browser: expect.objectContaining({
           threadId: scenario.params.threadId,
           status: "active",
@@ -220,9 +224,10 @@ test("rejects an untrusted discovery endpoint without returning provider payload
   const scenario = await viewerScenario();
   await scenario.run(async () => {
     scenario.provider.discoveryUrl = "wss://untrusted.example/private-token";
-    const response = await client().viewerConnection({
+    const response = await client().get({
       headers,
       params: scenario.params,
+      query,
     });
     expect(response).toMatchObject({
       status: 502,

@@ -29,6 +29,8 @@ private struct ChatProjectMembershipPicker: ViewModifier {
           }
           .id(ObjectIdentifier(workspace))
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
         .okouSheetBackground()
       }
       .background {

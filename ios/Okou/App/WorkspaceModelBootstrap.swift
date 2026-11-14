@@ -1,12 +1,16 @@
 import Foundation
 
-/// One workspace's model reads wait for the initial subscriptions, with bounded HTTP availability.
+/// Coordinates model baselines across startup and recovery, with bounded HTTP availability.
 @MainActor
 final class WorkspaceModelBootstrap {
   private enum Phase { case waiting, http, subscribed, closed }
   private var phase = Phase.waiting
   private var started = false
   private var readBeforeSubscriptions = false
+  private var subscribedOnce = false
+  private var recovering = false
+  private var revision = 0
+  private var scheduledRevision = 0
   private var waiters: [CheckedContinuation<Void, Error>] = []
   private var deadline: Task<Void, Never>?
   private let waitForTimeout: @Sendable () async throws -> Void
@@ -22,7 +26,7 @@ final class WorkspaceModelBootstrap {
   func wait() async throws {
     try Task.checkCancellation()
     switch phase {
-    case .http, .subscribed: return
+    case .http, .subscribed: break
     case .closed: throw CancellationError()
     case .waiting:
       startDeadline()
@@ -31,6 +35,7 @@ final class WorkspaceModelBootstrap {
       }
       try Task.checkCancellation()
     }
+    if phase == .http { readBeforeSubscriptions = true }
   }
 
   private func startDeadline() {
@@ -51,23 +56,50 @@ final class WorkspaceModelBootstrap {
     return revalidate
   }
 
+  /// Foreground and transport recovery share one pending model baseline.
+  func beginRecovery() {
+    guard phase != .closed, !recovering else { return }
+    recovering = true
+    revision += 1
+    readBeforeSubscriptions = false
+    deadline?.cancel()
+    deadline = nil
+    phase = .waiting
+  }
+
+  func connectionChanged(_ status: RealtimeConnectionStatus) {
+    if status == .connected {
+      _ = subscriptionsReady()
+    } else if subscribedOnce {
+      beginRecovery()
+    } else if status == .unavailable || status == .disconnected {
+      allowHTTP()
+    }
+  }
+
+  var needsRecoveryRead: Bool { revision != scheduledRevision }
+
+  func didScheduleRead() { scheduledRevision = revision }
+
   /// A read released before attachment needs a fresh baseline after the subscription gap closes.
   func subscriptionsReady() -> Bool {
+    guard phase != .closed else { return false }
+    subscribedOnce = true
+    recovering = false
     switch phase {
     case .waiting:
       release(.subscribed)
-      return false
     case .http:
+      if readBeforeSubscriptions { revision += 1 }
+      readBeforeSubscriptions = false
       phase = .subscribed
-      return true
-    case .subscribed: return readBeforeSubscriptions
-    case .closed: return false
+    case .subscribed, .closed: break
     }
+    return needsRecoveryRead
   }
 
   func allowHTTP() {
     guard phase == .waiting else { return }
-    readBeforeSubscriptions = true
     release(.http)
   }
 

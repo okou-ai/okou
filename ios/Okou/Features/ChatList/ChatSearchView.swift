@@ -24,6 +24,38 @@ struct ChatSearchView: View {
   }
 }
 
+/// Search has its own Store; list status must observe the workspace's original read.
+private struct ChatSearchListReadStatus: View {
+  let list: ThreadListStore
+
+  var body: some View {
+    StoreProvider(list.stateStore) {
+      ChatSearchListReadStatusContent(list: list)
+        .id(ObjectIdentifier(list))
+    }
+  }
+}
+
+private struct ChatSearchListReadStatusContent: View {
+  let list: ThreadListStore
+  @LoadableValue private var read: Loadable<Void>
+
+  init(list: ThreadListStore) {
+    self.list = list
+    _read = LoadableValue(task: list.listValue)
+  }
+
+  var body: some View {
+    if read.state == .loading && list.threads.isEmpty {
+      OkouLoadingRow("Loading chats…")
+    } else if let error = read.error?.localizedDescription ?? list.error {
+      OkouLoadErrorRow(message: error, actionTitle: "Reload chats") {
+        await list.refresh()
+      }
+    }
+  }
+}
+
 private struct ChatSearchContent: View {
   enum Scope: CaseIterable, Hashable {
     case all, chats, messages, workflows, artifacts
@@ -116,13 +148,7 @@ private struct ChatSearchContent: View {
 
   @ViewBuilder
   private func results(titles: [ChatThread]) -> some View {
-    if workspace.list.isLoading && workspace.list.threads.isEmpty {
-      OkouLoadingRow("Loading chats…")
-    } else if let error = workspace.list.error {
-      OkouLoadErrorRow(message: error, actionTitle: "Reload chats") {
-        await workspace.list.refresh()
-      }
-    }
+    ChatSearchListReadStatus(list: workspace.list)
     if let error = search.openingError {
       Text(error).foregroundStyle(OkouColor.mutedForeground)
     }

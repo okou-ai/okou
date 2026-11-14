@@ -8,6 +8,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cronSteerRunTimeBudgetRoutes } from "../cron-steer-run-time-budget";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 
 // The real cron scans the whole database, so each case owns an isolated copy.
 const context = testContext();
@@ -191,7 +192,7 @@ describe("run-targeted time budget steering through HTTP", () => {
       }),
     ]);
 
-    await api.heartbeatRunner(runnerGroup);
+    await createRunsApi(context).registerDirectRunner(runnerGroup);
     const successor = await sendChatRun(actor, {
       agentId,
       threadId: active.threadId,

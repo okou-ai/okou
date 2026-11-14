@@ -186,7 +186,7 @@ const CREDIT_PURCHASE_PREVIEW_LINE_METADATA_KEY = "credit_purchase_preview_id";
 const STRIPE_SUBSCRIPTION_PRICE_TIERS = ["pro", "team"] as const;
 export type SubscriptionCheckoutTier =
   (typeof STRIPE_SUBSCRIPTION_PRICE_TIERS)[number];
-export type BillingSubscriptionTier = SubscriptionCheckoutTier | "custom";
+export type BillingSubscriptionTier = SubscriptionCheckoutTier;
 
 export const orgPlanSubscriptionId$ = command(
   async (
@@ -366,11 +366,7 @@ interface BillingPlanPriceItem {
 export function tierForKnownPlanPrice(
   price: BillingPlanPriceItem["price"],
 ): BillingSubscriptionTier | null {
-  const checkoutTier = tierForKnownPriceId(price.id);
-  if (checkoutTier) {
-    return checkoutTier;
-  }
-  return env("OKOU_PRICE_CUSTOM")?.includes(price.id) ? "custom" : null;
+  return tierForKnownPriceId(price.id);
 }
 
 export function knownBillingPlanPriceItem<
@@ -402,9 +398,6 @@ function tierFromPriceId(priceId: string): SubscriptionCheckoutTier {
 
 function billingTierRank(tier: string | null | undefined): number {
   switch (tier) {
-    case "custom": {
-      return 3;
-    }
     case "team": {
       return 2;
     }
@@ -420,9 +413,6 @@ function billingTierRank(tier: string | null | undefined): number {
 
 function billingTierLabel(tier: string | null | undefined): string {
   switch (tier) {
-    case "custom": {
-      return "Custom";
-    }
     case "team": {
       return "Team";
     }
