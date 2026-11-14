@@ -3,15 +3,17 @@ import SwiftUI
 /// A message selection mark with a native-sized target and semantic checked colors.
 struct OkouSelectionButton: View {
   let isSelected: Bool
+  var isIndeterminate = false
   let action: () -> Void
 
   var body: some View {
     Button(action: action) {
       ZStack {
-        Circle().fill(isSelected ? OkouColor.primary : OkouColor.background)
-        Circle().strokeBorder(isSelected ? OkouColor.primary : OkouColor.controlBorder)
-        if isSelected {
-          OkouIcon("check", size: OkouIconSize.badge)
+        Circle().fill(isSelected || isIndeterminate ? OkouColor.primary : OkouColor.background)
+        Circle().strokeBorder(
+          isSelected || isIndeterminate ? OkouColor.primary : OkouColor.controlBorder)
+        if isSelected || isIndeterminate {
+          OkouIcon(isIndeterminate ? "minus" : "check", size: OkouIconSize.badge)
             .foregroundStyle(OkouColor.primaryForeground)
         }
       }
@@ -20,6 +22,7 @@ struct OkouSelectionButton: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .accessibilityValue(isSelected ? "Selected" : "Not selected")
+    .accessibilityValue(
+      isIndeterminate ? "Partially selected" : isSelected ? "Selected" : "Not selected")
   }
 }

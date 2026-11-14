@@ -20,9 +20,6 @@ const app = () => {
 test("resolves the final answer with its prompt and shares exactly the selected records", async () => {
   const { actor, agentId, runnerGroup } =
     await fixture.entitledNativeChatActor();
-  await fixture.authDeviceSupport.updateFeatureSwitches(actor, {
-    chatSharingSelection: true,
-  });
   const run = await fixture.sendChatRun(actor, {
     agentId,
     prompt: "Plan a quiet trip",
@@ -92,24 +89,20 @@ test("resolves the final answer with its prompt and shares exactly the selected 
   );
 });
 
-test("keeps selection private to the owner and behind the rollout switch", async () => {
+test("keeps the published selection contract private to the owner without a rollout switch", async () => {
   const { actor, agentId } = await fixture.entitledNativeChatActor();
   const run = await fixture.sendChatRun(actor, {
     agentId,
     prompt: "Private travel plans",
   });
-  const disabled = await accept(
+  await accept(
     app()(chatShareSelectionContract).get({
       params: { threadId: run.threadId },
       headers: fixture.sessionHeaders(actor),
     }),
-    [404],
+    [200],
   );
-  expect(disabled.body.error.code).toBe("NOT_FOUND");
   const other = fixture.bdd.user();
-  await fixture.authDeviceSupport.updateFeatureSwitches(other, {
-    chatSharingSelection: true,
-  });
   const denied = await accept(
     app()(chatShareSelectionContract).get({
       params: { threadId: run.threadId },

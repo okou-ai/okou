@@ -43,15 +43,16 @@ struct ChatDetailView: View {
   }
   private var rows: [ConversationCollectionRow] {
     let items = conversation.visibleItems
-    if conversation.sharing.isSelecting, conversation.sharing.selection != nil {
+    if conversation.sharing.isSelecting {
       let sharing = conversation.sharing
-      let shareableIDs = sharing.shareableIDs
+      let visibleIDs = Set(items.compactMap(\.message).map(\.id))
+      let selectedIDs = sharing.selectedIDs
+      let canSelect = !sharing.isBusy && sharing.visibility == nil
       var rows: [ConversationCollectionRow] = conversation.hasEarlierMessages ? [.earlier] : []
-      rows += items.compactMap { item in
-        guard let message = item.message, shareableIDs.contains(message.id) else {
-          return nil
-        }
-        return .share(message, selected: sharing.selectedIDs.contains(message.id), topSpacing: 16)
+      rows += sharing.groups.filter { !$0.eventIDs.allSatisfy { !visibleIDs.contains($0) } }.map {
+        .share(
+          $0, selected: Set($0.eventIDs).isSubset(of: selectedIDs), enabled: canSelect,
+          topSpacing: 16)
       }
       return rows
     }
@@ -396,18 +397,25 @@ struct ChatDetailView: View {
     -> some View
   {
     switch row {
-    case .share(let message, let selected, let topSpacing):
+    case .share(let group, let selected, let enabled, let topSpacing):
+      let partial =
+        !selected && !Set(group.eventIDs).isDisjoint(with: conversation.sharing.selectedIDs)
       HStack(alignment: .top, spacing: OkouSpace.xs) {
-        OkouSelectionButton(isSelected: selected) {
-          conversation.sharing.toggle(message, messages: conversation.messages)
+        OkouSelectionButton(isSelected: selected, isIndeterminate: partial) {
+          conversation.sharing.toggle(group)
         }
-        .disabled(conversation.sharing.isBusy)
-        .accessibilityLabel(message.role == .user ? "Select question" : "Select answer")
-        .accessibilityValue(selected ? "Selected" : "Not selected")
-        .accessibilityIdentifier("chat-sharing-select-\(message.id)")
-        messageRow(
-          message, showsAvatar: true, pendingRetry: nil, isSending: false,
-          isWorkHistory: false, showsActions: false, loadsAttachments: anchor != nil)
+        .disabled(!enabled)
+        .accessibilityLabel(
+          group.messages.first?.role == .user ? "Select question" : "Select answer"
+        )
+        .accessibilityIdentifier("chat-sharing-select-\(group.id)")
+        VStack(alignment: .leading, spacing: OkouSpace.xs) {
+          ForEach(Array(group.messages.enumerated()), id: \.element.id) { index, message in
+            messageRow(
+              message, showsAvatar: index == 0, pendingRetry: nil, isSending: false,
+              isWorkHistory: false, showsActions: false, loadsAttachments: anchor != nil)
+          }
+        }
       }
       .padding(OkouSpace.sm)
       .background(
@@ -415,7 +423,7 @@ struct ChatDetailView: View {
         in: RoundedRectangle(cornerRadius: OkouRadius.chat)
       )
       .background {
-        if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
+        if let anchor { ConversationRowAnchor(messageID: group.id, anchor: anchor) }
       }
       .padding(.horizontal, OkouSpace.sm)
       .padding(.top, topSpacing)
@@ -575,9 +583,7 @@ struct ChatDetailView: View {
           shareLink: { audience in
             let id = try await conversation.shareAnswer(message.id, audience: audience)
             return conversation.webURL.appending(path: "share/threads/\(id)")
-          },
-          selectMessages: conversation.sharingEnabled
-            ? { conversation.startSharing(answerID: message.id) } : nil
+          }
         )
         // The answer's text is inset 6 pt; the first glyph sits on that edge.
         .padding(.leading, OkouSpace.six)

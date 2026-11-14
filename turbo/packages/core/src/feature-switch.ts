@@ -201,13 +201,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
-  [FeatureSwitchKey.ChatSharingSelection]: {
-    maintainer: "lancy@okou.ai",
-    displayName: "Chat message selection",
-    description:
-      "Share individual messages with the same selection rules on Web and iOS.",
-    enabled: false,
-  },
   [FeatureSwitchKey.ChatReplyNameLine]: {
     maintainer: "tongx@okou.ai",
     displayName: "Agent name on replies",

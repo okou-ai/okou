@@ -46,9 +46,7 @@ struct ChatThreadMenu {
         title: pinned ? String(localized: "Unpin chat") : String(localized: "Pin chat"),
         icon: pinned ? "pin-off" : "pin", enabled: available && list.canPin(threadID))
     ]
-    if workspace.selectedConversation?.thread.id == threadID,
-      workspace.selectedConversation?.sharingEnabled == true
-    {
+    if workspace.selectedConversation?.thread.id == threadID {
       items.append(
         Item(
           action: .share, title: String(localized: "Share chat"), icon: "share-2",
