@@ -747,6 +747,7 @@ import charged_windows_probe as probe
 output, case = pathlib.Path(sys.argv[2]), sys.argv[3]
 previous = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
 original_signal = signal.signal
+mask = signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM})
 limit = resource.getrlimit(resource.RLIMIT_NOFILE)
 fillers = []
 failure = None
@@ -803,6 +804,7 @@ finally:
     resource.setrlimit(resource.RLIMIT_NOFILE, limit)
     for sig, handler in previous.items():
         original_signal(sig, handler)
+    signal.pthread_sigmask(signal.SIG_SETMASK, mask)
 """
         for case in ("descriptors", "signal", "publication"):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
