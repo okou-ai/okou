@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.70.4](https://github.com/okou-ai/okou/compare/api-v2.70.3...api-v2.70.4) (2026-11-14)
+
+
+### Bug Fixes
+
+* **api:** retire selection endpoints after ios 0.43.3 release ([#47146](https://github.com/okou-ai/okou/issues/47146)) ([bcca359](https://github.com/okou-ai/okou/commit/bcca359a055c278064b113aa7648572539eae72b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.63.2
+    * @okouai/core bumped to 8.839.2
+    * @okouai/db bumped to 2.35.5
+    * @okouai/pi-agent-runtime bumped to 1.51.124
+
 ## [2.70.3](https://github.com/okou-ai/okou/compare/api-v2.70.2...api-v2.70.3) (2026-11-14)
 
 
