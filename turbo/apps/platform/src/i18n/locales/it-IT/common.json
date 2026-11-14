@@ -5247,6 +5247,20 @@
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
+  "pwaScrollDiagnostics": {
+    "idle": "Inattivo",
+    "label": "Diagnostica scorrimento anteprima",
+    "mark": "Segna",
+    "notice": "Solo in memoria. Ricaricare cancella la traccia. Leggere geometria e stili per eventi nativi e marcatori aggiunge un sovraccarico. Arresta prima di leggere. La vicinanza a un input non implica causalità.",
+    "readSnapshot": "Leggi istantanea",
+    "recording": "Registrazione",
+    "start": "Avvia",
+    "status": "Diag. PWA: {{status}}",
+    "stop": "Arresta",
+    "stopped": "Arrestato",
+    "stoppedJson": "JSON della diagnostica arrestata",
+    "summary": "SHA {{sha}}\nstate={{state}} standalone={{standalone}} display={{display}} anchorSupport={{anchorSupport}}\nrun={{run}} retained={{retained}}/{{total}} dropped={{dropped}}\n{{entries}}"
+  },
   "queue": {
     "concurrentRuns_one": "{{count}} esecuzione simultanea",
     "concurrentRuns_many": "{{count}} esecuzioni simultanee",

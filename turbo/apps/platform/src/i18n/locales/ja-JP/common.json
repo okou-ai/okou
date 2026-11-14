@@ -5172,6 +5172,20 @@
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
+  "pwaScrollDiagnostics": {
+    "idle": "待機中",
+    "label": "プレビューのスクロール診断",
+    "mark": "マーク",
+    "notice": "メモリ内のみ。再読み込みで記録は消えます。ネイティブイベントやマーク時の形状・スタイル取得は負荷を増やします。停止してから読み取ってください。入力との時間的な近さは因果関係を示しません。",
+    "readSnapshot": "スナップショットを読む",
+    "recording": "記録中",
+    "start": "開始",
+    "status": "PWA 診断: {{status}}",
+    "stop": "停止",
+    "stopped": "停止済み",
+    "stoppedJson": "停止後の診断 JSON",
+    "summary": "SHA {{sha}}\nstate={{state}} standalone={{standalone}} display={{display}} anchorSupport={{anchorSupport}}\nrun={{run}} retained={{retained}}/{{total}} dropped={{dropped}}\n{{entries}}"
+  },
   "queue": {
     "concurrentRuns_one": "{{count}} 同時実行",
     "concurrentRuns_other": "{{count}} 同時実行数",

@@ -5172,6 +5172,20 @@
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
+  "pwaScrollDiagnostics": {
+    "idle": "대기 중",
+    "label": "미리보기 스크롤 진단",
+    "mark": "표시",
+    "notice": "메모리에만 저장됩니다. 새로고침하면 기록이 사라집니다. 네이티브 이벤트와 표시 시 지오메트리 및 스타일 읽기는 부하를 늘립니다. 읽기 전에 중지하세요. 입력과 시간적으로 가깝다고 인과관계가 있는 것은 아닙니다.",
+    "readSnapshot": "스냅샷 읽기",
+    "recording": "기록 중",
+    "start": "시작",
+    "status": "PWA 진단: {{status}}",
+    "stop": "중지",
+    "stopped": "중지됨",
+    "stoppedJson": "중지된 진단 JSON",
+    "summary": "SHA {{sha}}\nstate={{state}} standalone={{standalone}} display={{display}} anchorSupport={{anchorSupport}}\nrun={{run}} retained={{retained}}/{{total}} dropped={{dropped}}\n{{entries}}"
+  },
   "queue": {
     "concurrentRuns_one": "{{count}}개의 동시 실행",
     "concurrentRuns_other": "{{count}}개의 동시 실행",

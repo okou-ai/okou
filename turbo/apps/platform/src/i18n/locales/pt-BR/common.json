@@ -5247,6 +5247,20 @@
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
+  "pwaScrollDiagnostics": {
+    "idle": "Inativo",
+    "label": "Diagnóstico de rolagem da prévia",
+    "mark": "Marcar",
+    "notice": "Somente na memória. Recarregar apaga o registro. Leituras de geometria e estilo em eventos nativos e marcações geram sobrecarga. Pare antes de ler. A proximidade com uma entrada não implica causalidade.",
+    "readSnapshot": "Ler captura",
+    "recording": "Gravando",
+    "start": "Iniciar",
+    "status": "Diag. PWA: {{status}}",
+    "stop": "Parar",
+    "stopped": "Parado",
+    "stoppedJson": "JSON do diagnóstico parado",
+    "summary": "SHA {{sha}}\nstate={{state}} standalone={{standalone}} display={{display}} anchorSupport={{anchorSupport}}\nrun={{run}} retained={{retained}}/{{total}} dropped={{dropped}}\n{{entries}}"
+  },
   "queue": {
     "concurrentRuns_one": "{{count}} execução simultânea",
     "concurrentRuns_many": "{{count}} execuções simultâneas",

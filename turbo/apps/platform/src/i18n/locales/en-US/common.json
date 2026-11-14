@@ -5188,6 +5188,20 @@
     "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
+  "pwaScrollDiagnostics": {
+    "idle": "Idle",
+    "label": "Preview scroll diagnostics",
+    "mark": "Mark",
+    "notice": "Memory only. Reload loses trace. Native/mark geometry and style reads add overhead. Stop before reading. Input proximity is not causation.",
+    "readSnapshot": "Read snapshot",
+    "recording": "Recording",
+    "start": "Start",
+    "status": "PWA diag: {{status}}",
+    "stop": "Stop",
+    "stopped": "Stopped",
+    "stoppedJson": "Stopped diagnostic JSON",
+    "summary": "SHA {{sha}}\nstate={{state}} standalone={{standalone}} display={{display}} anchorSupport={{anchorSupport}}\nrun={{run}} retained={{retained}}/{{total}} dropped={{dropped}}\n{{entries}}"
+  },
   "queue": {
     "concurrentRuns_one": "{{count}} concurrent run",
     "concurrentRuns_other": "{{count}} concurrent runs",
