@@ -73,7 +73,9 @@ final class ConversationSharingTests: XCTestCase {
           return ChatHTTPResponse(status: 404, body: #"{"error":{"message":"Not found"}}"#)
         }
         return ChatHTTPResponse(
-          body: "{\"id\":\"\(id)\",\"audience\":\"\(value.audience)\",\"revision\":\"current-revision\"}")
+          body: """
+            {"id":"\(id)","audience":"\(value.audience)","revision":"current-revision"}
+            """)
       }
     }
     let history = try ChatEventProjection.history(
@@ -148,7 +150,7 @@ final class ConversationSharingTests: XCTestCase {
       rows: [
         ChatEvent(
           id: "question", runId: "run", createdAt: .now, eventType: .inputPrompt,
-          payload: .init(userMessage: .init(parts: [.init(type: "text", text: "Question")]))),
+          payload: .init(userMessage: .init(parts: [.init(type: "text", text: "Question")])))
       ], recovering: false)
     let sharing = ConversationSharing(
       client: fixture.client, threadID: "thread", webURL: fixture.baseURL,
@@ -193,7 +195,7 @@ final class ConversationSharingTests: XCTestCase {
       rows: [
         ChatEvent(
           id: "question", runId: "run", createdAt: .now, eventType: .inputPrompt,
-          payload: .init(userMessage: .init(parts: [.init(type: "text", text: "Question")]))),
+          payload: .init(userMessage: .init(parts: [.init(type: "text", text: "Question")])))
       ], recovering: false)
     let sharing = ConversationSharing(
       client: fixture.client, threadID: "thread", webURL: fixture.baseURL,

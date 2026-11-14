@@ -47,9 +47,10 @@ struct ChatDetailView: View {
       let sharing = conversation.sharing
       let visibleIDs = Set(items.compactMap(\.message).map(\.id))
       var rows: [ConversationCollectionRow] = conversation.hasEarlierMessages ? [.earlier] : []
-      rows += sharing.groups.filter { !$0.eventIDs.allSatisfy { !visibleIDs.contains($0) } }.map {
-        .share($0, topSpacing: 24)
-      }
+      rows += sharing.groups.filter { !$0.eventIDs.allSatisfy { !visibleIDs.contains($0) } }
+        .enumerated().map { index, group in
+          .share(group, topSpacing: index == 0 ? 20 : 24)
+        }
       return rows
     }
     var result: [ConversationCollectionRow] = []
@@ -395,7 +396,7 @@ struct ChatDetailView: View {
     switch row {
     case .share(let group, let topSpacing):
       ChatSharingRow(group: group, sharing: conversation.sharing) {
-        VStack(alignment: .leading, spacing: OkouSpace.xs) {
+        VStack(alignment: .leading, spacing: OkouSpace.sm) {
           ForEach(Array(group.messages.enumerated()), id: \.element.id) { index, message in
             messageRow(
               message, showsAvatar: index == 0, pendingRetry: nil, isSending: false,
