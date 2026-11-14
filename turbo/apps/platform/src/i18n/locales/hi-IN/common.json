@@ -4189,6 +4189,17 @@
       "redirectDescription": "आप {{brandName}} को अधिकृत करने के लिए {{connector}} पर जारी रहेंगे।",
       "redirectTitle": "{{connector}} पर पुनर्निर्देशित किया जा रहा है..."
     },
+    "setupGuide": {
+      "backToFields": "फ़ील्ड पर वापस जाएँ",
+      "hideSecret": "{{label}} छिपाएँ",
+      "imageProgress": "चित्र {{current}} / {{total}}",
+      "images": "संदर्भ स्क्रीनशॉट",
+      "permissionReference": "स्क्रीनशॉट आयात का स्थान दिखाता है। दाईं ओर से कॉपी किया गया पूरा JSON उपयोग करें।",
+      "permissionsJson": "अनुमति JSON देखें",
+      "showSecret": "{{label}} दिखाएँ",
+      "title": "सेटअप संदर्भ",
+      "viewReference": "सेटअप संदर्भ देखें"
+    },
     "toasts": {
       "connected": "{{connector}} कनेक्ट हुआ"
     }

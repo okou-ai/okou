@@ -21,6 +21,7 @@ import { createDeferredPromise } from "../../../signals/utils.ts";
 import { pathname } from "../../../signals/location.ts";
 import {
   getAction,
+  findAction,
   mockFeishu,
   queryAction,
   setupFeishuSettingsPage,
@@ -117,7 +118,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       "https://static.okou.io/platform/views/zero-page/assets/feishu/app-icon-okou-fefdc683bf5c.png",
     );
 
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
 
     await expect(screen.findByLabelText("App ID")).resolves.toBeInTheDocument();
     expect(screen.getByLabelText("App Secret")).toBeInTheDocument();
@@ -145,7 +146,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       );
       await setupFeishuSettingsPage(context, platform);
       click(await screen.findByText("Add bot"));
-      click(getAction("button", "Next"));
+      click(await findAction("button", "Next"));
       const appId = await screen.findByLabelText("App ID");
       const appSecret = screen.getByLabelText("App Secret");
       await fill(appId, "cli_new_bot");
@@ -186,7 +187,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       click(getAction("button", "Back"));
       expect(screen.getByText("Create an Agent app")).toBeInTheDocument();
       click(getAction("button", "Cancel"));
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      await screen.findByRole("heading", { name: `${provider.name} bots` });
     },
   );
 
@@ -234,10 +235,10 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     );
     await setupFeishuSettingsPage(context, platform);
     click(await screen.findByText("Add bot"));
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     await fill(await screen.findByLabelText("App ID"), "cli_new_bot");
     await fill(screen.getByLabelText("App Secret"), "app-secret");
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     await fill(
       await screen.findByLabelText("Verification Token"),
       "verification-token",
@@ -258,9 +259,9 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     expect(
       screen.getByDisplayValue(`https://app.okou.test${provider.callbackPath}`),
     ).toBeVisible();
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     expect(screen.getByText("Import app and user scopes")).toBeVisible();
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     expect(screen.getByText("Configure event delivery")).toBeVisible();
     expect(getAction("button", "Waiting for callback")).toBeDisabled();
     if (!status) {
@@ -275,14 +276,16 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     });
     context.mocks.ably.trigger("feishu:changed");
     await expect(screen.findByText("Callback verified")).resolves.toBeVisible();
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     expect(screen.getByText("Publish the app")).toBeVisible();
     click(getAction("button", "Done"));
     await waitFor(() => {
       expect(getAction("button", "Back")).toBeDisabled();
     });
     expect(getAction("button", "Done")).toBeDisabled();
-    expect(pathname()).toBe(provider.settingsPath);
+    expect(pathname()).toBe(
+      `${provider.settingsPath}/setup/${INSTALLATION_ID}`,
+    );
     completion.resolve();
     await expect(
       screen.findByText(`${provider.name} bot installed successfully`),
@@ -398,7 +401,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     await waitFor(() => {
       expect(dialog).not.toBeInTheDocument();
     });
-    expect(getAction("button", "Add bot")).toBeEnabled();
+    expect(getAction("link", "Add bot")).toBeEnabled();
   });
 
   it(`Reviewing a ${provider.name} bot guide never connects`, async () => {
@@ -436,13 +439,13 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       screen.findByText(`${provider.name} bots`),
     ).resolves.toBeInTheDocument();
     click(getAction("button", "More options for Completed admin bot"));
-    click(getAction("button", "Review guide"));
+    click(getAction("link", "Review guide"));
 
-    expect(
-      screen.getByRole("heading", { name: `${provider.name} review guide` }),
-    ).toBeInTheDocument();
+    await screen.findByRole("heading", {
+      name: `${provider.name} review guide`,
+    });
     expect(screen.getByText("Create an Agent app")).toBeInTheDocument();
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     expect(screen.getByLabelText("App ID")).toHaveValue("cli_completed_admin");
     expect(screen.getByLabelText("App ID")).toBeDisabled();
     expect(screen.getByLabelText("App Secret")).toBeDisabled();
@@ -450,14 +453,12 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       "placeholder",
       "Configured",
     );
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     expect(screen.getByLabelText("Encrypt Key")).toBeDisabled();
     expect(screen.getByLabelText("Verification Token")).toBeDisabled();
-    click(getAction("button", "Next"));
-    expect(
-      screen.getByText("Configure the OAuth redirect URL"),
-    ).toBeInTheDocument();
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
+    await screen.findByText("Configure the OAuth redirect URL");
+    click(await findAction("button", "Next"));
     expect(screen.getByText("Import app and user scopes")).toBeInTheDocument();
     const scopeImportJson = screen.getByTestId("feishu-scope-import-json");
     expect(JSON.parse(scopeImportJson.textContent ?? "")).toStrictEqual({
@@ -477,19 +478,21 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       },
     });
     expect(screen.getByRole("note")).toBeInTheDocument();
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     expect(screen.getByText("Configure event delivery")).toBeInTheDocument();
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     expect(screen.getByText("Publish the app")).toBeInTheDocument();
 
     click(getAction("button", "Done"));
 
-    expect(
-      screen.queryByRole("heading", {
-        name: `${provider.name} review guide`,
-      }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByText("Completed admin bot")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("heading", {
+          name: `${provider.name} review guide`,
+        }),
+      ).not.toBeInTheDocument();
+    });
+    await screen.findByText("Completed admin bot");
     expect(pathname()).toBe(provider.settingsPath);
     expect(browserOpen.calls).toStrictEqual([]);
   });
@@ -636,10 +639,8 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       screen.findByText(`${provider.name} bots`),
     ).resolves.toBeInTheDocument();
     click(getAction("button", `More options for ${provider.name} bot`));
-    click(getAction("button", "Manage"));
-    expect(
-      screen.getByText("Configure the OAuth redirect URL"),
-    ).toBeInTheDocument();
+    click(getAction("link", "Manage"));
+    await screen.findByText("Configure the OAuth redirect URL");
     const redirectInput = screen.getByRole("textbox", {
       name: "OAuth redirect URL",
     });
@@ -658,9 +659,9 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       expect(clipboard.writes).toStrictEqual([oauthRedirectUrl]);
     });
     expect(redirectInput).toHaveValue(oauthRedirectUrl);
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     expect(screen.getByText("Import app and user scopes")).toBeInTheDocument();
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     expect(screen.getByText("Configure event delivery")).toBeInTheDocument();
     expect(screen.getAllByText("Waiting for callback")).not.toHaveLength(0);
     expect(document.body).toHaveTextContent("im.message.receive_v1");
@@ -694,7 +695,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       screen.getByText(`${provider.name} connected successfully`),
     ).toBeInTheDocument();
     expect(getAction("button", "Next")).toBeEnabled();
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     expect(screen.getByText("Publish the app")).toBeInTheDocument();
   });
 
@@ -773,7 +774,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       }),
     );
     click(await screen.findByText("Add bot"));
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     await fill(await screen.findByLabelText("App ID"), "cli_registered");
     await fill(screen.getByLabelText("App Secret"), "app-secret");
 

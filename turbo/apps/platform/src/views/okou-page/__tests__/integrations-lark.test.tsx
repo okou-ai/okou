@@ -11,6 +11,7 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getAction,
+  findAction,
   mockFeishu,
 } from "./connector-integrations-test-helpers.ts";
 
@@ -51,7 +52,7 @@ test("Lark has an independent integration card and guided setup", async () => {
     "download",
     "okou-lark-app-icon.png",
   );
-  click(getAction("button", "Next"));
+  click(await findAction("button", "Next"));
   await expect(screen.findByLabelText("App ID")).resolves.toBeInTheDocument();
   expect(screen.getByLabelText("App Secret")).toBeInTheDocument();
   let checkedAppId: string | undefined;
@@ -61,7 +62,7 @@ test("Lark has an independent integration card and guided setup", async () => {
   });
   await fill(screen.getByLabelText("App ID"), "cli_lark");
   await fill(screen.getByLabelText("App Secret"), "lark-test-secret");
-  click(getAction("button", "Next"));
+  click(await findAction("button", "Next"));
   await expect(
     screen.findByLabelText("Encrypt Key"),
   ).resolves.toBeInTheDocument();

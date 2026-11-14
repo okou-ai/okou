@@ -4189,6 +4189,17 @@
       "redirectDescription": "Sie fahren mit {{connector}} fort, um {{brandName}} zu autorisieren.",
       "redirectTitle": "Weiterleitung zu {{connector}}…"
     },
+    "setupGuide": {
+      "backToFields": "Zurück zu den Feldern",
+      "hideSecret": "{{label}} ausblenden",
+      "imageProgress": "Bild {{current}} von {{total}}",
+      "images": "Referenz-Screenshots",
+      "permissionReference": "Der Screenshot zeigt den Importort. Verwende das vollständige rechts kopierte JSON.",
+      "permissionsJson": "Berechtigungs-JSON anzeigen",
+      "showSecret": "{{label}} anzeigen",
+      "title": "Einrichtungshilfe",
+      "viewReference": "Einrichtungshilfe anzeigen"
+    },
     "toasts": {
       "connected": "{{connector}} verbunden"
     }
