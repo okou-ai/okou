@@ -131,7 +131,7 @@ class NativeInstructionsTest {
                 .click()
             text(app.getString(R.string.appearance))
             reveal(app.getString(R.string.instructions_section))
-            text(app.getString(R.string.instructions_loading))
+            reveal(app.getString(R.string.instructions_loading))
             scenario.onActivity {
                 editorJob =
                     checkNotNull(
@@ -153,7 +153,7 @@ class NativeInstructionsTest {
             awaitIme(false)
             reveal(app.getString(R.string.instructions_section))
             scenario.recreate()
-            reveal(app.getString(R.string.instructions_section))
+            reveal(app.getString(R.string.instructions_unsaved))
             assertTrue(editor().text.contains("Native **instructions** 👋"))
             click(R.string.instructions_save)
             reveal(app.getString(R.string.instructions_current))
