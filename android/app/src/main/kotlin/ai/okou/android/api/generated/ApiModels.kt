@@ -2331,7 +2331,6 @@ data class UpdatePreferencesRequest(
     val `pinnedAgentIds`: List<String>? = null,
     val `sendMode`: UpdatePreferencesRequestSendMode? = null,
     val `cloudBrowserEnabledByDefault`: Boolean? = null,
-    val `chatResourcesEnabledByDefault`: Boolean? = null,
     val `theme`: UpdatePreferencesRequestTheme? = null,
     val `colorTheme`: UpdatePreferencesRequestColorTheme? = null,
     val `captureNetworkBodiesRemaining`: Long? = null,

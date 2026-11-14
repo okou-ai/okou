@@ -58,8 +58,8 @@ export const userPreferencesResponseSchema = object({
   pinnedAgentIds: array(string()),
   sendMode: sendModeSchema,
   cloudBrowserEnabledByDefault: boolean(),
-  // Retired: always false. Kept until the web client floor excludes cached
-  // Apps that read it and the iOS response gate is proven.
+  // Retired: always false. The web client floor excludes the Apps that read
+  // it, but installed iOS and Android readers still decode this response.
   chatResourcesEnabledByDefault: boolean(),
   theme: themePreferenceSchema.nullable(),
   colorTheme: colorThemeSchema.nullable(),
@@ -89,9 +89,6 @@ export const updateUserPreferencesRequestSchema = object({
   pinnedAgentIds: array(string()).optional(),
   sendMode: sendModeSchema.optional(),
   cloudBrowserEnabledByDefault: boolean().optional(),
-  // Retired and ignored. Cached Apps still send it, alone, from the artifacts
-  // button; it stays accepted until the web client floor excludes them.
-  chatResourcesEnabledByDefault: boolean().optional(),
   theme: themePreferenceSchema.optional(),
   colorTheme: colorThemeSchema.optional(),
   captureNetworkBodiesRemaining: number().int().min(0).optional(),
@@ -103,7 +100,6 @@ export const updateUserPreferencesRequestSchema = object({
       data.pinnedAgentIds !== undefined ||
       data.sendMode !== undefined ||
       data.cloudBrowserEnabledByDefault !== undefined ||
-      data.chatResourcesEnabledByDefault !== undefined ||
       data.theme !== undefined ||
       data.colorTheme !== undefined ||
       data.captureNetworkBodiesRemaining !== undefined
