@@ -1,7 +1,7 @@
 import type { ClipboardEvent, KeyboardEvent, ReactNode } from "react";
 import { Field } from "@base-ui/react/field";
 import { flushSync } from "react-dom";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -1574,6 +1574,92 @@ function BrowserInput({ signals }: { readonly signals: BrowserSignals }) {
   );
 }
 
+function BrowserContent({
+  signals,
+  selectedTabId,
+  operations,
+  creating,
+  onCreate,
+  presence,
+  placeholder,
+}: {
+  readonly signals: BrowserSignals;
+  readonly selectedTabId: string | null;
+  readonly operations: readonly (
+    Loadable<unknown> | { readonly state: "idle" }
+  )[];
+  readonly creating: boolean;
+  readonly onCreate: () => Promise<string>;
+  readonly presence: ReactNode;
+  readonly placeholder?: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const canvasVisible = useGet(signals.canvasVisible$);
+  const contentVisible = useGet(signals.contentVisible$);
+  const showBlankPage = useGet(signals.showBlankPage$);
+  const streaming = useGet(signals.streaming$);
+  const imageRecovery = useGet(signals.imageRecovery$);
+  const surfaceRef = useSet(signals.refs.surface$);
+  const canvasRef = useSet(signals.refs.canvas$);
+  return (
+    <TabsContent
+      keepMounted
+      value={selectedTabId}
+      tabIndex={-1}
+      className="relative min-h-0 flex-1"
+    >
+      <BrowserOperationError
+        occurrences={operations.filter((operation) => {
+          return (
+            operation.state === "hasError" &&
+            isBrowserOperationFailure(
+              operation.error,
+              imageRecovery !== null || streaming,
+            )
+          );
+        })}
+        className="absolute inset-x-3 top-3 z-20 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
+      />
+      <div
+        ref={surfaceRef}
+        data-browser-surface
+        tabIndex={-1}
+        className="relative h-full w-full touch-none overflow-hidden"
+      >
+        <canvas
+          ref={canvasRef}
+          data-browser-canvas
+          role="img"
+          aria-label={t(($) => {
+            return $.browserViewer.liveView;
+          })}
+          aria-hidden={!canvasVisible}
+          className="block h-full w-full object-contain"
+        />
+        <BrowserInput signals={signals} />
+        <BrowserFrameRate signals={signals.frameRate} />
+      </div>
+      {placeholder ?? (
+        <BrowserStatus
+          signals={signals}
+          creating={creating}
+          contentVisible={contentVisible}
+          onCreate={onCreate}
+        />
+      )}
+      {showBlankPage && (
+        <div className="absolute inset-0 bg-background">
+          <BrowserBlankPage />
+        </div>
+      )}
+      <div className="pointer-events-none absolute inset-0 z-10">
+        {presence}
+      </div>
+      <BrowserClipboard signals={signals} />
+    </TabsContent>
+  );
+}
+
 export function Browser({
   signals,
   actions,
@@ -1588,15 +1674,8 @@ export function Browser({
 }) {
   const { t } = useTranslation();
   const selectedTabId = useGet(signals.selectedTabId$);
-  const canvasVisible = useGet(signals.canvasVisible$);
-  const contentVisible = useGet(signals.contentVisible$);
-  const showBlankPage = useGet(signals.showBlankPage$);
-  const streaming = useGet(signals.streaming$);
   const pageSignal = useGet(pageSignal$);
-  const imageRecovery = useGet(signals.imageRecovery$);
   const rootRef = useSet(signals.refs.root$);
-  const surfaceRef = useSet(signals.refs.surface$);
-  const canvasRef = useSet(signals.refs.canvas$);
   const [selectOperation, selectTab] = useLoadableSet(signals.selectTab$);
   // Both New tab entry points share one request owner to prevent duplicate creation.
   const [createOperation, createTab] = useLoadableSet(signals.createTab$);
@@ -1632,65 +1711,17 @@ export function Browser({
         signals={signals}
         settingsDisabled={placeholder !== undefined}
       />
-      <TabsContent
-        keepMounted
-        value={selectedTabId}
-        tabIndex={-1}
-        className="relative min-h-0 flex-1"
-      >
-        <BrowserOperationError
-          occurrences={[selectOperation, createOperation].filter(
-            (operation) => {
-              return (
-                operation.state === "hasError" &&
-                isBrowserOperationFailure(
-                  operation.error,
-                  imageRecovery !== null || streaming,
-                )
-              );
-            },
-          )}
-          className="absolute inset-x-3 top-3 z-20 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
-        />
-        <div
-          ref={surfaceRef}
-          data-browser-surface
-          tabIndex={-1}
-          className="relative h-full w-full touch-none overflow-hidden"
-        >
-          <canvas
-            ref={canvasRef}
-            data-browser-canvas
-            role="img"
-            aria-label={t(($) => {
-              return $.browserViewer.liveView;
-            })}
-            aria-hidden={!canvasVisible}
-            className="block h-full w-full object-contain"
-          />
-          <BrowserInput signals={signals} />
-          <BrowserFrameRate signals={signals.frameRate} />
-        </div>
-        {placeholder ?? (
-          <BrowserStatus
-            signals={signals}
-            creating={createOperation.state === "loading"}
-            contentVisible={contentVisible}
-            onCreate={() => {
-              return createTab(pageSignal);
-            }}
-          />
-        )}
-        {showBlankPage && (
-          <div className="absolute inset-0 bg-background">
-            <BrowserBlankPage />
-          </div>
-        )}
-        <div className="pointer-events-none absolute inset-0 z-10">
-          {presence}
-        </div>
-        <BrowserClipboard signals={signals} />
-      </TabsContent>
+      <BrowserContent
+        signals={signals}
+        selectedTabId={selectedTabId}
+        operations={[selectOperation, createOperation]}
+        creating={createOperation.state === "loading"}
+        onCreate={() => {
+          return createTab(pageSignal);
+        }}
+        presence={presence}
+        placeholder={placeholder}
+      />
     </Tabs>
   );
 }
