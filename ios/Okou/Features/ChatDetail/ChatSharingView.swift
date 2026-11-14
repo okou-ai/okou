@@ -10,6 +10,7 @@ struct ChatSharingRow<Content: View>: View {
   @ViewBuilder let content: () -> Content
 
   var body: some View {
+    let hasAvatar = group.messages.first?.role == .assistant
     let ids = Set(group.eventIDs)
     let selectedIDs = sharing.selectedIDs(in: group)
     let selected = ids.isSubset(of: selectedIDs)
@@ -23,6 +24,7 @@ struct ChatSharingRow<Content: View>: View {
         .overlay(alignment: .topLeading) {
           OkouSelectionIndicator(isSelected: selected, isIndeterminate: partial)
             .frame(width: OkouAvatarSize.message, height: OkouAvatarSize.message)
+            .padding(.leading, hasAvatar ? OkouAvatarSize.message + OkouSpace.sm : 0)
         }
         .frame(maxWidth: .infinity, minHeight: OkouControl.minimumTarget, alignment: .leading)
         .contentShape(Rectangle())
