@@ -6,7 +6,7 @@ import {
   currentRightThread$,
 } from "./chat-thread-pane-state.ts";
 
-/** Reflow keeps native reading anchors; only bottom-follow needs a layout write. */
+/** Reflow keeps measured reading anchors and completes hidden initial requests. */
 export const restoreChatLayoutScroll$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     signal.throwIfAborted();
@@ -16,8 +16,8 @@ export const restoreChatLayoutScroll$ = command(
     ]);
     await Promise.all(
       Array.from(threads, async (thread) => {
-        if (thread && get(thread.threadScrollPosition$) === null) {
-          await set(thread.restoreScrollPosition$, signal);
+        if (thread) {
+          await set(thread.restoreScrollPositionForLayout$, signal);
         }
       }),
     );
