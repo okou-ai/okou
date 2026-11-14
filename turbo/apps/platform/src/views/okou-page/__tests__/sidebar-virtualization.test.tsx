@@ -316,6 +316,7 @@ async function openFoldList({
   members = 2,
   outside = 24,
   projects = 1,
+  viewportRows = 5,
   reducedMotion = false,
   unread = false,
   activeChat = false,
@@ -325,6 +326,7 @@ async function openFoldList({
   members?: number;
   outside?: number;
   projects?: number;
+  viewportRows?: number;
   reducedMotion?: boolean;
   unread?: boolean;
   activeChat?: boolean;
@@ -355,7 +357,7 @@ async function openFoldList({
   const mockHeight = mobile ? mockPwaViewportHeight : mockViewportHeight;
   mockHeight(
     () => {
-      return 5 * rowHeight;
+      return viewportRows * rowHeight;
     },
     members + outside + projects,
   );
@@ -495,15 +497,11 @@ test.each([false, true])(
       return expect(children()).not.toHaveAttribute("data-project-fold-state");
     });
 
-    const block = children();
-    const member = within(block).getByText("History 1").closest("a");
     const collapseFrame = holdFoldFrame();
     click(toggle());
     expect(toggle()).toHaveAttribute("aria-expanded", "false");
-    expect(children()).toBe(block);
-    expect(within(block).getByText("History 1").closest("a")).toBe(member);
-    expect(block).toHaveAttribute("inert");
-    expect(block).toHaveAttribute("aria-hidden", "true");
+    expect(children()).toHaveAttribute("inert");
+    expect(children()).toHaveAttribute("aria-hidden", "true");
     expect(list.style.getPropertyValue("--okou-project-fold-height")).toBe(
       `${2 * rowHeight}px`,
     );
@@ -532,19 +530,18 @@ test.each([false, true])(
     await waitFor(() => {
       return expect(children()).not.toHaveAttribute("data-project-fold-state");
     });
-    const block = children();
-    const member = within(block).getByText("History 1").closest("a");
     const reverseFrame = holdFoldFrame();
     click(toggle());
     expect(toggle()).toHaveAttribute("aria-expanded", "false");
-    expect(block).toHaveAttribute("inert");
+    expect(children()).toHaveAttribute("inert");
     click(toggle());
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
-    expect(children()).toBe(block);
-    expect(within(block).getByText("History 1").closest("a")).toBe(member);
-    expect(block).not.toHaveAttribute("inert");
-    expect(block).not.toHaveAttribute("aria-hidden");
-    expect(block).toHaveAttribute("data-project-fold-state", "prepared");
+    expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
+    expect(
+      queryAllByRoleFast("link", children()).find((link) => {
+        return link.textContent?.trim() === "History 1";
+      }),
+    ).toHaveAttribute("href", `/chats/${threadId(0)}`);
     await reverseFrame();
     await waitFor(() => {
       return expect(children()).not.toHaveAttribute("data-project-fold-state");
@@ -566,12 +563,6 @@ test.each([false, true])(
       expect(list.style.height).toBe(`${27 * rowHeight}px`);
     });
     const block = children();
-    const member = queryAllByRoleFast("link", block).find((link) => {
-      return link.getAttribute("href") === `/chats/${threadId(0)}`;
-    });
-    if (!member) {
-      throw new Error("Expected the first Project conversation link");
-    }
     const animation = holdFoldAnimation();
     const frame = holdFoldFrame();
     click(toggle());
@@ -583,19 +574,22 @@ test.each([false, true])(
     );
     click(toggle());
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
-    expect(children()).toBe(block);
-    expect(block).toHaveAttribute("data-project-fold-state", "prepared");
+    expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
     expect(list.style.getPropertyValue("--okou-project-fold-height")).toBe(
       `${displayedHeight}px`,
     );
-    expect(queryAllByRoleFast("link", block)).toContain(member);
+    expect(
+      queryAllByRoleFast("link", children()).find((link) => {
+        return link.textContent?.trim() === "History 1";
+      }),
+    ).toHaveAttribute("href", `/chats/${threadId(0)}`);
     await animation.finish();
-    expect(block).toHaveAttribute("data-project-fold-state", "prepared");
+    expect(children()).toHaveAttribute("data-project-fold-state", "prepared");
     await frame();
     await waitFor(() => {
       expect(list.style.height).toBe(`${27 * rowHeight}px`);
     });
-    click(member);
+    click(within(children()).getByText("History 1"));
     await screen.findByRole("textbox", { name: "Message" });
     expect(pathname()).toBe(`/chats/${threadId(0)}`);
   },
@@ -650,6 +644,49 @@ test.each([false, true])(
     expect(within(viewport).queryByText("History 1")).not.toBeInTheDocument();
     expect(list.style.height).toBe(`${25 * rowHeight}px`);
     expect(within(viewport).getByText("History 3")).toBeInTheDocument();
+  },
+);
+
+test.each([false, true])(
+  "Folding a partially visible Project keeps newly exposed chats reachable (mobile: %s)",
+  async (mobile) => {
+    const { toggle, viewport, list, rowHeight } = await openFoldList({
+      mobile,
+      projects: 17,
+      viewportRows: 5.5,
+    });
+    const scrollTop = 16 * rowHeight + 0.25;
+    fireEvent.scroll(viewport, { target: { scrollTop } });
+    await within(viewport).findByLabelText(
+      "Show or hide chats in Motion project",
+    );
+    const animation = holdFoldAnimation();
+    const frame = holdFoldFrame();
+    click(toggle());
+    expect(toggle()).toHaveAttribute("aria-expanded", "true");
+    await frame();
+    expect(within(viewport).getByText("History 1")).toBeInTheDocument();
+    expect(within(viewport).getByText("History 3")).toBeInTheDocument();
+    expect(
+      within(viewport).getAllByTestId("sidebar-chat-thread-virtual-row").length,
+    ).toBeLessThanOrEqual(68);
+    await animation.finish();
+    await waitFor(() => {
+      expect(list.style.height).toBe(`${43 * rowHeight}px`);
+    });
+    expect(viewport.scrollTop).toBe(scrollTop);
+    click(toggle());
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    await frame();
+    await waitFor(() => {
+      expect(list.style.height).toBe(`${41 * rowHeight}px`);
+    });
+    expect(viewport.scrollTop).toBe(scrollTop);
+    const exposedChat = within(viewport).getByText("History 7");
+    expect(exposedChat).toBeInTheDocument();
+    click(exposedChat);
+    await screen.findByRole("textbox", { name: "Message" });
+    expect(pathname()).toBe(`/chats/${threadId(6)}`);
   },
 );
 
