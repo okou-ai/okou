@@ -93,7 +93,7 @@ python3 android/scripts/screenshots.py collect shot.png
         self.assertIn("clean checkout", self.invoke(commit).stderr)
 
     def test_symlink_cannot_select_a_recipe_outside_the_screenshot_directory(self):
-        commit = self.commit("exit 0\n")
+        self.commit("exit 0\n")
         outside = self.root / "outside.sh"
         outside.write_text("exit 0\n")
         link = self.recipe.parent / "escape.sh"

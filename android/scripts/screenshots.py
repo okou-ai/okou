@@ -212,6 +212,7 @@ def execute(args):
             try:
                 os.killpg(process.pid, signal.SIGTERM)
             except ProcessLookupError:
+                # The recipe group has already exited, so no termination is needed.
                 pass
             try:
                 process.wait(timeout=10)
@@ -223,6 +224,7 @@ def execute(args):
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
                 except ProcessLookupError:
+                    # No background descendants remain once the group has exited.
                     pass
                 process.stdout.close()
         write_json(OUTPUT / "run.json", metadata)
