@@ -102,6 +102,7 @@ function createFoldDomSignals() {
         passive: true,
         signal,
       });
+      scrollport?.addEventListener("dragstart", cancel, { signal });
       window.addEventListener("resize", cancel, { signal });
       window
         .matchMedia("(prefers-reduced-motion: reduce)")

@@ -567,6 +567,7 @@ test.each([
   { mobile: false, event: "wheel" },
   { mobile: true, event: "touchmove" },
   { mobile: false, event: "scroll" },
+  { mobile: false, event: "dragstart" },
 ])(
   "List $event cancels Project motion without undoing the click (mobile: $mobile)",
   async ({ mobile, event }) => {
