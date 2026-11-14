@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
+import ai.okou.android.instructions.InstructionsPhase
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import android.view.KeyEvent
 import androidx.core.view.ViewCompat
@@ -20,6 +21,7 @@ import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -46,7 +48,11 @@ class NativeInstructionsTest {
         val drafts = PersonalInstructionsDraftStore(app, directory)
         val fixture = InstructionsApiFixture()
         val held = CountDownLatch(1)
-        fixture.beforeRead = { held.await() }
+        val entered = CountDownLatch(1)
+        fixture.beforeRead = {
+            entered.countDown()
+            held.await()
+        }
         app.instructionsService = fixture.service
         app.instructionsStore = drafts
         authentication.state.value = testAuthenticationState()
@@ -129,19 +135,21 @@ class NativeInstructionsTest {
                         .description(app.getString(R.string.settings))
                 )
                 .click()
+            assertTrue(entered.await(10, TimeUnit.SECONDS))
             text(app.getString(R.string.appearance))
-            reveal(app.getString(R.string.instructions_section))
-            reveal(app.getString(R.string.instructions_loading))
             scenario.onActivity {
-                editorJob =
+                val editor =
                     checkNotNull(
                             ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready
                         )
                         .instructions
-                        .viewModelScope
-                        .coroutineContext[Job]
+                editorJob = editor.viewModelScope.coroutineContext[Job]
+                assertEquals(InstructionsPhase.Loading, editor.uiState.value.phase)
             }
+            // The host Compose test covers pending Instructions feedback. Release the actual HTTP
+            // response after native first-display proof, before gestures can exhaust its deadline.
             held.countDown()
+            reveal(app.getString(R.string.instructions_section))
             reveal(app.getString(R.string.instructions_current))
             editor().click()
             awaitIme(true)
