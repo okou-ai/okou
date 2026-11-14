@@ -218,6 +218,22 @@ impl NbdNetlinkConnectTiming {
         }
     }
 
+    fn record_attempt(&mut self, timing: Self) {
+        for stage in NbdNetlinkConnectStage::ALL {
+            let attempt_timing = timing.stage(stage);
+            if !attempt_timing.entered {
+                continue;
+            }
+
+            self.record_stage_duration(stage, attempt_timing.duration, true);
+        }
+
+        // Failure attribution belongs to the latest connect attempt. Clearing
+        // a recovered or childless attempt prevents an earlier retry failure
+        // from being reported as the terminal child.
+        self.failed_stage = timing.failed_stage;
+    }
+
     fn stage(&self, stage: NbdNetlinkConnectStage) -> StageTiming {
         let [
             blocking_task_queue,
@@ -253,8 +269,7 @@ pub(super) struct NbdCowCreateTiming<'a> {
     observer: Option<&'a mut dyn NbdCowCreateObserver>,
     stages: [StageTiming; NBD_COW_CREATE_STAGE_COUNT],
     failed_stage: Option<NbdCowCreateStage>,
-    netlink_connect_stages: [StageTiming; NBD_NETLINK_CONNECT_STAGE_COUNT],
-    failed_netlink_connect_stage: Option<NbdNetlinkConnectStage>,
+    netlink_connect_timing: NbdNetlinkConnectTiming,
     used_demand_scan: bool,
     used_cooled_claim: bool,
     ebusy_retries: u32,
@@ -267,8 +282,7 @@ impl<'a> NbdCowCreateTiming<'a> {
             observer,
             stages: [StageTiming::default(); NBD_COW_CREATE_STAGE_COUNT],
             failed_stage: None,
-            netlink_connect_stages: [StageTiming::default(); NBD_NETLINK_CONNECT_STAGE_COUNT],
-            failed_netlink_connect_stage: None,
+            netlink_connect_timing: NbdNetlinkConnectTiming::default(),
             used_demand_scan: false,
             used_cooled_claim: false,
             ebusy_retries: 0,
@@ -314,23 +328,7 @@ impl<'a> NbdCowCreateTiming<'a> {
     }
 
     pub(super) fn record_netlink_connect_timing(&mut self, timing: NbdNetlinkConnectTiming) {
-        for stage in NbdNetlinkConnectStage::ALL {
-            let attempt_timing = timing.stage(stage);
-            if !attempt_timing.entered {
-                continue;
-            }
-
-            let aggregate_timing = self.netlink_connect_stage_mut(stage);
-            aggregate_timing.duration = aggregate_timing
-                .duration
-                .saturating_add(attempt_timing.duration);
-            aggregate_timing.entered = true;
-        }
-
-        // Failure attribution belongs to the latest connect attempt. Clearing
-        // a recovered or childless attempt prevents an earlier retry failure
-        // from being reported as the terminal child.
-        self.failed_netlink_connect_stage = timing.failed_stage;
+        self.netlink_connect_timing.record_attempt(timing);
     }
 
     pub(super) fn record_ebusy_retry(&mut self) {
@@ -360,12 +358,12 @@ impl<'a> NbdCowCreateTiming<'a> {
 
         let failed_netlink_connect_stage =
             if !create_success && self.failed_stage == Some(NbdCowCreateStage::NetlinkConnect) {
-                self.failed_netlink_connect_stage
+                self.netlink_connect_timing.failed_stage
             } else {
                 None
             };
         for stage in NbdNetlinkConnectStage::ALL {
-            let timing = self.netlink_connect_stage(stage);
+            let timing = self.netlink_connect_timing.stage(stage);
             if !timing.entered {
                 continue;
             }
@@ -429,36 +427,6 @@ impl<'a> NbdCowCreateTiming<'a> {
             NbdCowCreateStage::SizeVerify => size_verify,
             NbdCowCreateStage::RetryCleanup => retry_cleanup,
             NbdCowCreateStage::RetryDelay => retry_delay,
-        }
-    }
-
-    fn netlink_connect_stage(&self, stage: NbdNetlinkConnectStage) -> StageTiming {
-        let [
-            blocking_task_queue,
-            socket_setup,
-            family_resolve,
-            connect_command,
-        ] = &self.netlink_connect_stages;
-        *match stage {
-            NbdNetlinkConnectStage::BlockingTaskQueue => blocking_task_queue,
-            NbdNetlinkConnectStage::SocketSetup => socket_setup,
-            NbdNetlinkConnectStage::FamilyResolve => family_resolve,
-            NbdNetlinkConnectStage::ConnectCommand => connect_command,
-        }
-    }
-
-    fn netlink_connect_stage_mut(&mut self, stage: NbdNetlinkConnectStage) -> &mut StageTiming {
-        let [
-            blocking_task_queue,
-            socket_setup,
-            family_resolve,
-            connect_command,
-        ] = &mut self.netlink_connect_stages;
-        match stage {
-            NbdNetlinkConnectStage::BlockingTaskQueue => blocking_task_queue,
-            NbdNetlinkConnectStage::SocketSetup => socket_setup,
-            NbdNetlinkConnectStage::FamilyResolve => family_resolve,
-            NbdNetlinkConnectStage::ConnectCommand => connect_command,
         }
     }
 }
