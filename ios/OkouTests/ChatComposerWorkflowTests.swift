@@ -1,6 +1,7 @@
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
+import CoreFoundation
 import SwiftUI
 import Synchronization
 import XCTest
@@ -137,7 +138,9 @@ final class ChatComposerWorkflowTests: XCTestCase {
 
   func testMarkedTextConfirmationCannotInsertWorkflowAndKeyboardSelectionDoesNotSend() async throws
   {
-    let fixture = workflowFixture()
+    let responseGate = WorkflowGate()
+    defer { responseGate.open() }
+    let fixture = workflowFixture(responseGate: responseGate)
     let source = ComposerWorkflowSource(
       client: fixture.http.client, storage: nil, didFail: { _ in })
     let conversation = fixture.conversation(workflowSource: source)
@@ -151,7 +154,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let input = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(input)
     input.insertText("/")
-    let savedRow = try await workflowCell("morning", in: host.view)
+    let savedRow = try await workflowCell("morning", in: host.view, responseGate: responseGate)
     input.setMarkedText("rel", selectedRange: NSRange(location: 3, length: 0))
     XCTAssertNotNil(input.markedTextRange)
     XCTAssertTrue(savedRow.accessibilityActivate())
@@ -494,7 +497,9 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertTrue(empty.values.isEmpty)
   }
 
-  private func workflowFixture(failSend: Bool = false) -> AttachmentFlowFixture {
+  private func workflowFixture(
+    failSend: Bool = false, responseGate: WorkflowGate? = nil
+  ) -> AttachmentFlowFixture {
     AttachmentFlowFixture(
       failSend: failSend,
       workflows: { request in
@@ -502,6 +507,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
         guard query == [URLQueryItem(name: "agentId", value: AttachmentFlowFixture.agentID)] else {
           throw URLError(.badURL)
         }
+        await responseGate?.wait()
         return ChatHTTPResponse(body: workflowResponse)
       })
   }
@@ -529,17 +535,44 @@ final class ChatComposerWorkflowTests: XCTestCase {
     return view.subviews.compactMap { workflowTable(in: $0) }.first
   }
   private func workflowCell(
-    _ id: String, in view: UIView, file: StaticString = #filePath, line: UInt = #line
+    _ id: String, in view: UIView, responseGate: WorkflowGate? = nil,
+    file: StaticString = #filePath, line: UInt = #line
   ) async throws -> UITableViewCell {
     func cell() -> UITableViewCell? {
       nativeViews(in: view).compactMap { $0 as? UITableViewCell }.first {
         $0.accessibilityIdentifier == "workflow-" + id
       }
     }
-    try await eventually(
-      file: file, line: line,
-      message: "Missing Workflow row \(id); \(workflowDiagnostics(in: view))"
-    ) { cell() != nil }
+    let probe = WorkflowSamplingProbe()
+    let observer = CFRunLoopObserverCreateWithHandler(
+      kCFAllocatorDefault, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max
+    ) { _, _ in
+      MainActor.assumeIsolated {
+        if probe.firstReady == nil, cell() != nil {
+          probe.firstReady = probe.started.duration(to: ContinuousClock.now)
+        }
+      }
+    }!
+    CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+    defer { CFRunLoopObserverInvalidate(observer) }
+    do {
+      try await eventually(
+        file: file, line: line,
+        message: "Missing Workflow row \(id); \(workflowDiagnostics(in: view))"
+      ) {
+        let elapsed = probe.started.duration(to: ContinuousClock.now)
+        probe.polls.append(elapsed)
+        // Release the real fixture request from a late predicate evaluation.
+        // No extra timer, sleep, assertion retry or changed deadline is involved.
+        if elapsed >= .seconds(2) { responseGate?.open() }
+        return cell() != nil
+      }
+    } catch {
+      print(
+        "SAMPLING47362", id, "firstReady", String(describing: probe.firstReady), "polls",
+        probe.polls, "atFailure", cell() != nil)
+      throw error
+    }
     return try XCTUnwrap(cell(), "Missing Workflow row \(id)", file: file, line: line)
   }
   private func workflowDiagnostics(in view: UIView) -> String {
@@ -569,6 +602,13 @@ final class ChatComposerWorkflowTests: XCTestCase {
     addTeardownBlock { try? FileManager.default.removeItem(at: url) }
     return url
   }
+}
+
+@MainActor
+private final class WorkflowSamplingProbe {
+  let started = ContinuousClock.now
+  var firstReady: Duration?
+  var polls: [Duration] = []
 }
 
 private struct WorkflowNewChatHost: View {
