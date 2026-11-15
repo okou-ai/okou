@@ -601,7 +601,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release upload "$ANDROID_TAG" "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk" --repo "$GITHUB_REPOSITORY"
+          gh release upload "$ANDROID_TAG" \
+            "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk" \
+            "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION-mapping.txt.gz" \
+            --repo "$GITHUB_REPOSITORY"
 
       - name: Calculate duration
         id: duration

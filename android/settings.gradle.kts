@@ -17,3 +17,5 @@ dependencyResolutionManagement {
 rootProject.name = "OkouAndroid"
 
 include(":app")
+
+include(":release-test")

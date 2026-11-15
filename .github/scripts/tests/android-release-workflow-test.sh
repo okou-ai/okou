@@ -2,6 +2,7 @@
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 python3 - "$root" <<'PY'
+import gzip
 import json
 import os
 from pathlib import Path
@@ -52,6 +53,7 @@ with tempfile.TemporaryDirectory() as temp:
     work = Path(temp)
     binary = work / 'gh'
     binary.write_text('''#!/usr/bin/env python3
+import gzip
 import os
 from pathlib import Path
 import sys
@@ -65,6 +67,7 @@ if args[0] == 'api':
 elif args[:2] == ['release', 'upload']:
     assert args[2] == 'android-v0.2.0'
     assert Path(args[3]).read_bytes() == b'fixture-apk'
+    assert gzip.decompress(Path(args[4]).read_bytes()) == b'fixture-r8-mapping'
     assert '--clobber' not in args
     if os.environ.get('FAIL_UPLOAD') == 'true':
         sys.exit(23)
@@ -80,6 +83,8 @@ else:
     apk_dir = work / 'android-release'
     apk_dir.mkdir()
     (apk_dir / 'okou-android-0.2.0.apk').write_bytes(b'fixture-apk')
+    (apk_dir / 'okou-android-0.2.0-mapping.txt.gz').write_bytes(
+        gzip.compress(b'fixture-r8-mapping', mtime=0))
     env = dict(os.environ, PATH=str(work) + os.pathsep + os.environ['PATH'],
                RUNNER_TEMP=str(work), GITHUB_REPOSITORY='okou-ai/okou',
                ANDROID_VERSION='0.2.0', ANDROID_TAG='android-v0.2.0',

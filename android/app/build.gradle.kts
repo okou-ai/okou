@@ -64,7 +64,10 @@ android {
         buildConfigField("String", "WEB_ORIGIN", "\"$webOrigin\"")
         buildConfigField("String", "CLERK_PUBLISHABLE_KEY", "\"$clerkPublishableKey\"")
     }
-    buildTypes { debug { applicationIdSuffix = ".debug" } }
+    buildTypes {
+        debug { applicationIdSuffix = ".debug" }
+        release { optimization { enable = true } }
+    }
     buildFeatures {
         compose = true
         buildConfig = true
