@@ -333,7 +333,7 @@ export function createPublicComputerUseScenario(
     user(...args: Parameters<typeof bdd.user>) {
       return remember(bdd.user(...args));
     },
-    async launchRun(actor: ApiTestUser, hostId?: string) {
+    async launchRun(actor: ApiTestUser, hostId?: string, threadId?: string) {
       return await run(async () => {
         remember(actor);
         // Actor/Runner setup uses its ordinary object-store boundary; restore the
@@ -360,6 +360,7 @@ export function createPublicComputerUseScenario(
               {
                 agentId: setup.agentId,
                 prompt: "Use the selected Desktop",
+                ...(threadId ? { threadId } : {}),
                 clientEventId,
                 computerUseHostId: hostId ?? null,
               },

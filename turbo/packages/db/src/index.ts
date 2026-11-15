@@ -1,3 +1,4 @@
+import * as phoneUseSchema from "./schema/phone-use";
 import * as marketingContentGrantSchema from "./schema/marketing-content-grant";
 import * as projectSchema from "./schema/project";
 import * as projectEventSchema from "./schema/project-event";
@@ -179,6 +180,7 @@ import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config
 import * as tailscaleConfigSchema from "./schema/tailscale-config";
 
 export const schema = {
+  ...phoneUseSchema,
   ...marketingContentGrantSchema,
   ...projectSchema,
   ...projectEventSchema,

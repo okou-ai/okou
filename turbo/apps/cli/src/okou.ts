@@ -88,6 +88,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   sms: "phone:write",
   whatsapp: "whatsapp:write",
   whoami: null,
+  "phone-use": "phone-use:read",
   "computer-use": "computer-use:write",
   browser: ["browser:read", "browser:write"],
   intro: null,
@@ -404,6 +405,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "Manage workflows",
     load: async () => {
       return (await import("./commands/workflow")).workflowCommand;
+    },
+  },
+  {
+    name: "phone-use",
+    description: "Internal iPhone automation",
+    load: async () => {
+      return (await import("./commands/phone-use")).phoneUseCommand;
     },
   },
   {

@@ -1,3 +1,4 @@
+import { phoneUseDevices, phoneUseGrants } from "@okouai/db/schema/phone-use";
 import { createEmailMailboxConnections } from "./email-mailbox-context.service";
 import { createEmailThreadContext } from "./email-queued-launch-context.service";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
@@ -57,6 +58,9 @@ type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 
 /** Read-only facts for one picked event, shared by admission and prompting. */
 export interface ThreadContext extends ThreadWorkflowContext {
+  readonly phoneUseGrant$: Computed<
+    Promise<{ readonly deviceId: string; readonly grantId: string } | null>
+  >;
   /** Whether this run resumes the thread's native session, and its binding. */
   readonly threadContinuation$: Computed<
     Promise<ChatThreadContinuation | null>
@@ -167,7 +171,6 @@ export function createThreadContext(
     templateOrgId$,
     sourceSettings.disabledPaidTools$,
   );
-  const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
   const runIds$ = createRunIds();
   const threadContinuation$ = createThreadContinuation(
     pickedEvent$,
@@ -193,7 +196,7 @@ export function createThreadContext(
   );
   return {
     threadContinuation$,
-    computerUseHostGrant$,
+    ...createThreadDeviceGrants(bootstrap, thread$),
     slackContext$,
     feishuContext$,
     teamsContext$,
@@ -375,4 +378,45 @@ function createThreadContinuation(
       },
     });
   });
+}
+
+function createThreadPhoneUseGrant(
+  bootstrap: AgentRunContextSignals,
+  thread$: Computed<Promise<ChatThreadRequestRow | null>>,
+) {
+  return computed(async (get) => {
+    const thread = await get(thread$);
+    if (!thread || thread.userId !== bootstrap.userId) {
+      return null;
+    }
+    const [grant] = await get(db$)
+      .select({ deviceId: phoneUseDevices.id, grantId: phoneUseGrants.id })
+      .from(phoneUseGrants)
+      .innerJoin(
+        phoneUseDevices,
+        eq(phoneUseDevices.id, phoneUseGrants.deviceId),
+      )
+      .where(
+        and(
+          eq(phoneUseGrants.threadId, thread.id),
+          eq(phoneUseGrants.orgId, bootstrap.orgId),
+          eq(phoneUseGrants.userId, bootstrap.userId),
+          eq(phoneUseDevices.orgId, bootstrap.orgId),
+          eq(phoneUseDevices.userId, bootstrap.userId),
+          eq(phoneUseDevices.generation, phoneUseGrants.deviceGeneration),
+        ),
+      )
+      .limit(1);
+    return grant ?? null;
+  });
+}
+
+function createThreadDeviceGrants(
+  bootstrap: AgentRunContextSignals,
+  thread$: Computed<Promise<ChatThreadRequestRow | null>>,
+) {
+  return {
+    computerUseHostGrant$: createThreadHostGrant(bootstrap, thread$),
+    phoneUseGrant$: createThreadPhoneUseGrant(bootstrap, thread$),
+  };
 }

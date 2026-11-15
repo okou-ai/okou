@@ -1374,6 +1374,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "phone-use",
+    contracts: ["phoneUseContract"],
+    bindings: [],
+  },
+  {
     module: "presentation-templates",
     contracts: ["presentationTemplatesContract"],
     bindings: [],

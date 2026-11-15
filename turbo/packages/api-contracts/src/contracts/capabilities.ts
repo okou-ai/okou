@@ -47,6 +47,8 @@ export const CAPABILITIES = [
   "wallet:read",
   "wallet:write",
   "data-search:read",
+  "phone-use:read",
+  "phone-use:write",
   "computer-use:write",
   "computer-use:shell:write",
   "browser:read",

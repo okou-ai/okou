@@ -1,3 +1,10 @@
+import {
+  mergeRunPromptAndSkills,
+  renderRunPrompts,
+  type SkillVolume,
+  type SystemPromptVariables,
+} from "../run-prompt-and-skills";
+import { createPhoneUsePrompt } from "./phone-use";
 import { createEmailThreadPrompt } from "./email";
 import { createSuggestionsPrompt } from "./suggestions";
 import { createWechatThreadPrompt } from "./wechat";
@@ -6,12 +13,6 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { AgentRunContextSignals } from "../agent-run-context.signals";
 import { createConnectorsContext } from "../connectors-context.service";
-import {
-  mergeRunPromptAndSkills,
-  renderRunPrompts,
-  type SkillVolume,
-  type SystemPromptVariables,
-} from "../run-prompt-and-skills";
 import { createSystemSkillsContext } from "../system-skills-context.service";
 import type { ThreadContext } from "../thread-context.signals";
 import { createAgentPrompt } from "./agent";
@@ -200,13 +201,7 @@ export function createPromptAndSkillVolumesSignals(
     disabledPaidTools$,
     seedSkills$,
   } = sources;
-  const cloudBrowserEnabled$ = computed(async (get) => {
-    const thread = (await get(pickedEvent$))?.thread;
-    if (!thread) {
-      throw new Error("Agent prompt requires a chat thread");
-    }
-    return thread.cloudBrowserEnabled;
-  });
+  const cloudBrowserEnabled$ = createCloudBrowserEnabled(pickedEvent$);
   const integrationPrompts = createIntegrationPrompts(
     pickedEvent$,
     featureSwitches$,
@@ -226,9 +221,10 @@ export function createPromptAndSkillVolumesSignals(
     threadContext,
   );
   const userPrompt$ = createUserPrompt(memberMetadata$);
-  const computerUsePrompt$ = createComputerUsePrompt(
+  const { computerUsePrompt$, phoneUsePrompt$ } = createDeviceUsePrompts(
+    bootstrap.orgId,
     pickedEvent$,
-    threadContext.computerUseHostGrant$,
+    threadContext,
     featureSwitches$,
   );
   const rotatedPrompt$ = createRotatedPrompt(pickedEvent$);
@@ -261,6 +257,7 @@ export function createPromptAndSkillVolumesSignals(
       agent,
       user,
       computerUse,
+      phoneUse,
       connectors,
       systemSkills,
       runtime,
@@ -272,6 +269,7 @@ export function createPromptAndSkillVolumesSignals(
       get(agentPrompt$),
       get(userPrompt$),
       get(computerUsePrompt$),
+      get(phoneUsePrompt$),
       get(connectors$),
       get(systemSkills$),
       get(runtimePrompt$),
@@ -298,6 +296,7 @@ export function createPromptAndSkillVolumesSignals(
       ...(templates ? [templates] : []),
       user,
       computerUse,
+      phoneUse,
       connectors,
       systemSkills,
       runtime,
@@ -310,5 +309,37 @@ export function createPromptAndSkillVolumesSignals(
       userPrompt: prompts.userPrompt,
       skillVolumes: combined.skillVolumes,
     };
+  });
+}
+
+function createDeviceUsePrompts(
+  orgId: string,
+  event$: Parameters<typeof createComputerUsePrompt>[0],
+  threadContext: ThreadContext,
+  features$: Parameters<typeof createComputerUsePrompt>[2],
+) {
+  return {
+    computerUsePrompt$: createComputerUsePrompt(
+      event$,
+      threadContext.computerUseHostGrant$,
+      features$,
+    ),
+    phoneUsePrompt$: createPhoneUsePrompt(
+      orgId,
+      threadContext.phoneUseGrant$,
+      features$,
+    ),
+  };
+}
+
+function createCloudBrowserEnabled(
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+) {
+  return computed(async (get) => {
+    const thread = (await get(pickedEvent$))?.thread;
+    if (!thread) {
+      throw new Error("Agent prompt requires a chat thread");
+    }
+    return thread.cloudBrowserEnabled;
   });
 }

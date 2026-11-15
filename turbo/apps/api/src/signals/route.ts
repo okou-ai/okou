@@ -1,3 +1,4 @@
+import { phoneUseRoutes } from "./routes/phone-use";
 import { integrationsEmailRoutes } from "./routes/integrations-email";
 import { integrationsEmailUploadCompleteRoutes } from "./routes/integrations-email-upload-complete";
 import { integrationsEmailSessionRoutes } from "./routes/integrations-email-session";
@@ -360,6 +361,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...sshAuthorizationRoutes,
   ...vncAuthorizationRoutes,
   ...computerUseRoutes,
+  ...phoneUseRoutes,
   ...codexDeviceAuthRoutes,
   ...connectorCatalogRoutes,
   ...agentConnectorAccessRoutes,
