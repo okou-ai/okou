@@ -4,12 +4,10 @@ import { buildEmailPrompt } from "./email-prompt";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 import { renderRunPrompts } from "./run-prompt-and-skills";
 import { emailDeliveryTargetSchema } from "./email-chat-callback-payload";
-import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { performance } from "node:perf_hooks";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
-  type PreparedExecutionContext,
   type ExecutionInput,
   type ConnectorRuntimeTargetRegistration,
 } from "@okouai/api-contracts/contracts/runners";
@@ -24,8 +22,6 @@ import {
   type ConnectorScopeSource,
   type EffectiveConnectorScope,
   isEmptyRunConnectorScope,
-  type RunConnectorCatalogSelection,
-  runConnectorCatalogSelection,
 } from "./thread-connected-accounts.signals";
 import { pendingOkouTokenSecrets } from "./run-body-environment";
 import { createThreadContext } from "./thread-context.signals";
@@ -214,10 +210,7 @@ import type {
   ChatQueueHeadContext,
   ChatQueueHeadRejection,
 } from "./chat-queue-run-assembly";
-import type {
-  ChatThreadExecutionSnapshot,
-  ChatThreadContinuation,
-} from "./chat-session-continuity.service";
+import type { ChatThreadContinuation } from "./chat-session-continuity.service";
 
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
 import { WechatLaunchUnavailableError } from "./wechat-context.service";
@@ -326,11 +319,7 @@ import {
 } from "./workflow-automation-enqueue.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import { recordWorkflowAdmissionDuration } from "./workflow-queue-admission-timing.service";
-import {
-  prepareRunOutputMetadata,
-  type ResolvedAgentExecution,
-  type ResolvedRunExecution,
-} from "./run-storage-manifest.service";
+import { prepareRunAdmissionMetadata } from "./run-storage-manifest.service";
 import { createStorageSignals, type Storage } from "./thread-storage.signals";
 import { settleRejectedAutomationInput$ } from "./workflow-schedule-failure.service";
 
@@ -747,7 +736,6 @@ function automationSelectionCommand(
   >,
   model: ThreadModelSelection,
   identity: {
-    readonly timing: ApiDispatchTimingCollector;
     readonly owner: { readonly orgId: string; readonly userId: string };
     readonly agentId: string;
   },
@@ -757,7 +745,6 @@ function automationSelectionCommand(
     "chatThreadId" | "queueFirstAssociation" | "agentRunModelPin"
   > {
   const { automation, chatThreadId } = args.due;
-  const { timing } = identity;
   return {
     owner: identity.owner,
     body: {
@@ -777,7 +764,6 @@ function automationSelectionCommand(
       threadId: chatThreadId,
       eventId: args.queueEventId,
     },
-    timing,
   };
 }
 
@@ -855,7 +841,7 @@ function isDirectSendContext(contextType: string | null): boolean {
 type ThreadRunnerFacts = Omit<RunnerLaunchInputArgs, "workflowAutomationId">;
 
 interface RunPlan {
-  readonly args: ProductRunArgs;
+  readonly args: ThreadRunArgs;
   readonly enforceBuiltInCredits: boolean;
   readonly runner: ThreadRunnerFacts;
   readonly persisted: PendingRunContext;
@@ -1837,10 +1823,7 @@ export function createThreadClaimRunObjects(
       const { runInput, templateUsageIdentities } = preparedInput;
       return {
         kind: "assembled",
-        run: {
-          ...buildQueuedRunCommand(runInput, head.apiStartTime),
-          timing: input.runTiming,
-        },
+        run: buildQueuedRunCommand(runInput, head.apiStartTime),
         producerBinding: null,
         rejection: { kind: "prompt", runInput },
         launchRecord: {
@@ -1917,7 +1900,6 @@ export function createThreadClaimRunObjects(
         reasoningEffort: model.reasoningEffort,
         requiredOfficialWorkflowIds:
           args.queuedMessage.requiredOfficialWorkflowIds,
-        timing: identity.timing,
       },
     };
   });
@@ -2581,15 +2563,6 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const preCreateConnectorCatalogConnectorCatalog$ = computed(
-    async (get): Promise<RunConnectorCatalogSelection> => {
-      const [scope, catalog] = await Promise.all([
-        get(bootstrap.connectorScope$),
-        get(bootstrap.catalog$),
-      ]);
-      return runConnectorCatalogSelection(scope, catalog);
-    },
-  );
   const preCreatePermissionPoliciesPermissionPolicies$ = computed(
     async (get) => {
       const timing = get(threadContext.dispatchTiming$);
@@ -2607,29 +2580,19 @@ export function createThreadClaimRunObjects(
     },
   );
   const preCreatePostAuthorizationPostAuthorization$ = computed(
-    async (get): Promise<AgentRunAfterPreCreate | CreateRunErrorResult> => {
-      const { timing } = await get(preCreateInput$);
-      const [
-        connectorScope,
-        featureSwitchContext,
-        agentResult,
-        accountResult,
-        catalogResult,
-        policiesResult,
-      ] = await Promise.all([
-        get(bootstrap.connectorScope$),
-        get(bootstrap.featureSwitches$),
-        get(preCreateAgentAgent$),
-        get(preCreateSubscriptionAccountSubscriptionAccount$),
-        get(preCreateConnectorCatalogConnectorCatalog$),
-        get(preCreatePermissionPoliciesPermissionPolicies$),
-      ]);
+    async (get): Promise<ThreadRunPreparation | CreateRunErrorResult> => {
+      const [connectorScope, agentResult, accountResult, policiesResult] =
+        await Promise.all([
+          get(bootstrap.connectorScope$),
+          get(preCreateAgentAgent$),
+          get(preCreateSubscriptionAccountSubscriptionAccount$),
+          get(preCreatePermissionPoliciesPermissionPolicies$),
+        ]);
       const agent = agentResult;
       const account = accountResult;
       if ("status" in account) {
         return account;
       }
-      const catalog = catalogResult;
       const policies = policiesResult;
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
@@ -2638,15 +2601,7 @@ export function createThreadClaimRunObjects(
         ...connectorScope,
         ...account,
         agent,
-        timing,
-        connectorCatalogSelection: catalog,
         runPermissionPolicies: policies,
-        authorizedRequestObservation: {
-          userId: account.command.owner.userId,
-          orgId: account.command.owner.orgId,
-          agent,
-          featureSwitchContext,
-        },
       };
     },
   );
@@ -2676,7 +2631,7 @@ export function createThreadClaimRunObjects(
       threadContinuation: resolution,
     };
   });
-  const preCreateRunArgsRunArgs$ = computed(async (get) => {
+  const runArgs$ = computed(async (get) => {
     const input = await get(preCreatePreparedInput$);
     if (!input || "status" in input) {
       return input;
@@ -2685,7 +2640,7 @@ export function createThreadClaimRunObjects(
     if (isRouteError(promptAndSkills)) {
       return promptAndSkills;
     }
-    return { input, args: buildProductRunArgs(input, promptAndSkills) };
+    return buildThreadRunArgs(input, promptAndSkills);
   });
   const preCreateModelFeatureSwitchContext$ = computed(async (get) => {
     const observed = await get(featureSwitchContext$);
@@ -2705,8 +2660,7 @@ export function createThreadClaimRunObjects(
       const result = await settle(get(promptAndSkillVolumes$));
       if (!result.ok) {
         if (result.error instanceof PromptAndSkillVolumesError) {
-          // Source admission preserves the channel-specific rejection code;
-          // independent storage preparation must also return a failed result.
+          // Source admission preserves the channel-specific rejection code.
           return result.error.code === "BAD_REQUEST"
             ? badRequestMessage(result.error.message)
             : conflict(result.error.message);
@@ -2719,89 +2673,45 @@ export function createThreadClaimRunObjects(
       return result.value;
     },
   );
-  const model = {
-    featureSwitchContext$: preCreateModelFeatureSwitchContext$,
-    framework$: runFramework$,
-    modelRoute$: modelRoute$,
-  };
   const connectorSelection$ = threadContext.connectorSelection$;
   const connectorSnapshot$ = threadContext.connectorSnapshot$;
-  const preCreateExecutionConnectors = {
-    connectorSelection$,
-    connectorSnapshot$,
-  };
-  const preCreateBodyEnvironmentEnvironment$ = bootstrap.bodyEnvironment$;
   const connectorAdmission$ = createConnectorAdmissionSignals(
     bootstrap,
     threadContext,
   );
-  const workflow = createOfficialWorkflowSignals(pickedEvent$, threadContext);
-  const { officialWorkflow$ } = workflow;
-  const shared = {
-    ...model,
-    ...preCreateExecutionConnectors,
-    ...workflow,
-    bodyEnvironment$: preCreateBodyEnvironmentEnvironment$,
-  };
-  const graph = {
-    input$: preCreateInput$,
-    identityInput$: selectedIdentityInputIdentityInput$,
-    agentId$: preCreateAgentIdAgentId$,
-    agent$: preCreateAgentAgent$,
-    threadContinuation$: threadContinuation$,
-    runArgs$: preCreateRunArgsRunArgs$,
-    shared: shared,
-  };
-  const skillVolumeSources = [promptAndSkillVolumes$];
-  const storage$ = createStorageSignals(
-    bootstrap,
-    pickedEvent$,
-    threadContext,
-    skillVolumeSources,
-  );
-  const {
-    runArgs$: selectedRunContextRunArgs$,
-    shared: selectedRunContextShared,
-  } = graph;
+  const { officialWorkflow$, officialWorkflowFacts$ } =
+    createOfficialWorkflowSignals(pickedEvent$, threadContext);
+  const storage$ = createStorageSignals(bootstrap, pickedEvent$, threadContext);
   const contextArgs$ = computed(async (get) => {
-    const selected = await get(selectedRunContextRunArgs$);
+    const selected = await get(runArgs$);
     if (!selected || "status" in selected) {
       throw new Error("Run context requires an authorized ready input");
     }
     get(db$); // Preserve initialization and the graph dependency.
-    return selected.args;
+    return selected;
   });
-  const execution$ = computed(async (get) => {
-    // Agent/session resolution has no dependency on connector firewall policies
-    // or the completed runner body. Use the already-authorized identity and
-    // canonical session snapshot directly, as buildProductRunArgs does.
-    const [{ command, timing }, agent, session] = await Promise.all([
-      get(preCreateInput$),
-      get(preCreateAgentAgent$),
-      get(threadContinuation$),
-    ]);
-    if (!agent) {
-      throw new Error("Agent disappeared after preparation authorization");
-    }
-    return await resolveProductAgentExecution(
-      {
+  const execution$ = computed(
+    async (get): Promise<ThreadExecution | CreateRunErrorResult> => {
+      const [{ command }, agent, session] = await Promise.all([
+        get(preCreateInput$),
+        get(preCreateAgentAgent$),
+        get(threadContinuation$),
+      ]);
+      if (!agent) {
+        throw new Error("Agent disappeared after preparation authorization");
+      }
+      if (agent.orgId !== command.owner.orgId) {
+        return notFound("Agent not found");
+      }
+      return {
         agentId: agent.id,
-      },
-      command.owner.userId,
-      command.owner.orgId,
-      {
-        preloadedAgentExecutionObservation: {
-          requestUserId: command.owner.userId,
-          requestOrgId: command.owner.orgId,
-          agentId: agent.id,
-          ownerUserId: agent.owner,
-          agentOrgId: agent.orgId,
-        },
-        sessionSnapshot: session?.executionSnapshot,
-        timing,
-      },
-    );
-  });
+        orgId: agent.orgId,
+        ...(session
+          ? { nativeContinuation: session.executionSnapshot.nativeContinuation }
+          : {}),
+      };
+    },
+  );
   const body$ = computed(async (get) => {
     const [args, resolved, bodyEnvironment] = await Promise.all([
       get(contextArgs$),
@@ -2814,9 +2724,9 @@ export function createThreadClaimRunObjects(
     if (resolved.orgId !== args.orgId) {
       return notFound("Resource not found");
     }
-    return { ...initialRunBody(args), ...bodyEnvironment };
+    return { ...withPendingOkouTokenSecret(args.body), ...bodyEnvironment };
   });
-  const runBodyBodyContext$ = computed(async (get) => {
+  const bodyContext$ = computed(async (get) => {
     const [args, resolved, body, requestedFramework, featureSwitchContext] =
       await Promise.all([
         get(contextArgs$),
@@ -2842,8 +2752,7 @@ export function createThreadClaimRunObjects(
       connectorScope: connectorScopeFromCreateArgs(args),
     };
   });
-  const body = { bodyContext$: runBodyBodyContext$, framework$: runFramework$ };
-  const runRuntimeRuntimeContext$ = computed(async (get) => {
+  const runtimeContext$ = computed(async (get) => {
     const [
       bodyResult,
       modelResult,
@@ -2851,7 +2760,7 @@ export function createThreadClaimRunObjects(
       snapshotResult,
       connectorResult,
     ] = await Promise.all([
-      get(runBodyBodyContext$),
+      get(bodyContext$),
       get(modelRoute$),
       get(connectorSelection$),
       get(connectorSnapshot$),
@@ -2921,19 +2830,14 @@ export function createThreadClaimRunObjects(
       connectorCatalogSelection: selection.connectorCatalogSelection,
     };
   });
-  const runContextRuntime = { runtimeContext$: runRuntimeRuntimeContext$ };
   const imageModel$ = computed((get) => {
     return get(bootstrap.selectedImageModel$);
   });
-  const { officialWorkflow$: runContextOfficialWorkflow$ } =
-    selectedRunContextShared;
-  const { bodyContext$ } = body;
-  const { runtimeContext$ } = runContextRuntime;
   const executionPlan$ = computed(async (get) => {
     const args = await get(contextArgs$);
     const gate = enforceCaptureNetworkBodiesGate(
       args.orgId,
-      initialRunBody(args).captureNetworkBodies,
+      args.body.captureNetworkBodies,
     );
     if (gate) {
       return gate;
@@ -2943,7 +2847,7 @@ export function createThreadClaimRunObjects(
         get(bodyContext$),
         get(runtimeContext$),
         get(imageModel$),
-        get(runContextOfficialWorkflow$),
+        get(officialWorkflow$),
       ]);
     const bodyContext = bodyResult;
     const runtimeContext = runtimeResult;
@@ -2969,7 +2873,7 @@ export function createThreadClaimRunObjects(
     if (isRouteError(promptAndSkills)) {
       return promptAndSkills;
     }
-    const metadata = prepareRunOutputMetadata({
+    const metadata = prepareRunAdmissionMetadata({
       skillVolumes: promptAndSkills.skillVolumes,
       officialWorkflow: officialWorkflowRun,
       framework,
@@ -2983,15 +2887,13 @@ export function createThreadClaimRunObjects(
       modelProvider,
       connectorRuntimeTargets: runtimeContext.connectorRuntimeTargets,
       ...metadata,
-      officialWorkflowFacts: await get(
-        selectedRunContextShared.officialWorkflowFacts$,
-      ),
+      officialWorkflowFacts: await get(officialWorkflowFacts$),
       featureSwitchContext: bodyContext.featureSwitchContext,
       selectedImageModel,
     };
   });
   const preparedRunPlan$ = computed(async (get) => {
-    const selected = await get(selectedRunContextRunArgs$);
+    const selected = await get(runArgs$);
     if (!selected || "status" in selected) {
       return selected;
     }
@@ -3028,7 +2930,7 @@ export function createThreadClaimRunObjects(
         providerType: input.modelProviderType,
       });
       const [official, target] = await Promise.all([
-        get(runContextOfficialWorkflow$),
+        get(officialWorkflow$),
         get(threadContext.automationTarget$),
       ]);
       signal.throwIfAborted();
@@ -3315,7 +3217,7 @@ export function createThreadClaimRunObjects(
         return null;
       }
       const [selected, context] = await Promise.all([
-        get(preCreateRunArgsRunArgs$),
+        get(runArgs$),
         get(preparedRunPlan$),
         // Start session-based execution alongside firewall/body assembly,
         // rather than only after the completed create arguments are available.
@@ -3338,21 +3240,15 @@ export function createThreadClaimRunObjects(
         runnerProfile: DEFAULT_PROFILE,
       };
       const { body } = context;
-      const {
-        officialWorkflowRun,
-        officialWorkflowFacts,
-        selectedImageModel,
-        ...facts
-      } = context;
+      const { officialWorkflowRun, officialWorkflowFacts, selectedImageModel } =
+        context;
       const modelProvider = context.modelProvider;
       return {
         args,
         enforceBuiltInCredits:
-          args.enforceBuiltInCredits === true &&
           !(
             officialWorkflowRun && args.agentRunMetadata?.workflowAutomationId
-          ) &&
-          isBuiltInModelProviderType(modelProvider?.type),
+          ) && isBuiltInModelProviderType(modelProvider?.type),
         persisted: {
           body,
           selectedImageModel,
@@ -3375,8 +3271,11 @@ export function createThreadClaimRunObjects(
             : null,
         },
         runner: {
-          ...facts,
+          resolved: context.resolved,
           body,
+          protectedMountPaths: context.protectedMountPaths,
+          featureSwitchContext: context.featureSwitchContext,
+          connectorRuntimeTargets: context.connectorRuntimeTargets,
           launchSnapshot,
           apiStartTime: await get(runnerApiStartTime$),
           chatThreadId: args.chatThreadId,
@@ -4321,14 +4220,6 @@ type AgentRunRecord = AgentRunRequestAgent;
 
 // --- Thread-private implementation: launch persistence ---
 
-interface AgentExecutionRequestObservation {
-  readonly requestUserId: string;
-  readonly requestOrgId: string;
-  readonly agentId: string;
-  readonly ownerUserId: string;
-  readonly agentOrgId: string;
-}
-
 interface ExplicitConnectorScope {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
@@ -4499,7 +4390,7 @@ interface LaunchRunRowsArgs {
   readonly identity: LaunchRunIdentity;
   readonly status: LaunchRunStatus;
   readonly validatedAccountIdentity?: string | null;
-  readonly resolved: Pick<ResolvedRunExecution, "agentId">;
+  readonly resolved: PendingRunContext["resolved"];
   readonly body: CreateRunBody;
   readonly runStorageMounts: readonly PersistedStorageMount[] | undefined;
   readonly modelProvider: Pick<
@@ -4923,32 +4814,9 @@ function modelProviderFramework(
   return getFrameworkForType(modelProvider.type);
 }
 
-/** Post-reservation materializer. This never inserts a Run or invokes the API
- * first turn. Publication owns a fresh admission. */
-
 // Selected-agent authorization, bootstrap and canonical session preparation.
 
 type AgentRunCreateBody = zInfer<typeof runCreateBodySchema>;
-
-/**
- * Request-scoped preparation facts from an entry point that already authorized
- * this exact user, organization, and Agent. These observations can remove
- * equivalent preflight reads, but they never authorize the later launch
- * transaction: compute admission still resolves the Agent and its ownership
- * again before it claims input or inserts a Run.
- *
- * When this object is present, nullable Agent metadata and feature overrides
- * are authoritative observations. The bootstrap materializer may enrich an
- * omitted email from the same request's user-info row. Absence of the object
- * means those facts were not loaded and every existing database fallback
- * remains.
- */
-interface AuthorizedAgentRunRequestObservation {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly agent: AgentRunRequestAgent;
-  readonly featureSwitchContext: FeatureSwitchContext;
-}
 
 interface AgentRunsCreateHttpRunCallback {
   readonly url: string;
@@ -5010,9 +4878,7 @@ interface ThreadRunCommand {
   readonly agentRunModelPin?: AgentRunModelPin;
   /** Immutable Pi eligibility captured by the caller's admission snapshot. */
   readonly piExecution: boolean;
-  readonly timing?: ApiDispatchTimingCollector;
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
-  readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
 }
 
 /** The selection-time command: everything but the prompt-time facts. */
@@ -5024,17 +4890,10 @@ type ThreadRunIdentity = Omit<ThreadRunSelection, "piExecution"> & {
   readonly piExecution?: boolean;
 };
 
-function selectedRunPiExecution(command: ThreadRunIdentity): boolean {
-  if (command.piExecution === undefined) {
-    throw new Error("Selected model execution eligibility is unavailable");
-  }
-  return command.piExecution;
-}
-
 /** The plain facts of a Thread run that Pi model preparation reads. */
 function piModelPreparationInput(
   args: Pick<
-    RunModelProviderArgs,
+    ThreadRunArgs,
     "catalog" | "piExecution" | "codexServiceTier" | "agentRunMetadata"
   >,
 ): PiModelPreparationInput {
@@ -5046,34 +4905,21 @@ function piModelPreparationInput(
   };
 }
 
-function selectedRunModelProviderArgs(
-  command: ThreadRunIdentity,
-): Omit<RunModelProviderArgs, "catalog"> {
-  return {
-    orgId: command.owner.orgId,
-    userId: command.owner.userId,
-    modelProviderId: command.modelProviderId,
-    modelProviderCredentialScope: command.modelProviderCredentialScope,
-    modelProviderType: command.body.modelProvider,
-    selectedModelOverride: command.selectedModelOverride,
-    builtInModelRuntimeRoute: command.builtInModelRuntimeRoute,
-    piExecution: selectedRunPiExecution(command),
-    codexServiceTier: command.codexServiceTier,
-    agentRunMetadata: { reasoningEffort: command.reasoningEffort },
-    ...("queueFirstAssociation" in command
-      ? { queueFirstAssociation: command.queueFirstAssociation }
-      : {}),
-  };
-}
 // --- Thread-private implementation: launch input ---
+
+interface ThreadExecution {
+  readonly agentId: string;
+  readonly orgId: string;
+  readonly nativeContinuation?: ExecutionInput["nativeContinuation"];
+}
 
 interface RunnerLaunchInputArgs {
   readonly workflowAutomationId: string | null;
-  readonly resolved: ResolvedRunExecution;
+  readonly resolved: ThreadExecution;
   readonly body: CreateRunBody;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly apiStartTime: number | undefined;
-  readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
+  readonly protectedMountPaths: readonly string[];
   readonly chatThreadId: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
@@ -5096,19 +4942,13 @@ function prepareRunnerLaunchInput(input: {
   const context: ExecutionInput = {
     nativeContinuation,
     ...(input.previewBypassAuthorized ? { previewBypassAuthorized: true } : {}),
-    ...(args.resolved.agentId !== null
-      ? {
-          customWorkflowSelection: {
-            agentId: args.resolved.agentId,
-            ...(args.workflowAutomationId === null
-              ? {}
-              : { automationId: args.workflowAutomationId }),
-            protectedMountPaths: (args.templateGuidanceBundles ?? []).map(
-              templateGuidanceMountPath,
-            ),
-          },
-        }
-      : {}),
+    customWorkflowSelection: {
+      agentId: args.resolved.agentId,
+      ...(args.workflowAutomationId === null
+        ? {}
+        : { automationId: args.workflowAutomationId }),
+      protectedMountPaths: [...args.protectedMountPaths],
+    },
     platformEnvironment: {
       OKOU_TOKEN: input.okouToken,
       [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(input.disabledPaidTools),
@@ -5158,13 +4998,6 @@ function withPendingOkouTokenSecret(body: CreateRunBody): CreateRunBody {
   return { ...body, secrets: pendingOkouTokenSecrets(body.secrets) };
 }
 
-interface ResolveAgentExecutionOptions {
-  readonly agentObservation?: RunAgentObservation;
-  readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly sessionSnapshot?: ChatThreadExecutionSnapshot;
-}
-
 function forbidden(message: string): ApiErrorResponse<403, "FORBIDDEN"> {
   return {
     status: 403,
@@ -5194,63 +5027,6 @@ function isRouteError(value: unknown): value is CreateRunErrorResult {
   );
 }
 
-interface RunAgentObservation {
-  readonly agentId: string;
-  readonly agentOrgId: string;
-  readonly agentOwner: string;
-}
-
-function resolveAgentObservation(
-  row: RunAgentObservation | undefined,
-): ResolvedAgentExecution | CreateRunErrorResult {
-  if (!row) {
-    return notFound("Agent not found");
-  }
-  return {
-    agentId: row.agentId,
-    ownerUserId: row.agentOwner,
-    orgId: row.agentOrgId,
-  };
-}
-
-/** Product identity is authorized by the Agent; native provenance belongs to Thread. */
-function resolveProductAgentExecution(
-  body: Pick<CreateRunBody, "agentId">,
-  userId: string,
-  orgId: string,
-  options: ResolveAgentExecutionOptions,
-): ResolvedRunExecution | CreateRunErrorResult {
-  if (!body.agentId) {
-    return badRequestMessage("Missing agentId");
-  }
-  const agentId = body.agentId;
-  const preloaded = options.preloadedAgentExecutionObservation;
-  const resolved =
-    preloaded &&
-    preloaded.requestUserId === userId &&
-    preloaded.requestOrgId === orgId &&
-    preloaded.agentId === agentId &&
-    preloaded.agentOrgId === orgId
-      ? {
-          agentId,
-          ownerUserId: preloaded.ownerUserId,
-          orgId: preloaded.agentOrgId,
-        }
-      : resolveAgentObservation(options.agentObservation);
-  if (isRouteError(resolved)) {
-    return resolved;
-  }
-  const snapshot = options.sessionSnapshot;
-  return {
-    ...resolved,
-    ...(snapshot
-      ? {
-          nativeContinuation: snapshot.nativeContinuation,
-        }
-      : {}),
-  };
-}
-
 function enforceCaptureNetworkBodiesGate(
   orgId: string,
   captureNetworkBodies: boolean | undefined,
@@ -5263,15 +5039,6 @@ function enforceCaptureNetworkBodiesGate(
     return forbidden("captureNetworkBodies is restricted to internal accounts");
   }
   return null;
-}
-
-function initialRunBody(args: {
-  readonly body: CreateRunBody;
-  readonly includeOkouTokenSecret?: boolean;
-}): CreateRunBody {
-  return args.includeOkouTokenSecret
-    ? withPendingOkouTokenSecret(args.body)
-    : args.body;
 }
 
 // Emitted as the agent_run_origin observability dimension. The values name what
@@ -5338,74 +5105,53 @@ function createRunBody(args: {
   };
 }
 
-interface AgentRunAfterBootstrap extends AgentConnectorScopeSnapshot {
+interface ThreadRunPreparation extends AgentConnectorScopeSnapshot {
   readonly agent: AgentRunRecord;
-  readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
-  readonly timing: ApiDispatchTimingCollector;
   readonly command: ThreadRunIdentity;
-  readonly threadContinuation?: ChatThreadContinuation;
-}
-
-interface AgentRunAfterPreCreate extends AgentRunAfterBootstrap {
   readonly runPermissionPolicies: FirewallPolicies | null | undefined;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
 }
 
-interface ProductRunArgsInput {
+interface ThreadRunArgsInput {
   /** One catalog snapshot per run, loaded by the entry point. */
   readonly catalog: ModelCatalog;
   readonly command: ThreadRunCommand;
   readonly agent: AgentRunRecord;
-  readonly authorizedRequestObservation?: AuthorizedAgentRunRequestObservation;
   readonly runPermissionPolicies: FirewallPolicies | null | undefined;
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
   readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
-  readonly timing: ApiDispatchTimingCollector;
   readonly threadContinuation?: ChatThreadContinuation;
 }
 
-/**
- * Explicit run arguments a product entry point (chat/automation) prepares for
- * Thread: exactly the facts this builder sets, no legacy direct-run knobs.
- */
-interface ProductRunArgs {
+/** The facts Thread uses to prepare and commit one claimed input. */
+interface ThreadRunArgs {
   readonly catalog: ModelCatalog;
   readonly orgId: string;
   readonly userId: string;
-  readonly modelProviderId?: string;
-  readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
-  readonly modelProviderType?: string;
-  readonly selectedModelOverride?: string;
-  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
   readonly piExecution: boolean;
   readonly codexServiceTier?: "fast";
-  readonly agentRunMetadata?: AgentRunMetadata;
-  readonly queueFirstAssociation?: QueueFirstRunAssociation;
+  readonly agentRunMetadata: AgentRunMetadata;
+  readonly queueFirstAssociation: QueueFirstRunAssociation;
   readonly body: CreateRunBody;
   readonly apiStartTime: number;
-  readonly chatThreadId?: string;
-  readonly connectorSourceId?: string;
+  readonly chatThreadId: string;
   readonly threadContinuation?: ChatThreadContinuation;
-  readonly callbacks?: readonly RunCallback[];
-  readonly includeOkouTokenSecret?: boolean;
-  readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
-  readonly enforceBuiltInCredits?: boolean;
-  readonly requiredOfficialWorkflowIds?: readonly string[];
   readonly connectorScope: ExplicitConnectorScope;
   readonly agentRunModelPin?: AgentRunModelPin;
-  readonly timing?: ApiDispatchTimingCollector;
-  readonly timingDimensions?: ApiDispatchTimingDimensions;
+  readonly timingDimensions: ApiDispatchTimingDimensions;
 }
 
-function buildProductRunArgs(
-  args: ProductRunArgsInput,
+function buildThreadRunArgs(
+  args: ThreadRunArgsInput,
   prompt: Pick<PromptAndSkillVolumes, "userPrompt" | "appendedSystemPrompt">,
-): ProductRunArgs {
+): ThreadRunArgs {
   const command = args.command;
   return {
-    ...selectedRunModelProviderArgs(command),
+    orgId: command.owner.orgId,
+    userId: command.owner.userId,
+    piExecution: command.piExecution,
+    codexServiceTier: command.codexServiceTier,
+    queueFirstAssociation: command.queueFirstAssociation,
     catalog: args.catalog,
     body: createRunBody({
       body: command.body,
@@ -5416,27 +5162,9 @@ function buildProductRunArgs(
     }),
     apiStartTime: command.apiStartTime,
     chatThreadId: command.chatThreadId,
-    ...(command.connectorSourceId
-      ? { connectorSourceId: command.connectorSourceId }
-      : {}),
     ...(args.threadContinuation
       ? { threadContinuation: args.threadContinuation }
       : {}),
-    callbacks: command.callbacks,
-    includeOkouTokenSecret: true,
-    ...(args.authorizedRequestObservation
-      ? {
-          preloadedAgentExecutionObservation: {
-            requestUserId: args.authorizedRequestObservation.userId,
-            requestOrgId: args.authorizedRequestObservation.orgId,
-            agentId: args.agent.id,
-            ownerUserId: args.agent.owner,
-            agentOrgId: args.agent.orgId,
-          },
-        }
-      : {}),
-    enforceBuiltInCredits: true,
-    requiredOfficialWorkflowIds: command.requiredOfficialWorkflowIds,
     connectorScope: {
       allowedConnectorSlugs: args.allowedConnectorSlugs,
       allowedCustomConnectorIds: args.allowedCustomConnectorIds,
@@ -5451,7 +5179,6 @@ function buildProductRunArgs(
     ...(command.agentRunModelPin
       ? { agentRunModelPin: command.agentRunModelPin }
       : {}),
-    timing: args.timing,
     timingDimensions: agentRunTimingDimensions({
       origin: agentRunOrigin({
         command,
@@ -5585,24 +5312,6 @@ type CreateRunErrorResult =
       503,
       "PROVIDER_UNAVAILABLE" | "MODEL_PROVIDER_UNAVAILABLE"
     >;
-
-/** The model-selection facts of one run that its model environment reads. */
-interface RunModelProviderArgs {
-  /** The run's single catalog snapshot; every model decision reads it. */
-  readonly catalog: ModelCatalog;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelProviderId?: string;
-  readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
-  readonly modelProviderType?: string;
-  readonly selectedModelOverride?: string;
-  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
-  /** Immutable Pi eligibility captured by the caller's admission snapshot. */
-  readonly piExecution: boolean;
-  readonly codexServiceTier?: "fast";
-  readonly agentRunMetadata?: AgentRunMetadata;
-  readonly queueFirstAssociation?: QueueFirstRunAssociation;
-}
 
 // Pending persistence uses connection-free SQL plans owned by one command.
 function pendingLaunchCommitResult(

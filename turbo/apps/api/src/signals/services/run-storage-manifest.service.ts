@@ -8,9 +8,9 @@ import {
   PI_SKILLS_ROOT,
   type PiModelConfig,
   type StorageMountEntry,
-  type PreparedExecutionContext,
   type StoredStorageMountEntry,
 } from "@okouai/api-contracts/contracts/runners";
+import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import {
   resolveRunSkillVolumes,
   type SkillVolume,
@@ -556,34 +556,8 @@ function skillsRootForRun(
     : PI_SKILLS_ROOT;
 }
 
-export interface ResolvedAgentExecution {
-  readonly agentId: string;
-  readonly ownerUserId: string;
-  readonly orgId: string;
-  readonly nativeContinuation?: PreparedExecutionContext["nativeContinuation"];
-}
-
-interface ResolvedUnboundExecution extends Omit<
-  ResolvedAgentExecution,
-  "agentId"
-> {
-  readonly agentId: null;
-}
-
-export type ResolvedRunExecution =
-  ResolvedAgentExecution | ResolvedUnboundExecution;
-
 const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
   "preserveParentVersion";
-
-interface RunArtifacts {
-  readonly artifacts: readonly AgentRunCreateContextArtifact[];
-}
-
-interface PreparedRunBundles {
-  readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
-  readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
-}
 
 function autoMemoryMountPath(framework: SupportedFramework): string {
   return framework === "codex"
@@ -591,78 +565,41 @@ function autoMemoryMountPath(framework: SupportedFramework): string {
     : CANONICAL_CLAUDE_MEMORY_MOUNT_PATH;
 }
 
-function artifactsForRun(args: {
+export function memoryArtifactsForRun(args: {
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
-}): RunArtifacts {
-  return {
-    artifacts: [
-      {
-        name: AUTO_MEMORY_ARTIFACT_NAME,
-        mountPath:
-          args.piSandbox === undefined
-            ? autoMemoryMountPath(args.framework)
-            : CANONICAL_PI_MEMORY_MOUNT_PATH,
-        missingRootPolicy: AUTO_MEMORY_MISSING_ROOT_POLICY,
-      },
-    ],
-  };
+}): readonly AgentRunCreateContextArtifact[] {
+  return [
+    {
+      name: AUTO_MEMORY_ARTIFACT_NAME,
+      mountPath:
+        args.piSandbox === undefined
+          ? autoMemoryMountPath(args.framework)
+          : CANONICAL_PI_MEMORY_MOUNT_PATH,
+      missingRootPolicy: AUTO_MEMORY_MISSING_ROOT_POLICY,
+    },
+  ];
 }
 
-function preparedRunBundles(args: {
-  readonly skillVolumes: readonly SkillVolume[];
-  readonly skillsRoot: string;
-}): PreparedRunBundles {
-  const candidates = resolveRunSkillVolumes(args.skillVolumes, args.skillsRoot);
-  // Select the winning mount before separating Skill and template bundles.
-  const winners = normalizeMountOverlay(candidates);
-  const templateGuidanceBundles = winners.flatMap((volume, index) => {
-    return "templateGuidanceBundle" in volume
-      ? [
-          {
-            ...volume.templateGuidanceBundle,
-            beforeMountPaths: winners.slice(index + 1).map((later) => {
-              return later.mountPath;
-            }),
-          },
-        ]
-      : [];
-  });
-  const seedSkillBundles = winners.flatMap((volume) => {
-    return "contentBundle" in volume
-      ? [{ ...volume.contentBundle, mountPath: volume.mountPath }]
-      : [];
-  });
-  return {
-    seedSkillBundles,
-    templateGuidanceBundles,
-  };
-}
-
-export function prepareRunOutputMetadata(args: {
+export function prepareRunAdmissionMetadata(args: {
   readonly skillVolumes: readonly SkillVolume[];
   readonly officialWorkflow: OfficialWorkflowObservation | undefined;
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
 }): {
-  readonly artifacts: readonly AgentRunCreateContextArtifact[];
   readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
-  readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
-  readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
+  readonly protectedMountPaths: readonly string[];
 } {
   const skillsRoot = skillsRootForRun(args.framework, args.piSandbox);
-  const bundles = preparedRunBundles({
-    skillVolumes: args.skillVolumes,
-    skillsRoot,
-  });
-  const artifacts = artifactsForRun({
-    framework: args.framework,
-    piSandbox: args.piSandbox,
-  }).artifacts;
+  const winners = normalizeMountOverlay(
+    resolveRunSkillVolumes(args.skillVolumes, skillsRoot),
+  );
   return {
-    seedSkillBundles: bundles.seedSkillBundles,
-    templateGuidanceBundles: bundles.templateGuidanceBundles,
-    artifacts,
+    protectedMountPaths: winners.flatMap((volume) => {
+      return "templateGuidanceBundle" in volume
+        ? [templateGuidanceMountPath(volume.templateGuidanceBundle)]
+        : [];
+    }),
     officialWorkflowRun: args.officialWorkflow && {
       ...args.officialWorkflow,
       definitions: args.officialWorkflow.definitions.map((definition) => {
