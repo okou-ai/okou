@@ -206,6 +206,16 @@ export const remoteSetup$ = computed((get): RemoteSetup | null => {
   };
 });
 
+export const remoteVncSetupActive$ = computed((get) => {
+  return get(remoteSetup$)?.protocol === "vnc";
+});
+export const remoteSetupFromComputer$ = computed((get) => {
+  return get(remoteSetup$)?.fromComputer === true;
+});
+export const remoteVncSetupStep$ = computed((get) => {
+  return get(remoteSetup$)?.vncStep;
+});
+
 export const remoteSetupSavedName$ = computed(async (get) => {
   const setup = get(remoteSetup$);
   if (!setup || setup.step !== "saved") {
