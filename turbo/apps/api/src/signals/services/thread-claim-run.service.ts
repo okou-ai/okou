@@ -528,10 +528,8 @@ class QueuedPromptLaunchUnavailableError extends Error {
 function queuedPromptRunInput(args: {
   readonly input: CreateQueuedChatRunInputArgs;
   readonly launch: QueuedLaunchMaterial;
-  readonly promptAndSkills: PromptAndSkillVolumes;
+  readonly prompt: string;
   readonly model: ThreadModelSelection;
-  readonly session: ChatThreadContinuation;
-  readonly host: CreateQueuedChatRunInput["computerUseHostGrant"];
   readonly capture: boolean;
   readonly features: FeatureSwitchContext;
 }): CreateQueuedChatRunInput {
@@ -543,27 +541,14 @@ function queuedPromptRunInput(args: {
     orgId: input.agent.orgId,
     userId: input.userId,
     agentId: input.agent.id,
-    threadContinuation: args.session,
-    featureSwitchContext: args.features,
-    prompt: args.promptAndSkills.userPrompt,
+    prompt: args.prompt,
     threadId: input.threadId,
     queuedMessage: input.queuedMessage,
-    requiredOfficialWorkflowIds:
-      input.queuedMessage.requiredOfficialWorkflowIds,
-    modelPin: {
-      modelProviderId: model.agentRunModelPin.modelProviderId,
-      modelProviderType: model.agentRunModelPin.modelProvider,
-      modelProviderCredentialScope:
-        model.agentRunModelPin.modelProviderCredentialScope,
-      selectedModel: model.selectedModelOverride,
-    },
+    selectedModel: model.selectedModelOverride,
     effectiveModelProvider: model.modelProviderType,
-    builtInModelRuntimeRoute: model.builtInModelRuntimeRoute,
-    cliAgentType: model.cliAgentType,
     piExecution: model.piExecution,
     codexServiceTier: model.codexServiceTier,
     reasoningEffort: model.reasoningEffort,
-    computerUseHostGrant: args.host,
     triggerSource: launch.triggerSource,
     realAgentInPreview: isFeatureEnabled(
       FeatureSwitchKey.RealAgentInPreview,
@@ -641,7 +626,6 @@ interface QueuedAutomationEvent {
   readonly workflowName: string | null;
   readonly eventType: string | null;
   readonly eventPayload: WorkflowAutomationEventPayload | null;
-  readonly connectorSourceId: string | null;
 }
 
 interface LaunchTarget {
@@ -803,9 +787,6 @@ function queuedAutomationLaunchArguments(args: {
     apiStartTime: head.apiStartTime,
     triggerBrief: event.triggerBrief ?? undefined,
     triggerSource,
-    ...(event.connectorSourceId
-      ? { connectorSourceId: event.connectorSourceId }
-      : {}),
     callbacks: material.callbacks,
     autonomyBudget,
     recordLastRunId: material.recordLastRunId,
@@ -1038,12 +1019,10 @@ interface WorkflowAutomationLaunchArgs {
   readonly apiStartTime: number;
   readonly triggerBrief?: string;
   readonly triggerSource?: TriggerSource;
-  readonly connectorSourceId?: string;
   readonly callbacks: readonly InternalRunCallbackInput[];
   readonly autonomyBudget: number;
   readonly recordLastRunId: boolean;
   readonly recordLastRunAt: boolean;
-  readonly timing?: ApiDispatchTimingCollector;
 }
 
 type RunErrorResponse = {
@@ -1562,7 +1541,6 @@ export function createThreadClaimRunObjects(
           }
           return {
             triggerSource: context.platform,
-            connectorSourceId: context.connectorSourceId,
             delivery: {
               feishuDelivery: queuedFeishuDelivery(context),
             },
@@ -1635,7 +1613,6 @@ export function createThreadClaimRunObjects(
   );
   const promptContinuation$ = threadContext.threadContinuation$;
   const runTemplates$ = threadContext.templates$;
-  const promptHostHost$ = threadContext.computerUseHostGrant$;
   const promptCaptureCapture$ = computed(async (get) => {
     const { head } = await get(promptInputInput$);
     if (requestFacts?.input.id === head.id) {
@@ -1659,13 +1636,12 @@ export function createThreadClaimRunObjects(
         }
       | QueuedMessageAdmissionFailure
     > => {
-      const [args, launch, model, session, host, capture, features, templates] =
+      const [args, launch, model, session, capture, features, templates] =
         await Promise.all([
           get(promptArgsArgs$),
           get(promptMaterialMaterial$),
           get(threadContext.modelSelection$),
           get(promptContinuation$),
-          get(promptHostHost$),
           get(promptCaptureCapture$),
           get(bootstrap.featureSwitches$),
           get(runTemplates$),
@@ -1712,10 +1688,8 @@ export function createThreadClaimRunObjects(
         runInput: queuedPromptRunInput({
           input: args,
           launch,
-          promptAndSkills,
+          prompt: promptAndSkills.userPrompt,
           model,
-          session,
-          host,
           capture,
           features,
         }),
@@ -2113,7 +2087,6 @@ export function createThreadClaimRunObjects(
       due: { ...target, chatThreadId: event.chatThreadId },
       apiStartTime: head.apiStartTime,
       queueEventId: event.id,
-      connectorSourceId: event.connectorSourceId ?? undefined,
       triggerSource: manualTriggerSource(target.automation),
     };
   });
