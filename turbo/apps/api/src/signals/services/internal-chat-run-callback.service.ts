@@ -167,7 +167,6 @@ import {
   deliverTelegramChatAdmissionFailure$,
   dispatchTelegramChatDeliveryOnce$,
 } from "./internal-telegram-chat-run-callback.service";
-import { modelProviderWriteTypeForLaunch } from "./model-selection.service";
 import { sendUserPushNotifications$ } from "./push-notifications.service";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { saveRunSummary$ } from "./run-summary.service";
@@ -606,42 +605,6 @@ export function queuedChatRunCallbackInputs(
         ]
       : []),
   ];
-}
-
-export function buildQueuedRunCommand(
-  input: CreateQueuedChatRunInput,
-  admissionTime: number,
-) {
-  return {
-    owner: { userId: input.userId, orgId: input.orgId },
-    // Startup metrics begin when the queued message is admitted for dispatch.
-    // The time spent waiting in the chat queue is recorded separately.
-    apiStartTime: admissionTime,
-    chatThreadId: input.threadId,
-    selectedModelOverride: input.selectedModel,
-    codexServiceTier: input.codexServiceTier,
-    reasoningEffort: input.reasoningEffort,
-    triggerSource: input.triggerSource,
-    agentRunPreCreateSource: "chat_callback_auto_send" as const,
-    queueFirstAssociation: {
-      threadId: input.threadId,
-      eventId: input.queuedMessage.id,
-    },
-    piExecution: input.piExecution,
-    agentRunMetadata: { autonomyBudget: input.autonomyBudget },
-    body: {
-      agentId: input.agentId,
-      ...(input.effectiveModelProvider
-        ? {
-            modelProvider: modelProviderWriteTypeForLaunch(
-              input.effectiveModelProvider,
-            ),
-          }
-        : {}),
-      ...(input.realAgentInPreview ? { realAgentInPreview: true } : {}),
-      ...(input.captureNetworkBodies ? { captureNetworkBodies: true } : {}),
-    },
-  };
 }
 
 const loadCompletedChatOutput$ = command(

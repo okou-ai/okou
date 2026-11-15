@@ -239,7 +239,7 @@ export function prepareSubscriptionModelEnvironment(
 /** The run facts a Built-in model environment is prepared from. */
 interface ManagedModelEnvironmentInput {
   readonly framework: SupportedFramework;
-  readonly selectedModelOverride: string;
+  readonly selectedModel: string;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute;
 }
 
@@ -253,7 +253,7 @@ export async function prepareManagedModelEnvironment(
   }
   const route = args.builtInModelRuntimeRoute;
   if (
-    route.selectedModel !== args.selectedModelOverride ||
+    route.selectedModel !== args.selectedModel ||
     !isBuiltInModelRuntimeRoutePermitted(route) ||
     getFrameworkForType(route.providerType) !== args.framework ||
     route.modelKeyId !== source.identity.modelKeyId
