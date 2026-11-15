@@ -36,6 +36,17 @@ class Store:
 
 
 class PublicationTest(unittest.TestCase):
+    def test_version_order_matches_server_and_native_policy(self):
+        vectors = json.loads((path.parents[3] / "turbo/packages/api-contracts/src/validators/fixtures/android-versions.json").read_text())
+        for item in vectors["comparisons"]:
+            with self.subTest(item=item):
+                left = publication.version_parts(item["left"])
+                right = publication.version_parts(item["right"])
+                self.assertEqual((left > right) - (left < right), item["order"])
+        for version in vectors["invalid"]:
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                publication.version_parts(version)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -47,7 +58,7 @@ class PublicationTest(unittest.TestCase):
     def manifest(self, version="0.13.0"):
         digest = hashlib.sha256(self.apk.read_bytes()).hexdigest()
         return {"schemaVersion": 1, "release": {
-            "version": version, "versionCode": publication.version_code(version),
+            "version": version,
             "sha256": digest, "size": self.apk.stat().st_size, "minimumSdk": 24, "notes": "Update",
             "url": f"https://static.okou.io/android-updates/releases/{version}/{digest}.apk",
         }}
@@ -81,6 +92,12 @@ class PublicationTest(unittest.TestCase):
             self.publish()
         self.assertEqual(self.store.objects[publication.CURRENT], saved)
 
+    def test_numeric_components_preserve_release_order_across_digit_boundaries(self):
+        self.assertEqual(self.publish(self.manifest("0.9.0")), "published")
+        self.assertEqual(self.publish(self.manifest("0.10.0")), "published")
+        self.assertEqual(self.publish(self.manifest("0.1.1000")), "superseded")
+        self.assertEqual(self.publish(self.manifest("0.1000.0")), "published")
+
     def test_racing_newer_release_is_not_rolled_back(self):
         self.store.race = json.dumps(self.manifest("0.14.0")).encode()
         self.assertEqual(self.publish(), "superseded")
@@ -93,7 +110,7 @@ class PublicationTest(unittest.TestCase):
         self.assertEqual(self.store.writes.count(publication.CURRENT), 1)
 
     def test_metadata_rejects_mismatched_version_url_and_unexpected_types(self):
-        for key, value in [("versionCode", 12), ("url", "https://example.com/app.apk"),
+        for key, value in [("version", "0.13-beta"), ("url", "https://example.com/app.apk"),
                            ("minimumSdk", True), ("sha256", "unknown"), ("size", -1)]:
             manifest = self.manifest()
             manifest["release"][key] = value

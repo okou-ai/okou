@@ -9,17 +9,9 @@ if [ "$#" -ne 2 ] || [[ ! "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 2
 fi
 version=$1
-version_code=$(python3 - "$version" <<'PY'
-import sys
-major, minor, patch = map(int, sys.argv[1].split('.'))
-code = major * 1_000_000 + minor * 1_000 + patch
-if minor >= 1000 or patch >= 1000 or not 0 < code <= 2_147_483_647:
-    raise SystemExit('Android version does not fit versionCode')
-print(code)
-PY
-)
-output=$(realpath -m "$2")
 root=$(git rev-parse --show-toplevel)
+version_code=$(bash "$root/android/scripts/version-code.sh")
+output=$(realpath -m "$2")
 [ "$(cat "$root/android/version.txt")" = "$version" ] || {
   echo 'Android release version does not match version.txt' >&2
   exit 1

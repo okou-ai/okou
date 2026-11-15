@@ -23,7 +23,6 @@ import kotlinx.serialization.json.doubleOrNull
 @Serializable
 data class AndroidUpdatesRelease(
     val `version`: String,
-    val `versionCode`: Long,
     val `minimumSdk`: Long,
     val `size`: Long,
     val `sha256`: String,

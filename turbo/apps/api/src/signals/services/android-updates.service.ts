@@ -53,16 +53,9 @@ export async function loadAndroidRelease(
   const { release } = androidReleaseManifestSchema.parse(
     safeJsonParse(loaded.value),
   );
-  const [major, minor, patch] = release.version.split(".").map(Number);
   if (
-    major === undefined ||
-    minor === undefined ||
-    patch === undefined ||
-    minor >= 1000 ||
-    patch >= 1000 ||
-    major * 1_000_000 + minor * 1000 + patch !== release.versionCode ||
     release.url !==
-      `https://static.okou.io/android-updates/releases/${release.version}/${release.sha256}.apk`
+    `https://static.okou.io/android-updates/releases/${release.version}/${release.sha256}.apk`
   ) {
     throw new Error("Android release identity is inconsistent");
   }

@@ -268,20 +268,31 @@ class AndroidUpdateClientTest {
             if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES
             else PackageManager.GET_SIGNATURES
         val installed = context.packageManager.getPackageInfo(context.packageName, flags)
-        installed.versionCode = 12000
+        installed.versionCode = 401
         setSigners(installed, "1234")
         manager.installPackage(installed)
         val archive =
             PackageInfo().apply {
                 packageName = context.packageName
                 versionName = "0.13.0"
-                versionCode = 13000
+                versionCode = 402
                 setSigners(this, "1234")
             }
         manager.setPackageArchiveInfo(file.path, archive)
         AndroidUpdateClient(context, "https://api.okou.ai/".toHttpUrl(), "0.12.0", directory).use {
             updater ->
             assertEquals(file, updater.recover(release))
+            archive.versionCode = installed.versionCode
+            manager.setPackageArchiveInfo(file.path, archive)
+            try {
+                updater.recover(release)
+                fail("Expected non-increasing APK code rejection")
+            } catch (error: UpdateException) {
+                assertEquals(UpdateProblem.Identity, error.problem)
+            }
+            assertFalse(file.exists())
+            file.writeBytes(bytes)
+            archive.versionCode = 402
             setSigners(archive, "5678")
             manager.setPackageArchiveInfo(file.path, archive)
             try {

@@ -25,6 +25,7 @@ import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.historyRows
 import ai.okou.android.chat.HistoryCursor
+import ai.okou.android.updates.isAndroidVersion
 import java.io.Closeable
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -234,10 +235,7 @@ class ApiClient(
     private fun reject(error: HttpRejection): Nothing {
         if (error.status == 426) {
             val envelope = errorEnvelope<AndroidUpgradeRequired>(error.envelope)
-            val minimum =
-                envelope?.minimumSupportedVersion?.takeIf {
-                    Regex("\\d+\\.\\d+\\.\\d+").matches(it)
-                }
+            val minimum = envelope?.minimumSupportedVersion?.takeIf(::isAndroidVersion)
             required.compareAndSet(null, RequiredUpdate(minimum))
             // In-flight responses can report a stronger floor during an API rollout.
             onUpdateRequired(RequiredUpdate(minimum))

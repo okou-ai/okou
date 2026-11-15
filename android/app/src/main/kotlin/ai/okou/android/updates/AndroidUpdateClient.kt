@@ -87,7 +87,7 @@ class AndroidUpdateClient(
             validateRelease(info.release)
             if (
                 info.minimumSupportedVersion != null &&
-                    androidVersionCode(info.minimumSupportedVersion) == null
+                    !isAndroidVersion(info.minimumSupportedVersion)
             ) {
                 throw UpdateException(UpdateProblem.Check)
             }
@@ -104,7 +104,7 @@ class AndroidUpdateClient(
                 .build()
                 .toString()
         if (
-            androidVersionCode(release.version) != release.versionCode ||
+            !isAndroidVersion(release.version) ||
                 !Regex("[a-f0-9]{64}").matches(release.sha256) ||
                 release.url != expected ||
                 release.size !in 1..Int.MAX_VALUE.toLong() ||
@@ -211,8 +211,8 @@ class AndroidUpdateClient(
         if (
             archive.packageName != context.packageName ||
                 archive.versionName != release.version ||
-                PackageInfoCompat.getLongVersionCode(archive) != release.versionCode ||
-                release.versionCode <= PackageInfoCompat.getLongVersionCode(installed) ||
+                PackageInfoCompat.getLongVersionCode(archive) <=
+                    PackageInfoCompat.getLongVersionCode(installed) ||
                 release.minimumSdk > Build.VERSION.SDK_INT ||
                 certificates(installed).isEmpty() ||
                 certificates(installed) != certificates(archive)

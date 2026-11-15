@@ -13,7 +13,6 @@ const routes = Object.freeze([...androidUpdateRoutes]);
 const manifestUrl = "https://static.okou.io/android-updates/manifest.json";
 const release = Object.freeze({
   version: "0.13.0",
-  versionCode: 13_000,
   minimumSdk: 24,
   size: 1234,
   sha256: "a".repeat(64),

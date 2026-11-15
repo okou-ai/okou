@@ -28,13 +28,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 
-fun androidVersionCode(version: String): Long? {
-    if (!Regex("\\d+\\.\\d+\\.\\d+").matches(version)) return null
-    val parts = version.split('.').map { it.toLongOrNull() ?: return null }
-    if (parts[0] > 2147 || parts[1] >= 1000 || parts[2] >= 1000) return null
-    return (parts[0] * 1_000_000 + parts[1] * 1000 + parts[2]).takeIf { it in 1..Int.MAX_VALUE }
-}
-
 enum class UpdateCheck {
     Unknown,
     Checking,
@@ -104,13 +97,13 @@ data class UpdateUiState(
     val available
         get() =
             displayedRelease?.let {
-                it.versionCode > checkNotNull(androidVersionCode(installedVersion))
+                checkNotNull(compareAndroidVersions(it.version, installedVersion)) > 0
             } == true
 
     fun isEligible(release: AndroidUpdatesRelease) =
-        release.versionCode > checkNotNull(androidVersionCode(installedVersion)) &&
+        checkNotNull(compareAndroidVersions(release.version, installedVersion)) > 0 &&
             release.minimumSdk <= sdk &&
-            (minimum == null || release.versionCode >= checkNotNull(androidVersionCode(minimum)))
+            (minimum == null || checkNotNull(compareAndroidVersions(release.version, minimum)) >= 0)
 
     val canDownload
         get() =
@@ -243,9 +236,8 @@ class AppUpdates(
                     val floor = higherMinimum(mutable.value.minimum, info.minimumSupportedVersion)
                     val blocked =
                         mutable.value.required ||
-                            floor?.let {
-                                checkNotNull(androidVersionCode(it)) > androidVersionCode(version)!!
-                            } == true
+                            floor?.let { checkNotNull(compareAndroidVersions(it, version)) > 0 } ==
+                                true
                     checkedAt = now()
                     mutable.update {
                         it.copy(
@@ -426,6 +418,6 @@ class AppUpdates(
 }
 
 private fun higherMinimum(first: String?, second: String?): String? =
-    listOfNotNull(first, second)
-        .filter { androidVersionCode(it) != null }
-        .maxByOrNull { androidVersionCode(it)!! }
+    listOfNotNull(first, second).filter(::isAndroidVersion).maxWithOrNull { left, right ->
+        checkNotNull(compareAndroidVersions(left, right))
+    }

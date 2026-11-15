@@ -18,7 +18,6 @@ import org.junit.Test
 internal fun updateRelease(version: String = "0.13.0") =
     AndroidUpdatesRelease(
         version,
-        androidVersionCode(version)!!,
         24,
         1234,
         "a".repeat(64),
@@ -75,6 +74,25 @@ internal class ControlledUpdates : UpdateService {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppUpdatesTest {
+    @Test
+    fun policyComparesVersionComponentsAndRespectsTheFloorAndDevice() {
+        val release = updateRelease("0.10.0")
+        val state =
+            UpdateUiState(
+                "0.9.0",
+                AndroidUpdates("0.10.0", release),
+                minimum = "0.10.0",
+                transfer = UpdateTransfer.Idle,
+                sdk = 35,
+            )
+        assertTrue(state.available)
+        assertTrue(state.canDownload)
+        assertFalse(state.copy(installedVersion = "0.10.0").available)
+        assertFalse(state.copy(minimum = "0.10.1").canDownload)
+        assertFalse(state.copy(sdk = 23).canDownload)
+        assertTrue(state.copy(info = AndroidUpdates(null, updateRelease("0.1000.0"))).canDownload)
+    }
+
     @Test
     fun pendingRecoveryDoesNotAnnounceADifferentDownloadCandidate() = runTest {
         val store = MemoryUpdateStore()

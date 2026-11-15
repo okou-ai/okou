@@ -34,7 +34,6 @@ class NativeUpdateTest {
         val release =
             AndroidUpdatesRelease(
                 "99.0.0",
-                99_000_000,
                 24,
                 1234,
                 "a".repeat(64),

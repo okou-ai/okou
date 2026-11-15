@@ -18,24 +18,20 @@ BASE = "https://static.okou.io/"
 CURRENT = "android-updates/manifest.json"
 
 
-def version_code(version):
-    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+def version_parts(version):
+    if not isinstance(version, str) or len(version) > 64 or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
         raise ValueError("Invalid Android release version")
-    major, minor, patch = map(int, version.split("."))
-    code = major * 1_000_000 + minor * 1_000 + patch
-    if minor >= 1000 or patch >= 1000 or not 0 < code <= 2147483647:
-        raise ValueError("Android release version does not fit versionCode")
-    return code
+    return tuple(map(int, version.split(".")))
 
 
 def validate(manifest):
     if manifest.get("schemaVersion") != 1:
         raise ValueError("Unsupported Android update manifest")
     release = manifest["release"]
+    version_parts(release["version"])
     digest = release["sha256"]
     key = f'android-updates/releases/{release["version"]}/{digest}.apk'
-    if (release["versionCode"] != version_code(release["version"])
-            or not re.fullmatch(r"[a-f0-9]{64}", digest)
+    if (not re.fullmatch(r"[a-f0-9]{64}", digest)
             or release["url"] != BASE + key
             or type(release["size"]) is not int or not 0 < release["size"] <= 2147483647
             or type(release["minimumSdk"]) is not int or not 24 <= release["minimumSdk"] <= 10000
@@ -92,9 +88,9 @@ def publish(manifest, apk, store, directory):
     if previous:
         current = json.loads(previous[0])
         validate(current)
-        if current["release"]["versionCode"] > manifest["release"]["versionCode"]:
+        if version_parts(current["release"]["version"]) > version_parts(manifest["release"]["version"]):
             return "superseded"
-        if current["release"]["versionCode"] == manifest["release"]["versionCode"]:
+        if version_parts(current["release"]["version"]) == version_parts(manifest["release"]["version"]):
             if current != manifest:
                 raise RuntimeError("Refusing different bytes or metadata for the same Android version")
             return "already published"
@@ -113,16 +109,19 @@ def publish(manifest, apk, store, directory):
     if saved:
         newer = json.loads(saved[0])
         validate(newer)
-        if newer["release"]["versionCode"] > manifest["release"]["versionCode"]:
+        if version_parts(newer["release"]["version"]) > version_parts(manifest["release"]["version"]):
             return "superseded"
     raise RuntimeError("Conditional Android manifest publication could not be verified")
 
 
 def main(version, apk):
+    version_parts(version)
     tools = Path(os.environ["ANDROID_HOME"]) / "build-tools/36.0.0"
     subprocess.run([str(tools / "apksigner"), "verify", str(apk)], check=True, capture_output=True)
     badging = subprocess.check_output([str(tools / "aapt2"), "dump", "badging", str(apk)], text=True)
-    expected = f"package: name='ai.okou.android' versionCode='{version_code(version)}' versionName='{version}' "
+    root = Path(__file__).resolve().parents[3]
+    code = subprocess.check_output(["bash", str(root / "android/scripts/version-code.sh")], text=True).strip()
+    expected = f"package: name='ai.okou.android' versionCode='{code}' versionName='{version}' "
     if not badging.startswith(expected):
         raise ValueError("APK identity does not match its release")
     sdk = re.search(r"^sdkVersion:'(\d+)'$", badging, re.MULTILINE)
@@ -132,7 +131,7 @@ def main(version, apk):
                                      "--json", "body", "--jq", ".body"], text=True).strip()[:8000]
     digest = hashlib.sha256(apk.read_bytes()).hexdigest()
     manifest = {"schemaVersion": 1, "release": {
-        "version": version, "versionCode": version_code(version), "minimumSdk": int(sdk[1]),
+        "version": version, "minimumSdk": int(sdk[1]),
         "size": apk.stat().st_size, "sha256": digest,
         "url": f"{BASE}android-updates/releases/{version}/{digest}.apk", "notes": notes,
     }}

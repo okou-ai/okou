@@ -42,6 +42,30 @@ describe("Android installed-client compatibility at the API boundary", () => {
   );
 
   it.each([
+    ["0.9.9", "0.10.0"],
+    ["0.1.1000", "0.2.0"],
+    ["0.9007199254740992.0", "0.9007199254740993.0"],
+  ])(
+    "compares %s against floor %s by version components",
+    async (version, floor) => {
+      androidClientCompatibility.minimumSupportedVersion = floor;
+      const response = await createApp({
+        signal: context.signal,
+        routes: healthRoutes,
+      }).request("/health", {
+        headers: {
+          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_ANDROID,
+          [CLIENT_VERSION_HEADER]: version,
+        },
+      });
+      expect(response.status).toBe(426);
+      await expect(response.json()).resolves.toMatchObject({
+        minimumSupportedVersion: floor,
+      });
+    },
+  );
+
+  it.each([
     ["Android", "0.2.0"],
     ["Android", "1.0.0"],
     ["Android", "development"],

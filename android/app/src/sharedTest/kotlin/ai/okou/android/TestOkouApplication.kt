@@ -49,7 +49,6 @@ open class TestOkouApplication : OkouApplication() {
                             null,
                             AndroidUpdatesRelease(
                                 BuildConfig.VERSION_NAME,
-                                BuildConfig.VERSION_CODE.toLong(),
                                 24,
                                 1,
                                 "0".repeat(64),

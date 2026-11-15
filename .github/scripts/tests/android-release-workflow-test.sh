@@ -22,6 +22,7 @@ for value, expected in [('true', True), ('false', False), ('', False)]:
 checkout = next(step for step in job['steps'] if step.get('uses', '').startswith('actions/checkout'))
 assert checkout['with']['ref'] == '${{ needs.release-please.outputs.release_target }}'
 assert checkout['with']['persist-credentials'] is False
+assert checkout['with']['fetch-depth'] == 0
 assert job['environment'] == 'production'
 assert job['permissions'] == {'contents': 'write'}
 assert not any('artifact' in step.get('uses', '') for step in job['steps'])
