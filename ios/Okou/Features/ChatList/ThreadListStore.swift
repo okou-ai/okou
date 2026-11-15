@@ -64,6 +64,7 @@ final class ThreadListStore {
   private let resources: WorkspaceResources
   private let commands: ChatCommands
   private let didRefresh: @MainActor ([ChatThread]) -> Void
+  private let didChangeReadState: @MainActor () -> Void
   private let didLoadAgents: @MainActor ([AgentRecord]) -> Void
   private let didFail: @MainActor (Error) -> Void
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
@@ -109,6 +110,7 @@ final class ThreadListStore {
     client: APIClient, sync: ChatSync, commands: ChatCommands, resources: WorkspaceResources,
     didRefresh: @escaping @MainActor ([ChatThread]) -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
+    didChangeReadState: @escaping @MainActor () -> Void = {},
     didLoadAgents: @escaping @MainActor ([AgentRecord]) -> Void = { _ in },
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
@@ -134,6 +136,7 @@ final class ThreadListStore {
     self.resources = resources
     self.commands = commands
     self.didRefresh = didRefresh
+    self.didChangeReadState = didChangeReadState
     self.didLoadAgents = didLoadAgents
     self.didFail = didFail
     self.readRetrySleep = readRetrySleep
@@ -389,6 +392,7 @@ final class ThreadListStore {
       if threads[index].indicator == .unread { threads[index].indicator = nil }
     }
     didRefresh(threads)
+    didChangeReadState()
   }
 
   func setRead(_ thread: ChatThread, read: Bool) async -> Bool {
@@ -412,6 +416,8 @@ final class ThreadListStore {
           markRead(thread.id, through: watermark)
         } else {
           try await commands.markUnread(threadID: thread.id)
+          try Task.checkCancellation()
+          didChangeReadState()
         }
         try Task.checkCancellation()
         readRevision += 1
@@ -436,6 +442,8 @@ final class ThreadListStore {
     defer { markingAgentRead = false }
     await updateThread("agent-read", includingIndicators: true) { [self, commands] in
       try await commands.markAgentRead(agentID: agentID)
+      try Task.checkCancellation()
+      didChangeReadState()
       readRevision += 1
     }
   }

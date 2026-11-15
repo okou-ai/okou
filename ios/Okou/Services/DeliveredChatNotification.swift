@@ -6,7 +6,7 @@ struct DeliveredChatNotification: Sendable {
 }
 
 struct NotificationStateRequest: Encodable {
-  struct Receipt: Encodable {
+  struct Receipt: Encodable, Hashable {
     let identifier: String
     let threadId: String
     let runId: String
