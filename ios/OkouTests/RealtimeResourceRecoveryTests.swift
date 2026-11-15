@@ -527,34 +527,23 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
 
 @MainActor
 private final class ModelRecoveryFixture {
-  let server: RealtimeHTTPFixture
+  private let realtime: LoopbackRealtimeFixture
+  var server: RealtimeHTTPFixture { realtime.server }
   let http: WorkspaceStartupFixture
   private let bootstrap: WorkspaceModelBootstrap
   private let userID = "recovery-user-\(UUID().uuidString)"
   private let workspaceID = "recovery-workspace-\(UUID().uuidString)"
-  private var port: UInt16 = 0
-  var sdk: ARTRealtime?
+  var sdk: ARTRealtime? { realtime.sdk }
   var channel: String { "user-org:\(userID):\(workspaceID)" }
 
-  lazy var workspace = http.workspace(modelBootstrap: bootstrap) { [unowned self] options in
-    options.realtimeHost = "127.0.0.1"
-    options.restHost = "127.0.0.1"
-    options.port = Int(port)
-    options.tls = false
-    options.useBinaryProtocol = false
-    options.fallbackHosts = []
-    options.disconnectedRetryTimeout = 60
-    let realtime = ARTRealtime(options: options)
-    sdk = realtime
-    return realtime
-  }
+  lazy var workspace = http.workspace(modelBootstrap: bootstrap, createRealtime: realtime.factory)
 
   init(
     bootstrap: WorkspaceModelBootstrap,
     indicators: ChatHTTPFixture.Handler? = nil
   ) throws {
     self.bootstrap = bootstrap
-    server = try RealtimeHTTPFixture(clientID: userID, onProtocol: { _, _ in })
+    realtime = try LoopbackRealtimeFixture(clientID: userID)
     let token = try JSONSerialization.data(withJSONObject: [
       "keyName": "fixture.key", "timestamp": Int64(Date().timeIntervalSince1970 * 1000),
       "ttl": 3_600_000, "nonce": "fixture-nonce", "mac": "ZmFrZQ==",
@@ -565,7 +554,7 @@ private final class ModelRecoveryFixture {
   }
 
   func start() async throws {
-    port = try await server.start()
+    try await realtime.start()
     server.attachAutomatically()
     workspace.setPhase(.active)
     async let models: Void = workspace.newModelSelection.open()
@@ -577,6 +566,41 @@ private final class ModelRecoveryFixture {
 
   func close() async {
     await workspace.close().value
+    realtime.stop()
+  }
+}
+
+/// Owns SDK configuration and lifetime for workspace tests using the real loopback provider.
+@MainActor
+final class LoopbackRealtimeFixture {
+  let server: RealtimeHTTPFixture
+  private var port: UInt16 = 0
+  private(set) var sdk: ARTRealtime?
+
+  var factory: RealtimeService.ClientFactory {
+    { [unowned self] options in
+      options.realtimeHost = "127.0.0.1"
+      options.restHost = "127.0.0.1"
+      options.port = Int(port)
+      options.tls = false
+      options.useBinaryProtocol = false
+      options.fallbackHosts = []
+      options.disconnectedRetryTimeout = 60
+      let realtime = ARTRealtime(options: options)
+      sdk = realtime
+      return realtime
+    }
+  }
+
+  init(
+    clientID: String, onProtocol: @escaping @Sendable (Int, String) -> Void = { _, _ in }
+  ) throws {
+    server = try RealtimeHTTPFixture(clientID: clientID, onProtocol: onProtocol)
+  }
+
+  func start() async throws { port = try await server.start() }
+
+  func stop() {
     server.stop()
     sdk = nil
     XCTAssertEqual(server.errors, [])

@@ -146,6 +146,7 @@ final class WorkspaceStore {
   private var pruneAgain = false
   private var warmingTask: Task<Void, Never>?
   private var warmAgain = false
+  private var startupHistoryWarmingRequested = false
   private var closed = false
   private var isForeground = false
   private var startupGeneration = UUID()
@@ -224,7 +225,12 @@ final class WorkspaceStore {
         tokenProvider: { [client] in
           try await client.data("/api/realtime/token", method: "POST", body: Data("{}".utf8)).data
         },
-        onChange: { [weak self] in self?.requestRefresh($0) },
+        onChange: { [weak self] change in
+          guard let self, !closed, !needsUpgrade else { return }
+          // Manual history refreshes share this invalidation but must not start a global warm.
+          if case .history = change { warmAgain = true }
+          requestRefresh(change)
+        },
         onConnection: { [weak self] status in
           self?.connectionStatus = status
           self?.modelBootstrap?.connectionChanged(status)
@@ -382,6 +388,7 @@ final class WorkspaceStore {
       refreshGeneration = UUID()
       refreshTask?.cancel()
       refreshTask = nil
+      if let warmingTask, !warmingTask.isCancelled { warmAgain = true }
       warmingTask?.cancel()
       warmingTask = nil
       if list.cancelRefresh() { invalidations.insert(.threadList) }
@@ -492,7 +499,11 @@ final class WorkspaceStore {
       await selectedConversation?.modelSelection?.refresh()
     }
     await trimConversations(limit: conversationLimit)
-    requestHistoryWarming()
+    if batch.contains(.startup), !startupHistoryWarmingRequested {
+      startupHistoryWarmingRequested = true
+      warmAgain = true
+    }
+    if warmAgain { requestHistoryWarming() }
   }
 
   private func refreshComputerAuthorizations(_ batch: Set<ChatInvalidation>) async {

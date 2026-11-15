@@ -230,7 +230,7 @@ final class WorkspaceStoreTests: XCTestCase {
         try Task.checkCancellation()
       })
     defer { store.close() }
-    await store.refresh()
+    await store.refresh([.startup])
     XCTAssertNil(store.selectedConversation)
     await fulfillment(of: [warmingScheduled], timeout: 3)
     releaseWarming.open()
@@ -270,7 +270,7 @@ final class WorkspaceStoreTests: XCTestCase {
         try Task.checkCancellation()
       })
     defer { store.close() }
-    await store.refresh()
+    await store.refresh([.startup])
     await fulfillment(of: [warmingScheduled], timeout: 3)
     releaseWarming.open()
     try await waitForBusinessResult { store.needsUpgrade }
