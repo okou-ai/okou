@@ -3072,7 +3072,7 @@ export function createThreadClaimRunObjects(
         args,
         enforceBuiltInCredits:
           !(
-            officialWorkflowRun && args.agentRunMetadata?.workflowAutomationId
+            officialWorkflowRun && args.agentRunMetadata.workflowAutomationId
           ) && isBuiltInModelProviderType(modelProvider?.type),
         persisted: {
           body,
@@ -3161,7 +3161,7 @@ export function createThreadClaimRunObjects(
     return {
       ...input.runner,
       workflowAutomationId:
-        input.args.agentRunMetadata?.workflowAutomationId ?? null,
+        input.args.agentRunMetadata.workflowAutomationId ?? null,
     };
   });
   /** The run token makes runner input a command; its result is passed on. */
@@ -4585,7 +4585,7 @@ function piModelPreparationInput(
     catalog: args.catalog,
     piExecution: args.piExecution,
     codexServiceTier: args.codexServiceTier,
-    reasoningEffort: args.agentRunMetadata?.reasoningEffort,
+    reasoningEffort: args.agentRunMetadata.reasoningEffort,
   };
 }
 
@@ -5136,7 +5136,7 @@ function pendingAtomicLaunchPlan(
     billingCompletedAt: null,
     creditChargePolicy:
       context.rowsArgs.officialWorkflowProvenance &&
-      context.rowsArgs.agentRunMetadata?.workflowAutomationId
+      context.rowsArgs.agentRunMetadata.workflowAutomationId
         ? "official_workflow_free"
         : "standard",
   });
@@ -5424,21 +5424,20 @@ const commitThreadLaunch$ = command(
     });
     const thread = accepted.validatedThreadSession;
     const payload = args.persistence.payload;
-    const preparation =
-      thread && payload.reuseKey
-        ? set(prepareRunnerReusePreference$, {
-            runId: args.identity.runId,
-            runnerGroup: payload.runnerGroup,
-            profile: payload.profile,
-            reuseKey: payload.reuseKey,
-            thread: {
-              threadId: thread.chatThreadId,
-              userId: args.createArgs.userId,
-              orgId: args.createArgs.orgId,
-              predecessorRunId: thread.frameworkSessionRunId,
-            },
-          })
-        : Promise.resolve(undefined);
+    const preparation = thread
+      ? set(prepareRunnerReusePreference$, {
+          runId: args.identity.runId,
+          runnerGroup: payload.runnerGroup,
+          profile: payload.profile,
+          reuseKey: payload.reuseKey,
+          thread: {
+            threadId: thread.chatThreadId,
+            userId: args.createArgs.userId,
+            orgId: args.createArgs.orgId,
+            predecessorRunId: thread.frameworkSessionRunId,
+          },
+        })
+      : Promise.resolve(undefined);
     // Both reads and the guarded write belong to this attempt. Drain either
     // failure before returning; only publication establishes a durable launch.
     return await (async () => {
