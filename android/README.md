@@ -444,6 +444,33 @@ the first APK signed by the durable key.
 
 ### Signing And Upgrade Verification
 
+The direct-APK updater reads the public `GET /api/android/updates` contract,
+independently of authentication and the retained business-API 426 state. The
+API combines the source-owned compatibility floor with the published Android
+release; only its exact GET recovery path bypasses installed-client exclusion.
+`androidUpdateAnnouncements` controls optional announcements, while manual and
+required-update recovery remain available. Automatic checks run on foreground
+without holding the first native frame, at most once per day after success.
+
+Users initiate credential-free APK downloads inside Okou. The app streams into
+private files, validates byte count, SHA-256, package/version and signer, then
+offers installation through a narrowly scoped FileProvider and Android's
+installer. Android 8+ may require installation-source authorization. Activity
+recreation retains work; OS process termination can interrupt it. A later launch
+discards partial files and offers explicit retry, or revalidates a completed APK.
+No resident service, DownloadManager, silent installation or range resumption is
+implied. Installation handoff does not establish package replacement.
+
+After GitHub APK upload, `publish-android-update.py` publishes the same verified
+bytes and a conditional, monotonic manifest through the existing production
+static R2 configuration. The manifest is at
+`https://static.okou.io/android-updates/manifest.json`. APK writes are immutable;
+same-version conflicts fail, and an older publication cannot replace a newer
+manifest. Until the first successful publication, discovery reports unavailable.
+Previously installed clients without this updater still need an initial manual
+APK update. This feature does not raise the API floor or establish real
+production-key/device upgrade acceptance.
+
 Run the fixture suite with JDK 21 and the pinned SDK installed:
 
 ```bash

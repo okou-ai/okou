@@ -46,5 +46,8 @@ describe("selected Kotlin wire generation", () => {
     expect(files.get("ApiModels.kt")).toContain(
       'SerialName("ANDROID_UPDATE_REQUIRED")',
     );
+    expect(files.get("CanonicalApi.kt")).toContain(
+      "suspend fun `androidUpdates`(): Response<AndroidUpdates>",
+    );
   });
 });

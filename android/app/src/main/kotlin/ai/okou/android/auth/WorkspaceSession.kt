@@ -2,6 +2,7 @@ package ai.okou.android.auth
 
 import ai.okou.android.api.ApiClient
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.SignedTransferClient
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.ChatArchive
@@ -76,8 +77,10 @@ class CanonicalWorkspaceSession(
     tokens: WorkspaceTokenProvider,
     private val locale: InitializePreferencesRequestLocale = initialLocale(Locale.getDefault()),
     private val timezone: String = TimeZone.getDefault().id,
+    onUpdateRequired: (RequiredUpdate) -> Unit = {},
 ) : WorkspaceSession {
-    private val api = ApiClient(identity.apiOrigin.toHttpUrl(), tokens)
+    private val api =
+        ApiClient(identity.apiOrigin.toHttpUrl(), tokens, onUpdateRequired = onUpdateRequired)
     private val transfers = SignedTransferClient()
     private val archiveJson = Json {
         ignoreUnknownKeys = true

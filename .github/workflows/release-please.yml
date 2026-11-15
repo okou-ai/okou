@@ -585,6 +585,18 @@ jobs:
           }
           gh release upload "$ANDROID_TAG" "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk" --repo "$GITHUB_REPOSITORY"
 
+      - name: Publish verified Android update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
+        run: |
+          python3 .github/scripts/release/publish-android-update.py "$ANDROID_VERSION" \
+            "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk"
+
       - name: Calculate duration
         id: duration
         if: ${{ always() && steps.timer.outputs.start }}

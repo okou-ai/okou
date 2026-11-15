@@ -104,6 +104,7 @@ import { cronSyncSkillsRoutes } from "./routes/cron-sync-skills";
 import { cronTelegramCleanupRoutes } from "./routes/cron-telegram-cleanup";
 import { customConnectorsRoutes } from "./routes/custom-connectors";
 import { desktopUpdateRoutes } from "./routes/desktop-updates";
+import { androidUpdateRoutes } from "./routes/android-updates";
 import { wechatReceiverRoutes } from "./routes/wechat-receiver";
 import { integrationsWechatRoutes } from "./routes/integrations-wechat";
 import { discordGatewayRoutes } from "./routes/discord-gateway";
@@ -267,6 +268,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...authMeRoutes,
   ...cliAuthRoutes,
   ...desktopUpdateRoutes,
+  ...androidUpdateRoutes,
   ...githubOauthRoutes,
   ...userExportRoutes,
   ...cronProcessBackgroundJobsRoutes,

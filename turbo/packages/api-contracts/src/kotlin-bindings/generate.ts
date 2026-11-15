@@ -84,55 +84,59 @@ export function renderKotlinFiles(
   });
   if (new Set(names).size !== names.length)
     throw new Error("Duplicate Retrofit method");
-  const methods = routes.map(({ name, response, request, route }, index) => {
-    if (!/^(GET|POST|PUT|PATCH|DELETE)$/u.test(route.method)) {
-      throw new Error(`${name}: unsupported Retrofit route`);
-    }
-    if (
-      Boolean(request) !== (route.body !== undefined && !isNoBody(route.body))
-    )
-      throw new Error(`${name}: unsupported request/response binding`);
-    const responseType = types.find((binding) => {
-      return binding.name === response;
-    });
-    const requestType = types.find((binding) => {
-      return binding.name === request;
-    });
-    if (
-      !responseType ||
-      responseType.schema !== successResponse(route) ||
-      responseType.direction !== "output" ||
-      (request &&
-        (!requestType ||
-          requestType.schema !== route.body ||
-          requestType.direction !== "input"))
-    ) {
-      throw new Error(
-        `${name}: DTO binding does not match the canonical route schema`,
-      );
-    }
-    const path = pathBinding(route);
-    const query = queries[index]!;
-    const parameters = [
-      '@Header("Authorization") token: String',
-      ...path.parameters,
-      ...(request ? [`@Body body: ${typeName(request)}`] : []),
-      ...query.parameters,
-    ];
-    if (query.type) {
-      helpers.push(`internal suspend fun CanonicalApi.${identifier(name)}(${[
-        "token: String",
-        ...path.arguments.map((argument) => {
-          return `${argument}: String`;
-        }),
-        ...(request ? [`body: ${typeName(request)}`] : []),
-        `query: ${typeName(query.type.name)}`,
-      ].join(", ")}): Response<${typeName(response)}> =
-    ${identifier(`${name}Wire`)}(${["token", ...path.arguments, ...(request ? ["body"] : []), "query.toQueryParameters()"].join(", ")})`);
-      helpers.push(query.helper!);
-    }
-    return `    @${route.method}(${quote(path.path)})\n    suspend fun ${identifier(query.type ? `${name}Wire` : name)}(${parameters.join(", ")}): Response<${typeName(response)}>`;
-  });
+  const methods = routes.map(
+    ({ name, response, request, route, authenticated }, index) => {
+      if (!/^(GET|POST|PUT|PATCH|DELETE)$/u.test(route.method)) {
+        throw new Error(`${name}: unsupported Retrofit route`);
+      }
+      if (
+        Boolean(request) !== (route.body !== undefined && !isNoBody(route.body))
+      )
+        throw new Error(`${name}: unsupported request/response binding`);
+      const responseType = types.find((binding) => {
+        return binding.name === response;
+      });
+      const requestType = types.find((binding) => {
+        return binding.name === request;
+      });
+      if (
+        !responseType ||
+        responseType.schema !== successResponse(route) ||
+        responseType.direction !== "output" ||
+        (request &&
+          (!requestType ||
+            requestType.schema !== route.body ||
+            requestType.direction !== "input"))
+      ) {
+        throw new Error(
+          `${name}: DTO binding does not match the canonical route schema`,
+        );
+      }
+      const path = pathBinding(route);
+      const query = queries[index]!;
+      const parameters = [
+        ...(authenticated === false
+          ? []
+          : ['@Header("Authorization") token: String']),
+        ...path.parameters,
+        ...(request ? [`@Body body: ${typeName(request)}`] : []),
+        ...query.parameters,
+      ];
+      if (query.type) {
+        helpers.push(`internal suspend fun CanonicalApi.${identifier(name)}(${[
+          ...(authenticated === false ? [] : ["token: String"]),
+          ...path.arguments.map((argument) => {
+            return `${argument}: String`;
+          }),
+          ...(request ? [`body: ${typeName(request)}`] : []),
+          `query: ${typeName(query.type.name)}`,
+        ].join(", ")}): Response<${typeName(response)}> =
+    ${identifier(`${name}Wire`)}(${[...(authenticated === false ? [] : ["token"]), ...path.arguments, ...(request ? ["body"] : []), "query.toQueryParameters()"].join(", ")})`);
+        helpers.push(query.helper!);
+      }
+      return `    @${route.method}(${quote(path.path)})\n    suspend fun ${identifier(query.type ? `${name}Wire` : name)}(${parameters.join(", ")}): Response<${typeName(response)}>`;
+    },
+  );
   const constants = {
     CLIENT_TYPE: CLIENT_TYPE_ANDROID,
     TYPE_HEADER: CLIENT_TYPE_HEADER,

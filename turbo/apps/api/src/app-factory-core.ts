@@ -434,6 +434,14 @@ async function clientCompatibilityMiddleware(
   context: Context,
   next: Next,
 ): Promise<Response | void> {
+  // Installed clients must retain a public recovery path after business API exclusion.
+  if (
+    context.req.method === "GET" &&
+    context.req.path === "/api/android/updates"
+  ) {
+    await next();
+    return;
+  }
   const clientType = requestHeader(context, CLIENT_TYPE_HEADER);
   const clientVersion = requestHeader(context, CLIENT_VERSION_HEADER);
   if (

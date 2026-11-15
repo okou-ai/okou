@@ -84,6 +84,7 @@ class ApiClient(
     version: String = BuildConfig.VERSION_NAME,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
+    private val onUpdateRequired: (RequiredUpdate) -> Unit = {},
 ) : Closeable {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -238,6 +239,8 @@ class ApiClient(
                     Regex("\\d+\\.\\d+\\.\\d+").matches(it)
                 }
             required.compareAndSet(null, RequiredUpdate(minimum))
+            // In-flight responses can report a stronger floor during an API rollout.
+            onUpdateRequired(RequiredUpdate(minimum))
             throw ApiFailure.UpdateRequired(checkNotNull(required.value))
         }
         val envelope = errorEnvelope<ApiError>(error.envelope)

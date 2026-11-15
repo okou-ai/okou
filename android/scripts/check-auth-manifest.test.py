@@ -17,6 +17,10 @@ def fixture(package):
     ET.SubElement(app, "provider", {A + "name": policy["SHARED"], A + "exported": "false",
                                   A + "enabled": "false", A + "grantUriPermissions": "false",
                                   A + "authorities": package + ".clerk.shared-session-sync"})
+    updates = ET.SubElement(app, "provider", {A + "name": policy["UPDATES"], A + "exported": "false",
+                            A + "grantUriPermissions": "true", A + "authorities": package + ".updates"})
+    ET.SubElement(updates, "meta-data", {A + "name": "android.support.FILE_PROVIDER_PATHS",
+                                       A + "resource": "@xml/update_paths"})
     launcher = ET.SubElement(app, "activity", {A + "name": "ai.okou.android.MainActivity", A + "exported": "true"})
     route = ET.SubElement(launcher, "intent-filter")
     ET.SubElement(route, "action", {A + "name": "android.intent.action.MAIN"})

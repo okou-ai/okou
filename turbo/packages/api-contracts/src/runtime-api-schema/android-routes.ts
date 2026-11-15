@@ -4,13 +4,16 @@ import type { RuntimeApiRouteBinding } from "./routes";
 
 /** The generated service and installed-reader inventory share canonical references. */
 export const androidRouteBindings: readonly RuntimeApiRouteBinding[] =
-  kotlinRouteBindings.map(({ name, route }) => {
+  kotlinRouteBindings.map(({ name, route, authenticated }) => {
     return {
       id: `android.${name}`,
       owner: "android",
       route: {
         ...route,
-        responses: { ...route.responses, 426: androidUpgradeRequiredSchema },
+        responses:
+          authenticated === false
+            ? route.responses
+            : { ...route.responses, 426: androidUpgradeRequiredSchema },
       },
     };
   });

@@ -103,3 +103,4 @@ else:
 
 print('Android release selection, publication and failure propagation: ok')
 PY
+python3 "$root/.github/scripts/tests/android-update-publication.test.py"

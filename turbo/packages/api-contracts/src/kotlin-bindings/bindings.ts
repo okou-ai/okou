@@ -4,6 +4,7 @@ import { orgContract } from "../contracts/org-routes";
 import { userPreferencesContract } from "../contracts/user-preferences";
 import { apiErrorSchema } from "../contracts/api-error";
 import { androidUpgradeRequiredSchema } from "../contracts/android-client-compatibility";
+import { androidUpdatesContract } from "../contracts/android-updates";
 import {
   chatThreadsContract,
   chatThreadSnapshotArchiveSchema,
@@ -22,6 +23,7 @@ import { chatInputStatusContract } from "../contracts/chat-input-status";
 import { onboardingStatusContract } from "../contracts/onboarding";
 
 export interface KotlinRouteBinding {
+  readonly authenticated?: boolean;
   readonly name: string;
   readonly response: string;
   readonly request?: string;
@@ -95,6 +97,12 @@ const historyReadBindings: readonly KotlinRouteBinding[] = [
 /** Only routes used by the installed native client, not every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   {
+    name: "androidUpdates",
+    response: "AndroidUpdates",
+    authenticated: false,
+    route: androidUpdatesContract.get,
+  },
+  {
     name: "createThread",
     request: "CreateThreadRequest",
     response: "CreatedThread",
@@ -156,6 +164,11 @@ export interface KotlinTypeBinding {
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
+  {
+    name: "AndroidUpdates",
+    schema: androidUpdatesContract.get.responses[200],
+    direction: "output",
+  },
   {
     name: "CreateThreadRequest",
     schema: chatThreadsContract.create.body,

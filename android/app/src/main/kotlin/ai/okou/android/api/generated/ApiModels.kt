@@ -20,6 +20,24 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 
+@Serializable
+data class AndroidUpdatesRelease(
+    val `version`: String,
+    val `versionCode`: Long,
+    val `minimumSdk`: Long,
+    val `size`: Long,
+    val `sha256`: String,
+    val `url`: String,
+    val `notes`: String,
+)
+
+@Serializable
+data class AndroidUpdates(
+    val `optionalUpdatesEnabled`: Boolean,
+    val `minimumSupportedVersion`: String?,
+    val `release`: AndroidUpdatesRelease,
+)
+
 @Serializable(with = CreateThreadRequestConnectorSelectionsItemTargetSerializer::class)
 sealed interface CreateThreadRequestConnectorSelectionsItemTarget
 
