@@ -475,8 +475,8 @@ final class NotificationService {
             identifier: $0.identifier, threadId: $0.destination.threadId,
             runId: $0.destination.runId)
         }
-        // Removing an already reconciled OS receipt creates no new server work. A genuine
-        // read/indicator change still advances revision, even when the JSON body is unchanged.
+        // Dismissing retained OS receipts creates no new server work. A genuine read/indicator
+        // change still advances revision, even when the JSON body is unchanged.
         if let reconciledNotificationState,
           reconciledNotificationState.revision == revision,
           Set(receipts).isSubset(of: reconciledNotificationState.receipts)
@@ -490,6 +490,7 @@ final class NotificationService {
             revision: revision, receipts: [])
           return
         }
+        var retainedReceipts = Set(receipts)
         for offset in stride(from: 0, to: max(1, current.count), by: 500) {
           let batch = Array(current.dropFirst(offset).prefix(500))
           let request = NotificationStateRequest(
@@ -516,12 +517,14 @@ final class NotificationService {
             Set(response.removeIdentifiers).isSubset(of: submitted)
           else { throw APIClientError.incompatibleData }
           system.removeDeliveredNotifications(identifiers: response.removeIdentifiers)
+          let removed = Set(response.removeIdentifiers)
+          retainedReceipts = retainedReceipts.filter { !removed.contains($0.identifier) }
           // Older APIs expose chat unread counts, which must not restore an acknowledged badge.
           await enqueueBadgeCount(response.badgeCount ?? 0).value
           guard ownsRequest() else { return }
         }
         reconciledNotificationState = ReconciledNotificationState(
-          revision: revision, receipts: Set(receipts))
+          revision: revision, receipts: retainedReceipts)
       }
     } catch {
       guard ownsRequest() else { return }

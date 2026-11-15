@@ -10,6 +10,7 @@ import XCTest
 final class NotificationStateTests: XCTestCase {
   func testReconciliationClearsReadReceiptsAndUsesTheDeviceBadgeCount() async throws {
     let system = NotificationSystemFixture()
+    let requests = Mutex(0)
     system.delivered = [
       try receipt("read", user: "current"),
       try receipt("unread", user: "current", run: 2),
@@ -21,6 +22,7 @@ final class NotificationStateTests: XCTestCase {
       let body = try JSONDecoder().decode(
         SubmittedNotifications.self, from: chatRequestBody(request))
       XCTAssertEqual(body.notifications.map(\.identifier), ["read", "unread"])
+      requests.withLock { $0 += 1 }
       return ChatHTTPResponse(
         body: #"{"unreadCount":12,"badgeCount":7,"removeIdentifiers":["read"]}"#)
     }
@@ -29,6 +31,12 @@ final class NotificationStateTests: XCTestCase {
     await service.refreshNotificationState(userID: "current")
     XCTAssertEqual(system.delivered.map(\.identifier), ["unread"])
     XCTAssertEqual(system.badgeCount, 7)
+    await service.refreshNotificationState(userID: "current")
+    XCTAssertEqual(requests.withLock { $0 }, 1)
+    system.delivered.insert(try receipt("read", user: "current"), at: 0)
+    await service.refreshNotificationState(userID: "current")
+    XCTAssertEqual(requests.withLock { $0 }, 2)
+    XCTAssertEqual(system.delivered.map(\.identifier), ["unread"])
   }
 
   func testSigningOutClearsManagedNotificationsAndTheIconBadge() async throws {

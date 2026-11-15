@@ -1056,8 +1056,9 @@ final class WorkspaceStore {
     guard !closed else { return }
     let state = Dictionary(
       uniqueKeysWithValues: threads.map {
-        ($0.id, NotificationReadState(
-          agentID: $0.agentID, hidden: $0.isHidden, muted: $0.isMuted, unreadAt: $0.unreadAt))
+        let state = NotificationReadState(
+          agentID: $0.agentID, hidden: $0.isHidden, muted: $0.isMuted, unreadAt: $0.unreadAt)
+        return ($0.id, state)
       })
     let changed = notificationReadState.map { $0 != state } ?? false
     notificationReadState = state
