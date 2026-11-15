@@ -91,6 +91,7 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 from mitmproxy import http
 
@@ -204,13 +205,19 @@ class _FlowState:
     result_published: bool = False
 
 
+class _ValidationAdmission(NamedTuple):
+    """One event loop and the validation permit it owns."""
+
+    loop: asyncio.AbstractEventLoop
+    semaphore: asyncio.Semaphore
+
+
 _entries: OrderedDict[_CacheKey, _CacheEntry] = OrderedDict()
 _in_flight: dict[_CacheKey, _InFlight] = {}
 _owned_body_bytes = 0
 _active_flow_states = 0
 _process_hmac_key = secrets.token_bytes(32)
-_validation_loop: asyncio.AbstractEventLoop | None = None
-_validation_semaphore: asyncio.Semaphore | None = None
+_validation_admission: _ValidationAdmission | None = None
 _validation_executor: ThreadPoolExecutor | None = None
 _validation_shut_down = False
 
@@ -808,12 +815,11 @@ def _unwrap_response_stream(flow: http.HTTPFlow, state: _FlowState) -> None:
 
 
 def _validation_semaphore_for_running_loop() -> asyncio.Semaphore:
-    global _validation_loop, _validation_semaphore
+    global _validation_admission
     loop = asyncio.get_running_loop()
-    if _validation_loop is not loop or _validation_semaphore is None:
-        _validation_loop = loop
-        _validation_semaphore = asyncio.Semaphore(1)
-    return _validation_semaphore
+    if _validation_admission is None or _validation_admission.loop is not loop:
+        _validation_admission = _ValidationAdmission(loop, asyncio.Semaphore(1))
+    return _validation_admission.semaphore
 
 
 async def _validate_response_off_loop(
@@ -1036,7 +1042,7 @@ def shutdown() -> None:
 def reset_for_tests() -> None:
     """Reset process cache ownership between tests."""
     global _active_flow_states, _owned_body_bytes, _process_hmac_key
-    global _validation_loop, _validation_semaphore, _validation_shut_down
+    global _validation_admission, _validation_shut_down
     shutdown()
     for in_flight in _in_flight.values():
         if not in_flight.future.done():
@@ -1046,6 +1052,5 @@ def reset_for_tests() -> None:
     _owned_body_bytes = 0
     _active_flow_states = 0
     _process_hmac_key = secrets.token_bytes(32)
-    _validation_loop = None
-    _validation_semaphore = None
+    _validation_admission = None
     _validation_shut_down = False
