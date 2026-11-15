@@ -17,10 +17,10 @@ import {
 } from "../utils.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 import {
-  captureTextReadingAnchor,
-  measureTextReadingAnchor,
-  type TextReadingAnchor,
-} from "./chat-text-reading-anchor.ts";
+  captureBlockReadingAnchor,
+  measureBlockReadingAnchor,
+  type BlockReadingAnchor,
+} from "./chat-block-reading-anchor.ts";
 
 const L = logger("AutoScroll");
 const AT_BOTTOM_THRESHOLD_PX = 10;
@@ -329,7 +329,7 @@ function sameScrollPosition(
 
 interface ReadingBookmark {
   readonly eventId: string;
-  readonly text: TextReadingAnchor;
+  readonly block: BlockReadingAnchor;
 }
 
 interface HiddenScrollLayout {
@@ -415,21 +415,21 @@ function captureReadingBookmark(
     return;
   }
   const anchor = scrollAnchorForEvent(container, position.targetEventId);
-  const text = anchor ? captureTextReadingAnchor(container, anchor) : null;
-  runtime.readingBookmark = text
-    ? { eventId: position.targetEventId, text }
+  const block = anchor ? captureBlockReadingAnchor(container, anchor) : null;
+  runtime.readingBookmark = block
+    ? { eventId: position.targetEventId, block }
     : null;
   runtime.geometry = scrollGeometry(container, runtime);
 }
 
-function restoreTextPoint(
+function restoreBlockPoint(
   runtime: ScrollRuntime,
   container: HTMLElement,
   bookmark: ReadingBookmark,
 ): boolean {
   const anchor = scrollAnchorForEvent(container, bookmark.eventId);
   const offset = anchor
-    ? measureTextReadingAnchor(container, anchor, bookmark.text)
+    ? measureBlockReadingAnchor(container, anchor, bookmark.block)
     : null;
   if (offset === null) {
     return false;
@@ -437,12 +437,12 @@ function restoreTextPoint(
   applyScrollTop(
     runtime,
     container,
-    container.scrollTop + offset - bookmark.text.viewportOffsetTop,
+    container.scrollTop + offset - bookmark.block.viewportOffsetTop,
   );
   return true;
 }
 
-/** A missing/changed text point keeps the native result, never an unrelated alias. */
+/** A missing structural block leaves the native result untouched. */
 function restoreReadingBookmark(
   runtime: ScrollRuntime,
   container: HTMLElement,
@@ -452,8 +452,7 @@ function restoreReadingBookmark(
     return false;
   }
   if (hasScrollViewport(container)) {
-    restoreTextPoint(runtime, container, bookmark);
-    // A failed context check waits for a real capture instead of guessing.
+    restoreBlockPoint(runtime, container, bookmark);
     runtime.geometry = scrollGeometry(container, runtime);
   }
   return true;
@@ -468,7 +467,7 @@ function preserveReadingBookmark(
   if (bookmark) {
     const anchor = scrollAnchorForEvent(container, bookmark.eventId);
     const offset = anchor
-      ? measureTextReadingAnchor(container, anchor, bookmark.text)
+      ? measureBlockReadingAnchor(container, anchor, bookmark.block)
       : null;
     if (
       offset !== null &&
@@ -476,10 +475,10 @@ function preserveReadingBookmark(
         runtime.geometry,
         scrollGeometry(container, runtime),
       ) ||
-        Math.abs(offset - bookmark.text.viewportOffsetTop) <= 1)
+        Math.abs(offset - bookmark.block.viewportOffsetTop) <= 1)
     ) {
-      // The logical point can outgrow a landscape scrollport. Another toolbar
-      // opening is not reader takeover and must not select a different line.
+      // Keep the same block across a short landscape viewport or another
+      // toolbar opening. Only actual reader scrolling chooses a new block.
       return;
     }
   }
@@ -1470,10 +1469,10 @@ function createHiddenScrollLayoutSignals(
         signal.throwIfAborted();
       } else {
         runtime.readingBookmark = snapshot.readingBookmark;
-        const restoredText =
+        const restoredBlock =
           snapshot.readingBookmark !== null &&
-          restoreTextPoint(runtime, container, snapshot.readingBookmark);
-        if (!restoredText) {
+          restoreBlockPoint(runtime, container, snapshot.readingBookmark);
+        if (!restoredBlock) {
           runtime.readingBookmark = null;
           if (!scrollToPosition(runtime, container, snapshot.position)) {
             return;

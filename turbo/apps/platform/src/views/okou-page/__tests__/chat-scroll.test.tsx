@@ -1397,16 +1397,6 @@ async function openSemanticReadingFixture(captureInitially = true) {
       },
     });
   }
-  vi.spyOn(Range.prototype, "getClientRects").mockImplementation(function (
-    this: Range,
-  ) {
-    const paragraph = this.startContainer.parentElement?.closest("p");
-    const boxes =
-      paragraph && body.contains(paragraph)
-        ? [rect(paragraphRect(paragraph).top, 24, 8)]
-        : [];
-    return boxes as unknown as DOMRectList;
-  });
   const scrollToPassage = () => {
     scrollFromUser(
       container,
@@ -1500,7 +1490,7 @@ test("The narrow reveal restores its live pre-hide prose point after hidden refl
   });
 });
 
-test("Repeated narrow reveals retain a logical glyph that no longer fits the short viewport", async () => {
+test("Repeated narrow reveals retain a paragraph that no longer fits the short viewport", async () => {
   context.mocks.browser.matchMedia(() => {
     return false;
   });
@@ -1558,7 +1548,7 @@ test.each(["history", "tail"] as const)(
 );
 
 test.each(["font", "resize", "resource", "commit"] as const)(
-  "Restore the same prose glyph after native reflow at a %s completion",
+  "Restore the same paragraph after native reflow at a %s completion",
   async (cause) => {
     const fixture = await openSemanticReadingFixture();
     const complete =
@@ -1754,7 +1744,7 @@ test.each(["wheel", "thumb"] as const)(
   },
 );
 
-test("Motionless visible input retains the prose glyph for later reflow", async () => {
+test("Motionless visible input retains the paragraph for later reflow", async () => {
   const fixture = await openSemanticReadingFixture();
   fireEvent.wheel(fixture.container, { deltaY: 60 });
   fixture.reflow(275, 75);
@@ -1797,7 +1787,7 @@ test("An explicit event jump supersedes the old prose bookmark", async () => {
 });
 
 test.each(["height", "width"] as const)(
-  "A zero-%s pane defers its semantic correction until it has geometry",
+  "A zero-%s pane defers block restoration until it has geometry",
   async (dimension) => {
     const fixture = await openSemanticReadingFixture();
     if (dimension === "height") {
