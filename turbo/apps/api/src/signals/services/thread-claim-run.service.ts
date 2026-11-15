@@ -856,11 +856,9 @@ type ThreadRunnerFacts = Omit<RunnerLaunchInputArgs, "workflowAutomationId">;
 
 interface RunPlan {
   readonly args: ProductRunArgs;
-  readonly timing: ApiDispatchTimingCollector;
   readonly enforceBuiltInCredits: boolean;
   readonly runner: ThreadRunnerFacts;
   readonly persisted: PendingRunContext;
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
 }
 
 function unreadyQueueHeadRejection(
@@ -2765,16 +2763,13 @@ export function createThreadClaimRunObjects(
     runArgs$: selectedRunContextRunArgs$,
     shared: selectedRunContextShared,
   } = graph;
-  const contextInput$ = computed(async (get) => {
+  const contextArgs$ = computed(async (get) => {
     const selected = await get(selectedRunContextRunArgs$);
     if (!selected || "status" in selected) {
       throw new Error("Run context requires an authorized ready input");
     }
     get(db$); // Preserve initialization and the graph dependency.
-    return {
-      args: selected.args,
-      timing: selected.input.timing,
-    };
+    return selected.args;
   });
   const execution$ = computed(async (get) => {
     // Agent/session resolution has no dependency on connector firewall policies
@@ -2808,23 +2803,23 @@ export function createThreadClaimRunObjects(
     );
   });
   const body$ = computed(async (get) => {
-    const [input, resolved, bodyEnvironment] = await Promise.all([
-      get(contextInput$),
+    const [args, resolved, bodyEnvironment] = await Promise.all([
+      get(contextArgs$),
       get(execution$),
       get(bootstrap.bodyEnvironment$),
     ]);
     if (isRouteError(resolved)) {
       return resolved;
     }
-    if (resolved.orgId !== input.args.orgId) {
+    if (resolved.orgId !== args.orgId) {
       return notFound("Resource not found");
     }
-    return { ...initialRunBody(input.args), ...bodyEnvironment };
+    return { ...initialRunBody(args), ...bodyEnvironment };
   });
   const runBodyBodyContext$ = computed(async (get) => {
-    const [input, resolved, body, requestedFramework, featureSwitchContext] =
+    const [args, resolved, body, requestedFramework, featureSwitchContext] =
       await Promise.all([
-        get(contextInput$),
+        get(contextArgs$),
         get(execution$),
         get(body$),
         get(runFramework$),
@@ -2844,7 +2839,7 @@ export function createThreadClaimRunObjects(
       body,
       requestedFramework,
       featureSwitchContext,
-      connectorScope: connectorScopeFromCreateArgs(input.args),
+      connectorScope: connectorScopeFromCreateArgs(args),
     };
   });
   const body = { bodyContext$: runBodyBodyContext$, framework$: runFramework$ };
@@ -2908,7 +2903,7 @@ export function createThreadClaimRunObjects(
       routePricing: runRoutePricingFromSnapshot(
         {
           modelProvider,
-          serviceTier: (await get(contextInput$)).args.codexServiceTier,
+          serviceTier: (await get(contextArgs$)).codexServiceTier,
         },
         await get(bootstrap.modelPricing$),
       ),
@@ -2935,7 +2930,7 @@ export function createThreadClaimRunObjects(
   const { bodyContext$ } = body;
   const { runtimeContext$ } = runContextRuntime;
   const executionPlan$ = computed(async (get) => {
-    const { args } = await get(contextInput$);
+    const args = await get(contextArgs$);
     const gate = enforceCaptureNetworkBodiesGate(
       args.orgId,
       initialRunBody(args).captureNetworkBodies,
@@ -3335,7 +3330,7 @@ export function createThreadClaimRunObjects(
       if ("status" in context) {
         return context;
       }
-      const { args, timing } = await get(contextInput$);
+      const args = await get(contextArgs$);
       const launchSnapshot = {
         schemaVersion: 5 as const,
         framework:
@@ -3352,14 +3347,12 @@ export function createThreadClaimRunObjects(
       const modelProvider = context.modelProvider;
       return {
         args,
-        timing,
         enforceBuiltInCredits:
           args.enforceBuiltInCredits === true &&
           !(
             officialWorkflowRun && args.agentRunMetadata?.workflowAutomationId
           ) &&
           isBuiltInModelProviderType(modelProvider?.type),
-        officialWorkflowRun,
         persisted: {
           body,
           selectedImageModel,
