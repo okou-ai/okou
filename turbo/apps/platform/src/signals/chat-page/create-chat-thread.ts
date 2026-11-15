@@ -3917,12 +3917,14 @@ const createChatForwardComposerSignals: ChatForwardComposerFactory = (
   target: ChatForwardTarget,
   forward: ChatForwardContext,
   onOptimisticSend: () => void,
+  projectId?: string,
 ) => {
   if (target.kind === "agent") {
     const composer = createForwardAgentComposerSignals(
       target.id,
       forward,
       onOptimisticSend,
+      projectId,
     );
     const prepare$ = command(
       ({ set }, signal: AbortSignal): ChatForwardComposerState => {
