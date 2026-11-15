@@ -18,7 +18,7 @@ final class ChatModelResourceTests: XCTestCase {
     }
     let workspace = WorkspaceStore(
       client: fixture.client, webURL: fixture.baseURL,
-      modelBootstrap: WorkspaceModelBootstrap {
+      modelBootstrap: WorkspaceReadBootstrap {
         waiting.fulfill()
         await deadline.wait()
       })

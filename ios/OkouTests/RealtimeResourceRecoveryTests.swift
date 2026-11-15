@@ -15,7 +15,7 @@ final class RealtimeResourceRecoveryTests: XCTestCase {
     let deadline = ModelResponseGate()
     addTeardownBlock { deadline.open() }
     let waiting = expectation(description: "Model consumers are waiting for initial subscriptions")
-    let bootstrap = WorkspaceModelBootstrap {
+    let bootstrap = WorkspaceReadBootstrap {
       waiting.fulfill()
       await deadline.wait()
     }
@@ -45,7 +45,7 @@ final class RealtimeResourceRecoveryTests: XCTestCase {
     let deadline = ModelResponseGate()
     addTeardownBlock { deadline.open() }
     let waiting = expectation(description: "The bounded subscription wait has started")
-    let bootstrap = WorkspaceModelBootstrap {
+    let bootstrap = WorkspaceReadBootstrap {
       waiting.fulfill()
       await deadline.wait()
     }
@@ -167,7 +167,7 @@ final class RealtimeResourceRecoveryTests: XCTestCase {
   }
 
   private func makeFixture(
-    modelBootstrap: WorkspaceModelBootstrap? = nil
+    modelBootstrap: WorkspaceReadBootstrap? = nil
   ) async throws -> RealtimeResourceHarness {
     let fixture = try RealtimeResourceHarness(owner: self, modelBootstrap: modelBootstrap)
     addTeardownBlock { @MainActor in
@@ -198,7 +198,7 @@ private final class RealtimeResourceHarness {
   let http: ChatHTTPFixture
   let metadata: RealtimeMetadataFixture
   private let resources: WorkspaceResources
-  private let modelBootstrap: WorkspaceModelBootstrap?
+  private let modelBootstrap: WorkspaceReadBootstrap?
   let userID: String
   let workspaceID: String
   var workspaceChannel: String { "user-org:\(userID):\(workspaceID)" }
@@ -263,7 +263,7 @@ private final class RealtimeResourceHarness {
       return realtime
     })
 
-  init(owner: XCTestCase, modelBootstrap: WorkspaceModelBootstrap?) throws {
+  init(owner: XCTestCase, modelBootstrap: WorkspaceReadBootstrap?) throws {
     self.modelBootstrap = modelBootstrap
     let userID = "realtime-user-\(UUID().uuidString)"
     self.userID = userID
@@ -350,7 +350,7 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
     let recoveryDeadline = ModelResponseGate()
     let recovering = Mutex(false)
     let waiting = expectation(description: "Recovery model reads await subscriptions")
-    let bootstrap = WorkspaceModelBootstrap {
+    let bootstrap = WorkspaceReadBootstrap {
       if recovering.withLock({ $0 }) {
         waiting.fulfill()
         await recoveryDeadline.wait()
@@ -390,7 +390,7 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
     let recoveryDeadline = ModelResponseGate()
     let recovering = Mutex(false)
     let waiting = expectation(description: "Recovery's bounded wait has started")
-    let bootstrap = WorkspaceModelBootstrap {
+    let bootstrap = WorkspaceReadBootstrap {
       if recovering.withLock({ $0 }) {
         waiting.fulfill()
         await recoveryDeadline.wait()
@@ -430,7 +430,7 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
   }
 
   func testForegroundWithHealthySubscriptionsRevalidatesOnce() async throws {
-    let fixture = try ModelRecoveryFixture(bootstrap: WorkspaceModelBootstrap())
+    let fixture = try ModelRecoveryFixture(bootstrap: WorkspaceReadBootstrap())
     addTeardownBlock { await fixture.close() }
     try await fixture.start()
     await fixture.workspace.resumePendingRefresh()?.value
@@ -454,7 +454,7 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
   }
 
   func testResumedChannelPreservesTheBaselineAndStillAppliesPreferenceNotifications() async throws {
-    let fixture = try ModelRecoveryFixture(bootstrap: WorkspaceModelBootstrap())
+    let fixture = try ModelRecoveryFixture(bootstrap: WorkspaceReadBootstrap())
     addTeardownBlock { await fixture.close() }
     try await fixture.start()
     fixture.http.setRemoteModel("claude-model")
@@ -478,7 +478,7 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
   {
     let remote = Mutex("active")
     let fixture = try ModelRecoveryFixture(
-      bootstrap: WorkspaceModelBootstrap(),
+      bootstrap: WorkspaceReadBootstrap(),
       indicators: { _ in
         let state = remote.withLock { $0 }
         let thread = ConversationHistoryFixture.threadID
@@ -530,7 +530,7 @@ private final class ModelRecoveryFixture {
   private let realtime: LoopbackRealtimeFixture
   var server: RealtimeHTTPFixture { realtime.server }
   let http: WorkspaceStartupFixture
-  private let bootstrap: WorkspaceModelBootstrap
+  private let bootstrap: WorkspaceReadBootstrap
   private let userID = "recovery-user-\(UUID().uuidString)"
   private let workspaceID = "recovery-workspace-\(UUID().uuidString)"
   var sdk: ARTRealtime? { realtime.sdk }
@@ -539,7 +539,7 @@ private final class ModelRecoveryFixture {
   lazy var workspace = http.workspace(modelBootstrap: bootstrap, createRealtime: realtime.factory)
 
   init(
-    bootstrap: WorkspaceModelBootstrap,
+    bootstrap: WorkspaceReadBootstrap,
     indicators: ChatHTTPFixture.Handler? = nil
   ) throws {
     self.bootstrap = bootstrap

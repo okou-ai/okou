@@ -11,7 +11,7 @@ final class WorkspaceStartupModelTests: XCTestCase {
     let deadline = ModelResponseGate()
     let fixture = WorkspaceStartupFixture()
     let workspace = fixture.workspace(
-      modelBootstrap: WorkspaceModelBootstrap {
+      modelBootstrap: WorkspaceReadBootstrap {
         await deadline.wait()
       })
     let models = Task.immediate { await workspace.newModelSelection.open() }
@@ -87,7 +87,7 @@ final class WorkspaceStartupModelTests: XCTestCase {
         await release.wait()
       }
     })
-    let workspace = fixture.workspace(modelBootstrap: WorkspaceModelBootstrap())
+    let workspace = fixture.workspace(modelBootstrap: WorkspaceReadBootstrap())
     workspace.selectedThreadID = ConversationHistoryFixture.threadID
     let models = Task.immediate { await workspace.newModelSelection.open() }
     let startup = Task {
@@ -191,7 +191,7 @@ final class WorkspaceStartupFixture: Sendable {
 
   @MainActor
   func workspace(
-    modelBootstrap: WorkspaceModelBootstrap? = nil,
+    modelBootstrap: WorkspaceReadBootstrap? = nil,
     createRealtime: RealtimeService.ClientFactory? = nil
   ) -> WorkspaceStore {
     WorkspaceStore(

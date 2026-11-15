@@ -102,6 +102,10 @@ final class ChatProjectStore {
 
   func activate() async {
     guard !closed, !blocked, !Task.isCancelled else { return }
+    do { try resources.retryProjects() } catch {
+      didFail(error)
+      return
+    }
     if !active, subscription == nil {
       do {
         subscription = try stateStore.watch(listValue) { [weak self] in

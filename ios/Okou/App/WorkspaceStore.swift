@@ -14,7 +14,8 @@ final class WorkspaceStore {
   private let sync: ChatSync
   private let projectDisclosure: ProjectDisclosureStorage?
   private let resources: WorkspaceResources
-  private let modelBootstrap: WorkspaceModelBootstrap?
+  private let modelBootstrap: WorkspaceReadBootstrap?
+  private let projectBootstrap: WorkspaceReadBootstrap?
   private let createRealtime: RealtimeService.ClientFactory?
   private let commands: ChatCommands
   private let conversationLimit: Int
@@ -172,7 +173,8 @@ final class WorkspaceStore {
     historyWarmingSleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
-    modelBootstrap: WorkspaceModelBootstrap? = nil,
+    modelBootstrap: WorkspaceReadBootstrap? = nil,
+    projectBootstrap: WorkspaceReadBootstrap? = nil,
     createRealtime: RealtimeService.ClientFactory? = nil,
     didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
@@ -187,9 +189,11 @@ final class WorkspaceStore {
     let sync = sharedSync ?? ChatSync(client: client, cache: cache)
     self.sync = sync
     self.modelBootstrap = modelBootstrap
+    self.projectBootstrap = projectBootstrap
     self.createRealtime = createRealtime
     resources = WorkspaceResources(
       client: client, sync: sync, sleep: readRetrySleep, modelBootstrap: modelBootstrap,
+      projectBootstrap: projectBootstrap,
       lifecycleTasks: lifecycleTasks)
     self.readRetrySleep = readRetrySleep
     self.historyWarmingSleep = historyWarmingSleep
@@ -243,6 +247,7 @@ final class WorkspaceStore {
         onConnection: { [weak self] status in
           self?.connectionStatus = status
           self?.modelBootstrap?.connectionChanged(status)
+          self?.projectBootstrap?.connectionChanged(status)
         },
         createRealtime: createRealtime, lifecycleTasks: lifecycleTasks)
       self.realtime = realtime
@@ -393,6 +398,7 @@ final class WorkspaceStore {
     realtime?.setForeground(active)
     if phase == .background {
       modelBootstrap?.beginRecovery()
+      projectBootstrap?.beginRecovery()
       refreshSuspended = true
       refreshGeneration = UUID()
       refreshTask?.cancel()
@@ -408,6 +414,9 @@ final class WorkspaceStore {
       refreshSuspended = false
       if resuming, connectionStatus == .connected {
         _ = modelBootstrap?.subscriptionsReady()
+      }
+      if resuming, realtime?.hasContinuousSubscription == true {
+        projectBootstrap?.resumeContinuously()
       }
     }
     newComposer.setForeground(active)
@@ -443,6 +452,11 @@ final class WorkspaceStore {
     guard !closed, !needsUpgrade else { return }
     if invalidation == .realtimeResume || invalidation == .realtimeGap {
       modelBootstrap?.beginRecovery()
+    }
+    if invalidation == .realtimeGap {
+      projectBootstrap?.requireRecoveryRead()
+    } else if invalidation == .realtimeResume {
+      projectBootstrap?.resumeContinuously()
     }
     invalidations.insert(invalidation)
     resumePendingRefresh()
@@ -555,10 +569,35 @@ final class WorkspaceStore {
   }
 
   private func refreshProjects(_ batch: Set<ChatInvalidation>) async {
-    if projects.active
-      && (batch.contains(where: \.requiresFullRefresh) || batch.contains(.threadList))
-    {
+    let generation = refreshGeneration
+    let recovery = batch.contains(.foregroundResume) || batch.contains(.realtimeResume)
+      || batch.contains(.realtimeGap)
+    var reload = batch.contains(.threadList) || batch.contains(.reconnected)
+    if batch.contains(.startup) {
+      reload = (projectBootstrap?.beginStartup() ?? true) || reload
+    }
+    if batch.contains(.initialSubscriptions) {
+      reload = (projectBootstrap?.subscriptionsReady() ?? true) || reload
+    }
+    guard projects.active else { return }
+    if recovery {
+      if let projectBootstrap {
+        do { try await projectBootstrap.wait() } catch is CancellationError {
+          return
+        } catch {
+          handle(error)
+          return
+        }
+        guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
+        reload = projectBootstrap.needsRecoveryRead || reload
+      } else {
+        reload = batch.contains(.foregroundResume) || batch.contains(.realtimeGap) || reload
+      }
+    }
+    if reload {
       await projects.refresh()
+    } else if recovery || batch.contains(.startup) || batch.contains(.initialSubscriptions) {
+      await projects.activate()
     }
   }
 

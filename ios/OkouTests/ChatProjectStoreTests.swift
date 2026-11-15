@@ -111,7 +111,7 @@ final class ChatProjectStoreTests: XCTestCase {
     XCTAssertEqual(archive.projects.first?.threads.map(\.id), [archived.id])
   }
 
-  func testReadFailureRetainsTheConfirmedCacheAndExplicitRetryPersistsFreshProjects() async throws {
+  func testReadFailureRetainsTheConfirmedCacheAndReactivationPersistsFreshProjects() async throws {
     let directory = CacheTestDirectory(owner: self)
     let phase = Mutex(0)
     let fixture = ChatHTTPFixture { request in
@@ -148,7 +148,7 @@ final class ChatProjectStoreTests: XCTestCase {
     await reader.close()
 
     phase.withLock { $0 = 2 }
-    await workspace.projects.refresh()
+    await workspace.projects.activate()
     let fresh = try await workspace.projects.stateStore.get(workspace.projects.listValue).value
     XCTAssertEqual(fresh.first?.name, "Release")
     let reopened = directory.cache(scope: scope)
