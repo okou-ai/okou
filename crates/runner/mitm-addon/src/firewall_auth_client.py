@@ -526,7 +526,6 @@ async def _open_connected_socket(
                 return_when=asyncio.FIRST_COMPLETED,
             )
 
-            successful_attempts: list[tuple[int, socket.socket]] = []
             for attempt in sorted(done, key=attempts.__getitem__):
                 address_index = attempts.pop(attempt)
                 try:
@@ -536,10 +535,9 @@ async def _open_connected_socket(
                         last_error = (address_index, exc)
                 else:
                     unclaimed_sockets.append(connected_socket)
-                    successful_attempts.append((address_index, connected_socket))
 
-            if successful_attempts:
-                winner_socket = successful_attempts[0][1]
+            if unclaimed_sockets:
+                winner_socket = unclaimed_sockets[0]
                 for connected_socket in unclaimed_sockets:
                     if connected_socket is not winner_socket:
                         _abort_socket(connected_socket)
