@@ -18,7 +18,7 @@ export const IOS_PUBLISHED_VERSION_ORACLE =
   "ios-v* release commit with a successful publish-ios-testflight job and successful internal availability verification in release-please.yml";
 
 export const ANDROID_PUBLISHED_VERSION_ORACLE =
-  "highest stable android-vX.Y.Z GitHub Release with a nonempty, uploaded APK asset";
+  "release.version from GET https://api.okou.ai/api/android/updates after the API validates the published R2 manifest";
 
 type NativeOwner = "desktop" | "ios" | "android";
 interface NativeClientPolicy {
