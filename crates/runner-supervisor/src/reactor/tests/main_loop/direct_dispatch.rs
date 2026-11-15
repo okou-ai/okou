@@ -236,8 +236,8 @@ async fn supplied_http_returns_429_before_body_intake_and_retries_after_slot_rec
         Duration::from_secs(5),
     )
     .await;
-    let legacy: Vec<_> = (0..4).map(|_| RunId::new_v4()).collect();
-    for &id in &legacy {
+    let local_runs: Vec<_> = (0..4).map(|_| RunId::new_v4()).collect();
+    for &id in &local_runs {
         push_job(&env, id, "vm0/default", Some(minimal_context(id)));
     }
     assert!(
@@ -266,7 +266,7 @@ async fn supplied_http_returns_429_before_body_intake_and_retries_after_slot_rec
     );
     assert!(env.cancel_tokens.handle(run_id).await.is_none());
     env.handle.unblock_claims();
-    for id in legacy {
+    for id in local_runs {
         assert_eq!(
             env.handle
                 .wait_completion(id, Duration::from_secs(10))

@@ -4927,7 +4927,6 @@ function recordAtomicLaunchTiming(args: {
     runId: args.committed.run.id,
     runnerGroup: args.committed.admittedLaunch.runnerGroup,
     profile: args.committed.admittedLaunch.profile,
-    dispatchPath: "direct",
     dimensions: timingDimensionsForCreateArgs(args.createArgs),
     ...(args.createArgs.body.triggerSource
       ? { triggerSource: args.createArgs.body.triggerSource }
@@ -5547,7 +5546,6 @@ function flushQueueFirstClaimLostTiming(args: {
     runId: args.identity.runId,
     runnerGroup: args.launch.runnerInput.runnerGroup,
     profile: args.launch.runnerInput.profile,
-    dispatchPath: "direct",
     dimensions: {
       ...timingDimensionsForCreateArgs(args.createArgs),
       queue_first_launch_outcome: "claim_lost",

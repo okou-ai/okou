@@ -266,16 +266,13 @@ describe("prepared Seed Skill bundle contract", () => {
 });
 
 describe("admitted Workflow selection contract", () => {
-  it("preserves admitted invocation and mount-precedence selections", () => {
+  it("preserves admitted agent, automation and mount-precedence selections", () => {
     const agentId = "11111111-1111-4111-8111-111111111111";
-    const invocationId = "22222222-2222-4222-8222-222222222222";
     const automationId = "33333333-3333-4333-8333-333333333333";
     for (const selection of [
-      { agentId },
-      { agentId, invokedWorkflowId: null, protectedMountPaths: [] },
+      { agentId, protectedMountPaths: [] },
       {
         agentId,
-        invokedWorkflowId: invocationId,
         automationId,
         protectedMountPaths: ["/home/user/.codex/skills/official-workflow"],
       },
