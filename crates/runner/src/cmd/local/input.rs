@@ -57,19 +57,7 @@ fn run_input_with_home(args: InputArgs, home: HomePaths) -> RunnerResult<ExitCod
         )));
     }
 
-    let group_dir = home.groups_dir().join(&args.group);
-    if !group_dir.is_dir() {
-        return Err(RunnerError::Config(format!(
-            "group directory does not exist: {}",
-            group_dir.display()
-        )));
-    }
-    local_queue::validate_group_dir(&group_dir).map_err(|e| {
-        RunnerError::Config(format!(
-            "invalid group directory {}: {e}",
-            group_dir.display()
-        ))
-    })?;
+    let group_dir = super::existing_group_dir(&home, &args.group)?;
 
     let claim_path = local_queue::claim_path(&group_dir, args.run);
     let claimed = local_queue::marker_file_exists(&claim_path, "local claim marker")
