@@ -1,8 +1,8 @@
 import Foundation
 
-/// Coordinates model baselines across startup and recovery, with bounded HTTP availability.
+/// Coordinates one resource owner's baseline across subscription setup and recovery.
 @MainActor
-final class WorkspaceModelBootstrap {
+final class WorkspaceReadBootstrap {
   private enum Phase { case waiting, http, subscribed, closed }
   private var phase = Phase.waiting
   private var started = false
@@ -11,6 +11,7 @@ final class WorkspaceModelBootstrap {
   private var recovering = false
   private var revision = 0
   private var scheduledRevision = 0
+  private var requiredRecoveryRead = false
   private var waiters: [CheckedContinuation<Void, Error>] = []
   private var deadline: Task<Void, Never>?
   private let waitForTimeout: @Sendable () async throws -> Void
@@ -56,11 +57,12 @@ final class WorkspaceModelBootstrap {
     return revalidate
   }
 
-  /// Foreground and transport recovery share one pending model baseline.
+  /// Foreground and transport recovery share one pending resource baseline.
   func beginRecovery() {
     guard phase != .closed, !recovering else { return }
     recovering = true
     revision += 1
+    if readBeforeSubscriptions { requiredRecoveryRead = true }
     readBeforeSubscriptions = false
     deadline?.cancel()
     deadline = nil
@@ -79,7 +81,23 @@ final class WorkspaceModelBootstrap {
 
   var needsRecoveryRead: Bool { revision != scheduledRevision }
 
-  func didScheduleRead() { scheduledRevision = revision }
+  func didScheduleRead() {
+    scheduledRevision = revision
+    requiredRecoveryRead = false
+  }
+
+  /// A known gap must survive a later healthy-connection callback until a read starts.
+  func requireRecoveryRead() {
+    beginRecovery()
+    requiredRecoveryRead = true
+  }
+
+  /// Continuous delivery replaces a speculative recovery read, but never an early HTTP read.
+  func resumeContinuously() {
+    guard phase != .closed else { return }
+    if !requiredRecoveryRead, !readBeforeSubscriptions { scheduledRevision = revision }
+    _ = subscriptionsReady()
+  }
 
   /// A read released before attachment needs a fresh baseline after the subscription gap closes.
   func subscriptionsReady() -> Bool {
@@ -90,7 +108,10 @@ final class WorkspaceModelBootstrap {
     case .waiting:
       release(.subscribed)
     case .http:
-      if readBeforeSubscriptions { revision += 1 }
+      if readBeforeSubscriptions {
+        revision += 1
+        requiredRecoveryRead = true
+      }
       readBeforeSubscriptions = false
       phase = .subscribed
     case .subscribed, .closed: break

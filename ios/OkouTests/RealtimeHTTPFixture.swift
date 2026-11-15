@@ -17,6 +17,7 @@ final class RealtimeHTTPFixture: Sendable {
     var startup: CheckedContinuation<UInt16, Error>?
     var errors: [String] = []
     var autoAttach = false
+    var resumeAttachments = false
   }
   private let state = Mutex(State())
   var errors: [String] { state.withLock { $0.errors } }
@@ -98,7 +99,12 @@ final class RealtimeHTTPFixture: Sendable {
       ["action": 15, "channel": channel, "messages": [["name": topic]]], channel: channel)
   }
 
-  func attachAutomatically() { state.withLock { $0.autoAttach = true } }
+  func attachAutomatically(resumed: Bool = false) {
+    state.withLock {
+      $0.autoAttach = true
+      $0.resumeAttachments = resumed
+    }
+  }
 
   func fail(_ name: String) throws {
     try send(
@@ -251,10 +257,12 @@ final class RealtimeHTTPFixture: Sendable {
       if action == 10 {
         let automatic = state.withLock { value in
           value.channels[channel] = connection
-          return value.autoAttach
+          return (enabled: value.autoAttach, resumed: value.resumeAttachments)
         }
-        if automatic || channel.hasPrefix("user-org-foreground:") {
-          try send(["action": 11, "channel": channel], connection: connection)
+        if automatic.enabled || channel.hasPrefix("user-org-foreground:") {
+          try send(
+            ["action": 11, "channel": channel, "flags": automatic.resumed ? 4 : 0],
+            connection: connection)
         }
         onProtocol(action, channel)
       } else if action == 12 {
