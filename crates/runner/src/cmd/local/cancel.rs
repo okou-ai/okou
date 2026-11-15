@@ -49,20 +49,7 @@ where
     }
     crate::group::validate_or_err(&args.group)?;
 
-    let group_dir = home.groups_dir().join(&args.group);
-
-    if !group_dir.is_dir() {
-        return Err(RunnerError::Config(format!(
-            "group directory does not exist: {}",
-            group_dir.display()
-        )));
-    }
-    local_queue::validate_group_dir(&group_dir).map_err(|e| {
-        RunnerError::Config(format!(
-            "invalid group directory {}: {e}",
-            group_dir.display()
-        ))
-    })?;
+    let group_dir = super::existing_group_dir(&home, &args.group)?;
 
     let run_id = resolve_run_id(&group_dir, &args.run, read_entries, inspect_entry)?;
 
