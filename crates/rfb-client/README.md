@@ -394,14 +394,14 @@ no detached workers or retries.
 | Resource                                            | Bound                              |
 | --------------------------------------------------- | ---------------------------------- |
 | Width or height                                     | 8,192 pixels; neither may be zero  |
-| Total framebuffer pixels                            | 8,388,608                          |
+| Total framebuffer pixels                            | 21,233,664                         |
 | ServerInit name / discarded standard clipboard text | 4 KiB each                         |
 | Rectangles per update                               | 4,096                              |
-| ZRLE compressed rectangle                           | 40 MiB                             |
-| Wire bytes per update, including headers            | 64 MiB                             |
+| ZRLE compressed rectangle                           | 88 MiB                             |
+| Wire bytes per update, including headers            | 128 MiB                            |
 | Messages before a framebuffer update                | At most 63 Bell/clipboard messages |
 | Cursor dimensions                                   | 256 by 256                         |
-| Accounted owned decoder memory                      | 128 MiB                            |
+| Accounted shared decoder/capture memory             | 256 MiB                            |
 
 ZRLE decompressed storage is bounded before allocation by four bytes per rectangle
 pixel plus 382 bytes per 64-by-64 tile (and one overflow-detection byte). Every
@@ -453,7 +453,7 @@ cursor shape/hotspot describes that same snapshot. RFB does not supply its deskt
 position. PNG rows use the maintained `png` encoder, filter Up and flate2 level 1,
 with cooperative yields between rows. A conservative 2 MiB reservation covers
 encoder state and row/chunk buffers. Output storage grows as encoded bytes arrive,
-and is capped at 16 MiB of PNG data; a larger image fails with `ImageTooLarge`
+and is capped at 96 MiB of PNG data; a larger image fails with `ImageTooLarge`
 without changing dimensions. Actual buffer capacity, possible old/new overlap
 during growth, and cursor copies are charged. Kept captures retain that charge
 after return and even after session close; enough retained images can make a later
