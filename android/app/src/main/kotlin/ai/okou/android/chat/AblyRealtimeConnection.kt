@@ -4,6 +4,7 @@ import io.ably.pubsub.device.PubSubDevice
 import io.ably.pubsub.http.Auth
 import io.ably.pubsub.realtime.ChannelState
 import io.ably.pubsub.realtime.ConnectionState
+import io.ably.pubsub.realtime.PubSubRealtimeClient
 import io.ably.pubsub.types.AblyException
 import io.ably.pubsub.util.Log
 import java.io.Closeable
@@ -52,6 +53,14 @@ internal class AblyRealtimeConnection(
     userId: String,
     workspaceId: String,
     context: CoroutineContext,
+    clientFactory: (String, Auth.TokenCallback) -> PubSubRealtimeClient = { id, auth ->
+        PubSubDevice.clientBuilder()
+            .clientId(id)
+            .autoConnect(false)
+            .authCallback(auth)
+            .logLevel(Log.NONE)
+            .build()
+    },
     token: suspend () -> String,
 ) : Closeable {
     private val mutable = MutableStateFlow(RealtimeSnapshot())
@@ -70,12 +79,7 @@ internal class AblyRealtimeConnection(
         }
     private val client =
         try {
-            PubSubDevice.clientBuilder()
-                .clientId(userId)
-                .autoConnect(false)
-                .authCallback(tokens)
-                .logLevel(Log.NONE)
-                .build()
+            clientFactory(userId, tokens)
         } catch (error: Exception) {
             tokens.close()
             throw error
