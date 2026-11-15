@@ -39,7 +39,7 @@ import {
 import { prepareChatEventReplacement } from "./chat-event.service";
 import type { PreparedChatEventRow } from "./chat-event-append.service";
 import { withRunModelAnnotation } from "./chat-user-message.service";
-import type { PreparedCommitPreparedLaunchArgs } from "./thread-claim-run.service";
+import type { PreparedThreadLaunchCommit } from "./thread-claim-run.service";
 import type { ChatThreadContinuation } from "./chat-session-continuity.service";
 import type { QueueFirstRunAssociation } from "./chat-queued-event.service";
 
@@ -139,11 +139,9 @@ type PreparedInputClaim = AdmissionFacts & {
   };
   readonly headSql: SQL;
 };
-type Admitted = AdmissionFacts & { readonly kind: "admitted" };
 export type PendingAdmissionProgress =
   | AdmissionStatement
   | PreparedInputClaim
-  | Admitted
   | { readonly kind: "queue-first-claim-lost" }
   | (ReturnType<typeof conflict> & {
       readonly admissionFailure?: "subscription_account_disconnected";
@@ -153,7 +151,7 @@ export type PendingAdmissionProgress =
  * Each phase occurs at most once; independent subscription and queue head
  * reads share one statement. No retries, resources, callbacks or handles. */
 export function pendingLaunchAdmissionStart(
-  args: PreparedCommitPreparedLaunchArgs,
+  args: PreparedThreadLaunchCommit,
 ): PendingAdmissionProgress {
   const facts: AdmissionFacts = {
     validatedThreadSession: undefined,
@@ -161,7 +159,7 @@ export function pendingLaunchAdmissionStart(
   };
   const threadId = args.createArgs.chatThreadId;
   const resolution = args.createArgs.threadContinuation;
-  if (threadId && resolution) {
+  if (resolution) {
     const captured: AdmissionFacts = {
       ...facts,
       validatedThreadSession: {
@@ -176,19 +174,17 @@ export function pendingLaunchAdmissionStart(
     };
     return subscriptionStep(args, captured);
   }
-  return threadId
-    ? {
-        ...facts,
-        kind: "statement",
-        phase: "thread",
-        sql: sql`SELECT 'thread' AS phase, ${chatThreads.agentId} AS "threadAgentId", ${chatThreads.framework} AS "framework", ${chatThreads.frameworkSessionId} AS "frameworkSessionId", ${chatThreads.frameworkSessionRunId} AS "frameworkSessionRunId"
+  return {
+    ...facts,
+    kind: "statement",
+    phase: "thread",
+    sql: sql`SELECT 'thread' AS phase, ${chatThreads.agentId} AS "threadAgentId", ${chatThreads.framework} AS "framework", ${chatThreads.frameworkSessionId} AS "frameworkSessionId", ${chatThreads.frameworkSessionRunId} AS "frameworkSessionRunId"
       FROM ${chatThreads} WHERE ${eq(chatThreads.id, threadId)} LIMIT 1`,
-      }
-    : subscriptionStep(args, facts);
+  };
 }
 
 function subscriptionStep(
-  args: PreparedCommitPreparedLaunchArgs,
+  args: PreparedThreadLaunchCommit,
   facts: AdmissionFacts,
 ): PendingAdmissionProgress {
   const provider = args.context.modelProvider;
@@ -210,7 +206,7 @@ function subscriptionStep(
       )}
       LIMIT 1`;
   const association = args.createArgs.queueFirstAssociation;
-  if (!association || association.threadId !== args.createArgs.chatThreadId) {
+  if (association.threadId !== args.createArgs.chatThreadId) {
     // Any queue head step and its association check follow this read.
     return {
       ...facts,
@@ -250,13 +246,10 @@ function disconnectedSubscription() {
 }
 
 function queueHeadStep(
-  args: PreparedCommitPreparedLaunchArgs,
+  args: PreparedThreadLaunchCommit,
   facts: AdmissionFacts,
 ): PendingAdmissionProgress {
   const association = args.createArgs.queueFirstAssociation;
-  if (!association) {
-    return { ...facts, kind: "admitted" };
-  }
   if (association.threadId !== args.createArgs.chatThreadId) {
     throw new Error("Queue-first association must match the run chat thread");
   }
@@ -290,7 +283,7 @@ function queueHeadSql(association: QueueFirstRunAssociation): SQL {
 
 /** Actual decoded facts feed the next plan; validation never executes SQL. */
 export function advancePendingLaunchAdmission(
-  args: PreparedCommitPreparedLaunchArgs,
+  args: PreparedThreadLaunchCommit,
   step: AdmissionStatement,
   records: readonly AdmissionRecord[],
 ): PendingAdmissionProgress {
@@ -343,7 +336,7 @@ export function advancePendingLaunchAdmission(
 }
 
 function advanceThreadSnapshot(
-  args: PreparedCommitPreparedLaunchArgs,
+  args: PreparedThreadLaunchCommit,
   facts: AdmissionFacts,
   row: AdmissionRecord | undefined,
 ): PendingAdmissionProgress {
@@ -365,9 +358,6 @@ function advanceThreadSnapshot(
     throw new Error("Chat thread session changed during run preparation");
   }
   const threadId = args.createArgs.chatThreadId;
-  if (!threadId) {
-    throw new Error("Validated session requires a chat thread");
-  }
   const validatedThreadSession: ValidatedPendingThreadSession = Object.freeze({
     kind: "validated-thread-session-snapshot",
     chatThreadId: threadId,
@@ -382,15 +372,12 @@ function advanceThreadSnapshot(
 }
 
 function advanceQueueHead(
-  args: PreparedCommitPreparedLaunchArgs,
+  args: PreparedThreadLaunchCommit,
   facts: AdmissionFacts,
   row: AdmissionRecord | undefined,
   headSql: SQL,
 ): PendingAdmissionProgress {
   const association = args.createArgs.queueFirstAssociation;
-  if (!association) {
-    throw new Error("Queue-first claim requires a captured association");
-  }
   if (
     !row ||
     !("phase" in row) ||
@@ -406,9 +393,6 @@ function advanceQueueHead(
     throw new Error("Queued user message is missing its context type");
   }
   const pin = args.createArgs.agentRunModelPin;
-  if (!pin) {
-    throw new Error("Queue-first claim requires a run model pin");
-  }
   const serviceTier = args.createArgs.codexServiceTier
     ? ("priority" as const)
     : undefined;
