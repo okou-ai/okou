@@ -4,6 +4,11 @@ import ai.okou.android.api.ApiClient
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.AndroidUpdates
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.content.pm.Signature
+import android.content.pm.SigningInfo
+import android.os.Build
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -20,6 +25,7 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -232,7 +238,6 @@ class AndroidUpdateClientTest {
     }
 
     @Test
-    @Config(sdk = [24])
     @Suppress("DEPRECATION")
     fun cachedPackageRequiresTheInstalledSigningIdentityAndVersion() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
@@ -250,27 +255,34 @@ class AndroidUpdateClientTest {
                     url = "https://static.okou.io/android-updates/releases/0.13.0/$digest.apk",
                 )
         val file = File(directory, "$digest.apk").apply { writeBytes(bytes) }
-        val manager = org.robolectric.Shadows.shadowOf(context.packageManager)
-        val installed =
-            context.packageManager.getPackageInfo(
-                context.packageName,
-                android.content.pm.PackageManager.GET_SIGNATURES,
-            )
+        fun setSigners(info: PackageInfo, signature: String) {
+            val signers = arrayOf(Signature(signature))
+            if (Build.VERSION.SDK_INT >= 28) {
+                info.signingInfo = SigningInfo().apply { shadowOf(this).setSignatures(signers) }
+            } else {
+                info.signatures = signers
+            }
+        }
+        val manager = shadowOf(context.packageManager)
+        val flags =
+            if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES
+            else PackageManager.GET_SIGNATURES
+        val installed = context.packageManager.getPackageInfo(context.packageName, flags)
         installed.versionCode = 12000
-        installed.signatures = arrayOf(android.content.pm.Signature("1234"))
+        setSigners(installed, "1234")
         manager.installPackage(installed)
         val archive =
-            android.content.pm.PackageInfo().apply {
+            PackageInfo().apply {
                 packageName = context.packageName
                 versionName = "0.13.0"
                 versionCode = 13000
-                signatures = installed.signatures
+                setSigners(this, "1234")
             }
         manager.setPackageArchiveInfo(file.path, archive)
         AndroidUpdateClient(context, "https://api.okou.ai/".toHttpUrl(), "0.12.0", directory).use {
             updater ->
             assertEquals(file, updater.recover(release))
-            archive.signatures = arrayOf(android.content.pm.Signature("5678"))
+            setSigners(archive, "5678")
             manager.setPackageArchiveInfo(file.path, archive)
             try {
                 updater.recover(release)
