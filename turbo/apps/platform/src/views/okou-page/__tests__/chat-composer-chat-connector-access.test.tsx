@@ -296,7 +296,8 @@ async function openDirectory(user: ReturnType<typeof userEvent.setup>) {
 test.each([false, true])(
   "Directory permissions preserve connector-wide rules and disabled accounts with personal mode %s",
   async (singleAgent) => {
-    const user = userEvent.setup({ delay: null });
+    // Keep pointer/focus behavior without hovering before the roundtrip's clicks.
+    const user = userEvent.setup({ delay: null, skipHover: true });
     installAccess({ allOff: true });
     await setup(undefined, singleAgent);
     const trigger = await findFastControl("button", "Connectors");
