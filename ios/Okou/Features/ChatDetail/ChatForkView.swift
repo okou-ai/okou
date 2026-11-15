@@ -43,8 +43,7 @@ struct ChatForkView: View {
           connectorSelection: flow.modelSelection.connectors,
           mentionSource: ComposerMentionSource(agentID: flow.agentID, threads: threads),
           workflowSource: flow.workflowSource, agentID: flow.agentID,
-          showsTrailingFeedbackInput: false,
-          feedbackSourceTitle: flow.sourceTitle
+          showsTrailingFeedbackInput: false
         )
         // A failed or unknown attempt retries the captured message, never an edited body
         // under the same idempotency key. The error banner owns the explicit retry.

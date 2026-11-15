@@ -7,7 +7,6 @@ import Observation
 @MainActor @Observable
 final class ChatForkStore: Identifiable {
   let id = UUID()
-  let sourceTitle: String
   let agentID: String
   let composer: ComposerDraftStore
   private(set) var modelSelection: ChatModelSelectionStore
@@ -44,14 +43,13 @@ final class ChatForkStore: Identifiable {
   }
 
   init(
-    selection: ChatFeedbackSelection, sourceRunID: String, sourceTitle: String,
+    selection: ChatFeedbackSelection, sourceRunID: String,
     agentID: String, commands: ChatCommands, models: ChatModelStore,
     workflowSource: ComposerWorkflowSource, lifecycleTasks: LifecycleTasks,
     didCreate: @escaping @MainActor (ChatThread) -> Void,
     didSend: @escaping @MainActor (ChatThread) -> Void,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
-    self.sourceTitle = sourceTitle
     self.sourceRunID = sourceRunID
     sourceEventID = selection.eventID
     self.agentID = agentID

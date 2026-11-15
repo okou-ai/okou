@@ -879,7 +879,7 @@ final class WorkspaceStore {
       message.text.utf16.elementsEqual(selection.text.utf16), let runID = message.runID
     else { return }
     fork = ChatForkStore(
-      selection: selection, sourceRunID: runID, sourceTitle: conversation.thread.displayTitle,
+      selection: selection, sourceRunID: runID,
       agentID: agentID, commands: commands, models: modelStore, workflowSource: composerWorkflows,
       lifecycleTasks: lifecycleTasks,
       didCreate: { [weak self] thread in self?.list.insertCreated(thread) },

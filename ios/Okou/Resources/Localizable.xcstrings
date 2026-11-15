@@ -21,32 +21,12 @@
           }
         }
       },
-      "Add a message": {
-        "localizations": {
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "添加消息"
-            }
-          }
-        }
-      },
       "New chat created": {
         "localizations": {
           "zh-Hans": {
             "stringUnit": {
               "state": "translated",
               "value": "已创建新聊天"
-            }
-          }
-        }
-      },
-      "From %@": {
-        "localizations": {
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "来自 %@"
             }
           }
         }

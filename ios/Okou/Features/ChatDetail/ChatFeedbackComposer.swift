@@ -10,7 +10,6 @@ struct ChatFeedbackComposer: View {
   let acceptsImages: Bool
   var placeholder = String(localized: "Message Okou")
   var showsTrailingParagraph = true
-  var sourceTitle: String? = nil
   var returnKeyPreference = ComposerReturnKeyPreference.newline
   var canSendFromKeyboard = false
   var submitFromKeyboard: (@MainActor () -> Void)? = nil
@@ -33,10 +32,21 @@ struct ChatFeedbackComposer: View {
             {
               VStack(alignment: .leading, spacing: OkouSpace.sm) {
                 if let quote = block.quote {
-                  ChatFeedbackReference(
-                    quote: quote, sourceTitle: sourceTitle, id: block.id
-                  ) {
-                    state.removeFeedback(block.id)
+                  HStack(alignment: .top, spacing: OkouSpace.sm) {
+                    Text(quote).font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
+                      .frame(maxWidth: .infinity, alignment: .leading)
+                      .padding(.leading, OkouSpace.ten)
+                      .overlay(alignment: .leading) {
+                        Rectangle().fill(OkouColor.borderOnFill).frame(width: 2)
+                      }
+                    Button {
+                      state.removeFeedback(block.id)
+                    } label: {
+                      OkouToolbarIcon("x").frame(
+                        width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+                    }
+                    .accessibilityLabel("Remove feedback")
+                    .accessibilityIdentifier("remove-feedback-\(block.id)")
                   }
                   .accessibilityIdentifier("feedback-quote-\(block.id)")
                 }
@@ -77,9 +87,7 @@ struct ChatFeedbackComposer: View {
                   focusRequested: { state.requestEditorFocus(block.id) },
                   inputReady: { state.voice?.startRequestedInputIfReady() },
                   placeholder: block.isFeedback
-                    ? (sourceTitle == nil
-                      ? String(localized: "Ask or comment on this quote")
-                      : String(localized: "Add a message")) : placeholder,
+                    ? String(localized: "Ask or comment on this quote") : placeholder,
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
                   expanded: state.document.hasFeedback || isFocused,
                   returnKeyPreference: returnKeyPreference,
@@ -126,63 +134,5 @@ struct ChatFeedbackComposer: View {
         }
       }
     }
-  }
-}
-
-/// A Fork keeps its quote and source together; ordinary Quote retains the full passage.
-private struct ChatFeedbackReference: View {
-  let quote: String
-  let sourceTitle: String?
-  let id: UUID
-  let remove: () -> Void
-
-  var body: some View {
-    if let sourceTitle {
-      HStack(spacing: OkouSpace.sm) {
-        OkouIcon("quote", size: OkouIconSize.reference)
-          .foregroundStyle(OkouColor.mutedForeground)
-        VStack(alignment: .leading, spacing: OkouSpace.xs) {
-          Text(verbatim: quote)
-            .font(.okou(.subheadline))
-            .foregroundStyle(OkouColor.foreground)
-            .lineLimit(1)
-          Text("From \(sourceTitle)")
-            .font(.okou(.footnote))
-            .foregroundStyle(OkouColor.mutedForeground)
-            .lineLimit(1)
-            .accessibilityIdentifier("fork-source")
-        }
-        .layoutPriority(1)
-        removeButton
-      }
-      .padding(.leading, OkouSpace.sm)
-      .padding(.vertical, OkouSpace.xs)
-      .background(OkouColor.nestedFill, in: RoundedRectangle(cornerRadius: OkouRadius.control))
-      .overlay {
-        RoundedRectangle(cornerRadius: OkouRadius.control)
-          .strokeBorder(OkouColor.borderOnFill, lineWidth: OkouSpace.hairline)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-    } else {
-      HStack(alignment: .top, spacing: OkouSpace.sm) {
-        Text(verbatim: quote)
-          .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.leading, OkouSpace.ten)
-          .overlay(alignment: .leading) {
-            Rectangle().fill(OkouColor.borderOnFill).frame(width: 2)
-          }
-        removeButton
-      }
-    }
-  }
-
-  private var removeButton: some View {
-    Button(action: remove) {
-      OkouToolbarIcon("x").frame(
-        width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
-    }
-    .accessibilityLabel("Remove feedback")
-    .accessibilityIdentifier("remove-feedback-\(id)")
   }
 }
