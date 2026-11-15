@@ -135,7 +135,7 @@ interface ThreadModelProviderArgs {
   readonly agentRunMetadata?: {
     readonly reasoningEffort?: ReasoningEffort | null;
   };
-  readonly queueFirstAssociation?: QueueFirstRunAssociation;
+  readonly queueFirstAssociation: QueueFirstRunAssociation;
 }
 
 interface ThreadModelProviderInput {

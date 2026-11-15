@@ -13,10 +13,10 @@ import {
   exactMountsMatch,
 } from "./official-workflow-run.service";
 import { pendingCreditPlanSql } from "./pending-launch-credit-plan";
-import type { PreparedCommitPreparedLaunchArgs } from "./thread-claim-run.service";
+import type { PreparedThreadLaunchCommit } from "./thread-claim-run.service";
 
 function capturedOfficialDefinitions(
-  args: PreparedCommitPreparedLaunchArgs,
+  args: PreparedThreadLaunchCommit,
 ): readonly OfficialWorkflowAcceptedDefinition[] | null {
   const observation = args.context.officialWorkflowRun;
   const facts = args.context.officialWorkflowFacts;
@@ -87,7 +87,7 @@ function officialAutomationLockSql(id: string, prerequisite: SQL) {
 
 /** Existing catalog -> plan -> installation -> automation locks, within publication. */
 export function pendingOfficialAdmissionGuardSql(
-  args: PreparedCommitPreparedLaunchArgs,
+  args: PreparedThreadLaunchCommit,
 ) {
   const observation = args.context.officialWorkflowRun;
   if (!observation) {
