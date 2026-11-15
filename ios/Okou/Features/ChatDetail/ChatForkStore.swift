@@ -10,7 +10,7 @@ final class ChatForkStore: Identifiable {
   let sourceTitle: String
   let agentID: String
   let composer: ComposerDraftStore
-  let modelSelection: ChatModelSelectionStore
+  private(set) var modelSelection: ChatModelSelectionStore
   let workflowSource: ComposerWorkflowSource
   private(set) var isSending = false
   private(set) var error: String?
@@ -19,6 +19,7 @@ final class ChatForkStore: Identifiable {
   private let sourceRunID: String
   private let sourceEventID: String
   private let commands: ChatCommands
+  private let models: ChatModelStore
   private let lifecycleTasks: LifecycleTasks
   private let didCreate: @MainActor (ChatThread) -> Void
   private let didSend: @MainActor (ChatThread) -> Void
@@ -38,6 +39,7 @@ final class ChatForkStore: Identifiable {
     let model: ChatModelSelection?
     let effort: String?
     let options: ChatComposerOptions
+    let computerAccess: ChatComputerAccess
     let sourceRunID: String?
   }
 
@@ -54,6 +56,7 @@ final class ChatForkStore: Identifiable {
     sourceEventID = selection.eventID
     self.agentID = agentID
     self.commands = commands
+    self.models = models
     self.lifecycleTasks = lifecycleTasks
     self.workflowSource = workflowSource
     self.didCreate = didCreate
@@ -95,6 +98,7 @@ final class ChatForkStore: Identifiable {
           modelSelection.captureNewChatSelection()
         }, effort: modelSelection.requestedEffort,
         options: modelSelection.connectors.pendingOptions,
+        computerAccess: modelSelection.connectors.computerAccess,
         sourceRunID: hasSourceQuote ? sourceRunID : nil)
     }
     guard let pending else { return false }
@@ -124,6 +128,11 @@ final class ChatForkStore: Identifiable {
           try Task.checkCancellation()
           guard !closed else { return nil }
           thread = target
+          // Once created, settings belong to that thread, including edits after rejection.
+          modelSelection.close()
+          modelSelection = ChatModelSelectionStore(
+            models: models, thread: target, lifecycleTasks: lifecycleTasks)
+          modelSelection.isSending = true
           didCreate(target)
         }
         deliveryUnconfirmed = true
@@ -132,7 +141,7 @@ final class ChatForkStore: Identifiable {
           document: pending.document, clientEventID: pending.messageID,
           chatThreadSortEventID: pending.sortEventID,
           modelSelection: pending.model, reasoningEffort: pending.effort,
-          computerAccess: pending.options.computerAccess,
+          computerAccess: pending.computerAccess,
           expectedAgentID: agentID, sourceRunID: pending.sourceRunID)
         try Task.checkCancellation()
         guard !closed else { return nil }
