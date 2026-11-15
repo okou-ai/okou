@@ -118,7 +118,7 @@ final class NotificationService {
   private var reconciledNotificationState: ReconciledNotificationState?
   private var notificationStateTask: Task<Void, Never>?
   private var notificationStateRequest: Task<NotificationStateResponse, Error>?
-  private var badgeUpdateTask: Task<Void, Never>?
+  private var badgeUpdateTask: Task<Bool, Never>?
   private var isForeground = false
   private var badgeClearSequence: Int?
   private var pendingBadgeClearSequence: Int?
@@ -382,12 +382,16 @@ final class NotificationService {
 
   /// Serialize only OS writes; a foreground clear must never wait for an HTTP or token request.
   @discardableResult
-  private func enqueueBadgeCount(_ count: Int) -> Task<Void, Never> {
+  private func enqueueBadgeCount(_ count: Int) -> Task<Bool, Never> {
     let previous = badgeUpdateTask
     let task = Task { [system, log] in
-      await previous?.value
-      do { try await system.setBadgeCount(count) } catch {
+      _ = await previous?.value
+      do {
+        try await system.setBadgeCount(count)
+        return true
+      } catch {
         log.error("Cannot update app icon badge: \(error.localizedDescription, privacy: .public)")
+        return false
       }
     }
     badgeUpdateTask = task
@@ -464,7 +468,7 @@ final class NotificationService {
         return
       case .signedOut:
         system.removeDeliveredNotifications(identifiers: delivered.map(\.identifier))
-        await enqueueBadgeCount(0).value
+        _ = await enqueueBadgeCount(0).value
       case .user(let userID):
         guard let workspace, workspace.userID == userID else { return }
         system.removeDeliveredNotifications(
@@ -484,8 +488,8 @@ final class NotificationService {
           return
         }
         if binding == nil, receipts.isEmpty {
-          await enqueueBadgeCount(0).value
-          guard ownsRequest() else { return }
+          let updated = await enqueueBadgeCount(0).value
+          guard ownsRequest(), updated else { return }
           reconciledNotificationState = ReconciledNotificationState(
             revision: revision, receipts: [])
           return
@@ -520,8 +524,8 @@ final class NotificationService {
           let removed = Set(response.removeIdentifiers)
           retainedReceipts = retainedReceipts.filter { !removed.contains($0.identifier) }
           // Older APIs expose chat unread counts, which must not restore an acknowledged badge.
-          await enqueueBadgeCount(response.badgeCount ?? 0).value
-          guard ownsRequest() else { return }
+          let updated = await enqueueBadgeCount(response.badgeCount ?? 0).value
+          guard ownsRequest(), updated else { return }
         }
         reconciledNotificationState = ReconciledNotificationState(
           revision: revision, receipts: retainedReceipts)

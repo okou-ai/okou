@@ -374,6 +374,22 @@ final class NotificationStateTests: XCTestCase {
     XCTAssertEqual(system.badgeCount, 2)
   }
 
+  func testLocalBadgeFailureDoesNotCompleteEmptyDemand() async {
+    let system = NotificationSystemFixture()
+    system.badgeCount = 5
+    system.badgeFailures = 1
+    let fixture = ChatHTTPFixture { _ in
+      XCTFail("An unbound empty demand needs only a local badge retry")
+      throw URLError(.unsupportedURL)
+    }
+    let service = notifications(system)
+    await service.update(workspace: workspace(fixture, user: "current"))
+    await service.refreshNotificationState(userID: "current")
+    XCTAssertEqual(system.badgeCount, 5)
+    await service.refreshNotificationState(userID: "current")
+    XCTAssertEqual(system.badgeCount, 0)
+  }
+
   private func notifications(_ system: NotificationSystemFixture) -> NotificationService {
     let suite = "notification-state-" + UUID().uuidString
     let defaults = UserDefaults(suiteName: suite)!
