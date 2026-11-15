@@ -10,7 +10,7 @@
     )
 )]
 
-use std::future::pending;
+use std::future::{Future, pending};
 use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -49,7 +49,7 @@ pub enum RawHttpAction {
 /// An owned loopback server with ordered request capture and scripted actions.
 ///
 /// Use an explicit finish or cancellation method to await task cleanup. Dropping
-/// an unfinished server aborts its task as a safety net.
+/// an unfinished server or its completion future aborts its task as a safety net.
 pub struct RawHttpTestServer {
     // Request abort before releasing the request receiver.
     task: Option<AbortOnDropHandle<io::Result<()>>>,
@@ -145,7 +145,7 @@ impl RawHttpTestServer {
             .task
             .take()
             .expect("raw HTTP fixture task should be present");
-        finish_task_with_timeout(task.detach(), timeout)
+        finish_task_with_timeout(task, timeout)
             .await?
             .map_err(|error| format!("server failed: {error}"))
     }
@@ -157,14 +157,20 @@ pub async fn read_http_request(socket: &mut TcpStream) -> io::Result<String> {
 }
 
 /// Await a custom fixture task, aborting and reaping it if it exceeds the deadline.
-pub async fn join_raw_http_task<T>(task: JoinHandle<T>, description: &str) -> T {
-    finish_task_with_timeout(task, RAW_HTTP_FIXTURE_TIMEOUT)
-        .await
-        .unwrap_or_else(|error| panic!("{description} should finish: {error}"))
+///
+/// Dropping the returned future, including before its first poll, requests task
+/// cancellation. Retirement is asynchronous; await the future to observe completion.
+pub fn join_raw_http_task<T>(task: JoinHandle<T>, description: &str) -> impl Future<Output = T> {
+    let task = AbortOnDropHandle::new(task);
+    async move {
+        finish_task_with_timeout(task, RAW_HTTP_FIXTURE_TIMEOUT)
+            .await
+            .unwrap_or_else(|error| panic!("{description} should finish: {error}"))
+    }
 }
 
 async fn finish_task_with_timeout<T>(
-    mut task: JoinHandle<T>,
+    mut task: AbortOnDropHandle<T>,
     timeout: Duration,
 ) -> Result<T, String> {
     match tokio::time::timeout(timeout, &mut task).await {
