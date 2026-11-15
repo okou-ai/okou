@@ -53,6 +53,9 @@ async function execute(
   action: PhoneAction,
   options: { id?: string; wait?: string; output?: string },
 ) {
+  const wait = Number(options.wait ?? "30");
+  if (!Number.isFinite(wait) || wait < 0 || wait > 45)
+    throw new Error("--wait must be between 0 and 45 seconds");
   const operationId = options.id ?? randomUUID();
   // Print the identity before the request so uncertain transport outcomes remain recoverable.
   console.error(`Phone Use operation: ${operationId}`);
@@ -66,9 +69,6 @@ async function execute(
       response,
       `Operation submission is uncertain; inspect ${operationId} before retrying`,
     );
-  const wait = Number(options.wait ?? "30");
-  if (!Number.isFinite(wait) || wait < 0 || wait > 45)
-    throw new Error("--wait must be between 0 and 45 seconds");
   const until = Date.now() + wait * 1000;
   let operation = response.body;
   while (
