@@ -479,6 +479,17 @@ function VncConnectionFields({
   );
 }
 
+function VncHostCredentialSelection({
+  disabled,
+}: {
+  readonly disabled: boolean;
+}) {
+  const profile = useGet(vncProfile$);
+  return profile === "x509_none" ? null : (
+    <VncCredentialSelection disabled={disabled} />
+  );
+}
+
 function VncHostFields({
   dialog,
   inline,
@@ -488,7 +499,6 @@ function VncHostFields({
   readonly inline?: boolean;
   readonly disabled: boolean;
 }) {
-  const profile = useGet(vncProfile$);
   const { t } = useTranslation();
   const vncSetup = useGet(remoteVncSetupActive$);
   const fromComputer = useGet(remoteSetupFromComputer$);
@@ -504,11 +514,7 @@ function VncHostFields({
             })}
           </summary>
           <div className="mt-5 grid gap-5">
-            <VncSecurityProfileField
-              profile={profile}
-              disabled={disabled}
-              compact
-            />
+            <VncSecurityProfileField disabled={disabled} compact />
             <VncTransportFields disabled={disabled} />
             <RemoteVncProtectionNotice />
             <VncEndpointFields connection={dialog.connection} />
@@ -519,9 +525,7 @@ function VncHostFields({
             <VncTlsFields disabled={disabled} />
           </div>
         </details>
-        {profile !== "x509_none" && (
-          <VncCredentialSelection disabled={disabled} />
-        )}
+        <VncHostCredentialSelection disabled={disabled} />
       </div>
     );
   }
@@ -539,7 +543,7 @@ function VncHostFields({
             {guided && fromComputer ? (
               <ComputerScreenService disabled={disabled} />
             ) : (
-              <VncSecurityProfileField profile={profile} disabled={disabled} />
+              <VncSecurityProfileField disabled={disabled} />
             )}
           </div>
         </VncSetupStep>
@@ -556,9 +560,7 @@ function VncHostFields({
       </fieldset>
       <VncSetupStep step="login" guided={guided}>
         <div className="grid gap-5">
-          {profile !== "x509_none" && (
-            <VncCredentialSelection disabled={disabled} />
-          )}
+          <VncHostCredentialSelection disabled={disabled} />
           {guided && <VncDisplayNameField connection={dialog.connection} />}
         </div>
       </VncSetupStep>

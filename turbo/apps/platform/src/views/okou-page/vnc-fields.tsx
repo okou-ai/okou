@@ -784,7 +784,6 @@ export function ComputerScreenService({
 }) {
   const { t } = useTranslation();
   const setup = useGet(remoteSetup$);
-  const profile = useGet(vncProfile$);
   const choose = useSet(chooseComputerScreenService$);
   const items = [
     {
@@ -851,7 +850,6 @@ export function ComputerScreenService({
             </summary>
             <div className="grid gap-4 pt-4">
               <VncSecurityProfileField
-                profile={profile}
                 disabled={disabled}
                 showServiceGroup={false}
               />
@@ -860,24 +858,23 @@ export function ComputerScreenService({
         </>
       )}
       {setup?.computerScreenService === "other" && (
-        <VncSecurityProfileField profile={profile} disabled={disabled} />
+        <VncSecurityProfileField disabled={disabled} />
       )}
     </div>
   );
 }
 
 export function VncSecurityProfileField({
-  profile,
   disabled,
   showServiceGroup = true,
   compact = false,
 }: {
-  readonly profile: VncProfile;
   readonly disabled: boolean;
   readonly showServiceGroup?: boolean;
   readonly compact?: boolean;
 }) {
   const { t } = useTranslation();
+  const profile = useGet(vncProfile$);
   const chooseProfile = useSet(chooseVncProfile$);
   const group = profileGroup(profile);
   const profileItems = useVncSecurityProfileItems(group);
