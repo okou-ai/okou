@@ -222,6 +222,18 @@ test(
       );
     });
     expect(pending.body.status).toBe("approval_required");
+    const loggedOut = await scenario.run(() => {
+      context.mocks.clerk.sessions.getSession.mockResolvedValue({
+        id: sessionId,
+        userId: actor.userId,
+        status: "revoked",
+      });
+      return accept(
+        client.get({ headers: agentHeaders, params: { operationId: id } }),
+        [403],
+      );
+    });
+    expect(loggedOut.body.error.message).toContain("session has ended");
     await scenario.run(async () => {
       authenticate(actor.userId, staffOrg, sessionId);
       await accept(
