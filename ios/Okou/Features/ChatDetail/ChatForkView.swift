@@ -51,8 +51,6 @@ struct ChatForkView: View {
         .disabled(flow.hasPendingAttempt || needsUpgrade)
       }
       .fixedSize(horizontal: false, vertical: true)
-      .padding(.top, OkouSpace.sm)
-      .padding(.bottom, OkouSpace.sm)
       // Measure intrinsic content separately from the native navigation container.
       .onGeometryChange(for: CGFloat.self) { geometry in
         ceil(geometry.size.height)
