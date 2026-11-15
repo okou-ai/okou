@@ -643,6 +643,7 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
         grants,
         and(
           eq(grants.threadId, agentRuns.chatThreadId),
+          eq(grants.threadId, body.data.threadId),
           eq(grants.deviceId, device.id),
           eq(grants.deviceGeneration, device.generation),
         ),
@@ -704,7 +705,12 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
                 eq(agentRuns.status, "running"),
               ),
             )
-            .where(eq(grants.id, operations.grantId)),
+            .where(
+              and(
+                eq(grants.id, operations.grantId),
+                eq(grants.threadId, body.data.threadId),
+              ),
+            ),
         ),
       ),
     )

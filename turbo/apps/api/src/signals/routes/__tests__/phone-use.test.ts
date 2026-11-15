@@ -187,7 +187,11 @@ test(
     const claimed = await scenario.run(() => {
       authenticate(actor.userId, staffOrg, sessionId);
       return accept(
-        client.next({ headers, params, body: { generation } }),
+        client.next({
+          headers,
+          params,
+          body: { generation, threadId: thread.id },
+        }),
         [200],
       );
     });
@@ -260,6 +264,7 @@ test(
           params,
           body: {
             generation,
+            threadId: thread.id,
             activeRunId: run.runId,
             activeGrantId: submitted.body.grantId,
           },

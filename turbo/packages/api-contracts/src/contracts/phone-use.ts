@@ -211,6 +211,7 @@ export const phoneUseContract = c.router({
     path: "/api/phone-use/devices/:deviceId/next",
     pathParams: devicePath,
     body: authority.extend({
+      threadId: uuid(),
       activeRunId: uuid().optional(),
       activeGrantId: uuid().optional(),
     }),
