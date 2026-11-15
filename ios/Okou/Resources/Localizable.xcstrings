@@ -21,12 +21,12 @@
           }
         }
       },
-      "Continue from this passage.": {
+      "Add a message": {
         "localizations": {
           "zh-Hans": {
             "stringUnit": {
               "state": "translated",
-              "value": "基于这段引用继续讨论。"
+              "value": "添加消息"
             }
           }
         }

@@ -693,6 +693,14 @@ feature; the catalog shows each one.
 
 ### Chat
 
+- **Fork opens a fitted native sheet.** Its inline navigation title and trailing close
+  sit directly above the existing composer, without an introduction or a flexible spacer.
+  The quote is a removable, single-line reference with the source title as a quiet caption
+  inside the same reference surface (`ChatFeedbackReference`); VoiceOver retains the full
+  passage. Keep the native 44 pt remove target and shared composer geometry. The model
+  note stays above the composer, as in ordinary chat. Fit the sheet vertically to this
+  content rather than reserving a half/full page, and let the native editor scroll for a
+  long draft. Sending still closes only after acceptance and leaves the source chat open.
 - **Chat header** has no title: the menu glass circle on the left, the chat's "…" menu on
   the right, over a soft blur. The selected row in the sidebar says which chat
   is open. The "…" menu is titled with the chat and starts with Pin chat.

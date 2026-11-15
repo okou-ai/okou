@@ -18,30 +18,14 @@ struct ChatForkView: View {
   var body: some View {
     NavigationStack {
       VStack(alignment: .leading, spacing: OkouSpace.lg) {
-        Text("Continue from this passage.")
-          .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
-        Spacer(minLength: 0)
-        if flow.hasSourceQuote {
-          Label {
-            Text("From \(flow.sourceTitle)").lineLimit(1)
-          } icon: {
-            OkouIcon("git-branch", size: OkouIconSize.reference)
-          }
-          .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-          .accessibilityIdentifier("fork-source")
-        }
         if let error = flow.error {
           OkouBanner(Text(error), icon: "circle-alert", tone: .problem) {
             Button("Retry") { Task { await flow.send() } }
               .disabled(flow.isSending || needsUpgrade)
           }
           .accessibilityIdentifier("fork-send-error")
+          .padding(.horizontal, OkouControl.pageInset)
         }
-      }
-      .padding(.horizontal, OkouControl.pageInset)
-      .padding(.top, OkouSpace.lg)
-      .padding(.bottom, OkouSpace.sm)
-      .safeAreaInset(edge: .bottom, spacing: 0) {
         @Bindable var composer = flow.composer
         ChatComposerView(
           draft: $composer.text, isBusy: flow.isSending, showsProgress: flow.isSending,
@@ -52,12 +36,16 @@ struct ChatForkView: View {
           connectorSelection: flow.modelSelection.connectors,
           mentionSource: ComposerMentionSource(agentID: flow.agentID, threads: threads),
           workflowSource: flow.workflowSource, agentID: flow.agentID,
-          showsTrailingFeedbackInput: false
+          showsTrailingFeedbackInput: false,
+          feedbackSourceTitle: flow.sourceTitle
         )
         // A failed or unknown attempt retries the captured message, never an edited body
         // under the same idempotency key. The error banner owns the explicit retry.
         .disabled(flow.hasPendingAttempt || needsUpgrade)
       }
+      .fixedSize(horizontal: false, vertical: true)
+      .padding(.top, OkouSpace.sm)
+      .padding(.bottom, OkouSpace.sm)
       .navigationTitle("New chat")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
@@ -81,7 +69,7 @@ struct ChatForkView: View {
     .background {
       ForkDismissObserver(onAttempt: requestDismiss)
     }
-    .presentationDetents([.medium, .large])
+    .presentationSizing(.form.fitted(horizontal: false, vertical: true))
     .presentationDragIndicator(.visible)
     .okouSheetBackground(OkouColor.background)
     .accessibilityIdentifier("fork-sheet")
