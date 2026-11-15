@@ -109,7 +109,7 @@ class AndroidUpdateClient(
                 release.url != expected ||
                 release.size !in 1..Int.MAX_VALUE.toLong() ||
                 release.minimumSdk !in 24..10_000 ||
-                release.notes.length > 8_000
+                release.notes.codePointCount(0, release.notes.length) > 8_000
         )
             throw UpdateException(UpdateProblem.Check)
     }

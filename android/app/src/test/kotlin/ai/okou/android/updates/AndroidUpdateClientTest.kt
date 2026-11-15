@@ -28,6 +28,41 @@ class AndroidUpdateClientTest {
     @get:Rule val files = TemporaryFolder()
 
     @Test
+    fun releaseNotesRetainSupplementaryCharactersAtTheCanonicalLimit() = runBlocking {
+        MockWebServer().use { server ->
+            server.start()
+            val notes = "\uD83D\uDE80".repeat(8_000)
+            val release = updateRelease().copy(notes = notes)
+            server.enqueue(
+                MockResponse().setBody(Json.encodeToString(AndroidUpdates(true, null, release)))
+            )
+            server.enqueue(
+                MockResponse()
+                    .setBody(
+                        Json.encodeToString(
+                            AndroidUpdates(true, null, release.copy(notes = notes + "!"))
+                        )
+                    )
+            )
+            AndroidUpdateClient(
+                    ApplicationProvider.getApplicationContext(),
+                    server.url("/"),
+                    "0.12.0",
+                    files.newFolder(),
+                )
+                .use { updater ->
+                    assertEquals(notes, updater.check().release.notes)
+                    try {
+                        updater.check()
+                        fail("Expected the canonical release-note limit")
+                    } catch (error: UpdateException) {
+                        assertEquals(UpdateProblem.Check, error.problem)
+                    }
+                }
+        }
+    }
+
+    @Test
     fun rejectedApkRequestBecomesRecoverableDownloadFailure() = runBlocking {
         MockWebServer().use { server ->
             server.start()
