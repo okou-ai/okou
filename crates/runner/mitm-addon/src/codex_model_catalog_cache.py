@@ -193,7 +193,6 @@ class _FlowState:
     request_started_at: float
     entry_age_ms: int | None
     in_flight: _InFlight = field(repr=False)
-    prefetch_owner: bool = False
     upstream_encoding: str | None = None
     compressed_content_length: int | None = None
     capture: bytearray | None = field(default=None, repr=False)
@@ -448,7 +447,7 @@ def _set_not_stored(
         entry_age_ms=state.entry_age_ms,
         validation_latency_ms=_bounded_milliseconds(completed_at - state.request_started_at),
         upstream_encoding=state.upstream_encoding,
-        prefetch_role="producer" if state.prefetch_owner else None,
+        prefetch_role="producer" if state.in_flight.prefetch_owner else None,
     )
 
 
@@ -651,7 +650,6 @@ async def prepare_request(flow: http.HTTPFlow, *, request_end_stream: bool) -> b
             request_started_at=now,
             entry_age_ms=entry_age_ms,
             in_flight=in_flight,
-            prefetch_owner=is_prefetch,
         )
         flow.metadata[_FLOW_STATE] = state
         if is_prefetch:
@@ -737,7 +735,7 @@ def handle_response_headers(flow: http.HTTPFlow) -> bool:
         if bypass_reason is not None:
             _bypass_response(flow, state, bypass_reason)
         return True
-    if not state.prefetch_owner:
+    if not state.in_flight.prefetch_owner:
         if encoding == catalog_validation.BROTLI_ENCODING:
             state.upstream_encoding = catalog_validation.BROTLI_ENCODING
         _reject_encoded_response(flow, state)
@@ -879,7 +877,7 @@ async def _finalize_response_snapshot(
                     content_type=validated.content_type,
                     etag=validated.etag,
                     validated_at=completed_at,
-                    prefetched=state.prefetch_owner,
+                    prefetched=state.in_flight.prefetch_owner,
                 )
                 evictions = _replace_entry(state.key, entry)
                 _publish_result(state, entry)
@@ -892,7 +890,7 @@ async def _finalize_response_snapshot(
                     ),
                     eviction_count=evictions,
                     upstream_encoding=state.upstream_encoding,
-                    prefetch_role="producer" if state.prefetch_owner else None,
+                    prefetch_role="producer" if state.in_flight.prefetch_owner else None,
                 )
         if cancellation is not None:
             raise cancellation
