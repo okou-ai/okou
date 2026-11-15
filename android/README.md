@@ -535,7 +535,8 @@ catches up through the existing canonical HTTP list, indicators and selected
 history owners. Those reads remain independent of token/attachment readiness and
 of one another. Notifications contain no authoritative rows: recognized chat
 topics, initial attachment, reconnect and continuity loss invalidate HTTP reads.
-Bursts coalesce, retaining a trailing pass when a read is already in flight.
+Each confirmed resource coalesces its own notifications and retains a trailing
+read, so held history cannot delay subsequent list or indicator updates.
 Drafts and pending sends retain their existing durable journal ownership.
 
 The native connection notice reports connecting or unavailable with explicit

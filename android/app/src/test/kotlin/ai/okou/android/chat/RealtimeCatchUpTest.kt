@@ -78,9 +78,11 @@ class RealtimeCatchUpTest {
                     if (request.requestUrl?.pathSegments?.last() == "event-rows") held.await()
                 }
                 api.indicators = { MockResponse().setResponseCode(503).setBody("unavailable") }
-                api.events = {
+                api.events = { request ->
+                    val fresh =
+                        (request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0) < 30
                     jsonResponse(
-                        """{"events":[${chatEventWire(seq = 30, id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind = "renamed", title = "External title")}],"hasMore":false}"""
+                        """{"events":[${if (fresh) chatEventWire(seq = 30, id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind = "renamed", title = "External title") else ""}],"hasMore":false}"""
                     )
                 }
                 model.updates.foreground(true)
@@ -118,8 +120,9 @@ class RealtimeCatchUpTest {
                     )
                 }
                 repeat(50) { external.invalidate() }
-                held.countDown()
                 model.uiState.first { it.threads.any { row -> row.title == "Trailing title" } }
+                assertEquals(HistoryPhase.Loading, model.history.uiState.value.phase)
+                held.countDown()
                 val history =
                     model.history.uiState.first {
                         it.phase == HistoryPhase.Ready &&

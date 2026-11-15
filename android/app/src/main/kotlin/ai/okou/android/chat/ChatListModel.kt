@@ -10,7 +10,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -97,26 +97,37 @@ class ChatListModel(
     private var indicatorsJob: Job? = null
     private val writes = Mutex()
     private val projectSync = ProjectSync(service, dispatcher)
+    private val listInvalidations = Channel<Unit>(Channel.CONFLATED)
+    private val indicatorInvalidations = Channel<Unit>(Channel.CONFLATED)
     val updates =
         ChatUpdatesModel(realtime, viewModelScope, { current() }, onFailure) {
-            coroutineScope {
-                launch {
-                    listJob?.join()
-                    if (current()) {
-                        refreshList()
-                        listJob?.join()
-                    }
-                }
-                launch {
-                    indicatorsJob?.join()
-                    if (current()) {
-                        refreshIndicators()
-                        indicatorsJob?.join()
-                    }
-                }
-                launch { history.catchUp() }
+            if (current()) {
+                listInvalidations.trySend(Unit)
+                indicatorInvalidations.trySend(Unit)
+                history.invalidate()
             }
         }
+
+    init {
+        viewModelScope.launch {
+            for (ignored in listInvalidations) {
+                listJob?.join()
+                if (current()) {
+                    refreshList()
+                    listJob?.join()
+                }
+            }
+        }
+        viewModelScope.launch {
+            for (ignored in indicatorInvalidations) {
+                indicatorsJob?.join()
+                if (current()) {
+                    refreshIndicators()
+                    indicatorsJob?.join()
+                }
+            }
+        }
+    }
 
     private fun navigation() =
         mutable.value.let { state ->
@@ -456,6 +467,8 @@ class ChatListModel(
     override fun onCleared() {
         retired = true
         updates.close()
+        listInvalidations.close()
+        indicatorInvalidations.close()
         history.close()
         cache.close()
     }

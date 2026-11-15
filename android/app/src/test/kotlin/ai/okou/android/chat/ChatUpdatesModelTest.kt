@@ -15,26 +15,19 @@ import org.junit.Test
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ChatUpdatesModelTest {
     @Test
-    fun heldReadRetainsOneTrailingPassWithoutHidingDisconnectOrBlockingRetry() = runTest {
+    fun disconnectRecoveryAndRetryInvalidateWithoutOwningTheCanonicalReads() = runTest {
         val external = TestRealtimeService()
-        val held = CompletableDeferred<Unit>()
         var reads = 0
-        val owner =
-            ChatUpdatesModel(external, backgroundScope, { true }, { throw it }) {
-                reads++
-                if (reads == 1) held.await()
-            }
+        val owner = ChatUpdatesModel(external, backgroundScope, { true }, { throw it }) { reads++ }
         owner.foreground(true)
         runCurrent()
-        assertEquals(1, reads)
+        val initial = reads
         repeat(100) { external.invalidate() }
         external.snapshot.value = external.snapshot.value.copy(phase = RealtimePhase.Unavailable)
         runCurrent()
         assertEquals(RealtimePhase.Unavailable, owner.phase.value)
-        assertEquals(1, reads)
-        held.complete(Unit)
-        runCurrent()
-        assertEquals(2, reads)
+        assertTrue(reads > initial)
+        val disconnected = reads
         external.snapshot.value =
             external.snapshot.value.copy(
                 phase = RealtimePhase.Connected,
@@ -42,7 +35,7 @@ class ChatUpdatesModelTest {
             )
         runCurrent()
         assertEquals(RealtimePhase.Connected, owner.phase.value)
-        assertEquals(3, reads)
+        assertTrue(reads > disconnected)
         owner.close()
         runCurrent()
         assertEquals(external.opened.get(), external.closed.get())

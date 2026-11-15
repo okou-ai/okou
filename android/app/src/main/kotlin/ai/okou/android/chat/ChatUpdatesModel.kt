@@ -3,20 +3,19 @@ package ai.okou.android.chat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** Workspace lifetime; foreground subscription and independent, coalesced HTTP catch-up. */
+/** Workspace subscription lifetime; confirmed resources own their independent trailing reads. */
 class ChatUpdatesModel(
     private val service: RealtimeService?,
     private val scope: CoroutineScope,
     private val authorized: () -> Boolean,
     private val onFailure: (Exception) -> Unit,
-    private val catchUp: suspend () -> Unit,
+    private val invalidate: () -> Unit,
 ) {
     private val mutable = MutableStateFlow(RealtimePhase.Stopped)
     val phase = mutable.asStateFlow()
@@ -25,13 +24,6 @@ class ChatUpdatesModel(
     private var generation = 0L
     private var observation: Job? = null
     private val connection = Mutex()
-    private val requests = Channel<Unit>(Channel.CONFLATED)
-    private val reads =
-        scope.launch {
-            for (ignored in requests) {
-                if (!closed && foreground && authorized()) catchUp()
-            }
-        }
 
     fun foreground(value: Boolean) {
         if (closed || foreground == value) return
@@ -51,7 +43,7 @@ class ChatUpdatesModel(
         previous?.cancel()
         val ticket = ++generation
         mutable.value = RealtimePhase.Connecting
-        requests.trySend(Unit)
+        invalidate()
         observation =
             scope.launch {
                 connection.withLock {
@@ -64,7 +56,7 @@ class ChatUpdatesModel(
                                 next.failure?.let(onFailure)
                                 if (current(ticket) && next.revision != revision) {
                                     revision = next.revision
-                                    requests.trySend(Unit)
+                                    invalidate()
                                 }
                             }
                         }
@@ -87,8 +79,6 @@ class ChatUpdatesModel(
         closed = true
         generation++
         observation?.cancel()
-        reads.cancel()
-        requests.close()
         mutable.value = RealtimePhase.Stopped
     }
 }

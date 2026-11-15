@@ -1,10 +1,13 @@
 package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
+import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.RealtimePhase
 import ai.okou.android.chat.RealtimeSnapshot
 import android.view.KeyEvent
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -56,6 +59,7 @@ class NativeRealtimeTest {
         var scenario: ActivityScenario<MainActivity>? = null
         var composerJob: Job? = null
         var chatJob: Job? = null
+        var chats: ChatListModel? = null
         val failures = mutableListOf<Throwable>()
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
@@ -72,9 +76,17 @@ class NativeRealtimeTest {
                         10_000,
                     )
                 )
+            fun ime(visible: Boolean) = condition {
+                var shown = false
+                checkNotNull(scenario).onActivity {
+                    shown =
+                        ViewCompat.getRootWindowInsets(it.window.decorView)
+                            ?.isVisible(WindowInsetsCompat.Type.ime()) == true
+                }
+                shown == visible
+            }
             text(app.getString(R.string.chat_list_title))
             text(app.getString(R.string.realtime_connecting))
-            text("Personal chat")
             scenario.onActivity {
                 val ready =
                     checkNotNull(
@@ -82,7 +94,13 @@ class NativeRealtimeTest {
                     )
                 composerJob = ready.composer.viewModelScope.coroutineContext[Job]
                 chatJob = ready.chats.viewModelScope.coroutineContext[Job]
+                chats = ready.chats
             }
+            condition { chats?.uiState?.value?.threads?.any { it.id == CHAT_PERSONAL } == true }
+            androidx.test.uiautomator
+                .UiScrollable(UiSelector().scrollable(true))
+                .scrollIntoView(UiSelector().text("Personal chat"))
+            text("Personal chat")
             device
                 .findObject(UiSelector().packageName(app.packageName).text("Personal chat"))
                 .click()
@@ -103,7 +121,9 @@ class NativeRealtimeTest {
                 )
             editor.click()
             editor.text = "Keep this draft"
+            ime(true)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+            ime(false)
             external.snapshot.value =
                 external.snapshot.value.copy(phase = RealtimePhase.Unavailable)
             text(app.getString(R.string.realtime_unavailable))
