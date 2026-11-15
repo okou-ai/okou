@@ -146,7 +146,6 @@ interface RunScopedContext {
   readonly slackWorkspaceId: string;
   readonly runId: string;
   readonly threadId: string;
-  readonly runnerGroup: string;
   readonly agentId: string;
 }
 
@@ -370,7 +369,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       return {
         ...base,
         agentId,
-        runnerGroup,
         runId: sent.runId,
         threadId: sent.threadId,
       };
@@ -401,7 +399,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       }
       return issued.receivedExecution.sandboxToken;
     }
-    function readRunExecution(_runnerGroup: string, runId: string) {
+    function readRunExecution(runId: string) {
       const issued = receivedExecutions.get(runId);
       if (!issued) {
         throw new Error("Expected the already returned Runner execution");
@@ -1846,10 +1844,11 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       const { seedRunScoped, okouToken, sandboxToken, readRunExecution } =
         fixture;
       await fixture.run(async () => {
-        const { orgId, userId, runId, threadId, runnerGroup, agentId } =
-          await fixture.run(() => {
+        const { orgId, userId, runId, threadId, agentId } = await fixture.run(
+          () => {
             return seedRunScoped();
-          });
+          },
+        );
         const objectStore = chatCallbacks.acceptChatObjectStorage();
         const operationId = randomUUID();
         const token = okouToken({
@@ -2250,7 +2249,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
 
         if (!artifactUpload) {
           const receivedExecution = await fixture.run(() => {
-            return readRunExecution(runnerGroup, runId);
+            return readRunExecution(runId);
           });
           await fixture.run(() => {
             return completeRun({
@@ -2725,11 +2724,9 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     const fixture = createUploadFixture();
     const { seedRunScoped, okouToken, readRunExecution } = fixture;
     await fixture.run(async () => {
-      const { orgId, userId, runId, threadId, runnerGroup } = await fixture.run(
-        () => {
-          return seedRunScoped();
-        },
-      );
+      const { orgId, userId, runId, threadId } = await fixture.run(() => {
+        return seedRunScoped();
+      });
       chatCallbacks.acceptChatObjectStorage();
       const operationId = randomUUID();
       const token = okouToken({ userId, orgId, runId });
@@ -2759,7 +2756,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         throw new Error("Expected canonical Slack upload initialization");
       }
       const receivedExecution = await fixture.run(() => {
-        return readRunExecution(runnerGroup, runId);
+        return readRunExecution(runId);
       });
       await fixture.run(() => {
         return completeRun({
