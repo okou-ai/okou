@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 from authority_utils import (
     IPV6_VERSION,
+    RawAuthorityHost,
     authority_has_empty_port,
     has_ascii_space_or_control,
     is_default_scheme_port,
@@ -91,11 +92,6 @@ class _CompiledFirewallConfigBase(NamedTuple):
     malformed: bool
 
 
-class _RawAuthorityHost(NamedTuple):
-    hostname: str
-    bracketed: bool
-
-
 def _has_base_url_params(base: str) -> bool:
     return "{" in base and "}" in base
 
@@ -127,7 +123,7 @@ def _is_ascii(value: str) -> bool:
     return all(ord(char) <= _ASCII_MAX for char in value)
 
 
-def _extract_raw_hostname(netloc: str) -> _RawAuthorityHost | None:
+def _extract_raw_hostname(netloc: str) -> RawAuthorityHost | None:
     authority = netloc.rsplit("@", maxsplit=1)[-1]
     if not authority:
         return None
@@ -139,12 +135,12 @@ def _extract_raw_hostname(netloc: str) -> _RawAuthorityHost | None:
         rest = authority[close_index + 1 :]
         if rest and not rest.startswith(":"):
             return None
-        return _RawAuthorityHost(authority[1:close_index], bracketed=True)
+        return RawAuthorityHost(authority[1:close_index], bracketed=True)
 
     if authority.count(":") == 1:
         host, _, _port = authority.rpartition(":")
-        return _RawAuthorityHost(host, bracketed=False) if host else None
-    return _RawAuthorityHost(authority, bracketed=False)
+        return RawAuthorityHost(host, bracketed=False) if host else None
+    return RawAuthorityHost(authority, bracketed=False)
 
 
 def _format_param_segment(parsed: SegmentParam) -> str:
@@ -286,7 +282,7 @@ def _split_base_match_url(
 
 
 def _normalize_authority_host(
-    raw_host: _RawAuthorityHost,
+    raw_host: RawAuthorityHost,
     *,
     allow_host_params: bool = False,
 ) -> tuple[str, bool]:
@@ -319,7 +315,7 @@ def _normalize_authority_host(
 
 def _normalize_authority(
     scheme: str,
-    host: _RawAuthorityHost | None,
+    host: RawAuthorityHost | None,
     port: int | None,
     *,
     allow_host_params: bool = False,
@@ -672,9 +668,9 @@ def _match_compiled_base_url_parts(
 
 def _split_https_authority_parts(host: str, port: int) -> _BaseUrlParts | None:
     raw_host = (
-        _RawAuthorityHost(host[1:-1], bracketed=True)
+        RawAuthorityHost(host[1:-1], bracketed=True)
         if host.startswith("[") and host.endswith("]")
-        else _RawAuthorityHost(host, bracketed=False)
+        else RawAuthorityHost(host, bracketed=False)
     )
     authority_result = _normalize_authority(
         "https",
