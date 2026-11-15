@@ -146,6 +146,8 @@ private final class ForkFixture: Sendable {
           )
         case "/api/feature-switches":
           return ChatHTTPResponse(body: #"{"effectiveSwitches":{}}"#)
+        case "/api/indicators":
+          return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
         case "/api/user-model-preference":
           return ChatHTTPResponse(body: "{}")
         case "/api/run-models", "/api/model-catalog":

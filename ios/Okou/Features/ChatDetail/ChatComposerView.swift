@@ -26,6 +26,7 @@ struct ChatComposerView: View {
   var sendTransition: ConversationSendTransition? = nil
   /// "Message <agent>", so the field names who will do the work.
   var placeholder: String? = nil
+  var showsTrailingFeedbackInput = true
   var project: ChatProject? = nil
   var removeProject: (() -> Void)? = nil
 
@@ -182,6 +183,7 @@ struct ChatComposerView: View {
               ChatFeedbackComposer(
                 state: state, inputID: inputID, isFocused: $isFocused,
                 acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
+                showsTrailingParagraph: showsTrailingFeedbackInput,
                 returnKeyPreference: returnKeyPreference,
                 canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
               )

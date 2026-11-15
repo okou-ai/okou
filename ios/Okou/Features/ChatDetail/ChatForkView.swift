@@ -51,7 +51,8 @@ struct ChatForkView: View {
           modelSelection: flow.modelSelection,
           connectorSelection: flow.modelSelection.connectors,
           mentionSource: ComposerMentionSource(agentID: flow.agentID, threads: threads),
-          workflowSource: flow.workflowSource, agentID: flow.agentID
+          workflowSource: flow.workflowSource, agentID: flow.agentID,
+          showsTrailingFeedbackInput: false
         )
         // A failed or unknown attempt retries the captured message, never an edited body
         // under the same idempotency key. The error banner owns the explicit retry.
@@ -82,7 +83,7 @@ struct ChatForkView: View {
     }
     .presentationDetents([.medium, .large])
     .presentationDragIndicator(.visible)
-    .presentationBackground(OkouColor.background)
+    .okouSheetBackground(OkouColor.background)
     .accessibilityIdentifier("fork-sheet")
   }
 }

@@ -9,6 +9,7 @@ struct ChatFeedbackComposer: View {
   @Binding var isFocused: Bool
   let acceptsImages: Bool
   var placeholder = String(localized: "Message Okou")
+  var showsTrailingParagraph = true
   var returnKeyPreference = ComposerReturnKeyPreference.newline
   var canSendFromKeyboard = false
   var submitFromKeyboard: (@MainActor () -> Void)? = nil
@@ -24,7 +25,9 @@ struct ChatFeedbackComposer: View {
         VStack(alignment: .leading, spacing: OkouSpace.md) {
           ForEach(Array(blocks.enumerated()), id: \.element.id) { order, block in
             if block.isFeedback || !block.content.text.isEmpty
-              || !block.content.contextLabels.isEmpty || block.id == blocks.last?.id
+              || !block.content.contextLabels.isEmpty
+              || (block.id == blocks.last?.id
+                && (showsTrailingParagraph || !state.document.hasFeedback))
               || focusedBlock == block.id
             {
               VStack(alignment: .leading, spacing: OkouSpace.sm) {
