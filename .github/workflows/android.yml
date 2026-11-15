@@ -113,14 +113,14 @@ jobs:
             -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect \
             --no-daemon --stacktrace --console=plain \
             2>&1 | tee build/reports/instrumentation/gradle.log
-          # Only this test invocation signs the release with the disposable debug key.
-          ./gradlew :release-test:pixel2Api35ReleaseAndroidTest \
-            -Pandroid.injected.signing.store.file="$HOME/.android/debug.keystore" \
-            -Pandroid.injected.signing.store.password=android \
-            -Pandroid.injected.signing.key.alias=androiddebugkey \
-            -Pandroid.injected.signing.key.password=android \
+      - name: Test optimized release startup on Android API 35
+        shell: bash
+        working-directory: android
+        run: |
+          set -euo pipefail
+          bash scripts/test-release-startup.sh \
             -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect \
-            --no-daemon --stacktrace --console=plain \
+            --stacktrace --console=plain \
             2>&1 | tee -a build/reports/instrumentation/gradle.log
       - name: Retain Android test reports and diagnostics
         if: always()

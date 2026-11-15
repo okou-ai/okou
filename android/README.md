@@ -318,23 +318,18 @@ Compile/package the suite without starting a device:
 
 The separate `release-test` module launches the optimized, non-debuggable app in
 its own process with the real Application and authentication SDK. It uses UI
-Automator without importing app classes or adding test-only keep rules. CI first
-runs the Debug suite above, which creates the disposable debug signing key, then:
+Automator without importing app classes or adding test-only keep rules. Run it with:
 
 ```bash
-./gradlew :release-test:pixel2Api35ReleaseAndroidTest \
-  -Pandroid.injected.signing.store.file="$HOME/.android/debug.keystore" \
-  -Pandroid.injected.signing.store.password=android \
-  -Pandroid.injected.signing.key.alias=androiddebugkey \
-  -Pandroid.injected.signing.key.password=android \
-  -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect \
-  --no-daemon
+bash scripts/test-release-startup.sh \
+  -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
 ```
 
-Only this test invocation uses debug signing; normal Release builds remain
-unsigned until the production signing step. This fresh-install startup smoke
-test does not establish an authenticated provider session or every optimized
-business path. Its native reports and failure diagnostics live under
+The helper creates a fresh PKCS12 test key for each invocation and removes it on
+exit. It owns the signing location independently of the runner's Android home.
+Normal Release builds remain unsigned until the production signing step. This
+fresh-install startup smoke test does not establish an authenticated provider
+session or every optimized business path. Its native reports and failure diagnostics live under
 `release-test/build/` and are retained with the existing instrumentation artifact.
 
 Use an isolated test emulator. The fixture snapshots/restores app preferences,
