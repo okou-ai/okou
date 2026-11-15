@@ -1305,7 +1305,7 @@ export function createThreadClaimRunObjects(
   const telegramContext$ = threadContext.telegramContext$;
   const agentPhoneContext$ = threadContext.agentPhoneContext$;
   const discordContext$ = threadContext.discordContext$;
-  const automationContext$ = threadContext.automationContext$;
+  const automationEvent$ = threadContext.automationContext$;
   // Per-claim dispatch timing collectors, created once per graph like the run
   // ids; commands record into them in their own order.
   const claimRunTiming$ = computed((get): ClaimRunTiming => {
@@ -1345,7 +1345,7 @@ export function createThreadClaimRunObjects(
       agentId: bootstrap.agentId,
     };
   });
-  const promptInputInput$ = computed(
+  const promptInput$ = computed(
     async (get): Promise<QueuedPromptGraphInput> => {
       const head = await get(head$);
       return {
@@ -1355,7 +1355,7 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const promptQueuedEventQueuedEvent$ = computed(async (get) => {
+  const promptEvent$ = computed(async (get) => {
     // The picked head already excludes consumed and revoked inputs.
     const picked = await get(pickedEvent$);
     const event = picked?.eventType === "input.prompt" ? picked : null;
@@ -1391,32 +1391,13 @@ export function createThreadClaimRunObjects(
       requiredOfficialWorkflowIds,
     };
   });
-  const promptSourceAutonomyBudgetSourceAutonomyBudget$ = computed(
-    async (get) => {
-      const event = await get(promptQueuedEventQueuedEvent$);
-      if (!event) {
-        return null;
-      }
-      return event.sourceAutonomyBudget;
-    },
-  );
-  const isOfficialQueuedPrompt$ = computed(async (get) => {
-    const event = await get(promptQueuedEventQueuedEvent$);
-    if (!event) {
-      return false;
-    }
-    return event.preparation.isOfficialWorkflowThread;
-  });
-  const promptQueuedMessageQueuedMessage$ = computed(
+  const promptMessage$ = computed(
     async (get): Promise<QueuedUserMessage | null> => {
-      const [event, sourceBudget] = await Promise.all([
-        get(promptQueuedEventQueuedEvent$),
-        get(promptSourceAutonomyBudgetSourceAutonomyBudget$),
-      ]);
+      const event = await get(promptEvent$);
       if (!event) {
         return null;
       }
-      if (await get(isOfficialQueuedPrompt$)) {
+      if (event.preparation.isOfficialWorkflowThread) {
         throw new QueuedPromptLaunchUnavailableError(
           OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE,
         );
@@ -1432,16 +1413,16 @@ export function createThreadClaimRunObjects(
         contextId: event.contextId,
         autonomyBudget: queuedUserMessageAutonomyBudget(
           event.contextType,
-          sourceBudget,
+          event.sourceAutonomyBudget,
           get(maxAutonomyBudget$),
         ),
       };
     },
   );
-  const promptArgsArgs$ = computed(
+  const promptArgs$ = computed(
     async (get): Promise<CreateQueuedChatRunInputArgs> => {
-      const { head, timing } = await get(promptInputInput$);
-      const queuedMessage = await get(promptQueuedMessageQueuedMessage$);
+      const { head, timing } = await get(promptInput$);
+      const queuedMessage = await get(promptMessage$);
       if (!queuedMessage || queuedMessage.id !== head.id) {
         throw new Error("Prompt preparation lost its selected head");
       }
@@ -1498,9 +1479,9 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const promptMaterialMaterial$ = computed(
+  const promptMaterial$ = computed(
     async (get): Promise<QueuedLaunchMaterial> => {
-      const { queuedMessage } = await get(promptArgsArgs$);
+      const { queuedMessage } = await get(promptArgs$);
       switch (queuedMessage.contextType) {
         case "web":
         case "agent_run": {
@@ -1599,10 +1580,9 @@ export function createThreadClaimRunObjects(
       throw new QueuedPromptLaunchUnavailableError();
     },
   );
-  const promptContinuation$ = threadContext.threadContinuation$;
   const runTemplates$ = threadContext.templates$;
-  const promptCaptureCapture$ = computed(async (get) => {
-    const { head } = await get(promptInputInput$);
+  const captureNetworkBodies$ = computed(async (get) => {
+    const { head } = await get(promptInput$);
     if (requestFacts?.input.id === head.id) {
       return requestFacts.input.captureNetworkBodies;
     }
@@ -1614,7 +1594,7 @@ export function createThreadClaimRunObjects(
       .limit(1);
     return row !== undefined;
   });
-  const promptRunInputRunInput$ = computed(
+  const promptRunInput$ = computed(
     async (
       get,
     ): Promise<
@@ -1626,11 +1606,11 @@ export function createThreadClaimRunObjects(
     > => {
       const [args, launch, model, session, capture, features, templates] =
         await Promise.all([
-          get(promptArgsArgs$),
-          get(promptMaterialMaterial$),
+          get(promptArgs$),
+          get(promptMaterial$),
           get(threadContext.modelSelection$),
-          get(promptContinuation$),
-          get(promptCaptureCapture$),
+          get(threadContext.threadContinuation$),
+          get(captureNetworkBodies$),
           get(bootstrap.featureSwitches$),
           get(runTemplates$),
         ]);
@@ -1685,28 +1665,28 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const internalEarlyAssembly$ = computed(
+  const earlyPromptAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly | null> => {
       const head = await get(head$);
-      const selected = await settle(get(promptQueuedMessageQueuedMessage$));
+      const selected = await settle(get(promptMessage$));
       if (!selected.ok) {
         return queuedPromptPreparationRejection(selected.error, head);
       }
       return selected.value?.id === head.id ? null : { kind: "not-ready" };
     },
   );
-  const initializeQueuedPrompt$ = command(
+  const recordPromptQueueAge$ = command(
     async (
       { get },
       head: ChatQueueHeadContext,
       signal: AbortSignal,
-    ): Promise<boolean> => {
-      const early = await get(internalEarlyAssembly$);
+    ): Promise<void> => {
+      const early = await get(earlyPromptAssembly$);
       signal.throwIfAborted();
       if (early) {
-        return false;
+        return;
       }
-      const queued = await get(promptQueuedMessageQueuedMessage$);
+      const queued = await get(promptMessage$);
       signal.throwIfAborted();
       if (!queued) {
         throw new Error("Prepared prompt has no selected queue input");
@@ -1718,23 +1698,22 @@ export function createThreadClaimRunObjects(
         startedAt: queued.createdAt.getTime(),
         finishedAt: head.apiStartTime,
       });
-      return true;
     },
   );
-  const promptAssembleQueuedPromptRunAssembly$ = computed(
+  const promptAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
-      const early = await get(internalEarlyAssembly$);
+      const early = await get(earlyPromptAssembly$);
       if (early) {
         return early;
       }
-      const input = await get(promptInputInput$);
+      const input = await get(promptInput$);
       const { head, timing } = input;
       const prepared = await settle(
         (async () => {
           const startedAt = now();
           const result = await onRejection(
             (async () => {
-              return await get(promptRunInputRunInput$);
+              return await get(promptRunInput$);
             })(),
             () => {
               timing.recordElapsed({
@@ -1783,26 +1762,26 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const resourceValidation$ = computed(async (get) => {
+  const promptResourcesValid$ = computed(async (get) => {
     const [material, templates] = await Promise.all([
-      settle(get(promptMaterialMaterial$)),
+      settle(get(promptMaterial$)),
       get(runTemplates$),
     ]);
     if (!material.ok) {
       queuedPromptPreparationRejection(
         material.error,
-        (await get(promptInputInput$)).head,
+        (await get(promptInput$)).head,
       );
       return false;
     }
     return !("error" in templates);
   });
-  const promptExecutionSelectionIdentityInput$ = computed(async (get) => {
-    if (await get(internalEarlyAssembly$)) {
+  const promptIdentity$ = computed(async (get) => {
+    if (await get(earlyPromptAssembly$)) {
       return null;
     }
-    const { head, runTiming: timing } = await get(promptInputInput$);
-    const args = await get(promptArgsArgs$);
+    const { head, runTiming: timing } = await get(promptInput$);
+    const args = await get(promptArgs$);
     return {
       timing,
       owner: { userId: args.userId, orgId: args.agent.orgId },
@@ -1814,13 +1793,13 @@ export function createThreadClaimRunObjects(
       },
     };
   });
-  const promptExecutionSelectionSelectionInput$ = computed(async (get) => {
-    const identity = await get(promptExecutionSelectionIdentityInput$);
+  const promptSelection$ = computed(async (get) => {
+    const identity = await get(promptIdentity$);
     if (!identity) {
       return null;
     }
     const [args, model] = await Promise.all([
-      get(promptArgsArgs$),
+      get(promptArgs$),
       get(threadContext.modelSelection$),
     ]);
     if ("status" in model || args.queuedMessage.autonomyBudget.kind !== "ok") {
@@ -1842,44 +1821,27 @@ export function createThreadClaimRunObjects(
       },
     };
   });
-  const promptExecutionResourcesContinuation$ = computed(async (get) => {
-    if (await get(internalEarlyAssembly$)) {
-      return undefined;
-    }
-    return (await get(promptContinuation$)) ?? undefined;
-  });
-  const command$ = computed(async (get) => {
-    const assembly = await get(promptAssembleQueuedPromptRunAssembly$);
-    return assembly.kind === "assembled" ? assembly.run : null;
-  });
-  const promptExecutionResourcesFeatureSwitchContext$ = computed(
-    async (get) => {
-      return (await get(internalEarlyAssembly$))
-        ? undefined
-        : await get(bootstrap.featureSwitches$);
-    },
-  );
-  const availableMaterial$ = computed(async (get) => {
-    if (await get(internalEarlyAssembly$)) {
+  const availablePromptMaterial$ = computed(async (get) => {
+    if (await get(earlyPromptAssembly$)) {
       return null;
     }
-    const material = await settle(get(promptMaterialMaterial$));
+    const material = await settle(get(promptMaterial$));
     if (!material.ok) {
       queuedPromptPreparationRejection(
         material.error,
-        (await get(promptInputInput$)).head,
+        (await get(promptInput$)).head,
       );
       return null;
     }
     return material.value;
   });
-  const promptExecutionResourcesCallbackInputs$ = computed(async (get) => {
-    if (await get(internalEarlyAssembly$)) {
+  const promptCallbacks$ = computed(async (get) => {
+    if (await get(earlyPromptAssembly$)) {
       return undefined;
     }
     const [args, material] = await Promise.all([
-      get(promptArgsArgs$),
-      get(availableMaterial$),
+      get(promptArgs$),
+      get(availablePromptMaterial$),
     ]);
     if (!material) {
       return undefined;
@@ -1891,10 +1853,9 @@ export function createThreadClaimRunObjects(
       ...queuedIntegrationLaunchFields(material, args.agent.id),
     });
   });
-  const event$ = automationContext$;
-  const target$ = threadContext.automationTarget$;
-  const queuedAutomationBudgetSourceAutonomyBudget$ = computed(async (get) => {
-    const event = await get(event$);
+  const automationTarget$ = threadContext.automationTarget$;
+  const automationSourceBudget$ = computed(async (get) => {
+    const event = await get(automationEvent$);
     if (!event) {
       return null;
     }
@@ -1916,12 +1877,12 @@ export function createThreadClaimRunObjects(
       .limit(1);
     return { sourceRunId, autonomyBudget: run?.autonomyBudget ?? null };
   });
-  const autonomyBudget$ = computed(
+  const automationBudget$ = computed(
     async (get): Promise<AutonomyBudgetResult> => {
       const [event, target, source] = await Promise.all([
-        get(event$),
-        get(target$),
-        get(queuedAutomationBudgetSourceAutonomyBudget$),
+        get(automationEvent$),
+        get(automationTarget$),
+        get(automationSourceBudget$),
       ]);
       if (!event || !target || !source) {
         return {
@@ -1972,8 +1933,11 @@ export function createThreadClaimRunObjects(
         : { kind: "ok", autonomyBudget: derived.autonomyBudget };
     },
   );
-  const launchMaterial$ = computed(async (get) => {
-    const [event, target] = await Promise.all([get(event$), get(target$)]);
+  const automationMaterial$ = computed(async (get) => {
+    const [event, target] = await Promise.all([
+      get(automationEvent$),
+      get(automationTarget$),
+    ]);
     if (!event || !target) {
       return null;
     }
@@ -1998,10 +1962,10 @@ export function createThreadClaimRunObjects(
       const [head, event, target, launchMaterial, autonomyBudget] =
         await Promise.all([
           get(head$),
-          get(event$),
-          get(target$),
-          get(launchMaterial$),
-          get(autonomyBudget$),
+          get(automationEvent$),
+          get(automationTarget$),
+          get(automationMaterial$),
+          get(automationBudget$),
         ]);
       if (
         !event ||
@@ -2039,10 +2003,7 @@ export function createThreadClaimRunObjects(
       signal.throwIfAborted();
     },
   );
-  const timing$ = computed((get) => {
-    return get(claimRunTiming$).run;
-  });
-  const workflowAutomationLaunchModel$ = computed(
+  const automationModel$ = computed(
     async (get): Promise<ThreadModelSelection | RunFailure> => {
       if (!(await get(automationExecutionInput$))) {
         return {
@@ -2062,8 +2023,8 @@ export function createThreadClaimRunObjects(
   const automationExecutionInput$ = computed(async (get) => {
     const [head, event, target] = await Promise.all([
       get(head$),
-      get(event$),
-      get(target$),
+      get(automationEvent$),
+      get(automationTarget$),
     ]);
     if (!event || !target) {
       return null;
@@ -2075,21 +2036,21 @@ export function createThreadClaimRunObjects(
       triggerSource: manualTriggerSource(target.automation),
     };
   });
-  const workflowAutomationLaunchIdentityInput$ = computed(async (get) => {
+  const automationIdentity$ = computed(async (get) => {
     const args = await get(automationExecutionInput$);
     if (!args) {
       return null;
     }
     return {
-      timing: get(timing$),
+      timing: get(threadContext.dispatchTiming$),
       owner: { orgId: bootstrap.orgId, userId: bootstrap.userId },
       agentId: bootstrap.agentId,
     };
   });
-  const workflowAutomationLaunchSelectionInput$ = computed(async (get) => {
+  const automationSelection$ = computed(async (get) => {
     const [identity, model, args] = await Promise.all([
-      get(workflowAutomationLaunchIdentityInput$),
-      get(workflowAutomationLaunchModel$),
+      get(automationIdentity$),
+      get(automationModel$),
       get(automationExecutionInput$),
     ]);
     return identity && !("kind" in model) && args
@@ -2103,8 +2064,8 @@ export function createThreadClaimRunObjects(
     async (get): Promise<AssembledWorkflowAutomationRun | RunFailure> => {
       const args = await get(automationLaunchReadinessInput$);
       const [selection, model] = await Promise.all([
-        get(workflowAutomationLaunchSelectionInput$),
-        get(workflowAutomationLaunchModel$),
+        get(automationSelection$),
+        get(automationModel$),
       ]);
       if ("kind" in model) {
         return model;
@@ -2151,7 +2112,7 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const initializeWorkflowAutomationRun$ = command(
+  const prepareAutomationRun$ = command(
     async (
       { get },
       args: AssembleWorkflowAutomationRunArgs,
@@ -2160,7 +2121,7 @@ export function createThreadClaimRunObjects(
       const assembly = await get(assembleWorkflowAutomationRun$);
       signal.throwIfAborted();
       if (assembly.kind === "assembled") {
-        get(timing$).recordElapsed(
+        get(threadContext.dispatchTiming$).recordElapsed(
           "api_dispatch_pre_create_agent_workflow_automation_create_run",
           "nested",
           now(),
@@ -2173,7 +2134,7 @@ export function createThreadClaimRunObjects(
   );
   // A head whose automation input can no longer be read is rejected from its
   // captured reads.
-  const queuedAutomationAssemblerInternalEarlyAssembly$ = computed(
+  const earlyAutomationAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly | null> => {
       if (await get(automationExecutionInput$)) {
         return null;
@@ -2191,20 +2152,19 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const initializeAutomationExecution$ = command(
+  const recordAutomationEntryTiming$ = command(
     (
       _store,
       head: ChatQueueHeadContext,
       runTiming: ApiDispatchTimingCollector,
       signal: AbortSignal,
-    ): false => {
+    ): void => {
       signal.throwIfAborted();
       // Records the entrypoint gap on the claim's run timing.
       workflowAutomationTiming(runTiming, head.apiStartTime);
-      return false;
     },
   );
-  const initializeQueuedAutomationInitializeQueuedAutomation$ = command(
+  const prepareAutomationLaunch$ = command(
     async (
       { get },
       head: ChatQueueHeadContext,
@@ -2220,9 +2180,9 @@ export function createThreadClaimRunObjects(
         };
       };
       const [event, loadedTarget] = await Promise.all([
-        get(event$),
-        get(target$),
-        get(queuedAutomationBudgetSourceAutonomyBudget$),
+        get(automationEvent$),
+        get(automationTarget$),
+        get(automationSourceBudget$),
       ]);
       signal.throwIfAborted();
       if (!event || !loadedTarget) {
@@ -2246,8 +2206,8 @@ export function createThreadClaimRunObjects(
       }
       const target = loadedTarget;
       const [material, autonomyBudget] = await Promise.all([
-        get(launchMaterial$),
-        get(autonomyBudget$),
+        get(automationMaterial$),
+        get(automationBudget$),
       ]);
       signal.throwIfAborted();
       if (!material) {
@@ -2291,10 +2251,10 @@ export function createThreadClaimRunObjects(
       if (!args) {
         return;
       }
-      const timing = get(timing$);
+      const timing = get(threadContext.dispatchTiming$);
       const startedAt = performance.now();
       await (async () => {
-        await get(workflowAutomationLaunchModel$);
+        await get(automationModel$);
       })().finally(() => {
         timing.recordDuration(
           "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
@@ -2306,15 +2266,15 @@ export function createThreadClaimRunObjects(
       signal.throwIfAborted();
     },
   );
-  const queuedAutomationAssemblerAssembly$ = computed(
+  const automationAssembly$ = computed(
     async (get): Promise<ChatQueueRunAssembly> => {
-      const early = await get(queuedAutomationAssemblerInternalEarlyAssembly$);
+      const early = await get(earlyAutomationAssembly$);
       if (early) {
         return early;
       }
       const [assembled, target] = await Promise.all([
         get(assembleWorkflowAutomationRun$),
-        get(target$),
+        get(automationTarget$),
       ]);
       if (!target) {
         throw new Error(
@@ -2345,71 +2305,54 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const queuedAutomationAssemblerIdentityInput$ = computed(async (get) => {
-    return await get(workflowAutomationLaunchIdentityInput$);
-  });
-  const queuedAutomationAssemblerSelectionInput$ = computed(async (get) => {
-    return await get(workflowAutomationLaunchSelectionInput$);
-  });
-  const queuedAutomationAssemblerCallbackInputs$ = computed(async (get) => {
-    if (await get(queuedAutomationAssemblerInternalEarlyAssembly$)) {
+  const automationCallbacks$ = computed(async (get) => {
+    if (await get(earlyAutomationAssembly$)) {
       return undefined;
     }
-    return (await get(launchMaterial$))?.callbacks;
-  });
-  const queuedAutomationAssemblerCommand$ = computed(async (get) => {
-    const assembly = await get(queuedAutomationAssemblerAssembly$);
-    return assembly.kind === "assembled" ? assembly.run : null;
+    return (await get(automationMaterial$))?.callbacks;
   });
   const isAutomation$ = computed(async (get) => {
     return (await get(head$)).contextType === "automation";
   });
   const assembly$ = computed(async (get) => {
     return get(
-      (await get(isAutomation$))
-        ? queuedAutomationAssemblerAssembly$
-        : promptAssembleQueuedPromptRunAssembly$,
+      (await get(isAutomation$)) ? automationAssembly$ : promptAssembly$,
     );
   });
   const identityInput$ = computed(
     async (get): Promise<ThreadRunIdentityInput | null> => {
       return (await get(isAutomation$))
-        ? get(queuedAutomationAssemblerIdentityInput$)
-        : get(promptExecutionSelectionIdentityInput$);
+        ? get(automationIdentity$)
+        : get(promptIdentity$);
     },
   );
   const selectionInput$ = computed(
     async (get): Promise<ThreadRunSelectionInput | null> => {
       return (await get(isAutomation$))
-        ? get(queuedAutomationAssemblerSelectionInput$)
-        : get(promptExecutionSelectionSelectionInput$);
+        ? get(automationSelection$)
+        : get(promptSelection$);
     },
   );
-  const selectedCommand$ = computed(async (get) => {
-    return get(
-      (await get(isAutomation$)) ? queuedAutomationAssemblerCommand$ : command$,
-    );
-  });
-  const featureSwitchContext$ = computed(async (get) => {
-    return (await get(isAutomation$))
-      ? undefined
-      : get(promptExecutionResourcesFeatureSwitchContext$);
+  const assembledRun$ = computed(async (get) => {
+    const assembly = await get(assembly$);
+    return assembly.kind === "assembled" ? assembly.run : null;
   });
   const callbackInputs$ = computed(
     async (get): Promise<readonly InternalRunCallback[] | undefined> => {
       return (await get(isAutomation$))
-        ? get(queuedAutomationAssemblerCallbackInputs$)
-        : get(promptExecutionResourcesCallbackInputs$);
+        ? get(automationCallbacks$)
+        : get(promptCallbacks$);
     },
   );
   const threadContinuation$ = computed(
     async (get): Promise<ChatThreadContinuation | undefined> => {
-      return (await get(isAutomation$))
-        ? ((await get(threadContext.threadContinuation$)) ?? undefined)
-        : get(promptExecutionResourcesContinuation$);
+      if (!(await get(isAutomation$)) && (await get(earlyPromptAssembly$))) {
+        return undefined;
+      }
+      return (await get(threadContext.threadContinuation$)) ?? undefined;
     },
   );
-  const preCreateInput$ = computed(
+  const selectedRunInput$ = computed(
     async (get): Promise<ThreadRunSelectionInput> => {
       const input = await get(selectionInput$);
       if (!input) {
@@ -2463,30 +2406,28 @@ export function createThreadClaimRunObjects(
       });
     },
   );
-  const preCreatePermissionPoliciesPermissionPolicies$ = computed(
-    async (get) => {
-      const timing = get(threadContext.dispatchTiming$);
-      const startedAt = performance.now();
-      return await (async () => {
-        return await get(bootstrap.permissionPolicies$);
-      })().finally(() => {
-        timing.recordDuration(
-          "api_dispatch_pre_create_agent_resolve_firewall_metadata",
-          "nested",
-          performance.now() - startedAt,
-          now(),
-        );
-      });
-    },
-  );
-  const preCreatePostAuthorizationPostAuthorization$ = computed(
+  const permissionPolicies$ = computed(async (get) => {
+    const timing = get(threadContext.dispatchTiming$);
+    const startedAt = performance.now();
+    return await (async () => {
+      return await get(bootstrap.permissionPolicies$);
+    })().finally(() => {
+      timing.recordDuration(
+        "api_dispatch_pre_create_agent_resolve_firewall_metadata",
+        "nested",
+        performance.now() - startedAt,
+        now(),
+      );
+    });
+  });
+  const runPreparation$ = computed(
     async (get): Promise<ThreadRunPreparation | CreateRunErrorResult> => {
       const [connectorScope, agentResult, model, policiesResult] =
         await Promise.all([
           get(bootstrap.connectorScope$),
           get(selectedAgent$),
           get(threadContext.subscriptionSelection$),
-          get(preCreatePermissionPoliciesPermissionPolicies$),
+          get(permissionPolicies$),
         ]);
       const agent = agentResult;
       if ("status" in model) {
@@ -2504,11 +2445,11 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const preCreatePreparedInput$ = computed(async (get) => {
+  const preparedRunInput$ = computed(async (get) => {
     const [input, resolution, fullCommand, catalog] = await Promise.all([
-      get(preCreatePostAuthorizationPostAuthorization$),
+      get(runPreparation$),
       get(threadContinuation$),
-      get(selectedCommand$),
+      get(assembledRun$),
       get(claimCatalog$),
     ]);
     if (!fullCommand) {
@@ -2525,7 +2466,7 @@ export function createThreadClaimRunObjects(
     };
   });
   const runArgs$ = computed(async (get) => {
-    const input = await get(preCreatePreparedInput$);
+    const input = await get(preparedRunInput$);
     if (!input || "status" in input) {
       return input;
     }
@@ -2534,12 +2475,6 @@ export function createThreadClaimRunObjects(
       return promptAndSkills;
     }
     return buildThreadRunArgs(input, promptAndSkills);
-  });
-  const preCreateModelFeatureSwitchContext$ = computed(async (get) => {
-    const observed = await get(featureSwitchContext$);
-    return observed === undefined
-      ? await get(bootstrap.featureSwitches$)
-      : observed;
   });
   const runFramework$ = threadContext.requestedFramework$;
   const modelRoute$ = threadContext.modelRoute$;
@@ -2585,7 +2520,7 @@ export function createThreadClaimRunObjects(
   const execution$ = computed(
     async (get): Promise<ThreadExecution | CreateRunErrorResult> => {
       const [{ command }, agent, session] = await Promise.all([
-        get(preCreateInput$),
+        get(selectedRunInput$),
         get(selectedAgent$),
         get(threadContinuation$),
       ]);
@@ -2625,7 +2560,7 @@ export function createThreadClaimRunObjects(
         get(execution$),
         get(body$),
         get(runFramework$),
-        get(preCreateModelFeatureSwitchContext$),
+        get(bootstrap.featureSwitches$),
       ]);
     if (isRouteError(resolved)) {
       return resolved;
@@ -2722,9 +2657,6 @@ export function createThreadClaimRunObjects(
       connectorCatalogSelection: selection.connectorCatalogSelection,
     };
   });
-  const imageModel$ = computed((get) => {
-    return get(bootstrap.selectedImageModel$);
-  });
   const executionPlan$ = computed(async (get) => {
     const args = await get(contextArgs$);
     const gate = enforceCaptureNetworkBodiesGate(
@@ -2738,7 +2670,7 @@ export function createThreadClaimRunObjects(
       await Promise.all([
         get(bodyContext$),
         get(runtimeContext$),
-        get(imageModel$),
+        get(bootstrap.selectedImageModel$),
         get(officialWorkflow$),
       ]);
     const bodyContext = bodyResult;
@@ -2809,7 +2741,7 @@ export function createThreadClaimRunObjects(
     }
     return undefined;
   });
-  const runAdmissionCheckCheckAdmission$ = command(
+  const checkRunAdmission$ = command(
     async ({ get }, input: RunAdmissionInput, signal: AbortSignal) => {
       signal.throwIfAborted();
       const identity = bootstrap;
@@ -2875,7 +2807,6 @@ export function createThreadClaimRunObjects(
     },
   );
 
-  const checkAdmission$ = runAdmissionCheckCheckAdmission$;
   const directSendInsufficientCreditsMessage$ = computed(async (get) => {
     const capabilities = await get(bootstrap.plan$);
     const appUrl = env("APP_URL");
@@ -2982,8 +2913,7 @@ export function createThreadClaimRunObjects(
         }
         if (outcome.error instanceof DrizzleQueryError) {
           const code = safeSqlStateCode(outcome.error);
-          // A compound failure must not add message payloads to diagnostics
-          // that formerly contained only a sort or lease statement.
+          // Keep queued message payloads out of SQL failure diagnostics.
           throw new Error("Failed to commit queued input rejection", {
             cause: code === undefined ? undefined : { code },
           });
@@ -3185,13 +3115,13 @@ export function createThreadClaimRunObjects(
     // whose delegation admission already rejects it.
     if (
       (await get(isAutomation$)) &&
-      (await get(autonomyBudget$)).kind === "invalid"
+      (await get(automationBudget$)).kind === "invalid"
     ) {
       return false;
     }
     const [selection, validSource] = await Promise.all([
       get(selectionInput$),
-      (await get(isAutomation$)) ? true : get(resourceValidation$),
+      (await get(isAutomation$)) ? true : get(promptResourcesValid$),
     ]);
     return !!selection && validSource;
   });
@@ -3278,9 +3208,6 @@ export function createThreadClaimRunObjects(
       };
     });
   });
-  const storageMounts$ = computed((get) => {
-    return get(preparedStorage$);
-  });
   const prepareRunnerStorage$ = command(
     async (
       { get, set },
@@ -3311,7 +3238,7 @@ export function createThreadClaimRunObjects(
         return undefined;
       }
       const [input, model] = await Promise.all([
-        get(preCreateInput$),
+        get(selectedRunInput$),
         get(modelRoute$),
       ]);
       signal.throwIfAborted();
@@ -3321,7 +3248,7 @@ export function createThreadClaimRunObjects(
           isBuiltInModelProviderType(input.command.body.modelProvider)
         ) {
           const credits = await set(
-            checkAdmission$,
+            checkRunAdmission$,
             {
               catalog: await get(claimCatalog$),
               orgId: claim.orgId,
@@ -3339,7 +3266,7 @@ export function createThreadClaimRunObjects(
         return model;
       }
       return await set(
-        checkAdmission$,
+        checkRunAdmission$,
         {
           catalog: await get(claimCatalog$),
           orgId: claim.orgId,
@@ -3376,8 +3303,11 @@ export function createThreadClaimRunObjects(
       const head = await get(head$);
       signal.throwIfAborted();
       if (head.contextType === "automation") {
-        await set(initializeAutomationExecution$, head, timing.run, signal);
-        const [event, target] = await Promise.all([get(event$), get(target$)]);
+        await set(recordAutomationEntryTiming$, head, timing.run, signal);
+        const [event, target] = await Promise.all([
+          get(automationEvent$),
+          get(automationTarget$),
+        ]);
         signal.throwIfAborted();
         if (event && !target) {
           await set(
@@ -3389,7 +3319,7 @@ export function createThreadClaimRunObjects(
           return null;
         }
       } else {
-        await set(initializeQueuedPrompt$, head, signal);
+        await set(recordPromptQueueAge$, head, signal);
       }
       signal.throwIfAborted();
       const { identityInput, authorization } = await set(
@@ -3400,7 +3330,7 @@ export function createThreadClaimRunObjects(
       if (!identityInput) {
         const assembly =
           head.contextType === "automation"
-            ? await get(queuedAutomationAssemblerInternalEarlyAssembly$)
+            ? await get(earlyAutomationAssembly$)
             : await get(assembly$);
         signal.throwIfAborted();
         await set(
@@ -3515,30 +3445,19 @@ export function createThreadClaimRunObjects(
       return [plan, storage, runnerInput] as const;
     },
   );
-  /**
-   * Automation launch arguments are the only write-derived input of these
-   * reads; Web input starts them at once.
-   */
+  /** Validate the automation source before starting shared launch reads. */
   const prepareLaunchResources$ = command(
     async ({ get, set }, head: ChatQueueHeadContext, signal: AbortSignal) => {
       let rewardArgs: AssembleWorkflowAutomationRunArgs | null = null;
       if (head.contextType === "automation") {
-        const launch = await set(
-          initializeQueuedAutomationInitializeQueuedAutomation$,
-          head,
-          signal,
-        );
+        const launch = await set(prepareAutomationLaunch$, head, signal);
         signal.throwIfAborted();
         if (launch.kind === "rejected") {
           // The automation input was rejected from its captured reads;
           // no launch read can change that, so none starts.
           return { kind: "rejected" as const, assembly: launch.assembly };
         }
-        rewardArgs = await set(
-          initializeWorkflowAutomationRun$,
-          launch.args,
-          signal,
-        );
+        rewardArgs = await set(prepareAutomationRun$, launch.args, signal);
         signal.throwIfAborted();
       }
       const [runner, , callbackRows, assembly, identity] = await Promise.all([
@@ -3569,7 +3488,7 @@ export function createThreadClaimRunObjects(
       const [admission, launch] = await Promise.all([
         set(checkClaimAdmission$, signal),
         set(prepareLaunchResources$, head, signal),
-        get(storageMounts$),
+        get(preparedStorage$),
         // Connector reads start independently of prompt/model material. A
         // prefetch miss joins the same loader once for this selected identity.
         get(bootstrap.connectors$),
