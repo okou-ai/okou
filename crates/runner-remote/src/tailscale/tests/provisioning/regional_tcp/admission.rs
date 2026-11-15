@@ -48,6 +48,7 @@ async fn buffered_regional_bursts_preserve_frames_across_shared_peer_batches() {
         // kernel reads, TLS record sizes, or the producer thread's scheduling.
         frames.read_buffer_mut().extend_from_slice(&burst);
         services.push(Service {
+            listener: None,
             task: None,
             frames: Some(frames),
             outgoing: VecDeque::new(),

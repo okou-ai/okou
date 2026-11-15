@@ -256,6 +256,7 @@ async fn exercise(scenario: Scenario) {
             | Scenario::RelayMove
             | Scenario::Concurrent => {
                 let mut services = vec![Service {
+                    listener: None,
                     task: None,
                     frames: Some(frames),
                     outgoing: VecDeque::new(),
@@ -267,6 +268,7 @@ async fn exercise(scenario: Scenario) {
                 }];
                 if matches!(scenario, Scenario::RelayMove) {
                     services.push(Service {
+                        listener: None,
                         task: Some(other.take().unwrap().task),
                         frames: None,
                         outgoing: VecDeque::new(),

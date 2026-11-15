@@ -539,6 +539,7 @@ async fn run_case(case: Case) {
     let mut peers = Peers {
         services: vec![Service {
             task: None,
+            listener: None,
             frames: Some(frames),
             outgoing: VecDeque::new(),
             offset: 0,
