@@ -106,6 +106,15 @@ impl WriteGate {
             changed.await;
         }
     }
+
+    pub(in crate::tailscale::tests) fn resume(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.remaining = usize::MAX;
+        state.pending = false;
+        if let Some(waker) = state.waker.take() {
+            waker.wake();
+        }
+    }
 }
 
 pub(crate) struct PausedTcp<Io = TcpStream> {
@@ -185,7 +194,7 @@ impl<Io> Drop for PausedTcp<Io> {
 }
 
 async fn upgraded_server(
-    listener: TcpListener,
+    listener: &TcpListener,
     tls: Option<Arc<rustls::ServerConfig>>,
 ) -> Upgraded {
     loop {
@@ -294,15 +303,46 @@ pub(in crate::tailscale::tests) struct Server {
         tokio::task::JoinHandle<(Framed<Upgraded, frame::Codec>, NodePublicKey)>,
     pub(in crate::tailscale::tests) tls: Option<Arc<rustls::ClientConfig>>,
     pub(in crate::tailscale::tests) reservation: Arc<TcpSocket>,
+    pub(in crate::tailscale::tests) listener: Option<Listener>,
+}
+
+#[derive(Clone)]
+pub(in crate::tailscale::tests) struct Listener {
+    socket: Arc<TcpListener>,
+    tls: Option<Arc<rustls::ServerConfig>>,
+}
+
+impl Listener {
+    pub(in crate::tailscale::tests) fn accept(
+        &self,
+    ) -> tokio::task::JoinHandle<(Framed<Upgraded, frame::Codec>, NodePublicKey)> {
+        let Listener { socket, tls } = self.clone();
+        tokio::spawn(
+            async move {
+                let io = upgraded_server(&socket, tls).await;
+                drop(socket);
+                server_handshake(io).await
+            }
+            .with_subscriber(tracing::Dispatch::none()),
+        )
+    }
 }
 impl Server {
     pub(in crate::tailscale::tests) async fn new() -> Self {
-        Self::configured(None, None).await
+        Self::configured(None, None, false).await
     }
 
     /// Only this external service fixture trusts its synthetic authority.
     /// Actual certificate/name verification stays enabled; SDK roots stay unchanged.
     pub(in crate::tailscale::tests) async fn secure() -> Self {
+        Self::secure_configured(false).await
+    }
+
+    pub(in crate::tailscale::tests) async fn secure_reconnecting() -> Self {
+        Self::secure_configured(true).await
+    }
+
+    async fn secure_configured(reconnecting: bool) -> Self {
         let cert =
             rcgen::generate_simple_self_signed(vec!["derp.synthetic.invalid".into()]).unwrap();
         let crypto = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
@@ -323,16 +363,17 @@ impl Server {
             .unwrap()
             .with_root_certificates(roots)
             .with_no_client_auth();
-        Self::configured(Some(Arc::new(server)), Some(Arc::new(client))).await
+        Self::configured(Some(Arc::new(server)), Some(Arc::new(client)), reconnecting).await
     }
 
     async fn configured(
         server: Option<Arc<rustls::ServerConfig>>,
         tls: Option<Arc<rustls::ClientConfig>>,
+        reconnecting: bool,
     ) -> Self {
-        // Reserve the endpoint before publishing its single-session listener.
-        // After upgrade it must refuse reconnects without being reassigned to
-        // another fixture while a regional dialer still holds the old address.
+        // Reserve the endpoint before publishing its listener.
+        // Single-session fixtures refuse reconnects after upgrade. Either mode
+        // reserves the address while a regional dialer can still refer to it.
         let reservation = TcpSocket::new_v4().unwrap();
         reservation.set_reuseaddr(true).unwrap();
         reservation.bind("127.0.0.1:0".parse().unwrap()).unwrap();
@@ -340,19 +381,17 @@ impl Server {
         let socket = TcpSocket::new_v4().unwrap();
         socket.set_reuseaddr(true).unwrap();
         socket.bind(address).unwrap();
-        let listener = socket.listen(128).unwrap();
-        let task = tokio::spawn(
-            async move {
-                let io = upgraded_server(listener, server).await;
-                server_handshake(io).await
-            }
-            .with_subscriber(tracing::Dispatch::none()),
-        );
+        let listener = Listener {
+            socket: Arc::new(socket.listen(128).unwrap()),
+            tls: server,
+        };
+        let task = listener.accept();
         Self {
             address,
             task,
             tls,
             reservation: Arc::new(reservation),
+            listener: reconnecting.then_some(listener),
         }
     }
 }

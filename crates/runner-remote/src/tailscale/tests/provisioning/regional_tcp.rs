@@ -48,6 +48,7 @@ type Handshake = tokio::task::JoinHandle<(Frames, NodePublicKey)>;
 
 struct Service {
     task: Option<Handshake>,
+    listener: Option<crate::tailscale::tests::derp::fixture::Listener>,
     frames: Option<Frames>,
     outgoing: VecDeque<bytes::BytesMut>,
     offset: usize,
@@ -59,6 +60,12 @@ struct Service {
 
 impl Service {
     fn poll(&mut self, cx: &mut Context<'_>, side: &mut wire::DerpSide) {
+        if self.task.is_none()
+            && self.frames.is_none()
+            && let Some(listener) = &self.listener
+        {
+            self.task = Some(listener.accept());
+        }
         if let Some(task) = self.task.as_mut()
             && let Poll::Ready(result) = Pin::new(task).poll(cx)
         {
@@ -66,6 +73,7 @@ impl Service {
             assert_eq!(client, self.client);
             self.frames = Some(frames);
             self.task.take();
+            self.closed = false;
         }
         let Some(frames) = self.frames.as_mut() else {
             return;
@@ -87,12 +95,24 @@ impl Service {
                 Poll::Ready(_) => {
                     self.frames.take();
                     self.outgoing.clear();
+                    self.offset = 0;
                     self.closed = true;
                     break;
                 }
             }
         }
         self.flush(cx);
+    }
+
+    async fn shutdown(&mut self) {
+        self.listener.take();
+        self.frames.take();
+        if let Some(task) = self.task.take() {
+            task.abort();
+            if let Err(error) = task.await {
+                assert!(error.is_cancelled(), "relay accept failed: {error}");
+            }
+        }
     }
 
     fn enqueue(&mut self, source: NodePublicKey, packet: ts_packet::PacketMut) {
@@ -131,6 +151,14 @@ impl Service {
             self.offset = 0;
         }
         let _ = Pin::new(frames.get_mut()).poll_flush(cx);
+    }
+}
+
+impl Drop for Service {
+    fn drop(&mut self) {
+        if let Some(task) = &self.task {
+            task.abort();
+        }
     }
 }
 
@@ -313,6 +341,7 @@ async fn independent_b(scenario: Scenario) {
         services: vec![
             Service {
                 task: None,
+                listener: None,
                 frames: Some(frames),
                 outgoing: VecDeque::new(),
                 offset: 0,
@@ -323,6 +352,7 @@ async fn independent_b(scenario: Scenario) {
             },
             Service {
                 task: Some(other.task),
+                listener: None,
                 frames: None,
                 outgoing: VecDeque::new(),
                 offset: 0,

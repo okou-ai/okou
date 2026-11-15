@@ -66,6 +66,7 @@ async fn eight_live_regions_reject_ninth_until_actual_old_io_is_destroyed() {
     let home = servers.next().unwrap();
     let (frames, client) = bounded(home.task).await.unwrap();
     let mut services = vec![Service {
+        listener: None,
         task: None,
         frames: Some(frames),
         outgoing: VecDeque::new(),
@@ -77,6 +78,7 @@ async fn eight_live_regions_reject_ninth_until_actual_old_io_is_destroyed() {
     }];
     for (server, key) in servers.zip(&keys[1..]) {
         services.push(Service {
+            listener: None,
             task: Some(server.task),
             frames: None,
             outgoing: VecDeque::new(),

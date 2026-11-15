@@ -30,6 +30,7 @@ pub(super) async fn relay<F: Future>(
     Peers {
         services: vec![Service {
             task: None,
+            listener: home.listener,
             frames: Some(frames),
             outgoing: VecDeque::new(),
             offset: 0,
