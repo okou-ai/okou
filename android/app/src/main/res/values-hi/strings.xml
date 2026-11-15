@@ -120,4 +120,6 @@
     <string name="updates_error_install">Android इंस्टॉलर नहीं खोल सका। आप फिर कोशिश कर सकते हैं।</string>
     <string name="updates_unavailable">उपयुक्त अपडेट अभी उपलब्ध नहीं है। बाद में फिर जाँचें।</string>
     <string name="updates_android_unsupported">इस अपडेट के लिए नया Android सिस्टम संस्करण चाहिए।</string>
+    <string name="realtime_connecting">लाइव अपडेट से कनेक्ट हो रहा है…</string>
+    <string name="realtime_unavailable">लाइव अपडेट उपलब्ध नहीं हैं। आप मैन्युअल रूप से रीफ़्रेश कर सकते हैं।</string>
 </resources>

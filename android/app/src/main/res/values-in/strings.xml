@@ -120,4 +120,6 @@
     <string name="updates_error_install">Android tidak dapat membuka penginstal. Anda dapat mencoba lagi.</string>
     <string name="updates_unavailable">Pembaruan yang sesuai belum tersedia. Periksa lagi nanti.</string>
     <string name="updates_android_unsupported">Pembaruan ini memerlukan versi sistem Android yang lebih baru.</string>
+    <string name="realtime_connecting">Menghubungkan pembaruan langsung…</string>
+    <string name="realtime_unavailable">Pembaruan langsung tidak tersedia. Anda tetap dapat menyegarkan secara manual.</string>
 </resources>

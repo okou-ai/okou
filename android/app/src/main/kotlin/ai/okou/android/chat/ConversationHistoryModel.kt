@@ -191,6 +191,15 @@ class ConversationHistoryModel(
         }
     }
 
+    suspend fun catchUp() {
+        val ticket = generation
+        job?.join()
+        if (current(ticket)) {
+            refresh()
+            job?.join()
+        }
+    }
+
     private fun reportAuthorization(error: Exception) {
         if (
             error is ApiFailure.Unauthenticated ||

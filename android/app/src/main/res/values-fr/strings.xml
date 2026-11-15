@@ -120,4 +120,6 @@
     <string name="updates_error_install">Android ne peut pas ouvrir le programme d’installation. Vous pouvez réessayer.</string>
     <string name="updates_unavailable">Aucune mise à jour adaptée n’est encore disponible. Réessayez plus tard.</string>
     <string name="updates_android_unsupported">Cette mise à jour nécessite une version Android plus récente.</string>
+    <string name="realtime_connecting">Connexion aux mises à jour en direct…</string>
+    <string name="realtime_unavailable">Les mises à jour en direct sont indisponibles. Vous pouvez actualiser manuellement.</string>
 </resources>

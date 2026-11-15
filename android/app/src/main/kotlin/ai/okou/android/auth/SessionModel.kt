@@ -205,6 +205,7 @@ class SessionModel(
                                             workspaceFailure(ticket, snapshot, error)
                                         },
                                         dispatcher = dispatcher,
+                                        realtime = owner,
                                     )
                                 }
                             },

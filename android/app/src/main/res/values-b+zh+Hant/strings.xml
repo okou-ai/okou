@@ -120,4 +120,6 @@
     <string name="updates_error_install">Android 無法開啟安裝程式，您可以重試。</string>
     <string name="updates_unavailable">暫時找不到適用的更新，請稍後重新檢查。</string>
     <string name="updates_android_unsupported">此更新需要較新版本的 Android 系統。</string>
+    <string name="realtime_connecting">正在連線即時更新…</string>
+    <string name="realtime_unavailable">即時更新暫時無法使用，你仍可手動重新整理。</string>
 </resources>

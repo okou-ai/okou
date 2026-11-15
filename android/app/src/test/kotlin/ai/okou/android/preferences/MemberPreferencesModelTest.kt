@@ -32,6 +32,7 @@ import org.junit.Test
 class MemberPreferencesModelTest {
     private class Service :
         WorkspaceSession,
+        ai.okou.android.chat.RealtimeService by ai.okou.android.TestRealtimeService(),
         ChatListService by TestChatService(),
         ai.okou.android.chat.ChatComposerService by ai.okou.android.TestChatComposerService() {
         override suspend fun personalInstructionsEnabled() = false

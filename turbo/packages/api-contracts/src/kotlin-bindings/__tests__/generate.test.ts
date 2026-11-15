@@ -33,6 +33,19 @@ describe("selected Kotlin wire generation", () => {
     }).toThrow(/unsupported.*union/u);
   });
 
+  it("represents the consumed empty token body as a serializable singleton", () => {
+    const files = renderKotlinFiles();
+    expect(files.get("ApiModels.kt")).toContain(
+      "@Serializable\ndata object RealtimeTokenRequest",
+    );
+    expect(files.get("CanonicalApi.kt")).toContain(
+      '@POST("/api/realtime/token")',
+    );
+    expect(files.get("CanonicalApi.kt")).toContain(
+      "@Body body: RealtimeTokenRequest",
+    );
+  });
+
   it("binds the selected bootstrap methods to generated DTOs", () => {
     const files = renderKotlinFiles();
     expect(files.get("CanonicalApi.kt")).toContain('@GET("/api/org")');

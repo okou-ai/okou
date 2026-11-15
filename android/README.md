@@ -209,6 +209,14 @@ availability and write responses through the actual native route.
 on API 35. Its synthetic HTTP content and private temporary journal do not use
 production credentials or establish physical/OEM keyboard coverage.
 
+`RealtimeApiTest` verifies the installed token POST and actual SDK token bridge;
+`AblyRealtimeConnectionTest` starts/closes the real Android SDK with held or
+failed authentication. `RealtimeCatchUpTest` keeps canonical history held while
+list changes and status failures remain independent. `NativeRealtimeTest` covers
+the real native route's connecting first display, cross-client confirmed changes,
+disconnect/reconnect and foreground restoration while retaining a typed draft.
+Its external SDK observations are controlled; this is not provider-live evidence.
+
 Meaningful drafts and pending text operations live in `noBackupFilesDir/chat-input`,
 scoped by origin/user/workspace, separately from the rebuildable confirmed cache.
 Native selection/composition stay with the text control. Accepted local writes
@@ -517,6 +525,34 @@ certificate with the previously distributed durable-signed APK when available.
 The first durable release bootstraps that identity. Report fixture tests, real
 production signing, device upgrade/data retention and Release publication as
 separate evidence; a configured Secret name proves only its presence.
+
+## Foreground Chat Updates
+
+The authorized workspace owns an Ably device connection while the Activity is
+STARTED, including navigation to Settings. STOP and workspace retirement cancel
+token renewal and close subscriptions; foreground restoration connects again and
+catches up through the existing canonical HTTP list, indicators and selected
+history owners. Those reads remain independent of token/attachment readiness and
+of one another. Notifications contain no authoritative rows: recognized chat
+topics, initial attachment, reconnect and continuity loss invalidate HTTP reads.
+Bursts coalesce, retaining a trailing pass when a read is already in flight.
+Drafts and pending sends retain their existing durable journal ownership.
+
+The native connection notice reports connecting or unavailable with explicit
+retry; transport attachment is not a claim of confirmed-data freshness. Ordinary
+manual refresh/navigation remains available. The generated empty-object
+`POST /api/realtime/token` consumer uses the existing authenticated API transport
+and required-update handling. SDK callbacks obtain fresh single-use signed token
+requests for renewal; no API credentials are sent to Ably.
+A failed canonical token request closes that observation and offers explicit
+retry; a later transport callback cannot erase its authentication/update failure.
+
+The pinned `io.ably.pubsub:device:2.0.0` supports the API24/JDK17 baseline. Its
+unused Firebase Messaging dependency is excluded: this slice registers no push
+receiver/provider and does not activate push. Manifest auditing still applies to
+the packaged dependency graph. Build/controlled-SDK emulator evidence is separate
+from actual provider delivery. Transient active-run output and run controls are
+subsequent work, and continuous background delivery is not promised.
 
 ## Canonical API Bindings And Transport
 

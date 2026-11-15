@@ -10,6 +10,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,6 +68,7 @@ class ChatListModel(
     private val authorized: () -> Boolean,
     private val onFailure: (Exception) -> Unit,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    realtime: RealtimeService? = null,
 ) : ViewModel() {
     private val mutable = MutableStateFlow(ChatListUiState())
     val uiState = mutable.asStateFlow()
@@ -95,6 +97,26 @@ class ChatListModel(
     private var indicatorsJob: Job? = null
     private val writes = Mutex()
     private val projectSync = ProjectSync(service, dispatcher)
+    val updates =
+        ChatUpdatesModel(realtime, viewModelScope, { current() }, onFailure) {
+            coroutineScope {
+                launch {
+                    listJob?.join()
+                    if (current()) {
+                        refreshList()
+                        listJob?.join()
+                    }
+                }
+                launch {
+                    indicatorsJob?.join()
+                    if (current()) {
+                        refreshIndicators()
+                        indicatorsJob?.join()
+                    }
+                }
+                launch { history.catchUp() }
+            }
+        }
 
     private fun navigation() =
         mutable.value.let { state ->
@@ -433,6 +455,7 @@ class ChatListModel(
 
     override fun onCleared() {
         retired = true
+        updates.close()
         history.close()
         cache.close()
     }

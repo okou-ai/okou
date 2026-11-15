@@ -50,6 +50,7 @@ class SessionModelTest {
 
     private class Resource(val identity: WorkspaceIdentity, val tokens: WorkspaceTokenProvider) :
         WorkspaceSession,
+        ai.okou.android.chat.RealtimeService by ai.okou.android.TestRealtimeService(),
         ChatListService by TestChatService(),
         ChatComposerService by TestChatComposerService() {
         var closed = false

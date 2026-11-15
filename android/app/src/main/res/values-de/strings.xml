@@ -120,4 +120,6 @@
     <string name="updates_error_install">Android konnte das Installationsprogramm nicht öffnen. Versuche es erneut.</string>
     <string name="updates_unavailable">Ein passendes Update ist noch nicht verfügbar. Prüfe später erneut.</string>
     <string name="updates_android_unsupported">Dieses Update benötigt eine neuere Android-Systemversion.</string>
+    <string name="realtime_connecting">Live-Aktualisierungen werden verbunden…</string>
+    <string name="realtime_unavailable">Live-Aktualisierungen sind nicht verfügbar. Du kannst weiterhin manuell aktualisieren.</string>
 </resources>

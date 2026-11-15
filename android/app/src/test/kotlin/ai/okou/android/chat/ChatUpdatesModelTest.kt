@@ -1,0 +1,135 @@
+package ai.okou.android.chat
+
+import ai.okou.android.TestRealtimeService
+import ai.okou.android.api.ApiFailure
+import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import org.junit.Assert.*
+import org.junit.Test
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+class ChatUpdatesModelTest {
+    @Test
+    fun heldReadRetainsOneTrailingPassWithoutHidingDisconnectOrBlockingRetry() = runTest {
+        val external = TestRealtimeService()
+        val held = CompletableDeferred<Unit>()
+        var reads = 0
+        val owner =
+            ChatUpdatesModel(external, backgroundScope, { true }, { throw it }) {
+                reads++
+                if (reads == 1) held.await()
+            }
+        owner.foreground(true)
+        runCurrent()
+        assertEquals(1, reads)
+        repeat(100) { external.invalidate() }
+        external.snapshot.value = external.snapshot.value.copy(phase = RealtimePhase.Unavailable)
+        runCurrent()
+        assertEquals(RealtimePhase.Unavailable, owner.phase.value)
+        assertEquals(1, reads)
+        held.complete(Unit)
+        runCurrent()
+        assertEquals(2, reads)
+        external.snapshot.value =
+            external.snapshot.value.copy(
+                phase = RealtimePhase.Connected,
+                revision = external.snapshot.value.revision + 1,
+            )
+        runCurrent()
+        assertEquals(RealtimePhase.Connected, owner.phase.value)
+        assertEquals(3, reads)
+        owner.close()
+        runCurrent()
+        assertEquals(external.opened.get(), external.closed.get())
+    }
+
+    @Test
+    fun restartWaitsForOwnedCleanupAndRejectsOldCallbacksAndRetiredAuthorization() = runTest {
+        val cleanup = CompletableDeferred<Unit>()
+        val observers = mutableListOf<suspend (RealtimeSnapshot) -> Unit>()
+        var active = true
+        var reads = 0
+        val service =
+            object : RealtimeService {
+                override suspend fun observeRealtime(
+                    observe: suspend (RealtimeSnapshot) -> Unit
+                ): Nothing {
+                    observers += observe
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        if (observers.size == 1) withContext(NonCancellable) { cleanup.await() }
+                    }
+                }
+            }
+        val owner = ChatUpdatesModel(service, backgroundScope, { active }, { throw it }) { reads++ }
+        owner.foreground(true)
+        runCurrent()
+        owner.foreground(false)
+        owner.foreground(true)
+        owner.retry()
+        owner.retry()
+        runCurrent()
+        assertEquals(1, observers.size)
+        val old = observers.single()
+        old(RealtimeSnapshot(RealtimePhase.Unavailable, 99, IOException("late")))
+        assertEquals(RealtimePhase.Connecting, owner.phase.value)
+        cleanup.complete(Unit)
+        runCurrent()
+        assertEquals(2, observers.size)
+        observers.last()(RealtimeSnapshot(RealtimePhase.Connected, 1))
+        runCurrent()
+        assertEquals(RealtimePhase.Connected, owner.phase.value)
+        val before = reads
+        active = false
+        observers.last()(
+            RealtimeSnapshot(RealtimePhase.Unavailable, 2, ApiFailure.Unauthenticated())
+        )
+        runCurrent()
+        assertEquals(before, reads)
+        owner.close()
+        assertEquals(RealtimePhase.Stopped, owner.phase.value)
+    }
+
+    @Test
+    fun tokenFailureDoesNotPreventCanonicalForegroundReadAndKeepsAuthFailureOwned() = runTest {
+        val errors = mutableListOf<Exception>()
+        var reads = 0
+        val owner =
+            ChatUpdatesModel(
+                object : RealtimeService {
+                    override suspend fun observeRealtime(
+                        observe: suspend (RealtimeSnapshot) -> Unit
+                    ): Nothing = throw ApiFailure.Unauthenticated()
+                },
+                backgroundScope,
+                { true },
+                errors::add,
+            ) {
+                reads++
+            }
+        owner.foreground(true)
+        runCurrent()
+        assertEquals(1, reads)
+        assertEquals(RealtimePhase.Unavailable, owner.phase.value)
+        assertTrue(errors.single() is ApiFailure.Unauthenticated)
+        owner.close()
+    }
+
+    @Test
+    fun onlyCanonicalChatTopicsInvalidateConfirmedReads() {
+        assertTrue(isChatInvalidation("threadListChanged"))
+        assertTrue(isChatInvalidation("chatThreadReadCursorUpdated"))
+        assertTrue(
+            isChatInvalidation("chatThreadMessageCreated:11111111-1111-4111-8111-111111111111")
+        )
+        assertFalse(isChatInvalidation("chatThreadMessageCreated:not-a-thread"))
+        assertFalse(isChatInvalidation("connector:changed"))
+        assertFalse(isChatInvalidation(null))
+    }
+}
