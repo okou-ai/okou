@@ -342,6 +342,70 @@ RESOURCE_FAILURE_PATH_CASES = [
     """,
     ),
     (
+        "earlier same declaration bindings do not invent cancellation",
+        "okou_resource_failures",
+        """
+        import CCState
+        let foreign = computedTask { get, options in
+          do { return try await service.load() }
+          catch {
+            let error = cachedFailure, cause = error
+            if cause is CancellationError { return [] }
+            throw owner.failure
+          }
+        }
+        let native = computedTask { get, options in
+          do { return try await service.load() }
+          catch {
+            let Task = businessState, cancelled = Task.isCancelled
+            if cancelled { return [] }
+            throw error
+          }
+        }
+    """,
+    ),
+    (
+        "same declaration cleanup aliases must rethrow the original error",
+        "okou_resource_failures",
+        """
+        import CCState
+        let foreign = computedTask { get, options in
+          do { return try await service.load() }
+          catch {
+            let error = cachedFailure, original = error
+            try? await allocated.close() // violation
+            throw original
+          }
+        }
+        let original = computedTask { get, options in
+          do { return try await service.load() }
+          catch {
+            let error = error, original = error
+            try? await allocated.close()
+            throw original
+          }
+        }
+    """,
+    ),
+    (
+        "guard else aliases retain the caught error before the binding succeeds",
+        "okou_resource_failures",
+        """
+        import CCState
+        let read = computedTask { get, options in
+          do { return try await service.load() }
+          catch { // violation
+            guard let error = optionalFailure else {
+              let cause = error
+              if cause is CancellationError { return [] }
+              throw error
+            }
+            throw error
+          }
+        }
+    """,
+    ),
+    (
         "unreachable alias conditions and unknown helper predicates prove nothing",
         "okou_resource_failures",
         """

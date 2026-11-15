@@ -336,10 +336,10 @@ struct ResourceCancellationPaths {
         return true
       }
       guard let statements = parent.as(CodeBlockItemListSyntax.self) else { continue }
-      for item in statements where item.endPosition <= node.position {
+      for item in statements where item.position < node.position {
         if let variable = item.item.as(VariableDeclSyntax.self),
           let binding = variable.bindings.first(where: {
-            binds(Syntax($0.pattern), name: name)
+            $0.endPosition <= node.position && binds(Syntax($0.pattern), name: name)
           })
         {
           if signalAlias, variable.bindingSpecifier.text == "let",
@@ -350,6 +350,7 @@ struct ResourceCancellationPaths {
           return true
         }
         if let guardStatement = item.item.as(GuardStmtSyntax.self),
+          item.endPosition <= node.position,
           binds(guardStatement.conditions, name: name)
         {
           return true
