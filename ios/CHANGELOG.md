@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.0](https://github.com/okou-ai/okou/compare/ios-v0.43.9...ios-v0.44.0) (2026-11-15)
+
+
+### Features
+
+* **ios:** fork selected passages in a sheet ([#47450](https://github.com/okou-ai/okou/issues/47450)) ([2ca4ef5](https://github.com/okou-ai/okou/commit/2ca4ef5df81498919d2cbfa065e5606a096ffc4e))
+
 ## [0.43.9](https://github.com/okou-ai/okou/compare/ios-v0.43.8...ios-v0.43.9) (2026-11-15)
 
 

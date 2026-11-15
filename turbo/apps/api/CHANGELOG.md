@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.71.1](https://github.com/okou-ai/okou/compare/api-v2.71.0...api-v2.71.1) (2026-11-15)
+
+
+### Refactoring
+
+* **api:** require captured thread launch inputs ([#47486](https://github.com/okou-ai/okou/issues/47486)) ([0c5a0db](https://github.com/okou-ai/okou/commit/0c5a0dbb256f4d1c578fe4ce255522f961ce832a))
+
 ## [2.71.0](https://github.com/okou-ai/okou/compare/api-v2.70.8...api-v2.71.0) (2026-11-15)
 
 

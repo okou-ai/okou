@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.249.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.12...runner-rs-v0.249.13) (2026-11-15)
+
+
+### Refactoring
+
+* **python:** reuse the canonical raw authority host value ([#47512](https://github.com/okou-ai/okou/issues/47512)) ([59a9005](https://github.com/okou-ai/okou/commit/59a90058eb532a2e57952f979b02b48854f29939))
+
 ## [0.249.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.11...runner-rs-v0.249.12) (2026-11-15)
 
 
