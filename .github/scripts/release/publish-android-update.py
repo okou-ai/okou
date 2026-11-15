@@ -124,7 +124,7 @@ def main(version, apk):
     expected = f"package: name='ai.okou.android' versionCode='{code}' versionName='{version}' "
     if not badging.startswith(expected):
         raise ValueError("APK identity does not match its release")
-    sdk = re.search(r"^sdkVersion:'(\d+)'$", badging, re.MULTILINE)
+    sdk = re.search(r"^minSdkVersion:'(\d+)'$", badging, re.MULTILINE)
     if not sdk:
         raise ValueError("APK has no minimum SDK")
     notes = subprocess.check_output(["gh", "release", "view", f"android-v{version}", "--repo", os.environ["GITHUB_REPOSITORY"],
