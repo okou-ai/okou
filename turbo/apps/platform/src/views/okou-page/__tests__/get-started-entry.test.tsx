@@ -124,7 +124,7 @@ test("The gift opens invitations independently of credit quests and copies the i
     expect(dialog).not.toBeInTheDocument();
     expect(entry).toHaveFocus();
   });
-  await user.click(linkNamed("Workflows", document.body));
+  click(linkNamed("Workflows", document.body));
   await screen.findByRole("heading", { name: "Workflows" });
   act(() => {
     window.history.back();
@@ -132,7 +132,7 @@ test("The gift opens invitations independently of credit quests and copies the i
   const reopenedEntry = await waitFor(() => {
     return buttonNamed("Invite your friends", document.body);
   });
-  await user.click(reopenedEntry);
+  click(reopenedEntry);
   await screen.findByRole("dialog", {
     name: "Invite friends, get $20 each",
   });
