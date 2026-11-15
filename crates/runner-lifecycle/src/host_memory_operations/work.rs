@@ -4,7 +4,9 @@ use sandbox::{BackingProcessIdentity, SandboxBackingProcess};
 use tokio::sync::oneshot;
 use tokio_util::task::task_tracker::TaskTrackerToken;
 
-use super::accounting::{CapturedBacking, CapturedPlan, Purpose, Stage};
+use crate::captured_backing::CapturedBacking;
+
+use super::accounting::{CapturedPlan, Purpose, Stage};
 use super::{MemoryOperationError as Error, MemoryOperationId, Result, Shared};
 
 /// Receiver-only completion of accepted work. Caller cancellation/outer panic
