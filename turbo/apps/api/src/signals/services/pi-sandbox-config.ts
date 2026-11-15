@@ -305,19 +305,19 @@ export interface PiModelPreparationInput {
 
 export function materializePreparedPiProvider(
   input: PiModelPreparationInput,
-  provider: ResolvedModelProviderEnvironment | null,
-): ResolvedModelProviderEnvironment | null {
+  provider: ResolvedModelProviderEnvironment,
+): ResolvedModelProviderEnvironment {
   if (!input.piExecution) {
     return provider;
   }
-  const catalogModel = piCatalogModel(input.catalog, provider?.selectedModel);
+  const catalogModel = piCatalogModel(input.catalog, provider.selectedModel);
   const config = resolvePiSandboxModelConfig(
     provider,
     catalogModel,
     input.codexServiceTier,
     input.reasoningEffort,
   );
-  if (!config || !provider) {
+  if (!config) {
     throw new Error(
       "Selected Pi execution requires a supported model provider configuration",
     );
@@ -327,14 +327,14 @@ export function materializePreparedPiProvider(
 
 export function resolvePreparedPiModelConfig(args: {
   readonly input: PiModelPreparationInput;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
+  readonly modelProvider: ResolvedModelProviderEnvironment;
 }): PiModelConfig | undefined {
   if (!args.input.piExecution) {
     return undefined;
   }
   const config = resolvePiSandboxModelConfig(
     args.modelProvider,
-    piCatalogModel(args.input.catalog, args.modelProvider?.selectedModel),
+    piCatalogModel(args.input.catalog, args.modelProvider.selectedModel),
     args.input.codexServiceTier,
     args.input.reasoningEffort,
   );

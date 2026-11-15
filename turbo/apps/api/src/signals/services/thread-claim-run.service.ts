@@ -2574,7 +2574,6 @@ export function createThreadClaimRunObjects(
     return {
       resolved,
       body,
-      requestedFramework,
       featureSwitchContext,
       connectorScope: connectorScopeFromCreateArgs(args),
     };
@@ -2648,9 +2647,7 @@ export function createThreadClaimRunObjects(
       return providerUnavailable(usage.message);
     }
     return {
-      framework: modelProvider
-        ? modelProviderFramework(modelProvider)
-        : bodyContext.requestedFramework,
+      framework: modelProviderFramework(modelProvider),
       modelProvider,
       connectorRuntimeTargets: connector.runtimeTargets,
       connectorScope: selection.connectorScope,
@@ -3073,7 +3070,7 @@ export function createThreadClaimRunObjects(
         enforceBuiltInCredits:
           !(
             officialWorkflowRun && args.agentRunMetadata.workflowAutomationId
-          ) && isBuiltInModelProviderType(modelProvider?.type),
+          ) && isBuiltInModelProviderType(modelProvider.type),
         persisted: {
           body,
           selectedImageModel,
@@ -3083,17 +3080,14 @@ export function createThreadClaimRunObjects(
           resolved: {
             agentId: context.resolved.agentId,
           },
-          modelProvider: modelProvider
-            ? {
-                credentialOwner: modelProvider.credentialOwner,
-                id: modelProvider.id,
-                type: modelProvider.type,
-                selectedModel: modelProvider.selectedModel,
-                upstreamModel: modelProvider.upstreamModel,
-                builtInModelRuntimeRoute:
-                  modelProvider.builtInModelRuntimeRoute,
-              }
-            : null,
+          modelProvider: {
+            credentialOwner: modelProvider.credentialOwner,
+            id: modelProvider.id,
+            type: modelProvider.type,
+            selectedModel: modelProvider.selectedModel,
+            upstreamModel: modelProvider.upstreamModel,
+            builtInModelRuntimeRoute: modelProvider.builtInModelRuntimeRoute,
+          },
         },
         runner: {
           resolved: context.resolved,
@@ -3271,10 +3265,10 @@ export function createThreadClaimRunObjects(
           catalog: await get(claimCatalog$),
           orgId: claim.orgId,
           userId: input.command.owner.userId,
-          modelProviderType: model?.type ?? input.command.body.modelProvider,
+          modelProviderType: model.type,
           selectedModel:
-            model?.selectedModel ?? input.command.selectedModelOverride,
-          enforceBuiltInCredits: isBuiltInModelProviderType(model?.type),
+            model.selectedModel ?? input.command.selectedModelOverride,
+          enforceBuiltInCredits: isBuiltInModelProviderType(model.type),
         },
         signal,
       );
@@ -4098,7 +4092,7 @@ interface ThreadRunPersistenceContext {
     | "selectedModel"
     | "builtInModelRuntimeRoute"
     | "upstreamModel"
-  > | null;
+  >;
 }
 
 interface ThreadLaunchCommitInput {
@@ -4135,7 +4129,7 @@ interface LaunchRunRowsArgs {
     | "selectedModel"
     | "builtInModelRuntimeRoute"
     | "upstreamModel"
-  > | null;
+  >;
   readonly agentRunModelPin: AgentRunModelPin;
   readonly selectedImageModel: ImageModel;
   readonly callbackRows: readonly AgentRunCallbackInsert[];
@@ -4183,21 +4177,20 @@ function modelLaunchMetadataValues(
   modelProvider: Pick<
     ResolvedModelProviderEnvironment,
     "builtInModelRuntimeRoute" | "type" | "upstreamModel"
-  > | null,
+  >,
 ): ModelLaunchMetadataValues {
-  const runtimeRoute = modelProvider?.builtInModelRuntimeRoute;
+  const runtimeRoute = modelProvider.builtInModelRuntimeRoute;
   if (!runtimeRoute) {
     return {
       // Subscription launches record the compiled upstream without a managed key.
       modelRuntimeProvider:
-        modelProvider?.upstreamModel &&
+        modelProvider.upstreamModel &&
         isPersonalSubscriptionProviderType(modelProvider.type)
           ? modelProvider.type
           : null,
-      modelRuntimeModel:
-        modelProvider && isPersonalSubscriptionProviderType(modelProvider.type)
-          ? (modelProvider.upstreamModel ?? null)
-          : null,
+      modelRuntimeModel: isPersonalSubscriptionProviderType(modelProvider.type)
+        ? (modelProvider.upstreamModel ?? null)
+        : null,
       builtInModelKeyId: null,
     };
   }
@@ -4227,11 +4220,11 @@ function agentRunLaunchMetadataInput(metadata: AgentRunMetadata): {
 function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
   const metadata = args.agentRunMetadata;
   const modelPin = args.agentRunModelPin;
-  const exactSubscriptionId =
-    args.modelProvider &&
-    isPersonalSubscriptionProviderType(args.modelProvider.type)
-      ? args.modelProvider.id
-      : undefined;
+  const exactSubscriptionId = isPersonalSubscriptionProviderType(
+    args.modelProvider.type,
+  )
+    ? args.modelProvider.id
+    : undefined;
   return normalizeRunMetadata({
     triggerSource: args.body.triggerSource,
     ...agentRunLaunchMetadataInput(metadata),
@@ -4240,7 +4233,7 @@ function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
     modelProviderCredentialScope: modelPin.modelProviderCredentialScope,
     selectedModel: modelPin.selectedModel,
     ...modelLaunchMetadataValues(args.modelProvider),
-    ...(args.modelProvider?.builtInModelRuntimeRoute &&
+    ...(args.modelProvider.builtInModelRuntimeRoute &&
     modelPin.selectedModel &&
     isAutoSelectedModel(modelPin.selectedModel)
       ? {

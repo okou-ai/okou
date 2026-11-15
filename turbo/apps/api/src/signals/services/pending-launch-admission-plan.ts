@@ -188,7 +188,7 @@ function subscriptionStep(
   facts: AdmissionFacts,
 ): PendingAdmissionProgress {
   const provider = args.context.modelProvider;
-  if (!provider || !isPersonalSubscriptionProviderType(provider.type)) {
+  if (!isPersonalSubscriptionProviderType(provider.type)) {
     return queueHeadStep(args, facts);
   }
   if (!provider.id) {

@@ -142,8 +142,8 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
     return (await get(model$))?.provider ?? null;
   });
   const modelEnvironment$ = createModelProviderEnvironmentSignals(
-    { bodyEnvironment$: connectors.bodyEnvironment$ },
-    { modelRoute$ },
+    connectors.bodyEnvironment$,
+    modelRoute$,
   );
   const initialInput$ = createExecutionInitialInput(run$);
   const storage$ = createExecutionStorage(input$);
@@ -396,7 +396,6 @@ function createExecutionModel(run$: ExecutionRun$, global: GlobalModels) {
         throw new Error("Run execution sources are unavailable");
       }
       provider = await prepareManagedModelEnvironment(source, {
-        catalog,
         framework: getFrameworkForType(AUTO_RUN_PROVIDER),
         selectedModelOverride: run.selectedModel,
         builtInModelRuntimeRoute: {
@@ -646,7 +645,7 @@ function createExecutionPlatform(
         ...paidToolPlatformEnvironment({
           disabledTools,
           framework,
-          modelProviderType: model?.provider?.type ?? null,
+          modelProviderType: model?.provider.type ?? null,
           piExecution: framework === "pi",
         }),
         ...(integration ? { OKOU_CURRENT_INTEGRATION: integration } : {}),
@@ -839,7 +838,7 @@ function executionModelConfiguration(
       run.modelProvider === "built-in"
         ? (run.modelLongContextMinTotalInputTokens ?? undefined)
         : 0,
-    codexRuntimeConfig: model?.provider?.codexRuntimeConfig ?? null,
+    codexRuntimeConfig: model?.provider.codexRuntimeConfig ?? null,
     piModelConfig: model?.piModelConfig,
     piLaunchConfig: framework === "pi" ? { schemaVersion: 2 } : undefined,
     piSessionId:
