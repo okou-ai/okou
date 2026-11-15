@@ -3,6 +3,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { clearMockNow, mockNow } from "../../../lib/time";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { phoneUseContract as contract } from "@okouai/api-contracts/contracts/phone-use";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -82,6 +83,56 @@ describe("Phone Use native connection authority", () => {
     const listed = await accept(client.devices({ headers }), [200]);
     expect(listed.body.devices).toStrictEqual([
       expect.objectContaining({ id: first.body.id, ready: false }),
+    ]);
+  });
+  it("fences a delayed disconnect after a replacement connection becomes ready", async () => {
+    const actor = authenticate();
+    const client = api();
+    const first = await accept(client.register({ headers, body }), [200]);
+    const entered = createDeferredPromise<void>(context.signal),
+      release = createDeferredPromise<void>(context.signal);
+    context.mocks.clerk.sessions.getSession.mockImplementationOnce(async () => {
+      entered.resolve();
+      await release.promise;
+      return { id: actor.sessionId, userId: actor.userId, status: "active" };
+    });
+    const pending = client.disconnect({
+      headers,
+      params: { deviceId: first.body.id },
+      body: { generation: first.body.generation },
+    });
+    await entered.promise;
+    const replacement = await settleIncludingAbort(async () => {
+      const registered = await accept(
+        client.register({ headers, body }),
+        [200],
+      );
+      await accept(
+        client.heartbeat({
+          headers,
+          params: { deviceId: registered.body.id },
+          body: { generation: registered.body.generation, ready: true },
+        }),
+        [200],
+      );
+      return registered.body;
+    });
+    release.resolve();
+    const disconnected = await settleIncludingAbort(pending);
+    if (!replacement.ok) {
+      throw replacement.error;
+    }
+    if (!disconnected.ok) {
+      throw disconnected.error;
+    }
+    expect(disconnected.value.status).toBe(409);
+    const listed = await accept(client.devices({ headers }), [200]);
+    expect(listed.body.devices).toStrictEqual([
+      expect.objectContaining({
+        id: first.body.id,
+        generation: replacement.value.generation,
+        ready: true,
+      }),
     ]);
   });
   it("keeps device ownership private and prevents another account from disconnecting it", async () => {
@@ -335,5 +386,76 @@ test(
       );
     });
     expect(stale.body.error.message).toContain("grant");
+    // A completed/replaced Run must not leave a pending approval blocking the phone.
+    const following = await scenario.launchRun(actor, undefined, thread.id);
+    const followingHeaders = { authorization: `Bearer ${following.token}` };
+    const followingId = randomUUID();
+    await scenario.run(async () => {
+      authenticate(actor.userId, staffOrg, sessionId);
+      await accept(
+        client.heartbeat({
+          headers,
+          params,
+          body: { generation, ready: true },
+        }),
+        [200],
+      );
+    });
+    await scenario.run(() => {
+      return accept(
+        client.create({
+          headers: followingHeaders,
+          body: { id: followingId, action: { kind: "observe" } },
+        }),
+        [200],
+      );
+    });
+    const nextTask = await scenario.run(() => {
+      authenticate(actor.userId, staffOrg, sessionId);
+      return accept(
+        client.next({
+          headers,
+          params,
+          body: { generation, threadId: thread.id },
+        }),
+        [200],
+      );
+    });
+    expect(nextTask.body.operation).toMatchObject({
+      id: followingId,
+      runId: following.runId,
+      status: "running",
+    });
+    await scenario.run(async () => {
+      authenticate(actor.userId, staffOrg, sessionId);
+      await accept(
+        client.complete({
+          headers,
+          params,
+          body: {
+            generation,
+            operationId: followingId,
+            result: {
+              status: "succeeded",
+              data: { bundleID: "com.apple.Preferences" },
+            },
+          },
+        }),
+        [200],
+      );
+    });
+    const recovered = await scenario.run(() => {
+      return accept(
+        client.get({
+          headers: followingHeaders,
+          params: { operationId: followingId },
+        }),
+        [200],
+      );
+    });
+    expect(recovered.body).toMatchObject({
+      status: "succeeded",
+      result: { bundleID: "com.apple.Preferences" },
+    });
   },
 );

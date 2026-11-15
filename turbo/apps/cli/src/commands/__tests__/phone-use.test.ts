@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
@@ -79,6 +79,12 @@ describe("Phone Use CLI", () => {
     const path = join(directory, `${id}.png`);
     expect((await stat(path)).mode & 0o777).toBe(0o600);
     expect(await readFile(path)).toEqual(Buffer.from([137, 80, 78, 71]));
+    await chmod(path, 0o644);
+    await program.parseAsync(
+      ["phone-use", "status", id, "--output", directory],
+      { from: "user" },
+    );
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
   it("requests owner confirmation for one specific commit without approving it remotely", async () => {
     const id = randomUUID(),
@@ -139,6 +145,42 @@ describe("Phone Use CLI", () => {
       );
     expect(output).toHaveBeenCalledWith(
       expect.stringContaining('"status": "approval_required"'),
+    );
+  });
+  it("waits for the owner's completed operation by reading its receipt", async () => {
+    const id = randomUUID();
+    const operation = {
+      id,
+      deviceId: randomUUID(),
+      runId: randomUUID(),
+      grantId: randomUUID(),
+      action: {
+        kind: "tap",
+        app: "com.example.notes",
+        snapshotId: randomUUID(),
+        elementId: "3",
+        confirmation: "Publish the draft",
+      },
+      status: "succeeded",
+      result: { nativeAcknowledged: true, outcomeVerified: false },
+      error: null,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+    };
+    server.use(
+      http.get(`https://api.vm0.ai/api/phone-use/operations/${id}`, () => {
+        return HttpResponse.json(operation);
+      }),
+    );
+    const output = vi.spyOn(console, "log").mockImplementation(() => {});
+    await new Command()
+      .exitOverride()
+      .addCommand(phoneUseCommand)
+      .parseAsync(["phone-use", "wait", id, "--timeout", "0"], {
+        from: "user",
+      });
+    expect(output).toHaveBeenCalledWith(
+      expect.stringContaining('"nativeAcknowledged": true'),
     );
   });
 });

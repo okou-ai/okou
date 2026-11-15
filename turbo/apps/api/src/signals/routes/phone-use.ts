@@ -1,7 +1,19 @@
 import { settle } from "../utils";
 import { createHash, randomUUID } from "node:crypto";
 import { command, type Command } from "ccstate";
-import { and, asc, desc, eq, exists, gt, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gt,
+  inArray,
+  lte,
+  not,
+  or,
+  sql,
+} from "drizzle-orm";
 import {
   phoneUseContract as contract,
   phoneUseChannel,
@@ -301,7 +313,20 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
     .where(
       and(
         eq(operations.deviceId, device.id),
-        inArray(operations.status, ["queued", "running"]),
+        inArray(operations.status, ["queued", "running", "approval_required"]),
+        not(
+          exists(
+            get(db$)
+              .select({ id: grants.id })
+              .from(grants)
+              .where(
+                and(
+                  eq(grants.id, operations.grantId),
+                  gt(grants.deviceGeneration, device.generation - 1),
+                ),
+              ),
+          ),
+        ),
       ),
     );
   signal.throwIfAborted();
@@ -339,7 +364,7 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const path = get(disconnectPath$);
   await set(host$, path.deviceId, body.data.generation, signal);
-  await set(writeDb$)
+  const [disconnected] = await set(writeDb$)
     .update(devices)
     .set({ ready: false, generation: sql`${devices.generation}+1` })
     .where(
@@ -347,9 +372,20 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
         eq(devices.id, path.deviceId),
         eq(devices.generation, body.data.generation),
       ),
-    );
+    )
+    .returning({ id: devices.id });
   signal.throwIfAborted();
-  await set(writeDb$).delete(grants).where(eq(grants.deviceId, path.deviceId));
+  if (!disconnected) {
+    conflict("Native connection was replaced");
+  }
+  await set(writeDb$)
+    .delete(grants)
+    .where(
+      and(
+        eq(grants.deviceId, path.deviceId),
+        lte(grants.deviceGeneration, body.data.generation),
+      ),
+    );
   signal.throwIfAborted();
   await set(writeDb$)
     .update(operations)
@@ -361,7 +397,20 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
     .where(
       and(
         eq(operations.deviceId, path.deviceId),
-        inArray(operations.status, ["queued", "running"]),
+        inArray(operations.status, ["queued", "running", "approval_required"]),
+        not(
+          exists(
+            get(db$)
+              .select({ id: grants.id })
+              .from(grants)
+              .where(
+                and(
+                  eq(grants.id, operations.grantId),
+                  gt(grants.deviceGeneration, body.data.generation),
+                ),
+              ),
+          ),
+        ),
       ),
     );
   signal.throwIfAborted();
@@ -458,6 +507,17 @@ const grant$ = command(async ({ get, set }, signal: AbortSignal) => {
       })
       .onConflictDoUpdate({
         target: [grants.orgId, grants.userId, grants.threadId],
+        setWhere: exists(
+          get(db$)
+            .select({ id: devices.id })
+            .from(devices)
+            .where(
+              and(
+                eq(devices.id, device.id),
+                eq(devices.generation, device.generation),
+              ),
+            ),
+        ),
         set: {
           id: randomUUID(),
           deviceId: device.id,
@@ -474,6 +534,7 @@ const grant$ = command(async ({ get, set }, signal: AbortSignal) => {
           eq(grants.userId, auth.userId),
           eq(grants.threadId, thread.id),
           eq(grants.deviceId, device.id),
+          eq(grants.deviceGeneration, device.generation),
         ),
       );
   }
@@ -621,6 +682,106 @@ const screenshot$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   return { status: 200 as const, body: { url } };
 });
+const retireEndedOperations$ = command(
+  async (
+    { get, set },
+    device: typeof devices.$inferSelect,
+    signal: AbortSignal,
+  ) => {
+    await set(writeDb$)
+      .update(operations)
+      .set({
+        status: sql`case when ${operations.status} = 'queued' then 'failed' else 'unknown' end`,
+        error:
+          "Operation expired or its Run/grant ended; inspect uncertain effects before another input",
+        completedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(operations.deviceId, device.id),
+          exists(
+            get(db$)
+              .select({ id: devices.id })
+              .from(devices)
+              .where(
+                and(
+                  eq(devices.id, device.id),
+                  eq(devices.generation, device.generation),
+                ),
+              ),
+          ),
+          inArray(operations.status, [
+            "queued",
+            "running",
+            "approval_required",
+          ]),
+          or(
+            lte(operations.expiresAt, nowDate()),
+            not(
+              exists(
+                get(db$)
+                  .select({ id: grants.id })
+                  .from(grants)
+                  .innerJoin(
+                    agentRuns,
+                    and(
+                      eq(agentRuns.id, operations.runId),
+                      eq(agentRuns.chatThreadId, grants.threadId),
+                      eq(agentRuns.status, "running"),
+                      eq(agentRuns.orgId, device.orgId),
+                      eq(agentRuns.userId, device.userId),
+                    ),
+                  )
+                  .where(
+                    and(
+                      eq(grants.id, operations.grantId),
+                      eq(grants.deviceId, device.id),
+                      eq(grants.deviceGeneration, device.generation),
+                      eq(grants.orgId, device.orgId),
+                      eq(grants.userId, device.userId),
+                    ),
+                  ),
+              ),
+            ),
+          ),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
+const activeNativeRun$ = command(
+  async (
+    { get },
+    device: typeof devices.$inferSelect,
+    claim: { threadId: string; runId: string; grantId?: string },
+    signal: AbortSignal,
+  ) => {
+    const [active] = await get(db$)
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .innerJoin(
+        grants,
+        and(
+          eq(grants.threadId, agentRuns.chatThreadId),
+          eq(grants.threadId, claim.threadId),
+          eq(grants.deviceId, device.id),
+          eq(grants.deviceGeneration, device.generation),
+        ),
+      )
+      .where(
+        and(
+          eq(agentRuns.id, claim.runId),
+          eq(agentRuns.userId, device.userId),
+          eq(agentRuns.orgId, device.orgId),
+          eq(agentRuns.status, "running"),
+          claim.grantId ? eq(grants.id, claim.grantId) : undefined,
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return Boolean(active);
+  },
+);
 const nextBody$ = bodyResultOf(contract.next),
   nextPath$ = pathParamsOf(contract.next);
 const next$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -635,31 +796,21 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
     body.data.generation,
     signal,
   );
+  await set(retireEndedOperations$, device, signal);
+  signal.throwIfAborted();
   if (body.data.activeRunId) {
-    const [active] = await get(db$)
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .innerJoin(
-        grants,
-        and(
-          eq(grants.threadId, agentRuns.chatThreadId),
-          eq(grants.threadId, body.data.threadId),
-          eq(grants.deviceId, device.id),
-          eq(grants.deviceGeneration, device.generation),
-        ),
-      )
-      .where(
-        and(
-          eq(agentRuns.id, body.data.activeRunId),
-          eq(agentRuns.userId, device.userId),
-          eq(agentRuns.orgId, device.orgId),
-          eq(agentRuns.status, "running"),
-          body.data.activeGrantId
-            ? eq(grants.id, body.data.activeGrantId)
-            : undefined,
-        ),
-      )
-      .limit(1);
+    const active = await set(
+      activeNativeRun$,
+      device,
+      {
+        threadId: body.data.threadId,
+        runId: body.data.activeRunId,
+        ...(body.data.activeGrantId
+          ? { grantId: body.data.activeGrantId }
+          : {}),
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!active) {
       return {
@@ -693,6 +844,9 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
         eq(operations.deviceId, device.id),
         eq(operations.status, "queued"),
         gt(operations.expiresAt, nowDate()),
+        body.data.activeRunId
+          ? eq(operations.runId, body.data.activeRunId)
+          : undefined,
         exists(
           get(db$)
             .select({ id: grants.id })
@@ -728,6 +882,9 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
         eq(operations.id, candidate.id),
         eq(operations.status, "queued"),
         gt(operations.expiresAt, nowDate()),
+        body.data.activeRunId
+          ? eq(operations.runId, body.data.activeRunId)
+          : undefined,
         exists(
           get(db$)
             .select({ id: devices.id })

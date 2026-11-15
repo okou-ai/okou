@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { Command } from "commander";
@@ -15,12 +15,22 @@ import { withErrorHandler } from "../lib/command/with-error-handler";
 async function client() {
   return initClient(phoneUseContract, await getClientConfig());
 }
-async function inspect(operationId: string, output?: string) {
+async function readOperation(operationId: string) {
   const api = await client();
   const response = await api.get({ params: { operationId } });
   if (response.status !== 200)
     handleError(response, "Could not read Phone Use operation");
-  const operation = response.body;
+  return response.body;
+}
+async function inspect(operationId: string, output?: string) {
+  return renderOperation(await readOperation(operationId), output);
+}
+async function renderOperation(
+  operation: Awaited<ReturnType<typeof readOperation>>,
+  output?: string,
+) {
+  const operationId = operation.id;
+  const api = await client();
   if (output && operation.status === "succeeded") {
     const screenshot = await api.screenshot({ params: { operationId } });
     if (screenshot.status === 200) {
@@ -38,7 +48,13 @@ async function inspect(operationId: string, output?: string) {
       const dir = resolve(output);
       await mkdir(dir, { recursive: true, mode: 0o700 });
       const path = join(dir, `${operationId}.png`);
-      await writeFile(path, bytes, { mode: 0o600 });
+      const temporary = join(dir, `.${operationId}.${randomUUID()}.tmp`);
+      try {
+        await writeFile(temporary, bytes, { mode: 0o600, flag: "wx" });
+        await rename(temporary, path);
+      } finally {
+        await rm(temporary, { force: true });
+      }
       console.log(
         JSON.stringify({ ...operation, screenshotPath: path }, null, 2),
       );
@@ -87,7 +103,7 @@ export const phoneUseCommand = new Command("phone-use")
   .description("Internal iPhone automation through Okou iOS Use")
   .addHelpText(
     "after",
-    `\nOpen Okou iOS Use, sign in, allow this chat and start a control window. Start a new Run after granting access.\nObserve before every input. Preserve operation IDs. Never replay unknown effects. Secrets and device unlock require the owner.\nFor send/publish/pay/order/delete and other sensitive commits, use --confirm with the exact consequence. Only the owner can confirm in Use. Ordinary navigation and scrolling run automatically.\n`,
+    `\nOpen Okou iOS Use, sign in, allow this chat and start a control window. Start a new Run after granting access.\nObserve before every input. Preserve operation IDs. Never replay unknown effects. Secrets and device unlock require the owner.\nFor send/publish/pay/order/delete and other sensitive commits, use --confirm with the exact consequence. Only the owner can confirm in Use. On approval_required, tell the owner to review in Use, then wait <operationId> without ending the Run or resubmitting. Ordinary navigation and scrolling run automatically.\n`,
   );
 phoneUseCommand
   .command("devices")
@@ -106,6 +122,36 @@ phoneUseCommand
     withErrorHandler(async (id: string, options: { output?: string }) => {
       await inspect(id, options.output);
     }),
+  );
+phoneUseCommand
+  .command("wait <operationId>")
+  .description(
+    "Wait for an existing operation or owner review; never resubmit input",
+  )
+  .option("--timeout <seconds>", "Wait at most 300 seconds", "300")
+  .option("--output <dir>", "Save a private screenshot")
+  .action(
+    withErrorHandler(
+      async (id: string, options: { timeout: string; output?: string }) => {
+        const seconds = Number(options.timeout);
+        if (!Number.isFinite(seconds) || seconds < 0 || seconds > 300)
+          throw new Error("--timeout must be between 0 and 300 seconds");
+        const until = Date.now() + seconds * 1000;
+        while (true) {
+          const operation = await readOperation(id);
+          if (
+            !["queued", "running", "approval_required"].includes(
+              operation.status,
+            ) ||
+            Date.now() >= until
+          ) {
+            await renderOperation(operation, options.output);
+            return;
+          }
+          await delay(Math.min(2000, Math.max(0, until - Date.now())));
+        }
+      },
+    ),
   );
 function actionCommand(name: string, description: string) {
   return phoneUseCommand
