@@ -36,12 +36,15 @@ export const phoneActionSchema = object({
     .optional(),
   direction: zEnum(["up", "down", "left", "right"]).optional(),
   goal: string().min(1).max(1000).optional(),
+  confirmation: string().trim().min(1).max(500).optional(),
 })
   .strict()
   .superRefine((value, context) => {
     const invalid = (message: string) => {
       return context.addIssue({ code: "custom", message });
     };
+    if (value.confirmation && !["tap", "swipe"].includes(value.kind))
+      invalid("Confirmation describes one tap or swipe commit");
     if (value.kind === "session.start" && !value.goal)
       invalid("A concrete task goal is required");
     if (value.kind === "app.open" && !value.app) invalid("app is required");

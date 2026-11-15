@@ -782,6 +782,12 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     return { status: 200 as const, body: { ok: true as const } };
   }
   const result = body.data.result;
+  if (
+    row.status === "approval_required" &&
+    result.status === "approval_required"
+  ) {
+    return { status: 200 as const, body: { ok: true as const } };
+  }
   let screenshotKey: string | undefined;
   if (result.screenshotBase64) {
     const image = Buffer.from(result.screenshotBase64, "base64");
@@ -815,12 +821,16 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
       error: result.error ?? null,
       screenshotKey: screenshotKey ?? row.screenshotKey,
-      completedAt: nowDate(),
+      completedAt: result.status === "approval_required" ? null : nowDate(),
+      expiresAt:
+        result.status === "approval_required"
+          ? new Date(now() + 5 * 60_000)
+          : row.expiresAt,
     })
     .where(
       and(
         eq(operations.id, row.id),
-        inArray(operations.status, ["running", "approval_required"]),
+        eq(operations.status, row.status),
         eq(operations.claimedGeneration, device.generation),
       ),
     );

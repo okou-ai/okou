@@ -1,13 +1,15 @@
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { clearMockNow, mockNow } from "../../../lib/time";
 import { phoneUseContract as contract } from "@okouai/api-contracts/contracts/phone-use";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { phoneUseRoutes } from "../phone-use";
 
 const context = testContext();
+afterEach(clearMockNow);
 const staffOrg = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
 const headers = Object.freeze({ authorization: "Bearer native-session" });
 function authenticate(
@@ -155,7 +157,13 @@ test(
     const run = await scenario.launchRun(actor, undefined, thread.id);
     const agentHeaders = { authorization: `Bearer ${run.token}` };
     const id = randomUUID();
-    const action = { kind: "observe" as const };
+    const action = {
+      kind: "tap" as const,
+      app: "com.example.notes",
+      snapshotId: randomUUID(),
+      elementId: "0",
+      confirmation: "Send the reviewed message",
+    };
     const submitted = await scenario.run(() => {
       return accept(
         client.create({ headers: agentHeaders, body: { id, action } }),
@@ -226,6 +234,50 @@ test(
       );
     });
     expect(pending.body.status).toBe("approval_required");
+    // Review remains possible after the ordinary 45-second dispatch deadline.
+    mockNow(new Date(submitted.body.expiresAt).getTime() + 15_000);
+    await scenario.run(async () => {
+      authenticate(actor.userId, staffOrg, sessionId);
+      await accept(
+        client.validate({
+          headers,
+          params,
+          body: { generation, operationId: id },
+        }),
+        [200],
+      );
+      await accept(
+        client.complete({
+          headers,
+          params,
+          body: {
+            generation,
+            operationId: id,
+            result: { status: "approval_required", data: { target: "Send" } },
+          },
+        }),
+        [200],
+      );
+    });
+    const repeated = await scenario.run(() => {
+      return accept(
+        client.get({ headers: agentHeaders, params: { operationId: id } }),
+        [200],
+      );
+    });
+    expect(repeated.body.expiresAt).toBe(pending.body.expiresAt);
+    mockNow(new Date(pending.body.expiresAt).getTime() + 1);
+    await scenario.run(async () => {
+      authenticate(actor.userId, staffOrg, sessionId);
+      await accept(
+        client.validate({
+          headers,
+          params,
+          body: { generation, operationId: id },
+        }),
+        [403],
+      );
+    });
     const loggedOut = await scenario.run(() => {
       context.mocks.clerk.sessions.getSession.mockResolvedValue({
         id: sessionId,

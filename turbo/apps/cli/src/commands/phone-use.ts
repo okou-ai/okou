@@ -87,7 +87,7 @@ export const phoneUseCommand = new Command("phone-use")
   .description("Internal iPhone automation through Okou iOS Use")
   .addHelpText(
     "after",
-    `\nOpen Okou iOS Use, sign in, allow this chat and start a control window. Start a new Run after granting access.\nObserve before every input. Preserve operation IDs. Never replay unknown effects. Secrets and device unlock require the owner.\nSensitive commits require a specific owner confirmation in the Use App; the Agent cannot approve them.\n`,
+    `\nOpen Okou iOS Use, sign in, allow this chat and start a control window. Start a new Run after granting access.\nObserve before every input. Preserve operation IDs. Never replay unknown effects. Secrets and device unlock require the owner.\nFor send/publish/pay/order/delete and other sensitive commits, use --confirm with the exact consequence. Only the owner can confirm in Use. Ordinary navigation and scrolling run automatically.\n`,
   );
 phoneUseCommand
   .command("devices")
@@ -153,12 +153,17 @@ actionCommand("tap", "Tap an element from a current snapshot")
   .requiredOption("--app <bundleId>", "Expected app")
   .requiredOption("--snapshot <uuid>", "Snapshot ID")
   .requiredOption("--element <id>", "Element ID")
+  .option(
+    "--confirm <consequence>",
+    "Require one local owner confirmation for this commit",
+  )
   .action(
     withErrorHandler(
       async (options: {
         app: string;
         snapshot: string;
         element: string;
+        confirm?: string;
         id?: string;
         wait?: string;
         output?: string;
@@ -169,6 +174,7 @@ actionCommand("tap", "Tap an element from a current snapshot")
             app: options.app,
             snapshotId: options.snapshot,
             elementId: options.element,
+            ...(options.confirm ? { confirmation: options.confirm } : {}),
           },
           options,
         );
@@ -205,12 +211,17 @@ actionCommand("swipe", "Scroll the current app")
   .requiredOption("--app <bundleId>", "Expected app")
   .requiredOption("--snapshot <uuid>", "Snapshot ID")
   .requiredOption("--direction <direction>", "up, down, left or right")
+  .option(
+    "--confirm <consequence>",
+    "Require one local owner confirmation for this commit",
+  )
   .action(
     withErrorHandler(
       async (options: {
         app: string;
         snapshot: string;
         direction: PhoneAction["direction"];
+        confirm?: string;
         id?: string;
         wait?: string;
         output?: string;
@@ -221,6 +232,7 @@ actionCommand("swipe", "Scroll the current app")
             app: options.app,
             snapshotId: options.snapshot,
             direction: options.direction,
+            ...(options.confirm ? { confirmation: options.confirm } : {}),
           },
           options,
         );

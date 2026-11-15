@@ -80,4 +80,65 @@ describe("Phone Use CLI", () => {
     expect((await stat(path)).mode & 0o777).toBe(0o600);
     expect(await readFile(path)).toEqual(Buffer.from([137, 80, 78, 71]));
   });
+  it("requests owner confirmation for one specific commit without approving it remotely", async () => {
+    const id = randomUUID(),
+      snapshot = randomUUID();
+    const action = {
+      kind: "tap",
+      app: "com.example.notes",
+      snapshotId: snapshot,
+      elementId: "3",
+      confirmation: "Publish the reviewed draft",
+    };
+    const operation = {
+      id,
+      deviceId: randomUUID(),
+      runId: randomUUID(),
+      grantId: randomUUID(),
+      action,
+      status: "approval_required",
+      result: { target: "Publish" },
+      error: null,
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+    };
+    server.use(
+      http.post(
+        "https://api.vm0.ai/api/phone-use/operations",
+        async ({ request }) => {
+          expect(await request.json()).toEqual({ id, action });
+          return HttpResponse.json(operation);
+        },
+      ),
+      http.get(`https://api.vm0.ai/api/phone-use/operations/${id}`, () => {
+        return HttpResponse.json(operation);
+      }),
+    );
+    const output = vi.spyOn(console, "log").mockImplementation(() => {});
+    await new Command()
+      .exitOverride()
+      .addCommand(phoneUseCommand)
+      .parseAsync(
+        [
+          "phone-use",
+          "tap",
+          "--id",
+          id,
+          "--app",
+          action.app,
+          "--snapshot",
+          snapshot,
+          "--element",
+          "3",
+          "--confirm",
+          action.confirmation,
+          "--wait",
+          "0",
+        ],
+        { from: "user" },
+      );
+    expect(output).toHaveBeenCalledWith(
+      expect.stringContaining('"status": "approval_required"'),
+    );
+  });
 });
