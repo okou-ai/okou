@@ -29,7 +29,8 @@ public actor ChatCommands {
   public func createThread(
     modelSelection: ChatModelSelection? = nil,
     reasoningEffort: String? = nil, composerOptions: ChatComposerOptions? = nil,
-    projectID: String? = nil
+    projectID: String? = nil,
+    clientThreadID: String = UUID().uuidString
   ) async throws -> ChatThread {
     async let agentsRequest: [AgentRecord] = client.request("/api/agents")
     let selection: ThreadModelSelection
@@ -47,7 +48,7 @@ public actor ChatCommands {
     let agents = try await agentsRequest
     guard let agent = agents.first(where: \.isDefaultAgent) else { throw ChatError.noDefaultAgent }
     let body = CreateThreadBody(
-      agentId: agent.agentId, clientThreadId: UUID().uuidString,
+      agentId: agent.agentId, clientThreadId: clientThreadID,
       eventId: UUID().uuidString, model: selection.model,
       serviceTier: selection.serviceTier,
       reasoningEffort: selection.reasoningEffort, composerOptions: composerOptions,
@@ -115,7 +116,7 @@ public actor ChatCommands {
     chatThreadSortEventID: String = UUID().uuidString,
     modelSelection: ChatModelSelection? = nil, reasoningEffort: String? = nil,
     computerAccess: ChatComputerAccess? = nil,
-    expectedAgentID: String? = nil
+    expectedAgentID: String? = nil, sourceRunID: String? = nil
   )
     async throws -> SendReceipt
   {
@@ -156,6 +157,7 @@ public actor ChatCommands {
               ])
             }),
       hasTextContent: !prompt.isEmpty || document?.hasTextContent == true,
+      sourceRunId: sourceRunID,
       modelSelection: modelSelection,
       reasoningEffort: reasoningEffort,
       computerAccess: computerAccess
@@ -358,12 +360,13 @@ public actor ChatCommands {
     let chatThreadSortEventId: String
     let userMessage: ChatDraftDocument
     let hasTextContent: Bool
+    let sourceRunId: String?
     let modelSelection: ChatModelSelection?
     let reasoningEffort: String?
     let computerAccess: ChatComputerAccess
     enum Keys: String, CodingKey {
       case agentId, threadId, prompt, clientEventId, chatThreadSortEventId, userMessage
-      case hasTextContent, computerUseHostId, cloudBrowserEnabled, model, runOptions
+      case hasTextContent, sourceRunId, computerUseHostId, cloudBrowserEnabled, model, runOptions
     }
     func encode(to encoder: Encoder) throws {
       var container = encoder.container(keyedBy: Keys.self)
@@ -374,6 +377,7 @@ public actor ChatCommands {
       try container.encode(chatThreadSortEventId, forKey: .chatThreadSortEventId)
       try container.encode(userMessage, forKey: .userMessage)
       try container.encode(hasTextContent, forKey: .hasTextContent)
+      try container.encodeIfPresent(sourceRunId, forKey: .sourceRunId)
       if let modelSelection {
         try container.encode(modelSelection.model, forKey: .model)
         var options: [String: String] = [:]
