@@ -627,15 +627,16 @@ async fn wait_for_pid_file(path: &Path) -> u32 {
 }
 
 async fn acquire_test_runtime(config: &ProxyConfig) -> Arc<MitmdumpRuntime> {
-    tokio::fs::create_dir_all(&config.addon_dir).await.unwrap();
-    for (name, content) in ADDON_FILES.iter() {
-        tokio::fs::create_dir_all(config.addon_dir.join(name).parent().unwrap())
-            .await
-            .unwrap();
-        tokio::fs::write(config.addon_dir.join(name), content)
-            .await
-            .unwrap();
-    }
+    let addon_dir = config.addon_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        std::fs::create_dir_all(&addon_dir).unwrap();
+        for (name, content) in ADDON_FILES.iter() {
+            std::fs::create_dir_all(addon_dir.join(name).parent().unwrap()).unwrap();
+            std::fs::write(addon_dir.join(name), content).unwrap();
+        }
+    })
+    .await
+    .unwrap();
     MitmdumpRuntime::acquire(config.runtime_dir.clone(), config.runtime_lock_path.clone())
         .await
         .unwrap()
