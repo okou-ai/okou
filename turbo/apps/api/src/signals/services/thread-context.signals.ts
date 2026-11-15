@@ -163,14 +163,14 @@ export function createThreadContext(
     automationContext$,
     automationTarget$,
   );
-  const templateOrgId$ = computed(() => {
-    return Promise.resolve(orgId);
-  });
+  const templateOrgId$ = createThreadOrgId(orgId);
   const templates$ = createRunTemplates(
     pickedEvent$,
     templateOrgId$,
     sourceSettings.disabledPaidTools$,
   );
+  const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
+  const phoneUseGrant$ = createThreadPhoneUseGrant(bootstrap, thread$);
   const runIds$ = createRunIds();
   const threadContinuation$ = createThreadContinuation(
     pickedEvent$,
@@ -196,7 +196,8 @@ export function createThreadContext(
   );
   return {
     threadContinuation$,
-    ...createThreadDeviceGrants(bootstrap, thread$),
+    computerUseHostGrant$,
+    phoneUseGrant$,
     slackContext$,
     feishuContext$,
     teamsContext$,
@@ -411,12 +412,8 @@ function createThreadPhoneUseGrant(
   });
 }
 
-function createThreadDeviceGrants(
-  bootstrap: AgentRunContextSignals,
-  thread$: Computed<Promise<ChatThreadRequestRow | null>>,
-) {
-  return {
-    computerUseHostGrant$: createThreadHostGrant(bootstrap, thread$),
-    phoneUseGrant$: createThreadPhoneUseGrant(bootstrap, thread$),
-  };
+function createThreadOrgId(orgId: string) {
+  return computed(() => {
+    return Promise.resolve(orgId);
+  });
 }

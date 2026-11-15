@@ -221,12 +221,13 @@ export function createPromptAndSkillVolumesSignals(
     threadContext,
   );
   const userPrompt$ = createUserPrompt(memberMetadata$);
-  const { computerUsePrompt$, phoneUsePrompt$ } = createDeviceUsePrompts(
+  const deviceUsePrompts = createDeviceUsePrompts(
     bootstrap.orgId,
     pickedEvent$,
     threadContext,
     featureSwitches$,
   );
+  const { computerUsePrompt$, phoneUsePrompt$ } = deviceUsePrompts;
   const rotatedPrompt$ = createRotatedPrompt(pickedEvent$);
   const connectors$ = createConnectorsContext(
     authorizedConnectors$,
