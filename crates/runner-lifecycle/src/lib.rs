@@ -8,6 +8,7 @@
 )]
 
 pub mod active_runs;
+mod captured_backing;
 mod error;
 pub mod guest_timezone;
 pub mod home_image_cache;
