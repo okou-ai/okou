@@ -142,7 +142,7 @@ describe("POST /api/integrations/slack/message", () => {
       const execution = await owner.executionInput(run.runId);
       const token = execution.platformEnvironment?.OKOU_TOKEN;
       if (!token) {
-        throw new Error("Expected the claimed Okou token");
+        throw new Error("Expected the execution Okou token");
       }
       return { runId: run.runId, token };
     });

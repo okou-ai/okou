@@ -83,7 +83,7 @@ function createDiskTelemetryFixture(context: TestContext) {
             return runs.requestCancelRun(actor, runId, [200]);
           });
         }
-        // Public cancellation keeps a claimed slot until its actual Runner ACKs.
+        // Public cancellation keeps an assigned slot until its actual Runner ACKs.
         if (
           owned.runId === runId &&
           owned.sandboxToken &&
@@ -175,7 +175,7 @@ function createDiskTelemetryFixture(context: TestContext) {
 }
 
 describe("Runner disk telemetry HTTP", () => {
-  it("accepts independent, missing and malformed filesystem observations on an authenticated claimed run", async () => {
+  it("accepts independent, missing and malformed filesystem observations on an authenticated assigned Run", async () => {
     mockSecretKmsHttp();
     const fixture = createDiskTelemetryFixture(context);
     const { bdd, runs, webhooks, actor } = fixture;
@@ -273,7 +273,7 @@ describe("Runner disk telemetry HTTP", () => {
       return runs.requestReadRun(actor, run.runId, [200]);
     });
     expect(readback.body).toMatchObject({ status: "failed" });
-    // Queued/claimed identity and persisted terminal state are observed through
+    // Queued/assigned identity and persisted terminal state are observed through
     // production endpoints, not private DB fixtures.
   });
 });

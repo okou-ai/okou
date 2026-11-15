@@ -104,7 +104,7 @@ function createScenario() {
     return actor.orgId;
   }
 
-  async function claimCanonicalIntegrationRun(args: {
+  async function readCanonicalIntegrationExecution(args: {
     readonly actor: ApiTestUser;
     readonly source: "slack" | "teams";
     readonly prompt: string;
@@ -147,8 +147,8 @@ function createScenario() {
       return args.runs.heartbeatRunner(args.runnerGroup);
     });
     const runId = input.runId;
-    const claim = await scenario.executionInput(args.actor, runId);
-    expect(claim.prompt).toContain(args.prompt);
+    const receivedExecution = await scenario.executionInput(args.actor, runId);
+    expect(receivedExecution.prompt).toContain(args.prompt);
     const log = await scenario.run(() => {
       return createRunReadsApi(context).requestReadLogById(
         args.actor,
@@ -157,9 +157,9 @@ function createScenario() {
       );
     });
     expect(log.body.triggerSource).toBe(args.source);
-    const token = claim.platformEnvironment.OKOU_TOKEN;
+    const token = receivedExecution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
-      throw new Error("Expected the Runner claim to issue an Okou token");
+      throw new Error("Expected the Runner execution to issue an Okou token");
     }
     return { runId: input.runId, threadId, token };
   }
@@ -207,7 +207,7 @@ function createScenario() {
     bdd,
     api,
     requireOrg,
-    claimCanonicalIntegrationRun,
+    readCanonicalIntegrationExecution,
     requestTokenFromUrl,
     createAuthorizationScenario,
     readAuthorizationThreadLifecycle,
@@ -814,7 +814,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
 
   it("uses chat-thread authorization for a canonical Slack run", async () => {
     const scenario = createScenario();
-    const { bdd, api, claimCanonicalIntegrationRun, requestTokenFromUrl } =
+    const { bdd, api, readCanonicalIntegrationExecution, requestTokenFromUrl } =
       scenario;
     return await withNowScopeForTest(() => {
       return scenario.run(async () => {
@@ -850,7 +850,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
             channel_type: "channel",
           });
         });
-        const run = await claimCanonicalIntegrationRun({
+        const run = await readCanonicalIntegrationExecution({
           actor,
           source: "slack",
           prompt,
@@ -894,7 +894,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
 
   it("uses chat-thread authorization for a canonical Teams run", async () => {
     const scenario = createScenario();
-    const { bdd, api, claimCanonicalIntegrationRun, requestTokenFromUrl } =
+    const { bdd, api, readCanonicalIntegrationExecution, requestTokenFromUrl } =
       scenario;
     return await withNowScopeForTest(() => {
       return scenario.run(async () => {
@@ -980,7 +980,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
           });
         });
         expect(message.status).toBe(200);
-        const run = await claimCanonicalIntegrationRun({
+        const run = await readCanonicalIntegrationExecution({
           actor,
           source: "teams",
           prompt,

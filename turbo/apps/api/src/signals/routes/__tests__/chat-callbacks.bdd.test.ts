@@ -868,9 +868,12 @@ describe("CHAT-02: completed chat callback", () => {
     if (!claimed?.runId) {
       throw new Error("Expected the queued Web message to auto-send");
     }
-    const secondClaim = await readChatRunExecution(runnerGroup, claimed.runId);
+    const secondExecution = await readChatRunExecution(
+      runnerGroup,
+      claimed.runId,
+    );
     // Only a pick inside its own send request is anchored at receipt.
-    expect(secondClaim.apiStartTime).toBeUndefined();
+    expect(secondExecution.apiStartTime).toBeUndefined();
 
     await api.requestCancelRun(actor, claimed.runId, [200]);
     await waitForRunStatus(actor, claimed.runId, "cancelled");
@@ -4275,7 +4278,10 @@ describe("CHAT-02: auto-send after failures", () => {
         threadId: anchor.threadId,
         prompt: probePrompt,
       });
-      const probeClaim = await readChatRunExecution(runnerGroup, probe.runId);
+      const probeExecution = await readChatRunExecution(
+        runnerGroup,
+        probe.runId,
+      );
       const probeContext = await waitForRunContext(actor, probe.runId);
       expect(probeContext.body.prompt).toBe(probePrompt);
       if (status === "failed") {
@@ -4295,13 +4301,13 @@ describe("CHAT-02: auto-send after failures", () => {
         await api.requestCancelRun(actor, probe.runId, [200]);
         await waitForRunStatus(actor, probe.runId, "cancelled");
       } else {
-        expect(probeClaim.nativeContinuation).toMatchObject({
+        expect(probeExecution.nativeContinuation).toMatchObject({
           sessionId: cliAgentSessionIdForChatRun(dense.runId),
           generationRunId: dense.runId,
         });
         chatCallbacks.mockChatOutputEvents([]);
         await completeChatRunOk(probe.runId, {
-          authorization: `Bearer ${probeClaim.sandboxToken}`,
+          authorization: `Bearer ${probeExecution.sandboxToken}`,
         });
         await waitForRunStatus(actor, probe.runId, "completed");
       }

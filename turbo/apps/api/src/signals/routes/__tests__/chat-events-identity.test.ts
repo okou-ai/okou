@@ -59,14 +59,16 @@ async function entitledNativeChatActor(): Promise<
 async function expectRunAppContext(args: {
   readonly actor: ApiTestUser;
   readonly runId: string;
-  readonly claim: RunnerExecutionInput;
+  readonly executionInput: RunnerExecutionInput;
   readonly appUrl: string;
 }): Promise<void> {
   if (!args.actor.orgId) {
     throw new Error("Expected an organization-scoped chat actor");
   }
-  expect(args.claim.platformEnvironment.OKOU_APP_URL).toBe(args.appUrl);
-  const token = args.claim.platformEnvironment.OKOU_TOKEN;
+  expect(args.executionInput.platformEnvironment.OKOU_APP_URL).toBe(
+    args.appUrl,
+  );
+  const token = args.executionInput.platformEnvironment.OKOU_TOKEN;
   if (!token) {
     throw new Error("Expected the run context to contain an Okou token");
   }
@@ -109,7 +111,7 @@ describe("CHAT-02: default assistant identity", () => {
     await expectRunAppContext({
       actor,
       runId: anchor.runId,
-      claim: anchorExecution.execution,
+      executionInput: anchorExecution.execution,
       appUrl: "https://app.okou.ai",
     });
     const queuedEventId = randomUUID();
@@ -167,7 +169,7 @@ describe("CHAT-02: default assistant identity", () => {
     await expectRunAppContext({
       actor,
       runId: promoted.runId,
-      claim: promotedExecution.execution,
+      executionInput: promotedExecution.execution,
       appUrl: "https://app.okou.ai",
     });
     await cancelChatRun(actor, promoted.runId);
@@ -189,7 +191,7 @@ describe("CHAT-02: default assistant identity", () => {
     await expectRunAppContext({
       actor,
       runId: customRun.runId,
-      claim: customExecution.execution,
+      executionInput: customExecution.execution,
       appUrl: "https://preview.example.test",
     });
 
@@ -215,7 +217,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       const okouToken =
         callerExecution.execution.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
-        throw new Error("Expected a claimed agent token");
+        throw new Error("Expected an execution agent token");
       }
 
       const createdThread = await accept(
@@ -360,7 +362,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
         hostName: "BDD Desktop",
       });
 
-      // Observe the authorization of each actual claim, in addition to the
+      // Observe the authorization of each dispatched execution, in addition to the
       // thread binding available from its public snapshot/events: a
       // granted token can create write commands on the host, while an
       // ungranted token cannot. Chat messaging remains available independently.

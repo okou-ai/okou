@@ -241,7 +241,7 @@ describe("Run cancellation reconciliation", () => {
         await directFixture(runCounts);
       const [peer] = peers;
       if (!peer?.sandboxToken) {
-        throw new Error("Expected a separately claimed peer Run");
+        throw new Error("Expected a separately dispatched peer Run");
       }
       const response = await accept(
         client().get({
@@ -335,7 +335,7 @@ describe("Run cancellation reconciliation", () => {
     });
   });
 
-  it("confirms physical absence after permitted Agent deletion with the original claim token", async () => {
+  it("confirms physical absence after permitted Agent deletion with the original sandbox token", async () => {
     const f = await fixture();
     await f.runs.requestCancelRun(f.actor, f.runId, [200]);
     await flushWaitUntilForTest();
@@ -347,7 +347,7 @@ describe("Run cancellation reconciliation", () => {
     });
   });
 
-  it("does not mistake a present row with another group or official claim for deletion", async () => {
+  it("does not mistake a present row with another group or Runner assignment for deletion", async () => {
     const f = await fixture();
     for (const query of [
       { ...f.query, runnerGroup: "vm0/another-group" },
@@ -374,7 +374,7 @@ describe("Run cancellation reconciliation", () => {
     const f = await fixture();
     const agentToken = f.agentToken;
     if (!agentToken) {
-      throw new Error("Expected the claim to issue an agent token");
+      throw new Error("Expected execution input to include an agent token");
     }
     for (const headers of [
       {},

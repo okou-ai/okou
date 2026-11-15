@@ -11,14 +11,14 @@ import { chatEventsRoutes } from "../chat-events";
 
 const context = testContext();
 
-describe("Claim Storage URL freshness", () => {
+describe("Execution Storage URL freshness", () => {
   it("refreshes a queued mount across the cache margin and publishes the winning URL", async () => {
     await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
     const startedAt = now();
     mockNow(startedAt);
     onTestFinished(clearMockNow);
     // Presigning credentials give this clock-controlled case its own cache namespace.
-    mockEnv("R2_SECRET_ACCESS_KEY", `claim-storage-${randomUUID()}`);
+    mockEnv("R2_SECRET_ACCESS_KEY", `execution-storage-${randomUUID()}`);
     closeS3Clients();
     const fixture = createPublicRunnerMemory(context);
     await fixture.run(async () => {
@@ -74,7 +74,7 @@ describe("Claim Storage URL freshness", () => {
       await fixture.cancel(refreshed);
       const reused = await fixture.startExecution(
         agentId,
-        "Reuse the winning Claim URL",
+        "Reuse the published execution URL",
       );
       expect(reused.memory).toStrictEqual(refreshed.memory);
     });

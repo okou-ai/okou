@@ -50,7 +50,7 @@ describe("authorized connector admission", () => {
     });
   });
 
-  it("lists the exact admitted manual MCP account for a claimed Run", async () => {
+  it("lists the exact admitted manual MCP account for a dispatched Run", async () => {
     const {
       actor,
       agentId,

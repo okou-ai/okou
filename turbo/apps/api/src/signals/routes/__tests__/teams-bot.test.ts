@@ -1016,7 +1016,7 @@ async function setupConnectedTeamsBotActor(
   };
 }
 
-interface TeamsDownloadClaimAttempt {
+interface TeamsDownloadExecutionAttempt {
   readonly runId: string;
   state: "pending" | "returned" | "rejected";
   error?: unknown;
@@ -1040,8 +1040,8 @@ function captureTeamsDownloadEnvironment() {
   };
 }
 
-function verifyTeamsDownloadClaims(
-  attempts: readonly TeamsDownloadClaimAttempt[],
+function verifyTeamsDownloadExecutions(
+  attempts: readonly TeamsDownloadExecutionAttempt[],
 ) {
   const errors = attempts.flatMap((attempt) => {
     if (attempt.state === "returned") {
@@ -1050,7 +1050,7 @@ function verifyTeamsDownloadClaims(
     return [
       attempt.state === "rejected"
         ? attempt.error
-        : new Error(`Unacknowledged claim for ${attempt.runId}`),
+        : new Error(`Unacknowledged execution for ${attempt.runId}`),
     ];
   });
   if (errors.length === 1) {
@@ -1064,14 +1064,14 @@ function verifyTeamsDownloadClaims(
 async function verifyTeamsDownloadRunsTerminal(
   actor: ApiTestUser,
   receipt: readonly RunCleanupReceiptEntry[],
-  attempts: readonly TeamsDownloadClaimAttempt[],
+  attempts: readonly TeamsDownloadExecutionAttempt[],
 ) {
   const enumerated = new Map(
     receipt.map((run) => {
       return [run.id, run];
     }),
   );
-  const claimed = new Set(
+  const receivedRunIds = new Set(
     attempts.map((attempt) => {
       return attempt.runId;
     }),
@@ -1091,7 +1091,7 @@ async function verifyTeamsDownloadRunsTerminal(
       }
       if (
         (run.status === "cancelled" && run.startedAt !== null) ||
-        (claimed.has(run.id) &&
+        (receivedRunIds.has(run.id) &&
           !["completed", "failed", "timeout"].includes(original.status))
       ) {
         expect(original.completionAcknowledged).toBeTruthy();
@@ -1112,12 +1112,12 @@ async function verifyTeamsDownloadRunsTerminal(
     );
   }
   expect([...currentIds].sort()).toStrictEqual([...enumerated.keys()].sort());
-  for (const runId of claimed) {
+  for (const runId of receivedRunIds) {
     expect(currentIds).toContain(runId);
   }
 }
 
-function claimedTeamsDownloadFixture() {
+function teamsDownloadExecutionFixture() {
   const fixture = teamsConnectFixture();
   mockTeamsConversationMembership(fixture);
   const actor = authOrgApi.user({
@@ -1125,7 +1125,7 @@ function claimedTeamsDownloadFixture() {
     orgId: fixture.orgId,
     orgRole: "org:admin",
   });
-  const attempts: TeamsDownloadClaimAttempt[] = [];
+  const attempts: TeamsDownloadExecutionAttempt[] = [];
   let accepted = captureTeamsDownloadEnvironment();
   let restoreWebhook: (() => void) | undefined;
   const ownedRuns = publicRunOwner(context, actor, {
@@ -1135,7 +1135,7 @@ function claimedTeamsDownloadFixture() {
       restoreWebhook?.();
     },
     beforeRuns: () => {
-      verifyTeamsDownloadClaims(attempts);
+      verifyTeamsDownloadExecutions(attempts);
       return Promise.resolve();
     },
     afterSuccessfulCleanup: async (receipt) => {
@@ -1182,7 +1182,10 @@ function claimedTeamsDownloadFixture() {
     actor,
     executionInput(runId: string) {
       return ownedRuns.run(async () => {
-        const attempt: TeamsDownloadClaimAttempt = { runId, state: "pending" };
+        const attempt: TeamsDownloadExecutionAttempt = {
+          runId,
+          state: "pending",
+        };
         attempts.push(attempt);
         const result = await settleIncludingAbort(() => {
           return captured(() => {
@@ -1292,8 +1295,8 @@ function historicalTeamsDownloadProvider(
   return { rootId, attachmentId, name, contents, url };
 }
 
-async function claimHistoricalTeamsDownload(
-  owned: ReturnType<typeof claimedTeamsDownloadFixture>,
+async function readHistoricalTeamsDownloadExecution(
+  owned: ReturnType<typeof teamsDownloadExecutionFixture>,
   provider: ReturnType<typeof historicalTeamsDownloadProvider>,
 ) {
   const { actor, fixture } = owned;
@@ -1376,13 +1379,16 @@ describe("POST /api/webhooks/teams/bot", () => {
   });
 
   it.each(["downloadInfo", "graph", "bot"] as const)(
-    "delivers a historical %s attachment through its claimed Run",
+    "delivers a historical %s attachment through its dispatched Run",
     async (kind) => {
-      const owned = claimedTeamsDownloadFixture();
+      const owned = teamsDownloadExecutionFixture();
       const provider = historicalTeamsDownloadProvider(owned.fixture, kind);
-      const claim = await claimHistoricalTeamsDownload(owned, provider);
+      const receivedExecution = await readHistoricalTeamsDownloadExecution(
+        owned,
+        provider,
+      );
       const history = promptSection(
-        claim.appendSystemPrompt ?? "",
+        receivedExecution.appendSystemPrompt ?? "",
         "# Microsoft Teams Thread Context",
       );
       expect(history).toContain(`[Teams file] ${provider.name} (text/plain)`);
@@ -1390,10 +1396,10 @@ describe("POST /api/webhooks/teams/bot", () => {
         `[Teams attachment ID] ${provider.attachmentId}`,
       );
       const fileId = history.match(/\[ID\] (\S+)/u)?.[1];
-      const token = claim.platformEnvironment.OKOU_TOKEN;
+      const token = receivedExecution.platformEnvironment.OKOU_TOKEN;
       if (!fileId || !token) {
         throw new Error(
-          "Expected a historical file ID and claim-issued Okou token",
+          "Expected a historical file ID and execution-issued Okou token",
         );
       }
       const app = createAppWithRoutes({
@@ -3699,10 +3705,10 @@ describe("POST /api/webhooks/teams/bot", () => {
       await scenario.run(() => {
         return runsApi.heartbeatRunner(runnerGroup);
       });
-      const firstClaim = await scenario.executionInput(actor, firstRunId);
-      const firstOkouToken = firstClaim.platformEnvironment.OKOU_TOKEN;
+      const firstExecution = await scenario.executionInput(actor, firstRunId);
+      const firstOkouToken = firstExecution.platformEnvironment.OKOU_TOKEN;
       if (!firstOkouToken) {
-        throw new Error("Claimed Teams runner job did not include OKOU_TOKEN");
+        throw new Error("Teams execution input did not include OKOU_TOKEN");
       }
       const created =
         await computerUseApi.createComputerUseAuthorizationRequest({
@@ -3735,10 +3741,10 @@ describe("POST /api/webhooks/teams/bot", () => {
       await scenario.run(() => {
         return runsApi.heartbeatRunner(runnerGroup);
       });
-      const secondClaim = await scenario.executionInput(actor, secondRunId);
-      const secondOkouToken = secondClaim.platformEnvironment.OKOU_TOKEN;
+      const secondExecution = await scenario.executionInput(actor, secondRunId);
+      const secondOkouToken = secondExecution.platformEnvironment.OKOU_TOKEN;
       if (!secondOkouToken) {
-        throw new Error("Claimed Teams runner job did not include OKOU_TOKEN");
+        throw new Error("Teams execution input did not include OKOU_TOKEN");
       }
       const okouAuth = verifyOkouToken(secondOkouToken);
       expect(okouAuth).toMatchObject({ computerUseHostId: host.hostId });

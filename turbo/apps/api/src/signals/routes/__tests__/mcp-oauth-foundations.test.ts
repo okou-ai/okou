@@ -805,7 +805,9 @@ describe("MCP OAuth foundations", () => {
     });
     const sandboxToken = input.sandboxToken;
     if (!sandboxToken) {
-      throw new Error("Expected the actual Runner claim sandbox credential");
+      throw new Error(
+        "Expected the actual Runner execution sandbox credential",
+      );
     }
     await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
       status: "running",

@@ -233,7 +233,7 @@ async function createWorkflow(actor: ApiTestUser, body: WorkflowCreateRequest) {
 
 async function enableWorkflowRuns(actor: ApiTestUser): Promise<void> {
   await api.grantProEntitlement(actor);
-  // Fable keeps workflow runs on the claimable native Runner route.
+  // Fable keeps workflow runs on the native Runner execution route.
   await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
@@ -3143,7 +3143,7 @@ describe("workflow owner profile cancellation", () => {
   });
 });
 
-test("promotes a queued workflow after failure and completes it with a real Runner claim", async () => {
+test("promotes a queued workflow after failure and completes it with a real Runner execution", async () => {
   const actor = user({ orgRole: "org:admin" });
   await enableWorkflowRuns(actor);
   const runnerGroup = await api.configureRunnerGroup();

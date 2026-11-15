@@ -64,7 +64,7 @@ const GMAIL_TOPIC_NAME = "projects/vm0-ai-488909/topics/gmail-events";
 const GMAIL_AUDIENCE = "https://api.okou.ai/api/webhooks/gmail";
 const GMAIL_PUSH_SERVICE_ACCOUNT =
   "gmail-pubsub-push@vm0-ai-488909.iam.gserviceaccount.com";
-// Queue/claim fixtures deliberately use the permanently native Claude route.
+// Queued-execution fixtures deliberately use the permanently native Claude route.
 const GMAIL_WORKSPACE_MODEL = "claude-fable-5-1";
 const GOOGLE_OIDC_CERT_KID = "gmail-pubsub-test-key";
 const googleOidcKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -416,7 +416,7 @@ function expectResponseStatus(
 async function configureWorkspaceModelProvider(
   actor: ApiTestUser & { readonly orgId: string },
 ): Promise<void> {
-  // Keep native claim/callback coverage through a supported personal subscription.
+  // Keep native execution/callback coverage through a supported personal subscription.
   await runsApi.ensurePersonalSubscriptionModel(actor, {
     model: GMAIL_WORKSPACE_MODEL,
   });

@@ -84,13 +84,13 @@ async function personalHeaders(actor: Owner) {
   return { authorization: `Bearer ${issued.body.access_token}` };
 }
 
-const claimed = createSshExecutionApi(context, {
+const executionApi = createSshExecutionApi(context, {
   runnerHeaders: { authorization: `Bearer vm0_official_${runnerSecret}` },
   authenticate,
 });
 
 afterEach(async () => {
-  await claimed.cleanup();
+  await executionApi.cleanup();
 });
 
 function credentials() {
@@ -134,12 +134,12 @@ function vncConnections() {
 }
 
 describe("remote control CLI management authorization", () => {
-  it("allows a claimed Run to manage saved SSH credentials and bindings without exposing secrets", async () => {
+  it("allows a dispatched Run to manage saved SSH credentials and bindings without exposing secrets", async () => {
     useSecretKmsProbe();
     mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
     const actor = owner();
     authenticate(actor);
-    const run = await claimed.runtime(actor);
+    const run = await executionApi.runtime(actor);
     const headers = run.guestHeaders;
     const created = await accept(
       credentials().create({ headers, body: credentialBody() }),

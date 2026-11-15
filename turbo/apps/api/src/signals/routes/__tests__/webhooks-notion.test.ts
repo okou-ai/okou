@@ -426,7 +426,7 @@ describe("POST /api/webhooks/notion", () => {
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }
-    // Fable keeps Notion workflow runs on the claimable native Runner route.
+    // Fable keeps Notion workflow runs on the native Runner execution route.
     await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
@@ -1358,7 +1358,7 @@ describe("POST /api/webhooks/notion", () => {
     });
     const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
-      throw new Error("Expected an Okou token from the Runner claim");
+      throw new Error("Expected an Okou token from the Runner execution");
     }
     await accept(
       runAccounts.select({

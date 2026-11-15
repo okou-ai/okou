@@ -414,7 +414,7 @@ function customOauthConnectorBodyForTeardown(
 /**
  * At the organization's run capacity a chat send creates no run: the input
  * stays pending in its thread until a pick launches it. The model routes to a
- * native runner so the picked run waits for a runner claim instead of running
+ * native runner so the picked run waits for a Runner execution instead of running
  * an API-first provider turn.
  */
 async function sendChatInputAtCapacity(

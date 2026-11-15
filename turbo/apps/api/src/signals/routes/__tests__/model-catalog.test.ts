@@ -236,8 +236,11 @@ describe("GET /api/model-catalog", () => {
     async (scope) => {
       const actor = authOrgApi.user({ orgRole: "org:member" });
       authOrgApi.mockClerkOrg(actor);
-      const claimed = await credentials.forActor(actor);
-      const token = scope === "okou" ? claimed.token : claimed.sandboxToken;
+      const executionCredentials = await credentials.forActor(actor);
+      const token =
+        scope === "okou"
+          ? executionCredentials.token
+          : executionCredentials.sandboxToken;
 
       const response = await accept(
         apiClient().get({ headers: { authorization: `Bearer ${token}` } }),

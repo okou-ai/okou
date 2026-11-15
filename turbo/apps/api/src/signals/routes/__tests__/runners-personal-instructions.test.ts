@@ -66,10 +66,10 @@ describe("Captured personal Instructions in direct Runs", () => {
       await save(owned.actor, "personal at admission");
       const queued = await api.createThreadRun(owned.actor, {
         agentId: defaultAgentId,
-        prompt: "personal claim",
+        prompt: "execute with personal instructions",
         model: "auto",
       });
-      await save(owned.actor, "latest before claim");
+      await save(owned.actor, "latest before dispatch");
       await mode(owned.actor, false);
       const { execution } = await owned.runExecution(queued.runId);
       const selected = execution.contentBundles.instructions!;

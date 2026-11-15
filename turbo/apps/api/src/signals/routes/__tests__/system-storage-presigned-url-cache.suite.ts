@@ -126,7 +126,7 @@ describe("system storage presigned URL cache", () => {
             customConnectorId: connector.id,
           }),
         );
-        // Settle the real claimed Run before advancing application time. A failed
+        // Settle the real dispatched Run before advancing application time. A failed
         // Runner completion has no unfinished output upload or expired live token.
         await owned.run(() => {
           return fixture.failChatRun(
@@ -251,7 +251,7 @@ describe("system storage presigned URL cache", () => {
     },
   );
 
-  it("delivers and caches 51 Connector Skill bundles across Runner claims", async () => {
+  it("delivers and caches 51 Connector Skill bundles across Runner executions", async () => {
     const runFixture = await entitledDirectRunActor();
     const { actor } = runFixture;
     context.mocks.s3.send.mockResolvedValue({ ContentLength: 2048 });
@@ -338,7 +338,7 @@ describe("system storage presigned URL cache", () => {
       }),
     );
 
-    // Later Runner claims return the complete same manifest and signed URLs.
+    // Later Runner executions return the complete same manifest and signed URLs.
     for (const prompt of [
       "use the mixed-scope storage URL cache",
       "reuse the mixed-scope storage URL cache",

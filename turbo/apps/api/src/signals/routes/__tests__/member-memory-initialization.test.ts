@@ -110,13 +110,13 @@ async function observeMemory(
     model: "claude-fable-5-1",
   });
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await owner.executionInput(actor, run.runId);
+  const receivedExecution = await owner.executionInput(actor, run.runId);
   const memories =
-    expectCanonicalStorageManifest(claim.storageManifest)?.storageMounts.filter(
-      (mount) => {
-        return mount.name === "memory";
-      },
-    ) ?? [];
+    expectCanonicalStorageManifest(
+      receivedExecution.storageManifest,
+    )?.storageMounts.filter((mount) => {
+      return mount.name === "memory";
+    }) ?? [];
   expect(memories).toHaveLength(1);
   const memory = memories[0];
   if (!memory) {

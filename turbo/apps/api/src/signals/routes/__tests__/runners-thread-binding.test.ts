@@ -238,7 +238,7 @@ describe("Runner first-start Thread binding", () => {
         const second = await api.createThreadRun(owned.actor, {
           agentId: owned.agentId,
           threadId: first.threadId,
-          prompt: "initialize exactly one winning claim",
+          prompt: "initialize exactly one accepted execution",
         });
         const execution = await owned.executionInput(second.runId);
         expect(execution.nativeContinuation).toMatchObject({

@@ -15,7 +15,7 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const claimedToken = createRunExecutionCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const mocks = createRouteMocks(context);
 const store = createStore();
 
@@ -281,7 +281,7 @@ describe("GET /api/connectors/search", () => {
       { orgId, userId, role: "admin" },
       context.signal,
     );
-    const token = await claimedToken({ userId, orgId });
+    const token = await executionToken({ userId, orgId });
 
     const client = setupApp({ context, routes: builtinConnectorsRoutes })(
       builtinConnectorsSearchContract,

@@ -137,7 +137,7 @@ async function remove(kind: OwnerKind, id: string) {
     : await accept(presentationClient().delete(args), [204]);
 }
 
-function claimedFiles(
+function executionFiles(
   fixture: Fixture,
   execution: RunnerExecutionInput,
   kind: OwnerKind,
@@ -239,10 +239,10 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
         return remove(kind, id);
       });
       // Each dispatched Run retains its immutable package after replacement/deletion.
-      expect(claimedFiles(fixture, first.execution, kind, id)).toStrictEqual(
+      expect(executionFiles(fixture, first.execution, kind, id)).toStrictEqual(
         oldFiles,
       );
-      expect(claimedFiles(fixture, next.execution, kind, id)).toStrictEqual(
+      expect(executionFiles(fixture, next.execution, kind, id)).toStrictEqual(
         kind === "user-template" ? guidance("B") : oldFiles,
       );
       await owner.run(async () => {
@@ -397,7 +397,7 @@ test("mounts both template owner kinds once when selections repeat", async () =>
       );
     });
     if (!bundle) {
-      throw new Error("Expected each selected template in the claim");
+      throw new Error("Expected each selected template in execution input");
     }
     expect(
       readTemplateGuidanceBundle(fixture.readSignedObject(bundle.downloadUrl), {
@@ -476,7 +476,7 @@ test("allows package replacement and retry after a completed metadata edit", asy
   });
   const execution = await owner.runExecution(run.runId);
   expect(
-    claimedFiles(fixture, execution.execution, "user-template", id),
+    executionFiles(fixture, execution.execution, "user-template", id),
   ).toStrictEqual(guidance("B"));
 });
 
@@ -589,7 +589,7 @@ test.each(["replacement", "metadata edit"] as const)(
     });
     const execution = await owner.runExecution(run.runId);
     expect(
-      claimedFiles(fixture, execution.execution, "user-template", id),
+      executionFiles(fixture, execution.execution, "user-template", id),
     ).toStrictEqual(guidance(change === "replacement" ? "winner" : "A"));
   },
 );

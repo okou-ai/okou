@@ -194,7 +194,7 @@ describe("Seed Skill bundles through sync-skills", () => {
     expect((await sync()).body).toMatchObject({ total: 0, failed: 0 });
   });
 
-  it("loads current Claude Code Seed bundles at Claim and retains delivered bytes", async () => {
+  it("loads current Claude Code Seed bundles during preparation and retains delivered bytes", async () => {
     const root = "/home/user/.claude/skills";
     const app = await setupApp({
       context,
@@ -380,7 +380,7 @@ describe("Seed Skill bundle delivery", () => {
     },
   );
 
-  it("filters disabled image generation from the claimed Seed bundles", async () => {
+  it("filters disabled image generation from the published Seed bundles", async () => {
     const owned = await publicChatActor(context);
     const fixture = createChatEventsFixture(context);
     const s3 = await owned.run(async () => {

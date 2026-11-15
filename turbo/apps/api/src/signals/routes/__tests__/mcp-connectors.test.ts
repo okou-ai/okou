@@ -633,7 +633,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       owned.sandboxToken = execution.sandboxToken;
       const okouToken = execution.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
-        throw new Error("Expected the claimed run to include an Okou token");
+        throw new Error("Expected the dispatched Run to include an Okou token");
       }
       const firewall = createFirewallApi(context);
       const connectorKey = connector.id.replaceAll("-", "");
@@ -883,7 +883,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     const execution = await runs.executionInput(run.runId);
     const okouToken = execution.platformEnvironment.OKOU_TOKEN;
     if (!okouToken) {
-      throw new Error("Expected the claimed run to include an Okou token");
+      throw new Error("Expected the dispatched Run to include an Okou token");
     }
 
     const discovery = await accept(

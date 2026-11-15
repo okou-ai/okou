@@ -40,7 +40,7 @@ const {
   cancelChatRun,
 } = createChatEventsFixture(context);
 
-// Session continuity is observed through the native Runner claim protocol,
+// Session continuity is observed through the native Runner execution protocol,
 // so select Fable's native personal-subscription route.
 async function entitledNativeChatActor(): Promise<
   Awaited<ReturnType<typeof entitledChatActor>>
@@ -608,7 +608,7 @@ describe("CHAT-02: run-level model overrides", () => {
       );
       await flushWaitUntilForTest();
       // Release recovery without completion metadata: only the initialization
-      // receipt can have supplied the binding observed by the next claim.
+      // receipt can have supplied the binding observed by the next execution.
       await failChatRun(first.runId, execution.sandboxHeaders, "Run cancelled");
       await waitForRunStatus(actor, first.runId, "cancelled");
       const second = await sendChatRun(actor, {

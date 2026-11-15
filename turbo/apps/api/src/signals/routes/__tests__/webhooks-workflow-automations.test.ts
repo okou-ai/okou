@@ -68,7 +68,7 @@ async function setupFixture(): Promise<{
   readonly subscriptionId: string;
 }> {
   mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
-  // Webhook runs are claimed by the native Runner, so the owner selects
+  // Webhook runs are executed by the native Runner, so the owner selects
   // Fable, whose personal subscription route never uses Pi.
   const { actor, subscriptionId } = await wf.setupWorkflowOrg({
     tier: "team",

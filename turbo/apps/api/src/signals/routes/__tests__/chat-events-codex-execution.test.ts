@@ -193,7 +193,7 @@ describe("Codex execution switch", () => {
       const first = await sendChatRun(actor, { agentId, prompt });
       const firstExecution = await runExecution(first.runId);
       expect(firstExecution.execution.cliAgentType).toBe("pi");
-      // Changing the switch does not rewrite the already claimed Pi run.
+      // Changing the switch does not rewrite the dispatched Pi Run.
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId: requireOrgId(actor) },

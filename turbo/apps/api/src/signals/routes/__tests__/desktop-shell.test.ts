@@ -137,10 +137,13 @@ async function approveAndResume(
   if (!launched?.runId) {
     throw new Error("The explicit callback must launch the next Run");
   }
-  const claim = await scenario.executionInput(actor, launched.runId);
-  const token = claim.platformEnvironment.OKOU_TOKEN;
+  const receivedExecution = await scenario.executionInput(
+    actor,
+    launched.runId,
+  );
+  const token = receivedExecution.platformEnvironment.OKOU_TOKEN;
   if (!token) {
-    throw new Error("Expected claimed Run token");
+    throw new Error("Expected dispatched Run token");
   }
   return {
     ...initial,

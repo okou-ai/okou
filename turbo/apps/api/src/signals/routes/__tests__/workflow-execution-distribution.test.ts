@@ -63,7 +63,7 @@ async function fixture(
   bdd.acceptAgentStorageWrites();
   const s3 = installWorkflowVolumeS3Fixture(context);
   const agent = await bdd.createAgent(actor, {
-    displayName: "Workflow claim owner",
+    displayName: "Workflow execution owner",
     visibility: "public",
   });
   return { actor, agent, group, s3 };
@@ -87,7 +87,7 @@ async function createWorkflow(
         headers: headers(actor),
         body: {
           agentId,
-          name: `claim-${randomUUID().slice(0, 8)}`,
+          name: `execution-${randomUUID().slice(0, 8)}`,
           instruction: "original body",
           ...body,
         },
@@ -125,7 +125,7 @@ test.each([
         headers: headers(actor),
         params: { workflowId: workflow.id },
         body: {
-          instruction: "claim-selected body",
+          instruction: "execution-selected body",
           files: [
             { path: "reference.md", content: "new attachment" },
             { path: "资料/说明.md", content: "附件内容" },
@@ -167,7 +167,7 @@ test.each([
     ]);
     const selected = readExecutionContentBundle(s3.objects, skill);
     expect(selected.get("SKILL.md")?.toString()).toContain(
-      "claim-selected body",
+      "execution-selected body",
     );
     expect(selected.get("reference.md")?.toString()).toBe("new attachment");
     expect(selected.get("资料/说明.md")?.toString()).toBe("附件内容");
@@ -376,7 +376,7 @@ test("invokes the caller's Private Workflow when Public and foreign Private Work
     prompt: `/${name} summarize today`,
   });
   await runs.heartbeatRunner(group);
-  // The claim mounts this slug's current winner.
+  // Execution preparation mounts this slug's current winner.
   const execution = await runs.executionInput(run.runId);
   const skill = execution.contentBundles.skills.find((entry) => {
     return entry.mountPath.endsWith(`/${name}`);
@@ -476,7 +476,7 @@ test("keeps a large non-ASCII Workflow in its complete package without truncatio
 test("preserves a running Agent after rejected completion and accepts cancellation acknowledgement", async () => {
   const { actor, agent, group } = await fixture();
   const workflow = await createWorkflow(actor, agent.agentId, {
-    files: [{ path: "keep.md", content: "claimed attachment" }],
+    files: [{ path: "keep.md", content: "execution attachment" }],
   });
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,

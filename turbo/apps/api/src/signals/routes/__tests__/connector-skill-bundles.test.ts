@@ -125,7 +125,7 @@ describe("Connector Skill bundle delivery", () => {
       model: "gpt-6-luna",
     },
   ] as const)(
-    "delivers current authorized $framework Skill bytes at Claim and for the next Run",
+    "delivers current authorized $framework Skill bytes during preparation and for the next Run",
     async ({ framework, root, model }) => {
       const owner = await publicChatActor(context);
       owner.ownsFeatureSwitches();
@@ -177,7 +177,7 @@ describe("Connector Skill bundle delivery", () => {
         prompt: "Use the selected Connector Skill",
         model,
       });
-      // A queued Run reads the current authorized publication at Claim.
+      // A queued Run reads the current authorized publication during preparation.
       await owner.run(() => {
         installWorkflowVolumeS3Fixture(context, s3.objects);
         return api.updateCustomConnector(owner.actor, selected.id, {

@@ -158,7 +158,7 @@ async function connectorActor() {
 }
 
 describe("Run connector selection through normal user changes", () => {
-  it("omits a connected but unselected connector from a real Runner claim", async () => {
+  it("omits a connected but unselected connector from a real Runner execution", async () => {
     const fixture = await connectorActor();
     const { actor, agentId, api } = fixture;
     await api.enableAgentConnectors(actor, agentId, []);
@@ -176,7 +176,7 @@ describe("Run connector selection through normal user changes", () => {
     await fixture.cancel(run.runId, execution.sandboxToken);
   });
 
-  it("uses current native connector selections at Claim and keeps the delivered Run configuration", async () => {
+  it("uses current native connector selections during preparation and keeps the delivered Run configuration", async () => {
     const fixture = await connectorActor();
     const { actor, agentId, api, connectors } = fixture;
     const connection = await connectors.connectManualGrant(

@@ -19,7 +19,7 @@ import {
 
 // Connecting a Slack user resolves the built-in Slack connector OAuth method.
 const context = testContext();
-const claimedToken = createRunExecutionCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const store = createStore();
 const slackOrgs = createPublicSlackOrgApi(context);
 const SLACK_USER_CONVERSATIONS_URL =
@@ -56,7 +56,7 @@ async function fixture(
     { userId, orgId, role: "admin" },
     context.signal,
   );
-  const token = await claimedToken({ userId, orgId });
+  const token = await executionToken({ userId, orgId });
   return {
     client: setupApp({ context, routes: integrationsSlackReadRoutes })(
       integrationsSlackReadContract,

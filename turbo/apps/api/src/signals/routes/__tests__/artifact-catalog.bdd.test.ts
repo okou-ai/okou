@@ -99,7 +99,7 @@ async function catalogActor(
   const runnerGroup = await api.configureRunnerGroup();
   if (options.bootstrapOrg !== false) {
     await api.grantProEntitlement(actor);
-    // Catalog fixtures complete claimed native Runner runs, so the owner
+    // Catalog fixtures complete dispatched native Runner runs, so the owner
     // selects Fable, whose personal subscription route never uses Pi.
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -146,7 +146,7 @@ function okouTokenFromExecution(execution: RunnerExecutionInput): string {
   const token = execution.platformEnvironment.OKOU_TOKEN;
   if (!token || !token.startsWith("vm0_sandbox_")) {
     throw new Error(
-      "Expected the claim platform environment to carry an OKOU_TOKEN",
+      "Expected the execution platform environment to carry an OKOU_TOKEN",
     );
   }
   return token;
@@ -323,11 +323,11 @@ async function uploadFile(args: {
     prompt: args.prompt,
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
-  const { execution: claim, sandboxHeaders } = await runExecution(
+  const { execution: receivedExecution, sandboxHeaders } = await runExecution(
     args.owner.runnerGroup,
     run.runId,
   );
-  const bearer = `Bearer ${okouTokenFromExecution(claim)}`;
+  const bearer = `Bearer ${okouTokenFromExecution(receivedExecution)}`;
   const fileId = args.fileId ?? randomUUID();
   stageUploadObject(
     `artifacts/${args.owner.actor.userId}/${fileId}/${args.filename}`,
@@ -1115,7 +1115,7 @@ describe("GET /api/artifacts/catalog", () => {
         agentId: owner.agentId,
         prompt: "Upload an artifact through the Runner protocol",
       });
-      const { execution: claim } = await runExecution(
+      const { execution: receivedExecution } = await runExecution(
         owner.runnerGroup,
         run.runId,
       );
@@ -1125,7 +1125,7 @@ describe("GET /api/artifacts/catalog", () => {
         1024,
       );
       const completed = await chat.completeUploadWithBearer(
-        `Bearer ${okouTokenFromExecution(claim)}`,
+        `Bearer ${okouTokenFromExecution(receivedExecution)}`,
         { id: fileId, contentType: `video/${container}` },
         [200],
       );
@@ -1698,7 +1698,7 @@ describe("GET /api/artifacts/catalog", () => {
       agentId: owner.agentId,
       prompt: "Upload an artifact through the Runner protocol",
     });
-    const { execution: claim, sandboxHeaders } = await runExecution(
+    const { execution: receivedExecution, sandboxHeaders } = await runExecution(
       owner.runnerGroup,
       run.runId,
     );
@@ -1708,7 +1708,7 @@ describe("GET /api/artifacts/catalog", () => {
       128,
     );
     await chat.completeUploadWithBearer(
-      `Bearer ${okouTokenFromExecution(claim)}`,
+      `Bearer ${okouTokenFromExecution(receivedExecution)}`,
       { id: fileId, contentType: "text/plain" },
       [200],
     );

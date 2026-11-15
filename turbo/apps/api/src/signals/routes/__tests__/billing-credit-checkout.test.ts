@@ -1002,7 +1002,7 @@ describe("POST /api/billing/credit-checkout", () => {
     });
   });
 
-  it("creates credit checkout with a real claim-issued agent token", async () => {
+  it("creates credit checkout with a real execution-issued agent token", async () => {
     const fixture = await createSubscriptionOrg({ tier: "pro" });
     const token = await issueAgentToken(fixture);
     const customerId = fixture.customerId;

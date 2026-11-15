@@ -94,7 +94,7 @@ async function configurePersonalRuntimeContext(
 }
 
 describe("chat eager connector credentials", () => {
-  it("keeps firewall-only credentials deferred when the Runner claims the Run", async () => {
+  it("keeps firewall-only credentials deferred during Run preparation", async () => {
     const { actor, agentId } = await entitledChatActor();
     const figma = await connectors.connectManualGrant(
       actor,
@@ -128,7 +128,7 @@ describe("chat eager connector credentials", () => {
     await cancelChatRun(actor, run.runId, sandboxHeaders);
   });
 
-  it("decrypts only the eager connector at Claim and delivers its plaintext to the runner", async () => {
+  it("decrypts only the eager connector during preparation and delivers its plaintext to the runner", async () => {
     const { actor, agentId } = await entitledChatActor();
     const openai = await connectors.connectManualGrant(
       actor,

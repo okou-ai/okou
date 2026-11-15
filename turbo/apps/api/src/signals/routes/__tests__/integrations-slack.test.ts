@@ -26,7 +26,7 @@ import { settleIncludingAbort } from "../../utils";
 
 // Connecting a Slack user resolves the built-in Slack connector OAuth method.
 const context = testContext();
-const claimedToken = createRunExecutionCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const store = createStore();
 
 const bdd = createBddApi(context);
@@ -751,7 +751,7 @@ describe("GET /api/integrations/slack/download-file", () => {
     return {
       orgId,
       userId,
-      token: await claimedToken({ userId, orgId }),
+      token: await executionToken({ userId, orgId }),
     };
   }
 

@@ -47,7 +47,7 @@ describe("ordinary Pi published personal Memory", () => {
       fixture.installObjects();
 
       async function publish(
-        claimed: Awaited<ReturnType<typeof fixture.startExecution>>,
+        receivedExecution: Awaited<ReturnType<typeof fixture.startExecution>>,
         suffix: string,
       ) {
         const files = [
@@ -61,9 +61,10 @@ describe("ordinary Pi published personal Memory", () => {
             content: `Verified harbor fact ${suffix}`,
           },
         ];
-        const version = await fixture.publish(claimed, files);
+        const version = await fixture.publish(receivedExecution, files);
         expect(
-          (await fixture.api.readRun(actor, claimed.run.runId)).status,
+          (await fixture.api.readRun(actor, receivedExecution.run.runId))
+            .status,
         ).toBe("completed");
         return version;
       }
@@ -114,9 +115,9 @@ describe("ordinary Pi published personal Memory", () => {
           return record.type === "tool_execution_end";
         }),
       ).toHaveLength(4);
-      const claimedQueued = await fixture.readExecution(queued);
-      expect(claimedQueued.memory).toStrictEqual(selected.memory);
-      await fixture.cancel(claimedQueued);
+      const queuedExecution = await fixture.readExecution(queued);
+      expect(queuedExecution.memory).toStrictEqual(selected.memory);
+      await fixture.cancel(queuedExecution);
       const next = await fixture.startExecution(
         agentId,
         "A new Run selects the newly published version",
@@ -133,7 +134,7 @@ describe("ordinary Pi published personal Memory", () => {
         const foreignAgent = await foreign.initializeNative();
         await chat.configureSubscriptionPiModel(foreign.actor);
         foreign.installObjects();
-        const claimed = await foreign.startExecution(
+        const receivedExecution = await foreign.startExecution(
           foreignAgent,
           "Read my own personal Memory",
           "gpt-6-luna",
@@ -143,11 +144,13 @@ describe("ordinary Pi published personal Memory", () => {
           selected.run.runId,
           [404],
         );
-        expect(claimed.memory.storageId).not.toBe(selected.memory.storageId);
-        expect(claimed.memory.empty).toBeTruthy();
+        expect(receivedExecution.memory.storageId).not.toBe(
+          selected.memory.storageId,
+        );
+        expect(receivedExecution.memory.empty).toBeTruthy();
         const otherRead = await readPiExecutionMemory(
-          claimed.execution,
-          claimed.memory,
+          receivedExecution.execution,
+          receivedExecution.memory,
           context.signal,
         );
         expect(JSON.stringify(otherRead.requests)).not.toContain(

@@ -968,7 +968,7 @@ describe("personal subscription run identity", () => {
           await expect(resolve(execution, type)).resolves.toMatchObject({
             Authorization: `Bearer ${f.connected.token}`,
           });
-          return { f, admitted, owner, claim: execution, captured };
+          return { f, admitted, owner, receivedExecution: execution, captured };
         });
       }
 
@@ -977,23 +977,23 @@ describe("personal subscription run identity", () => {
           f,
           admitted,
           owner,
-          claim: execution,
+          receivedExecution: execution,
           captured,
         } = await removedProviderFixture();
         await owner.run(async () => {
           const next = await connect(f.actor, type, "identity-b");
           const nextRun = await f.start();
           admitted.push(nextRun);
-          const nextClaim = await f.execution(nextRun);
-          expect(accountId(nextClaim, type)).not.toBe(captured);
-          await expect(resolve(nextClaim, type)).resolves.toMatchObject({
+          const nextExecution = await f.execution(nextRun);
+          expect(accountId(nextExecution, type)).not.toBe(captured);
+          await expect(resolve(nextExecution, type)).resolves.toMatchObject({
             Authorization: `Bearer ${next.token}`,
           });
           await expect(resolve(execution, type)).resolves.toMatchObject({
             Authorization: `Bearer ${f.connected.token}`,
           });
           const denied = await firewall.requestFirewallAuth(
-            { authorization: `Bearer ${nextClaim.sandboxToken}` },
+            { authorization: `Bearer ${nextExecution.sandboxToken}` },
             authBody(execution, type),
             [424],
           );
@@ -1109,7 +1109,7 @@ describe("exact subscription selection", () => {
         f.connected.token,
       );
       expect(accountId(execution, type)).toBe(f.connected.id);
-      // Queue claim consumes the transient context; a later preference is not execution provenance.
+      // Admission pins the execution route; later preferences do not rewrite its provenance.
       await runs.updateUserModelPreference(f.actor, f.model);
       const captured = await reads.requestReadLogById(f.actor, runId, [200]);
       expect(captured.body).toMatchObject({
@@ -1397,9 +1397,9 @@ describe("subscription bundle decryption ownership", () => {
           onTestFinished(async () => {
             await runs.requestCancelRun(f.actor, next, [200]);
           });
-          const nextClaim = await f.execution(next);
-          expect(accountId(nextClaim, f.type)).toBe(accountB);
-          await expect(resolve(nextClaim, f.type)).resolves.toMatchObject({
+          const nextExecution = await f.execution(next);
+          expect(accountId(nextExecution, f.type)).toBe(accountB);
+          await expect(resolve(nextExecution, f.type)).resolves.toMatchObject({
             "ChatGPT-Account-ID": "identity-b",
           });
         }

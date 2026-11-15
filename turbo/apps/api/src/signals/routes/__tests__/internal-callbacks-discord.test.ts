@@ -102,7 +102,7 @@ async function startDiscordRun(
   };
 }
 
-async function claimRun(actor: ConnectedDiscordActor, runId: string) {
+async function readRunExecution(actor: ConnectedDiscordActor, runId: string) {
   await runs.heartbeatRunner(actor.runnerGroup);
   return runs.executionInput(runId);
 }
@@ -196,11 +196,14 @@ describe("lazy Discord reply threads", () => {
       expect(started.provider.channels.has(started.channelId)).toBe(
         channelType !== "channel",
       );
-      const claim = await claimRun(started.actor, started.runId);
+      const receivedExecution = await readRunExecution(
+        started.actor,
+        started.runId,
+      );
       mockNow(now() + 9000);
       await webhooks.requestAgentHeartbeat(
         { runId: started.runId },
-        { authorization: `Bearer ${claim.sandboxToken}` },
+        { authorization: `Bearer ${receivedExecution.sandboxToken}` },
         [200],
       );
       await flushWaitUntilForTest();
@@ -213,7 +216,7 @@ describe("lazy Discord reply threads", () => {
       );
       const completion = await completeRun({
         runId: started.runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         text: "Ready to deliver.",
       });
       if (!completion) {
@@ -221,7 +224,7 @@ describe("lazy Discord reply threads", () => {
       }
       await webhooks.requestAgentComplete(
         completion,
-        { authorization: `Bearer ${claim.sandboxToken}` },
+        { authorization: `Bearer ${receivedExecution.sandboxToken}` },
         [200],
       );
       await flushWaitUntilForTest();
@@ -237,11 +240,11 @@ describe("lazy Discord reply threads", () => {
 
   it("delivers the next DM reply once to the moved physical channel", async () => {
     const started = await startDiscordRun({ channelType: "dm" });
-    const firstClaim = await claimRun(started.actor, started.runId);
+    const firstExecution = await readRunExecution(started.actor, started.runId);
     const firstText = "The answer in the original DM.";
     await completeRun({
       runId: started.runId,
-      sandboxToken: firstClaim.sandboxToken,
+      sandboxToken: firstExecution.sandboxToken,
       text: firstText,
     });
     expect(started.provider.sentMessages).toHaveLength(1);
@@ -304,12 +307,15 @@ describe("lazy Discord reply threads", () => {
         href: `https://discord.com/channels/@me/${channelId}/${next.id}`,
       },
     ]);
-    const claim = await claimRun(started.actor, input.runId);
-    expect(claim.prompt).toBe(next.content);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      input.runId,
+    );
+    expect(receivedExecution.prompt).toBe(next.content);
     const text = "The answer in the moved DM.";
     const completion = await completeRun({
       runId: input.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text,
     });
     if (!completion) {
@@ -335,7 +341,7 @@ describe("lazy Discord reply threads", () => {
     );
     await webhooks.requestAgentComplete(
       completion,
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${receivedExecution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
@@ -354,7 +360,10 @@ describe("lazy Discord reply threads", () => {
 
   it("reuses a thread created by the user while the answer is being prepared", async () => {
     const started = await startDiscordRun({ channelType: "channel" });
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     const thread = started.provider.createThread(started.channelId);
     thread.name = "User-created discussion";
     // An existing thread needs neither thread-creation nor parent send permission.
@@ -363,7 +372,7 @@ describe("lazy Discord reply threads", () => {
     ).toString();
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text: "Continue in your thread.",
     });
     expect(started.provider.channels.get(started.channelId)?.name).toBe(
@@ -381,7 +390,10 @@ describe("lazy Discord reply threads", () => {
     "recovers the first reply when the thread is %s",
     async (scenario) => {
       const started = await startDiscordRun({ channelType: "channel" });
-      const claim = await claimRun(started.actor, started.runId);
+      const receivedExecution = await readRunExecution(
+        started.actor,
+        started.runId,
+      );
       if (scenario === "created concurrently") {
         server.use(
           http.post(
@@ -403,7 +415,7 @@ describe("lazy Discord reply threads", () => {
       }
       await completeRun({
         runId: started.runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         text: "Recovered reply.",
       });
       expect(started.provider.sentMessages).toMatchObject([
@@ -422,7 +434,10 @@ describe("lazy Discord reply threads", () => {
 
   it("retries a rate-limited thread creation before sending the reply once", async () => {
     const started = await startDiscordRun({ channelType: "channel" });
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     server.use(
       http.post(
         `https://discord.com/api/v10/channels/${started.sourceChannelId}/messages/${started.message.id}/threads`,
@@ -437,7 +452,7 @@ describe("lazy Discord reply threads", () => {
     );
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text: "Created after the rate limit.",
     });
     expect(started.provider.sentMessages).toMatchObject([
@@ -450,8 +465,11 @@ describe("lazy Discord reply threads", () => {
 
   it("moves typing and the final reply to the thread opened by an in-run message", async () => {
     const started = await startDiscordRun({ channelType: "channel" });
-    const claim = await claimRun(started.actor, started.runId);
-    const token = claim.platformEnvironment.OKOU_TOKEN;
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
+    const token = receivedExecution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the run's Okou token");
     }
@@ -471,14 +489,14 @@ describe("lazy Discord reply threads", () => {
     mockNow(now() + 9000);
     await webhooks.requestAgentHeartbeat(
       { runId: started.runId },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${receivedExecution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
     expect(started.provider.typingChannels.at(-1)).toBe(started.channelId);
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text: "The final answer.",
     });
     expect(started.provider.sentMessages).toHaveLength(2);
@@ -495,11 +513,14 @@ describe("lazy Discord reply threads", () => {
 describe("canonical Discord terminal replies", () => {
   it("delivers canonical output after a long task to the native thread exactly once", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     mockNow(now() + 16 * 60_000);
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text: "The Discord task is complete.",
     });
     expect(started.provider.sentMessages).toHaveLength(1);
@@ -524,8 +545,13 @@ describe("canonical Discord terminal replies", () => {
 
   it("keeps canonical completion without sending or replaying a reply when Discord access fails with 502", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
-    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
+    const headers = {
+      authorization: `Bearer ${receivedExecution.sandboxToken}`,
+    };
     started.provider.state.channelResponse = (channelId) => {
       return channelId === started.channelId
         ? HttpResponse.json({ message: "Bad gateway" }, { status: 502 })
@@ -591,11 +617,14 @@ describe("canonical Discord terminal replies", () => {
 
   it("delivers a long reply in order to the original destination", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     const text = "A long Discord answer. ".repeat(180);
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text,
     });
     expect(started.provider.sentMessages.length).toBeGreaterThan(1);
@@ -611,10 +640,13 @@ describe("canonical Discord terminal replies", () => {
 
   it("delivers the canonical safe run error without exposing the internal failure", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       error: "Discord test execution failed",
     });
     expect(started.provider.sentMessages).toHaveLength(1);
@@ -639,10 +671,13 @@ describe("canonical Discord terminal replies", () => {
 
   it("offers billing recovery when a running Discord task runs out of credits", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       error: "insufficient_credits",
     });
     expect(started.provider.sentMessages).toHaveLength(1);
@@ -654,7 +689,7 @@ describe("canonical Discord terminal replies", () => {
     );
   });
 
-  it("delivers cancellation before a runner claims the queued run", async () => {
+  it("delivers cancellation before queued Run dispatch", async () => {
     const started = await startDiscordRun();
     await runs.requestCancelRun(started.actor.actor, started.runId, [200]);
     await flushWaitUntilForTest();
@@ -668,7 +703,10 @@ describe("canonical Discord terminal replies", () => {
     "delivers a queued admission failure once for $agent without launching another run",
     async ({ footer }) => {
       const started = await startDiscordRun({});
-      const claim = await claimRun(started.actor, started.runId);
+      const receivedExecution = await readRunExecution(
+        started.actor,
+        started.runId,
+      );
       const followup = discordMessageForTest(started.actor, {
         channelId: started.channelId,
         content: `<@${started.actor.botUserId}> Reject this queued follow-up.`,
@@ -697,7 +735,7 @@ describe("canonical Discord terminal replies", () => {
       );
       await completeRun({
         runId: started.runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         text: "The original task finished.",
       });
       const events = await readProjectedChatEvents(context, {
@@ -741,7 +779,10 @@ describe("canonical Discord terminal replies", () => {
       const started = await startDiscordRun(
         revocation === "dm-recipient" ? { channelType: "dm" } : {},
       );
-      const claim = await claimRun(started.actor, started.runId);
+      const receivedExecution = await readRunExecution(
+        started.actor,
+        started.runId,
+      );
       if (revocation === "binding") {
         await removePublicDiscordBinding(context, started.actor.fixture);
         started.fixture.deleted = true;
@@ -758,7 +799,7 @@ describe("canonical Discord terminal replies", () => {
       }
       await completeRun({
         runId: started.runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         text: "This output belongs to the original user.",
       });
       expect(started.provider.sentMessages).toHaveLength(0);
@@ -777,11 +818,14 @@ describe("canonical Discord terminal replies", () => {
 
   it("delivers the final reply after the thread auto-archives during the run", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     setThreadState(started, { archived: true, locked: false });
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text: "The archived-thread task is complete.",
     });
     expect(started.provider.sentMessages).toHaveLength(1);
@@ -798,7 +842,10 @@ describe("canonical Discord terminal replies", () => {
     "delivers into a thread locked during the run only for a MANAGE_THREADS $sender",
     async ({ sender, delivered }) => {
       const started = await startDiscordRun();
-      const claim = await claimRun(started.actor, started.runId);
+      const receivedExecution = await readRunExecution(
+        started.actor,
+        started.runId,
+      );
       // The sender's only authority comes from @everyone; the bot keeps its
       // administrator role, which alone must not reopen the lock.
       started.provider.state.everyonePermissions =
@@ -808,7 +855,7 @@ describe("canonical Discord terminal replies", () => {
       setThreadState(started, { archived: true, locked: true });
       await completeRun({
         runId: started.runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         text: "The locked-thread task is complete.",
       });
       expect(started.provider.sentMessages).toHaveLength(delivered);
@@ -827,7 +874,10 @@ describe("canonical Discord terminal replies", () => {
 
   it("launches a queued follow-up after the thread auto-archives", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     started.provider.state.everyonePermissions = MEMBER_PERMISSIONS;
     const followup = discordMessageForTest(started.actor, {
       channelId: started.channelId,
@@ -839,7 +889,7 @@ describe("canonical Discord terminal replies", () => {
     setThreadState(started, { archived: true, locked: false });
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text: "The first task is complete.",
     });
     expect(started.provider.sentMessages).toHaveLength(1);
@@ -866,7 +916,10 @@ describe("canonical Discord terminal replies", () => {
     "keeps a revoked %s active input queued until the next pick rejects it",
     async (phase) => {
       const started = await startDiscordRun();
-      const claim = await claimRun(started.actor, started.runId);
+      const receivedExecution = await readRunExecution(
+        started.actor,
+        started.runId,
+      );
       const followup = discordMessageForTest(started.actor, {
         channelId: started.channelId,
         content: `<@${started.actor.botUserId}> Use the confidential follow-up details.`,
@@ -876,7 +929,7 @@ describe("canonical Discord terminal replies", () => {
       await flushWaitUntilForTest();
       if (phase === "read") {
         const read = await runs.nextSteerableInput(
-          claim.sandboxToken,
+          receivedExecution.sandboxToken,
           started.runId,
         );
         expect(read.input?.prompt).toContain(
@@ -886,10 +939,10 @@ describe("canonical Discord terminal replies", () => {
       await removePublicDiscordBinding(context, started.actor.fixture);
       started.fixture.deleted = true;
       await expect(
-        runs.nextSteerableInput(claim.sandboxToken, started.runId),
+        runs.nextSteerableInput(receivedExecution.sandboxToken, started.runId),
       ).resolves.toStrictEqual({ input: null });
       await expect(
-        runs.nextSteerableInput(claim.sandboxToken, started.runId),
+        runs.nextSteerableInput(receivedExecution.sandboxToken, started.runId),
       ).resolves.toStrictEqual({ input: null });
       const whileRunning = await readProjectedChatEvents(context, {
         threadId: started.threadId,
@@ -902,7 +955,7 @@ describe("canonical Discord terminal replies", () => {
       ).toHaveLength(0);
       await completeRun({
         runId: started.runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         text: "The original task is complete.",
       });
       const events = await readProjectedChatEvents(context, {
@@ -942,7 +995,10 @@ describe("canonical Discord terminal replies", () => {
     "reads each provider resource once per active input in a %s",
     async (kind) => {
       const started = await startDiscordRun({ channelType: kind });
-      const claim = await claimRun(started.actor, started.runId);
+      const receivedExecution = await readRunExecution(
+        started.actor,
+        started.runId,
+      );
       mockDiscordApplication(1 << 19);
       const followup = discordMessageForTest(started.actor, {
         channelId: started.sourceChannelId,
@@ -976,7 +1032,7 @@ describe("canonical Discord terminal replies", () => {
         context.mocks.clerk.organizations.getOrganizationMembershipList;
       memberships.mockClear();
       const { input } = await runs.nextSteerableInput(
-        claim.sandboxToken,
+        receivedExecution.sandboxToken,
         started.runId,
       );
       expect(input?.prompt).toContain("Continue this task.");
@@ -995,7 +1051,10 @@ describe("canonical Discord terminal replies", () => {
     "handles a current MESSAGE_CONTENT lookup returning %s without losing the queued input",
     async (status) => {
       const started = await startDiscordRun();
-      const claim = await claimRun(started.actor, started.runId);
+      const receivedExecution = await readRunExecution(
+        started.actor,
+        started.runId,
+      );
       mockDiscordApplication(1 << 19);
       const followup = discordMessageForTest(started.actor, {
         channelId: started.channelId,
@@ -1021,13 +1080,13 @@ describe("canonical Discord terminal replies", () => {
       // A failed application lookup is not evidence of a disabled intent.
       // Keep the provider failure retryable instead of consuming the input.
       await runs.requestNextSteerableInputAs(
-        `Bearer ${claim.sandboxToken}`,
+        `Bearer ${receivedExecution.sandboxToken}`,
         started.runId,
         [500],
       );
       mockDiscordApplication(1 << 19);
       const { input } = await runs.nextSteerableInput(
-        claim.sandboxToken,
+        receivedExecution.sandboxToken,
         started.runId,
       );
       expect(input?.prompt).toContain("Keep this current input.");
@@ -1042,7 +1101,10 @@ describe("canonical Discord terminal replies", () => {
     "private thread membership",
   ] as const)("rechecks %s on each active-input delivery", async (revoked) => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     if (revoked === "private thread membership") {
       const channel = started.provider.channels.get(started.channelId);
       if (!channel) {
@@ -1059,7 +1121,7 @@ describe("canonical Discord terminal replies", () => {
     await postDiscordMessage(context, followup);
     await flushWaitUntilForTest();
     const initial = await runs.nextSteerableInput(
-      claim.sandboxToken,
+      receivedExecution.sandboxToken,
       started.runId,
     );
     expect(initial.input?.prompt).toContain("Revalidate this follow-up.");
@@ -1083,7 +1145,7 @@ describe("canonical Discord terminal replies", () => {
       );
     }
     await expect(
-      runs.nextSteerableInput(claim.sandboxToken, started.runId),
+      runs.nextSteerableInput(receivedExecution.sandboxToken, started.runId),
     ).resolves.toStrictEqual({ input: null });
   });
 
@@ -1091,7 +1153,10 @@ describe("canonical Discord terminal replies", () => {
     "drops previously read history when the current %s is revoked",
     async (revoked) => {
       const started = await startDiscordRun();
-      const claim = await claimRun(started.actor, started.runId);
+      const receivedExecution = await readRunExecution(
+        started.actor,
+        started.runId,
+      );
       mockDiscordApplication(1 << 19);
       const followup = discordMessageForTest(started.actor, {
         channelId: started.channelId,
@@ -1107,7 +1172,7 @@ describe("canonical Discord terminal replies", () => {
       await postDiscordMessage(context, followup);
       await flushWaitUntilForTest();
       const initial = await runs.nextSteerableInput(
-        claim.sandboxToken,
+        receivedExecution.sandboxToken,
         started.runId,
       );
       expect(initial.input?.prompt).toContain(history.content);
@@ -1121,7 +1186,7 @@ describe("canonical Discord terminal replies", () => {
         ).toString();
       }
       const { input: narrowed } = await runs.nextSteerableInput(
-        claim.sandboxToken,
+        receivedExecution.sandboxToken,
         started.runId,
       );
       if (!narrowed) {
@@ -1135,13 +1200,13 @@ describe("canonical Discord terminal replies", () => {
           : "current Discord permissions",
       );
       await runs.declareSteeredInput(
-        claim.sandboxToken,
+        receivedExecution.sandboxToken,
         started.runId,
         narrowed.eventId,
       );
       await completeRun({
         runId: started.runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         text: "The current task is complete.",
       });
     },
@@ -1149,7 +1214,10 @@ describe("canonical Discord terminal replies", () => {
 
   it("does not retry a reply that Discord rate-limits", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     let attempts = 0;
     started.provider.state.beforeMessageCreate = () => {
       attempts += 1;
@@ -1160,7 +1228,7 @@ describe("canonical Discord terminal replies", () => {
     };
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text: "Reply that Discord rate-limits.",
     });
     expect(attempts).toBe(1);
@@ -1179,7 +1247,10 @@ describe("canonical Discord terminal replies", () => {
 
   it("sends each part once and stops at the first part Discord does not accept", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     let sendRequests = 0;
     started.provider.state.beforeMessageCreate = () => {
       sendRequests += 1;
@@ -1189,7 +1260,7 @@ describe("canonical Discord terminal replies", () => {
     };
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text: "A long Discord answer. ".repeat(180),
     });
     expect(sendRequests).toBe(2);
@@ -1199,7 +1270,10 @@ describe("canonical Discord terminal replies", () => {
 
   it("does not repeat a lost send whose response never arrived", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     let sendRequests = 0;
     started.provider.state.beforeMessageCreate = () => {
       sendRequests += 1;
@@ -1210,7 +1284,7 @@ describe("canonical Discord terminal replies", () => {
     };
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text: "A reply whose Discord response is lost.",
     });
     expect(sendRequests).toBe(1);
@@ -1238,12 +1312,15 @@ describe("Discord processing status", () => {
     expect(new Set(started.provider.typingChannels)).toStrictEqual(
       new Set([started.channelId]),
     );
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
 
     mockNow(now() + TYPING_REFRESH_GAP_MS);
     const typedBeforeHeartbeat = started.provider.typingChannels.length;
     await expect(
-      heartbeat(started.runId, claim.sandboxToken),
+      heartbeat(started.runId, receivedExecution.sandboxToken),
     ).resolves.toStrictEqual({ ok: true, typingRefreshIntervalSeconds: 6 });
     expect(started.provider.typingChannels).toHaveLength(
       typedBeforeHeartbeat + 1,
@@ -1251,7 +1328,7 @@ describe("Discord processing status", () => {
 
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text: "The status task is complete.",
     });
     expect(started.provider.sentMessages).toHaveLength(1);
@@ -1259,7 +1336,7 @@ describe("Discord processing status", () => {
     mockNow(now() + TYPING_REFRESH_GAP_MS);
     await webhooks.requestAgentHeartbeat(
       { runId: started.runId },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${receivedExecution.sandboxToken}` },
       [404],
     );
     await flushWaitUntilForTest();
@@ -1271,11 +1348,17 @@ describe("Discord processing status", () => {
     async (firstHeartbeatAfterMs) => {
       mockNow(now());
       const started = await startDiscordRun();
-      const claim = await claimRun(started.actor, started.runId);
+      const receivedExecution = await readRunExecution(
+        started.actor,
+        started.runId,
+      );
       const typedOnAdmission = started.provider.typingChannels.length;
 
       mockNow(now() + firstHeartbeatAfterMs);
-      const first = await heartbeat(started.runId, claim.sandboxToken);
+      const first = await heartbeat(
+        started.runId,
+        receivedExecution.sandboxToken,
+      );
       expect(started.provider.typingChannels).toHaveLength(
         typedOnAdmission + (firstHeartbeatAfterMs === 500 ? 0 : 1),
       );
@@ -1286,13 +1369,13 @@ describe("Discord processing status", () => {
 
       mockNow(now() + 6000);
       const typedBeforeRefresh = started.provider.typingChannels.length;
-      await heartbeat(started.runId, claim.sandboxToken);
+      await heartbeat(started.runId, receivedExecution.sandboxToken);
       expect(started.provider.typingChannels).toHaveLength(
         typedBeforeRefresh + 1,
       );
       await completeRun({
         runId: started.runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         text: "Typing remained active until the reply.",
       });
       expect(started.provider.sentMessages.at(-1)?.content).toContain(
@@ -1314,16 +1397,19 @@ describe("Discord processing status", () => {
           };
         },
       });
-      const claim = await claimRun(started.actor, started.runId);
+      const receivedExecution = await readRunExecution(
+        started.actor,
+        started.runId,
+      );
       started.provider.state.typingResponse = undefined;
       mockNow(now() + 4000);
-      await heartbeat(started.runId, claim.sandboxToken);
+      await heartbeat(started.runId, receivedExecution.sandboxToken);
       expect(started.provider.typingChannels).toStrictEqual([
         started.channelId,
       ]);
       await completeRun({
         runId: started.runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         text: "Delivered after typing recovered.",
       });
       expect(started.provider.sentMessages.at(-1)?.content).toContain(
@@ -1334,7 +1420,10 @@ describe("Discord processing status", () => {
 
   it("shows typing when a queued Discord follow-up is admitted and when it launches", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     mockNow(now() + TYPING_REFRESH_GAP_MS);
     const typedBeforeFollowup = started.provider.typingChannels.length;
     const followup = discordMessageForTest(started.actor, {
@@ -1352,7 +1441,7 @@ describe("Discord processing status", () => {
     const typedBeforeLaunch = started.provider.typingChannels.length;
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text: "The first task is complete.",
     });
     const events = await readProjectedChatEvents(context, {
@@ -1386,12 +1475,15 @@ describe("Discord processing status", () => {
       });
       const { provider } = started;
       expect(typingRequests).toBeGreaterThan(0);
-      const claim = await claimRun(started.actor, started.runId);
+      const receivedExecution = await readRunExecution(
+        started.actor,
+        started.runId,
+      );
       mockNow(now() + TYPING_REFRESH_GAP_MS);
-      await heartbeat(started.runId, claim.sandboxToken);
+      await heartbeat(started.runId, receivedExecution.sandboxToken);
       await completeRun({
         runId: started.runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         text: "Delivered despite a typing failure.",
       });
       expect(provider.typingChannels).toHaveLength(0);
@@ -1419,19 +1511,22 @@ describe("Discord processing status", () => {
     });
     const { provider } = started;
     expect(typingRequests).toBe(1);
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     mockNow(now() + TYPING_REFRESH_GAP_MS);
-    await heartbeat(started.runId, claim.sandboxToken);
+    await heartbeat(started.runId, receivedExecution.sandboxToken);
     expect(typingRequests).toBe(1);
 
     mockNow(now() + 60_000);
-    await heartbeat(started.runId, claim.sandboxToken);
+    await heartbeat(started.runId, receivedExecution.sandboxToken);
     expect(typingRequests).toBe(2);
     expect(provider.typingChannels).toStrictEqual([started.channelId]);
 
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text: "Delivered after a typing rate limit.",
     });
     expect(provider.sentMessages).toHaveLength(1);
@@ -1441,7 +1536,10 @@ describe("Discord processing status", () => {
     "stops typing after %s revocation",
     async (revocation) => {
       const started = await startDiscordRun();
-      const claim = await claimRun(started.actor, started.runId);
+      const receivedExecution = await readRunExecution(
+        started.actor,
+        started.runId,
+      );
       let typingRequests = 0;
       started.provider.state.typingResponse = () => {
         typingRequests += 1;
@@ -1454,23 +1552,26 @@ describe("Discord processing status", () => {
         started.provider.deniedMembers.add(started.actor.discordUserId);
       }
       mockNow(now() + TYPING_REFRESH_GAP_MS);
-      await heartbeat(started.runId, claim.sandboxToken);
+      await heartbeat(started.runId, receivedExecution.sandboxToken);
       expect(typingRequests).toBe(0);
     },
   );
 
   it("stops typing after binding revocation while permission reuse is warm", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     onTestFinished(async () => {
       await completeRun({
         runId: started.runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         error: "Test-owned Discord run cleanup",
       });
       await webhooks.requestAgentHeartbeat(
         { runId: started.runId },
-        { authorization: `Bearer ${claim.sandboxToken}` },
+        { authorization: `Bearer ${receivedExecution.sandboxToken}` },
         [404],
       );
       await flushWaitUntilForTest();
@@ -1487,7 +1588,7 @@ describe("Discord processing status", () => {
     };
     const typedBeforeRefresh = started.provider.typingChannels.length;
     mockNow(now() + TYPING_REFRESH_GAP_MS);
-    await heartbeat(started.runId, claim.sandboxToken);
+    await heartbeat(started.runId, receivedExecution.sandboxToken);
     const reuseStartedAt = now();
     const readsPerFullCheck = channelReads;
     expect(readsPerFullCheck).toBeGreaterThan(0);
@@ -1498,7 +1599,7 @@ describe("Discord processing status", () => {
     expect(started.provider.typingChannels.at(-1)).toBe(started.channelId);
 
     mockNow(now() + TYPING_REFRESH_GAP_MS);
-    await heartbeat(started.runId, claim.sandboxToken);
+    await heartbeat(started.runId, receivedExecution.sandboxToken);
     expect(channelReads).toBe(readsPerFullCheck);
     expect(typingRequests).toBe(2);
     expect(started.provider.typingChannels).toHaveLength(
@@ -1524,7 +1625,7 @@ describe("Discord processing status", () => {
     mockNow(now() + TYPING_REFRESH_GAP_MS);
     expect(now() - reuseStartedAt).toBeLessThan(TYPING_ACCESS_REUSE_MS);
     await expect(
-      heartbeat(started.runId, claim.sandboxToken),
+      heartbeat(started.runId, receivedExecution.sandboxToken),
     ).resolves.toStrictEqual({ ok: true, typingRefreshIntervalSeconds: 6 });
     expect(typingRequests).toBe(2);
     expect(started.provider.typingChannels).toHaveLength(
@@ -1534,20 +1635,23 @@ describe("Discord processing status", () => {
 
   it("refreshes typing without repeating Discord permission reads inside the reuse window", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     let channelReads = 0;
     started.provider.state.channelResponse = () => {
       channelReads += 1;
       return undefined;
     };
     mockNow(now() + TYPING_REFRESH_GAP_MS);
-    await heartbeat(started.runId, claim.sandboxToken);
+    await heartbeat(started.runId, receivedExecution.sandboxToken);
     const readsPerFullCheck = channelReads;
     expect(readsPerFullCheck).toBeGreaterThan(0);
     const typedAfterFirstRefresh = started.provider.typingChannels.length;
 
     mockNow(now() + TYPING_REFRESH_GAP_MS);
-    await heartbeat(started.runId, claim.sandboxToken);
+    await heartbeat(started.runId, receivedExecution.sandboxToken);
     // One refresh costs one typing request while the permission reads are reused.
     expect(channelReads).toBe(readsPerFullCheck);
     expect(started.provider.typingChannels).toHaveLength(
@@ -1555,21 +1659,24 @@ describe("Discord processing status", () => {
     );
 
     mockNow(now() + TYPING_ACCESS_REUSE_MS);
-    await heartbeat(started.runId, claim.sandboxToken);
+    await heartbeat(started.runId, receivedExecution.sandboxToken);
     expect(channelReads).toBe(readsPerFullCheck * 2);
   });
 
   it("stops typing after member revocation once the reuse window ends", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     mockNow(now() + TYPING_REFRESH_GAP_MS);
-    await heartbeat(started.runId, claim.sandboxToken);
+    await heartbeat(started.runId, receivedExecution.sandboxToken);
     started.provider.deniedMembers.add(started.actor.discordUserId);
     mockNow(now() + TYPING_ACCESS_REUSE_MS);
     const typedAtRevocationCheck = started.provider.typingChannels.length;
-    await heartbeat(started.runId, claim.sandboxToken);
+    await heartbeat(started.runId, receivedExecution.sandboxToken);
     mockNow(now() + TYPING_REFRESH_GAP_MS);
-    await heartbeat(started.runId, claim.sandboxToken);
+    await heartbeat(started.runId, receivedExecution.sandboxToken);
     expect(started.provider.typingChannels).toHaveLength(
       typedAtRevocationCheck,
     );
@@ -1577,7 +1684,10 @@ describe("Discord processing status", () => {
 
   it("pauses all typing after a rate limit on a Discord permission read", async () => {
     const started = await startDiscordRun();
-    const claim = await claimRun(started.actor, started.runId);
+    const receivedExecution = await readRunExecution(
+      started.actor,
+      started.runId,
+    );
     let limited = true;
     let limitedReads = 0;
     server.use(
@@ -1597,7 +1707,7 @@ describe("Discord processing status", () => {
     );
     mockNow(now() + TYPING_REFRESH_GAP_MS);
     const typedBeforeLimit = started.provider.typingChannels.length;
-    await heartbeat(started.runId, claim.sandboxToken);
+    await heartbeat(started.runId, receivedExecution.sandboxToken);
     expect(limitedReads).toBeGreaterThan(0);
     limited = false;
 
@@ -1610,15 +1720,15 @@ describe("Discord processing status", () => {
     await postDiscordMessage(context, other);
     await flushWaitUntilForTest();
     mockNow(now() + TYPING_REFRESH_GAP_MS);
-    await heartbeat(started.runId, claim.sandboxToken);
+    await heartbeat(started.runId, receivedExecution.sandboxToken);
     expect(started.provider.typingChannels).toHaveLength(typedBeforeLimit);
 
     mockNow(now() + 30_000);
-    await heartbeat(started.runId, claim.sandboxToken);
+    await heartbeat(started.runId, receivedExecution.sandboxToken);
     expect(started.provider.typingChannels).toHaveLength(typedBeforeLimit + 1);
     await completeRun({
       runId: started.runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       text: "Delivered after typing yielded to a rate limit.",
     });
     expect(started.provider.sentMessages.at(-1)?.content).toContain(

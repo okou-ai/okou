@@ -629,8 +629,8 @@ describe("connector catalog valid lifecycle", () => {
       context,
       actor,
       "gitlab",
-      async ({ execution: claim, resolveAuth }) => {
-        expect(claim.environment).not.toHaveProperty("GITLAB_HOST");
+      async ({ execution: receivedExecution, resolveAuth }) => {
+        expect(receivedExecution.environment).not.toHaveProperty("GITLAB_HOST");
         const resolved = await resolveAuth({
           authHeaders: {
             "PRIVATE-TOKEN": secretTemplate("GITLAB_TOKEN"),
@@ -734,7 +734,7 @@ describe("connector catalog valid lifecycle", () => {
     }
   }, 30_000);
 
-  it("loads the current published connector skill when a queued Run is claimed", async () => {
+  it("loads the current published connector skill when a queued Run is prepared", async () => {
     clearMockNow();
     const owned = await publicChatActor(context, { clockTime: now() });
     const fixture = createChatEventsFixture(context);
@@ -852,8 +852,8 @@ describe("connector catalog valid lifecycle", () => {
       context,
       actor,
       "steam",
-      ({ execution: claim }) => {
-        expect(claim.environment?.STEAM_ID).toBe(STEAM_TEST_ID);
+      ({ execution: receivedExecution }) => {
+        expect(receivedExecution.environment?.STEAM_ID).toBe(STEAM_TEST_ID);
       },
     );
   });
@@ -1103,8 +1103,8 @@ describe("connector catalog valid lifecycle", () => {
       context,
       actor,
       "agora",
-      ({ execution: claim }) => {
-        const bundle = claim.contentBundles.skills.find((entry) => {
+      ({ execution: receivedExecution }) => {
+        const bundle = receivedExecution.contentBundles.skills.find((entry) => {
           return entry.mountPath.endsWith("/agora");
         });
         expect(bundle).toMatchObject({

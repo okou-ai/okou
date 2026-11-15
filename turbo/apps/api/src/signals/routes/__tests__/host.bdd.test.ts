@@ -295,7 +295,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     expect(history.deployments).toHaveLength(8);
   });
 
-  it("publishes browser and claimed Runner sites in the current layout [HOST-A]", async () => {
+  it("publishes browser and dispatched Runner sites in the current layout [HOST-A]", async () => {
     mockEnv("OKOU_PUBLIC_HOST_DOMAIN", "okou.app");
     mockEnv("ZERO_HOST_DOMAIN", "sites.vm0.io");
     mockEnv("OKOU_HOST_SCHEME", "https");
@@ -644,7 +644,7 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
     await owned.run(async () => {
       const okouToken = execution.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
-        throw new Error("Expected a claimed agent token");
+        throw new Error("Expected an execution agent token");
       }
       expect(okouToken).toMatch(/^vm0_sandbox_/);
 

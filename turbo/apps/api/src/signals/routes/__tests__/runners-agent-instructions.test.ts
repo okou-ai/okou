@@ -24,10 +24,10 @@ describe("API dispatch-time Agent instructions", () => {
       );
       const queued = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
-        prompt: "claim current instructions",
+        prompt: "execute with admitted instructions",
         model: "auto",
       });
-      const current = "\uFEFF  B before claim\r\n中文\n[AGENT_PROFILE]\n  ";
+      const current = "\uFEFF  B before dispatch\r\n中文\n[AGENT_PROFILE]\n  ";
       await bdd.updateAgentInstructions(owned.actor, owned.agentId, current);
       const { execution } = await owned.runExecution(queued.runId);
       const selected = execution.contentBundles.instructions!;
@@ -39,7 +39,7 @@ describe("API dispatch-time Agent instructions", () => {
       await bdd.updateAgentInstructions(
         owned.actor,
         owned.agentId,
-        "C after claim",
+        "C after dispatch",
       );
       expect(
         readExecutionContentBundle(s3.objects, selected)
@@ -48,7 +48,7 @@ describe("API dispatch-time Agent instructions", () => {
       ).toBe("A at queue time");
       const next = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
-        prompt: "claim the later edit",
+        prompt: "execute with the later edit",
         model: "auto",
       });
       const subsequent = await owned.runExecution(next.runId);
@@ -58,7 +58,7 @@ describe("API dispatch-time Agent instructions", () => {
         readExecutionContentBundle(s3.objects, later)
           .get("instructions.md")
           ?.toString(),
-      ).toBe("C after claim");
+      ).toBe("C after dispatch");
       await expect(
         api.readRun(owned.actor, queued.runId),
       ).resolves.toMatchObject({ status: "running" });

@@ -466,7 +466,7 @@ async function setupFixture(
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
-  // Fable keeps Google Meet workflow runs on the claimable native Runner route.
+  // Fable keeps Google Meet workflow runs on the native Runner execution route.
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });

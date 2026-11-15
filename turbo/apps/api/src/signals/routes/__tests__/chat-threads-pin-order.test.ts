@@ -20,7 +20,7 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const claimedToken = createRunExecutionCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const store = createStore();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
@@ -82,7 +82,7 @@ function pinClient() {
 }
 async function headers(fixture: ChatThreadFixture) {
   return {
-    authorization: `Bearer ${await claimedToken({ ...fixture })}`,
+    authorization: `Bearer ${await executionToken({ ...fixture })}`,
   };
 }
 function metadataClient() {
