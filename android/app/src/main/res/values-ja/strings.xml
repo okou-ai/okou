@@ -120,4 +120,6 @@
     <string name="updates_error_install">Android でインストーラーを開けませんでした。再試行できます。</string>
     <string name="updates_unavailable">適切な更新がまだありません。後でもう一度確認してください。</string>
     <string name="updates_android_unsupported">この更新には、より新しい Android が必要です。</string>
+    <string name="realtime_connecting">リアルタイム更新に接続中…</string>
+    <string name="realtime_unavailable">リアルタイム更新を利用できません。手動で更新できます。</string>
 </resources>

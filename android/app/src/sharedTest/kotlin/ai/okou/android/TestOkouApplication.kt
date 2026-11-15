@@ -19,6 +19,7 @@ import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.chat.RealtimeService
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsService
 import ai.okou.android.updates.AppUpdates
@@ -81,6 +82,7 @@ open class TestOkouApplication : OkouApplication() {
         )
     }
     var chatService: ChatListService = TestChatService()
+    var realtimeService: RealtimeService = TestRealtimeService()
     var composerService: ChatComposerService = TestChatComposerService()
     var journalStore: ComposerJournalStore? = null
     override val composerJournal
@@ -111,6 +113,7 @@ open class TestOkouApplication : OkouApplication() {
         fun stored() = preferences.getOrPut(key) { testBootstrap(identity.workspaceId).preferences }
         return object :
             WorkspaceSession,
+            RealtimeService by realtimeService,
             ChatListService by chatService,
             ChatComposerService by composerService {
 

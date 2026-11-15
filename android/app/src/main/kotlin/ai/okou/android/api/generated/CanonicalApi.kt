@@ -57,6 +57,12 @@ internal interface CanonicalApi {
     @GET("/api/org")
     suspend fun `organization`(@Header("Authorization") token: String): Response<Organization>
 
+    @POST("/api/realtime/token")
+    suspend fun `realtimeToken`(
+        @Header("Authorization") token: String,
+        @Body body: RealtimeTokenRequest,
+    ): Response<RealtimeToken>
+
     @GET("/api/user-preferences")
     suspend fun `preferences`(@Header("Authorization") token: String): Response<UserPreferences>
 

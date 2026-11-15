@@ -121,4 +121,6 @@
     <string name="updates_error_install">Android could not open the installer. You can try again.</string>
     <string name="updates_unavailable">A suitable update is not available yet. Check again later.</string>
     <string name="updates_android_unsupported">This update needs a newer Android system version.</string>
+    <string name="realtime_connecting">Connecting to live updates…</string>
+    <string name="realtime_unavailable">Live updates unavailable. You can still refresh manually.</string>
 </resources>

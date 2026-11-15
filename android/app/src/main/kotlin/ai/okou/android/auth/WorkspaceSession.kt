@@ -21,6 +21,7 @@ import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.chat.AblyRealtimeConnection
 import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ChatSnapshotUnavailable
@@ -28,6 +29,8 @@ import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.HistoryPage
 import ai.okou.android.chat.InputObservation
+import ai.okou.android.chat.RealtimeService
+import ai.okou.android.chat.RealtimeSnapshot
 import ai.okou.android.chat.TextDisposition
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
@@ -36,9 +39,11 @@ import java.io.Closeable
 import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.decodeFromStream
@@ -60,7 +65,7 @@ data class WorkspaceIdentity(
 data class WorkspaceBootstrap(val organization: Organization, val preferences: UserPreferences)
 
 interface WorkspaceSession :
-    Closeable, ChatListService, PersonalInstructionsService, ChatComposerService {
+    Closeable, ChatListService, PersonalInstructionsService, ChatComposerService, RealtimeService {
     suspend fun bootstrap(): WorkspaceBootstrap
 
     suspend fun preferences(): UserPreferences
@@ -88,6 +93,23 @@ class CanonicalWorkspaceSession(
     }
 
     override suspend fun chatSnapshot() = api.chatSnapshot()
+
+    override suspend fun observeRealtime(observe: suspend (RealtimeSnapshot) -> Unit): Nothing =
+        withContext(Dispatchers.IO) {
+            AblyRealtimeConnection(
+                    identity.userId,
+                    identity.workspaceId,
+                    currentCoroutineContext(),
+                ) {
+                    archiveJson.encodeToString(api.realtimeToken())
+                }
+                .use { connection ->
+                    connection.state.collect { next ->
+                        next.failure?.let { throw it }
+                        withContext(Dispatchers.Main.immediate) { observe(next) }
+                    }
+                }
+        }
 
     override suspend fun chatEvents(since: Long?) = api.chatEvents(since)
 

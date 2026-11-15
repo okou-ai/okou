@@ -5,10 +5,13 @@ import ai.okou.android.AppearanceUiState
 import ai.okou.android.OkouApp
 import ai.okou.android.R
 import ai.okou.android.chat.ChatListRoute
+import ai.okou.android.chat.RealtimeNotice
+import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -64,6 +67,7 @@ fun SessionRoot(
         val ready = state.ready
         if (state.stage == SessionStage.Ready && ready != null) {
             key(ready.identity, state.generation) {
+                WorkspaceRealtimeLifecycle(ready.chats.updates)
                 OkouApp(
                     appearance,
                     selectAppearance,
@@ -74,7 +78,12 @@ fun SessionRoot(
                         PersonalInstructionsSettings(ready.instructions)
                         appUpdates()
                     },
-                    homeContent = { ChatListRoute(ready.chats, ready.composer) },
+                    homeContent = {
+                        Column(Modifier.fillMaxSize()) {
+                            RealtimeNotice(ready.chats.updates)
+                            Box(Modifier.weight(1f)) { ChatListRoute(ready.chats, ready.composer) }
+                        }
+                    },
                 )
             }
         } else if (state.stage == SessionStage.SignIn) {

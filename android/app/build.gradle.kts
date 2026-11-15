@@ -180,6 +180,10 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.serialization.json)
     implementation(libs.commonmark)
+    implementation(libs.ably.device) {
+        // This client owns foreground realtime only; FCM adds an unused public receiver/provider.
+        exclude(group = "com.google.firebase", module = "firebase-messaging")
+    }
     implementation(libs.room.runtime)
     implementation(libs.sqlite.bundled)
     ksp(libs.room.compiler)

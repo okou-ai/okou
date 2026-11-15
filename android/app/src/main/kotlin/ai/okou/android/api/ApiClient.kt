@@ -19,6 +19,7 @@ import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
+import ai.okou.android.api.generated.RealtimeTokenRequest
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
@@ -141,6 +142,8 @@ class ApiClient(
     }
 
     suspend fun organization(): Organization = execute { api.organization(it) }
+
+    suspend fun realtimeToken() = execute { api.realtimeToken(it, RealtimeTokenRequest) }
 
     suspend fun personalInstructions(): PersonalInstructions = execute {
         api.personalInstructions(it)

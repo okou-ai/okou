@@ -24,6 +24,7 @@ room = "2.8.5"
 ksp = "2.3.13"
 sqlite = "2.6.2"
 commonmark = "0.24.0"
+ably = "2.0.0"
 
 [libraries]
 appcompat = { module = "androidx.appcompat:appcompat", version.ref = "appcompat" }
@@ -60,6 +61,7 @@ room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 sqlite-bundled = { module = "androidx.sqlite:sqlite-bundled", version.ref = "sqlite" }
 sqlite-host = { module = "androidx.sqlite:sqlite-bundled-jvm", version.ref = "sqlite" }
 commonmark = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
+ably-device = { module = "io.ably.pubsub:device", version.ref = "ably" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

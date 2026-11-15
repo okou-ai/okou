@@ -120,4 +120,6 @@
     <string name="updates_error_install">Android non riesce ad aprire il programma di installazione. Puoi riprovare.</string>
     <string name="updates_unavailable">Non è ancora disponibile un aggiornamento adatto. Riprova più tardi.</string>
     <string name="updates_android_unsupported">Questo aggiornamento richiede una versione Android più recente.</string>
+    <string name="realtime_connecting">Connessione agli aggiornamenti in tempo reale…</string>
+    <string name="realtime_unavailable">Gli aggiornamenti in tempo reale non sono disponibili. Puoi aggiornare manualmente.</string>
 </resources>

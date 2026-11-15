@@ -20,6 +20,19 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 
+@Serializable data object RealtimeTokenRequest
+
+@Serializable
+data class RealtimeToken(
+    val `keyName`: String,
+    val `ttl`: Double? = null,
+    val `timestamp`: Double,
+    val `capability`: String,
+    val `clientId`: String? = null,
+    val `nonce`: String,
+    val `mac`: String,
+)
+
 @Serializable
 data class AndroidUpdatesRelease(
     val `version`: String,

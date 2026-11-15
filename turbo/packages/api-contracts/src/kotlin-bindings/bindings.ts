@@ -21,6 +21,7 @@ import { instructionsContract } from "../contracts/instructions";
 import { chatEventsContract } from "../contracts/chat-event-send";
 import { chatInputStatusContract } from "../contracts/chat-input-status";
 import { onboardingStatusContract } from "../contracts/onboarding";
+import { platformRealtimeTokenContract } from "../contracts/realtime";
 
 export interface KotlinRouteBinding {
   readonly authenticated?: boolean;
@@ -137,6 +138,12 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   },
   { name: "organization", response: "Organization", route: orgContract.get },
   {
+    name: "realtimeToken",
+    response: "RealtimeToken",
+    request: "RealtimeTokenRequest",
+    route: platformRealtimeTokenContract.create,
+  },
+  {
     name: "preferences",
     response: "UserPreferences",
     route: userPreferencesContract.get,
@@ -164,6 +171,16 @@ export interface KotlinTypeBinding {
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
+  {
+    name: "RealtimeTokenRequest",
+    schema: platformRealtimeTokenContract.create.body,
+    direction: "input",
+  },
+  {
+    name: "RealtimeToken",
+    schema: platformRealtimeTokenContract.create.responses[200],
+    direction: "output",
+  },
   {
     name: "AndroidUpdates",
     schema: androidUpdatesContract.get.responses[200],
