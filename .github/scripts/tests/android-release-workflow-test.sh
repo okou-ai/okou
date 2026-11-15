@@ -5,6 +5,7 @@ python3 - "$root" <<'PY'
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -43,6 +44,7 @@ for output, suffix in [('android_version', 'version'), ('android_tag', 'tag_name
     assert release['outputs'][output] == "${{ steps.release.outputs['android--" + suffix + "'] }}"
 assert 'publish-android' in jobs['update-rollback-dashboard']['needs']
 publish = next(step for step in job['steps'] if step.get('name') == 'Publish APK on the Android Release')
+verify = next(step for step in job['steps'] if step.get('name') == 'Verify Android release tag')
 assert not publish.get('continue-on-error', False)
 
 # Exercise the actual publication step with GitHub at its external CLI boundary.
@@ -68,6 +70,9 @@ elif args[:2] == ['release', 'upload']:
         sys.exit(23)
     with (root / 'uploaded').open('x') as output:
         output.write(args[2])
+elif args[:2] == ['release', 'view']:
+    assert args[2] == 'android-v0.2.0'
+    print('Fixture release notes')
 else:
     raise AssertionError(args)
 ''')
@@ -80,8 +85,12 @@ else:
                ANDROID_VERSION='0.2.0', ANDROID_TAG='android-v0.2.0',
                ANDROID_RELEASE_SOURCE_SHA='a' * 40)
     def run(**overrides):
-        return subprocess.run(['bash', '-e', '-c', publish['run']], env=env | overrides,
-                              text=True, capture_output=True)
+        for step in [verify, publish]:
+            result = subprocess.run(['bash', '-e', '-c', step['run']], env=env | overrides,
+                                    text=True, capture_output=True)
+            if result.returncode:
+                break
+        return result
     result = run()
     assert result.returncode == 0, result.stderr
     assert (work / 'uploaded').read_text() == 'android-v0.2.0'
@@ -100,6 +109,93 @@ else:
     assert not (work / 'uploaded').exists()
     result = run(FAIL_LOOKUP='true')
     assert result.returncode == 17, result.stderr
+    assert not (work / 'uploaded').exists()
+
+    # Exercise the real R2 publisher and actual workflow ordering. GitHub is a
+    # secondary copy: a previous upload must not prevent repairing discovery.
+    aws = work / 'aws'
+    aws.write_text('''#!/usr/bin/env python3
+import hashlib
+import json
+import os
+from pathlib import Path
+import sys
+args = sys.argv[1:]
+assert args[0] == 's3api'
+key = args[args.index('--key') + 1]
+path = Path(os.environ['RUNNER_TEMP']) / 'r2' / key
+def etag():
+    return '"' + hashlib.sha256(path.read_bytes()).hexdigest() + '"'
+if args[1] == 'get-object':
+    if not path.exists():
+        print(json.dumps({'Error': {'Code': 'NoSuchKey'}}), file=sys.stderr)
+        sys.exit(1)
+    Path(args[args.index('--key') + 2]).write_bytes(path.read_bytes())
+    print(json.dumps({'ETag': etag()}))
+elif args[1] == 'put-object':
+    if key.endswith('manifest.json') and os.environ.get('FAIL_R2') == 'true':
+        sys.exit(19)
+    if '--if-none-match' in args:
+        if path.exists():
+            sys.exit(12)
+    elif not path.exists() or args[args.index('--if-match') + 1] != etag():
+        sys.exit(12)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(Path(args[args.index('--body') + 1]).read_bytes())
+    print(json.dumps({'ETag': etag()}))
+else:
+    raise AssertionError(args)
+''')
+    aws.chmod(0o755)
+    tools = work / 'sdk/build-tools/36.0.0'
+    tools.mkdir(parents=True)
+    for name in ['apksigner', 'aapt2']:
+        tool = tools / name
+        tool.write_text('''#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
+if Path(sys.argv[0]).name == 'aapt2':
+    print("package: name='ai.okou.android' versionCode='" + os.environ['FIXTURE_VERSION_CODE'] + "' versionName='0.2.0' ")
+    print("sdkVersion:'24'")
+else:
+    assert sys.argv[1] == 'verify'
+''')
+        tool.chmod(0o755)
+    env |= dict(ANDROID_HOME=str(work / 'sdk'), R2_BUCKET_NAME='fixture-static',
+                R2_ACCOUNT_ID='fixture-account', FIXTURE_VERSION_CODE=subprocess.check_output(
+                    ['bash', str(root / 'android/scripts/version-code.sh')], text=True).strip())
+    steps = [step for step in job['steps'] if step.get('name') in {
+        'Verify Android release tag', 'Publish verified Android update',
+        'Publish APK on the Android Release',
+    }]
+    def run_publication(**overrides):
+        for step in steps:
+            result = subprocess.run(['bash', '-e', '-c', step['run']], cwd=root,
+                                    env=env | overrides, text=True, capture_output=True)
+            if result.returncode:
+                break
+        return result
+
+    (work / 'uploaded').write_text('android-v0.2.0')
+    result = run_publication()
+    assert result.returncode != 0  # The immutable GitHub copy still refuses overwrite.
+    manifest = work / 'r2/android-updates/manifest.json'
+    assert manifest.exists(), 'An existing GitHub APK prevented R2 publication repair'
+    data = json.loads(manifest.read_text())
+    assert data['release']['version'] == '0.2.0'
+    assert (work / 'r2' / data['release']['url'].removeprefix('https://static.okou.io/')).read_bytes() == b'fixture-apk'
+    assert (work / 'uploaded').read_text() == 'android-v0.2.0'
+
+    shutil.rmtree(work / 'r2')
+    (work / 'uploaded').unlink()
+    result = run_publication(TAG_SOURCE='b' * 40)
+    assert result.returncode != 0
+    assert not (work / 'r2').exists(), 'Wrong release source reached R2'
+    assert not (work / 'uploaded').exists()
+    result = run_publication(FAIL_R2='true')
+    assert result.returncode != 0
+    assert not manifest.exists()
     assert not (work / 'uploaded').exists()
 
 print('Android release selection, publication and failure propagation: ok')

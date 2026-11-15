@@ -474,9 +474,11 @@ discards partial files and offers explicit retry, or revalidates a completed APK
 No resident service, DownloadManager, silent installation or range resumption is
 implied. Installation handoff does not establish package replacement.
 
-After GitHub APK upload, `publish-android-update.py` publishes the same verified
-bytes and a conditional, monotonic manifest through the existing production
-static R2 configuration. The manifest is at
+After validating the release tag against the checked-out source,
+`publish-android-update.py` publishes the verified APK bytes and a conditional,
+monotonic manifest through the existing production static R2 configuration.
+R2 publication precedes the GitHub APK copy, allowing a rerun to repair discovery
+when that copy already exists. The manifest is at
 `https://static.okou.io/android-updates/manifest.json`. APK writes are immutable;
 same-version conflicts fail, and an older publication cannot replace a newer
 manifest. Until the first successful publication, discovery reports unavailable.

@@ -570,7 +570,7 @@ jobs:
           bash .github/scripts/artifacts/sign-okou-android-apk.sh "$ANDROID_VERSION" \
             "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION-unsigned.apk" \
             "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk"
-      - name: Publish APK on the Android Release
+      - name: Verify Android release tag
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -584,8 +584,6 @@ jobs:
             echo 'Android release tag does not match the checked-out source' >&2
             exit 1
           }
-          gh release upload "$ANDROID_TAG" "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk" --repo "$GITHUB_REPOSITORY"
-
       - name: Publish verified Android update
         env:
           GH_TOKEN: ${{ github.token }}
@@ -597,6 +595,13 @@ jobs:
         run: |
           python3 .github/scripts/release/publish-android-update.py "$ANDROID_VERSION" \
             "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk"
+
+      - name: Publish APK on the Android Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release upload "$ANDROID_TAG" "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk" --repo "$GITHUB_REPOSITORY"
 
       - name: Calculate duration
         id: duration
