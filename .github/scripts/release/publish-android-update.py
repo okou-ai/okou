@@ -80,6 +80,8 @@ class R2:
                       "--content-type", content_type, "--cache-control",
                       "no-store" if key == CURRENT else "public, max-age=31536000, immutable", *condition])
         except subprocess.TimeoutExpired:
+            # A timed-out conditional write may have committed; publish() reads it
+            # back before accepting success and never retries the uncertain write.
             pass
 
 
