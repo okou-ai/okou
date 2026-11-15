@@ -312,6 +312,14 @@ final class NotificationStateTests: XCTestCase {
     system.delivered = [try receipt("new-delivery", user: "current")]
     await service.refreshNotificationState(userID: "current")
     XCTAssertEqual(cursors.withLock { $0.count }, 3)
+
+    system.delivered = []
+    system.status = .denied
+    system.badgeCount = 5
+    await service.update(workspace: workspace(fixture, user: "current"))
+    await service.refreshNotificationState(userID: "current")
+    XCTAssertEqual(system.badgeCount, 0)
+    XCTAssertEqual(cursors.withLock { $0.count }, 3)
   }
 
   func testRealInvalidationRejectsTheOldResponseEvenWhenThePayloadIsUnchanged() async throws {

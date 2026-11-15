@@ -328,6 +328,7 @@ final class NotificationService {
     guard let workspace, binding != nil || defaults.bool(forKey: "ios-push-registration-attempted")
     else { return }
     generation = UUID()
+    notificationStateRevision = UUID()
     let generation = generation
     registrationTask?.cancel()
     for task in backgroundTasks.values { task.cancel() }
