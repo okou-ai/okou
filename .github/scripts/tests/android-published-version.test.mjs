@@ -12,23 +12,21 @@ const script = fileURLToPath(
   new URL("../checks/android-published-version.mjs", import.meta.url),
 );
 
-async function withGithub(evidence, action) {
+async function withUpdates(body, action) {
   const server = createServer((request, response) => {
-    assert.equal(request.headers.authorization, "Bearer fixture-token");
-    const key = request.url.replace("/repos/okou-ai/okou/", "");
-    const body = evidence[key];
+    assert.equal(request.url, "/api/android/updates");
+    assert.equal(request.headers.authorization, undefined);
     response.writeHead(body?.httpStatus ?? (body === undefined ? 404 : 200), {
       "content-type": "application/json",
+      ...(body?.location ? { location: body.location } : {}),
     });
-    response.end(JSON.stringify(body ?? {}));
+    response.end(typeof body === "string" ? body : JSON.stringify(body ?? {}));
   });
   server.listen(0, "127.0.0.1");
   try {
     await once(server, "listening");
     await action({
-      repository: "okou-ai/okou",
-      token: "fixture-token",
-      apiUrl: `http://127.0.0.1:${server.address().port}`,
+      updatesUrl: `http://127.0.0.1:${server.address().port}/api/android/updates`,
     });
   } finally {
     server.closeAllConnections();
@@ -38,89 +36,116 @@ async function withGithub(evidence, action) {
   }
 }
 
-function evidence() {
-  const versions = ["0.9.0", "0.10.0"];
-  const data = {
-    "git/matching-refs/tags/android-v": versions.map((version) => ({
-      ref: `refs/tags/android-v${version}`,
-      object: { type: "tag", sha: "a".repeat(40) },
-    })),
+function discovery(version = "0.10.0") {
+  return {
+    minimumSupportedVersion: null,
+    release: {
+      version,
+      minimumSdk: 24,
+      size: 1234,
+      sha256: "a".repeat(64),
+      url: `https://static.okou.io/android-updates/releases/${version}/${"a".repeat(64)}.apk`,
+      notes: "A published update",
+    },
   };
-  for (const version of versions) {
-    data[`releases/tags/android-v${version}`] = {
-      tag_name: `android-v${version}`,
-      draft: false,
-      prerelease: false,
-      assets: [{ name: "app-release.apk", state: "uploaded", size: 1234 }],
-    };
-  }
-  return data;
 }
 
 function cli(options) {
   return run(process.execPath, [script], {
     env: {
       ...process.env,
-      GH_TOKEN: options.token,
-      GITHUB_REPOSITORY: options.repository,
-      GITHUB_API_URL: options.apiUrl,
+      GH_TOKEN: "fixture-token",
+      ANDROID_UPDATES_URL: options.updatesUrl,
     },
   });
 }
 
-test("selects the highest stable APK release numerically, including annotated tags", async () => {
-  const data = evidence();
-  data["git/matching-refs/tags/android-v"].push({
-    ref: "refs/tags/android-v1.0.0-beta.1",
-    object: { type: "commit", sha: "b".repeat(40) },
+test("publication availability cannot advance beyond the R2-backed discovery feed", async () => {
+  const data = discovery("0.9.0");
+  await withUpdates(data, async (options) => {
+    assert.equal(await publishedAndroidVersion(options), "0.9.0");
+    data.release = discovery("0.10.0").release;
+    assert.equal(await publishedAndroidVersion(options), "0.10.0");
   });
-  await withGithub(data, async (options) =>
+});
+
+test("the compatibility floor cannot substitute for an available release", async () => {
+  const data = discovery();
+  data.minimumSupportedVersion = "0.11.0";
+  await withUpdates(data, async (options) =>
     assert.equal(await publishedAndroidVersion(options), "0.10.0"),
   );
 });
 
-test("a bare tag, draft, prerelease or missing completed APK cannot prove a newer floor", async () => {
-  for (const invalid of [
-    undefined,
-    { draft: true },
-    { prerelease: true },
-    { assets: [] },
-    { assets: [{ name: "app-release.aab", state: "uploaded", size: 1234 }] },
-    { assets: [{ name: "app-release.apk", state: "starter", size: 1234 }] },
-    { assets: [{ name: "app-release.apk", state: "uploaded", size: 0 }] },
-  ]) {
-    const data = evidence();
-    const key = "releases/tags/android-v0.10.0";
-    data[key] =
-      invalid === undefined ? undefined : { ...data[key], ...invalid };
-    await withGithub(data, async (options) =>
-      assert.equal(await publishedAndroidVersion(options), "0.9.0"),
-    );
-  }
-});
-
 test("the CI command prints only the released version", async () => {
-  await withGithub(evidence(), async (options) => {
+  await withUpdates(discovery(), async (options) => {
     const result = await cli(options);
     assert.equal(result.stdout, "0.10.0\n");
     assert.equal(result.stderr, "");
   });
 });
 
-test("no Android publication leaves the CI version unset", async () => {
-  await withGithub({}, async (options) => {
-    const result = await cli(options);
-    assert.equal(result.stdout, "");
-    assert.match(result.stderr, /No published Android GitHub Release/u);
+test("missing discovery or unavailable R2 publication leaves the CI version unset", async () => {
+  for (const body of [undefined, { httpStatus: 503 }]) {
+    await withUpdates(body, async (options) => {
+      const result = await cli(options);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, /No Android release is available/u);
+    });
+  }
+});
+
+test("failed, redirected or malformed discovery cannot prove availability", async () => {
+  for (const body of [
+    { httpStatus: 403 },
+    { httpStatus: 500 },
+    { httpStatus: 302, location: "/api/android/updates" },
+    "not json",
+  ]) {
+    await withUpdates(body, async (options) => {
+      const result = await cli(options);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, /Published Android version unavailable/u);
+    });
+  }
+});
+
+test("invalid release versions cannot prove a floor", async () => {
+  for (const version of [
+    null,
+    "development",
+    "0.10",
+    "0.10.0-beta",
+    "0.10.0\n",
+    "1".repeat(65) + ".0.0",
+  ]) {
+    await withUpdates(discovery(version), async (options) => {
+      await assert.rejects(
+        publishedAndroidVersion(options),
+        /no stable release version/u,
+      );
+    });
+  }
+});
+
+test("bounds discovery bytes while accepting canonical supplementary Unicode notes", async () => {
+  const data = discovery();
+  data.release.notes = "🚀".repeat(8_000);
+  await withUpdates(data, async (options) => {
+    assert.equal(await publishedAndroidVersion(options), "0.10.0");
+    data.release.notes = "a".repeat(65_536);
+    await assert.rejects(
+      publishedAndroidVersion(options),
+      /exceeds its limit/u,
+    );
   });
 });
 
-test("a GitHub failure leaves the version unset instead of claiming an older release", async () => {
-  const data = evidence();
-  data["releases/tags/android-v0.10.0"] = { httpStatus: 403 };
-  await withGithub(data, async (options) => {
-    const result = await cli(options);
-    assert.equal(result.stdout, "");
-    assert.match(result.stderr, /Published Android version unavailable:.*403/u);
-  });
+test("public discovery requires HTTPS outside the local fixture", async () => {
+  await assert.rejects(
+    publishedAndroidVersion({
+      updatesUrl: "http://example.com/api/android/updates",
+    }),
+    /HTTPS/u,
+  );
 });

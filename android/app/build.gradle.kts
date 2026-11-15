@@ -32,21 +32,21 @@ require(Regex("pk_(live|test)_[A-Za-z0-9_-]+").matches(clerkPublishableKey)) {
     "okou.clerkPublishableKey must be a public Clerk publishable key"
 }
 
-require(Regex("\\d+\\.\\d+\\.\\d+").matches(appVersion)) {
+require(appVersion.length <= 64 && Regex("[0-9]+\\.[0-9]+\\.[0-9]+").matches(appVersion)) {
     "Android version.txt must contain a stable x.y.z version"
 }
 
-val versionParts = appVersion.split('.').map { it.toInt() }
 val appVersionCode =
-    versionParts[0].toLong() * 1_000_000 + versionParts[1] * 1_000L + versionParts[2]
-
-require(
-    versionParts[1] < 1_000 &&
-        versionParts[2] < 1_000 &&
-        appVersionCode in 1..Int.MAX_VALUE.toLong()
-) {
-    "Android version must fit a monotonic major*1000000 + minor*1000 + patch versionCode"
-}
+    providers
+        .exec {
+            workingDir(rootProject.projectDir)
+            commandLine("bash", "scripts/version-code.sh")
+        }
+        .standardOutput
+        .asText
+        .get()
+        .trim()
+        .toInt()
 
 android {
     namespace = "ai.okou.android"
@@ -55,7 +55,7 @@ android {
         applicationId = "ai.okou.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = appVersionCode.toInt()
+        versionCode = appVersionCode
         versionName = appVersion
         testInstrumentationRunner = "ai.okou.android.OkouTestRunner"
         testInstrumentationRunnerArguments["useTestStorageService"] = "true"
@@ -70,6 +70,10 @@ android {
         buildConfig = true
     }
     sourceSets["test"].kotlin.directories.add("src/sharedTest/kotlin")
+    sourceSets["test"]
+        .resources
+        .directories
+        .add("../../turbo/packages/api-contracts/src/validators/fixtures")
     sourceSets["androidTest"].kotlin.directories.add("src/sharedTest/kotlin")
     providers.gradleProperty("okou.screenshotScenarioDir").orNull?.let { value ->
         val directory = file(value).canonicalFile

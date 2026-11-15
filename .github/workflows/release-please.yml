@@ -546,6 +546,7 @@ jobs:
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
@@ -569,7 +570,7 @@ jobs:
           bash .github/scripts/artifacts/sign-okou-android-apk.sh "$ANDROID_VERSION" \
             "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION-unsigned.apk" \
             "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk"
-      - name: Publish APK on the Android Release
+      - name: Verify Android release tag
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -583,6 +584,23 @@ jobs:
             echo 'Android release tag does not match the checked-out source' >&2
             exit 1
           }
+      - name: Publish verified Android update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
+        run: |
+          python3 .github/scripts/release/publish-android-update.py "$ANDROID_VERSION" \
+            "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk"
+
+      - name: Publish APK on the Android Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
           gh release upload "$ANDROID_TAG" "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk" --repo "$GITHUB_REPOSITORY"
 
       - name: Calculate duration

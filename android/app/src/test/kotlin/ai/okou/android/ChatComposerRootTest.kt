@@ -2,6 +2,7 @@ package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
+import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -27,7 +28,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.runners.model.MultipleFailureException
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 class ComposerRootApplication : TestOkouApplication() {
@@ -173,15 +176,27 @@ class ChatComposerRootTest {
         val app = compose.activity.application as ComposerRootApplication
         app.contextGate.countDown()
         app.sendGate.countDown()
-        compose.activityRule.scenario.close()
-        compose.waitUntil(10_000) {
-            editorJob?.isCompleted != false && listJob?.isCompleted != false
+        val failures = mutableListOf<Throwable>()
+        for (cleanup in
+            listOf<() -> Unit>(
+                { compose.activityRule.scenario.close() },
+                {
+                    compose.waitUntil(10_000) {
+                        // Finish cancellation callbacks on Robolectric's paused Main looper.
+                        shadowOf(Looper.getMainLooper()).idle()
+                        editorJob?.isCompleted != false && listJob?.isCompleted != false
+                    }
+                },
+                { runBlocking { checkNotNull(app.journalStore).close() } },
+                { app.fixture.close() },
+                { app.cacheSnapshot.restore() },
+            )) {
+            try {
+                cleanup()
+            } catch (error: Throwable) {
+                failures += error
+            }
         }
-        try {
-            runBlocking { checkNotNull(app.journalStore).close() }
-            app.fixture.close()
-        } finally {
-            app.cacheSnapshot.restore()
-        }
+        MultipleFailureException.assertEmpty(failures)
     }
 }

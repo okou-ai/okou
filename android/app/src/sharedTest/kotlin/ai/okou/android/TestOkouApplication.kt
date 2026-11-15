@@ -1,6 +1,8 @@
 package ai.okou.android
 
 import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.generated.AndroidUpdates
+import ai.okou.android.api.generated.AndroidUpdatesRelease
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.OrganizationRole
 import ai.okou.android.api.generated.UpdatePreferencesRequest
@@ -19,11 +21,65 @@ import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsService
+import ai.okou.android.updates.AppUpdates
+import ai.okou.android.updates.UpdateRecord
+import ai.okou.android.updates.UpdateService
+import ai.okou.android.updates.UpdateStore
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
 
 /** Compiled only into host/device tests. Production has no authentication bypass switch. */
 open class TestOkouApplication : OkouApplication() {
+    var updateService: UpdateService? = null
+    var updateOwner: AppUpdates? = null
+    override val updates
+        get() = updateOwner ?: testUpdates
+
+    private val testUpdates by lazy {
+        val service =
+            object : UpdateService {
+                override suspend fun initialize() {
+                    updateService?.initialize()
+                }
+
+                override suspend fun check() =
+                    updateService?.check()
+                        ?: AndroidUpdates(
+                            null,
+                            AndroidUpdatesRelease(
+                                BuildConfig.VERSION_NAME,
+                                24,
+                                1,
+                                "0".repeat(64),
+                                "https://static.okou.io/unused",
+                                "",
+                            ),
+                        )
+
+                override suspend fun recover(release: AndroidUpdatesRelease) =
+                    updateService?.recover(release)
+
+                override suspend fun download(
+                    release: AndroidUpdatesRelease,
+                    progress: (Long) -> Unit,
+                ): File = checkNotNull(updateService).download(release, progress)
+
+                override fun close() {
+                    updateService?.close()
+                }
+            }
+        AppUpdates(
+            service,
+            object : UpdateStore {
+                override suspend fun load(): UpdateRecord? = null
+
+                override suspend fun save(record: UpdateRecord) = Unit
+            },
+            BuildConfig.VERSION_NAME,
+            android.os.Build.VERSION.SDK_INT,
+        )
+    }
     var chatService: ChatListService = TestChatService()
     var composerService: ChatComposerService = TestChatComposerService()
     var journalStore: ComposerJournalStore? = null

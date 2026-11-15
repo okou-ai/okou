@@ -2910,11 +2910,9 @@ jobs:
             echo "version=$version" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Read published Android GitHub Release version
+      - name: Read discoverable Android release version
         id: android-release
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           version=$(node .github/scripts/checks/android-published-version.mjs)

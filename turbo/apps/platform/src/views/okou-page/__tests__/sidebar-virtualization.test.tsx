@@ -272,10 +272,10 @@ test("Collapse and expand a Project inside a scrolled virtual window", async () 
     expect(
       within(viewport).getByLabelText("Show or hide chats in Project 17"),
     ).toHaveAttribute("aria-expanded", "false");
+    expect(within(viewport).queryByText("History 1")).not.toBeInTheDocument();
+    expect(within(viewport).queryByText("History 2")).not.toBeInTheDocument();
+    expect(within(viewport).getByText("History 3")).toBeInTheDocument();
   });
-  expect(within(viewport).queryByText("History 1")).not.toBeInTheDocument();
-  expect(within(viewport).queryByText("History 2")).not.toBeInTheDocument();
-  expect(within(viewport).getByText("History 3")).toBeInTheDocument();
 
   click(within(viewport).getByLabelText("Show or hide chats in Project 17"));
   const member = await within(viewport).findByText("History 1");

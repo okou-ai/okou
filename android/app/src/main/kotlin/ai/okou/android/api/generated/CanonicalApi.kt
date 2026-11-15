@@ -17,6 +17,8 @@ import retrofit2.http.Query
 import retrofit2.http.QueryMap
 
 internal interface CanonicalApi {
+    @GET("/api/android/updates") suspend fun `androidUpdates`(): Response<AndroidUpdates>
+
     @POST("/api/chat-threads")
     suspend fun `createThread`(
         @Header("Authorization") token: String,

@@ -10,7 +10,10 @@ import androidx.test.core.graphics.writeToTestStorage
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Condition
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.UiScrollable
 import androidx.test.uiautomator.UiSelector
 import androidx.test.uiautomator.Until
@@ -44,7 +47,9 @@ class NativeChatListTest {
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             fun text(value: String) =
-                checkNotNull(device.wait(Until.findObject(By.text(value)), 10_000))
+                checkNotNull(
+                    device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
+                )
             fun click(selector: UiSelector) {
                 // Resolve at action time. The SDK return acknowledges accessibility events;
                 // verify Compose's actual application outcomes below instead.
@@ -52,14 +57,30 @@ class NativeChatListTest {
             }
             fun clickText(value: String) = click(UiSelector().text(value))
             fun revealText(value: String) {
-                // A collapsed Project can make the entire list fit without a scrollable node.
-                if (!device.hasObject(By.pkg(app.packageName).text(value))) {
-                    assertTrue(
-                        UiScrollable(UiSelector().packageName(app.packageName).scrollable(true))
-                            .setAsVerticalList()
-                            .scrollTextIntoView(value)
+                val target = By.pkg(app.packageName).text(value)
+                val scrollable = By.pkg(app.packageName).scrollable(true)
+                assertTrue(
+                    device.wait(
+                        object : Condition<UiDevice, Boolean> {
+                            override fun apply(device: UiDevice) =
+                                device.hasObject(target) || device.hasObject(scrollable)
+                        },
+                        10_000,
                     )
+                )
+                // The whole list can fit after collapse; only scroll when it is necessary.
+                val container = device.findObject(scrollable)
+                if (!device.hasObject(target) && container != null) {
+                    val visible =
+                        object : Condition<UiObject2, Boolean> {
+                            // Resolve virtual descendants from the current window after scrolls.
+                            override fun apply(container: UiObject2) = device.hasObject(target)
+                        }
+                    if (!container.scrollUntil(Direction.UP, visible)) {
+                        container.scrollUntil(Direction.DOWN, visible)
+                    }
                 }
+                // A scroll result is not a receipt for Compose's eventual visible outcome.
                 text(value)
             }
             text(app.getString(R.string.chat_list_title))

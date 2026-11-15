@@ -56,6 +56,7 @@ fun SessionRoot(
     chooseWorkspace: (String) -> Unit,
     signOut: () -> Unit,
     openWorkspaceSetup: () -> Unit,
+    appUpdates: @Composable () -> Unit = {},
 ) {
     val textButtonColors =
         ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
@@ -71,6 +72,7 @@ fun SessionRoot(
                     workspacePreferences = {
                         MemberPreferencesSettings(ready.preferences)
                         PersonalInstructionsSettings(ready.instructions)
+                        appUpdates()
                     },
                     homeContent = { ChatListRoute(ready.chats, ready.composer) },
                 )

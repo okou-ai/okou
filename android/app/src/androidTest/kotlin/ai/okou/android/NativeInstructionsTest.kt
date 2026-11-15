@@ -15,9 +15,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Condition
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.UiScrollable
-import androidx.test.uiautomator.UiSelector
+import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
@@ -70,23 +70,19 @@ class NativeInstructionsTest {
                 val target = By.pkg(app.packageName).text(value)
                 if (!device.hasObject(target)) {
                     val scroll =
-                        UiScrollable(UiSelector().packageName(app.packageName).scrollable(true))
-                            .setAsVerticalList()
-                    // Compose can move without the legacy SDK receiving its scroll-event receipt.
-                    // Observe the actual Settings content instead of treating that receipt as an
-                    // end.
-                    for (step in 0 until 8) {
-                        if (
-                            device.hasObject(
-                                By.pkg(app.packageName).text(app.getString(R.string.appearance))
+                        checkNotNull(
+                            device.wait(
+                                Until.findObject(By.pkg(app.packageName).scrollable(true)),
+                                10_000,
                             )
                         )
-                            break
-                        scroll.scrollBackward()
-                    }
-                    for (step in 0 until 8) {
-                        if (device.hasObject(target)) break
-                        scroll.scrollForward()
+                    val visible =
+                        object : Condition<UiObject2, Boolean> {
+                            // Compose exposes virtual descendants in the current window.
+                            override fun apply(unused: UiObject2) = device.hasObject(target)
+                        }
+                    if (!scroll.scrollUntil(Direction.UP, visible)) {
+                        scroll.scrollUntil(Direction.DOWN, visible)
                     }
                 }
                 text(value)
@@ -95,12 +91,12 @@ class NativeInstructionsTest {
                 val label = app.getString(id)
                 reveal(label)
                 checkNotNull(
-                    device.wait(
-                        Until.findObject(By.pkg(app.packageName).text(label).enabled(true)),
-                        10_000,
+                        device.wait(
+                            Until.findObject(By.pkg(app.packageName).text(label).enabled(true)),
+                            10_000,
+                        )
                     )
-                )
-                device.findObject(UiSelector().packageName(app.packageName).text(label)).click()
+                    .click()
             }
             fun editor() =
                 checkNotNull(
@@ -128,11 +124,15 @@ class NativeInstructionsTest {
                 )
             }
             text(app.getString(R.string.chat_list_title))
-            device
-                .findObject(
-                    UiSelector()
-                        .packageName(app.packageName)
-                        .description(app.getString(R.string.settings))
+            checkNotNull(
+                    device.wait(
+                        Until.findObject(
+                            By.pkg(app.packageName)
+                                .desc(app.getString(R.string.settings))
+                                .enabled(true)
+                        ),
+                        10_000,
+                    )
                 )
                 .click()
             assertTrue(entered.await(10, TimeUnit.SECONDS))

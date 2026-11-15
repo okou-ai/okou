@@ -1,12 +1,13 @@
 import type { AndroidUpgradeRequired } from "@okouai/api-contracts/contracts/android-client-compatibility";
-import { object, string } from "zod";
-import { compareAppVersions } from "./app-version";
+import {
+  androidVersionSchema,
+  compareAndroidVersions,
+} from "@okouai/api-contracts/validators/android-version";
+import { object } from "zod";
 import compatibilityConfig from "./android-client-compatibility.json";
 
 const configSchema = object({
-  minimumSupportedVersion: string()
-    .regex(/^\d+\.\d+\.\d+$/u)
-    .nullable(),
+  minimumSupportedVersion: androidVersionSchema.nullable(),
 });
 configSchema.parse(compatibilityConfig);
 
@@ -20,7 +21,7 @@ export function isSupportedAndroidClientVersion(version: string): boolean {
   if (floor === null) {
     return true;
   }
-  const comparison = compareAppVersions(version, floor);
+  const comparison = compareAndroidVersions(version, floor);
   return comparison === null || comparison >= 0;
 }
 

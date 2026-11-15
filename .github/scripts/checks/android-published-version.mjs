@@ -1,73 +1,52 @@
 #!/usr/bin/env node
-// Read-only GitHub Release publication check. Requires GH_TOKEN and
-// GITHUB_REPOSITORY; GITHUB_API_URL defaults to GitHub. Prints the highest
-// stable android-vX.Y.Z release with an uploaded APK, or warns on stderr.
+// Read-only publication check through the same public discovery used by Android.
+// ANDROID_UPDATES_URL defaults to the production API. Prints its available
+// stable release version, or leaves stdout empty and warns on stderr.
 import { pathToFileURL } from "node:url";
 
 export async function publishedAndroidVersion({
-  repository,
-  token,
-  apiUrl = "https://api.github.com",
-}) {
-  if (!/^[\w.-]+\/[\w.-]+$/u.test(repository) || !token) {
-    throw new Error("GH_TOKEN and a valid GITHUB_REPOSITORY are required");
-  }
-  const origin = new URL(apiUrl);
+  updatesUrl = "https://api.okou.ai/api/android/updates",
+} = {}) {
+  const origin = new URL(updatesUrl);
   if (
     origin.protocol !== "https:" &&
     !(origin.protocol === "http:" && origin.hostname === "127.0.0.1")
   ) {
-    throw new Error("GitHub API must use HTTPS");
+    throw new Error("Android update discovery must use HTTPS");
   }
-  const read = async (path) => {
-    const response = await fetch(`${apiUrl}/repos/${repository}/${path}`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-      },
-      signal: AbortSignal.timeout(15_000),
-      redirect: "error",
-    });
-    if (response.status === 404) return undefined;
-    if (!response.ok)
-      throw new Error(
-        `GitHub publication evidence returned HTTP ${response.status}`,
-      );
-    return response.json();
-  };
-  const refs = await read("git/matching-refs/tags/android-v");
-  const versions = (refs ?? [])
-    .flatMap((ref) => {
-      const match = /^refs\/tags\/android-v(\d+\.\d+\.\d+)$/u.exec(ref.ref);
-      if (!match) return [];
-      const parts = match[1].split(".").map(Number);
-      if (!parts.every(Number.isSafeInteger)) return [];
-      return [{ version: match[1], parts }];
-    })
-    .sort(
-      (a, b) =>
-        b.parts[0] - a.parts[0] ||
-        b.parts[1] - a.parts[1] ||
-        b.parts[2] - a.parts[2],
+  const response = await fetch(updatesUrl, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(15_000),
+    redirect: "error",
+    cache: "no-store",
+  });
+  if (response.status !== 200) {
+    await response.body?.cancel();
+    if (response.status === 404 || response.status === 503) return undefined;
+    throw new Error(
+      `Android update discovery returned HTTP ${response.status}`,
     );
-
-  // Match the native publication checks' bounded candidate search.
-  for (const { version } of versions.slice(0, 20)) {
-    const release = await read(`releases/tags/android-v${version}`);
-    if (
-      release?.tag_name === `android-v${version}` &&
-      release.draft === false &&
-      release.prerelease === false &&
-      release.assets.some(
-        (asset) =>
-          /\.apk$/iu.test(asset.name) &&
-          asset.state === "uploaded" &&
-          asset.size > 0,
-      )
-    )
-      return version;
   }
-  return undefined;
+  if (response.body === null)
+    throw new Error("Android update discovery is empty");
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of response.body) {
+    size += chunk.byteLength;
+    if (size > 65_536)
+      throw new Error("Android update discovery exceeds its limit");
+    chunks.push(chunk);
+  }
+  // A successful canonical response validates the R2 manifest and its release identity.
+  const { release } = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  const version = release?.version;
+  if (
+    typeof version !== "string" ||
+    version.length > 64 ||
+    !/^[0-9]+\.[0-9]+\.[0-9]+(?![\s\S])/u.test(version)
+  )
+    throw new Error("Android update discovery has no stable release version");
+  return version;
 }
 
 if (
@@ -76,18 +55,16 @@ if (
 ) {
   try {
     const version = await publishedAndroidVersion({
-      repository: process.env.GITHUB_REPOSITORY,
-      token: process.env.GH_TOKEN,
-      apiUrl: process.env.GITHUB_API_URL,
+      updatesUrl: process.env.ANDROID_UPDATES_URL,
     });
     if (version) console.log(version);
     else
       console.error(
-        "::warning::No published Android GitHub Release with an uploaded APK could be verified.",
+        "::warning::No Android release is available through public update discovery.",
       );
   } catch (error) {
     console.error(
-      `::warning::Published Android version unavailable: ${error.message}`,
+      `::warning::Published Android version unavailable: ${error.message.replaceAll("\r", " ").replaceAll("\n", " ")}`,
     );
   }
 }

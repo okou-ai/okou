@@ -23,8 +23,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 
 enum class SessionStage {
@@ -65,6 +67,7 @@ class SessionModel(
     private val instructionsDrafts: PersonalInstructionsDraftStore,
     private val composerJournal: ComposerJournalStore,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    updatesRequired: Flow<Boolean> = emptyFlow(),
 ) : ViewModel() {
     @Volatile private var generation = 0L
     private val mutable = MutableStateFlow(SessionUiState(generation))
@@ -73,9 +76,19 @@ class SessionModel(
     private var operation: Job? = null
     private var workspace: WorkspaceSession? = null
     private var presentation: ViewModelStore? = null
+    private var requiredUpdate = false
 
     init {
         viewModelScope.launch { authentication.state.collect { reconcile(it) } }
+        viewModelScope.launch {
+            updatesRequired.collect { required ->
+                if (required && !requiredUpdate) {
+                    requiredUpdate = true
+                    retire()
+                    mutable.value = SessionUiState(generation, SessionStage.UpdateRequired)
+                }
+            }
+        }
     }
 
     private fun retire() {
@@ -89,6 +102,7 @@ class SessionModel(
     }
 
     private fun reconcile(snapshot: AuthenticationState, force: Boolean = false) {
+        if (requiredUpdate) return
         // SDK token refreshes do not replace a stable identity or its presentation owner.
         if (!force && observed == snapshot) return
         observed = snapshot
