@@ -728,6 +728,9 @@ impl ActiveInputController {
     }
 
     /// Send the queued steered declarations and stop the declaration worker.
+    ///
+    /// Concurrent callers wait for the same worker. Cancelling a wait leaves the
+    /// worker available for a later caller to finish waiting.
     pub async fn finalize_steered_declarations(&self) -> Result<(), AgentError> {
         let sink_in_flight = self.sink_in_flight();
         if let ActiveInputMode::Enabled(declarations) = &self.inner.mode {
