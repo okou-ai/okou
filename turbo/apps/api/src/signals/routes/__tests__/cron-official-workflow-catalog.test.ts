@@ -354,7 +354,9 @@ test.each(scenarios)(
       return skill.mountPath.endsWith(`/${definitionName}`);
     });
     if (!bundle) {
-      throw new Error("Expected an Official Workflow bundle in the claim");
+      throw new Error(
+        "Expected an Official Workflow bundle in execution input",
+      );
     }
     const files = readExecutionContentBundle(s3.objects, bundle);
     expect(files.get("SKILL.md")?.toString()).toContain(heading);

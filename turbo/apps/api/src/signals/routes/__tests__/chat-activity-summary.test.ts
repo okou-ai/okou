@@ -85,7 +85,7 @@ async function fixture(prompt = "Prepare a launch checklist") {
       visibility: "private",
     }),
   ]);
-  // The activity suite needs a live Runner claim, not a Pi API-first turn.
+  // The activity suite needs a live Runner execution, not a Pi API-first turn.
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
   const sent = await chat.sendAndLaunch(actor, {
     agentId: agent.agentId,

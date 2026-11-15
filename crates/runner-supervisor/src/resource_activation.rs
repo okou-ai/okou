@@ -1,4 +1,4 @@
-//! Claimed sandbox selection, activation and fallback above the idle, provider and executor owners.
+//! Sandbox resource selection, activation and fallback above the idle, provider and executor owners.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -346,7 +346,7 @@ pub async fn activate_reserved_idle(
                 idle_kind = ?reservation_kind,
                 reuse_key_fingerprint = reserved_reuse_key.as_deref().map(diagnostic_reuse_key_fingerprint),
                 reuse_key_kind = reserved_reuse_key.as_deref().map(reuse_key_kind),
-                "activating pre-claim reserved idle sandbox"
+                "activating reserved idle sandbox"
             );
             ReservedActivation::Ready {
                 reuse_entry: Some(sandbox),

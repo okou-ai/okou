@@ -1178,7 +1178,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             RunnerMode::Draining => {
                 if acceptance_tasks.is_empty() {
                     // Settle acceptance before removing inventory that an
-                    // in-flight claim may return or need for activation. Then
+                    // in-flight job may return or need for activation. Then
                     // release idle budget and keep servicing running jobs.
                     soft_drain
                         .start_if_needed(&idle_destroy_tracker, &shared.idle_pool, &shared.status)

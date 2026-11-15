@@ -262,7 +262,7 @@ test("cLI account activation reuses the existing switch behavior", async () => {
   ).toStrictEqual([accountIds[1], accountIds[0]]);
 });
 
-test("a claimed agent cannot execute a subscription reset", async () => {
+test("an executing agent cannot execute a subscription reset", async () => {
   const { actor, accountIds } = await fixture();
   let consumed = false;
   server.use(

@@ -85,7 +85,7 @@ test("uses current permission definitions after publication with a warm executio
     actor,
     "figma",
     "api-token",
-    { accessToken: "claim-catalog-figma-token" },
+    { accessToken: "execution-catalog-figma-token" },
     agentId,
   );
   await connectors.updateFeatureSwitches(actor, {
@@ -217,7 +217,7 @@ test("uses current permission definitions after publication with a warm executio
 });
 
 describe.each([false, true])(
-  "Runner claim current connector permissions (Chat accounts: %s)",
+  "Execution connector permissions (Chat accounts: %s)",
   (chatAccounts) => {
     it.each(["add", "revoke"] as const)(
       "applies a %s grant change made after the Run was queued",
@@ -276,7 +276,7 @@ describe.each([false, true])(
         await executeAndCancel(actor, agentId);
         const queued = await queueChatRun(actor, {
           agentId,
-          prompt: "use the current GitHub permissions at claim",
+          prompt: "use the current GitHub permissions for execution",
         });
         if (change === "add") {
           if (chatAccounts) {
@@ -333,8 +333,8 @@ describe.each([false, true])(
 
     it.each([
       "active",
-      "expired-before-claim",
-      "expired-during-claim",
+      "expired-before-preparation",
+      "expired-during-preparation",
     ] as const)(
       "evaluates the captured permission source and temporary deadline: %s",
       async (expiry) => {
@@ -393,15 +393,15 @@ describe.each([false, true])(
         });
         const expiresAt = startedAt + 60 * 60 * 1000;
         mockNow(
-          expiry === "expired-before-claim"
+          expiry === "expired-before-preparation"
             ? expiresAt
-            : expiry === "expired-during-claim"
+            : expiry === "expired-during-preparation"
               ? expiresAt - 1
               : startedAt + 30 * 60 * 1000,
         );
         await runs.registerDirectRunner(runnerGroup);
-        if (expiry === "expired-during-claim") {
-          // Claim encrypts its reconstructed secrets after hydration. Let the
+        if (expiry === "expired-during-preparation") {
+          // Execution preparation encrypts its resolved secrets. Let the
           // external KMS response cross the exact temporary-allow boundary.
           useSecretKmsProbe(() => {
             mockNow(expiresAt);
@@ -429,7 +429,7 @@ describe.each([false, true])(
             nextRefreshAt: new Date(expiresAt).toISOString(),
           });
           // Active-Run sync follows current settings, independently of the
-          // captured Claim decision. Restore the mode before testing expiry.
+          // published execution decision. Restore the mode before testing expiry.
           await connectors.updateFeatureSwitches(actor, {
             connectorChatAccountAccess: chatAccounts,
           });

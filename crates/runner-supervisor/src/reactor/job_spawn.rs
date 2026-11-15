@@ -1,4 +1,4 @@
-//! Claimed job task spawning, completion, and panic cleanup.
+//! Accepted job task spawning, completion, and panic cleanup.
 //!
 //! Discovery and idle reuse decide when an accepted job should start. This module
 //! owns the spawned task body: concrete executor invocation and request wiring,
@@ -700,7 +700,7 @@ pub(super) async fn run_job(
             active_sandbox.current(),
             completion_auth,
         );
-        // Structural guarantee: claim (in provider) is always paired with complete.
+        // Keep provider completion paired with the accepted job.
         signal_usage_flush(run_id, &usage_flush_tx);
         let telemetry = completion_payload
             .complete_execution_run(

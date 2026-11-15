@@ -1505,7 +1505,7 @@ async fn finalizer_promotes_home_cache_from_reuse_key_without_resolved_session()
     assert_eq!(cache_states.len(), 1);
     assert_eq!(cache_states[0].reuse_key, reuse_key);
     let active_runs = test_active_runs();
-    let snapshot_states = home_cache_snapshot.current_held_home_states(&active_runs, None);
+    let snapshot_states = home_cache_snapshot.current_held_home_states(&active_runs);
     assert_eq!(snapshot_states.len(), 1);
     assert_eq!(snapshot_states[0].reuse_key, reuse_key);
     assert_eq!(snapshot_states[0].home_caches.len(), 1);
@@ -1614,7 +1614,7 @@ async fn finalizer_promotes_failed_first_run_home_without_session() {
         "sessionless failure cannot invent history authority"
     );
     let active_runs = test_active_runs();
-    let snapshot_states = home_cache_snapshot.current_held_home_states(&active_runs, None);
+    let snapshot_states = home_cache_snapshot.current_held_home_states(&active_runs);
     assert_eq!(snapshot_states.len(), 1);
     assert_eq!(snapshot_states[0].reuse_key, reuse_key);
     assert_eq!(snapshot_states[0].home_caches.len(), 1);
@@ -1682,7 +1682,7 @@ async fn finalizer_waits_for_successful_stop_before_home_generation_publication(
     );
     assert!(
         snapshot
-            .current_held_home_states(&test_active_runs(), None)
+            .current_held_home_states(&test_active_runs())
             .is_empty()
     );
     stop_gate.release_one();
@@ -1769,7 +1769,7 @@ async fn finalizer_stop_error_abandons_frozen_home_cache_before_destroy() {
     let active_runs = test_active_runs();
     assert!(
         home_cache_snapshot
-            .current_held_home_states(&active_runs, None)
+            .current_held_home_states(&active_runs)
             .is_empty(),
         "failed post-freeze stop must not advertise reusable state"
     );

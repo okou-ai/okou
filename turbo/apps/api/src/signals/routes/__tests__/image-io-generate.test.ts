@@ -37,7 +37,7 @@ import { createPublicImageMember } from "./helpers/public-image-member";
 import { chargePublicDataUsage } from "./helpers/public-data-charge";
 
 import {
-  createImageRun as createClaimedImageRunForContext,
+  createImageRun as createImageExecutionForContext,
   createImageIoTestApp as createImageIoTestAppForContext,
   orgCredits as orgCreditsForContext,
   postFalWebhookEnvelope,
@@ -215,7 +215,7 @@ function createImageRun(
   credits = 1000,
   providerCleanupBody?: Record<string, unknown>,
 ) {
-  return createClaimedImageRunForContext(
+  return createImageExecutionForContext(
     context,
     imageModel,
     credits,

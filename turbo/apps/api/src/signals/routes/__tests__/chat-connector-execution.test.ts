@@ -101,7 +101,7 @@ async function start(value: Awaited<ReturnType<typeof owner>>) {
   receipt.sandboxToken = execution.sandboxToken;
   const token = execution.platformEnvironment.OKOU_TOKEN;
   if (!token) {
-    throw new Error("Runner claim did not issue an Okou token");
+    throw new Error("Execution input did not include an Okou token");
   }
   return {
     ...run,

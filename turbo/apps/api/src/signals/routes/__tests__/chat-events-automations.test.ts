@@ -144,7 +144,7 @@ describe("CHAT effort: automation launches", () => {
   async function startAutomation() {
     const scenario = await entitledChatActor({}, "pro");
     const { actor, agentId } = scenario;
-    // Fable keeps the automation on the Claude Code Runner claim protocol;
+    // Fable keeps the automation on the Claude Code Runner execution protocol;
     // the Sonnet fixture default would launch a Pi run instead.
     await api.updateUserModelPreference(actor, "claude-fable-5-1");
     const workflowId = await createWorkflowsBddApi(context).createWorkflow(
@@ -177,13 +177,13 @@ describe("CHAT effort: automation launches", () => {
       ...scenario,
       threadId,
       runId,
-      claimed: execution,
+      receivedExecution: execution,
       automationId: created.body.id,
     };
   }
 
   it("captures automation effort at enqueue and applies edits to later triggers", async () => {
-    const { actor, threadId, runId, claimed, automationId } =
+    const { actor, threadId, runId, receivedExecution, automationId } =
       await startAutomation();
     await chat.updateThreadModelSelection(actor, threadId, "claude-fable-5-1", {
       reasoningEffort: "extra",
@@ -199,7 +199,7 @@ describe("CHAT effort: automation launches", () => {
     await chat.updateThreadModelSelection(actor, threadId, "claude-fable-5-1", {
       reasoningEffort: "high",
     });
-    await completeChatRunOk(runId, claimed.sandboxHeaders, {
+    await completeChatRunOk(runId, receivedExecution.sandboxHeaders, {
       cliAgentType: "claude-code",
     });
     await flushWaitUntilForTest();
@@ -234,9 +234,9 @@ describe("CHAT effort: automation launches", () => {
   }, 90_000);
 
   it("uses route defaults for unsupported effort at automation launch", async () => {
-    const { actor, threadId, runId, claimed, automationId } =
+    const { actor, threadId, runId, receivedExecution, automationId } =
       await startAutomation();
-    await completeChatRunOk(runId, claimed.sandboxHeaders, {
+    await completeChatRunOk(runId, receivedExecution.sandboxHeaders, {
       cliAgentType: "claude-code",
     });
     await flushWaitUntilForTest();

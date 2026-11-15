@@ -40,7 +40,7 @@ async function artifactActor(
   chatCallbacks.disableVapid();
   const runnerGroup = await api.configureRunnerGroup();
   await api.grantProEntitlement(actor, { tier });
-  // Artifact scenarios claim the chat run through the native Runner; Fable
+  // Artifact scenarios execute the chat Run through the native Runner; Fable
   // stays off Pi while Sonnet 5 would run API-first.
   await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
@@ -83,7 +83,7 @@ function okouTokenFromExecution(execution: RunnerExecutionInput): string {
   const token = execution.platformEnvironment.OKOU_TOKEN;
   if (!token || !token.startsWith("vm0_sandbox_")) {
     throw new Error(
-      "Expected the claim platform environment to carry an OKOU_TOKEN",
+      "Expected the execution platform environment to carry an OKOU_TOKEN",
     );
   }
   return token;
@@ -129,11 +129,11 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
       agentId: owner.agentId,
       prompt: "publish two hosted sites",
     });
-    const { execution: claim } = await runExecution(
+    const { execution: receivedExecution } = await runExecution(
       owner.runnerGroup,
       run.runId,
     );
-    const bearer = `Bearer ${okouTokenFromExecution(claim)}`;
+    const bearer = `Bearer ${okouTokenFromExecution(receivedExecution)}`;
     host.captureHostedSitesS3();
 
     const site = `artifact-versions-${randomUUID().slice(0, 8)}`;
@@ -190,11 +190,11 @@ describe("hosted artifacts without a supplied cover", () => {
       agentId: owner.agentId,
       prompt: "Publish a site without a supplied cover",
     });
-    const { execution: claim, sandboxHeaders } = await runExecution(
+    const { execution: receivedExecution, sandboxHeaders } = await runExecution(
       owner.runnerGroup,
       run.runId,
     );
-    const bearer = `Bearer ${okouTokenFromExecution(claim)}`;
+    const bearer = `Bearer ${okouTokenFromExecution(receivedExecution)}`;
     host.captureHostedSitesS3();
     const site = `optional-cover-${randomUUID().slice(0, 8)}`;
     const prepared = await chat.prepareHostedSiteWithBearer(bearer, {

@@ -1,4 +1,4 @@
-//! Claimed-run sandbox execution, session history, result composition, and telemetry.
+//! Run sandbox execution, session history, result composition, and telemetry.
 
 pub mod executor;
 mod network_provider_adapter;

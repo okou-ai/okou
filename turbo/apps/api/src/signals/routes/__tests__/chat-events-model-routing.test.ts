@@ -853,14 +853,14 @@ describe("CHAT-02: model-first routing", () => {
         type: "model",
         selectedModel: "gpt-6.1-sol",
       });
-      const { execution: standardClaim, sandboxHeaders: standardHeaders } =
+      const { execution: standardExecution, sandboxHeaders: standardHeaders } =
         await runExecution(standard.runId);
-      expect(standardClaim.cliAgentType).toBe("pi");
-      expect(standardClaim.piModelConfig).toMatchObject({
+      expect(standardExecution.cliAgentType).toBe("pi");
+      expect(standardExecution.piModelConfig).toMatchObject({
         provider: "openai-codex",
         model: "gpt-6.1-sol",
       });
-      expect(standardClaim.piModelConfig).not.toHaveProperty("serviceTier");
+      expect(standardExecution.piModelConfig).not.toHaveProperty("serviceTier");
       await cancelChatRun(actor, standard.runId, standardHeaders);
       const rejectedThreadId = randomUUID();
       const rejected = await chat.requestSendEvent(

@@ -45,8 +45,8 @@ async function prepareCaseSite(site: string) {
   return { first: response.body, entitled };
 }
 
-/** Claim a real chat Run and own cancellation before a claim can fail. */
-async function claimedChatRun(
+/** Execute a real chat Run and own cancellation before preparation can fail. */
+async function dispatchedChatRun(
   entitled: Awaited<ReturnType<typeof fixture.entitledNativeChatActor>>,
   prompt: string,
 ) {
@@ -75,7 +75,7 @@ describe("thread-independent hosted publication through host APIs", () => {
   it("redeploys one organization site across chats", async () => {
     const site = `host-${randomUUID().slice(0, 8)}`;
     const { first, entitled } = await prepareCaseSite(site);
-    const firstRun = await claimedChatRun(
+    const firstRun = await dispatchedChatRun(
       entitled,
       "publish the first chat version",
     );
@@ -85,7 +85,10 @@ describe("thread-independent hosted publication through host APIs", () => {
     );
     await firstRun.complete();
 
-    const otherRun = await claimedChatRun(entitled, "publish in another chat");
+    const otherRun = await dispatchedChatRun(
+      entitled,
+      "publish in another chat",
+    );
     expect(otherRun.threadId).not.toBe(firstRun.threadId);
     const third = await fixture.chat.prepareHostedSiteWithBearer(
       otherRun.bearer,
@@ -108,7 +111,7 @@ describe("thread-independent hosted publication through host APIs", () => {
     const runs = [];
     for (let index = 0; index < 3; index += 1) {
       runs.push(
-        await claimedChatRun(entitled, `publish concurrently ${index}`),
+        await dispatchedChatRun(entitled, `publish concurrently ${index}`),
       );
     }
     expect(

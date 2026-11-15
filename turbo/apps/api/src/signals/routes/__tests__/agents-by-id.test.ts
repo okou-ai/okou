@@ -16,7 +16,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 
 const context = testContext();
-const claimedToken = createRunExecutionCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 
@@ -83,7 +83,7 @@ describe("GET /api/agents/:id", () => {
 
     const capabilityBody = await readAgentAs(
       agent.agentId,
-      bearerHeaders(await claimedToken(actor)),
+      bearerHeaders(await executionToken(actor)),
     );
 
     expect(patBody).toStrictEqual(sessionBody);
@@ -208,7 +208,7 @@ describe("GET /api/agents/:id", () => {
       displayName: "Okou Run Token Agent",
       description: "Read by an Okou run token",
     });
-    const token = await claimedToken(actor);
+    const token = await executionToken(actor);
     mockClerkMembership(context, actor, "org:admin");
 
     const response = await accept(
@@ -238,7 +238,7 @@ describe("DELETE /api/agents/:id", () => {
 
   it("returns 403 for an agent token without agent:delete capability", async () => {
     const actor = bdd.user();
-    const token = await claimedToken(actor);
+    const token = await executionToken(actor);
 
     const response = await accept(
       agentsClient().delete({

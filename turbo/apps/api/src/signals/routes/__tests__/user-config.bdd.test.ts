@@ -655,7 +655,7 @@ describe("AUTH-01 sandbox and agent bearers", () => {
       cfg.mockMembership(owned.actor, "org:admin");
       const agentToken = execution.platformEnvironment?.OKOU_TOKEN;
       if (!agentToken) {
-        throw new Error("Expected the actual claim's Okou token");
+        throw new Error("Expected the actual execution's Okou token");
       }
       for (const token of [execution.sandboxToken, agentToken]) {
         const identity = await cfg.requestMe(
@@ -677,7 +677,7 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     });
   });
 
-  it("updates user connectors with a claimed agent token and rejects push registration", async () => {
+  it("updates user connectors with an execution agent token and rejects push registration", async () => {
     const owned = await publicChatActor(context);
     const run = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
@@ -686,7 +686,7 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     const { execution } = await owned.runExecution(run.runId);
     const token = execution.platformEnvironment?.OKOU_TOKEN;
     if (!token) {
-      throw new Error("Expected the claim's Okou token");
+      throw new Error("Expected the execution's Okou token");
     }
     await owned.run(async () => {
       cfg.mockMembership(owned.actor, "org:admin");
@@ -717,7 +717,7 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     });
   });
 
-  it("drops the organization from claimed agent identity after public member removal", async () => {
+  it("drops the organization from execution agent identity after public member removal", async () => {
     const owned = await publicChatActor(context);
     const run = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
@@ -726,7 +726,7 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     const { execution } = await owned.runExecution(run.runId);
     const token = execution.platformEnvironment?.OKOU_TOKEN;
     if (!token) {
-      throw new Error("Expected the claim's Okou token");
+      throw new Error("Expected the execution's Okou token");
     }
     await owned.run(async () => {
       const admin = api.user({ orgId: owned.actor.orgId });

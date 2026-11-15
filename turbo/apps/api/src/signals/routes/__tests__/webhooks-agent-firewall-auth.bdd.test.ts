@@ -839,12 +839,14 @@ describe("FW-3: billable firewall lease", () => {
     const actor = createBddApi(context).user();
     const subscription =
       await createRunsApi(context).grantProEntitlement(actor);
-    const { execution: claim } = await launchPublicToolRun(
+    const { execution: receivedExecution } = await launchPublicToolRun(
       context,
       actor,
       onTestFinished,
     );
-    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+    const headers = {
+      authorization: `Bearer ${receivedExecution.sandboxToken}`,
+    };
     await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
       refreshToken: "refresh-1",
@@ -1608,7 +1610,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     const {
       actor,
       headers,
-      execution: claim,
+      execution: receivedExecution,
     } = await firewallRun({
       additionalConnectorSlugs: [catalog.slug],
       prepareAgent: async (owner, agentId) => {
@@ -1676,19 +1678,19 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
         ).toBeNull();
       },
     });
-    if (!automaticConnectionId || !claim.encryptedSecrets) {
+    if (!automaticConnectionId || !receivedExecution.encryptedSecrets) {
       throw new Error(
-        "Expected the connected account and actual claimed Runner credentials",
+        "Expected the connected account and actual dispatched Runner credentials",
       );
     }
-    expect(claim.connectorRuntimeTargets).toContainEqual(
+    expect(receivedExecution.connectorRuntimeTargets).toContainEqual(
       expect.objectContaining({
         kind: "builtin",
         connectorSlug: catalog.slug,
         sourceId: automaticConnectionId,
       }),
     );
-    expect(claim.firewalls).toContainEqual(
+    expect(receivedExecution.firewalls).toContainEqual(
       expect.objectContaining({
         kind: "builtin",
         name: catalog.slug,
@@ -1788,7 +1790,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     const unknownGrantRefresh = await fw.requestFirewallAuth(
       headers,
       {
-        encryptedSecrets: claim.encryptedSecrets,
+        encryptedSecrets: receivedExecution.encryptedSecrets,
         authHeaders: catalog.firewallAuthHeaders,
         matchedFirewall: {
           name: catalog.slug,

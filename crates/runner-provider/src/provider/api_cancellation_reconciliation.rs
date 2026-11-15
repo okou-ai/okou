@@ -1,4 +1,4 @@
-//! Claim-scoped cancellation observation, independent of Ably and heartbeats.
+//! Run-scoped cancellation observation, independent of Ably and heartbeats.
 //!
 //! Each live registration owns one observer containing separate read and
 //! delivery futures. Tokio's FIFO semaphore bounds reads across the provider;

@@ -102,14 +102,7 @@ type InitialInput =
   InitialInput$ extends Computed<infer T> ? Awaited<T> : never;
 type DisabledTools$ = Computed<Promise<readonly string[]>>;
 
-/** An expected source removal or cancellation, distinct from dependency failures. */
-class ExecutionRuntimeUnavailableError extends Error {
-  constructor() {
-    super("Run execution sources are unavailable");
-  }
-}
-
-/** All dependencies belong to this execution; no captured runtime snapshot participates. */
+/** Assemble runtime input from this Run's authoritative sources. */
 export function createExecutionRuntimeContext(input$: ExecutionInput$) {
   const identities = createExecutionIdentities(input$);
   const { run$, identity$, features$ } = identities;
@@ -305,7 +298,7 @@ function createExecutionConnectorContext(
       .from(agentRunConnectorDiagnosticRegistrations)
       .where(eq(agentRunConnectorDiagnosticRegistrations.runId, run.id));
     if (!row) {
-      throw new ExecutionRuntimeUnavailableError();
+      throw new Error("Run execution sources are unavailable");
     }
     return agentRunConnectorDiagnosticRegistrationPayloadSchema.parse(
       row.payload,
@@ -400,7 +393,7 @@ function createExecutionModel(run$: ExecutionRun$, global: GlobalModels) {
       });
       const source = managedSourceFromSnapshot(key);
       if (!source) {
-        throw new ExecutionRuntimeUnavailableError();
+        throw new Error("Run execution sources are unavailable");
       }
       provider = await prepareManagedModelEnvironment(source, {
         catalog,
@@ -425,11 +418,11 @@ function createExecutionModel(run$: ExecutionRun$, global: GlobalModels) {
           personalSubscriptionAccountIdentity(account) !==
             run.modelProviderAccountIdentity)
       ) {
-        throw new ExecutionRuntimeUnavailableError();
+        throw new Error("Run execution sources are unavailable");
       }
       const source = memberAccountSourceFromSnapshot(members, account.id);
       if (!source) {
-        throw new ExecutionRuntimeUnavailableError();
+        throw new Error("Run execution sources are unavailable");
       }
       provider = prepareSubscriptionModelEnvironment(
         source,
@@ -443,7 +436,7 @@ function createExecutionModel(run$: ExecutionRun$, global: GlobalModels) {
       );
     }
     if (!provider) {
-      throw new ExecutionRuntimeUnavailableError();
+      throw new Error("Run execution sources are unavailable");
     }
     const resolved = materializePreparedPiProvider(preparation, provider);
     return {
@@ -563,7 +556,7 @@ function createExecutionPackages(
             get(templates$),
           ]);
     if (templates && "error" in templates) {
-      throw new ExecutionRuntimeUnavailableError();
+      throw new Error("Run execution sources are unavailable");
     }
     const parts = [connectors, seedSkills, templates].filter((part) => {
       return part !== undefined;
@@ -686,7 +679,7 @@ function createExecutionEnvironment(
         run.agentId === null ? emptyEnvironment() : get(connectorEnvironment$),
       ]);
     if ("status" in connectorEnvironment || "status" in modelEnvironment) {
-      throw new ExecutionRuntimeUnavailableError();
+      throw new Error("Run execution sources are unavailable");
     }
     const data = dataRouterEnvironment();
     const token = context.platformEnvironment.OKOU_TOKEN;

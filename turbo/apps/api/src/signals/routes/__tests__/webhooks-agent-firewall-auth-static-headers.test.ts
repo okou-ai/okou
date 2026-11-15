@@ -122,19 +122,21 @@ describe("catalog-owned Automatic MCP static headers", () => {
     await owned.run(async () => {
       const {
         catalog,
-        execution: claim,
+        execution: receivedExecution,
         body,
         sandboxHeaders,
         connectionId,
       } = await admittedConfiguredMcp(owned);
-      expect(claim.environment).not.toHaveProperty("MCP_ACCESS_TOKEN");
-      expect(claim.environment).not.toHaveProperty(
+      expect(receivedExecution.environment).not.toHaveProperty(
+        "MCP_ACCESS_TOKEN",
+      );
+      expect(receivedExecution.environment).not.toHaveProperty(
         "AUTOMATIC_STATIC_ACCESS_TOKEN",
       );
-      expect(claim.platformEnvironment).not.toHaveProperty(
+      expect(receivedExecution.platformEnvironment).not.toHaveProperty(
         "AUTOMATIC_STATIC_ACCESS_TOKEN",
       );
-      expect(claim.secretValues).not.toContain(
+      expect(receivedExecution.secretValues).not.toContain(
         "automatic-initial-access-token",
       );
 

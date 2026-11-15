@@ -11,8 +11,8 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 const context = testContext();
 const api = createRunsApi(context);
 
-describe("API dispatch-time Agent instructions", () => {
-  it("pins published instruction bytes at dispatch and selects later edits for later Runs", async () => {
+describe("Published Agent instructions in direct Runs", () => {
+  it("keeps each Run's published instruction bytes across later edits", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const bdd = createBddApi(context);
@@ -20,14 +20,15 @@ describe("API dispatch-time Agent instructions", () => {
       await bdd.updateAgentInstructions(
         owned.actor,
         owned.agentId,
-        "A at queue time",
+        "A at admission",
       );
       const queued = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
-        prompt: "claim current instructions",
+        prompt: "execute with admitted instructions",
         model: "auto",
       });
-      const current = "\uFEFF  B before claim\r\n中文\n[AGENT_PROFILE]\n  ";
+      const current =
+        "\uFEFF  B after Run creation\r\n中文\n[AGENT_PROFILE]\n  ";
       await bdd.updateAgentInstructions(owned.actor, owned.agentId, current);
       const { execution } = await owned.runExecution(queued.runId);
       const selected = execution.contentBundles.instructions!;
@@ -35,20 +36,20 @@ describe("API dispatch-time Agent instructions", () => {
         readExecutionContentBundle(s3.objects, selected)
           .get("instructions.md")
           ?.toString(),
-      ).toBe("A at queue time");
+      ).toBe("A at admission");
       await bdd.updateAgentInstructions(
         owned.actor,
         owned.agentId,
-        "C after claim",
+        "C after first publication",
       );
       expect(
         readExecutionContentBundle(s3.objects, selected)
           .get("instructions.md")
           ?.toString(),
-      ).toBe("A at queue time");
+      ).toBe("A at admission");
       const next = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
-        prompt: "claim the later edit",
+        prompt: "execute with the later edit",
         model: "auto",
       });
       const subsequent = await owned.runExecution(next.runId);
@@ -58,7 +59,7 @@ describe("API dispatch-time Agent instructions", () => {
         readExecutionContentBundle(s3.objects, later)
           .get("instructions.md")
           ?.toString(),
-      ).toBe("C after claim");
+      ).toBe("C after first publication");
       await expect(
         api.readRun(owned.actor, queued.runId),
       ).resolves.toMatchObject({ status: "running" });

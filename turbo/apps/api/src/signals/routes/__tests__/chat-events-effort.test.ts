@@ -46,7 +46,7 @@ describe("CHAT effort: thread configuration", () => {
     });
     await cancelChatRun(actor, sent.runId, execution.sandboxHeaders);
   }, 90_000);
-  it("applies requested and saved native effort through the existing claim protocol", async () => {
+  it("applies requested and saved native effort through the execution protocol", async () => {
     const { actor, agentId } = await entitledChatActor();
 
     await configureSubscriptionPiModel(actor).then(() => {

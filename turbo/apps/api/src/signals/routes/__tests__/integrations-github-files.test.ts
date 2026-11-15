@@ -26,7 +26,7 @@ import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const credentials = createRunExecutionCredentials(context);
-const claimedToken = credentials.okouToken;
+const executionToken = credentials.okouToken;
 const mocks = createRouteMocks(context);
 const github = createGithubBddApi(context);
 const bdd = createBddApi(context);
@@ -108,7 +108,7 @@ describe("GitHub file integration routes", () => {
       restoreAccepted = captureConnectorExternalState(context);
       const token = execution.platformEnvironment?.OKOU_TOKEN;
       if (!token) {
-        throw new Error("Expected a claimed GitHub caller");
+        throw new Error("Expected an execution GitHub caller");
       }
       return { ...run, token };
     });
@@ -137,7 +137,7 @@ describe("GitHub file integration routes", () => {
       const response = await accept(
         client.fileUrl({
           query: { url },
-          headers: { authorization: `Bearer ${await claimedToken(fixture)}` },
+          headers: { authorization: `Bearer ${await executionToken(fixture)}` },
         }),
         [200],
       );
@@ -163,7 +163,7 @@ describe("GitHub file integration routes", () => {
     const response = await accept(
       client.fileUrl({
         query: { url, filename: "../report.pdf" },
-        headers: { authorization: `Bearer ${await claimedToken(fixture)}` },
+        headers: { authorization: `Bearer ${await executionToken(fixture)}` },
       }),
       [200],
     );
@@ -180,7 +180,7 @@ describe("GitHub file integration routes", () => {
     mockEnv("S3_PUBLIC_ENDPOINT", "https://public-s3.test");
     mocks.s3.listObjects([]);
     const fixture = await seedFixture();
-    const token = await claimedToken(fixture);
+    const token = await executionToken(fixture);
     context.mocks.s3.getSignedUrl.mockClear();
     const client = setupApp({
       context,

@@ -91,7 +91,7 @@ const TEST_APP_ROUTES = Object.freeze([...chatThreadRoutes]);
  * Google Drive sync status.
  *
  * Most Given state is constructed through public APIs (Stripe-webhook
- * entitlement, personal model provider routes, runner heartbeat/claim, sandbox
+ * entitlement, personal model provider routes, Runner heartbeat/dispatch, sandbox
  * report webhooks, connector OAuth flows, and skills routes).
  * Targeted database checks are kept for migration and side-effect coverage
  * where the persisted row shape is the contract under test.
@@ -156,7 +156,7 @@ async function entitledChatActorWithoutRunner(
   chatCallbacks.disableVapid();
   await api.grantProEntitlement(actor);
   const { providerId } = await api.ensurePersonalSubscriptionModel(actor);
-  // Thread lifecycle tests claim and complete a native-harness run. Fable is
+  // Thread lifecycle tests execute and complete a native-harness Run. Fable is
   // the permanently native Claude route now that Pi has no off switch.
   await selectNativeClaudeModel(actor);
   const agent = await bdd.createAgent(actor, {
@@ -210,7 +210,7 @@ function okouTokenFromExecution(execution: RunnerExecutionInput): string {
   const token = execution.platformEnvironment.OKOU_TOKEN;
   if (!token || !token.startsWith("vm0_sandbox_")) {
     throw new Error(
-      "Expected the claim platform environment to carry an OKOU_TOKEN",
+      "Expected the execution platform environment to carry an OKOU_TOKEN",
     );
   }
   return token;
@@ -434,7 +434,7 @@ async function sendNoCreditMessage(
 }
 
 /**
- * Runs a full chat run (send, runner claim, output publication + completion) so the
+ * Runs a full chat run (send, Runner execution, output publication + completion) so the
  * thread gains its run-finished marker through the production callback path.
  */
 async function completeChatRunInThread(
@@ -482,7 +482,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     expect(unauthenticatedBody.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("allows claimed agent tokens to sync their owner's snapshots and events", async () => {
+  it("allows execution agent tokens to sync their owner's snapshots and events", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
       const { actor, agentId } = owned;
@@ -1148,7 +1148,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       code: "NOT_FOUND",
     });
 
-    // Main thread with a claimed (running) run.
+    // Main thread with a running Run.
     const main = await sendChatRun(actor, {
       agentId,
       prompt: "delete cascade anchor",
@@ -1290,7 +1290,7 @@ describe("CHAT-01 chat thread read state", () => {
       chat.listUnreadChatThreadIds(sameUserOtherOrg),
     ).resolves.toStrictEqual([otherOrgRun.threadId]);
 
-    // An active (claimed) run keeps its thread out of the unread aggregate
+    // An active Run keeps its thread out of the unread aggregate
     // until it completes and leaves a run-finished marker.
     const activeRun = await sendChatRun(owner, {
       agentId: agentA,
@@ -1438,7 +1438,7 @@ describe("CHAT-01 chat thread read state", () => {
       prompt: "other org active thread",
     });
 
-    // Owner: one claimed (running) run and one send over the org concurrency
+    // Owner: one running Run and one send over the org concurrency
     // cap, which admits as a queued run.
     const runningRun = await sendChatRun(owner, {
       agentId: ownerAgent,
@@ -2092,11 +2092,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       agentId,
       prompt: "produce thread artifacts",
     });
-    const { execution: claim, sandboxHeaders } = await runExecution(
+    const { execution: receivedExecution, sandboxHeaders } = await runExecution(
       runnerGroup,
       run.runId,
     );
-    const runBearer = `Bearer ${okouTokenFromExecution(claim)}`;
+    const runBearer = `Bearer ${okouTokenFromExecution(receivedExecution)}`;
 
     const unauthenticated = await chat.requestListThreadArtifacts(
       null,
@@ -2566,7 +2566,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       agentId,
       prompt: "produce an artifact",
     });
-    const { execution: claim, sandboxHeaders } = await runExecution(
+    const { execution: receivedExecution, sandboxHeaders } = await runExecution(
       runnerGroup,
       run.runId,
     );
@@ -2578,7 +2578,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       ...(params.source ? { body: params.source.body } : {}),
     });
     await chat.completeUploadWithBearer(
-      `Bearer ${okouTokenFromExecution(claim)}`,
+      `Bearer ${okouTokenFromExecution(receivedExecution)}`,
       { id: deckId },
       [200],
     );
@@ -3196,7 +3196,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     const { execution } = await owned.runExecution(run.runId);
     // Drive imports consume public-storage files. Use the supported org-less
-    // upload producer, then publish with this user's real Run claim. Do not
+    // upload producer, then publish with this user's real Run execution. Do not
     // fabricate a legacy object key or relax the private-artifact boundary.
     installSharedThreadStorage(context);
     const prepared = await owned.run(() => {
@@ -5176,11 +5176,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       agentId,
       prompt: "produce an account-bound artifact",
     });
-    const { execution: claim, sandboxHeaders } = await runExecution(
+    const { execution: receivedExecution, sandboxHeaders } = await runExecution(
       runnerGroup,
       run.runId,
     );
-    const runBearer = `Bearer ${okouTokenFromExecution(claim)}`;
+    const runBearer = `Bearer ${okouTokenFromExecution(receivedExecution)}`;
     const fileId = randomUUID();
     objectStore.addObject({
       bucket: "test-user-artifacts",
@@ -5438,8 +5438,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       agentId,
       prompt: "first artifact run",
     });
-    const claim1 = await runExecution(runnerGroup, run1.runId);
-    const bearer1 = `Bearer ${okouTokenFromExecution(claim1.execution)}`;
+    const execution1 = await runExecution(runnerGroup, run1.runId);
+    const bearer1 = `Bearer ${okouTokenFromExecution(execution1.execution)}`;
     const ownId = randomUUID();
     const sharedId = randomUUID();
     objectStore.addObject({
@@ -5455,7 +5455,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     await chat.completeUploadWithBearer(bearer1, { id: ownId }, [200]);
     await chat.completeUploadWithBearer(bearer1, { id: sharedId }, [200]);
     chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(run1.runId, claim1.sandboxHeaders);
+    await completeChatRunOk(run1.runId, execution1.sandboxHeaders);
     // Run 1's completion drains the thread queue via waitUntil side effects;
     // flush them so the drain cannot claim run 2's queued message first.
     await flushWaitUntilForTest();
@@ -5467,8 +5467,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       threadId: run1.threadId,
       prompt: "second artifact run",
     });
-    const claim2 = await runExecution(runnerGroup, run2.runId);
-    const bearer2 = `Bearer ${okouTokenFromExecution(claim2.execution)}`;
+    const execution2 = await runExecution(runnerGroup, run2.runId);
+    const bearer2 = `Bearer ${okouTokenFromExecution(execution2.execution)}`;
     await chat.completeUploadWithBearer(bearer2, { id: sharedId }, [200]);
 
     let artifacts = await chat.listThreadArtifacts(actor, run1.threadId);
@@ -5575,7 +5575,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     }
 
     chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(run2.runId, claim2.sandboxHeaders);
+    await completeChatRunOk(run2.runId, execution2.sandboxHeaders);
   }, 120_000);
 
   it("keeps files generated beside a hosted site visible", async () => {

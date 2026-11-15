@@ -30,7 +30,7 @@ import {
 const context = testContext();
 
 describe("VNC depends on current SSH binding", () => {
-  const claimed = createVncExecutionApi(context);
+  const executionApi = createVncExecutionApi(context);
   const query = { view: "scoped" as const };
   const configs = () => {
     return setupApp({ context, routes: cloudflareAccessRoutes })(
@@ -50,12 +50,12 @@ describe("VNC depends on current SSH binding", () => {
   };
 
   beforeEach(initializeVncRuntimeTest);
-  afterEach(claimed.cleanup);
+  afterEach(executionApi.cleanup);
 
   it("keeps an SSH provider dependency separate from native VNC role authority", async () => {
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
     const api = createVncRuntimeApi(context);
-    const f = await claimed.fixture();
+    const f = await executionApi.fixture();
     const config = await accept(
       configs().create({
         headers: vncSessionHeaders,
@@ -213,7 +213,7 @@ describe("VNC depends on current SSH binding", () => {
     "%s blocks VNC over a retained SSH host and allows explicit SSH recovery",
     async (transition) => {
       const api = createVncRuntimeApi(context);
-      const f = await claimed.fixture();
+      const f = await executionApi.fixture();
       const store = createStore();
       const admin = {
         orgId: f.orgId,
@@ -282,7 +282,7 @@ describe("VNC depends on current SSH binding", () => {
       const target = { ...f, connectionId: tunneled.body.id };
       await api.enableDefault(f, "ssh", ssh.body.id);
       await api.enableDefault(f, "vnc", tunneled.body.id);
-      const guestHeaders = claimed.agentHeaders(f);
+      const guestHeaders = executionApi.agentHeaders(f);
       const listHosts = async () => {
         return (
           await accept(inventory().list({ headers: guestHeaders }), [200])

@@ -133,7 +133,7 @@ describe("POST /api/welcome-chat-threads", () => {
     expect(response.status).toBe(401);
   });
 
-  it("rejects a claimed credential after the member leaves the organization", async () => {
+  it("rejects an execution credential after the member leaves the organization", async () => {
     const actor = bdd.user();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     const token = await credentials.okouToken(member);

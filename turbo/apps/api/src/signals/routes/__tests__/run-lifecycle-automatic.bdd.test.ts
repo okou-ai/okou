@@ -284,7 +284,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       }
       if (!execution.encryptedSecrets) {
         throw new Error(
-          "Expected encrypted secrets from the authenticated Runner claim",
+          "Expected encrypted secrets from the authenticated Runner execution",
         );
       }
       const authBody = {

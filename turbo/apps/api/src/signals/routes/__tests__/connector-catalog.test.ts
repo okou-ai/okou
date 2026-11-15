@@ -33,7 +33,7 @@ import {
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const claimedToken = createRunExecutionCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
@@ -254,7 +254,7 @@ describe("GET /api/connector-catalog", () => {
         context.signal,
       ),
     );
-    const token = await claimedToken({ userId, orgId });
+    const token = await executionToken({ userId, orgId });
 
     const client = setupApp({ context, routes: connectorCatalogRoutes })(
       connectorCatalogContract,

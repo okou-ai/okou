@@ -58,7 +58,7 @@ function completionBody(
     cliAgentType !== "codex" &&
     cliAgentType !== "pi"
   ) {
-    throw new Error("Expected the claimed Framework identity");
+    throw new Error("Expected the dispatched Framework identity");
   }
   return {
     runId: run.runId,

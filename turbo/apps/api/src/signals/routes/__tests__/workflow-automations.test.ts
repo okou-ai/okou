@@ -585,7 +585,7 @@ describe("okou workflow automations", () => {
     tier: "pro" | "team" = "pro",
     options: { readonly maxAutonomyBudget?: number } = {},
   ): Promise<AutomationScenario> {
-    // Fable keeps automation runs on the claimable native Runner route.
+    // Fable keeps automation runs on the native Runner execution route.
     const { actor, customerId, subscriptionId } = await wf.setupWorkflowOrg({
       tier,
       model: "claude-fable-5-1",
@@ -4771,7 +4771,7 @@ describe("okou workflow automations", () => {
       maxAutonomyBudget: 2,
     });
 
-    async function claimRun(runId: string | null) {
+    async function readRunExecution(runId: string | null) {
       if (!runId) {
         throw new Error("Expected the Automation run to start");
       }
@@ -4779,7 +4779,7 @@ describe("okou workflow automations", () => {
       const execution = await runs.executionInput(runId);
       const okouToken = execution.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
-        throw new Error("Expected the claimed run to receive OKOU_TOKEN");
+        throw new Error("Expected the dispatched Run to receive OKOU_TOKEN");
       }
       return { runId, okouToken, sandboxToken: execution.sandboxToken };
     }
@@ -4809,7 +4809,7 @@ describe("okou workflow automations", () => {
     }
 
     const root = await accept(createAs("Bearer clerk-session", 3600), [201]);
-    const rootRun = await claimRun(
+    const rootRun = await readRunExecution(
       (await runAutomationNow(root.body.id)).runId,
     );
     const first = await accept(
@@ -4818,7 +4818,7 @@ describe("okou workflow automations", () => {
     );
     await cancel(rootRun);
 
-    const firstRun = await claimRun(
+    const firstRun = await readRunExecution(
       (await runAutomationNow(first.body.id)).runId,
     );
     const second = await accept(
@@ -4827,7 +4827,7 @@ describe("okou workflow automations", () => {
     );
     await cancel(firstRun);
 
-    const secondRun = await claimRun(
+    const secondRun = await readRunExecution(
       (await runAutomationNow(second.body.id)).runId,
     );
     const exhausted = `Bearer ${secondRun.okouToken}`;

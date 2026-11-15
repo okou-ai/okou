@@ -387,7 +387,7 @@ test("rejects a member copy if its default target changes during publication", a
   ).toStrictEqual([]);
 });
 
-test("keeps captured workspace Workflow scope after claim and a live switch change", async () => {
+test("keeps captured workspace Workflow scope after dispatch and a live switch change", async () => {
   const owned = await publicChatActor(context, { tier: "team" });
   const runs = createRunsApi(context);
   await owned.run(async () => {

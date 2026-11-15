@@ -10,7 +10,7 @@ import { createRunExecutionCredentials } from "./helpers/run-execution-credentia
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
 const context = testContext();
-const claimedToken = createRunExecutionCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const store = createStore();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
@@ -59,7 +59,7 @@ function client() {
 describe("GET /api/chat-threads/:id/metadata", () => {
   it("returns thread metadata with an Okou run token carrying chat-thread:read", async () => {
     const fixture = await seedChatThread("Launch plan");
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });

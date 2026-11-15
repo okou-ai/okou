@@ -7,8 +7,8 @@ import { publicChatActor } from "./helpers/public-chat-actor";
 
 const context = testContext();
 
-describe("Runner claim home-reuse context", () => {
-  it("distinguishes current input, earlier Runs and another thread through public claims", async () => {
+describe("Execution home-reuse context", () => {
+  it("distinguishes current input, earlier Runs and another thread through dispatched input", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const {
@@ -25,7 +25,7 @@ describe("Runner claim home-reuse context", () => {
         prompt: "first home-reuse context",
       });
       const firstExecution = await executionInput(first.runId);
-      // The first prompt is already attributed to this Run when claim reads it.
+      // The first prompt is already attributed to this Run during preparation.
       expect(firstExecution).toMatchObject({ isFirstRun: true });
       await webhooks.requestAgentComplete(
         { runId: first.runId, exitCode: 0 },

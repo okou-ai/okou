@@ -26,7 +26,7 @@ struct OrphanedActiveRunState {
     retained_budget: Option<crate::resource_budget::BudgetLease>,
 }
 
-/// Claimed runs whose outer task is gone but whose sandbox ownership is uncertain.
+/// Runs whose outer task is gone but whose sandbox ownership is uncertain.
 #[derive(Clone, Default)]
 pub struct OrphanedActiveRuns {
     inner: Arc<Mutex<BTreeMap<RunId, OrphanedActiveRunState>>>,

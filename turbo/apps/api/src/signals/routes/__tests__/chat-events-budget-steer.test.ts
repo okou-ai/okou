@@ -44,7 +44,7 @@ async function startBudgetRun(app: Awaited<ReturnType<typeof setupApp>>) {
   const execution = await runExecution(active.runId);
   const run = await api.readRun(actor, active.runId);
   if (!run.startedAt) {
-    throw new Error("Expected the claimed run's public start time");
+    throw new Error("Expected the dispatched Run's public start time");
   }
   const startedAt = Date.parse(run.startedAt);
   return {
@@ -52,7 +52,7 @@ async function startBudgetRun(app: Awaited<ReturnType<typeof setupApp>>) {
     agentId,
     runnerGroup,
     active,
-    claimed: execution,
+    receivedExecution: execution,
     startedAt,
     requestBudgetSweep,
   };
@@ -62,7 +62,8 @@ async function startRunAtBudgetBoundary(
   app: Awaited<ReturnType<typeof setupApp>>,
 ) {
   const started = await startBudgetRun(app);
-  const { actor, active, claimed, startedAt, requestBudgetSweep } = started;
+  const { actor, active, receivedExecution, startedAt, requestBudgetSweep } =
+    started;
   mockNow(startedAt + STEER_AT_MS - 1);
   await requestBudgetSweep();
   expect(
@@ -96,7 +97,10 @@ async function startRunAtBudgetBoundary(
   const prompt = chatEventDisplayText(budget);
   expect(prompt).toContain("leaving approximately 5 minutes");
   await expect(
-    api.nextSteerableInput(claimed.execution.sandboxToken, active.runId),
+    api.nextSteerableInput(
+      receivedExecution.execution.sandboxToken,
+      active.runId,
+    ),
   ).resolves.toStrictEqual({ input: { eventId: budget.id, prompt } });
   return {
     ...started,
@@ -113,9 +117,9 @@ describe("run-targeted time budget steering through HTTP", () => {
       routes: cronSteerRunTimeBudgetRoutes,
       isolatePg: true,
     });
-    const { actor, active, claimed, startedAt, requestBudgetSweep } =
+    const { actor, active, receivedExecution, startedAt, requestBudgetSweep } =
       await startBudgetRun(app);
-    await completeChatRunOk(active.runId, claimed.sandboxHeaders);
+    await completeChatRunOk(active.runId, receivedExecution.sandboxHeaders);
     await flushWaitUntilForTest();
     mockNow(startedAt + STEER_AT_MS);
     await requestBudgetSweep();
@@ -137,9 +141,9 @@ describe("run-targeted time budget steering through HTTP", () => {
       routes: cronSteerRunTimeBudgetRoutes,
       isolatePg: true,
     });
-    const { actor, active, claimed, budget } =
+    const { actor, active, receivedExecution, budget } =
       await startRunAtBudgetBoundary(app);
-    const token = claimed.execution.sandboxToken;
+    const token = receivedExecution.execution.sandboxToken;
     await expect(
       api.declareSteeredInput(token, active.runId, budget.id),
     ).resolves.toStrictEqual({ outcome: "steered" });
@@ -166,7 +170,7 @@ describe("run-targeted time budget steering through HTTP", () => {
         return event.eventType === "input.budget";
       }),
     ).toHaveLength(2);
-    await cancelChatRun(actor, active.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, active.runId, receivedExecution.sandboxHeaders);
   }, 90_000);
 
   it("revokes an unsteered warning at completion and never gives it to the next run", async () => {
@@ -175,9 +179,9 @@ describe("run-targeted time budget steering through HTTP", () => {
       routes: cronSteerRunTimeBudgetRoutes,
       isolatePg: true,
     });
-    const { actor, agentId, runnerGroup, active, claimed, budget } =
+    const { actor, agentId, runnerGroup, active, receivedExecution, budget } =
       await startRunAtBudgetBoundary(app);
-    await completeChatRunOk(active.runId, claimed.sandboxHeaders);
+    await completeChatRunOk(active.runId, receivedExecution.sandboxHeaders);
     await flushWaitUntilForTest();
     const completed = (await chat.listThreadEvents(actor, active.threadId))
       .events;

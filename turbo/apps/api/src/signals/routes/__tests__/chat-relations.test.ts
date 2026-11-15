@@ -48,14 +48,15 @@ async function sourceFixture() {
   return {
     ...fixture,
     source,
-    claimed: execution,
+    receivedExecution: execution,
     token: okouTokenFromExecution(execution.execution),
   };
 }
 
 describe("chat relationships", () => {
   it("returns all created chats once without inferring human-created children", async () => {
-    const { actor, agentId, source, claimed, token } = await sourceFixture();
+    const { actor, agentId, source, receivedExecution, token } =
+      await sourceFixture();
     const createdIds: string[] = [];
     for (let index = 0; index < 51; index++) {
       const clientThreadId = randomUUID();
@@ -105,7 +106,7 @@ describe("chat relationships", () => {
       [200],
     );
     expect(messages.body.items).toStrictEqual([]);
-    await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, source.runId, receivedExecution.sandboxHeaders);
   });
 
   it("records both directions between existing chats and attributes only consumed messages", async () => {
@@ -113,7 +114,7 @@ describe("chat relationships", () => {
       actor,
       agentId,
       source,
-      claimed,
+      receivedExecution,
       token,
       runExecution,
       requestSendEventWithBearer,
@@ -182,12 +183,12 @@ describe("chat relationships", () => {
       })?.userMessage?.parts,
     ).toContainEqual({ type: "text", text: send.prompt });
     await api.declareSteeredInput(
-      claimed.execution.sandboxToken,
+      receivedExecution.execution.sandboxToken,
       source.runId,
       replyId,
     );
     await api.declareSteeredInput(
-      claimed.execution.sandboxToken,
+      receivedExecution.execution.sandboxToken,
       source.runId,
       replyId,
     );
@@ -279,7 +280,7 @@ describe("chat relationships", () => {
     );
     expect(children.body.items).toStrictEqual([]);
     await cancelChatRun(actor, peerRunId, peerExecution.sandboxHeaders);
-    await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, source.runId, receivedExecution.sandboxHeaders);
   });
 
   it.each([
@@ -298,7 +299,7 @@ describe("chat relationships", () => {
       actor,
       agentId,
       source,
-      claimed,
+      receivedExecution,
       token,
       requestSendEventWithBearer,
     } = await sourceFixture();
@@ -395,7 +396,7 @@ describe("chat relationships", () => {
         ).size,
       ).toBeGreaterThan(1);
     }
-    await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, source.runId, receivedExecution.sandboxHeaders);
   });
 
   it("records implicit creation and enforces user and organization boundaries", async () => {
@@ -403,7 +404,7 @@ describe("chat relationships", () => {
       actor,
       agentId,
       source,
-      claimed,
+      receivedExecution,
       token,
       requestSendEventWithBearer,
     } = await sourceFixture();
@@ -464,6 +465,6 @@ describe("chat relationships", () => {
       }),
       [404],
     );
-    await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, source.runId, receivedExecution.sandboxHeaders);
   });
 });

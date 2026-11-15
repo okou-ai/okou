@@ -1543,7 +1543,7 @@ test("rejects an inline login on a host needing rebind until a transport is expl
 describe("protected host writes with authorized Runner authority", () => {
   afterEach(ordinary.cleanup);
 
-  async function claimedHost() {
+  async function executionHost() {
     const owner = await actor();
     const runtime = await ordinary.runtime(owner);
     const shared = await sharedConfig(owner);
@@ -1572,7 +1572,7 @@ describe("protected host writes with authorized Runner authority", () => {
   function rotateResource(
     resource: "network" | "login",
     fixture: Pick<
-      Awaited<ReturnType<typeof claimedHost>>,
+      Awaited<ReturnType<typeof executionHost>>,
       "owner" | "shared" | "host"
     >,
   ) {
@@ -1743,7 +1743,7 @@ describe("protected host writes with authorized Runner authority", () => {
   );
 
   it("preserves pin and observation authority across a concurrent metadata-only rename without rotating credentials", async () => {
-    const { owner, shared, host, runner, request } = await claimedHost();
+    const { owner, shared, host, runner, request } = await executionHost();
     const member = await actor(owner.orgId, "member");
     await accept(createHost(member, shared.id), [201]);
     const beforeOther = (
@@ -1844,7 +1844,7 @@ describe("protected host writes with authorized Runner authority", () => {
   });
 
   it("rejects an edit delayed at KMS after Runner learns trust, without replacing the pin or leaving an inline login", async () => {
-    const { owner, shared, host, runner, request } = await claimedHost();
+    const { owner, shared, host, runner, request } = await executionHost();
     const beforeLogins = (
       await accept(credentials().list({ headers: owner.headers }), [200])
     ).body;
@@ -1945,7 +1945,7 @@ describe("protected host writes with authorized Runner authority", () => {
   it.each(["create", "rebind"] as const)(
     "publishes a %s binding with a shared login while another host records Runner authority",
     async (operation) => {
-      const { owner, shared, host, runner, request } = await claimedHost();
+      const { owner, shared, host, runner, request } = await executionHost();
       const credentialId = credentialBackedSshHost(host).credentialId;
       const body = {
         id: randomUUID(),
@@ -2048,7 +2048,7 @@ describe("protected host writes with authorized Runner authority", () => {
   );
 
   it("notifies the affected Runner after reviewed deletion and preserves the detached Host", async () => {
-    const { owner, shared, host, runner, request } = await claimedHost();
+    const { owner, shared, host, runner, request } = await executionHost();
     const admin = await actor(owner.orgId);
     const impact = (
       await accept(
@@ -2107,7 +2107,7 @@ describe("protected host writes with authorized Runner authority", () => {
   it.each(["network", "login"] as const)(
     "commits %s rotation completely or rejects concurrent Runner authority before a fresh request",
     async (resource) => {
-      const fixture = await claimedHost();
+      const fixture = await executionHost();
       const { owner, shared, host, runner, request } = fixture;
       const second = (
         await accept(

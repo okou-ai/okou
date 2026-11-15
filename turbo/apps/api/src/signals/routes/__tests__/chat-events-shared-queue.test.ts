@@ -230,9 +230,9 @@ describe("CHAT-02: shared user message queue", () => {
       }),
     ).toBeTruthy();
 
-    const claimedRun = await runExecution(runId);
-    expect(claimedRun.execution.apiStartTime).toBe(apiStartedAt);
-    expect(claimedRun.execution.prompt).toBe(
+    const receivedExecution = await runExecution(runId);
+    expect(receivedExecution.execution.apiStartTime).toBe(apiStartedAt);
+    expect(receivedExecution.execution.prompt).toBe(
       `queue-first [direct dispatch](/chats/${referencedThreadId})`,
     );
 
@@ -513,9 +513,9 @@ describe("CHAT-02: shared user message queue", () => {
       agentId,
       prompt: "delegate work to other chat threads",
     });
-    const { execution: sourceClaim, sandboxHeaders: sourceSandboxHeaders } =
+    const { execution: sourceExecution, sandboxHeaders: sourceSandboxHeaders } =
       await runExecution(source.runId);
-    const sourceToken = okouTokenFromExecution(sourceClaim);
+    const sourceToken = okouTokenFromExecution(sourceExecution);
 
     const firstEventId = randomUUID();
     const firstSend = await requestSendEventWithBearer(
@@ -755,9 +755,9 @@ describe("CHAT-02: shared user message queue", () => {
       agentId,
       prompt: "delegate into existing chat threads",
     });
-    const { execution: sourceClaim, sandboxHeaders: sourceSandboxHeaders } =
+    const { execution: sourceExecution, sandboxHeaders: sourceSandboxHeaders } =
       await runExecution(source.runId);
-    const sourceToken = okouTokenFromExecution(sourceClaim);
+    const sourceToken = okouTokenFromExecution(sourceExecution);
 
     const rotatedAnchorPrompt = "prior Web round before an agent rotation";
     const rotatedAnchor = await sendChatRun(actor, {
@@ -904,16 +904,12 @@ describe("CHAT-02: shared user message queue", () => {
     const blockedTarget = await chat.createThread(actor, { agentId });
     // The thirty-two-hop limit is reached through thirty-one ordinary hops,
     // then the last allowed delegation below. No budget row is injected.
-    const { run: root, execution: rootClaim } = await callerAtDelegationDepth(
-      actor,
-      agentId,
-      runnerGroup,
-      31,
-    );
+    const { run: root, execution: rootExecution } =
+      await callerAtDelegationDepth(actor, agentId, runnerGroup, 31);
 
     const delegatedEventId = randomUUID();
     const delegated = await requestSendEventWithBearer(
-      okouTokenFromExecution(rootClaim.execution),
+      okouTokenFromExecution(rootExecution.execution),
       {
         agentId,
         clientEventId: delegatedEventId,
@@ -932,7 +928,7 @@ describe("CHAT-02: shared user message queue", () => {
       delegatedEventId,
     );
 
-    await completeChatRunOk(root.runId, rootClaim.sandboxHeaders);
+    await completeChatRunOk(root.runId, rootExecution.sandboxHeaders);
     await flushWaitUntilForTest();
     const delegatedExecution = await runExecution(delegatedRunId);
 
@@ -1577,7 +1573,7 @@ describe("CHAT-02: shared user message queue", () => {
       [201],
     );
 
-    // Cancellation is public immediately, but a claimed run keeps the thread
+    // Cancellation is public immediately, but a dispatched Run keeps the thread
     // barrier until the runner reports cancellation recovery.
     await api.requestCancelRun(actor, anchor.runId, [200]);
     await waitForRunStatus(actor, anchor.runId, "cancelled");

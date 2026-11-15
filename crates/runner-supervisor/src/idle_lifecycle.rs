@@ -266,7 +266,7 @@ impl IdleDestroyTracker {
         }
     }
 
-    /// Recover original claim/resource owners only after joined shutdown.
+    /// Recover original job/resource owners only after joined shutdown.
     /// Taking custody supplies neither physical credit nor completion proof.
     pub fn take_retained_finalizing_owners(
         &self,
@@ -402,7 +402,7 @@ pub struct IdlePressureOutcome {
 /// A reuse reservation paired with the idle snapshot captured by the pool
 /// mutation or direct handoff. Its reservation retains the parked/running
 /// distinction so cancellation cannot restore a running sandbox to the pool.
-/// Claimed activation can publish ownership without reacquiring the pool.
+/// Job activation can publish ownership without reacquiring the pool.
 pub struct ReservedIdleActivation {
     reservation: Box<ReservedIdleSandbox>,
     idle_snapshot: IdlePoolSnapshot,
@@ -484,7 +484,7 @@ pub async fn reserve_exact_idle_for_spawn(
     Ok(ReservedIdleActivation::new(reservation, snapshot))
 }
 
-/// Restore an unconsumed claim reservation, publish the post-restore snapshot,
+/// Restore an unconsumed idle reservation, publish the post-restore snapshot,
 /// and finish any rejected or replaced sandbox destruction before notifying.
 pub async fn rollback_reserved_idle_for_spawn(
     reservation: ReservedIdleActivation,
@@ -544,7 +544,7 @@ impl RetiringIdleEntry {
 /// consumed. Resource-budget substitution takes only its short synchronous
 /// mutex inside that pool lock and never carries a guard across an await. Every
 /// evicted payload obtains tracked cleanup ownership before the final pool
-/// snapshot is captured. The caller owns publication so pre-claim acceptance
+/// snapshot is captured. The caller owns publication so job acceptance
 /// can register it independently without waiting for status state or IO.
 pub async fn select_idle_entries_for_pressure(
     idle_pool: &SharedIdlePool,

@@ -144,7 +144,7 @@ describe("thread connector selection", () => {
       sourceId: runtimeConnection.id,
     });
     // The active run keeps its own account snapshot, but queued input must
-    // observe thread selections at its later successful claim, not enqueue.
+    // observe thread selections during its later successful preparation.
     const waiting = await sendWaitingChatInput(actor, {
       agentId,
       threadId: thread.id,

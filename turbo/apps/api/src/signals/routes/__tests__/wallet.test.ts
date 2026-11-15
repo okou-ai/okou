@@ -85,7 +85,7 @@ async function carrier(existingActor?: ApiTestUser, unattended = false) {
   const execution = await api.executionInput(run.runId);
   const token = execution.platformEnvironment.OKOU_TOKEN;
   if (!token) {
-    throw new Error("Missing claimed run token");
+    throw new Error("Missing dispatched Run token");
   }
   let completed = false;
   onTestFinished(async () => {

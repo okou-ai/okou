@@ -386,7 +386,7 @@ async fn send_heartbeat(
     // Preserve the pre-transfer producer even if filtering observes its
     // resolved state; the next snapshot will advertise the parked sandbox.
     state.held_sandbox_states =
-        filter_current_held_sandbox_states(state.held_sandbox_states, &hb.active_runs, None);
+        filter_current_held_sandbox_states(state.held_sandbox_states, &hb.active_runs);
     producers.extend(hb.active_runs.active_reuse_producers());
     producers.sort_unstable_by_key(|entry| entry.run_id);
     producers.dedup_by_key(|entry| entry.run_id);
@@ -394,7 +394,7 @@ async fn send_heartbeat(
     state.active_reuse_producers = producers;
     let inventory_observed_states = refresh.states.len();
     state.held_home_states = filter_home_states_for_profiles(
-        filter_current_held_home_states(refresh.states, &hb.active_runs, None),
+        filter_current_held_home_states(refresh.states, &hb.active_runs),
         &hb.base.profiles,
     );
     if let Some(reporter) = &hb.sandbox_op_reporter {
@@ -511,12 +511,8 @@ fn filter_home_states_for_profiles(
 fn filter_current_held_sandbox_states(
     states: Vec<HeldSandboxState>,
     active_runs: &ActiveRuns,
-    extra_active_reuse_key: Option<&str>,
 ) -> Vec<HeldSandboxState> {
-    let mut active_reuse_keys = active_runs.reuse_keys();
-    if let Some(reuse_key) = extra_active_reuse_key {
-        active_reuse_keys.insert(reuse_key.to_owned());
-    }
+    let active_reuse_keys = active_runs.reuse_keys();
     let mut states = states
         .into_iter()
         .filter(|state| !active_reuse_keys.contains(&state.reuse_key))

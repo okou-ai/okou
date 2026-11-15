@@ -53,14 +53,14 @@ function createIndicatorCredentials() {
   }
 
   return {
-    claim: readExecution,
+    executionInput: readExecution,
     register(actor: ApiTestUser, owner: ReturnType<typeof publicRunOwner>) {
       owners.set(actorKey(actor), owner);
     },
     token(actor: ApiTestUser) {
       const token = tokens.get(actorKey(actor));
       if (!token) {
-        throw new Error("Expected a previously claimed Run");
+        throw new Error("Expected a previously dispatched Run");
       }
       return token;
     },
@@ -141,11 +141,14 @@ async function createCancelledThread(args: {
     prompt: args.prompt,
     model: "claude-fable-5-1",
   });
-  const claim = await indicatorCredentials.claim(args.actor, sent.runId);
+  const executionInput = await indicatorCredentials.executionInput(
+    args.actor,
+    sent.runId,
+  );
   await api.requestCancelRun(args.actor, sent.runId, [200]);
   await createWebhookCallbackApi(context).requestAgentComplete(
     { runId: sent.runId, exitCode: 1, error: "Run cancelled" },
-    { authorization: `Bearer ${claim.sandboxToken}` },
+    { authorization: `Bearer ${executionInput.sandboxToken}` },
     [200],
   );
   await flushWaitUntilForTest();
@@ -341,7 +344,7 @@ describe("GET /api/indicators", () => {
       prompt: "Visible active indicator",
     });
 
-    await indicatorCredentials.claim(actor, visible.runId);
+    await indicatorCredentials.executionInput(actor, visible.runId);
 
     for (let index = 0; index < 50; index += 1) {
       await chat.sendAndLaunch(actor, {

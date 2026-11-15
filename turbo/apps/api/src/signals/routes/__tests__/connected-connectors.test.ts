@@ -106,7 +106,7 @@ test.each(["PAT", "Run"] as const)(
     }
 
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    // Saving accounts after issuance does not add them to an already claimed Run.
+    // Saving accounts after issuance does not add them to an already dispatched Run.
     await accept(
       app(builtinConnectorManualGrantContract).connect({
         headers,

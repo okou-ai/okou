@@ -9,7 +9,7 @@ const context = testContext();
 const fixture = createChatEventsFixture(context);
 
 describe("captured My Okou execution guidance", () => {
-  it("keeps fixed identity and personal scope through claim after a live flag change", async () => {
+  it("keeps fixed identity and personal scope through dispatch after a live flag change", async () => {
     const owned = await publicChatActor(context);
     const { actor } = owned;
     if (!actor.orgId) {

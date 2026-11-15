@@ -583,11 +583,13 @@ describe("Discord file authorization and input validation", () => {
 
   it("requires native read or write capability for sandbox requests", async () => {
     const actor = await actorSession();
-    const { execution: claim } = await launchPublicDiscordTestRun(
+    const { execution: receivedExecution } = await launchPublicDiscordTestRun(
       context,
       actor,
     );
-    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+    const headers = {
+      authorization: `Bearer ${receivedExecution.sandboxToken}`,
+    };
     const client = fileClients();
     const upload = await accept(
       client.init({ headers, body: uploadBody() }),
@@ -1076,7 +1078,9 @@ describe("Canonical Discord file publication and delivery", () => {
       const execution = await runs.executionInput(sent.runId);
       const token = execution.platformEnvironment.OKOU_TOKEN;
       if (!token) {
-        throw new Error("Expected the Runner claim to issue an Okou run token");
+        throw new Error(
+          "Expected the Runner execution to issue an Okou run token",
+        );
       }
       const headers = { authorization: `Bearer ${token}` };
       const body = uploadBody({ channelId: fixture.channelId });
@@ -1494,7 +1498,9 @@ describe("Canonical Discord file publication and delivery", () => {
     const execution = await runs.executionInput(sent.runId);
     const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
-      throw new Error("Expected the Runner claim to issue an Okou run token");
+      throw new Error(
+        "Expected the Runner execution to issue an Okou run token",
+      );
     }
     const headers = { authorization: `Bearer ${token}` };
     const upload = await canonicalUpload({ ...fixture, headers });
@@ -1569,7 +1575,9 @@ describe("Canonical Discord file publication and delivery", () => {
     const execution = await runs.executionInput(input.runId);
     const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
-      throw new Error("Expected the Runner claim to issue an Okou run token");
+      throw new Error(
+        "Expected the Runner execution to issue an Okou run token",
+      );
     }
     const headers = { authorization: `Bearer ${token}` };
     const fixture: BoundFixture = {

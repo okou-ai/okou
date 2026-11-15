@@ -50,7 +50,7 @@ async function fundedFreeRuns() {
       visibility: "private",
     });
 
-    async function claimRun(prompt: string) {
+    async function startRunExecution(prompt: string) {
       const run = await runs.createThreadRun(actor, {
         agentId: agent.agentId,
         model: null,
@@ -67,8 +67,10 @@ async function fundedFreeRuns() {
       };
     }
 
-    const active = await claimRun("Keep using managed services");
-    const peer = await claimRun("Complete and settle shared credit usage");
+    const active = await startRunExecution("Keep using managed services");
+    const peer = await startRunExecution(
+      "Complete and settle shared credit usage",
+    );
     const encryptedSecrets = active.execution.encryptedSecrets;
     if (!encryptedSecrets) {
       throw new Error("Expected the real managed Run's encrypted secrets");

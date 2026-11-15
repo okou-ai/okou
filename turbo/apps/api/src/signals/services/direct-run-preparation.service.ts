@@ -32,7 +32,7 @@ import {
   executionWorkflowSelectionSql,
 } from "./execution-workflow-selection";
 
-/** Retained result of this graph's own durable admission, never a stored payload. */
+/** Receipt from this graph's durable Run admission. */
 export interface AdmittedRunLaunch {
   readonly run: ExecutionPublicationRun;
   readonly executionContext: ExecutionInput;

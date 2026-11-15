@@ -225,8 +225,8 @@ async function launchedRunIds(
   });
 }
 
-/** The Runner claims a run and reports a failed exit with its own token. */
-async function failClaimedRun(
+/** The Runner executions a run and reports a failed exit with its own token. */
+async function failExecutionRun(
   runnerGroup: string,
   runId: string | undefined,
 ): Promise<void> {
@@ -352,13 +352,13 @@ describe("Teams route ownership through public ingress", () => {
 
     // The first run ends through the Runner, which launches the queued second
     // input; its terminal reply follows the conversation's new destination.
-    await failClaimedRun(
+    await failExecutionRun(
       runnerGroup,
       (await launchedRunIds(fixture, threadId))[0],
     );
     const launched = await launchedRunIds(fixture, threadId);
     expect(launched).toHaveLength(2);
-    await failClaimedRun(runnerGroup, launched[1]);
+    await failExecutionRun(runnerGroup, launched[1]);
 
     const secondActivity = encodeURIComponent(
       `${fixture.fixtureId}-second personal message`,

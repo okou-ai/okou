@@ -124,7 +124,7 @@ async function configureResponsesWithOwnedRuns(args: {
     }
   }
 
-  // These selected callbacks own every main Run before its first claim. This
+  // These selected callbacks own every main Run before its first dispatch. This
   // hook and the producer hook both finish Runs before releasing model state.
   const operations = createFixtureOperationOwner(
     async () => {

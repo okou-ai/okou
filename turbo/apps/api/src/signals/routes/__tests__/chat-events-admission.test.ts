@@ -49,8 +49,8 @@ const {
   sessionHeaders,
 } = createChatEventsFixture(context);
 
-// These sends observe claimable native Runner runs; Sonnet's Pi route can
-// finish API-first before the Runner claim, cancel, and callback steps run.
+// These sends observe native Runner execution runs; Sonnet's Pi route can
+// finish API-first before the Runner execution, cancel, and callback steps run.
 async function entitledChatActor() {
   const result = await createEntitledChatActor();
   await api.ensurePersonalSubscriptionModel(result.actor, {
@@ -118,9 +118,12 @@ describe("CHAT-02: on-demand member memory initialization", () => {
         prompt: "run after on-demand memory initialization",
       });
       expect(launched.runId).toStrictEqual(expect.any(String));
-      const claim = await lifecycle.executionInput(member, launched.runId);
+      const receivedExecution = await lifecycle.executionInput(
+        member,
+        launched.runId,
+      );
       const memory = expectCanonicalStorageManifest(
-        claim.storageManifest,
+        receivedExecution.storageManifest,
       )?.storageMounts.find((mount) => {
         return mount.name === "memory";
       });

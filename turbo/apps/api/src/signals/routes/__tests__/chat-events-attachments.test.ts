@@ -70,8 +70,8 @@ const {
   requestSendEventRaw,
 } = createChatEventsFixture(context);
 
-// These sends observe claimable native Runner runs; Sonnet's Pi route can
-// finish API-first before the Runner claim, cancel, and callback steps run.
+// These sends observe native Runner execution runs; Sonnet's Pi route can
+// finish API-first before the Runner execution, cancel, and callback steps run.
 async function entitledChatActor() {
   const result = await createEntitledChatActor();
   await api.updateUserModelPreference(result.actor, "claude-fable-5-1");

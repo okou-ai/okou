@@ -127,7 +127,7 @@ describe("CHAT-02: run-level model overrides", () => {
   });
 
   describe("final subscription authority", () => {
-    async function claimPreparedSubscription() {
+    async function prepareSubscriptionExecution() {
       const { actor, agentId } = await entitledChatActor();
       const identity = `held-subscription-${randomUUID()}`;
       const captured = await configureSubscriptionPiModel(actor, {
@@ -150,7 +150,7 @@ describe("CHAT-02: run-level model overrides", () => {
     it.each(["connected invalid_grant", "retained terminal refresh"] as const)(
       "rejects %s acquired after preparation without refreshing again",
       async (failure) => {
-        const f = await claimPreparedSubscription();
+        const f = await prepareSubscriptionExecution();
         if (failure === "retained terminal refresh") {
           await authDeviceSupport.deletePersonalModelProviderAccount(
             f.actor,
@@ -399,7 +399,7 @@ describe("CHAT-02: run-level model overrides", () => {
         });
     }),
   )(
-    "promotes queued and immediate $name Fast from $origin into the runner claim",
+    "promotes queued and immediate $name Fast from $origin into the Runner execution",
     async ({ route, origin }) => {
       const owned = await publicChatActor(context);
       const { actor, agentId } = owned;
@@ -421,7 +421,7 @@ describe("CHAT-02: run-level model overrides", () => {
         const sourceExecution = await owned.runExecution(source.runId);
         const token = sourceExecution.execution.platformEnvironment.OKOU_TOKEN;
         if (!token) {
-          throw new Error("Expected a claimed agent token");
+          throw new Error("Expected an execution agent token");
         }
         await configureUserOwnedGptPiModel(actor, route);
         mockPiResourceArchiveDownloads();
