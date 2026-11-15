@@ -753,15 +753,16 @@ async fn ultrawide_zrle_retains_the_previous_memory_bound() {
     )
     .await;
     assert_eq!(client.pixels().unwrap().len(), 8_388_608 * 4);
+    // Compare every decoded RGBA byte with one independently constructed row.
+    let expected_row = RED.repeat(8192);
     assert!(
         client
             .pixels()
             .unwrap()
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .all(|pixel| *pixel == RED)
+            .chunks(expected_row.len())
+            .all(|row| row == expected_row)
     );
+    drop(expected_row);
     let (current, peak) = client.memory_usage();
     assert!(current >= initial);
     assert!(current <= peak);
