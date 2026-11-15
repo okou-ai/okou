@@ -49,6 +49,7 @@ internal class ControlledUpdates : UpdateService {
     var progress: ((Long) -> Unit)? = null
     var recoverFailure: UpdateProblem? = null
     var heldRecovery: CompletableDeferred<Unit>? = null
+    val downloadedReleases = mutableListOf<AndroidUpdatesRelease>()
 
     override suspend fun check(): AndroidUpdates {
         checks++
@@ -57,13 +58,14 @@ internal class ControlledUpdates : UpdateService {
         return response
     }
 
-    override suspend fun recover(release: AndroidUpdatesRelease?): File? {
+    override suspend fun recover(release: AndroidUpdatesRelease): File? {
         heldRecovery?.await()
         recoverFailure?.let { throw UpdateException(it) }
         return downloaded
     }
 
     override suspend fun download(release: AndroidUpdatesRelease, progress: (Long) -> Unit): File {
+        downloadedReleases += release
         this.progress = progress
         return transfer.await().also { downloaded = it }
     }
@@ -73,6 +75,181 @@ internal class ControlledUpdates : UpdateService {
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppUpdatesTest {
+    @Test
+    fun pendingRecoveryDoesNotAnnounceADifferentDownloadCandidate() = runTest {
+        val store = MemoryUpdateStore()
+        val original = ControlledUpdates().apply { transfer.complete(File("verified.apk")) }
+        AppUpdates(original, store, "0.12.0", 35, StandardTestDispatcher(testScheduler)).use { owner
+            ->
+            owner.check()
+            advanceUntilIdle()
+            owner.download(updateRelease())
+            advanceUntilIdle()
+            original.response = AndroidUpdates(null, updateRelease("0.14.0"))
+            owner.check()
+            advanceUntilIdle()
+        }
+        runCurrent()
+        val saved = checkNotNull(store.record)
+        for (complete in listOf(false, true)) {
+            val recovery =
+                ControlledUpdates().apply {
+                    if (complete) downloaded = File("verified.apk")
+                    heldRecovery = CompletableDeferred()
+                }
+            AppUpdates(
+                    recovery,
+                    MemoryUpdateStore(saved),
+                    "0.12.0",
+                    35,
+                    StandardTestDispatcher(testScheduler),
+                )
+                .use { owner ->
+                    runCurrent()
+                    assertTrue(owner.state.value.preparing)
+                    assertFalse(owner.state.value.announce)
+                    assertFalse(owner.state.value.canDownload)
+                    assertFalse(owner.state.value.canInstall)
+                    assertEquals("0.13.0", owner.state.value.displayedRelease!!.version)
+                    assertEquals("0.14.0", owner.state.value.candidate!!.version)
+                    owner.download(updateRelease("0.14.0"))
+                    owner.cancelDownload(updateRelease())
+                    owner.defer(updateRelease())
+                    assertNull(owner.installationFile(updateRelease()))
+                    runCurrent()
+                    assertTrue(owner.state.value.preparing)
+                    assertTrue(recovery.downloadedReleases.isEmpty())
+                    recovery.heldRecovery!!.complete(Unit)
+                    advanceUntilIdle()
+                    assertFalse(owner.state.value.preparing)
+                    assertTrue(recovery.downloadedReleases.isEmpty())
+                    if (complete) {
+                        assertEquals(
+                            UpdateTransfer.Ready(updateRelease()),
+                            owner.state.value.transfer,
+                        )
+                        assertTrue(owner.state.value.canInstall)
+                        assertEquals("0.13.0", owner.state.value.displayedRelease!!.version)
+                        assertNull(owner.installationFile(updateRelease("0.14.0")))
+                        assertEquals(File("verified.apk"), owner.installationFile(updateRelease()))
+                    } else {
+                        assertEquals(UpdateTransfer.Interrupted, owner.state.value.transfer)
+                        assertTrue(owner.state.value.canDownload)
+                        assertEquals("0.14.0", owner.state.value.displayedRelease!!.version)
+                        owner.download(updateRelease("0.14.0"))
+                        runCurrent()
+                        assertEquals(listOf(updateRelease("0.14.0")), recovery.downloadedReleases)
+                    }
+                }
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun restoredDiscoveryRetainsSuccessWhenAutomaticCheckIsThrottled() = runTest {
+        val store = MemoryUpdateStore()
+        val original =
+            ControlledUpdates().apply { response = AndroidUpdates(null, updateRelease("0.12.0")) }
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        var now = 100_000L
+        AppUpdates(original, store, "0.12.0", 35, dispatcher, { now }).use { owner ->
+            owner.check(false)
+            advanceUntilIdle()
+            assertEquals(UpdateCheck.Checked, owner.state.value.check)
+        }
+        runCurrent()
+        val service = ControlledUpdates()
+        AppUpdates(service, store, "0.12.0", 35, dispatcher, { now }).use { owner ->
+            owner.check(false)
+            advanceUntilIdle()
+            assertEquals(0, service.checks)
+            assertEquals(UpdateCheck.Checked, owner.state.value.check)
+            assertFalse(owner.state.value.available)
+            now += 86_400_000
+            service.heldCheck = CompletableDeferred()
+            service.failCheck = true
+            owner.check(false)
+            runCurrent()
+            assertEquals(1, service.checks)
+            assertEquals(UpdateCheck.Checking, owner.state.value.check)
+            service.heldCheck!!.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(UpdateCheck.Failed, owner.state.value.check)
+        }
+        runCurrent()
+    }
+
+    @Test
+    fun invalidRecoveredPackageFinishesPreparationAndRetainsRequiredPolicy() = runTest {
+        val selected = updateRelease()
+        val latest = updateRelease("0.14.0")
+        val recovery =
+            ControlledUpdates().apply {
+                heldRecovery = CompletableDeferred()
+                recoverFailure = UpdateProblem.Integrity
+            }
+        val store =
+            MemoryUpdateStore(
+                UpdateRecord(
+                    "0.12.0",
+                    AndroidUpdates(null, latest),
+                    true,
+                    "0.13.0",
+                    target = selected,
+                )
+            )
+        AppUpdates(recovery, store, "0.12.0", 35, StandardTestDispatcher(testScheduler)).use { owner
+            ->
+            runCurrent()
+            assertTrue(owner.state.value.preparing)
+            assertTrue(owner.state.value.required)
+            recovery.heldRecovery!!.complete(Unit)
+            advanceUntilIdle()
+            assertFalse(owner.state.value.preparing)
+            assertTrue(owner.state.value.required)
+            assertEquals(UpdateProblem.Integrity, owner.state.value.problem)
+            assertTrue(owner.state.value.canDownload)
+            assertFalse(owner.state.value.canInstall)
+            owner.download(latest)
+            runCurrent()
+            assertEquals(listOf(latest), recovery.downloadedReleases)
+        }
+        runCurrent()
+    }
+
+    @Test
+    fun actionsFromAnOlderPresentationCannotChangeTheCurrentPackage() = runTest {
+        val old = updateRelease()
+        val latest = updateRelease("0.14.0")
+        val service = ControlledUpdates()
+        val store = MemoryUpdateStore()
+        AppUpdates(service, store, "0.12.0", 35, StandardTestDispatcher(testScheduler)).use { owner
+            ->
+            owner.check()
+            advanceUntilIdle()
+            service.response = AndroidUpdates(null, latest)
+            owner.check()
+            advanceUntilIdle()
+            owner.download(old)
+            owner.defer(old)
+            runCurrent()
+            assertTrue(service.downloadedReleases.isEmpty())
+            assertNull(owner.state.value.deferred)
+            owner.download(latest)
+            runCurrent()
+            owner.cancelDownload(old)
+            assertEquals(UpdateTransfer.Downloading(latest), owner.state.value.transfer)
+            service.transfer.complete(File("latest.apk"))
+            advanceUntilIdle()
+            assertNull(owner.installationFile(old))
+            owner.installFailed(old)
+            assertNull(owner.state.value.problem)
+            assertEquals(File("latest.apk"), owner.installationFile(latest))
+            assertEquals(latest, store.record!!.target)
+        }
+        runCurrent()
+    }
+
     @Test
     fun discoveryRetainsActiveTransfersAndRetriesTheLatestReleaseAfterFailure() = runTest {
         val service = ControlledUpdates()
@@ -87,29 +264,29 @@ class AppUpdatesTest {
         try {
             owner.check()
             advanceUntilIdle()
-            owner.download()
+            owner.download(updateRelease())
             runCurrent()
             service.response = AndroidUpdates(null, updateRelease("0.14.0"))
             owner.check()
             advanceUntilIdle()
-            assertEquals("0.13.0", owner.state.value.release!!.version)
-            assertEquals(UpdateTransfer.Downloading, owner.state.value.transfer)
+            assertEquals("0.13.0", owner.state.value.displayedRelease!!.version)
+            assertTrue(owner.state.value.transfer is UpdateTransfer.Downloading)
             service.transfer.completeExceptionally(IOException("The old download is unavailable"))
             advanceUntilIdle()
             assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
-            assertEquals("0.14.0", owner.state.value.release!!.version)
+            assertEquals("0.14.0", owner.state.value.displayedRelease!!.version)
             service.transfer = CompletableDeferred()
-            owner.download()
+            owner.download(updateRelease("0.14.0"))
             runCurrent()
-            assertEquals("0.14.0", owner.state.value.target!!.version)
-            assertEquals(UpdateTransfer.Downloading, owner.state.value.transfer)
+            assertEquals("0.14.0", owner.state.value.selectedRelease!!.version)
+            assertTrue(owner.state.value.transfer is UpdateTransfer.Downloading)
             service.transfer.complete(File("new.apk"))
             advanceUntilIdle()
             service.response = AndroidUpdates(null, updateRelease("0.15.0"))
             owner.check()
             advanceUntilIdle()
-            assertEquals(UpdateTransfer.Ready, owner.state.value.transfer)
-            assertEquals("0.14.0", owner.state.value.release!!.version)
+            assertTrue(owner.state.value.transfer is UpdateTransfer.Ready)
+            assertEquals("0.14.0", owner.state.value.displayedRelease!!.version)
         } finally {
             owner.close()
             runCurrent()
@@ -130,25 +307,25 @@ class AppUpdatesTest {
         try {
             owner.check()
             advanceUntilIdle()
-            owner.download()
+            owner.download(updateRelease())
             runCurrent()
             service.transfer.complete(File("old.apk"))
             advanceUntilIdle()
             service.heldRecovery = CompletableDeferred()
-            val oldInstall = async { owner.installationFile() }
+            val oldInstall = async { owner.installationFile(updateRelease()) }
             runCurrent()
             service.response = AndroidUpdates("0.14.0", updateRelease("0.14.0"))
             owner.requireUpdate(RequiredUpdate("0.14.0"))
             advanceUntilIdle()
             service.transfer = CompletableDeferred()
-            owner.download()
+            owner.download(updateRelease("0.14.0"))
             runCurrent()
             service.recoverFailure = UpdateProblem.Integrity
             service.heldRecovery!!.complete(Unit)
             runCurrent()
             assertNull(oldInstall.await())
-            assertEquals("0.14.0", owner.state.value.release!!.version)
-            assertEquals(UpdateTransfer.Downloading, owner.state.value.transfer)
+            assertEquals("0.14.0", owner.state.value.displayedRelease!!.version)
+            assertTrue(owner.state.value.transfer is UpdateTransfer.Downloading)
             assertNull(owner.state.value.problem)
         } finally {
             owner.close()
@@ -178,7 +355,7 @@ class AppUpdatesTest {
             service.heldCheck!!.complete(Unit)
             advanceUntilIdle()
             assertTrue(owner.state.value.announce)
-            owner.defer()
+            owner.defer(updateRelease())
             advanceUntilIdle()
             assertFalse(owner.state.value.announce)
             owner.check(false)
@@ -214,7 +391,7 @@ class AppUpdatesTest {
             assertTrue(owner.state.value.required)
             assertEquals("0.13.0", owner.state.value.minimum)
             owner.requireUpdate(RequiredUpdate(null))
-            owner.defer()
+            owner.defer(updateRelease())
             advanceUntilIdle()
             assertTrue(store.record!!.blocked)
             assertNull(store.record!!.deferred)
@@ -240,11 +417,11 @@ class AppUpdatesTest {
             owner.check()
             advanceUntilIdle()
             assertTrue(owner.state.value.required)
-            assertFalse(owner.state.value.suitable)
-            owner.download()
+            assertFalse(owner.state.value.canDownload)
+            owner.download(updateRelease())
             advanceUntilIdle()
             assertEquals(UpdateTransfer.Idle, owner.state.value.transfer)
-            assertNull(owner.installationFile())
+            assertNull(owner.installationFile(updateRelease()))
         } finally {
             owner.close()
             runCurrent()
@@ -259,28 +436,30 @@ class AppUpdatesTest {
         try {
             owner.check()
             advanceUntilIdle()
-            owner.download()
+            owner.download(updateRelease())
             runCurrent()
             service.progress!!(500)
-            assertEquals(500L, owner.state.value.downloadedBytes)
+            assertEquals(
+                500L,
+                (owner.state.value.transfer as UpdateTransfer.Downloading).downloadedBytes,
+            )
             val staleProgress = service.progress!!
-            owner.cancelDownload()
+            owner.cancelDownload(updateRelease())
             runCurrent()
             staleProgress(1000)
             assertEquals(UpdateTransfer.Idle, owner.state.value.transfer)
-            assertEquals(0L, owner.state.value.downloadedBytes)
             service.transfer = CompletableDeferred()
-            owner.download()
+            owner.download(updateRelease())
             runCurrent()
             service.transfer.complete(File("verified.apk"))
             advanceUntilIdle()
-            assertEquals(UpdateTransfer.Ready, owner.state.value.transfer)
-            assertEquals(File("verified.apk"), owner.installationFile())
-            owner.installFailed()
-            assertEquals(UpdateTransfer.Ready, owner.state.value.transfer)
+            assertTrue(owner.state.value.transfer is UpdateTransfer.Ready)
+            assertEquals(File("verified.apk"), owner.installationFile(updateRelease()))
+            owner.installFailed(updateRelease())
+            assertTrue(owner.state.value.transfer is UpdateTransfer.Ready)
             assertEquals(UpdateProblem.Install, owner.state.value.problem)
             service.downloaded = null
-            assertNull(owner.installationFile())
+            assertNull(owner.installationFile(updateRelease()))
             assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
         } finally {
             owner.close()
@@ -313,7 +492,8 @@ class AppUpdatesTest {
                 advanceUntilIdle()
                 assertTrue(owner.state.value.required)
                 assertEquals(
-                    if (complete) UpdateTransfer.Ready else UpdateTransfer.Interrupted,
+                    if (complete) UpdateTransfer.Ready(updateRelease())
+                    else UpdateTransfer.Interrupted,
                     owner.state.value.transfer,
                 )
                 service.response = AndroidUpdates(null, updateRelease("0.14.0"))
@@ -321,7 +501,7 @@ class AppUpdatesTest {
                 advanceUntilIdle()
                 assertEquals(
                     if (complete) "0.13.0" else "0.14.0",
-                    owner.state.value.release!!.version,
+                    owner.state.value.displayedRelease!!.version,
                 )
             } finally {
                 owner.close()
@@ -339,7 +519,7 @@ class AppUpdatesTest {
         try {
             advanceUntilIdle()
             assertFalse(updated.state.value.required)
-            assertNull(updated.state.value.target)
+            assertNull(updated.state.value.selectedRelease)
         } finally {
             updated.close()
             runCurrent()
@@ -360,12 +540,12 @@ class AppUpdatesTest {
         try {
             owner.check()
             advanceUntilIdle()
-            owner.download()
+            owner.download(updateRelease())
             runCurrent()
             owner.requireUpdate(RequiredUpdate("0.14.0"))
             advanceUntilIdle()
             assertTrue(owner.state.value.required)
-            assertFalse(owner.state.value.suitable)
+            assertFalse(owner.state.value.canDownload)
             assertEquals(UpdateTransfer.Idle, owner.state.value.transfer)
         } finally {
             owner.close()

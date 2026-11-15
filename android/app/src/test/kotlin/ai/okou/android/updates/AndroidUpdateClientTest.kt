@@ -95,13 +95,13 @@ class AndroidUpdateClientTest {
                 owner ->
                 owner.check()
                 withTimeout(10_000) { owner.state.first { it.check == UpdateCheck.Checked } }
-                owner.download()
+                owner.download(release)
                 val failed =
                     withTimeout(10_000) {
                         owner.state.first { it.transfer == UpdateTransfer.Failed }
                     }
                 assertEquals(UpdateProblem.Download, failed.problem)
-                assertEquals("0.13.0", failed.release!!.version)
+                assertEquals("0.13.0", failed.displayedRelease!!.version)
                 assertTrue(
                     directory.listFiles()!!.none {
                         it.name.endsWith(".apk") || it.name.endsWith(".part")

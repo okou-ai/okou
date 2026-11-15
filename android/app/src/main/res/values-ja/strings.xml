@@ -98,6 +98,7 @@
     <string name="updates_available">バージョン %1$s に更新できます</string>
     <string name="updates_current">最新バージョンです</string>
     <string name="updates_checking">更新を確認中…</string>
+    <string name="updates_preparing">更新を準備中…</string>
     <string name="updates_check">更新を確認</string>
     <string name="updates_view">更新を見る</string>
     <string name="updates_later">後で</string>

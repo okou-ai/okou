@@ -98,6 +98,7 @@
     <string name="updates_available">可更新至 %1$s</string>
     <string name="updates_current">已是最新版本</string>
     <string name="updates_checking">正在检查更新…</string>
+    <string name="updates_preparing">正在准备更新…</string>
     <string name="updates_check">检查更新</string>
     <string name="updates_view">查看更新</string>
     <string name="updates_later">稍后</string>

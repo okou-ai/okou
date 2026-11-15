@@ -58,7 +58,7 @@ open class TestOkouApplication : OkouApplication() {
                             ),
                         )
 
-                override suspend fun recover(release: AndroidUpdatesRelease?) =
+                override suspend fun recover(release: AndroidUpdatesRelease) =
                     updateService?.recover(release)
 
                 override suspend fun download(

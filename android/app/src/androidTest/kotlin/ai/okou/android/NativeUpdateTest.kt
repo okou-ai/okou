@@ -51,7 +51,7 @@ class NativeUpdateTest {
                         return AndroidUpdates(null, release)
                     }
 
-                    override suspend fun recover(release: AndroidUpdatesRelease?): File? = null
+                    override suspend fun recover(release: AndroidUpdatesRelease): File? = null
 
                     override suspend fun download(
                         release: AndroidUpdatesRelease,

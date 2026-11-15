@@ -1,6 +1,7 @@
 package ai.okou.android.updates
 
 import ai.okou.android.R
+import ai.okou.android.api.generated.AndroidUpdatesRelease
 import android.text.format.Formatter
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -44,16 +45,16 @@ import androidx.compose.ui.unit.dp
 fun UpdateHost(
     state: UpdateUiState,
     check: () -> Unit,
-    download: () -> Unit,
-    cancel: () -> Unit,
-    defer: () -> Unit,
-    install: () -> Unit,
-    canInstall: Boolean,
+    download: (AndroidUpdatesRelease) -> Unit,
+    cancel: (AndroidUpdatesRelease) -> Unit,
+    defer: (AndroidUpdatesRelease) -> Unit,
+    install: (AndroidUpdatesRelease) -> Unit,
+    sourceAuthorized: Boolean,
     content: @Composable (openUpdates: () -> Unit) -> Unit,
 ) {
     var details by remember { mutableStateOf(false) }
     val controls: @Composable () -> Unit = {
-        UpdateActions(state, check, download, cancel, install, canInstall)
+        UpdateActions(state, check, download, cancel, install, sourceAuthorized)
     }
     if (state.required) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -73,7 +74,7 @@ fun UpdateHost(
                             modifier = Modifier.semantics { heading() },
                         )
                         Text(stringResource(R.string.updates_required_description))
-                        UpdateDetails(state, canInstall, showNotes = false)
+                        UpdateDetails(state, sourceAuthorized, showNotes = false)
                     }
                     controls()
                 }
@@ -82,19 +83,23 @@ fun UpdateHost(
     } else {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             if (state.announce) {
+                val release = checkNotNull(state.displayedRelease)
                 Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                         Text(
-                            stringResource(R.string.updates_available, state.release!!.version),
+                            stringResource(R.string.updates_available, release.version),
                             Modifier.fillMaxWidth(),
                         )
                         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                             ActionText(stringResource(R.string.updates_view), { details = true })
                             if (
-                                state.transfer != UpdateTransfer.Downloading &&
-                                    state.transfer != UpdateTransfer.Ready
+                                state.transfer !is UpdateTransfer.Downloading &&
+                                    state.transfer !is UpdateTransfer.Ready
                             )
-                                ActionText(stringResource(R.string.updates_later), defer)
+                                ActionText(
+                                    stringResource(R.string.updates_later),
+                                    { defer(release) },
+                                )
                         }
                     }
                 }
@@ -111,7 +116,7 @@ fun UpdateHost(
                     Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    UpdateDetails(state, canInstall)
+                    UpdateDetails(state, sourceAuthorized)
                 }
             },
             confirmButton = controls,
@@ -120,8 +125,9 @@ fun UpdateHost(
                     stringResource(R.string.updates_later),
                     {
                         details = false
-                        defer()
+                        state.displayedRelease?.let(defer)
                     },
+                    enabled = !state.preparing,
                 )
             },
         )
@@ -139,10 +145,14 @@ fun AppUpdateSettings(state: UpdateUiState, open: () -> Unit, check: () -> Unit)
         stringResource(R.string.updates_installed, state.installedVersion),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    if (state.available) {
-        ActionText(stringResource(R.string.updates_available, state.release!!.version), open)
+    if (!state.preparing && state.available) {
+        ActionText(
+            stringResource(R.string.updates_available, state.displayedRelease!!.version),
+            open,
+        )
     } else {
-        if (state.check == UpdateCheck.Checked) Text(stringResource(R.string.updates_current))
+        if (!state.preparing && state.check == UpdateCheck.Checked)
+            Text(stringResource(R.string.updates_current))
         if (state.check == UpdateCheck.Failed)
             Text(
                 stringResource(R.string.updates_error_check),
@@ -151,18 +161,25 @@ fun AppUpdateSettings(state: UpdateUiState, open: () -> Unit, check: () -> Unit)
     }
     ActionText(
         stringResource(
-            if (state.check == UpdateCheck.Checking) R.string.updates_checking
-            else R.string.updates_check
+            when {
+                state.preparing -> R.string.updates_preparing
+                state.check == UpdateCheck.Checking -> R.string.updates_checking
+                else -> R.string.updates_check
+            }
         ),
         check,
-        state.check != UpdateCheck.Checking,
+        !state.preparing && state.check != UpdateCheck.Checking,
     )
 }
 
 @Composable
-private fun UpdateDetails(state: UpdateUiState, canInstall: Boolean, showNotes: Boolean = true) {
+private fun UpdateDetails(
+    state: UpdateUiState,
+    sourceAuthorized: Boolean,
+    showNotes: Boolean = true,
+) {
     Text(stringResource(R.string.updates_installed, state.installedVersion))
-    state.release?.let { release ->
+    state.displayedRelease?.let { release ->
         Text(
             stringResource(R.string.updates_target, release.version),
             style = MaterialTheme.typography.titleMedium,
@@ -172,7 +189,7 @@ private fun UpdateDetails(state: UpdateUiState, canInstall: Boolean, showNotes: 
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         if (showNotes && release.notes.isNotBlank()) Text(release.notes)
-        if ((state.available || state.required) && !state.suitable)
+        if ((state.available || state.required) && !state.isEligible(release))
             Text(
                 stringResource(
                     if (release.minimumSdk > state.sdk) R.string.updates_android_unsupported
@@ -182,11 +199,16 @@ private fun UpdateDetails(state: UpdateUiState, canInstall: Boolean, showNotes: 
             )
     }
     if (state.check == UpdateCheck.Checking) Text(stringResource(R.string.updates_checking))
-    if (state.check == UpdateCheck.Checked && !state.available && !state.required)
+    if (
+        !state.preparing &&
+            state.check == UpdateCheck.Checked &&
+            !state.available &&
+            !state.required
+    )
         Text(stringResource(R.string.updates_current))
-    if (state.transfer == UpdateTransfer.Downloading) {
-        val fraction =
-            (state.downloadedBytes.toFloat() / checkNotNull(state.release).size).coerceIn(0f, 1f)
+    val transfer = state.transfer
+    if (transfer is UpdateTransfer.Downloading) {
+        val fraction = (transfer.downloadedBytes.toFloat() / transfer.release.size).coerceIn(0f, 1f)
         LinearProgressIndicator(
             progress = { fraction },
             modifier = Modifier.fillMaxWidth(),
@@ -194,7 +216,7 @@ private fun UpdateDetails(state: UpdateUiState, canInstall: Boolean, showNotes: 
         )
         Text(stringResource(R.string.updates_downloading, (fraction * 100).toInt()))
     }
-    if (state.transfer == UpdateTransfer.Ready && !canInstall)
+    if (transfer is UpdateTransfer.Ready && !sourceAuthorized)
         Text(stringResource(R.string.updates_permission))
     state.problem?.let { problem ->
         val message =
@@ -219,30 +241,38 @@ private fun UpdateDetails(state: UpdateUiState, canInstall: Boolean, showNotes: 
 private fun UpdateActions(
     state: UpdateUiState,
     check: () -> Unit,
-    download: () -> Unit,
-    cancel: () -> Unit,
-    install: () -> Unit,
-    canInstall: Boolean,
+    download: (AndroidUpdatesRelease) -> Unit,
+    cancel: (AndroidUpdatesRelease) -> Unit,
+    install: (AndroidUpdatesRelease) -> Unit,
+    sourceAuthorized: Boolean,
 ) {
+    val transfer = state.transfer
     when {
-        state.transfer == UpdateTransfer.Downloading ->
-            ActionText(stringResource(R.string.updates_cancel), cancel)
-        state.suitable && state.transfer == UpdateTransfer.Ready ->
-            Button(onClick = install) {
+        transfer is UpdateTransfer.Recovering ->
+            Button(onClick = check, enabled = false) {
+                Text(stringResource(R.string.updates_preparing))
+            }
+        transfer is UpdateTransfer.Downloading ->
+            ActionText(stringResource(R.string.updates_cancel), { cancel(transfer.release) })
+        transfer is UpdateTransfer.Ready && state.canInstall ->
+            Button(onClick = { install(transfer.release) }) {
                 Text(
                     stringResource(
-                        if (canInstall) R.string.updates_install else R.string.updates_allow_install
+                        if (sourceAuthorized) R.string.updates_install
+                        else R.string.updates_allow_install
                     )
                 )
             }
-        state.suitable ->
-            Button(onClick = download) { Text(stringResource(R.string.updates_download)) }
+        state.canDownload ->
+            Button(onClick = { download(checkNotNull(state.candidate)) }) {
+                Text(stringResource(R.string.updates_download))
+            }
         else ->
             Button(onClick = check, enabled = state.check != UpdateCheck.Checking) {
                 Text(stringResource(R.string.updates_check))
             }
     }
-    if (state.problem != null && state.suitable && state.transfer != UpdateTransfer.Downloading)
+    if (state.problem != null && (state.canDownload || state.canInstall))
         ActionText(
             stringResource(R.string.updates_check),
             check,

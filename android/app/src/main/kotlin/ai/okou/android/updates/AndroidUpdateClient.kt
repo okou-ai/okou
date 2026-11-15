@@ -124,10 +124,9 @@ class AndroidUpdateClient(
             }
         }
 
-    override suspend fun recover(release: AndroidUpdatesRelease?): File? =
+    override suspend fun recover(release: AndroidUpdatesRelease): File? =
         withContext(dispatcher) {
             ensureDirectory()
-            if (release == null) return@withContext null
             validateRelease(release)
             val file = File(directory, "${release.sha256}.apk")
             if (!file.isFile) return@withContext null

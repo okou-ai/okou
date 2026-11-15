@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.api.generated.AndroidUpdatesRelease
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.auth.SessionRoot
 import ai.okou.android.auth.WorkspaceSessionFactory
@@ -33,7 +34,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
-    private var canInstallUpdates by mutableStateOf(false)
+    private var updateSourceAuthorized by mutableStateOf(false)
     private val session: SessionModel by viewModels {
         viewModelFactory {
             initializer {
@@ -104,7 +105,7 @@ class MainActivity : AppCompatActivity() {
                     updates::cancelDownload,
                     updates::defer,
                     ::installUpdate,
-                    canInstallUpdates,
+                    updateSourceAuthorized,
                 ) { openUpdates ->
                     SessionRoot(
                         sessionState,
@@ -147,14 +148,15 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         session.refreshPreferences()
-        canInstallUpdates = Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()
+        updateSourceAuthorized =
+            Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls()
         (application as OkouApplication).updates.check(manual = false)
     }
 
-    private fun installUpdate() {
+    private fun installUpdate(release: AndroidUpdatesRelease) {
         val updates = (application as OkouApplication).updates
         lifecycleScope.launch {
-            val file = updates.installationFile() ?: return@launch
+            val file = updates.installationFile(release) ?: return@launch
             try {
                 if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
                     startActivity(
@@ -173,9 +175,9 @@ class MainActivity : AppCompatActivity() {
                     )
                 }
             } catch (_: ActivityNotFoundException) {
-                updates.installFailed()
+                updates.installFailed(release)
             } catch (_: SecurityException) {
-                updates.installFailed()
+                updates.installFailed(release)
             }
         }
     }

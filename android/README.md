@@ -453,6 +453,11 @@ deferral. Manual and required-update recovery remain available. Automatic checks
 run on foreground without holding the first native frame, at most once per day
 after success.
 
+Startup revalidates a saved package before offering download or installation
+actions. The last successful discovery and its timestamp are restored together.
+Each transfer and installer action stays bound to its presented package; a click
+during preparation is not queued against a later version or recovery result.
+
 Users initiate credential-free APK downloads inside Okou. The app streams into
 private files, validates byte count, SHA-256, package/version and signer, then
 offers installation through a narrowly scoped FileProvider and Android's

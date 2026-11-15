@@ -82,13 +82,13 @@ class UpdateRootTest {
     fun installationUsesNarrowUriGrantsAndDoesNotClearRequiredState() {
         app.fixture.heldCheck!!.complete(Unit)
         app.updates.requireUpdate(RequiredUpdate("99.0.0"))
-        compose.waitUntil(10_000) { app.updates.state.value.suitable }
+        compose.waitUntil(10_000) { app.updates.state.value.canDownload }
         val file = java.io.File(app.filesDir, "updates/install.apk")
         file.parentFile!!.mkdirs()
         file.writeText("verified external-service fixture")
         app.fixture.transfer.complete(file)
         compose.onNodeWithText("Download update").assertIsDisplayed().performClick()
-        compose.waitUntil(10_000) { app.updates.state.value.transfer == UpdateTransfer.Ready }
+        compose.waitUntil(10_000) { app.updates.state.value.transfer is UpdateTransfer.Ready }
         val packageManager = org.robolectric.Shadows.shadowOf(app.packageManager)
         packageManager.setCanRequestPackageInstalls(false)
         compose.onNodeWithText("Allow update installation").assertIsDisplayed().performClick()
@@ -112,6 +112,6 @@ class UpdateRootTest {
         assertEquals("content", intent.data!!.scheme)
         assertTrue(intent.flags and android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
         assertTrue(app.updates.state.value.required)
-        assertEquals(UpdateTransfer.Ready, app.updates.state.value.transfer)
+        assertTrue(app.updates.state.value.transfer is UpdateTransfer.Ready)
     }
 }

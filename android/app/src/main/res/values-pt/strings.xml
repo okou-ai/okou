@@ -98,6 +98,7 @@
     <string name="updates_available">A atualização %1$s está disponível</string>
     <string name="updates_current">Você está na versão mais recente</string>
     <string name="updates_checking">Verificando atualizações…</string>
+    <string name="updates_preparing">Preparando atualização…</string>
     <string name="updates_check">Verificar atualizações</string>
     <string name="updates_view">Ver atualização</string>
     <string name="updates_later">Mais tarde</string>

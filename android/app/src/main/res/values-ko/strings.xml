@@ -98,6 +98,7 @@
     <string name="updates_available">%1$s 버전으로 업데이트할 수 있습니다</string>
     <string name="updates_current">최신 버전입니다</string>
     <string name="updates_checking">업데이트 확인 중…</string>
+    <string name="updates_preparing">업데이트 준비 중…</string>
     <string name="updates_check">업데이트 확인</string>
     <string name="updates_view">업데이트 보기</string>
     <string name="updates_later">나중에</string>

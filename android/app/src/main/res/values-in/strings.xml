@@ -98,6 +98,7 @@
     <string name="updates_available">Pembaruan %1$s tersedia</string>
     <string name="updates_current">Anda menggunakan versi terbaru</string>
     <string name="updates_checking">Memeriksa pembaruan…</string>
+    <string name="updates_preparing">Menyiapkan pembaruan…</string>
     <string name="updates_check">Periksa pembaruan</string>
     <string name="updates_view">Lihat pembaruan</string>
     <string name="updates_later">Nanti</string>

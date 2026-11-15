@@ -42,12 +42,19 @@ enum class UpdateCheck {
     Failed,
 }
 
-enum class UpdateTransfer {
-    Idle,
-    Downloading,
-    Ready,
-    Failed,
-    Interrupted,
+sealed interface UpdateTransfer {
+    data class Recovering(val release: AndroidUpdatesRelease?) : UpdateTransfer
+
+    data object Idle : UpdateTransfer
+
+    data class Downloading(val release: AndroidUpdatesRelease, val downloadedBytes: Long = 0) :
+        UpdateTransfer
+
+    data class Ready(val release: AndroidUpdatesRelease) : UpdateTransfer
+
+    data object Failed : UpdateTransfer
+
+    data object Interrupted : UpdateTransfer
 }
 
 enum class UpdateProblem {
@@ -69,39 +76,64 @@ data class UpdateUiState(
     val required: Boolean = false,
     val minimum: String? = null,
     val deferred: String? = null,
-    val transfer: UpdateTransfer = UpdateTransfer.Idle,
-    val target: AndroidUpdatesRelease? = null,
-    val downloadedBytes: Long = 0,
+    val transfer: UpdateTransfer = UpdateTransfer.Recovering(null),
     val problem: UpdateProblem? = null,
     val sdk: Int,
 ) {
-    val release
+    val candidate
+        get() = info?.release
+
+    val selectedRelease
         get() =
-            when (transfer) {
-                UpdateTransfer.Downloading,
-                UpdateTransfer.Ready -> target
-                else -> info?.release
+            when (val transfer = transfer) {
+                is UpdateTransfer.Recovering -> transfer.release
+                is UpdateTransfer.Downloading -> transfer.release
+                is UpdateTransfer.Ready -> transfer.release
+                UpdateTransfer.Idle,
+                UpdateTransfer.Failed,
+                UpdateTransfer.Interrupted -> null
             }
+
+    /** Presentation only; actions bind either the discovery candidate or a selected package. */
+    val displayedRelease
+        get() = selectedRelease ?: candidate
+
+    val preparing
+        get() = transfer is UpdateTransfer.Recovering
 
     val available
         get() =
-            release?.let { it.versionCode > checkNotNull(androidVersionCode(installedVersion)) } ==
-                true
+            displayedRelease?.let {
+                it.versionCode > checkNotNull(androidVersionCode(installedVersion))
+            } == true
 
-    val suitable
+    fun isEligible(release: AndroidUpdatesRelease) =
+        release.versionCode > checkNotNull(androidVersionCode(installedVersion)) &&
+            release.minimumSdk <= sdk &&
+            (minimum == null || release.versionCode >= checkNotNull(androidVersionCode(minimum)))
+
+    val canDownload
         get() =
-            available &&
-                release!!.minimumSdk <= sdk &&
-                (minimum == null ||
-                    release!!.versionCode >= checkNotNull(androidVersionCode(minimum)))
+            when (transfer) {
+                UpdateTransfer.Idle,
+                UpdateTransfer.Failed,
+                UpdateTransfer.Interrupted -> candidate?.let(::isEligible) == true
+                is UpdateTransfer.Recovering,
+                is UpdateTransfer.Downloading,
+                is UpdateTransfer.Ready -> false
+            }
+
+    val canInstall
+        get() = (transfer as? UpdateTransfer.Ready)?.release?.let(::isEligible) == true
 
     val announce
         get() =
-            !required &&
+            !preparing &&
+                !required &&
                 available &&
-                (deferred != release?.version ||
-                    transfer == UpdateTransfer.Downloading ||
-                    transfer == UpdateTransfer.Ready)
+                (deferred != displayedRelease?.version ||
+                    transfer is UpdateTransfer.Downloading ||
+                    transfer is UpdateTransfer.Ready)
 }
 
 @Serializable
@@ -126,7 +158,7 @@ interface UpdateService : Closeable {
 
     suspend fun check(): AndroidUpdates
 
-    suspend fun recover(release: AndroidUpdatesRelease?): File?
+    suspend fun recover(release: AndroidUpdatesRelease): File?
 
     suspend fun download(release: AndroidUpdatesRelease, progress: (Long) -> Unit): File
 }
@@ -164,23 +196,31 @@ class AppUpdates(
                             required = saved.blocked,
                             minimum = saved.minimum,
                             deferred = saved.deferred,
-                            target = saved.target,
+                            check =
+                                if (saved.info != null) UpdateCheck.Checked
+                                else UpdateCheck.Unknown,
+                            transfer = UpdateTransfer.Recovering(saved.target),
                         )
                 }
                 service.initialize()
-                val file = service.recover(saved?.target)
-                if (saved?.target != null) {
-                    mutable.update {
-                        it.copy(
-                            transfer =
-                                if (file != null) UpdateTransfer.Ready
-                                else UpdateTransfer.Interrupted,
-                            problem = if (file == null) UpdateProblem.Interrupted else null,
-                        )
-                    }
+                val target = saved?.target
+                val file = target?.let { service.recover(it) }
+                mutable.update {
+                    it.copy(
+                        transfer =
+                            when {
+                                target == null -> UpdateTransfer.Idle
+                                file != null -> UpdateTransfer.Ready(target)
+                                else -> UpdateTransfer.Interrupted
+                            },
+                        problem =
+                            if (target != null && file == null) UpdateProblem.Interrupted else null,
+                    )
                 }
             } catch (error: Exception) {
-                report(error, UpdateProblem.Storage)
+                currentCoroutineContext().ensureActive()
+                val failure = classify(error, UpdateProblem.Storage)
+                mutable.update { it.copy(transfer = UpdateTransfer.Failed, problem = failure) }
             } finally {
                 initialized.complete(Unit)
             }
@@ -220,8 +260,8 @@ class AppUpdates(
                     persist()
                 } catch (error: Exception) {
                     currentCoroutineContext().ensureActive()
-                    report(error, UpdateProblem.Check)
-                    mutable.update { it.copy(check = UpdateCheck.Failed) }
+                    val failure = classify(error, UpdateProblem.Check)
+                    mutable.update { it.copy(check = UpdateCheck.Failed, problem = failure) }
                 }
             }
     }
@@ -245,11 +285,11 @@ class AppUpdates(
         }
     }
 
-    fun defer() {
+    fun defer(release: AndroidUpdatesRelease) {
+        val snapshot = mutable.value
+        if (snapshot.preparing || snapshot.required || snapshot.displayedRelease != release) return
+        mutable.update { it.copy(deferred = release.version) }
         scope.launch {
-            initialized.await()
-            if (mutable.value.required) return@launch
-            mutable.update { it.copy(deferred = it.release?.version) }
             try {
                 persist()
             } catch (error: Exception) {
@@ -258,59 +298,54 @@ class AppUpdates(
         }
     }
 
-    fun download() {
+    fun download(release: AndroidUpdatesRelease) {
+        val offered = mutable.value
+        if (!offered.canDownload || offered.candidate != release) return
         if (transferJob?.isActive == true) return
         transferJob =
             scope.launch {
-                initialized.await()
                 val snapshot = mutable.value
-                if (
-                    snapshot.transfer == UpdateTransfer.Ready ||
-                        snapshot.transfer == UpdateTransfer.Downloading
-                )
-                    return@launch
-                val release = snapshot.release?.takeIf { snapshot.suitable } ?: return@launch
+                if (!snapshot.canDownload || snapshot.candidate != release) return@launch
                 val ticket = ++transferTicket
                 mutable.update {
-                    it.copy(
-                        target = release,
-                        transfer = UpdateTransfer.Downloading,
-                        downloadedBytes = 0,
-                        problem = null,
-                    )
+                    it.copy(transfer = UpdateTransfer.Downloading(release), problem = null)
                 }
                 try {
                     persist()
                     service.download(release) { bytes ->
                         mutable.update {
-                            if (ticket == transferTicket) it.copy(downloadedBytes = bytes) else it
+                            val transfer = it.transfer
+                            if (ticket == transferTicket && transfer is UpdateTransfer.Downloading)
+                                it.copy(transfer = transfer.copy(downloadedBytes = bytes))
+                            else it
                         }
                     }
                     currentCoroutineContext().ensureActive()
                     if (ticket == transferTicket)
-                        mutable.update { it.copy(transfer = UpdateTransfer.Ready) }
+                        mutable.update { it.copy(transfer = UpdateTransfer.Ready(release)) }
                 } catch (error: Exception) {
                     currentCoroutineContext().ensureActive()
                     if (ticket == transferTicket) {
-                        report(error, UpdateProblem.Download)
-                        mutable.update { it.copy(transfer = UpdateTransfer.Failed) }
+                        val failure = classify(error, UpdateProblem.Download)
+                        mutable.update {
+                            it.copy(transfer = UpdateTransfer.Failed, problem = failure)
+                        }
                     }
                 }
             }
     }
 
-    fun cancelDownload() {
+    fun cancelDownload(release: AndroidUpdatesRelease) {
+        val transfer = mutable.value.transfer
+        if (transfer !is UpdateTransfer.Downloading || transfer.release != release) return
+        discardTransfer()
+    }
+
+    private fun discardTransfer() {
         ++transferTicket
         transferJob?.cancel()
         transferJob = null
-        mutable.update {
-            it.copy(
-                transfer = UpdateTransfer.Idle,
-                target = null,
-                downloadedBytes = 0,
-                problem = null,
-            )
-        }
+        mutable.update { it.copy(transfer = UpdateTransfer.Idle, problem = null) }
         scope.launch {
             try {
                 persist()
@@ -320,21 +355,19 @@ class AppUpdates(
         }
     }
 
-    suspend fun installationFile(): File? {
-        initialized.await()
+    suspend fun installationFile(release: AndroidUpdatesRelease): File? {
         val snapshot = mutable.value
-        val release =
-            snapshot.release?.takeIf {
-                snapshot.suitable && snapshot.transfer == UpdateTransfer.Ready
-            } ?: return null
+        val selected = snapshot.transfer as? UpdateTransfer.Ready ?: return null
+        if (selected.release != release || !snapshot.canInstall) return null
         return try {
             val file = service.recover(release) ?: throw UpdateException(UpdateProblem.Download)
-            if (mutable.value.release == release && mutable.value.suitable) file else null
+            val current = mutable.value
+            if (current.transfer == selected && current.canInstall) file else null
         } catch (error: Exception) {
             currentCoroutineContext().ensureActive()
             val failure = classify(error, UpdateProblem.Download)
             mutable.update {
-                if (it.release == release && it.transfer == UpdateTransfer.Ready)
+                if (it.transfer == selected)
                     it.copy(transfer = UpdateTransfer.Failed, problem = failure)
                 else it
             }
@@ -342,12 +375,18 @@ class AppUpdates(
         }
     }
 
-    fun installFailed() {
-        mutable.update { it.copy(problem = UpdateProblem.Install) }
+    fun installFailed(release: AndroidUpdatesRelease) {
+        mutable.update {
+            if ((it.transfer as? UpdateTransfer.Ready)?.release == release)
+                it.copy(problem = UpdateProblem.Install)
+            else it
+        }
     }
 
     private fun retireUnsuitableTransfer() {
-        if (mutable.value.target != null && !mutable.value.suitable) cancelDownload()
+        val snapshot = mutable.value
+        val selected = snapshot.selectedRelease ?: return
+        if (!snapshot.isEligible(selected)) discardTransfer()
     }
 
     private suspend fun persist() =
@@ -361,7 +400,7 @@ class AppUpdates(
                     value.minimum,
                     value.deferred,
                     checkedAt,
-                    value.target,
+                    value.selectedRelease,
                 )
             )
         }
