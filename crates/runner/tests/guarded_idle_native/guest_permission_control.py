@@ -58,23 +58,10 @@ def send(stream, value):
 class Controller:
     """One task retains the gate and its actual event until explicit disposal."""
 
-    def __init__(self, original, executable):
+    def __init__(self):
         self.original = self.executable = self.gate = None
         self.event = None
         self.observed = self.decided = False
-        try:
-            self.original = os.open(original, os.O_RDONLY | os.O_CLOEXEC)
-            self.executable = os.open(executable, os.O_RDONLY | os.O_CLOEXEC)
-            self.identity = metadata(self.original)
-            self.executable_identity = metadata(self.executable)
-            require(self.identity["size"] <= 4096, "oversized original timezone file")
-            self.payload = os.pread(self.original, 4097, 0)
-            self.gate = FileOpenPermission(
-                self.original, (self.identity["device"], self.identity["inode"])
-            )
-        except BaseException:
-            self.close()
-            raise
 
     def status(self):
         self.gate.fileno()
@@ -145,9 +132,29 @@ class Controller:
         return result
 
 
+class FileController(Controller):
+    """Bind the shared permission lifecycle to an original regular file."""
+
+    def __init__(self, original, executable):
+        super().__init__()
+        try:
+            self.original = os.open(original, os.O_RDONLY | os.O_CLOEXEC)
+            self.executable = os.open(executable, os.O_RDONLY | os.O_CLOEXEC)
+            self.identity = metadata(self.original)
+            self.executable_identity = metadata(self.executable)
+            require(self.identity["size"] <= 4096, "oversized original timezone file")
+            self.payload = os.pread(self.original, 4097, 0)
+            self.gate = FileOpenPermission(
+                self.original, (self.identity["device"], self.identity["inode"])
+            )
+        except BaseException:
+            self.close()
+            raise
+
+
 def serve(stream, nonce, original, executable):
     require(re.fullmatch(r"[0-9a-f]{32}", nonce) is not None, "invalid invocation nonce")
-    serve_owned(stream, nonce, Controller(original, executable))
+    serve_owned(stream, nonce, FileController(original, executable))
 
 
 def serve_owned(stream, nonce, owner):
