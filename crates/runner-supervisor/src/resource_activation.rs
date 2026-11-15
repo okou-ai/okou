@@ -5,14 +5,12 @@ use std::time::Instant;
 
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
 use futures_util::future::BoxFuture;
-use runner_executor::executor::{
-    BlankPoolSelection, BlankPoolSelectionReason, RunnerPreSpawnPhase, RunnerPreSpawnTiming,
-};
+use runner_executor::executor::{RunnerPreSpawnPhase, RunnerPreSpawnTiming};
 use runner_host::paths::short_digest;
 use runner_lifecycle::home_image_cache::{HomeImageCache, snapshot::HomeCacheStateSnapshot};
 use runner_lifecycle::idle_pool::{
-    BlankIdleReservationMiss, DestroyOutcome, IdlePoolSnapshot, IdleSandboxKind, IdleUnparkResult,
-    RestoreReservedIdleResult, ReusableIdleSandbox,
+    DestroyOutcome, IdlePoolSnapshot, IdleSandboxKind, IdleUnparkResult, RestoreReservedIdleResult,
+    ReusableIdleSandbox,
 };
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::StatusTracker;
@@ -24,7 +22,7 @@ use tokio::sync::{Notify, OwnedMutexGuard};
 use tracing::{info, warn};
 
 use crate::activation::{remove_failed_activation_status, retain_uncertain_activation_ownership};
-use crate::blank_pool::BlankPoolDiagnostics;
+use crate::blank_pool::{BlankPoolDiagnostics, reserve_blank_with_diagnostics};
 use crate::idle_lifecycle::{
     IdleDestroyTracker, ReservedIdleActivation, SharedIdlePool,
     add_preparing_run_with_idle_status_snapshot, rollback_reserved_idle_for_spawn,
@@ -473,31 +471,17 @@ pub async fn try_reuse_from_pool(
             if exact.is_some() {
                 (exact, None)
             } else {
-                match pool.reserve_blank(profile_name, device_rate_limits) {
-                    Ok(entry) => (
-                        Some((entry, pool.status_snapshot())),
-                        Some(BlankPoolSelection::Hit),
-                    ),
-                    Err(BlankIdleReservationMiss::Empty) => (
-                        None,
-                        Some(ctx.blank_pool_diagnostics.classify_empty(
-                            profile_name,
-                            device_rate_limits,
-                            pool.revision(),
-                            ctx.budget,
-                        )),
-                    ),
-                    Err(BlankIdleReservationMiss::Incompatible) => (
-                        None,
-                        Some(BlankPoolSelection::Miss(
-                            BlankPoolSelectionReason::IncompatibleShape,
-                        )),
-                    ),
-                    Err(BlankIdleReservationMiss::Unknown) => (
-                        None,
-                        Some(BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)),
-                    ),
-                }
+                let (entry, selection) = reserve_blank_with_diagnostics(
+                    &mut pool,
+                    profile_name,
+                    device_rate_limits,
+                    Some(ctx.blank_pool_diagnostics),
+                    ctx.budget,
+                );
+                (
+                    entry.map(|entry| (entry, pool.status_snapshot())),
+                    Some(selection),
+                )
             }
         }
     };
