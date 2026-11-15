@@ -79,7 +79,7 @@ final class ChatForkStore: Identifiable {
 
   @discardableResult
   func send() async -> Bool {
-    guard !closed, !isSending, !Task.isCancelled else { return false }
+    guard !closed, sendTask == nil, !Task.isCancelled else { return false }
     if pending == nil {
       guard composer.hasContent, composer.canSend, composer.attachments.isReady,
         modelSelection.canSend
