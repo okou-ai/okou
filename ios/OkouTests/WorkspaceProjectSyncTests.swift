@@ -146,7 +146,7 @@ final class WorkspaceProjectSyncTests: XCTestCase {
 
   private func makeFixture(waiting: XCTestExpectation? = nil) throws -> ProjectSyncFixture {
     let directory = CacheTestDirectory(owner: self)
-    let fixture = try ProjectSyncFixture(directory: directory, waiting: waiting)
+    let fixture = try ProjectSyncFixture(owner: self, directory: directory, waiting: waiting)
     addTeardownBlock { @MainActor in await fixture.close() }
     return fixture
   }
@@ -154,6 +154,7 @@ final class WorkspaceProjectSyncTests: XCTestCase {
 
 @MainActor
 private final class ProjectSyncFixture {
+  private unowned let owner: XCTestCase
   private let initialDeadline = ModelResponseGate()
   private let recoveryDeadline = ModelResponseGate()
   private let recovering = Mutex(false)
@@ -173,7 +174,8 @@ private final class ProjectSyncFixture {
     client: http.client, webURL: http.baseURL, cache: cache,
     projectBootstrap: bootstrap, createRealtime: realtime.factory)
 
-  init(directory: CacheTestDirectory, waiting: XCTestExpectation?) throws {
+  init(owner: XCTestCase, directory: CacheTestDirectory, waiting: XCTestExpectation?) throws {
+    self.owner = owner
     let initialDeadline = initialDeadline
     let recoveryDeadline = recoveryDeadline
     let recovering = recovering
@@ -245,7 +247,7 @@ private final class ProjectSyncFixture {
     async let projects: Void = workspace.projects.activate()
     await workspace.start(userID: userID, workspaceID: workspaceID)
     await projects
-    try await waitForBusinessResult { self.workspace.connectionStatus == .connected }
+    try await owner.waitForBusinessResult { self.workspace.connectionStatus == .connected }
     await workspace.resumePendingRefresh()?.value
     XCTAssertEqual(workspace.connectionStatus, .connected)
     recovering.withLock { $0 = true }
