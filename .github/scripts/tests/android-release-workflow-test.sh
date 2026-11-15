@@ -147,6 +147,20 @@ else:
     raise AssertionError(args)
 ''')
     aws.chmod(0o755)
+    # The release job has full history, while this suite also runs in shallow
+    # CI checkouts. Give the publisher its own complete, real source history.
+    source = work / 'source'
+    for relative in ['.github/scripts/release/publish-android-update.py',
+                     'android/scripts/version-code.sh']:
+        target = source / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(root / relative, target)
+    subprocess.run(['git', 'init', '--initial-branch=main', str(source)],
+                   check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(source), 'add', '.'], check=True, capture_output=True)
+    subprocess.run(['git', '-C', str(source), '-c', 'user.name=Release Fixture',
+                    '-c', 'user.email=release-fixture@example.com', 'commit', '-m', 'fixture'],
+                   check=True, capture_output=True)
     tools = work / 'sdk/build-tools/36.0.0'
     tools.mkdir(parents=True)
     for name in ['apksigner', 'aapt2']:
@@ -164,14 +178,14 @@ else:
         tool.chmod(0o755)
     env |= dict(ANDROID_HOME=str(work / 'sdk'), R2_BUCKET_NAME='fixture-static',
                 R2_ACCOUNT_ID='fixture-account', FIXTURE_VERSION_CODE=subprocess.check_output(
-                    ['bash', str(root / 'android/scripts/version-code.sh')], text=True).strip())
+                    ['bash', str(source / 'android/scripts/version-code.sh')], text=True).strip())
     steps = [step for step in job['steps'] if step.get('name') in {
         'Verify Android release tag', 'Publish verified Android update',
         'Publish APK on the Android Release',
     }]
     def run_publication(**overrides):
         for step in steps:
-            result = subprocess.run(['bash', '-e', '-c', step['run']], cwd=root,
+            result = subprocess.run(['bash', '-e', '-c', step['run']], cwd=source,
                                     env=env | overrides, text=True, capture_output=True)
             if result.returncode:
                 break
