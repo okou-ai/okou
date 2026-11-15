@@ -22,18 +22,10 @@ export interface AgentRunModelPin {
   readonly selectedModel: string | null;
 }
 
-export interface HttpRunCallback {
-  readonly url: string;
-  readonly secret: string;
-  readonly payload: unknown;
-}
-
 export interface InternalRunCallback {
   readonly internalKind: InternalRunCallbackKind;
   readonly payload: unknown;
 }
-
-export type RunCallback = HttpRunCallback | InternalRunCallback;
 
 export type AgentRunPreCreateSource =
   "chat_callback_auto_send" | "workflow_slash_command";
