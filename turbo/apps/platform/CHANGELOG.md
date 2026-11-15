@@ -13,6 +13,33 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1133.0](https://github.com/okou-ai/okou/compare/app-v0.1132.2...app-v0.1133.0) (2026-11-15)
+
+
+### Features
+
+* **android:** add native apk update and recovery flows ([#47331](https://github.com/okou-ai/okou/issues/47331)) ([c9d9bdb](https://github.com/okou-ai/okou/commit/c9d9bdb0c7a3affbfc4f0a3910a1eb22cbeddf21))
+
+
+### Bug Fixes
+
+* **app:** highlight the whole browser tab on hover ([#47482](https://github.com/okou-ai/okou/issues/47482)) ([2102cce](https://github.com/okou-ai/okou/commit/2102cce0e41c384545a5cedca454c58a76b51104))
+* **platform:** keep forks in their source project ([#47444](https://github.com/okou-ai/okou/issues/47444)) ([ecb5350](https://github.com/okou-ai/okou/commit/ecb53502c1fc05aaae4d7e79dbc9e8815fa2d10a))
+
+
+### Performance Improvements
+
+* **test:** trim ordinary invitation click simulation ([#47389](https://github.com/okou-ai/okou/issues/47389)) ([78a93f1](https://github.com/okou-ai/okou/commit/78a93f1506f4940f29b0d489f9d22c14b3cd85ba))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.67.0
+    * @okouai/core bumped to 8.839.6
+    * @okouai/ui bumped to 1.21.22
+
 ## [0.1132.2](https://github.com/okou-ai/okou/compare/app-v0.1132.1...app-v0.1132.2) (2026-11-14)
 
 

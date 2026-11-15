@@ -10,6 +10,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.71.0](https://github.com/okou-ai/okou/compare/api-v2.70.8...api-v2.71.0) (2026-11-15)
+
+
+### Features
+
+* **android:** add native apk update and recovery flows ([#47331](https://github.com/okou-ai/okou/issues/47331)) ([c9d9bdb](https://github.com/okou-ai/okou/commit/c9d9bdb0c7a3affbfc4f0a3910a1eb22cbeddf21))
+
+
+### Refactoring
+
+* **api:** align launch preparation with current consumers ([#47419](https://github.com/okou-ai/okou/issues/47419)) ([52f57b4](https://github.com/okou-ai/okou/commit/52f57b4fbdb3d7c0f03cd069b119ce627c393718))
+* **api:** derive thread admission from current sources ([#47449](https://github.com/okou-ai/okou/issues/47449)) ([5a86554](https://github.com/okou-ai/okou/commit/5a865546b211d24a8afbf4dd7859393294a791e4))
+* **api:** flatten thread claim graph dependencies ([#47483](https://github.com/okou-ai/okou/issues/47483)) ([0a3791e](https://github.com/okou-ai/okou/commit/0a3791ee588dcf6739a688a6caa01e57f077de11))
+* **api:** simplify current launch preparation ([#47387](https://github.com/okou-ai/okou/issues/47387)) ([29f1322](https://github.com/okou-ai/okou/commit/29f132228d5837cf420c185528735903453ab24a))
+* **runner:** finish execution input and timing cleanup ([#47356](https://github.com/okou-ai/okou/issues/47356)) ([4b7190a](https://github.com/okou-ai/okou/commit/4b7190afbe6ae6571dbfcf6f122573891065937b))
+* **runner:** finish native execution model cleanup ([#47328](https://github.com/okou-ai/okou/issues/47328)) ([d4f131f](https://github.com/okou-ai/okou/commit/d4f131fab3253a843b49afaf4589afa043c8ce13))
+* **runner:** model direct execution without claim scaffolding ([#47235](https://github.com/okou-ai/okou/issues/47235)) ([8bf20fb](https://github.com/okou-ai/okou/commit/8bf20fb75b2788038d699332435a84e551660c49))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.67.0
+    * @okouai/core bumped to 8.839.6
+    * @okouai/db bumped to 2.35.10
+    * @okouai/pi-agent-runtime bumped to 1.51.128
+
 ## [2.70.8](https://github.com/okou-ai/okou/compare/api-v2.70.7...api-v2.70.8) (2026-11-14)
 
 

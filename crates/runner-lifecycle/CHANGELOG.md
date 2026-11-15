@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.105](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.104...runner-lifecycle-v0.17.105) (2026-11-15)
+
+
+### Refactoring
+
+* **runner-lifecycle:** centralize captured backing identity ([#47318](https://github.com/okou-ai/okou/issues/47318)) ([0afea18](https://github.com/okou-ai/okou/commit/0afea185ec3b1a7f96133e433811837c04106ea8))
+* **runner:** finish native execution model cleanup ([#47328](https://github.com/okou-ai/okou/issues/47328)) ([d4f131f](https://github.com/okou-ai/okou/commit/d4f131fab3253a843b49afaf4589afa043c8ce13))
+
 ## [0.17.104](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.103...runner-lifecycle-v0.17.104) (2026-11-14)
 
 ## [0.17.103](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.102...runner-lifecycle-v0.17.103) (2026-11-14)
