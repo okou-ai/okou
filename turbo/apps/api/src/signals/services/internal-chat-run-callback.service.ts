@@ -21,7 +21,6 @@ import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { v5 as uuidv5 } from "uuid";
-import type { ChatThreadContinuation } from "./chat-session-continuity.service";
 
 import type { ChatRecommendedFollowup } from "@okouai/api-contracts/contracts/chat-threads";
 import { publicProviderBalanceFailureReason } from "@okouai/api-contracts/contracts/run-balance-errors";
@@ -71,7 +70,6 @@ import {
 } from "./agentphone-chat-callback-payload";
 import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
 import { integrationCompletionFallbackEventIdForRun } from "./assistant-event-id";
-import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
   loadCompletedRunOutput$,
   type CompletedRunOutput,
@@ -169,10 +167,7 @@ import {
   deliverTelegramChatAdmissionFailure$,
   dispatchTelegramChatDeliveryOnce$,
 } from "./internal-telegram-chat-run-callback.service";
-import {
-  modelProviderWriteTypeForLaunch,
-  type ModelFirstPin,
-} from "./model-selection.service";
+import { modelProviderWriteTypeForLaunch } from "./model-selection.service";
 import { sendUserPushNotifications$ } from "./push-notifications.service";
 import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 import { saveRunSummary$ } from "./run-summary.service";
@@ -350,27 +345,17 @@ interface AgentForAutoSend {
 }
 
 export interface CreateQueuedChatRunInput {
-  readonly threadContinuation?: ChatThreadContinuation;
-  readonly featureSwitchContext?: FeatureSwitchContext;
   readonly orgId: string;
   readonly userId: string;
   readonly agentId: string;
   readonly prompt: string;
   readonly threadId: string;
-  readonly connectorSourceId?: string;
   readonly queuedMessage: QueuedUserMessage;
-  readonly requiredOfficialWorkflowIds?: readonly string[];
-  readonly modelPin: ModelFirstPin;
+  readonly selectedModel: string;
   readonly effectiveModelProvider: string | null | undefined;
-  readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
-  readonly cliAgentType: string | null;
   readonly piExecution: boolean;
   readonly codexServiceTier: "fast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
-  readonly computerUseHostGrant: {
-    readonly hostId: string;
-    readonly displayName: string;
-  } | null;
   readonly triggerSource: QueuedUserMessageTriggerSource;
   readonly realAgentInPreview?: boolean;
   /** The send asked this input's run to capture network bodies. */
@@ -633,39 +618,17 @@ export function buildQueuedRunCommand(
     // The time spent waiting in the chat queue is recorded separately.
     apiStartTime: admissionTime,
     chatThreadId: input.threadId,
-    ...(input.connectorSourceId
-      ? { connectorSourceId: input.connectorSourceId }
-      : {}),
-    computerUseHostId: input.computerUseHostGrant?.hostId,
-    modelProviderId: input.modelPin.modelProviderId ?? undefined,
-    modelProviderCredentialScope:
-      input.modelPin.modelProviderCredentialScope ?? undefined,
-    selectedModelOverride: input.modelPin.selectedModel ?? undefined,
+    selectedModelOverride: input.selectedModel,
     codexServiceTier: input.codexServiceTier,
     reasoningEffort: input.reasoningEffort,
-    callbacks: queuedChatRunCallbackInputs(input),
     triggerSource: input.triggerSource,
     agentRunPreCreateSource: "chat_callback_auto_send" as const,
     queueFirstAssociation: {
       threadId: input.threadId,
       eventId: input.queuedMessage.id,
     },
-    agentRunModelPin: {
-      modelProvider: input.effectiveModelProvider ?? null,
-      modelProviderId: input.modelPin.modelProviderId,
-      modelProviderCredentialScope: input.modelPin.modelProviderCredentialScope,
-      selectedModel: input.modelPin.selectedModel,
-    },
     piExecution: input.piExecution,
     agentRunMetadata: { autonomyBudget: input.autonomyBudget },
-    ...(input.requiredOfficialWorkflowIds === undefined
-      ? {}
-      : {
-          requiredOfficialWorkflowIds: input.requiredOfficialWorkflowIds,
-        }),
-    ...(input.builtInModelRuntimeRoute
-      ? { builtInModelRuntimeRoute: input.builtInModelRuntimeRoute }
-      : {}),
     body: {
       agentId: input.agentId,
       ...(input.effectiveModelProvider
@@ -2100,7 +2063,6 @@ type QueuedIntegrationDeliveries = Pick<
 
 export interface QueuedLaunchMaterial {
   readonly triggerSource: QueuedUserMessageTriggerSource;
-  readonly connectorSourceId?: string;
   readonly delivery: QueuedIntegrationDeliveries;
 }
 
@@ -2313,9 +2275,6 @@ export function queuedIntegrationLaunchFields(
       : {}),
     ...(delivery.agentphoneDelivery
       ? { agentphoneDelivery: { ...delivery.agentphoneDelivery, agentId } }
-      : {}),
-    ...(launchMaterial.connectorSourceId
-      ? { connectorSourceId: launchMaterial.connectorSourceId }
       : {}),
   };
 }

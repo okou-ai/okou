@@ -17,7 +17,7 @@ import {
   finalizePreparedStorage,
   type ResolvedAgentRunStorage,
   prepareRequestStorageResolution,
-  prepareRunOutputMetadata,
+  memoryArtifactsForRun,
   resolveStorageEntries,
   resolveStorageManifestInputs,
   storageEntriesMetadata,
@@ -33,7 +33,6 @@ import {
 } from "./storage-index.service";
 import type { ThreadContext } from "./thread-context.signals";
 import type { ThreadModelError } from "./thread-model.signals";
-import type { PromptAndSkillVolumes } from "./thread-run-prompt/prompt-and-skill-volumes";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 function isThreadModelError(value: unknown): value is ThreadModelError {
@@ -43,26 +42,19 @@ function isThreadModelError(value: unknown): value is ThreadModelError {
 /** Exact accepted mount intent. Claim owns archive metadata and signed URLs. */
 export type Storage = ResolvedAgentRunStorage;
 
-/** A prompt bundle or other source that declares the Run's skill volumes. */
-export type SkillVolumeSource = Computed<
-  Promise<Pick<PromptAndSkillVolumes, "skillVolumes">>
->;
-
 /**
- * The Run's storage from its current Agent, model and skill volumes: resolved
+ * The Run's memory storage from its current Agent and model: resolved
  * versions, mount paths and writeback targets.
  */
 export function createStorageSignals(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   threadContext: ThreadContext,
-  skillVolumeSources: readonly SkillVolumeSource[],
 ) {
   const storageInput$ = createStorageInputSignal(
     bootstrap,
     pickedEvent$,
     threadContext,
-    skillVolumeSources,
   );
   const index = createStorageIndexSignals(bootstrap, storageInput$);
   const plan = createStoragePlanSignals(index);
@@ -73,32 +65,17 @@ function createStorageInputSignal(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   threadContext: ThreadContext,
-  skillVolumeSources: readonly SkillVolumeSource[],
 ) {
   return computed(async (get): Promise<AgentRunStorageInput> => {
-    const [
-      event,
-      agent,
-      framework,
-      modelProvider,
-      selection,
-      officialWorkflow,
-      catalog,
-      skillBundles,
-    ] = await Promise.all([
-      get(pickedEvent$),
-      get(bootstrap.agent$),
-      get(threadContext.providerFramework$),
-      get(threadContext.modelRoute$),
-      get(threadContext.subscriptionSelection$),
-      get(threadContext.officialWorkflowObservation$),
-      get(bootstrap.modelCatalog$),
-      Promise.all(
-        skillVolumeSources.map((source$) => {
-          return get(source$);
-        }),
-      ),
-    ]);
+    const [event, agent, framework, modelProvider, selection, catalog] =
+      await Promise.all([
+        get(pickedEvent$),
+        get(bootstrap.agent$),
+        get(threadContext.providerFramework$),
+        get(threadContext.modelRoute$),
+        get(threadContext.subscriptionSelection$),
+        get(bootstrap.modelCatalog$),
+      ]);
     if (!event || !agent) {
       throw new Error("Run storage requires its picked event and Agent");
     }
@@ -118,11 +95,7 @@ function createStorageInputSignal(
       },
       modelProvider,
     });
-    const metadata = prepareRunOutputMetadata({
-      skillVolumes: skillBundles.flatMap((bundle) => {
-        return bundle.skillVolumes;
-      }),
-      officialWorkflow,
+    const artifacts = memoryArtifactsForRun({
       framework,
       piSandbox,
     });
@@ -131,7 +104,7 @@ function createStorageInputSignal(
       args: {
         runtimeOrgId: bootstrap.orgId,
         userId: bootstrap.userId,
-        artifacts: metadata.artifacts,
+        artifacts,
         timing: get(threadContext.dispatchTiming$),
       },
     };
