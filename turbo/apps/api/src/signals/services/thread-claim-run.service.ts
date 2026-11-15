@@ -106,7 +106,7 @@ import type {
   AgentRunPreCreateSource,
   AgentRunRequestAgent,
   ResolvedModelProviderEnvironment,
-  RunCallback,
+  InternalRunCallback,
 } from "./agent-run-contracts";
 import {
   type AdmissionAttemptOutcome,
@@ -134,10 +134,6 @@ import {
   chatThreadEvents,
 } from "@okouai/db/schema/chat-thread-event";
 import { agents } from "@okouai/db/schema/agent";
-import {
-  type ExecutionCallback,
-  prepareCallbacks$ as prepareExecutionCallbacks$,
-} from "./execution-callbacks.service";
 import {
   buildQueuedRunCommand,
   ChatCallbackPreCreateTimingCollector,
@@ -217,7 +213,6 @@ import { isMemberSubscriptionRoute } from "./effective-model-route.service";
 
 import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
 import { formatIntegrationRunError$ } from "./integration-run-errors.service";
-import type { InternalRunCallbackKind } from "./internal-run-callback";
 
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
@@ -976,8 +971,8 @@ function buildWorkflowAutomationCallbacks(
   agentId: string,
   chatThreadId: string,
   eventType: WorkflowAutomationEventType,
-): InternalRunCallbackInput[] {
-  const callbacks: InternalRunCallbackInput[] = [];
+): InternalRunCallback[] {
+  const callbacks: InternalRunCallback[] = [];
   // Debug adds one delivery and never settles the daily schedule occurrence.
   const nightlyManual =
     eventType === "manual" &&
@@ -1019,7 +1014,7 @@ interface WorkflowAutomationLaunchArgs {
   readonly apiStartTime: number;
   readonly triggerBrief?: string;
   readonly triggerSource?: TriggerSource;
-  readonly callbacks: readonly InternalRunCallbackInput[];
+  readonly callbacks: readonly InternalRunCallback[];
   readonly autonomyBudget: number;
   readonly recordLastRunId: boolean;
   readonly recordLastRunAt: boolean;
@@ -1031,11 +1026,6 @@ type RunErrorResponse = {
     readonly error: { readonly message: string; readonly code: string };
   };
 };
-
-interface InternalRunCallbackInput {
-  readonly internalKind: InternalRunCallbackKind;
-  readonly payload: unknown;
-}
 
 function withEmailSystemPrompt(
   plan: RunPlan,
@@ -1451,8 +1441,6 @@ export function createThreadClaimRunObjects(
   const promptArgsArgs$ = computed(
     async (get): Promise<CreateQueuedChatRunInputArgs> => {
       const { head, timing } = await get(promptInputInput$);
-      // Preserve runtime DB acquisition without carrying its handle onward.
-      get(db$);
       const queuedMessage = await get(promptQueuedMessageQueuedMessage$);
       if (!queuedMessage || queuedMessage.id !== head.id) {
         throw new Error("Prompt preparation lost its selected head");
@@ -1814,15 +1802,12 @@ export function createThreadClaimRunObjects(
       return null;
     }
     const { head, runTiming: timing } = await get(promptInputInput$);
-    // Preserve this node's existing DB dependency and initialization boundary.
-    get(db$);
     const args = await get(promptArgsArgs$);
     return {
       timing,
       owner: { userId: args.userId, orgId: args.agent.orgId },
       apiStartTime: head.apiStartTime,
       agentId: args.agent.id,
-      chatThreadId: args.threadId,
       queueFirstAssociation: {
         threadId: args.threadId,
         eventId: args.queuedMessage.id,
@@ -2098,13 +2083,7 @@ export function createThreadClaimRunObjects(
     return {
       timing: get(timing$),
       owner: { orgId: bootstrap.orgId, userId: bootstrap.userId },
-      apiStartTime: args.apiStartTime,
       agentId: bootstrap.agentId,
-      chatThreadId: args.due.chatThreadId,
-      queueFirstAssociation: {
-        threadId: args.due.chatThreadId,
-        eventId: args.queueEventId,
-      },
     };
   });
   const workflowAutomationLaunchSelectionInput$ = computed(async (get) => {
@@ -2393,14 +2372,14 @@ export function createThreadClaimRunObjects(
     );
   });
   const identityInput$ = computed(
-    async (get): Promise<AgentRunIdentityInput | null> => {
+    async (get): Promise<ThreadRunIdentityInput | null> => {
       return (await get(isAutomation$))
         ? get(queuedAutomationAssemblerIdentityInput$)
         : get(promptExecutionSelectionIdentityInput$);
     },
   );
   const selectionInput$ = computed(
-    async (get): Promise<AgentRunGraphInput | null> => {
+    async (get): Promise<ThreadRunSelectionInput | null> => {
       return (await get(isAutomation$))
         ? get(queuedAutomationAssemblerSelectionInput$)
         : get(promptExecutionSelectionSelectionInput$);
@@ -2417,7 +2396,7 @@ export function createThreadClaimRunObjects(
       : get(promptExecutionResourcesFeatureSwitchContext$);
   });
   const callbackInputs$ = computed(
-    async (get): Promise<readonly RunCallback[] | undefined> => {
+    async (get): Promise<readonly InternalRunCallback[] | undefined> => {
       return (await get(isAutomation$))
         ? get(queuedAutomationAssemblerCallbackInputs$)
         : get(promptExecutionResourcesCallbackInputs$);
@@ -2430,70 +2409,57 @@ export function createThreadClaimRunObjects(
         : get(promptExecutionResourcesContinuation$);
     },
   );
-  const preCreateInput$ = computed(async (get): Promise<AgentRunGraphInput> => {
-    const input = await get(selectionInput$);
-    if (!input) {
-      throw new Error("Agent preparation has no selected input");
-    }
-    return input;
-  });
-  const selectedIdentityInputIdentityInput$ = computed(
-    async (get): Promise<AgentRunGraphInput> => {
+  const preCreateInput$ = computed(
+    async (get): Promise<ThreadRunSelectionInput> => {
+      const input = await get(selectionInput$);
+      if (!input) {
+        throw new Error("Agent preparation has no selected input");
+      }
+      return input;
+    },
+  );
+  const selectedIdentity$ = computed(
+    async (get): Promise<ThreadRunIdentityInput> => {
       const input = await get(identityInput$);
       if (!input) {
         throw new Error("Run identity is unavailable");
       }
-      return {
-        timing: input.timing,
-        command: {
-          owner: input.owner,
-          apiStartTime: input.apiStartTime,
-          body: { agentId: input.agentId },
-          chatThreadId: input.chatThreadId,
-          queueFirstAssociation: input.queueFirstAssociation,
-        },
-      };
+      return input;
     },
   );
-  const preCreateAgentIdAgentId$ = computed(async (get) => {
-    const { command: args, timing } = await get(
-      selectedIdentityInputIdentityInput$,
-    );
+  const selectedAgentId$ = computed(async (get) => {
+    const { agentId, timing } = await get(selectedIdentity$);
     // A Thread run always names its queue head's Agent.
-    const startedAt = timing ? performance.now() : undefined;
+    const startedAt = performance.now();
     return await (async () => {
-      return await Promise.resolve(args.body.agentId);
+      return await Promise.resolve(agentId);
     })().finally(() => {
-      if (startedAt !== undefined) {
-        timing?.recordDuration(
-          "api_dispatch_pre_create_agent_resolve_agent_id",
-          "nested",
-          performance.now() - startedAt,
-          now(),
-        );
-      }
+      timing.recordDuration(
+        "api_dispatch_pre_create_agent_resolve_agent_id",
+        "nested",
+        performance.now() - startedAt,
+        now(),
+      );
     });
   });
-  const preCreateAgentAgent$ = computed(
+  const selectedAgent$ = computed(
     async (get): Promise<AgentRunRecord | null> => {
-      const { timing } = await get(selectedIdentityInputIdentityInput$);
-      const agentId = await get(preCreateAgentIdAgentId$);
+      const { timing } = await get(selectedIdentity$);
+      const agentId = await get(selectedAgentId$);
       if (!agentId) {
         return null;
       }
-      const startedAt = timing ? performance.now() : undefined;
+      const startedAt = performance.now();
       return await (async () => {
         // Authorization waits only for the context's Agent snapshot.
         return await get(bootstrap.agent$);
       })().finally(() => {
-        if (startedAt !== undefined) {
-          timing?.recordDuration(
-            "api_dispatch_pre_create_agent_load_agent",
-            "nested",
-            performance.now() - startedAt,
-            now(),
-          );
-        }
+        timing.recordDuration(
+          "api_dispatch_pre_create_agent_load_agent",
+          "nested",
+          performance.now() - startedAt,
+          now(),
+        );
       });
     },
   );
@@ -2518,7 +2484,7 @@ export function createThreadClaimRunObjects(
       const [connectorScope, agentResult, model, policiesResult] =
         await Promise.all([
           get(bootstrap.connectorScope$),
-          get(preCreateAgentAgent$),
+          get(selectedAgent$),
           get(threadContext.subscriptionSelection$),
           get(preCreatePermissionPoliciesPermissionPolicies$),
         ]);
@@ -2614,14 +2580,13 @@ export function createThreadClaimRunObjects(
     if (!selected || "status" in selected) {
       throw new Error("Run context requires an authorized ready input");
     }
-    get(db$); // Preserve initialization and the graph dependency.
     return selected;
   });
   const execution$ = computed(
     async (get): Promise<ThreadExecution | CreateRunErrorResult> => {
       const [{ command }, agent, session] = await Promise.all([
         get(preCreateInput$),
-        get(preCreateAgentAgent$),
+        get(selectedAgent$),
         get(threadContinuation$),
       ]);
       if (!agent) {
@@ -2827,14 +2792,17 @@ export function createThreadClaimRunObjects(
     return get(executionPlan$);
   });
   const authorizeSelectedAgentRun$ = computed(async (get) => {
-    const [{ command: args }, agent] = await Promise.all([
-      get(selectedIdentityInputIdentityInput$),
-      get(preCreateAgentAgent$),
+    const [identity, agent] = await Promise.all([
+      get(selectedIdentity$),
+      get(selectedAgent$),
     ]);
-    if (!agent || agent.orgId !== args.owner.orgId) {
+    if (!agent || agent.orgId !== identity.owner.orgId) {
       return notFound("Agent not found");
     }
-    if (agent.visibility === "private" && agent.owner !== args.owner.userId) {
+    if (
+      agent.visibility === "private" &&
+      agent.owner !== identity.owner.userId
+    ) {
       return agentRunsCreateForbidden(
         "Only the private agent owner can run this agent",
       );
@@ -3283,8 +3251,6 @@ export function createThreadClaimRunObjects(
       const okouToken = set(prepareOkouToken$, tokenInput, signal);
       const disabledPaidTools = await get(bootstrap.disabledPaidTools$);
       signal.throwIfAborted();
-      // Keep acquisition before storage preparation without retaining the DB.
-      set(writeDb$);
       return prepareRunnerLaunchInput({
         args: bodyOverride ? { ...args, body: bodyOverride } : args,
         okouToken,
@@ -3293,58 +3259,25 @@ export function createThreadClaimRunObjects(
       });
     },
   );
-  const prepareCallbacks$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const identity = get(runIds$);
-      const [callbacks, { command }] = await Promise.all([
-        get(callbackInputs$),
-        get(selectedIdentityInputIdentityInput$),
-      ]);
-      signal.throwIfAborted();
-      const definitions = (callbacks ?? []).map(
-        (callback): ExecutionCallback => {
-          // Keep the JSON serialization previously performed by callback JSONB
-          // persistence (optional fields omitted, Date values serialized).
-          const serializedPayload = JSON.stringify(callback.payload);
-          const payload =
-            serializedPayload === undefined
-              ? null
-              : json().parse(JSON.parse(serializedPayload) as unknown);
-          return "internalKind" in callback
-            ? { kind: "internal", internalKind: callback.internalKind, payload }
-            : {
-                kind: "http",
-                url: callback.url,
-                secret: callback.secret,
-                payload,
-              };
-        },
-      );
-      const prepared = await set(
-        prepareExecutionCallbacks$,
-        { orgId: command.owner.orgId, userId: command.owner.userId },
-        definitions,
-        signal,
-      );
-      return prepared.map((callback) => {
-        return callback.kind === "internal"
-          ? {
-              runId: identity.runId,
-              url: null,
-              internalKind: callback.internalKind,
-              encryptedSecret: null,
-              payload: callback.payload,
-            }
-          : {
-              runId: identity.runId,
-              url: callback.url,
-              internalKind: null,
-              encryptedSecret: callback.encryptedSecret,
-              payload: callback.payload,
-            };
-      });
-    },
-  );
+  const callbackRows$ = computed(async (get) => {
+    const identity = get(runIds$);
+    const callbacks = await get(callbackInputs$);
+    return (callbacks ?? []).map((callback): AgentRunCallbackInsert => {
+      // Normalize payloads to JSON: omit optional fields and serialize Dates.
+      const serializedPayload = JSON.stringify(callback.payload);
+      const payload =
+        serializedPayload === undefined
+          ? null
+          : json().parse(JSON.parse(serializedPayload) as unknown);
+      return {
+        runId: identity.runId,
+        url: null,
+        internalKind: callback.internalKind,
+        encryptedSecret: null,
+        payload,
+      };
+    });
+  });
   const storageMounts$ = computed((get) => {
     return get(preparedStorage$);
   });
@@ -3613,7 +3546,7 @@ export function createThreadClaimRunObjects(
         rewardArgs
           ? set(recordQueuedWorkflowReward$, rewardArgs, signal)
           : undefined,
-        set(prepareCallbacks$, signal),
+        get(callbackRows$),
         get(assembly$),
         get(runIdentity$),
       ]);
@@ -4090,7 +4023,7 @@ export function createThreadClaimRunObjects(
         signal,
       );
       if (!settled.ok) {
-        // A durable run/job commit is creation success, even if subsequent
+        // A durable Run commit is creation success, even if subsequent
         // telemetry or cancellation fails. Never reject its consumed input.
         if (get(internalCommittedRunId$) !== null) {
           throw settled.error;
@@ -4777,11 +4710,6 @@ interface ThreadRunCommand {
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
 }
 
-/** The identity read before Pi eligibility is decided. */
-type ThreadRunIdentity = Omit<ThreadRunCommand, "piExecution"> & {
-  readonly piExecution?: boolean;
-};
-
 /** The plain facts of a Thread run that Pi model preparation reads. */
 function piModelPreparationInput(
   args: Pick<
@@ -4954,14 +4882,11 @@ function agentRunsCreateForbidden(
 
 function agentRunTimingDimensions(args: {
   readonly origin: AgentRunOrigin;
-  readonly command: ThreadRunCommand;
   readonly source?: AgentRunPreCreateSource;
 }): ApiDispatchTimingDimensions {
-  const apiStartSource =
-    "queueFirstAssociation" in args.command ? "queue_event" : "request";
   return {
     agent_run_origin: args.origin,
-    api_start_source: apiStartSource,
+    api_start_source: "queue_event",
     ...(args.source ? { agent_run_pre_create_source: args.source } : {}),
   };
 }
@@ -5074,22 +4999,18 @@ function buildThreadRunArgs(
       origin: agentRunOrigin({
         command,
       }),
-      command,
       source: command.agentRunPreCreateSource,
     }),
   };
 }
 
-interface AgentRunIdentityInput {
+interface ThreadRunIdentityInput {
   readonly timing: ApiDispatchTimingCollector;
   readonly owner: ThreadRunOwner;
   readonly agentId: string;
-  readonly apiStartTime: number;
-  readonly chatThreadId: string;
-  readonly queueFirstAssociation: QueueFirstRunAssociation;
 }
-interface AgentRunGraphInput {
-  readonly command: ThreadRunIdentity;
+interface ThreadRunSelectionInput {
+  readonly command: ThreadRunCommand;
   readonly timing: ApiDispatchTimingCollector;
 }
 

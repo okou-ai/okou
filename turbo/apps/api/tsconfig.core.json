@@ -479,7 +479,6 @@
     "src/signals/services/discord-queued-launch-context.service.ts",
     "src/signals/services/discord-realtime.service.ts",
     "src/signals/services/discord-run-typing.service.ts",
-    "src/signals/services/execution-callbacks.service.ts",
     "src/signals/services/execution-model-runtime.ts",
     "src/signals/services/execution-secrets.service.ts",
     "src/signals/services/feishu-chat-callback-payload.ts",
