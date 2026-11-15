@@ -1,4 +1,3 @@
-import Ably
 import ChatData
 import ChatDataTestSupport
 import Foundation
@@ -47,11 +46,10 @@ final class WorkspaceProjectSyncTests: XCTestCase {
     let fixture = try makeFixture()
     try await fixture.start()
     fixture.workspace.setPhase(.background)
-    let channel = try XCTUnwrap(fixture.sdk).channels.get(fixture.channel)
-    channel.detach()
+    try fixture.realtime.detach(fixture.channel)
     try await waitForBusinessResult { fixture.workspace.connectionStatus == .unavailable }
     fixture.remote.withLock { $0 = 1 }
-    channel.attach()
+    try fixture.realtime.attach(fixture.channel)
     try await waitForBusinessResult { fixture.workspace.connectionStatus == .connected }
 
     fixture.workspace.setPhase(.active)
@@ -64,11 +62,9 @@ final class WorkspaceProjectSyncTests: XCTestCase {
   func testEarlyHTTPFallbackCatchesUpAgainAfterSubscriptionsAreRestored() async throws {
     let fixture = try makeFixture()
     try await fixture.start()
-    let sdk = try XCTUnwrap(fixture.sdk)
     let disconnected = expectation(description: "The real SDK observes transport loss")
-    sdk.connection.once(.disconnected) { _ in disconnected.fulfill() }
     fixture.workspace.setPhase(.background)
-    try fixture.server.disconnect()
+    try fixture.realtime.disconnectTransport(observed: disconnected)
     await fulfillment(of: [disconnected], timeout: 3)
     fixture.workspace.setPhase(.active)
     let refresh = try XCTUnwrap(fixture.workspace.resumePendingRefresh())
@@ -77,7 +73,7 @@ final class WorkspaceProjectSyncTests: XCTestCase {
     XCTAssertEqual(fixture.reads, 2)
 
     fixture.remote.withLock { $0 = 1 }
-    sdk.connect()
+    try fixture.realtime.reconnectTransport()
     try await waitForBusinessResult {
       fixture.workspace.projects.projects.first?.name == "Release"
     }
@@ -101,18 +97,16 @@ final class WorkspaceProjectSyncTests: XCTestCase {
   func testContinuousTransportResumeBeforeTheDeadlineKeepsTheExistingProjectRead() async throws {
     let fixture = try makeFixture()
     try await fixture.start()
-    let sdk = try XCTUnwrap(fixture.sdk)
     let disconnected = expectation(description: "The SDK observes a recoverable transport loss")
-    sdk.connection.once(.disconnected) { _ in disconnected.fulfill() }
     fixture.workspace.setPhase(.background)
-    try fixture.server.disconnect()
+    try fixture.realtime.disconnectTransport(observed: disconnected)
     await fulfillment(of: [disconnected], timeout: 3)
     try await waitForBusinessResult { fixture.workspace.connectionStatus == .unavailable }
     fixture.workspace.setPhase(.active)
     let refresh = try XCTUnwrap(fixture.workspace.resumePendingRefresh())
 
     fixture.server.attachAutomatically(resumed: true)
-    sdk.connect()
+    try fixture.realtime.reconnectTransport()
     await refresh.value
     try await waitForBusinessResult { fixture.workspace.connectionStatus == .connected }
     await fixture.workspace.resumePendingRefresh()?.value
@@ -149,7 +143,7 @@ private final class ProjectSyncFixture {
   private let recovering = Mutex(false)
   let remote = Mutex(0)
   private let projectReads = Mutex(0)
-  private let realtime: LoopbackRealtimeFixture
+  let realtime: LoopbackRealtimeFixture
   private let http: ChatHTTPFixture
   private let bootstrap: WorkspaceReadBootstrap
   private let cache: ChatCache
@@ -157,7 +151,6 @@ private final class ProjectSyncFixture {
   private let workspaceID = "project-workspace-\(UUID().uuidString)"
   var channel: String { "user-org:\(userID):\(workspaceID)" }
   var server: RealtimeHTTPFixture { realtime.server }
-  var sdk: ARTRealtime? { realtime.sdk }
   var reads: Int { projectReads.withLock { $0 } }
 
   lazy var workspace = WorkspaceStore(

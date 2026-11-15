@@ -600,6 +600,24 @@ final class LoopbackRealtimeFixture {
 
   func start() async throws { port = try await server.start() }
 
+  func disconnectTransport(observed: XCTestExpectation) throws {
+    let sdk = try XCTUnwrap(sdk)
+    sdk.connection.once(.disconnected) { _ in observed.fulfill() }
+    try server.disconnect()
+  }
+
+  func reconnectTransport() throws {
+    try XCTUnwrap(sdk).connect()
+  }
+
+  func detach(_ channel: String) throws {
+    try XCTUnwrap(sdk).channels.get(channel).detach()
+  }
+
+  func attach(_ channel: String) throws {
+    try XCTUnwrap(sdk).channels.get(channel).attach()
+  }
+
   func stop() {
     server.stop()
     sdk = nil
