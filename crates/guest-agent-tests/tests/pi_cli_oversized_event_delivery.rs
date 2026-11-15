@@ -9,7 +9,7 @@ use guest_agent::masker::SecretMasker;
 use guest_agent::paths::GuestPaths;
 use guest_agent::run_context::GuestRuntime;
 use serde_json::{Value, json};
-use std::io::{BufWriter, Read, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
@@ -751,12 +751,36 @@ async fn deliver_pi_rpc_with_skips(
         }
         assert_eq!(file.read(&mut [0])?, 0, "{}: extra bytes", path.display());
     }
-    let local = std::fs::read_to_string(runtime.paths.agent_log_file())?;
-    let local_lines = local.lines().collect::<Vec<_>>();
-    for expected in original.lines() {
-        assert!(local_lines.contains(&expected));
+    {
+        let mut original_lines = original
+            .lines()
+            .map(|line| (line, false))
+            .collect::<Vec<_>>();
+        let capacity = original_lines
+            .iter()
+            .map(|(line, _)| line.len())
+            .max()
+            .unwrap_or(0);
+        let mut line = String::with_capacity(capacity + 1);
+        let mut local = BufReader::new(std::fs::File::open(runtime.paths.agent_log_file())?);
+        while local.read_line(&mut line)? != 0 {
+            let actual = line.lines().next().ok_or("missing Pi log line")?;
+            assert!(
+                !actual.contains("for delivery"),
+                "delivery marker in local Pi log"
+            );
+            for (expected, found) in &mut original_lines {
+                if actual == *expected {
+                    *found = true;
+                }
+            }
+            line.clear();
+        }
+        assert!(
+            original_lines.iter().all(|(_, found)| *found),
+            "original Pi message was not recorded"
+        );
     }
-    assert!(!local.contains("for delivery"));
     let commands = std::fs::read_to_string(commands_path)?;
     assert_eq!(commands.lines().count(), 2);
     assert!(!commands.contains("for delivery"));
