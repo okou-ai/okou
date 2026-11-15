@@ -2386,7 +2386,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const selectionInput$ = computed(
-    async (get): Promise<AgentRunGraphInput | null> => {
+    async (get): Promise<ThreadRunSelectionInput | null> => {
       return (await get(isAutomation$))
         ? get(queuedAutomationAssemblerSelectionInput$)
         : get(promptExecutionSelectionSelectionInput$);
@@ -2416,13 +2416,15 @@ export function createThreadClaimRunObjects(
         : get(promptExecutionResourcesContinuation$);
     },
   );
-  const preCreateInput$ = computed(async (get): Promise<AgentRunGraphInput> => {
-    const input = await get(selectionInput$);
-    if (!input) {
-      throw new Error("Agent preparation has no selected input");
-    }
-    return input;
-  });
+  const preCreateInput$ = computed(
+    async (get): Promise<ThreadRunSelectionInput> => {
+      const input = await get(selectionInput$);
+      if (!input) {
+        throw new Error("Agent preparation has no selected input");
+      }
+      return input;
+    },
+  );
   const selectedIdentity$ = computed(
     async (get): Promise<AgentRunIdentityInput> => {
       const input = await get(identityInput$);
@@ -4715,11 +4717,6 @@ interface ThreadRunCommand {
   readonly agentRunPreCreateSource?: AgentRunPreCreateSource;
 }
 
-/** The identity read before Pi eligibility is decided. */
-type ThreadRunIdentity = Omit<ThreadRunCommand, "piExecution"> & {
-  readonly piExecution?: boolean;
-};
-
 /** The plain facts of a Thread run that Pi model preparation reads. */
 function piModelPreparationInput(
   args: Pick<
@@ -5022,8 +5019,8 @@ interface AgentRunIdentityInput {
   readonly chatThreadId: string;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
 }
-interface AgentRunGraphInput {
-  readonly command: ThreadRunIdentity;
+interface ThreadRunSelectionInput {
+  readonly command: ThreadRunCommand;
   readonly timing: ApiDispatchTimingCollector;
 }
 
