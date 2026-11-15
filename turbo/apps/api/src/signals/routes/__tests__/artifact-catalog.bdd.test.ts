@@ -465,9 +465,8 @@ describe("GET /api/artifacts/catalog", () => {
         },
       });
     }
-    const originalCatalog = await chat.listArtifactCatalog(owner.actor, {
-      chatThreadId: first.threadId,
-    });
+    // The publish-time API response already supplies the original identity.
+    const originalCatalog = publications[0]!.catalog;
     await completeChatRunOk(first.runId, execution.sandboxHeaders);
     const second = await sendChatRun(owner.actor, {
       agentId: owner.agentId,
