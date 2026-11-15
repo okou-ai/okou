@@ -489,7 +489,6 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
             .iter()
             .any(|event| common::contains_json_text(event, "for delivery"))
     );
-    let local_events = read_jsonl(runtime.paths.agent_log_file())?;
     for original in &original_collaborations {
         let item_id = original["id"]
             .as_str()
@@ -532,45 +531,82 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
             }
         }
         assert!(reduced_messages > 0);
-        assert_eq!(
-            delivered_item(&local_events, item_id)?["item"]["agents_states"],
-            original["agentsStates"]
+    }
+    let mut saw_local_collaborations = vec![false; original_collaborations.len()];
+    let mut saw_local_agent = false;
+    let mut saw_local_plan = false;
+    let mut saw_local_multi_change = false;
+    let mut saw_local_image = false;
+    let reader = BufReader::new(std::fs::File::open(runtime.paths.agent_log_file())?);
+    for line in reader.lines() {
+        let event: Value = serde_json::from_str(&line?)?;
+        let item_id = event.pointer("/item/id").and_then(Value::as_str);
+        if let Some(index) = original_collaborations
+            .iter()
+            .position(|original| original["id"].as_str() == item_id)
+            && !saw_local_collaborations[index]
+        {
+            assert_eq!(
+                event["item"]["agents_states"],
+                original_collaborations[index]["agentsStates"]
+            );
+            saw_local_collaborations[index] = true;
+        }
+        if item_id == Some("oversized-agent-message") && !saw_local_agent {
+            let local_text = event["item"]["text"]
+                .as_str()
+                .ok_or("local agent message omitted text")?;
+            assert!(local_text.len() > MAX_REQUEST_BYTES);
+            assert!(local_text.contains(SECRET));
+            assert!(!local_text.contains(DELIVERY_MARKER));
+            saw_local_agent = true;
+        }
+        if event["type"] == "turn.plan.updated" && !saw_local_plan {
+            assert_eq!(event["plan"].as_array().map(Vec::len), Some(75_000));
+            assert!(!common::contains_json_text(&event, FALLBACK_MARKER));
+            saw_local_plan = true;
+        }
+        if item_id == Some("oversized-multi-change") && !saw_local_multi_change {
+            assert_eq!(event["item"]["changes"].as_array().map(Vec::len), Some(2));
+            assert!(
+                event["item"]["changes"]
+                    .as_array()
+                    .is_some_and(|changes| changes.iter().all(|change| {
+                        change["diff"].as_str().is_some_and(|diff| {
+                            diff.contains(SECRET) && !diff.contains(DELIVERY_MARKER)
+                        })
+                    }))
+            );
+            saw_local_multi_change = true;
+        }
+        if item_id == Some("large-image") && !saw_local_image {
+            assert_eq!(
+                event["item"]["output"],
+                serde_json::json!([image(&large_image)])
+            );
+            saw_local_image = true;
+        }
+    }
+    for (seen, original) in saw_local_collaborations
+        .into_iter()
+        .zip(&original_collaborations)
+    {
+        assert!(
+            seen,
+            "local collaboration {} was not recorded",
+            original["id"]
         );
     }
-    let local_agent = delivered_item(&local_events, "oversized-agent-message")?;
-    let local_text = local_agent["item"]["text"]
-        .as_str()
-        .ok_or("local agent message omitted text")?;
-    assert!(local_text.len() > MAX_REQUEST_BYTES);
-    assert!(local_text.contains(SECRET));
-    assert!(!local_text.contains(DELIVERY_MARKER));
-    let local_plan = local_events
-        .iter()
-        .find(|event| event["type"] == "turn.plan.updated")
-        .ok_or("local oversized plan update was not recorded")?;
-    assert_eq!(local_plan["plan"].as_array().map(Vec::len), Some(75_000));
-    assert!(!common::contains_json_text(local_plan, FALLBACK_MARKER));
-    let local_multi_change = delivered_item(&local_events, "oversized-multi-change")?;
-    assert_eq!(
-        local_multi_change["item"]["changes"]
-            .as_array()
-            .map(Vec::len),
-        Some(2)
+    assert!(saw_local_agent, "local agent message was not recorded");
+    assert!(
+        saw_local_plan,
+        "local oversized plan update was not recorded"
     );
     assert!(
-        local_multi_change["item"]["changes"]
-            .as_array()
-            .is_some_and(|changes| changes.iter().all(|change| {
-                change["diff"]
-                    .as_str()
-                    .is_some_and(|diff| diff.contains(SECRET) && !diff.contains(DELIVERY_MARKER))
-            }))
+        saw_local_multi_change,
+        "local multi-change was not recorded"
     );
-
-    assert_eq!(
-        delivered_item(&local_events, "large-image")?["item"]["output"],
-        serde_json::json!([image(&large_image)])
-    );
+    assert!(saw_local_image, "local large image was not recorded");
     let system_log = std::fs::read_to_string(runtime.paths.system_log_file())?;
     assert_eq!(
         system_log
@@ -695,15 +731,4 @@ fn delivered_items<'a>(events: &'a [Value], item_id: &str) -> Vec<&'a Value> {
         .iter()
         .filter(|event| event.pointer("/item/id").and_then(Value::as_str) == Some(item_id))
         .collect()
-}
-
-fn read_jsonl(path: &str) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
-    let mut reader = BufReader::new(std::fs::File::open(path)?);
-    let mut line = String::new();
-    let mut events = Vec::new();
-    while reader.read_line(&mut line)? != 0 {
-        events.push(serde_json::from_str(&line)?);
-        line.clear();
-    }
-    Ok(events)
 }
