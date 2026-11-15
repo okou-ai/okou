@@ -5,6 +5,7 @@ from mitmproxy.flow import Error
 
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import model_websocket_usage
 import usage
 import websocket_retention
 from tests.model_provider_flow_helpers import (
@@ -154,7 +155,7 @@ class TestModelProviderWebSocketRetentionWithUsageDelivery:
         )
         assert flow.websocket is not None
         assert flow.websocket.messages == []
-        assert "model_websocket_usage_enabled" not in flow.metadata
+        assert not model_websocket_usage.is_enabled(flow)
 
         run_deferred_websocket_trims(deferred_websocket_trim_scheduler)
         assert flow.websocket.messages == []
@@ -189,7 +190,7 @@ class TestModelProviderWebSocketRetentionWithUsageDelivery:
         )
         assert flow.websocket is not None
         assert flow.websocket.messages == []
-        assert "model_websocket_usage_enabled" not in flow.metadata
+        assert not model_websocket_usage.is_enabled(flow)
 
         run_deferred_websocket_trims(deferred_websocket_trim_scheduler)
         assert flow.websocket.messages == []

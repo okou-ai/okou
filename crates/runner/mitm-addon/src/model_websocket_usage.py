@@ -12,7 +12,6 @@ import run_usage
 import usage
 from logging_utils import log_proxy_entry
 
-_MODEL_WEBSOCKET_USAGE_ENABLED = "model_websocket_usage_enabled"
 _MODEL_WEBSOCKET_PREWARM_STATE = "_model_websocket_prewarm_state"
 _MAX_IGNORED_RESPONSE_IDS = 100
 _MODEL_WEBSOCKET_PARSE_ERROR_DIAGNOSTIC_LIMIT = 4
@@ -51,7 +50,6 @@ def activate(flow: http.HTTPFlow) -> None:
     flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE] = {}
     flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE_SOURCES] = {}
     flow.metadata[_MODEL_WEBSOCKET_PREWARM_STATE] = _OpenAIResponsesPrewarmState()
-    flow.metadata[_MODEL_WEBSOCKET_USAGE_ENABLED] = True
 
 
 def is_enabled(flow: http.HTTPFlow) -> bool:
@@ -60,12 +58,13 @@ def is_enabled(flow: http.HTTPFlow) -> bool:
     True means an HTTP 101 response is not terminal for tracked usage and
     reporting must wait for ``websocket_end()``.
     """
-    return bool(flow.metadata.get(_MODEL_WEBSOCKET_USAGE_ENABLED, False))
+    return isinstance(
+        flow.metadata.get(_MODEL_WEBSOCKET_PREWARM_STATE), _OpenAIResponsesPrewarmState
+    )
 
 
 def release_state(flow: http.HTTPFlow) -> None:
     """Disable usage extraction after a terminal WebSocket or error hook."""
-    flow.metadata.pop(_MODEL_WEBSOCKET_USAGE_ENABLED, None)
     flow.metadata.pop(_MODEL_WEBSOCKET_PREWARM_STATE, None)
 
 
