@@ -2,6 +2,7 @@
 
 import copy
 import errno
+import hashlib
 import importlib.util
 import json
 import os
@@ -37,7 +38,8 @@ class ReplayTests(unittest.TestCase):
         cls.original_file = Path(cls.shared.name) / "retained.bin"
         with cls.original_file.open("xb") as handle:
             handle.truncate(64 * MIB)
-        cls.file_hash = REPORT.sha256(cls.original_file.read_bytes())
+        with cls.original_file.open("rb") as source:
+            cls.file_hash = hashlib.file_digest(source, "sha256").hexdigest()
 
     @classmethod
     def tearDownClass(cls):
