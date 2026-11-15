@@ -560,9 +560,8 @@ fn run_manifest(input: RunManifestInput<'_>) -> CapturedHelperOutput {
     {
         drain_cancel.cancel();
     }
-    let (stdout, stderr) = collect_bounded_output(
-        stdout_drain,
-        stderr_drain,
+    let [stdout, stderr] = collect_bounded_output(
+        [stdout_drain, stderr_drain],
         &drain_done_rx,
         &drain_cancel,
         drain_deadline,
