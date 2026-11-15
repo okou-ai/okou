@@ -1058,7 +1058,10 @@ function BrowserTab({
           { title: name },
         )}
         disabled={!canMutateTabs || closing || selecting}
-        className="size-6 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+        className={cn(
+          "size-6 shrink-0 rounded-md text-muted-foreground hover:bg-transparent",
+          canMutateTabs && "group-hover/browser-tab:text-foreground",
+        )}
         onClick={() => {
           detach(closeTab(target.id, pageSignal), Reason.DomCallback);
         }}
