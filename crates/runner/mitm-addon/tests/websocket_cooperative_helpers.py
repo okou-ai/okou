@@ -4,6 +4,7 @@ import json
 
 import mitm_addon
 from tests.model_provider_websocket_helpers import append_websocket_message
+from tests.repeated_bytes_helpers import repeat_marker
 
 
 def costly_message(side, repetitions):
@@ -25,7 +26,7 @@ def costly_message(side, repetitions):
             "response": response,
         }
     envelope = json.dumps(event).encode()
-    return envelope.replace(b"\\u4e2d", b"\\u4e2d" * repetitions, 1)
+    return repeat_marker(envelope, b"\\u4e2d", repetitions)
 
 
 async def deliver(flow, body, *, from_client=False):

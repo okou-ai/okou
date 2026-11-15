@@ -16,6 +16,7 @@ from tests.model_provider_websocket_helpers import (
     append_websocket_message,
     openai_websocket_usage_frame,
 )
+from tests.repeated_bytes_helpers import repeat_marker
 from tests.usage_helpers import assert_usage_event_rows
 from tests.websocket_cooperative_helpers import costly_message, deliver
 
@@ -137,7 +138,9 @@ async def test_history_remains_available_while_inspection_yields(
 async def test_documented_non_usage_message_keeps_synchronous_fast_path(real_flow, tmp_path):
     flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
     mitm_addon.responseheaders(flow)
-    body = b'{"type":"response.output_text.delta","delta":"' + b"\\u4e2d" * 350_000 + b'"}'
+    body = repeat_marker(
+        b'{"type":"response.output_text.delta","delta":"\\u4e2d"}', b"\\u4e2d", 350_000
+    )
     message = append_websocket_message(flow, from_client=False, content=body)
     assert mitm_addon.websocket_message(flow) is None
     assert message.content == body
@@ -198,12 +201,10 @@ async def test_server_total_work_budget_never_commits_partial_usage(
     ids=["type", "generate"],
 )
 def test_client_duplicate_consistency_survives_feed_boundaries(duplicate):
-    body = (
-        b'{"type":"response.create","generate":false,"input":"'
-        + b"\\u4e2d" * 10_000
-        + b'",'
-        + duplicate
-        + b"}"
+    body = repeat_marker(
+        b'{"type":"response.create","generate":false,"input":"\\u4e2d",' + duplicate + b"}",
+        b"\\u4e2d",
+        10_000,
     )
     observation = usage.inspect_openai_responses_client_event_json(body)
     assert observation.request_kind == "unknown"
@@ -213,12 +214,12 @@ def test_client_duplicate_consistency_survives_feed_boundaries(duplicate):
 
 @pytest.mark.parametrize("second_id", ["first", "conflicting"], ids=["consistent", "conflicting"])
 def test_server_lifecycle_id_consistency_survives_feed_boundaries(second_id):
-    body = (
-        b'{"type":"response.created","response":{"id":"first","instructions":"'
-        + b"\\u4e2d" * 10_000
-        + b'","id":"'
+    body = repeat_marker(
+        b'{"type":"response.created","response":{"id":"first","instructions":"\\u4e2d","id":"'
         + second_id.encode()
-        + b'"}}'
+        + b'"}}',
+        b"\\u4e2d",
+        10_000,
     )
     event = usage.inspect_openai_responses_event_json(body)
     inspection = usage.inspect_openai_responses_server_event(event, include_lifecycle=True)

@@ -14,6 +14,7 @@ import usage
 from body_limits import LARGE_RESPONSE_DECOMPRESS_LIMIT
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
+from tests.repeated_bytes_helpers import repeat_marker
 from tests.x_flow_helpers import make_x_pipeline_flow, make_x_response_flow
 
 
@@ -23,7 +24,7 @@ def _inline_delivery(sync_usage_executor):
 
 
 def _costly_row(repetitions):
-    return b'{"data":{"id":"1","text":"' + b"\\u0061" * repetitions + b'"}}'
+    return repeat_marker(b'{"data":{"id":"1","text":"\\u0061"}}', b"\\u0061", repetitions)
 
 
 @pytest.mark.parametrize("repetitions", [250_000, 350_000], ids=["accepted", "over-budget"])
