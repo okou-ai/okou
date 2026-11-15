@@ -14,10 +14,18 @@ use tokio::{
 
 fn compress_with(stream: &mut Compress, data: &[u8]) -> Vec<u8> {
     let before = stream.total_in();
-    let mut output = Vec::with_capacity(data.len() * 2 + 4096);
-    stream
-        .compress_vec(data, &mut output, FlushCompress::Sync)
-        .unwrap();
+    let mut output = Vec::with_capacity(data.len() + 4096);
+    loop {
+        let consumed = usize::try_from(stream.total_in() - before).unwrap();
+        stream
+            .compress_vec(&data[consumed..], &mut output, FlushCompress::Sync)
+            .unwrap();
+        // A full output buffer can leave the sync flush incomplete.
+        if output.len() < output.capacity() {
+            break;
+        }
+        output.reserve_exact(64 * 1024);
+    }
     assert_eq!(stream.total_in() - before, data.len() as u64);
     output
 }
