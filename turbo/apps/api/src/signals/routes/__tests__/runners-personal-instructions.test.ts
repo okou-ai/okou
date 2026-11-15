@@ -48,7 +48,7 @@ async function save(actor: ApiTestUser, content: string) {
 }
 
 describe("Captured personal Instructions in direct Runs", () => {
-  it("uses personal content at dispatch and keeps the signed API mode across a live flag disable", async () => {
+  it("keeps published personal content and signed API mode across a live flag disable", async () => {
     const owned = await publicChatActor(context);
     owned.ownsFeatureSwitches();
     await owned.run(async () => {
@@ -69,7 +69,7 @@ describe("Captured personal Instructions in direct Runs", () => {
         prompt: "execute with personal instructions",
         model: "auto",
       });
-      await save(owned.actor, "latest before dispatch");
+      await save(owned.actor, "latest after Run admission");
       await mode(owned.actor, false);
       const { execution } = await owned.runExecution(queued.runId);
       const selected = execution.contentBundles.instructions!;
