@@ -35,7 +35,9 @@ def _response(payload: bytes, framing: str) -> bytes:
 @pytest.mark.parametrize("framing", ["fixed", "chunked", "eof"])
 @pytest.mark.parametrize("size", [0, 32 * 1024 * 1024, 32 * 1024 * 1024 + 1])
 async def test_response_body_bounds_across_read_buffers(framing: str, size: int):
-    payload = (bytes(range(256)) * ((size + 255) // 256))[:size]
+    slab = bytes(range(256)) * 64
+    blocks, remainder = divmod(size, len(slab))
+    payload = b"".join([slab] * blocks + [slab[:remainder]])
     raw_response = _response(payload, framing)
     with fake_forwarder_upstream(socket_factory=lambda: FakeSocket(raw_response)) as upstream:
         if size > 32 * 1024 * 1024:
