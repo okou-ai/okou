@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.43.9](https://github.com/okou-ai/okou/compare/ios-v0.43.8...ios-v0.43.9) (2026-11-15)
+
+
+### Bug Fixes
+
+* **ios:** preserve cancellation through aliases and switches ([#47252](https://github.com/okou-ai/okou/issues/47252)) ([22088a6](https://github.com/okou-ai/okou/commit/22088a64171461c16dfab329c6c51b6c9f471f5c))
+
+
+### Performance Improvements
+
+* **ios:** coalesce project startup and healthy resume reads ([#47461](https://github.com/okou-ai/okou/issues/47461)) ([97ce489](https://github.com/okou-ai/okou/commit/97ce4894082954d3ec5944675091b3ff60bab411))
+* **ios:** narrow history warming triggers ([#47251](https://github.com/okou-ai/okou/issues/47251)) ([f767dca](https://github.com/okou-ai/okou/commit/f767dca04f1577ee18c6387abc86e91632ffb74c))
+* **ios:** narrow notification reconciliation demand ([#47421](https://github.com/okou-ai/okou/issues/47421)) ([6b8fdf5](https://github.com/okou-ai/okou/commit/6b8fdf5391b75f6a954a87286985f4328b5f666a))
+
 ## [0.43.8](https://github.com/okou-ai/okou/compare/ios-v0.43.7...ios-v0.43.8) (2026-11-14)
 
 

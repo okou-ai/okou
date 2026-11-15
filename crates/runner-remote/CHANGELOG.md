@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.57](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.56...runner-remote-v0.31.57) (2026-11-15)
+
+
+### Bug Fixes
+
+* **runner-remote:** propagate connection retirement to the native owner ([#47306](https://github.com/okou-ai/okou/issues/47306)) ([e6524f7](https://github.com/okou-ai/okou/commit/e6524f7d75d3a03f84db38da63018aae30efadf7))
+
 ## [0.31.56](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.55...runner-remote-v0.31.56) (2026-11-14)
 
 ## [0.31.55](https://github.com/okou-ai/okou/compare/runner-remote-v0.31.54...runner-remote-v0.31.55) (2026-11-14)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.107](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.106...guest-control-server-v0.24.107) (2026-11-15)
+
+
+### Refactoring
+
+* **guest-control:** centralize fixed-helper output finalization ([#47327](https://github.com/okou-ai/okou/issues/47327)) ([8d4c788](https://github.com/okou-ai/okou/commit/8d4c78822a513b24771d969eb8416345b9b04cf8))
+
 ## [0.24.106](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.105...guest-control-server-v0.24.106) (2026-11-14)
 
 ## [0.24.105](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.104...guest-control-server-v0.24.105) (2026-11-14)

@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.249.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.11...runner-rs-v0.249.12) (2026-11-15)
+
+
+### Refactoring
+
+* **python:** centralize auth-base worker finalization ([#47320](https://github.com/okou-ai/okou/issues/47320)) ([663c9d5](https://github.com/okou-ai/okou/commit/663c9d533775ae1e2d0e97b763aad7d4bc883855))
+* **python:** centralize webhook outcome publication ([#47413](https://github.com/okou-ai/okou/issues/47413)) ([b490e26](https://github.com/okou-ai/okou/commit/b490e269c95cf32b1b5c724f0b8e14f27fa82095))
+* **python:** keep catalog prefetch role on its owner ([#47448](https://github.com/okou-ai/okou/issues/47448)) ([5582016](https://github.com/okou-ai/okou/commit/5582016ef6205fdae90f93a977e02d5e8103e2fd))
+* **python:** let the report lease own its release directly ([#47459](https://github.com/okou-ai/okou/issues/47459)) ([15530c5](https://github.com/okou-ai/okou/commit/15530c51287c3e1f93745b1af1101da99d0ae9e0))
+* **python:** own active websocket correlation as one record ([#47310](https://github.com/okou-ai/okou/issues/47310)) ([53385a4](https://github.com/okou-ai/okou/commit/53385a44a212832eda20271fb7503b46504d72b8))
+* **python:** own catalog validation loop admission ([#47325](https://github.com/okou-ai/okou/issues/47325)) ([28bed1e](https://github.com/okou-ai/okou/commit/28bed1e62bf5097ebb1fb56856935c852109549f))
+* **python:** select connection winner from owned sockets ([#47361](https://github.com/okou-ai/okou/issues/47361)) ([465706e](https://github.com/okou-ai/okou/commit/465706e925a0e3f5552390fe10dd4cfa3ebb6277))
+* **runner:** centralize existing local group directory admission ([#47363](https://github.com/okou-ai/okou/issues/47363)) ([9fd19ae](https://github.com/okou-ai/okou/commit/9fd19ae9963a714844b1e207b3208e5e9a5c1522))
+* **runner:** model direct execution without claim scaffolding ([#47235](https://github.com/okou-ai/okou/issues/47235)) ([8bf20fb](https://github.com/okou-ai/okou/commit/8bf20fb75b2788038d699332435a84e551660c49))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.10...runner-rs-v0.249.11) (2026-11-14)
 
 
