@@ -633,39 +633,17 @@ export function buildQueuedRunCommand(
     // The time spent waiting in the chat queue is recorded separately.
     apiStartTime: admissionTime,
     chatThreadId: input.threadId,
-    ...(input.connectorSourceId
-      ? { connectorSourceId: input.connectorSourceId }
-      : {}),
-    computerUseHostId: input.computerUseHostGrant?.hostId,
-    modelProviderId: input.modelPin.modelProviderId ?? undefined,
-    modelProviderCredentialScope:
-      input.modelPin.modelProviderCredentialScope ?? undefined,
     selectedModelOverride: input.modelPin.selectedModel ?? undefined,
     codexServiceTier: input.codexServiceTier,
     reasoningEffort: input.reasoningEffort,
-    callbacks: queuedChatRunCallbackInputs(input),
     triggerSource: input.triggerSource,
     agentRunPreCreateSource: "chat_callback_auto_send" as const,
     queueFirstAssociation: {
       threadId: input.threadId,
       eventId: input.queuedMessage.id,
     },
-    agentRunModelPin: {
-      modelProvider: input.effectiveModelProvider ?? null,
-      modelProviderId: input.modelPin.modelProviderId,
-      modelProviderCredentialScope: input.modelPin.modelProviderCredentialScope,
-      selectedModel: input.modelPin.selectedModel,
-    },
     piExecution: input.piExecution,
     agentRunMetadata: { autonomyBudget: input.autonomyBudget },
-    ...(input.requiredOfficialWorkflowIds === undefined
-      ? {}
-      : {
-          requiredOfficialWorkflowIds: input.requiredOfficialWorkflowIds,
-        }),
-    ...(input.builtInModelRuntimeRoute
-      ? { builtInModelRuntimeRoute: input.builtInModelRuntimeRoute }
-      : {}),
     body: {
       agentId: input.agentId,
       ...(input.effectiveModelProvider
