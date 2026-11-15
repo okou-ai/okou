@@ -25,7 +25,7 @@ final class WorkspaceProjectSyncTests: XCTestCase {
   func testSharedListNotificationsAndManualRetryStillReadProjectEvents() async throws {
     let fixture = try makeFixture()
     try await fixture.start()
-    fixture.remote.withLock { $0 = 1 }
+    fixture.setRemoteVersion(1)
     try fixture.server.notify("threadListChanged", channel: fixture.channel)
     try await waitForBusinessResult {
       fixture.workspace.projects.projects.first?.name == "Release"
@@ -35,7 +35,7 @@ final class WorkspaceProjectSyncTests: XCTestCase {
 
     await fixture.workspace.refresh()
     XCTAssertEqual(fixture.reads, 3)
-    fixture.remote.withLock { $0 = 2 }
+    fixture.setRemoteVersion(2)
     try fixture.server.notify("threadListChanged", channel: fixture.channel)
     try await waitForBusinessResult { fixture.workspace.projects.projects.isEmpty }
     await fixture.workspace.resumePendingRefresh()?.value
@@ -48,7 +48,7 @@ final class WorkspaceProjectSyncTests: XCTestCase {
     fixture.workspace.setPhase(.background)
     try fixture.realtime.detach(fixture.channel)
     try await waitForBusinessResult { fixture.workspace.connectionStatus == .unavailable }
-    fixture.remote.withLock { $0 = 1 }
+    fixture.setRemoteVersion(1)
     try fixture.realtime.attach(fixture.channel)
     try await waitForBusinessResult { fixture.workspace.connectionStatus == .connected }
 
@@ -72,7 +72,7 @@ final class WorkspaceProjectSyncTests: XCTestCase {
     await refresh.value
     XCTAssertEqual(fixture.reads, 2)
 
-    fixture.remote.withLock { $0 = 1 }
+    fixture.setRemoteVersion(1)
     try fixture.realtime.reconnectTransport()
     try await waitForBusinessResult {
       fixture.workspace.projects.projects.first?.name == "Release"
@@ -86,7 +86,7 @@ final class WorkspaceProjectSyncTests: XCTestCase {
     fixture.allowHTTP()
     await fixture.workspace.projects.activate()
     XCTAssertEqual(fixture.reads, 1)
-    fixture.remote.withLock { $0 = 1 }
+    fixture.setRemoteVersion(1)
 
     try await fixture.start()
 
@@ -121,7 +121,7 @@ final class WorkspaceProjectSyncTests: XCTestCase {
     await fixture.workspace.projects.activate()
     XCTAssertEqual(fixture.reads, 1)
     fixture.workspace.setPhase(.background)
-    fixture.remote.withLock { $0 = 1 }
+    fixture.setRemoteVersion(1)
     try await fixture.start(backgrounded: true)
 
     fixture.workspace.setPhase(.active)
@@ -157,9 +157,7 @@ private final class ProjectSyncFixture {
   private unowned let owner: XCTestCase
   private let initialDeadline = ModelResponseGate()
   private let recoveryDeadline = ModelResponseGate()
-  private let recovering = Mutex(false)
-  let remote = Mutex(0)
-  private let projectReads = Mutex(0)
+  private let state = ProjectSyncFixtureState()
   let realtime: LoopbackRealtimeFixture
   private let http: ChatHTTPFixture
   private let bootstrap: WorkspaceReadBootstrap
@@ -168,7 +166,7 @@ private final class ProjectSyncFixture {
   private let workspaceID = "project-workspace-\(UUID().uuidString)"
   var channel: String { "user-org:\(userID):\(workspaceID)" }
   var server: RealtimeHTTPFixture { realtime.server }
-  var reads: Int { projectReads.withLock { $0 } }
+  var reads: Int { state.projectReads.withLock { $0 } }
 
   lazy var workspace = WorkspaceStore(
     client: http.client, webURL: http.baseURL, cache: cache,
@@ -178,10 +176,10 @@ private final class ProjectSyncFixture {
     self.owner = owner
     let initialDeadline = initialDeadline
     let recoveryDeadline = recoveryDeadline
-    let recovering = recovering
+    let state = state
     bootstrap = WorkspaceReadBootstrap {
       waiting?.fulfill()
-      if recovering.withLock({ $0 }) {
+      if state.recovering.withLock({ $0 }) {
         await recoveryDeadline.wait()
       } else {
         await initialDeadline.wait()
@@ -193,8 +191,6 @@ private final class ProjectSyncFixture {
       "ttl": 3_600_000, "nonce": "fixture-nonce", "mac": "ZmFrZQ==",
       "clientId": userID, "capability": "{\"*\":[\"subscribe\"]}",
     ])
-    let remote = remote
-    let projectReads = projectReads
     http = ChatHTTPFixture(
       onUnhandledRequest: { XCTFail($0) },
       handler: { request in
@@ -217,13 +213,13 @@ private final class ProjectSyncFixture {
               "createdAt":"2026-11-09T01:00:00Z","updatedAt":"2026-11-09T01:00:00Z"}]}
               """)
         case "/api/projects/events":
-          projectReads.withLock { $0 += 1 }
+          state.projectReads.withLock { $0 += 1 }
           let components = request.url.flatMap {
             URLComponents(url: $0, resolvingAgainstBaseURL: false)
           }
           let cursor = components?.queryItems?.first { $0.name == "sinceSeqId" }?.value
           let since = Int(cursor ?? "0") ?? 0
-          let version = remote.withLock { $0 }
+          let version = state.remote.withLock { $0 }
           let events = (1...2).filter { $0 > since && $0 <= version }.map { sequence in
             """
             {"id":"30000000-0000-4000-8000-00000000008\(sequence)","seqId":\(sequence),
@@ -250,8 +246,10 @@ private final class ProjectSyncFixture {
     try await owner.waitForBusinessResult { self.workspace.connectionStatus == .connected }
     await workspace.resumePendingRefresh()?.value
     XCTAssertEqual(workspace.connectionStatus, .connected)
-    recovering.withLock { $0 = true }
+    state.recovering.withLock { $0 = true }
   }
+
+  func setRemoteVersion(_ version: Int) { state.remote.withLock { $0 = version } }
 
   func allowHTTP() {
     initialDeadline.open()
@@ -263,4 +261,10 @@ private final class ProjectSyncFixture {
     await workspace.close().value
     realtime.stop()
   }
+}
+
+private final class ProjectSyncFixtureState: Sendable {
+  let remote = Mutex(0)
+  let projectReads = Mutex(0)
+  let recovering = Mutex(false)
 }
