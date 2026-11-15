@@ -28,16 +28,16 @@ use tokio::sync::{Notify, oneshot};
 use tokio_util::task::TaskTracker;
 use tracing::{info, warn};
 
-use crate::blank_pool::BlankPoolDiagnostics;
-use runner_executor::executor::{BlankPoolSelection, BlankPoolSelectionReason};
+use crate::blank_pool::{BlankPoolDiagnostics, reserve_blank_with_diagnostics};
+use runner_executor::executor::BlankPoolSelection;
 use runner_host::idle_prune_control::{PruneIdleReport, PruneIdleResponse};
 use runner_host::paths::short_digest;
 use runner_lifecycle::host_memory_operations::{HostMemoryOperations, MemoryOperationError};
 use runner_lifecycle::idle_pool::{
-    BlankIdleReservationMiss, DestroyOutcome, ExactIdleReservationMiss, IdleDestroyJob,
-    IdleDestroyPayload, IdleDestroyResult, IdlePool, IdlePoolRetirement, IdlePoolSnapshot,
-    IdleRetirementCandidate, IdleRetirementEnvelope, ReservedIdleSandbox,
-    RestoreReservedIdleResult, RetainedActivationCleanup, RetainedIdleDestroyResult,
+    DestroyOutcome, ExactIdleReservationMiss, IdleDestroyJob, IdleDestroyPayload,
+    IdleDestroyResult, IdlePool, IdlePoolRetirement, IdlePoolSnapshot, IdleRetirementCandidate,
+    IdleRetirementEnvelope, ReservedIdleSandbox, RestoreReservedIdleResult,
+    RetainedActivationCleanup, RetainedIdleDestroyResult,
 };
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::{StatusResult, StatusTracker};
@@ -637,33 +637,14 @@ fn reserve_pressure_reuse(
     if !request.allow_compatible_blank {
         return (None, None);
     }
-    match pool.reserve_blank(request.profile_name, request.device_rate_limits) {
-        Ok(reservation) => (Some(reservation), Some(BlankPoolSelection::Hit)),
-        Err(BlankIdleReservationMiss::Empty) => (
-            None,
-            Some(request.blank_pool_diagnostics.map_or(
-                BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown),
-                |diagnostics| {
-                    diagnostics.classify_empty(
-                        request.profile_name,
-                        request.device_rate_limits,
-                        pool.revision(),
-                        budget,
-                    )
-                },
-            )),
-        ),
-        Err(BlankIdleReservationMiss::Incompatible) => (
-            None,
-            Some(BlankPoolSelection::Miss(
-                BlankPoolSelectionReason::IncompatibleShape,
-            )),
-        ),
-        Err(BlankIdleReservationMiss::Unknown) => (
-            None,
-            Some(BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)),
-        ),
-    }
+    let (reservation, selection) = reserve_blank_with_diagnostics(
+        pool,
+        request.profile_name,
+        request.device_rate_limits,
+        request.blank_pool_diagnostics,
+        budget,
+    );
+    (reservation, Some(selection))
 }
 
 fn try_substitute_retiring_leases(
