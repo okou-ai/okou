@@ -851,19 +851,14 @@ function isDirectSendContext(contextType: string | null): boolean {
   return contextType === "web" || contextType === "agent_run";
 }
 
-/** Runner payload facts the Thread assembles privately for one run. */
-type ThreadRunnerFacts = Omit<
-  BuildRunnerLaunchInputInput,
-  "run" | "workflowAutomationId"
->;
+/** Execution input facts the Thread captures privately for one Run. */
+type ThreadRunnerFacts = Omit<RunnerLaunchInputArgs, "workflowAutomationId">;
 
 interface RunPlan {
   readonly args: ProductRunArgs;
-  readonly timing: ApiDispatchTimingCollector;
   readonly enforceBuiltInCredits: boolean;
   readonly runner: ThreadRunnerFacts;
   readonly persisted: PendingRunContext;
-  readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
 }
 
 function unreadyQueueHeadRejection(
@@ -954,7 +949,7 @@ function claimCommitArguments(
 
 /**
  * The first route error among prepared resources, in plan, credit admission,
- * storage and stored-context order.
+ * storage and launch-input order.
  */
 function firstPreparationFailure(
   results: readonly unknown[],
@@ -967,7 +962,7 @@ function firstPreparationFailure(
   return null;
 }
 
-/** Encode the final pending payload before it crosses the claim boundary. */
+/** Bind prepared launch facts to this admission's pending persistence. */
 function finalizeClaimRunContext(
   context: Omit<ThreadRunContext, "persistence">,
   timing: ApiDispatchTimingCollector,
@@ -1211,22 +1206,6 @@ const ABANDONED_HEAD_ERROR = {
   message: "The input could not be started",
 } as const;
 
-/** Revalidate only the captured admission facts under the pending transaction. */
-
-/** Producer ownership is persisted with the run rather than carried as a callback. */
-
-/** All writes here use the parent's one pending transaction. */
-
-/**
- * Reuse this outer graph for one organization pass. Each successful claim gets
- * one isolated child graph in the same request Store. The cursor advances over
- * selected work; it never retries a failed launch within this pass.
- */
-/**
- * Replace an unconsumed queued input with `input.rejected` and append its
- * visible error. Returns null when the input was already consumed.
- */
-
 /** A picked queue head a rejection records, publishes and reports. */
 interface RejectedQueueHead {
   readonly id: string;
@@ -1263,7 +1242,7 @@ export interface ThreadClaimRunObjects {
   >;
 }
 
-/** The admission input with the instant its reads are taken. */
+/** Construct the Thread-owned admission and publication graph. */
 export function createThreadClaimRunObjects(
   claim: ThreadClaim,
   bootstrap: AgentRunContextSignals,
@@ -2784,16 +2763,13 @@ export function createThreadClaimRunObjects(
     runArgs$: selectedRunContextRunArgs$,
     shared: selectedRunContextShared,
   } = graph;
-  const contextInput$ = computed(async (get) => {
+  const contextArgs$ = computed(async (get) => {
     const selected = await get(selectedRunContextRunArgs$);
     if (!selected || "status" in selected) {
       throw new Error("Run context requires an authorized ready input");
     }
     get(db$); // Preserve initialization and the graph dependency.
-    return {
-      args: selected.args,
-      timing: selected.input.timing,
-    };
+    return selected.args;
   });
   const execution$ = computed(async (get) => {
     // Agent/session resolution has no dependency on connector firewall policies
@@ -2827,23 +2803,23 @@ export function createThreadClaimRunObjects(
     );
   });
   const body$ = computed(async (get) => {
-    const [input, resolved, bodyEnvironment] = await Promise.all([
-      get(contextInput$),
+    const [args, resolved, bodyEnvironment] = await Promise.all([
+      get(contextArgs$),
       get(execution$),
       get(bootstrap.bodyEnvironment$),
     ]);
     if (isRouteError(resolved)) {
       return resolved;
     }
-    if (resolved.orgId !== input.args.orgId) {
+    if (resolved.orgId !== args.orgId) {
       return notFound("Resource not found");
     }
-    return { ...initialRunBody(input.args), ...bodyEnvironment };
+    return { ...initialRunBody(args), ...bodyEnvironment };
   });
   const runBodyBodyContext$ = computed(async (get) => {
-    const [input, resolved, body, requestedFramework, featureSwitchContext] =
+    const [args, resolved, body, requestedFramework, featureSwitchContext] =
       await Promise.all([
-        get(contextInput$),
+        get(contextArgs$),
         get(execution$),
         get(body$),
         get(runFramework$),
@@ -2863,7 +2839,7 @@ export function createThreadClaimRunObjects(
       body,
       requestedFramework,
       featureSwitchContext,
-      connectorScope: connectorScopeFromCreateArgs(input.args),
+      connectorScope: connectorScopeFromCreateArgs(args),
     };
   });
   const body = { bodyContext$: runBodyBodyContext$, framework$: runFramework$ };
@@ -2927,7 +2903,7 @@ export function createThreadClaimRunObjects(
       routePricing: runRoutePricingFromSnapshot(
         {
           modelProvider,
-          serviceTier: (await get(contextInput$)).args.codexServiceTier,
+          serviceTier: (await get(contextArgs$)).codexServiceTier,
         },
         await get(bootstrap.modelPricing$),
       ),
@@ -2954,7 +2930,7 @@ export function createThreadClaimRunObjects(
   const { bodyContext$ } = body;
   const { runtimeContext$ } = runContextRuntime;
   const executionPlan$ = computed(async (get) => {
-    const { args } = await get(contextInput$);
+    const args = await get(contextArgs$);
     const gate = enforceCaptureNetworkBodiesGate(
       args.orgId,
       initialRunBody(args).captureNetworkBodies,
@@ -3354,7 +3330,7 @@ export function createThreadClaimRunObjects(
       if ("status" in context) {
         return context;
       }
-      const { args, timing } = await get(contextInput$);
+      const args = await get(contextArgs$);
       const launchSnapshot = {
         schemaVersion: 5 as const,
         framework:
@@ -3371,14 +3347,12 @@ export function createThreadClaimRunObjects(
       const modelProvider = context.modelProvider;
       return {
         args,
-        timing,
         enforceBuiltInCredits:
           args.enforceBuiltInCredits === true &&
           !(
             officialWorkflowRun && args.agentRunMetadata?.workflowAutomationId
           ) &&
           isBuiltInModelProviderType(modelProvider?.type),
-        officialWorkflowRun,
         persisted: {
           body,
           selectedImageModel,
@@ -3448,11 +3422,10 @@ export function createThreadClaimRunObjects(
       return storage.value;
     },
   );
-  /** Launch payload arguments without the run token; a pure read join. */
+  /** Execution input arguments before Run-scoped token creation. */
   const runnerArgs$ = computed(async (get) => {
-    const [input, identity, allowed] = await Promise.all([
+    const [input, allowed] = await Promise.all([
       get(runPlan$),
-      get(runIdentity$),
       get(resourceAllowed$),
     ]);
     if (!allowed) {
@@ -3461,24 +3434,17 @@ export function createThreadClaimRunObjects(
     if (!input || isRouteError(input)) {
       return input;
     }
-    if (!identity) {
-      throw new Error("Selected claim has no run identity");
-    }
     return {
       ...input.runner,
       workflowAutomationId:
         input.args.agentRunMetadata?.workflowAutomationId ?? null,
-      run: {
-        id: identity.runId,
-      },
-      timing: input.timing,
     };
   });
   /** The run token makes runner input a command; its result is passed on. */
   const prepareRunnerInput$ = command(
     async (
       { get, set },
-      bodyOverride: BuildRunnerLaunchInputInput["body"] | undefined,
+      bodyOverride: RunnerLaunchInputArgs["body"] | undefined,
       signal: AbortSignal,
     ) => {
       const args = await get(runnerArgs$);
@@ -3559,7 +3525,7 @@ export function createThreadClaimRunObjects(
   const prepareRunnerStorage$ = command(
     async (
       { get, set },
-      bodyOverride: BuildRunnerLaunchInputInput["body"] | undefined,
+      bodyOverride: RunnerLaunchInputArgs["body"] | undefined,
       signal: AbortSignal,
     ) => {
       const [input, preparedStorage] = await Promise.all([
@@ -5099,10 +5065,9 @@ function selectedRunModelProviderArgs(
       : {}),
   };
 }
-// --- Thread-private implementation: Runner payload ---
+// --- Thread-private implementation: launch input ---
 
-interface BuildRunnerLaunchInputInput {
-  readonly run: Pick<RunRecord, "id">;
+interface RunnerLaunchInputArgs {
   readonly workflowAutomationId: string | null;
   readonly resolved: ResolvedRunExecution;
   readonly body: CreateRunBody;
@@ -5116,7 +5081,7 @@ interface BuildRunnerLaunchInputInput {
 
 /** Capture selectors and request receipts; admitted preparation assembles runtime input. */
 function prepareRunnerLaunchInput(input: {
-  readonly args: BuildRunnerLaunchInputInput;
+  readonly args: RunnerLaunchInputArgs;
   readonly okouToken: string;
   readonly disabledPaidTools: readonly string[];
   readonly previewBypassAuthorized: boolean;
@@ -5585,14 +5550,6 @@ function officialRunnerGroup(group: string | undefined): string {
   }
   return group;
 }
-
-// --- Private implementation: storage manifest ---
-
-// Storage planning and explicit resource materialization.
-
-// Execution context, launch preparation and pending atomic commit.
-
-// --- Private implementation: launch persistence ---
 
 interface AgentRunMetadata {
   // Run provenance for workflow schedule automations.
