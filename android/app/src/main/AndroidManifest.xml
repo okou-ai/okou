@@ -14,7 +14,6 @@
         android:usesCleartextTraffic="false"
         android:supportsRtl="true"
         android:theme="@style/Theme.Okou">
-        <!-- Clerk requires this component at startup; keep sharing private and disabled. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.updates"
@@ -22,6 +21,7 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths" />
         </provider>
+        <!-- Clerk requires this component at startup; keep sharing private and disabled. -->
         <provider
             android:name="com.clerk.api.sharedsession.SharedSessionSyncProvider"
             android:authorities="${applicationId}.clerk.shared-session-sync"
