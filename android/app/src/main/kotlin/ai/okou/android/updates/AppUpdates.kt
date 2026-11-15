@@ -1,5 +1,6 @@
 package ai.okou.android.updates
 
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.api.generated.AndroidUpdatesRelease
@@ -371,6 +372,7 @@ class AppUpdates(
     private fun classify(error: Exception, fallback: UpdateProblem): UpdateProblem =
         when (error) {
             is UpdateException -> error.problem
+            is ApiFailure.Http -> fallback
             is IOException,
             is SerializationException -> fallback
             else -> throw error

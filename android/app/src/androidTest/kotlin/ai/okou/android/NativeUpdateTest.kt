@@ -88,6 +88,11 @@ class NativeUpdateTest {
             takeScreenshot().writeToTestStorage("android-update-required.png")
         } catch (error: Throwable) {
             failures += error
+            try {
+                takeScreenshot().writeToTestStorage("android-update-failure.png")
+            } catch (diagnostic: Throwable) {
+                error.addSuppressed(diagnostic)
+            }
         } finally {
             gate.complete(Unit)
             for (cleanup in

@@ -6,7 +6,10 @@ import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.AndroidUpdates
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.MockResponse
@@ -23,6 +26,51 @@ import org.robolectric.annotation.Config
 @Config(sdk = [24, 35])
 class AndroidUpdateClientTest {
     @get:Rule val files = TemporaryFolder()
+
+    @Test
+    fun rejectedApkRequestBecomesRecoverableDownloadFailure() = runBlocking {
+        MockWebServer().use { server ->
+            server.start()
+            val directory = files.newFolder()
+            val release =
+                updateRelease()
+                    .copy(
+                        url =
+                            server
+                                .url("/android-updates/releases/0.13.0/${"a".repeat(64)}.apk")
+                                .toString()
+                    )
+            server.enqueue(
+                MockResponse().setBody(Json.encodeToString(AndroidUpdates(true, null, release)))
+            )
+            server.enqueue(MockResponse().setResponseCode(404))
+            val client =
+                AndroidUpdateClient(
+                    ApplicationProvider.getApplicationContext(),
+                    server.url("/"),
+                    "0.12.0",
+                    directory,
+                    artifactOrigin = server.url("/"),
+                )
+            AppUpdates(client, FileUpdateStore(directory), "0.12.0", 35, Dispatchers.Default).use {
+                owner ->
+                owner.check()
+                withTimeout(10_000) { owner.state.first { it.check == UpdateCheck.Checked } }
+                owner.download()
+                val failed =
+                    withTimeout(10_000) {
+                        owner.state.first { it.transfer == UpdateTransfer.Failed }
+                    }
+                assertEquals(UpdateProblem.Download, failed.problem)
+                assertEquals("0.13.0", failed.release!!.version)
+                assertTrue(
+                    directory.listFiles()!!.none {
+                        it.name.endsWith(".apk") || it.name.endsWith(".part")
+                    }
+                )
+            }
+        }
+    }
 
     @Test
     fun publicGeneratedTransportWorksAfterBusinessClientIsExcludedWithoutCredentials() =
