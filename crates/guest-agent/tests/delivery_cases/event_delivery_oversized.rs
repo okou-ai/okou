@@ -4,7 +4,7 @@ use crate::common;
 
 use base64::Engine as _;
 use serde_json::{Value, json};
-use std::io::{BufRead, BufReader, BufWriter, Read, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Seek, Write};
 use std::time::Duration;
 use tokio::process::Command;
 
@@ -220,15 +220,47 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
             break;
         }
     }
-    let log = std::fs::read_to_string(paths.agent_log_file())?;
-    let logged_lines = log.lines().collect::<Vec<_>>();
-    let mut source = BufReader::new(std::fs::File::open(source_path)?);
+    // Index complete UTF-8 log lines without retaining the complete log.
+    // Membership remains independent of log order and duplicate source lines.
+    let mut log = BufReader::new(std::fs::File::open(paths.agent_log_file())?);
+    let mut spans = Vec::new();
+    let mut offset = 0;
     let mut line = String::new();
+    loop {
+        let bytes = log.read_line(&mut line)?;
+        if bytes == 0 {
+            break;
+        }
+        spans.push((offset, line.lines().next().ok_or("missing log line")?.len()));
+        offset += bytes as u64;
+        line.clear();
+    }
+    let mut log = log.into_inner();
+    let mut source = BufReader::new(std::fs::File::open(source_path)?);
+    actual_chunk.resize(CHUNK_BYTES, 0);
     while source.read_line(&mut line)? != 0 {
-        // Match str::lines, including its CRLF handling, without loading the
-        // complete source alongside the complete log.
         let expected = line.lines().next().ok_or("missing source line")?;
-        assert!(logged_lines.contains(&expected));
+        let mut found = false;
+        for &(offset, length) in &spans {
+            if length != expected.len() {
+                continue;
+            }
+            log.seek(std::io::SeekFrom::Start(offset))?;
+            let mut equal = true;
+            for expected in expected.as_bytes().chunks(actual_chunk.len()) {
+                let actual = &mut actual_chunk[..expected.len()];
+                log.read_exact(actual)?;
+                if actual != expected {
+                    equal = false;
+                    break;
+                }
+            }
+            if equal {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "original Claude message was not recorded");
         line.clear();
     }
     Ok(())
