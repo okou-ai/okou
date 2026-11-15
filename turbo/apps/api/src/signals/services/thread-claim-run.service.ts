@@ -1808,7 +1808,6 @@ export function createThreadClaimRunObjects(
       owner: { userId: args.userId, orgId: args.agent.orgId },
       apiStartTime: head.apiStartTime,
       agentId: args.agent.id,
-      chatThreadId: args.threadId,
       queueFirstAssociation: {
         threadId: args.threadId,
         eventId: args.queuedMessage.id,
@@ -2084,13 +2083,7 @@ export function createThreadClaimRunObjects(
     return {
       timing: get(timing$),
       owner: { orgId: bootstrap.orgId, userId: bootstrap.userId },
-      apiStartTime: args.apiStartTime,
       agentId: bootstrap.agentId,
-      chatThreadId: args.due.chatThreadId,
-      queueFirstAssociation: {
-        threadId: args.due.chatThreadId,
-        eventId: args.queueEventId,
-      },
     };
   });
   const workflowAutomationLaunchSelectionInput$ = computed(async (get) => {
@@ -2379,7 +2372,7 @@ export function createThreadClaimRunObjects(
     );
   });
   const identityInput$ = computed(
-    async (get): Promise<AgentRunIdentityInput | null> => {
+    async (get): Promise<ThreadRunIdentityInput | null> => {
       return (await get(isAutomation$))
         ? get(queuedAutomationAssemblerIdentityInput$)
         : get(promptExecutionSelectionIdentityInput$);
@@ -2426,7 +2419,7 @@ export function createThreadClaimRunObjects(
     },
   );
   const selectedIdentity$ = computed(
-    async (get): Promise<AgentRunIdentityInput> => {
+    async (get): Promise<ThreadRunIdentityInput> => {
       const input = await get(identityInput$);
       if (!input) {
         throw new Error("Run identity is unavailable");
@@ -5011,13 +5004,10 @@ function buildThreadRunArgs(
   };
 }
 
-interface AgentRunIdentityInput {
+interface ThreadRunIdentityInput {
   readonly timing: ApiDispatchTimingCollector;
   readonly owner: ThreadRunOwner;
   readonly agentId: string;
-  readonly apiStartTime: number;
-  readonly chatThreadId: string;
-  readonly queueFirstAssociation: QueueFirstRunAssociation;
 }
 interface ThreadRunSelectionInput {
   readonly command: ThreadRunCommand;
