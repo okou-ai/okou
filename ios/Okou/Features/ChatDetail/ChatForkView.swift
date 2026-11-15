@@ -9,6 +9,7 @@ struct ChatForkView: View {
   let needsUpgrade: Bool
   let dismiss: () -> Void
   @State private var confirmsDiscard = false
+  @State private var fittedHeight: CGFloat?
 
   private func requestDismiss() {
     guard !flow.isSending else { return }
@@ -46,6 +47,13 @@ struct ChatForkView: View {
       .fixedSize(horizontal: false, vertical: true)
       .padding(.top, OkouSpace.sm)
       .padding(.bottom, OkouSpace.sm)
+      // Include the real native toolbar inset; NavigationStack has no intrinsic sheet height.
+      .onGeometryChange(for: CGFloat.self) { geometry in
+        ceil(geometry.frame(in: .named(flow.id)).maxY)
+      } action: { height in
+        if height > 0 { fittedHeight = height }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       .navigationTitle("New chat")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
@@ -65,11 +73,12 @@ struct ChatForkView: View {
         }
       }
     }
+    .coordinateSpace(name: flow.id)
     .interactiveDismissDisabled(flow.isSending || flow.hasEdits)
     .background {
       ForkDismissObserver(onAttempt: requestDismiss)
     }
-    .presentationSizing(.form.fitted(horizontal: false, vertical: true))
+    .presentationDetents([fittedHeight.map(PresentationDetent.height) ?? .medium])
     .presentationDragIndicator(.visible)
     .okouSheetBackground(OkouColor.background)
     .accessibilityIdentifier("fork-sheet")
