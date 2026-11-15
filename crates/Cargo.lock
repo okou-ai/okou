@@ -1096,7 +1096,7 @@ dependencies = [
  "base64 0.23.1",
  "flate2",
  "libc",
- "nix",
+ "nix 0.32.0",
  "rustix",
  "serde",
  "serde_json",
@@ -2120,7 +2120,7 @@ dependencies = [
  "chrono",
  "cli-test-support",
  "libc",
- "nix",
+ "nix 0.32.0",
  "serde",
  "serde_json",
  "tempfile",
@@ -2133,7 +2133,7 @@ version = "0.23.94"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
- "nix",
+ "nix 0.32.0",
  "sandbox",
  "serde_json",
  "shell-quote",
@@ -2162,7 +2162,7 @@ dependencies = [
  "guest-contracts",
  "guest-control-proto",
  "libc",
- "nix",
+ "nix 0.32.0",
  "process-control-ipc",
  "process-launch",
  "rustix",
@@ -2197,7 +2197,7 @@ dependencies = [
  "guest-contracts",
  "libc",
  "linux-mountinfo",
- "nix",
+ "nix 0.32.0",
  "rustix",
  "tempfile",
 ]
@@ -2210,7 +2210,7 @@ dependencies = [
  "guest-control-server",
  "guest-home-mount",
  "libc",
- "nix",
+ "nix 0.32.0",
  "tempfile",
 ]
 
@@ -2235,7 +2235,7 @@ dependencies = [
  "httpmock",
  "libc",
  "linux-mountinfo",
- "nix",
+ "nix 0.32.0",
  "proptest",
  "roxmltree 0.21.2",
  "rustix",
@@ -2294,7 +2294,7 @@ dependencies = [
  "guest-contracts",
  "guest-control-proto",
  "libc",
- "nix",
+ "nix 0.32.0",
  "tempfile",
 ]
 
@@ -2806,9 +2806,9 @@ checksum = "3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4"
 
 [[package]]
 name = "jiff"
-version = "0.2.43"
+version = "0.2.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26699905cc795a23e3949585cc7ba3ee8ade090872a27e4316304a777297894a"
+checksum = "34e6d07feb763c647199bd9072192b9639da3b5ffde49afd73c08b1d5ceb1469"
 dependencies = [
  "jiff-core",
  "jiff-static",
@@ -2822,18 +2822,18 @@ dependencies = [
 
 [[package]]
 name = "jiff-core"
-version = "0.1.5"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffe6854081f5ac0a3046a9b223729ccd7a20b1e0e8277e44dc0660eedf67dfe2"
+checksum = "3c0dfb57e3485bee979b355302992ea9c38331a94f6ccce72c2bf0077d6c9310"
 dependencies = [
  "log",
 ]
 
 [[package]]
 name = "jiff-static"
-version = "0.2.43"
+version = "0.2.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b4ff49b2887190c760b86207b55cdcaabbdecaf7a0660d68aa2ed6f652abf0a"
+checksum = "d93b8289f811027d18f228ae410cbadc766419d50b79185fa0084b10cc172d03"
 dependencies = [
  "jiff-core",
  "proc-macro2",
@@ -2843,9 +2843,9 @@ dependencies = [
 
 [[package]]
 name = "jiff-tzdb"
-version = "0.1.9"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa8377070c6bae868759445e5a77f66d84f0b72f3a054bfb00e6d038b8282da7"
+checksum = "0980fca2cc272465bd60e82397607ba9f33add9e48defd77923301bbd03808f2"
 
 [[package]]
 name = "jiff-tzdb-platform"
@@ -3137,7 +3137,7 @@ dependencies = [
  "bitvec",
  "cli-test-support",
  "libc",
- "nix",
+ "nix 0.32.0",
  "serde_json",
  "tempfile",
  "thiserror",
@@ -3155,6 +3155,18 @@ name = "nix"
 version = "0.31.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+dependencies = [
+ "bitflags 2.13.2",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
+
+[[package]]
+name = "nix"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77730ed34f01f4990cb2ea67fec715ecebc6fab9a6396cf83c5529b13f581bdc"
 dependencies = [
  "bitflags 2.13.2",
  "cfg-if",
@@ -3663,7 +3675,7 @@ name = "process-launch"
 version = "0.1.7"
 dependencies = [
  "libc",
- "nix",
+ "nix 0.32.0",
  "rustix",
  "tempfile",
  "tokio",
@@ -4129,7 +4141,7 @@ dependencies = [
  "libc",
  "log",
  "nbd-cow",
- "nix",
+ "nix 0.32.0",
  "raw-http-test-support",
  "reqwest",
  "runner-executor",
@@ -4186,7 +4198,7 @@ dependencies = [
  "hex",
  "httpmock",
  "libc",
- "nix",
+ "nix 0.32.0",
  "raw-http-test-support",
  "reqwest",
  "runner-host",
@@ -4224,7 +4236,7 @@ dependencies = [
  "futures-util",
  "hex",
  "libc",
- "nix",
+ "nix 0.32.0",
  "runner-types",
  "rustix",
  "serde",
@@ -4251,7 +4263,7 @@ dependencies = [
  "guest-contracts",
  "hex",
  "libc",
- "nix",
+ "nix 0.32.0",
  "runner-host",
  "runner-storage",
  "runner-types",
@@ -4285,7 +4297,7 @@ dependencies = [
  "httpmock",
  "libc",
  "log",
- "nix",
+ "nix 0.32.0",
  "reqwest",
  "runner-host",
  "runner-types",
@@ -4320,7 +4332,7 @@ dependencies = [
  "httpmock",
  "hyper",
  "hyper-util",
- "nix",
+ "nix 0.32.0",
  "process-control-ipc",
  "raw-http-test-support",
  "rcgen",
@@ -4372,7 +4384,7 @@ dependencies = [
  "kerberos-worker",
  "libc",
  "log",
- "nix",
+ "nix 0.32.0",
  "pkcs5",
  "pkcs8",
  "png",
@@ -4469,7 +4481,7 @@ dependencies = [
  "httpmock",
  "hyper",
  "libc",
- "nix",
+ "nix 0.32.0",
  "raw-http-test-support",
  "rcgen",
  "reqwest",
@@ -4635,7 +4647,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3aec6cb630dbe85d72ffd7bcd95f07e1bd69f9f270ee8adfa1afe443a6331438"
 dependencies = [
  "log",
- "nix",
+ "nix 0.31.3",
  "ssh-encoding",
  "windows-sys 0.61.2",
 ]
@@ -4844,7 +4856,7 @@ dependencies = [
  "libc",
  "linux-mountinfo",
  "nbd-cow",
- "nix",
+ "nix 0.32.0",
  "process-launch",
  "proptest",
  "reqwest",
@@ -5908,9 +5920,9 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "trybuild"
-version = "1.0.122"
+version = "1.0.123"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62db9c92d704393fbf2132041720cc80b689f2d3f28521015c2ac866223c11b8"
+checksum = "5dc7029163734745d9a24da4e1c74122e719d5045495c2d8d55c4cc2f6055fdf"
 dependencies = [
  "glob",
  "serde",
