@@ -16,7 +16,6 @@ RUNNER_FIXTURE = r'''
 import json
 import os
 from pathlib import Path
-import subprocess
 import sys
 
 args = sys.argv[1:]
@@ -60,7 +59,7 @@ else:
             env.pop(name, None)
         else:
             env[name] = value
-sys.exit(subprocess.call(args, env=env))
+os.execvpe(args[0], args, env)
 '''
 
 VERSION_FIXTURE = r'''#!/bin/sh
