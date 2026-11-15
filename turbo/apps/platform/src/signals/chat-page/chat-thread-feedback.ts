@@ -20,8 +20,10 @@ import { clearChatListQuery$ } from "../okou-page/sidebar-state.ts";
 import { defaultAgentId$ } from "../agent.ts";
 import { ASSISTANT_NAME } from "../branding.ts";
 import { singleAgentEnabled$ } from "../single-agent.ts";
+import { projectsEnabled$ } from "../projects/projects.ts";
 import {
   chatThreadMetaMap$,
+  eventDrivenChatThreads$,
   type ThreadMeta,
 } from "./chat-thread-event-sourcing.ts";
 import { onDomEventFn, onRef, resetSignal, withCleanup } from "../utils.ts";
@@ -485,6 +487,7 @@ export type ChatForwardComposerFactory = (
   target: ChatForwardTarget,
   forward: ChatForwardContext,
   onOptimisticSend: () => void,
+  projectId?: string,
 ) => {
   readonly prepare$: Command<
     ChatForwardComposerState | Promise<ChatForwardComposerState>,
@@ -496,6 +499,7 @@ interface ForwardComposerRequest {
   readonly target: ChatForwardTarget;
   readonly forward: ChatForwardContext;
   readonly fork?: boolean;
+  readonly projectId?: string;
 }
 
 /** The passage quotes its own thread, so its title travels with it. */
@@ -544,6 +548,7 @@ function createForwardState(
           request.target,
           request.forward,
           request.onOptimisticSend,
+          request.projectId,
         )
       : null;
   });
@@ -670,6 +675,11 @@ function createStartForward(
             target: { kind: "agent", id: agentId, title: ASSISTANT_NAME },
             forward: forwardContextFrom(captured, source),
             fork: true,
+            projectId: get(projectsEnabled$)
+              ? (get(eventDrivenChatThreads$).find((thread) => {
+                  return thread.id === captured.threadId;
+                })?.projectId ?? undefined)
+              : undefined,
           },
           signal,
         );
