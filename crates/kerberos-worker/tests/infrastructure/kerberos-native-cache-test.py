@@ -50,7 +50,7 @@ env > "$fixture_root/compiler.env"
 if [[ ${CACHE_TEST_COMPILE_FAIL:-} == true ]]; then exit 24; fi
 echo compile >> "$fixture_root/compiles"
 while [[ $1 != -o ]]; do shift; done
-cp "$fixture_root/fixture-helper" "$2"
+exec cp "$fixture_root/fixture-helper" "$2"
 '''
         for host in ("x86_64", "aarch64"):
             prefix = f"zig-{host}-linux-0.15.2"
@@ -94,7 +94,7 @@ class CacheTest(unittest.TestCase):
 set -eu
 while [[ $1 != -o ]]; do url=$1; shift; done
 case "$url" in *ziglang*) name=zig.tar.xz ;; *) name=krb5.tar.gz ;; esac
-cp "$CACHE_TEST_ROOT/$name" "$2"
+exec cp "$CACHE_TEST_ROOT/$name" "$2"
 """)
         self.command("make", f"#!/bin/bash\nfixture_root={shlex.quote(str(self.root))}\n" + """
 set -eu
