@@ -890,29 +890,22 @@ function BrowserAddress({
   );
 }
 
-function BrowserNavigation({
+function BrowserHistoryButtons({
   signals,
-  settingsDisabled,
-}: BrowserNavigationProps) {
+  streaming,
+  navigating,
+  onNavigate,
+}: {
+  readonly signals: BrowserSignals;
+  readonly streaming: boolean;
+  readonly navigating: boolean;
+  readonly onNavigate: (action: "back" | "forward") => void;
+}) {
   const { t } = useTranslation();
   const history = useLoadable(signals.history$);
-  const scope = useGet(signals.navigationScope$);
-  const streaming = useGet(signals.streaming$);
-  const canSubmitAddress = useGet(signals.canSubmitAddress$);
-  const pageSignal = useGet(pageSignal$);
-  const [operation, navigate] = useLoadableSet(signals.navigate$);
-  const navigating = operation.state === "loading";
   const entries = history.state === "hasData" ? history.data : null;
-  const failures = [
-    history.state === "hasError" &&
-      isBrowserOperationFailure(history.error) &&
-      history,
-    operation.state === "hasError" &&
-      isCurrentNavigationFailure(operation.error, scope) &&
-      operation,
-  ];
   return (
-    <div className="relative flex shrink-0 items-center gap-1 border-b border-divider px-2 py-1.5">
+    <>
       <IconButton
         type="button"
         className="size-8"
@@ -921,7 +914,7 @@ function BrowserNavigation({
         })}
         disabled={!streaming || !entries?.canGoBack || navigating}
         onClick={() => {
-          detach(navigate("back", pageSignal), Reason.DomCallback);
+          onNavigate("back");
         }}
       >
         <ArrowLeft size={16} />
@@ -934,11 +927,60 @@ function BrowserNavigation({
         })}
         disabled={!streaming || !entries?.canGoForward || navigating}
         onClick={() => {
-          detach(navigate("forward", pageSignal), Reason.DomCallback);
+          onNavigate("forward");
         }}
       >
         <ArrowRight size={16} />
       </IconButton>
+    </>
+  );
+}
+
+function BrowserNavigationErrors({
+  signals,
+  operation,
+}: {
+  readonly signals: BrowserSignals;
+  readonly operation: Loadable<unknown> | { readonly state: "idle" };
+}) {
+  const history = useLoadable(signals.history$);
+  const scope = useGet(signals.navigationScope$);
+  const failures = [
+    history.state === "hasError" &&
+      isBrowserOperationFailure(history.error) &&
+      history,
+    operation.state === "hasError" &&
+      isCurrentNavigationFailure(operation.error, scope) &&
+      operation,
+  ];
+  return (
+    <BrowserOperationError
+      occurrences={failures}
+      className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
+    />
+  );
+}
+
+function BrowserNavigation({
+  signals,
+  settingsDisabled,
+}: BrowserNavigationProps) {
+  const { t } = useTranslation();
+  const streaming = useGet(signals.streaming$);
+  const canSubmitAddress = useGet(signals.canSubmitAddress$);
+  const pageSignal = useGet(pageSignal$);
+  const [operation, navigate] = useLoadableSet(signals.navigate$);
+  const navigating = operation.state === "loading";
+  return (
+    <div className="relative flex shrink-0 items-center gap-1 border-b border-divider px-2 py-1.5">
+      <BrowserHistoryButtons
+        signals={signals}
+        streaming={streaming}
+        navigating={navigating}
+        onNavigate={(action) => {
+          detach(navigate(action, pageSignal), Reason.DomCallback);
+        }}
+      />
       <IconButton
         type="button"
         className="size-8"
@@ -962,10 +1004,7 @@ function BrowserNavigation({
       />
       <BrowserSettings signals={signals} disabled={settingsDisabled} />
       {/* Overlays keep the canvas box stable; layout changes are commanded. */}
-      <BrowserOperationError
-        occurrences={failures}
-        className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
-      />
+      <BrowserNavigationErrors signals={signals} operation={operation} />
     </div>
   );
 }
