@@ -7,13 +7,13 @@ const context = testContext();
 test("claims exact-attempt SSH and VNC guidance", async () => {
   const owned = await publicChatActor(context);
   await owned.run(async () => {
-    const { actor, agentId, runnerGroup } = owned;
+    const { actor, agentId } = owned;
     const run = await owned.sendChatRun(actor, {
       agentId,
       prompt: "Explain the retained failure from my remote operation",
     });
-    const { claim } = await owned.claimChatRun(runnerGroup, run.runId);
-    const prompt = claim.appendSystemPrompt ?? "";
+    const { execution } = await owned.runExecution(run.runId);
+    const prompt = execution.appendSystemPrompt ?? "";
     expect(prompt).toContain("- VNC: use");
 
     for (const protocol of ["ssh", "vnc"] as const) {

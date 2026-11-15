@@ -270,7 +270,7 @@ async function responseFixture() {
       );
       await receiveBatch(connectionId);
     },
-    async claim() {
+    async executionInput() {
       return await runs.nextReceivedExecution(runnerGroup);
     },
     async finish(
@@ -311,7 +311,7 @@ describe("WeChat reply presentation and processing status", () => {
   it("offers billing recovery when a running WeChat task runs out of credits", async () => {
     const fixture = await responseFixture();
     await fixture.receive("Finish this task");
-    const run = await fixture.claim();
+    const run = await fixture.executionInput();
     await fixture.webhooks.requestAgentComplete(
       {
         runId: run.runId,
@@ -332,7 +332,7 @@ describe("WeChat reply presentation and processing status", () => {
     async (revoked) => {
       const fixture = await responseFixture();
       await fixture.receive("Return a long reply");
-      const run = await fixture.claim();
+      const run = await fixture.executionInput();
       await flushWaitUntilForTest();
       const text = "🌿".repeat(2050);
       server.use(
@@ -417,7 +417,7 @@ describe("WeChat reply presentation and processing status", () => {
     async (change) => {
       const fixture = await responseFixture();
       await fixture.receive("Hello");
-      await fixture.claim();
+      await fixture.executionInput();
       await flushWaitUntilForTest();
       const entered = createDeferredPromise<void>(context.signal);
       const release = createDeferredPromise<void>(context.signal);
@@ -475,7 +475,7 @@ describe("WeChat reply presentation and processing status", () => {
   it("delivers long Unicode replies and keeps typing for queued follow-ups", async () => {
     const fixture = await responseFixture();
     await fixture.receive("First task");
-    const first = await fixture.claim();
+    const first = await fixture.executionInput();
     await fixture.receive("A queued follow-up");
     await flushWaitUntilForTest();
     const statusBeforeCompletion = fixture.provider.typingStatuses.length;
@@ -494,7 +494,7 @@ describe("WeChat reply presentation and processing status", () => {
     expect(
       fixture.provider.typingStatuses.slice(statusBeforeCompletion),
     ).not.toContain(2);
-    const second = await fixture.claim();
+    const second = await fixture.executionInput();
     await fixture.finish(second, "Follow-up complete");
     await flushWaitUntilForTest();
     expect(fixture.provider.typingStatuses.at(-1)).toBe(2);
@@ -505,7 +505,7 @@ describe("WeChat reply presentation and processing status", () => {
     async (outcome) => {
       const fixture = await responseFixture();
       await fixture.receive("Start a task");
-      const run = await fixture.claim();
+      const run = await fixture.executionInput();
       await flushWaitUntilForTest();
       expect(fixture.provider.typingStatuses.at(-1)).toBe(1);
       if (outcome === "cancelled") {
@@ -538,7 +538,7 @@ describe("WeChat reply presentation and processing status", () => {
         );
       }
       await fixture.receive("Hello");
-      const run = await fixture.claim();
+      const run = await fixture.executionInput();
       await fixture.finish(run, "Still delivered");
       await flushWaitUntilForTest();
       expect(fixture.sentTexts).toStrictEqual([
@@ -553,7 +553,7 @@ describe("WeChat reply presentation and processing status", () => {
     async (partial) => {
       const fixture = await responseFixture();
       await fixture.receive("Recover my reply");
-      const run = await fixture.claim();
+      const run = await fixture.executionInput();
       await flushWaitUntilForTest();
       const text = "x".repeat(2100);
       const callbackHeaders = { authorization: `Bearer ${run.sandboxToken}` };
@@ -651,7 +651,7 @@ describe("WeChat reply presentation and processing status", () => {
   it("does not resend an ambiguous reply on repeated Runner completion", async () => {
     const fixture = await responseFixture();
     await fixture.receive("Return an answer once");
-    const run = await fixture.claim();
+    const run = await fixture.executionInput();
     let sends = 0;
     server.use(
       http.post(`${origin}/ilink/bot/sendmessage`, () => {
@@ -670,7 +670,7 @@ describe("WeChat reply presentation and processing status", () => {
   it("accepts new input while reply recovery is waiting for WeChat", async () => {
     const fixture = await responseFixture();
     await fixture.receive("First prompt");
-    const run = await fixture.claim();
+    const run = await fixture.executionInput();
     await flushWaitUntilForTest();
     const memberships =
       context.mocks.clerk.organizations.getOrganizationMembershipList;
@@ -743,7 +743,7 @@ describe("WeChat reply presentation and processing status", () => {
     async (elapsed) => {
       const fixture = await responseFixture();
       await fixture.receive("Reply once");
-      const run = await fixture.claim();
+      const run = await fixture.executionInput();
       const entered = createDeferredPromise<void>(context.signal);
       const release = createDeferredPromise<void>(context.signal);
       let attempts = 0;
@@ -790,7 +790,7 @@ describe("WeChat reply presentation and processing status", () => {
   it("clears typing even when the reply cannot be delivered", async () => {
     const fixture = await responseFixture();
     await fixture.receive("Hello");
-    const run = await fixture.claim();
+    const run = await fixture.executionInput();
     await flushWaitUntilForTest();
     expect(fixture.provider.typingStatuses.at(-1)).toBe(1);
     let attempts = 0;
@@ -826,7 +826,7 @@ describe("WeChat reply presentation and processing status", () => {
   it("does not restore typing when a delayed config read outlives completion", async () => {
     const fixture = await responseFixture();
     await fixture.receive("Hello");
-    const run = await fixture.claim();
+    const run = await fixture.executionInput();
     await flushWaitUntilForTest();
     const entered = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
@@ -869,7 +869,7 @@ describe("WeChat reply presentation and processing status", () => {
   it("does not send typing after the connection is disconnected during a config read", async () => {
     const fixture = await responseFixture();
     await fixture.receive("Hello");
-    const run = await fixture.claim();
+    const run = await fixture.executionInput();
     await flushWaitUntilForTest();
     const entered = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
@@ -1217,7 +1217,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
   async function receive() {
     return await receiveBatch(connectionId);
   }
-  async function claim() {
+  async function readExecution() {
     return await runs.nextReceivedExecution(runnerGroup);
   }
   expect(sends).toHaveLength(1);
@@ -1241,7 +1241,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
   await receive();
   expect(sends).toHaveLength(1);
 
-  const first = await claim();
+  const first = await readExecution();
   await flushWaitUntilForTest();
   expect(provider.typingStatuses.at(-1)).toBe(1);
 
@@ -1590,7 +1590,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
   messageText = "What is the project called?";
   await receive();
 
-  const second = await claim();
+  const second = await readExecution();
 
   expect(second.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(threadId);
   expect(second.nativeContinuation?.sessionId).toBe("wechat-native-session");

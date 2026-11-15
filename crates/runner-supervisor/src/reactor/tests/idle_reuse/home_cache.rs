@@ -17,8 +17,12 @@ fn reusable_candidate(
     profile_name: &str,
     reuse_key: &str,
 ) -> runner_provider::JobCandidate {
-    runner_provider::JobCandidate::new(run_id, profile_name.to_string())
-        .with_reuse_key(Some(reuse_key.to_string()))
+    runner_provider::JobCandidate::new(
+        run_id,
+        profile_name.to_string(),
+        format!("{run_id}.job").into(),
+    )
+    .with_reuse_key(Some(reuse_key.to_string()))
 }
 
 #[tokio::test(start_paused = true)]
@@ -863,7 +867,7 @@ async fn home_cache_promotion_triggers_immediate_heartbeat_without_park() {
     };
     assert!(
         omitted_active_home,
-        "post-claim heartbeat should stop advertising the active home cache; heartbeats: {post_claim_heartbeats:?}",
+        "post-acceptance heartbeat should stop advertising the active home cache; heartbeats: {post_claim_heartbeats:?}",
     );
     overrides.clear_wait_process_lifecycle_gate();
     second_gate.release_one();

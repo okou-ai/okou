@@ -20,11 +20,11 @@ import {
   mockClaudeCodeTokenEndpoint,
   mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const mocks = createRouteMocks(context);
 const routes = Object.freeze([
   ...meThirdPartySubscriptionsListRoutes,

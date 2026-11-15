@@ -357,9 +357,9 @@ async function requestRunCompletionThroughSandbox(
   runId: string,
 ) {
   await runsApi.heartbeatRunner(scenario.runnerGroup);
-  const claim = await runsApi.executionInput(runId);
-  await requestClaimedRunCompletionThroughSandbox(runId, claim);
-  return claim;
+  const execution = await runsApi.executionInput(runId);
+  await requestClaimedRunCompletionThroughSandbox(runId, execution);
+  return execution;
 }
 
 async function requestClaimedRunCompletionThroughSandbox(
@@ -599,9 +599,9 @@ describe("workflow queue", () => {
     const runIds = await workflowRunIds(automation.threadId);
     expect(runIds).toHaveLength(2);
     await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const secondClaim = await runsApi.executionInput(runIds[1]!);
+    const secondExecution = await runsApi.executionInput(runIds[1]!);
     // API start is anchored only for runs picked by POST /api/chat/events.
-    expect(secondClaim.apiStartTime).toBeUndefined();
+    expect(secondExecution.apiStartTime).toBeUndefined();
   });
 
   it("keeps user-friendly automation prompts across queue drain", async () => {
@@ -664,22 +664,24 @@ describe("workflow queue", () => {
     const runIds = await workflowRunIds(automation.threadId);
     expect(runIds).toHaveLength(2);
     await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const secondClaim = await runsApi.executionInput(runIds[1]!);
-    expect(secondClaim.prompt).toContain(
+    const secondExecution = await runsApi.executionInput(runIds[1]!);
+    expect(secondExecution.prompt).toContain(
       `/${WORKFLOW_NAME}\n\nAutomation event\nType: webhook-received\nSummary: signed workflow webhook received`,
     );
-    expect(secondClaim.prompt).toContain('"event": "queued friendly event"');
-    expect(secondClaim.appendSystemPrompt).toContain("# Agent Identity");
+    expect(secondExecution.prompt).toContain(
+      '"event": "queued friendly event"',
+    );
+    expect(secondExecution.appendSystemPrompt).toContain("# Agent Identity");
     expect(
-      secondClaim.appendSystemPrompt?.match(/^# Current User Info$/gmu),
+      secondExecution.appendSystemPrompt?.match(/^# Current User Info$/gmu),
     ).toHaveLength(1);
-    expect(secondClaim.appendSystemPrompt).toContain(
+    expect(secondExecution.appendSystemPrompt).toContain(
       `Email: ${scenario.actor.email}`,
     );
 
     for (const [runId, claim, body] of [
       [firstRunId, firstClaim, firstBody],
-      [runIds[1]!, secondClaim, secondBody],
+      [runIds[1]!, secondExecution, secondBody],
     ] as const) {
       const publicRun = await runsApi.readRun(scenario.actor, runId);
       expect(claim.prompt).toBe(publicRun.prompt);
@@ -811,7 +813,7 @@ describe("workflow queue", () => {
       automation.threadId,
     );
     await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const firstClaim = await runsApi.executionInput(firstRunId);
+    const firstExecution = await runsApi.executionInput(firstRunId);
     expectAccepted(await postWorkflowWebhook(automation, "wait for recovery"));
 
     await runsApi.requestCancelRun(scenario.actor, firstRunId, [200]);
@@ -822,7 +824,7 @@ describe("workflow queue", () => {
 
     await webhooksApi.requestAgentComplete(
       { runId: firstRunId, exitCode: 1, error: "Run cancelled" },
-      { authorization: `Bearer ${firstClaim.sandboxToken}` },
+      { authorization: `Bearer ${firstExecution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
@@ -862,7 +864,7 @@ describe("workflow queue", () => {
       { eventType: "webhook-received", automationId: automation.automationId },
     );
     await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const claim = await runsApi.executionInput(runId);
+    const execution = await runsApi.executionInput(runId);
 
     await accept(
       automationsClient().delete({
@@ -877,10 +879,10 @@ describe("workflow queue", () => {
     await expect(
       wf.readThreadEvents(automation.threadId),
     ).resolves.toContainEqual(claimedEvent);
-    expect(claim.prompt).toContain(
+    expect(execution.prompt).toContain(
       `/${WORKFLOW_NAME}\n\nAutomation event\nType: webhook-received\n`,
     );
-    expect(claim.prompt).toContain(
+    expect(execution.prompt).toContain(
       `"automationId": "${automation.automationId}"`,
     );
     await expect(runsApi.readRun(scenario.actor, runId)).resolves.toMatchObject(
@@ -897,7 +899,7 @@ describe("workflow queue", () => {
       webhookAutomation.threadId,
     );
     await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const runningClaim = await runsApi.executionInput(runningRunId);
+    const runningExecution = await runsApi.executionInput(runningRunId);
     expectAccepted(
       await postWorkflowWebhook(webhookAutomation, "orphaned after deletion"),
     );
@@ -965,7 +967,10 @@ describe("workflow queue", () => {
       pendingAutomationEvents(webhookAutomation.threadId),
     ).resolves.toStrictEqual([scheduleEvent]);
 
-    await requestClaimedRunCompletionThroughSandbox(runningRunId, runningClaim);
+    await requestClaimedRunCompletionThroughSandbox(
+      runningRunId,
+      runningExecution,
+    );
     await flushWaitUntilForTest();
 
     const events = await readProjectedChatEvents(context, {
@@ -1152,7 +1157,7 @@ describe("workflow queue", () => {
   it("revokes an orphaned queued input after its workflow is deleted", async () => {
     const { scenario, automation, runningRunId } = await busyQueueFixture(1);
     await runsApi.heartbeatRunner(scenario.runnerGroup);
-    const runningClaim = await runsApi.executionInput(runningRunId);
+    const runningExecution = await runsApi.executionInput(runningRunId);
     const [queuedEvent] = await pendingAutomationEvents(automation.threadId);
     if (!queuedEvent) {
       throw new Error("Expected the workflow's queued input");
@@ -1168,7 +1173,10 @@ describe("workflow queue", () => {
     );
     // Workflow deletion cascades the automation row without deleting its
     // historical chat context. The next pick must retire that queued input.
-    await requestClaimedRunCompletionThroughSandbox(runningRunId, runningClaim);
+    await requestClaimedRunCompletionThroughSandbox(
+      runningRunId,
+      runningExecution,
+    );
     await flushWaitUntilForTest();
     expect(
       (await readInputStatus(automation.threadId, queuedEvent.id)).body,

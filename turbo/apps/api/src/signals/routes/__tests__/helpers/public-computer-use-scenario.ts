@@ -37,11 +37,11 @@ export function createPublicComputerUseScenario(
   const chat = createChatFilesBddApi(context);
   const hosts = createPublicComputerUseHosts(context);
   const actors = new Map<string, ApiTestUser>();
-  const claims = new Map<
+  const executions = new Map<
     string,
     { actor: ApiTestUser; sandboxToken: string }
   >();
-  const activeClaims = new Map<string, string>();
+  const activeExecutions = new Map<string, string>();
   const resources: (() => Promise<void>)[] = [];
   const personalTokens = new Map<string, ApiTestUser>();
   const prepared = new Map<
@@ -72,7 +72,7 @@ export function createPublicComputerUseScenario(
     }
     return actor;
   }
-  async function cancelClaim(
+  async function cancelExecution(
     actor: ApiTestUser,
     runId: string,
     perform: <T>(operation: () => Promise<T>) => Promise<T> = (operation) => {
@@ -85,19 +85,19 @@ export function createPublicComputerUseScenario(
       });
     });
     const errors: unknown[] = cancelled.ok ? [] : [cancelled.error];
-    const claim = claims.get(runId);
-    if (claim) {
+    const execution = executions.get(runId);
+    if (execution) {
       const acknowledged = await settleIncludingAbort(() => {
         return perform(() => {
           return createWebhookCallbackApi(context).requestAgentComplete(
             { runId, exitCode: 1, error: "Run cancelled" },
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${execution.sandboxToken}` },
             [200],
           );
         });
       });
       if (acknowledged.ok) {
-        claims.delete(runId);
+        executions.delete(runId);
       } else {
         errors.push(acknowledged.error);
       }
@@ -147,15 +147,18 @@ export function createPublicComputerUseScenario(
               handledRuns.add(item.id);
               await settle(async () => {
                 if (["queued", "pending", "running"].includes(item.status)) {
-                  await cancelClaim(actor, item.id);
-                } else if (claims.has(item.id) && item.status === "cancelled") {
-                  const claim = claims.get(item.id);
-                  if (!claim) {
-                    throw new Error("Expected the actual Runner claim");
+                  await cancelExecution(actor, item.id);
+                } else if (
+                  executions.has(item.id) &&
+                  item.status === "cancelled"
+                ) {
+                  const execution = executions.get(item.id);
+                  if (!execution) {
+                    throw new Error("Expected the dispatched execution");
                   }
                   await createWebhookCallbackApi(context).requestAgentComplete(
                     { runId: item.id, exitCode: 1, error: "Run cancelled" },
-                    { authorization: `Bearer ${claim.sandboxToken}` },
+                    { authorization: `Bearer ${execution.sandboxToken}` },
                     [200],
                   );
                 }
@@ -163,10 +166,10 @@ export function createPublicComputerUseScenario(
             }
           });
         }
-        for (const [runId, claim] of claims) {
+        for (const [runId, execution] of executions) {
           if (!handledRuns.has(runId)) {
             await settle(() => {
-              return cancelClaim(claim.actor, runId);
+              return cancelExecution(execution.actor, runId);
             });
           }
         }
@@ -305,15 +308,15 @@ export function createPublicComputerUseScenario(
     prepareActor,
     cancelRun(actor: ApiTestUser, runId: string) {
       return run(() => {
-        return cancelClaim(actor, runId, run);
+        return cancelExecution(actor, runId, run);
       });
     },
-    claimExisting(actor: ApiTestUser, runId: string) {
+    executionInput(actor: ApiTestUser, runId: string) {
       return run(async () => {
         remember(actor);
         const actual = await runs.executionInput(runId);
-        claims.set(runId, { actor, sandboxToken: actual.sandboxToken });
-        activeClaims.set(`${actor.orgId}:${actor.userId}`, runId);
+        executions.set(runId, { actor, sandboxToken: actual.sandboxToken });
+        activeExecutions.set(`${actor.orgId}:${actor.userId}`, runId);
         return actual;
       });
     },
@@ -330,7 +333,7 @@ export function createPublicComputerUseScenario(
     user(...args: Parameters<typeof bdd.user>) {
       return remember(bdd.user(...args));
     },
-    async claim(actor: ApiTestUser, hostId?: string) {
+    async launchRun(actor: ApiTestUser, hostId?: string) {
       return await run(async () => {
         remember(actor);
         // Actor/Runner setup uses its ordinary object-store boundary; restore the
@@ -343,12 +346,12 @@ export function createPublicComputerUseScenario(
           mockOptionalEnv("RUNNER_DEFAULT_GROUP", setup.runnerGroup);
           await runs.registerDirectRunner(setup.runnerGroup);
           const key = `${actor.orgId}:${actor.userId}`;
-          const previousRun = activeClaims.get(key);
+          const previousRun = activeExecutions.get(key);
           if (previousRun) {
             await run(() => {
-              return cancelClaim(actor, previousRun, run);
+              return cancelExecution(actor, previousRun, run);
             });
-            activeClaims.delete(key);
+            activeExecutions.delete(key);
           }
           const clientEventId = randomUUID();
           const sent = await run(() => {
@@ -381,21 +384,21 @@ export function createPublicComputerUseScenario(
             throw new Error("Expected the public launched Run");
           }
           const runId = launched.runId;
-          const claim = await run(async () => {
+          const execution = await run(async () => {
             const actual = await runs.executionInput(runId);
-            claims.set(runId, { actor, sandboxToken: actual.sandboxToken });
-            activeClaims.set(key, runId);
+            executions.set(runId, { actor, sandboxToken: actual.sandboxToken });
+            activeExecutions.set(key, runId);
             return actual;
           });
-          const token = claim.platformEnvironment.OKOU_TOKEN;
+          const token = execution.platformEnvironment.OKOU_TOKEN;
           if (!token) {
-            throw new Error("Expected the actual claimed Okou token");
+            throw new Error("Expected the execution's Okou token");
           }
           return {
             token,
             runId,
             threadId: sent.body.threadId,
-            sandboxToken: claim.sandboxToken,
+            sandboxToken: execution.sandboxToken,
           };
         });
         restoreStorage();

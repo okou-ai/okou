@@ -86,7 +86,7 @@ export function createPublicChatAdmissionFixture(context: TestContext) {
         await runs.requestCancelRun(actor, runId, [200]);
       }
     }
-    // Neither selected scenario claims a Runner, so no ACK is fabricated.
+    // Neither scenario starts a Runner execution.
     await flushWaitUntilForTest();
     await deleteFeatureSwitchesForUser(context, {
       userId: actor.userId,

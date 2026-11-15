@@ -1,6 +1,6 @@
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { claimPublicToolRun } from "./helpers/public-tool-actor";
+import { launchPublicToolRun } from "./helpers/public-tool-actor";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { randomUUID } from "node:crypto";
 import { completePublicClaudeRun } from "./helpers/public-native-run";
@@ -209,12 +209,12 @@ async function firewallRun(
       prompt: "resolve firewall auth",
     });
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await owner.claim(run.runId);
+    const execution = await owner.executionInput(run.runId);
     return {
       actor,
       runId: run.runId,
-      claim,
-      headers: { authorization: `Bearer ${claim.sandboxToken}` },
+      execution,
+      headers: { authorization: `Bearer ${execution.sandboxToken}` },
     };
   });
 }
@@ -289,10 +289,10 @@ async function withPublicFirewallRun(
     });
     fixture.registerRun(run.runId);
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.executionInput(run.runId);
-    fixture.registerClaim(run.runId, claim.sandboxToken);
+    const execution = await runsApi.executionInput(run.runId);
+    fixture.registerExecution(run.runId, execution.sandboxToken);
     await scenario(
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       fixture,
       subscription,
       { ...run, agentId: agent.agentId },
@@ -839,7 +839,11 @@ describe("FW-3: billable firewall lease", () => {
     const actor = createBddApi(context).user();
     const subscription =
       await createRunsApi(context).grantProEntitlement(actor);
-    const { claim } = await claimPublicToolRun(context, actor, onTestFinished);
+    const { execution: claim } = await launchPublicToolRun(
+      context,
+      actor,
+      onTestFinished,
+    );
     const headers = { authorization: `Bearer ${claim.sandboxToken}` };
     await publicConnections.testOAuth(actor, {
       accessToken: "stale-access",
@@ -1008,8 +1012,8 @@ describe("FW-3: billable firewall lease", () => {
       prompt: "billable auth across a subscription deletion",
     });
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.executionInput(run.runId);
-    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+    const execution = await runsApi.executionInput(run.runId);
+    const headers = { authorization: `Bearer ${execution.sandboxToken}` };
     const body = {
       encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
       authHeaders: {
@@ -1087,9 +1091,9 @@ describe("FW-3: billable firewall lease", () => {
     });
 
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.executionInput(run.runId);
+    const execution = await runsApi.executionInput(run.runId);
     const denied = await fw.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       {
         encryptedSecrets: fw.encryptedSecretsBody({ API_KEY: "paid" }),
         authHeaders: {
@@ -1107,7 +1111,7 @@ describe("FW-3: billable firewall lease", () => {
     await runsApi.requestCancelRun(actor, run.runId, [200]);
     await createWebhookCallbackApi(context).requestAgentComplete(
       { runId: run.runId, exitCode: 1, error: "Firewall carrier cancelled" },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
   });
@@ -1601,7 +1605,11 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       }),
     );
     let automaticConnectionId: string | undefined;
-    const { actor, headers, claim } = await firewallRun({
+    const {
+      actor,
+      headers,
+      execution: claim,
+    } = await firewallRun({
       additionalConnectorSlugs: [catalog.slug],
       prepareAgent: async (owner, agentId) => {
         mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");

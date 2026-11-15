@@ -123,7 +123,7 @@ describe("private Runner VNC authority", () => {
       useSecretKmsProbe();
       await runs.requestCancelRun(actor, runId, [200]);
       await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId: runId, exitCode: 137 },
+        { runId, exitCode: 137 },
         { authorization: `Bearer ${input.sandboxToken}` },
         [200],
       );
@@ -2759,7 +2759,7 @@ describe("private Runner VNC authority", () => {
       userId: `user_vnc_public_${randomUUID()}`,
     };
     const run = await selectedRuns.start(owner);
-    const claimed = await selectedRuns.claim(run, vncRunnerHeaders);
+    const claimed = await selectedRuns.executionInput(run, vncRunnerHeaders);
     api.authenticate(owner);
     const connection = await accept(
       api
@@ -2785,7 +2785,7 @@ describe("private Runner VNC authority", () => {
     expect(kms.decryptCalls).toBe(0);
     for (const status of ["completed", "cancelled", "failed"] as const) {
       const next = await selectedRuns.start(owner);
-      const current = await selectedRuns.claim(next, vncRunnerHeaders);
+      const current = await selectedRuns.executionInput(next, vncRunnerHeaders);
       await selectedRuns.finish(current, status);
       kms = useSecretKmsProbe();
       await expect(api.resolve({ ...f, ...current })).resolves.toStrictEqual({

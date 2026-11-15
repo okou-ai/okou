@@ -6,14 +6,14 @@ import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const claimedToken = createRunExecutionCredentials(context).okouToken;
 const mocks = createRouteMocks(context);
 
 interface AuthenticatedFixture {

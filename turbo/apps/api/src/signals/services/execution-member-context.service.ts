@@ -52,9 +52,8 @@ const switchSchema = array(
 const toolSchema = array(object({ toolId: string() }));
 
 /**
- * Composable member UNION; consumers decode only their own payload. The member
- * model sources are gated before enqueue together with this metadata, so they
- * share the preparation statement without moving a failure boundary.
+ * Composable member UNION; consumers decode only their own payload while
+ * execution metadata and member model sources share one statement snapshot.
  */
 export function executionMemberQuery(
   owner: ExecutionMemberIdentity,

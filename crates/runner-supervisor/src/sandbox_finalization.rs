@@ -347,13 +347,13 @@ impl FinalizationTestHooks {
 /// Coordinate the finalizing transition, physical resource disposition and
 /// observable outcome after executor return. Provider reporting and settlement
 /// surround this future in `job_lifecycle`.
-pub async fn finalize_claimed_run(
+pub async fn finalize_execution_run(
     sandbox: Option<Box<dyn Sandbox>>,
     active_lease: ActiveBudgetLease,
     telemetry: &mut JobTelemetry,
     ctx: FinalizeContext,
 ) -> FinalizationReady {
-    finalize_claimed_run_inner(
+    finalize_execution_run_inner(
         sandbox,
         active_lease,
         telemetry,
@@ -366,17 +366,17 @@ pub async fn finalize_claimed_run(
 
 /// Keep fault injection outside the production finalization interface.
 #[cfg(any(test, feature = "test-support"))]
-pub async fn finalize_claimed_run_with_test_hooks(
+pub async fn finalize_execution_run_with_test_hooks(
     sandbox: Option<Box<dyn Sandbox>>,
     active_lease: ActiveBudgetLease,
     telemetry: &mut JobTelemetry,
     ctx: FinalizeContext,
     test_hooks: FinalizationTestHooks,
 ) -> FinalizationReady {
-    finalize_claimed_run_inner(sandbox, active_lease, telemetry, ctx, test_hooks).await
+    finalize_execution_run_inner(sandbox, active_lease, telemetry, ctx, test_hooks).await
 }
 
-async fn finalize_claimed_run_inner(
+async fn finalize_execution_run_inner(
     sandbox: Option<Box<dyn Sandbox>>,
     active_lease: ActiveBudgetLease,
     telemetry: &mut JobTelemetry,

@@ -5,7 +5,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
+import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 
 const context = testContext();
@@ -29,13 +29,10 @@ describe("API dispatch-time Agent instructions", () => {
       });
       const current = "\uFEFF  B before claim\r\n中文\n[AGENT_PROFILE]\n  ";
       await bdd.updateAgentInstructions(owned.actor, owned.agentId, current);
-      const { claim } = await owned.claimChatRun(
-        owned.runnerGroup,
-        queued.runId,
-      );
-      const selected = claim.contentBundles.instructions!;
+      const { execution } = await owned.runExecution(queued.runId);
+      const selected = execution.contentBundles.instructions!;
       expect(
-        readClaimedContentBundle(s3.objects, selected)
+        readExecutionContentBundle(s3.objects, selected)
           .get("instructions.md")
           ?.toString(),
       ).toBe("A at queue time");
@@ -45,7 +42,7 @@ describe("API dispatch-time Agent instructions", () => {
         "C after claim",
       );
       expect(
-        readClaimedContentBundle(s3.objects, selected)
+        readExecutionContentBundle(s3.objects, selected)
           .get("instructions.md")
           ?.toString(),
       ).toBe("A at queue time");
@@ -54,14 +51,11 @@ describe("API dispatch-time Agent instructions", () => {
         prompt: "claim the later edit",
         model: "auto",
       });
-      const subsequent = await owned.claimChatRun(
-        owned.runnerGroup,
-        next.runId,
-      );
-      const later = subsequent.claim.contentBundles.instructions!;
+      const subsequent = await owned.runExecution(next.runId);
+      const later = subsequent.execution.contentBundles.instructions!;
       expect(later.sha256).not.toBe(selected.sha256);
       expect(
-        readClaimedContentBundle(s3.objects, later)
+        readExecutionContentBundle(s3.objects, later)
           .get("instructions.md")
           ?.toString(),
       ).toBe("C after claim");
@@ -87,13 +81,10 @@ describe("API dispatch-time Agent instructions", () => {
         prompt: "clear instructions",
         model: "auto",
       });
-      const { claim } = await owned.claimChatRun(
-        owned.runnerGroup,
-        queued.runId,
-      );
-      const files = readClaimedContentBundle(
+      const { execution } = await owned.runExecution(queued.runId);
+      const files = readExecutionContentBundle(
         s3.objects,
-        claim.contentBundles.instructions!,
+        execution.contentBundles.instructions!,
       );
       expect([...files.keys()]).toStrictEqual(["instructions.md"]);
       expect(files.get("instructions.md")?.length).toBe(0);
@@ -138,11 +129,8 @@ describe("API dispatch-time Agent instructions", () => {
       await bdd.updateAgentMetadata(owned.actor, owned.agentId, {
         visibility: "public",
       });
-      const { claim } = await owned.claimChatRun(
-        owned.runnerGroup,
-        queued.runId,
-      );
-      expect(claim.contentBundles.instructions).toMatchObject({
+      const { execution } = await owned.runExecution(queued.runId);
+      expect(execution.contentBundles.instructions).toMatchObject({
         sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
         archiveBytes: expect.any(Number),
       });

@@ -27,7 +27,7 @@ import { integrationsTelegramRoutes } from "../integrations-telegram";
 import { integrationsTelegramMessageRoutes } from "../integrations-telegram-message";
 import { integrationsTelegramUploadCompleteRoutes } from "../integrations-telegram-upload-complete";
 import { integrationsTelegramUploadInitRoutes } from "../integrations-telegram-upload-init";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createAuthDeviceApiActions,
@@ -44,7 +44,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const store = createStore();
 const mocks = createRouteMocks(context);
 
@@ -231,10 +231,10 @@ function sendClaimedModelMessage(model: FooterModel) {
         prompt: "Exercise footer",
       });
       await api.heartbeatRunner(runnerGroup);
-      const claim = await owner.claim(run.runId);
-      expect(claim.runId).toBe(run.runId);
+      const execution = await owner.executionInput(run.runId);
+      expect(execution.runId).toBe(run.runId);
       if (fast) {
-        const config = claim.piModelConfig;
+        const config = execution.piModelConfig;
         expect({
           provider: config?.provider,
           model: config?.model,
@@ -246,9 +246,9 @@ function sendClaimedModelMessage(model: FooterModel) {
           serviceTier: "fast",
         });
       } else {
-        expect(claim.environment?.ANTHROPIC_MODEL).toBe("claude-fable-5-1");
+        expect(execution.environment?.ANTHROPIC_MODEL).toBe("claude-fable-5-1");
       }
-      const token = claim.platformEnvironment.OKOU_TOKEN;
+      const token = execution.platformEnvironment.OKOU_TOKEN;
       if (!token?.startsWith("vm0_sandbox_")) {
         throw new Error("Expected the actual claim to issue an OKOU_TOKEN");
       }

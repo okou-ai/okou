@@ -46,9 +46,9 @@ async function setupAwsFirewall(publicFixture: PublicFirewallFixture) {
   });
   publicFixture.registerRun(run.runId);
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.executionInput(run.runId);
-  publicFixture.registerClaim(run.runId, claim.sandboxToken);
-  const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+  const execution = await runs.executionInput(run.runId);
+  publicFixture.registerExecution(run.runId, execution.sandboxToken);
+  const headers = { authorization: `Bearer ${execution.sandboxToken}` };
   mockAwsExternalCodeProvider();
   const ownedAccountIds = publicFixture.registerBuiltinConnector("aws");
 

@@ -31,7 +31,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
@@ -44,7 +44,7 @@ import {
 } from "./helpers/vnc-runtime";
 
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const claimedToken = createRunExecutionCredentials(context).okouToken;
 const store = createStore();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
@@ -1533,9 +1533,9 @@ describe("POST /api/chat-threads", () => {
       prompt: "Create a separate thread using the workspace default",
     });
     await api.heartbeatRunner(runnerGroup);
-    const claim = await api.executionInput(runId);
-    expect(claim.modelUsageProvider).toBe(OTHER_WORKSPACE_MODEL);
-    const token = claim.platformEnvironment.OKOU_TOKEN;
+    const execution = await api.executionInput(runId);
+    expect(execution.modelUsageProvider).toBe(OTHER_WORKSPACE_MODEL);
+    const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the caller Run claim to provide OKOU_TOKEN");
     }
@@ -1603,12 +1603,12 @@ describe("POST /api/chat-threads", () => {
       prompt: "Create a separate thread with the member's priority default",
     });
     await api.heartbeatRunner(runnerGroup);
-    const claim = await api.executionInput(runId);
-    expect(claim.piModelConfig).toMatchObject({
+    const execution = await api.executionInput(runId);
+    expect(execution.piModelConfig).toMatchObject({
       model: PRIORITY_MODEL,
       serviceTier: "fast",
     });
-    const inheritedToken = claim.platformEnvironment.OKOU_TOKEN;
+    const inheritedToken = execution.platformEnvironment.OKOU_TOKEN;
     if (!inheritedToken) {
       throw new Error("Expected the caller Run claim to provide OKOU_TOKEN");
     }

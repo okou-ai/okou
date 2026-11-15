@@ -843,7 +843,7 @@ async fn claimed_home_cache_metadata_combines_with_reserved_blank() {
         &config.paths.home,
         &config.runner.group,
     );
-    let reuse_key = "thread:blank-pool-claimed-home-priority";
+    let reuse_key = "thread:blank-pool-job-home-priority";
     seed_home_cache_state(
         &home_cache,
         &runner_paths,
@@ -864,13 +864,17 @@ async fn claimed_home_cache_metadata_combines_with_reserved_blank() {
     env.provider.set_claim_result(run_id, Some(context));
     env.handle
         .discover_tx
-        .send(JobCandidate::new(run_id, "vm0/default".into()))
+        .send(JobCandidate::new(
+            run_id,
+            "vm0/default".into(),
+            format!("{run_id}.job").into(),
+        ))
         .unwrap();
     let completion = env
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
-        .expect("claimed workspace metadata should be attached to the reserved blank");
+        .expect("job workspace metadata should be attached to the reserved blank");
 
     assert_eq!(completion.exit_code, 0);
     assert_eq!(completion.sandbox_id, Some(blank_sandbox_id));

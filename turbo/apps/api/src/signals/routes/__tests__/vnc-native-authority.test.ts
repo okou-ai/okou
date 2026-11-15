@@ -6,7 +6,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { tailscaleRoutes } from "../tailscale";
-import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
+import { createVncExecutionApi } from "./helpers/vnc-execution";
 import {
   createVncRuntimeApi,
   initializeVncRuntimeTest,
@@ -15,7 +15,7 @@ import {
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
-const claimed = createClaimedVncApi(context);
+const claimed = createVncExecutionApi(context);
 const api = createVncRuntimeApi(context);
 beforeEach(initializeVncRuntimeTest);
 afterEach(async () => {

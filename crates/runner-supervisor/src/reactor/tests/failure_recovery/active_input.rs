@@ -76,7 +76,11 @@ async fn assert_active_input_completion(path: CompletionPath) {
     );
     env.handle
         .discover_tx
-        .send(JobCandidate::new(run_id, profile.into()))
+        .send(JobCandidate::new(
+            run_id,
+            profile.into(),
+            format!("{run_id}.job").into(),
+        ))
         .unwrap();
     let run_task = tokio::spawn(run(config));
 
@@ -127,7 +131,7 @@ async fn assert_active_input_completion(path: CompletionPath) {
             .handle
             .wait_completion(run_id, TEST_TIMEOUT)
             .await
-            .expect("active-input shutdown must not block claimed-run completion");
+            .expect("active-input shutdown must not block job-run completion");
         if matches!(path, CompletionPath::Delivered) {
             assert_eq!(completion.exit_code, 0);
             assert!(completion.error.is_none());

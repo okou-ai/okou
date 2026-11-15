@@ -97,15 +97,15 @@ async function start(value: Awaited<ReturnType<typeof owner>>) {
     }
   });
   await runs.heartbeatRunner(value.runnerGroup);
-  const claim = await runs.executionInput(run.runId);
-  receipt.sandboxToken = claim.sandboxToken;
-  const token = claim.platformEnvironment.OKOU_TOKEN;
+  const execution = await runs.executionInput(run.runId);
+  receipt.sandboxToken = execution.sandboxToken;
+  const token = execution.platformEnvironment.OKOU_TOKEN;
   if (!token) {
     throw new Error("Runner claim did not issue an Okou token");
   }
   return {
     ...run,
-    claim,
+    execution,
     headers: { authorization: `Bearer ${token}` },
     receipt,
   };
@@ -142,7 +142,7 @@ describe("Chat connector execution", () => {
     const value = await owner(false);
     const account = await addAccount(value.actor, "A");
     const run = await start(value);
-    expect(run.claim.connectorRuntimeTargets ?? []).toStrictEqual([]);
+    expect(run.execution.connectorRuntimeTargets ?? []).toStrictEqual([]);
     await accept(client().list({ headers: run.headers }), [403]);
     session(value.actor);
     await accept(
@@ -169,7 +169,7 @@ describe("Chat connector execution", () => {
       [200],
     );
     const run = await start(value);
-    expect(run.claim.connectorRuntimeTargets).toContainEqual(
+    expect(run.execution.connectorRuntimeTargets).toContainEqual(
       expect.objectContaining({
         kind: "builtin",
         connectorSlug: "manual-mcp",
@@ -229,7 +229,7 @@ describe("Chat connector execution", () => {
     );
     const firewall = createFirewallApi(context);
     const metadata = Object.fromEntries(
-      Object.entries(run.claim.secretConnectorMetadataMap ?? {}).map(
+      Object.entries(run.execution.secretConnectorMetadataMap ?? {}).map(
         ([key, entry]) => {
           return [
             key,
@@ -241,11 +241,11 @@ describe("Chat connector execution", () => {
       ),
     );
     const auth = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${run.claim.sandboxToken}` },
+      { authorization: `Bearer ${run.execution.sandboxToken}` },
       {
         encryptedSecrets:
-          run.claim.encryptedSecrets || firewall.encryptedSecretsBody({}),
-        secretConnectorMap: run.claim.secretConnectorMap ?? undefined,
+          run.execution.encryptedSecrets || firewall.encryptedSecretsBody({}),
+        secretConnectorMap: run.execution.secretConnectorMap ?? undefined,
         secretConnectorMetadataMap: metadata,
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("MCP_API_KEY")}`,
@@ -293,17 +293,17 @@ describe("Chat connector execution", () => {
         exitCode: 0,
         lastEventSequence: 0,
         completion: {
-          cliAgentType: run.claim.cliAgentType,
+          cliAgentType: run.execution.cliAgentType,
           cliAgentSessionId: run.runId,
           cliAgentSessionHistoryDisposition: "native_only",
         },
       },
-      { authorization: `Bearer ${run.claim.sandboxToken}` },
+      { authorization: `Bearer ${run.execution.sandboxToken}` },
       [200],
     );
     run.receipt.completed = true;
     const next = await start(value);
-    expect(next.claim.connectorRuntimeTargets).toContainEqual(
+    expect(next.execution.connectorRuntimeTargets).toContainEqual(
       expect.objectContaining({
         kind: "builtin",
         connectorSlug: "manual-mcp",
@@ -339,7 +339,7 @@ describe("Chat connector execution", () => {
         isCurrent: false,
       }),
     );
-    expect(run.claim.connectorRuntimeTargets).toContainEqual(
+    expect(run.execution.connectorRuntimeTargets).toContainEqual(
       expect.objectContaining({ sourceId: a.id }),
     );
     await accept(
@@ -479,7 +479,7 @@ describe("Chat connector execution", () => {
             })?.expiresAt
           : undefined;
       const run = await start(value);
-      expect(run.claim.connectorRuntimeTargets).toContainEqual(
+      expect(run.execution.connectorRuntimeTargets).toContainEqual(
         expect.objectContaining({
           kind: "custom",
           customConnectorId: definition.id,
@@ -531,10 +531,10 @@ describe("Chat connector execution", () => {
       }
       const firewall = createFirewallApi(context);
       const authenticated = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${run.claim.sandboxToken}` },
+        { authorization: `Bearer ${run.execution.sandboxToken}` },
         {
           encryptedSecrets:
-            run.claim.encryptedSecrets || firewall.encryptedSecretsBody({}),
+            run.execution.encryptedSecrets || firewall.encryptedSecretsBody({}),
           authHeaders: api.auth.headers ?? {},
           matchedFirewall: {
             name: published.firewall.firewall.name,
@@ -619,7 +619,7 @@ describe("Chat connector execution", () => {
       [200],
     );
     const run = await start(value);
-    expect(run.claim.connectorRuntimeTargets).not.toContainEqual(
+    expect(run.execution.connectorRuntimeTargets).not.toContainEqual(
       expect.objectContaining(target),
     );
     expect(

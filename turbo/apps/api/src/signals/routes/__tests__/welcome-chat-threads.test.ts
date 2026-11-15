@@ -26,7 +26,7 @@ import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { welcomeChatThreadRoutes } from "../welcome-chat-threads";
 import { featureSwitchesRoutes } from "../feature-switches";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -41,7 +41,7 @@ const personalModelProviderTestRoutes = Object.freeze([
 ]);
 
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);

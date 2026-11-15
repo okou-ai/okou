@@ -1,7 +1,7 @@
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { randomUUID } from "node:crypto";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -110,8 +110,8 @@ async function createRunForAgent(
     threadId: thread.body.id,
     prompt: "Discover MCP connectors",
   });
-  const claimed = await owned.claimChatRun(owned.runnerGroup, run.runId);
-  return { ...run, token: okouTokenFromClaim(claimed.claim) };
+  const execution = await owned.runExecution(run.runId);
+  return { ...run, token: okouTokenFromExecution(execution.execution) };
 }
 
 function requireConnectedAccountId(
@@ -629,9 +629,9 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       owned.runId = run.runId;
       expect(run.status).toBe("running");
       await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.executionInput(run.runId);
-      owned.sandboxToken = claim.sandboxToken;
-      const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+      const execution = await runs.executionInput(run.runId);
+      owned.sandboxToken = execution.sandboxToken;
+      const okouToken = execution.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
         throw new Error("Expected the claimed run to include an Okou token");
       }
@@ -640,7 +640,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       const firewallName = `custom_connector_${connectorKey}`;
       const useAccount = async () => {
         const refreshed = await firewall.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           {
             encryptedSecrets: firewall.encryptedSecretsBody({}),
             authHeaders: {
@@ -880,8 +880,8 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     });
     expect(run.status).toBe("running");
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.executionInput(run.runId);
-    const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+    const execution = await runs.executionInput(run.runId);
+    const okouToken = execution.platformEnvironment.OKOU_TOKEN;
     if (!okouToken) {
       throw new Error("Expected the claimed run to include an Okou token");
     }

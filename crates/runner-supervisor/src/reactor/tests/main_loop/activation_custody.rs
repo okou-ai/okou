@@ -4,7 +4,7 @@ use super::super::support::{
     seed_idle_pool_with_overrides, shutdown, test_profiles, wait_cancel_token_removed,
     wait_discover_entered,
 };
-use crate::reactor::claim_tasks::MAX_IN_FLIGHT_CLAIMS;
+use crate::reactor::acceptance_tasks::MAX_IN_FLIGHT_ACCEPTANCES;
 
 #[tokio::test]
 async fn four_blocked_activations_retain_the_original_claim_bound() {
@@ -13,7 +13,7 @@ async fn four_blocked_activations_retain_the_original_claim_bound() {
     overrides.set_unpark_lifecycle_gate(gate.clone());
     let (mut config, env) =
         mock_run_config_with_overrides(test_profiles(), 32, 65_536, 16, overrides.clone());
-    config.capacity.max_idle = MAX_IN_FLIGHT_CLAIMS;
+    config.capacity.max_idle = MAX_IN_FLIGHT_ACCEPTANCES;
     let budget = Arc::clone(&config.capacity.budget);
     let pool = Arc::clone(&config.shared.idle_pool);
     let status_path = env._temp_dir.path().join("status.json");
@@ -24,7 +24,7 @@ async fn four_blocked_activations_retain_the_original_claim_bound() {
         .await
         .unwrap();
     let mut runs = Vec::new();
-    for _ in 0..MAX_IN_FLIGHT_CLAIMS {
+    for _ in 0..MAX_IN_FLIGHT_ACCEPTANCES {
         let run_id = RunId::new_v4();
         let key = RunId::new_v4().to_string();
         let sandbox_id =
@@ -44,13 +44,13 @@ async fn four_blocked_activations_retain_the_original_claim_bound() {
     }
     let later = RunId::new_v4();
     push_job(&env, later, "vm0/default", Some(minimal_context(later)));
-    gate.wait_entered(MAX_IN_FLIGHT_CLAIMS as u64, Duration::from_secs(5))
+    gate.wait_entered(MAX_IN_FLIGHT_ACCEPTANCES as u64, Duration::from_secs(5))
         .await
         .unwrap();
     let status: serde_json::Value =
         serde_json::from_str(&tokio::fs::read_to_string(&status_path).await.unwrap()).unwrap();
     let active = status["active_runs"].as_array().unwrap();
-    assert_eq!(active.len(), MAX_IN_FLIGHT_CLAIMS);
+    assert_eq!(active.len(), MAX_IN_FLIGHT_ACCEPTANCES);
     for (run_id, _, sandbox_id) in &runs {
         let owner = active
             .iter()
@@ -60,8 +60,11 @@ async fn four_blocked_activations_retain_the_original_claim_bound() {
         assert_eq!(owner["phase"], "preparing");
         assert!(env.cancel_tokens.handle(*run_id).await.is_some());
     }
-    assert_eq!(budget.allocated().2, MAX_IN_FLIGHT_CLAIMS);
-    assert_eq!(env.handle.claim_candidates().len(), MAX_IN_FLIGHT_CLAIMS);
+    assert_eq!(budget.allocated().2, MAX_IN_FLIGHT_ACCEPTANCES);
+    assert_eq!(
+        env.handle.claim_candidates().len(),
+        MAX_IN_FLIGHT_ACCEPTANCES
+    );
     assert!(env.cancel_tokens.handle(later).await.is_none());
     gate.release_many(usize::MAX);
     drop(foreground);
@@ -86,13 +89,13 @@ async fn four_blocked_activations_retain_the_original_claim_bound() {
     assert_eq!(budget.allocated(), (0, 0, 0));
     assert_eq!(
         env.handle.claim_candidates().len(),
-        MAX_IN_FLIGHT_CLAIMS + 1
+        MAX_IN_FLIGHT_ACCEPTANCES + 1
     );
     assert_eq!(
         env.handle.completions.lock().unwrap().len(),
-        MAX_IN_FLIGHT_CLAIMS + 1
+        MAX_IN_FLIGHT_ACCEPTANCES + 1
     );
-    assert!(env.handle.max_claim_in_flight() <= MAX_IN_FLIGHT_CLAIMS);
+    assert!(env.handle.max_claim_in_flight() <= MAX_IN_FLIGHT_ACCEPTANCES);
     for run_id in runs.into_iter().map(|r| r.0).chain([later]) {
         wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
     }

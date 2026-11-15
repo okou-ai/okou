@@ -76,11 +76,6 @@
       "dependency": "module:turbo/packages/db/src/schema/skill"
     },
     {
-      "file": "turbo/apps/api/src/signals/services/execution-context.ts",
-      "dependency": "module:turbo/apps/api/src/signals/services/execution-storage.service",
-      "uses": 2
-    },
-    {
       "file": "turbo/apps/api/src/signals/services/execution-runtime-context.ts",
       "dependency": "module:turbo/apps/api/src/signals/services/execution-storage.service",
       "uses": 2

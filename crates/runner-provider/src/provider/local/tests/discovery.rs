@@ -15,9 +15,9 @@ async fn discover_claim_complete() {
     assert_eq!(candidate.run_id(), job_id);
     assert_eq!(candidate.profile_name(), crate::profile::DEFAULT_PROFILE);
 
-    let claimed = provider.claim(candidate).await.unwrap();
-    assert!(claimed.active_input_source().is_none());
-    let ctx = claimed.context();
+    let job = provider.claim(candidate).await.unwrap();
+    assert!(job.active_input_source().is_none());
+    let ctx = job.context();
     assert_eq!(ctx.run_id, job_id);
     assert_eq!(ctx.prompt, "hello world");
 
@@ -52,12 +52,9 @@ async fn discover_carries_reuse_metadata_before_claim() {
     let candidate = provider.discover().await.unwrap();
     assert_eq!(candidate.reuse_key(), Some(reuse_key));
 
-    let claimed = provider.claim(candidate).await.unwrap();
-    assert_eq!(
-        claimed.context().cli_agent_session_id(),
-        Some("session-123")
-    );
-    assert_eq!(claimed.context().reuse_key(), Some(reuse_key));
+    let job = provider.claim(candidate).await.unwrap();
+    assert_eq!(job.context().cli_agent_session_id(), Some("session-123"));
+    assert_eq!(job.context().reuse_key(), Some(reuse_key));
 }
 
 #[tokio::test]
@@ -71,12 +68,9 @@ async fn session_only_job_resumes_without_reuse_key() {
     let candidate = provider.discover().await.unwrap();
     assert_eq!(candidate.reuse_key(), None);
 
-    let claimed = provider.claim(candidate).await.unwrap();
-    assert_eq!(
-        claimed.context().cli_agent_session_id(),
-        Some("session-123")
-    );
-    assert_eq!(claimed.context().reuse_key(), None);
+    let job = provider.claim(candidate).await.unwrap();
+    assert_eq!(job.context().cli_agent_session_id(), Some("session-123"));
+    assert_eq!(job.context().reuse_key(), None);
 }
 
 #[tokio::test]
@@ -91,9 +85,9 @@ async fn reuse_key_is_available_before_a_session_exists() {
     let candidate = provider.discover().await.unwrap();
     assert_eq!(candidate.reuse_key(), Some(reuse_key));
 
-    let claimed = provider.claim(candidate).await.unwrap();
-    assert_eq!(claimed.context().cli_agent_session_id(), None);
-    assert_eq!(claimed.context().reuse_key(), Some(reuse_key));
+    let job = provider.claim(candidate).await.unwrap();
+    assert_eq!(job.context().cli_agent_session_id(), None);
+    assert_eq!(job.context().reuse_key(), Some(reuse_key));
 }
 
 #[tokio::test]
@@ -175,7 +169,7 @@ async fn skips_already_claimed_jobs() {
 
     let job1 = RunId::new_v4();
     let job2 = RunId::new_v4();
-    write_job(dir.path(), job1, "claimed");
+    write_job(dir.path(), job1, "job");
     write_job(dir.path(), job2, "available");
     std::fs::create_dir_all(local_queue::claims_dir(dir.path())).unwrap();
     std::fs::write(local_queue::claim_path(dir.path(), job1), b"").unwrap();
@@ -233,8 +227,8 @@ async fn empty_result_does_not_hide_retryable_job() {
 
     let candidate = provider.discover().await.unwrap();
     assert_eq!(candidate.run_id(), job_id);
-    let claimed = provider.claim(candidate).await.unwrap();
-    let ctx = claimed.context();
+    let job = provider.claim(candidate).await.unwrap();
+    let ctx = job.context();
     assert_eq!(ctx.prompt, "retry me");
 
     provider
@@ -313,8 +307,8 @@ async fn large_ineligible_queue_discovers_and_claims_eligible_job() {
     let candidate = provider.discover().await.unwrap();
     assert_eq!(candidate.run_id(), expected_run_id);
 
-    let claimed = provider.claim(candidate).await.unwrap();
-    let ctx = claimed.context();
+    let job = provider.claim(candidate).await.unwrap();
+    let ctx = job.context();
     assert_eq!(ctx.run_id, expected_run_id);
     assert_eq!(ctx.prompt, "job 40");
 }

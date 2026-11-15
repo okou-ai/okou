@@ -648,19 +648,16 @@ describe("AUTH-01 sandbox and agent bearers", () => {
         model: "claude-fable-5-1",
       });
       activeCarrier.runId = run.runId;
-      const { claim } = await fixture.claimChatRun(
-        owned.runnerGroup,
-        run.runId,
-      );
-      activeCarrier.sandboxToken = claim.sandboxToken;
+      const { execution } = await fixture.runExecution(run.runId);
+      activeCarrier.sandboxToken = execution.sandboxToken;
       cfg.mockSession(null);
       cfg.mockClerkUsers([owned.actor]);
       cfg.mockMembership(owned.actor, "org:admin");
-      const agentToken = claim.platformEnvironment?.OKOU_TOKEN;
+      const agentToken = execution.platformEnvironment?.OKOU_TOKEN;
       if (!agentToken) {
         throw new Error("Expected the actual claim's Okou token");
       }
-      for (const token of [claim.sandboxToken, agentToken]) {
+      for (const token of [execution.sandboxToken, agentToken]) {
         const identity = await cfg.requestMe(
           { authorization: `Bearer ${token}` },
           [200],
@@ -686,8 +683,8 @@ describe("AUTH-01 sandbox and agent bearers", () => {
       agentId: owned.agentId,
       prompt: "configure connectors with the issued agent credential",
     });
-    const { claim } = await owned.claimChatRun(owned.runnerGroup, run.runId);
-    const token = claim.platformEnvironment?.OKOU_TOKEN;
+    const { execution } = await owned.runExecution(run.runId);
+    const token = execution.platformEnvironment?.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the claim's Okou token");
     }
@@ -726,8 +723,8 @@ describe("AUTH-01 sandbox and agent bearers", () => {
       agentId: owned.agentId,
       prompt: "read identity after organization membership removal",
     });
-    const { claim } = await owned.claimChatRun(owned.runnerGroup, run.runId);
-    const token = claim.platformEnvironment?.OKOU_TOKEN;
+    const { execution } = await owned.runExecution(run.runId);
+    const token = execution.platformEnvironment?.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the claim's Okou token");
     }

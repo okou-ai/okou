@@ -103,7 +103,7 @@ export type PromptMessage = Extract<ChatEvent, { eventType: "input.prompt" }>;
 
 type OutputMessage = Extract<ChatEvent, { eventType: "output.message" }>;
 
-export type RunnerClaim = Awaited<
+export type RunnerExecutionInput = Awaited<
   ReturnType<ReturnType<typeof createRunsApi>["executionInput"]>
 >;
 
@@ -157,19 +157,23 @@ export function requireOrgId(actor: ApiTestUser): string {
   return actor.orgId;
 }
 
-export function claimEnvironment(claim: RunnerClaim): Record<string, string> {
+export function executionEnvironment(
+  execution: RunnerExecutionInput,
+): Record<string, string> {
   return {
-    ...claim.environment,
-    ...claim.platformEnvironment,
+    ...execution.environment,
+    ...execution.platformEnvironment,
   };
 }
 
-/** Sandbox-scoped Okou token issued through the trusted claim environment. */
-export function okouTokenFromClaim(claim: RunnerClaim): string {
-  const token = claimEnvironment(claim).OKOU_TOKEN;
+/** Sandbox-scoped Okou token issued through the trusted execution environment. */
+export function okouTokenFromExecution(
+  execution: RunnerExecutionInput,
+): string {
+  const token = executionEnvironment(execution).OKOU_TOKEN;
   if (!token || !token.startsWith("vm0_sandbox_")) {
     throw new Error(
-      "Expected the claim platform environment to carry an OKOU_TOKEN",
+      "Expected the execution platform environment to carry an OKOU_TOKEN",
     );
   }
   return token;
@@ -396,7 +400,7 @@ export function createChatEventsFixture(context: TestContext) {
 
   /**
    * An entitled actor with a personal Fable subscription route for sends
-   * that must stay claimable by the native Runner.
+   * that must remain executable by the native Runner.
    */
   async function entitledNativeChatActor(
     options: ApiTestUserOptions = {},
@@ -624,19 +628,16 @@ export function createChatEventsFixture(context: TestContext) {
     );
   }
 
-  async function claimChatRun(
-    _runnerGroup: string,
-    runId: string,
-  ): Promise<{
-    readonly claim: RunnerClaim;
+  async function runExecution(runId: string): Promise<{
+    readonly execution: RunnerExecutionInput;
     readonly sandboxHeaders: { readonly authorization: string };
   }> {
-    const claim = await api.executionInput(runId);
+    const execution = await api.executionInput(runId);
     const sandboxHeaders = {
-      authorization: `Bearer ${claim.sandboxToken}`,
+      authorization: `Bearer ${execution.sandboxToken}`,
     };
     return {
-      claim,
+      execution,
       sandboxHeaders,
     };
   }
@@ -744,9 +745,9 @@ export function createChatEventsFixture(context: TestContext) {
   }
 
   async function cancelAndCompleteChatRun(actor: ApiTestUser, runId: string) {
-    const claim = await api.executionInput(runId);
+    const execution = await api.executionInput(runId);
     await cancelChatRun(actor, runId, {
-      authorization: `Bearer ${claim.sandboxToken}`,
+      authorization: `Bearer ${execution.sandboxToken}`,
     });
   }
 
@@ -765,11 +766,11 @@ export function createChatEventsFixture(context: TestContext) {
       model: body.model,
       prompt: "Hold the following input until its configuration is ready",
     });
-    const claim = await api.executionInput(blocker.runId);
+    const execution = await api.executionInput(blocker.runId);
     const receipt = {
       runId: blocker.runId,
       threadId: blocker.threadId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: execution.sandboxToken,
     };
     onBlocker?.(receipt);
     const waiting = await sendWaitingChatInput(actor, {
@@ -990,7 +991,7 @@ export function createChatEventsFixture(context: TestContext) {
     ).toStrictEqual(["run.completed"]);
   }
 
-  async function claimGptPiSandbox(
+  async function launchGptPiSandbox(
     actor: ApiTestUser,
     runId: string,
     tier: "fast" | undefined,
@@ -1091,7 +1092,7 @@ export function createChatEventsFixture(context: TestContext) {
       readonly model: string;
     };
     readonly historyObjects: Map<string, Buffer>;
-    readonly claim: Awaited<ReturnType<typeof claimChatRun>>;
+    readonly execution: Awaited<ReturnType<typeof runExecution>>;
     readonly prompt: string;
     readonly run: { readonly runId: string; readonly threadId: string };
   }): Promise<void> {
@@ -1107,7 +1108,7 @@ export function createChatEventsFixture(context: TestContext) {
           { type: "result", sequenceNumber: 2, result: args.answer },
         ],
       },
-      args.claim.sandboxHeaders,
+      args.execution.sandboxHeaders,
       [200],
     );
     await webhooks.requestAgentComplete(
@@ -1121,7 +1122,7 @@ export function createChatEventsFixture(context: TestContext) {
           cliAgentSessionHistoryDisposition: "native_only",
         },
       },
-      args.claim.sandboxHeaders,
+      args.execution.sandboxHeaders,
       [200],
       undefined,
     );
@@ -1190,7 +1191,7 @@ export function createChatEventsFixture(context: TestContext) {
     queueChatRun,
     expectThreadCreatedModelEvent,
     expectNoThreadModelUpdateEvent,
-    claimChatRun,
+    runExecution,
     waitForThreadMessages,
     waitForRunUserMessage,
     waitForRunStatus,
@@ -1208,7 +1209,7 @@ export function createChatEventsFixture(context: TestContext) {
     postThreadPiAutomationEvent,
     lastThreadPiAutomationRun,
     expectThreadPiTerminal,
-    claimGptPiSandbox,
+    launchGptPiSandbox,
     mockPiObjectStore,
     uploadedPiS3Object,
     piS3Object,

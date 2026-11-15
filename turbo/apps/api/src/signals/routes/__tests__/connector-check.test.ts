@@ -1,7 +1,7 @@
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { publicChatActor } from "./helpers/public-chat-actor";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -1089,7 +1089,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
 
   it("keeps builtin registration pinned while permission and account authority change", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: owner, agentId, runnerGroup, run: own } = fixture;
+    const { actor: owner, agentId, run: own } = fixture;
     const runBase = "https://prod.api.reap.global/v1";
     const changedBase = "https://changed.api.reap.global/v1";
     const connected = await own(() => {
@@ -1106,8 +1106,8 @@ describe("POST /api/connectors/diagnostics/check", () => {
       agentId,
       prompt: "Use the admitted Reap base",
     });
-    const claimed = await fixture.claimChatRun(runnerGroup, sent.runId);
-    const token = okouTokenFromClaim(claimed.claim);
+    const execution = await fixture.runExecution(sent.runId);
+    const token = okouTokenFromExecution(execution.execution);
     const callbacks = createWebhookCallbackApi(context);
     const request = {
       mode: "url" as const,
@@ -1184,7 +1184,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
     await own(() => {
       return callbacks.requestAgentComplete(
         { runId: sent.runId, exitCode: 1, error: "Run cancelled" },
-        claimed.sandboxHeaders,
+        execution.sandboxHeaders,
         [200],
       );
     });
@@ -1464,7 +1464,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
   describe("run-admitted custom connector diagnostics", () => {
     it("returns unsafe input when a configured prefix exceeds analysis capacity", async () => {
       const fixture = await publicChatActor(context);
-      const { actor, agentId, runnerGroup, run: own } = fixture;
+      const { actor, agentId, run: own } = fixture;
       await own(async () => {
         const authority = `https://${randomUUID()}.analysis-capacity.test`;
         const definition = await connectorsApi.createCustomConnector(
@@ -1487,13 +1487,16 @@ describe("POST /api/connectors/diagnostics/check", () => {
           agentId,
           prompt: "Inspect the admitted encoded prefix",
         });
-        const claimed = await fixture.claimChatRun(runnerGroup, sent.runId);
-        const result = await checkWithToken(okouTokenFromClaim(claimed.claim), {
-          mode: "url",
-          method: "GET",
-          url: `${authority}/outside`,
-          target: { kind: "custom", customConnectorId: definition.id },
-        });
+        const execution = await fixture.runExecution(sent.runId);
+        const result = await checkWithToken(
+          okouTokenFromExecution(execution.execution),
+          {
+            mode: "url",
+            method: "GET",
+            url: `${authority}/outside`,
+            target: { kind: "custom", customConnectorId: definition.id },
+          },
+        );
         expect(result.body).toStrictEqual({
           outcome: "unsafe-input",
           reason: "unsafe-path",
@@ -1885,10 +1888,9 @@ describe("POST /api/connectors/diagnostics/check", () => {
     const {
       actor,
       agentId,
-      runnerGroup,
       run: own,
       sendChatRun,
-      claimChatRun,
+      runExecution,
     } = await publicChatActor(context);
     await own(async () => {
       await runsApi.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -1896,8 +1898,8 @@ describe("POST /api/connectors/diagnostics/check", () => {
         agentId,
         prompt: "Inspect active connector registration",
       });
-      const claimed = await claimChatRun(runnerGroup, sent.runId);
-      const token = okouTokenFromClaim(claimed.claim);
+      const execution = await runExecution(sent.runId);
+      const token = okouTokenFromExecution(execution.execution);
       const active = await checkWithToken(token, {
         mode: "environment",
         environmentName: "GH_TOKEN",
@@ -1918,7 +1920,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       await runsApi.requestCancelRun(actor, sent.runId, [200]);
       await createWebhookCallbackApi(context).requestAgentComplete(
         { runId: sent.runId, exitCode: 1, error: "Run cancelled" },
-        claimed.sandboxHeaders,
+        execution.sandboxHeaders,
         [200],
       );
       const terminal = await accept(

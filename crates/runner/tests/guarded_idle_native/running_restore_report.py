@@ -6,7 +6,6 @@ import pathlib
 import re
 import struct
 
-import claim_producer_report as retained
 import guest_preparation_report as preparation
 import report
 from snapshot_report import exact
@@ -68,9 +67,9 @@ def control_records(waiting, held, joined, request, response, allow, directory):
     if files.is_symlink() or not files.is_dir():
         raise ValueError("original control directory missing or substituted")
     for name,raw in frames.items():
-        if retained.regular(files/(name+".bin"),16388) != preparation.blob(raw,16388):
+        if report.regular(files/(name+".bin"),16388) != preparation.blob(raw,16388):
             raise ValueError("original control file differs from phase record")
-    exact(json.loads(retained.regular(files/"controller-terminal.json",300000),object_pairs_hook=report.unique_object),
+    exact(json.loads(report.regular(files/"controller-terminal.json",300000),object_pairs_hook=report.unique_object),
           joined["process_terminal"],"original process terminal file differs")
     hello = packet(frames["response-0"],nonce,0,True)
     if hello["ready"] is not True or type(hello["uid"]) is not int or hello["uid"] != 0:

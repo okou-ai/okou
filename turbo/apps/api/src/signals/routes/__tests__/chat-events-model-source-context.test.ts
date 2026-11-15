@@ -11,7 +11,7 @@ const {
   chat,
   entitledNativeChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   cancelChatRun,
   requestSendEventRaw,
 } = createChatEventsFixture(context);
@@ -66,13 +66,13 @@ describe("chat send authorization, validation and cancellation", () => {
   });
 
   it("rejects an unknown model without changing thread events", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {
       agentId,
       prompt: "early preload rejection anchor",
     });
-    const claimed = await claimChatRun(runnerGroup, first.runId);
-    await cancelChatRun(actor, first.runId, claimed.sandboxHeaders);
+    const execution = await runExecution(first.runId);
+    await cancelChatRun(actor, first.runId, execution.sandboxHeaders);
     await flushWaitUntilForTest();
     const before = await chat.listThreadEvents(actor, first.threadId);
     if (!actor.orgId) {

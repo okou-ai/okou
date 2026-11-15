@@ -37,7 +37,7 @@ import { createPublicImageMember } from "./helpers/public-image-member";
 import { chargePublicDataUsage } from "./helpers/public-data-charge";
 
 import {
-  createClaimedImageRun as createClaimedImageRunForContext,
+  createImageRun as createClaimedImageRunForContext,
   createImageIoTestApp as createImageIoTestAppForContext,
   orgCredits as orgCreditsForContext,
   postFalWebhookEnvelope,
@@ -210,7 +210,7 @@ async function postFalWebhook(
   });
 }
 
-function createClaimedImageRun(
+function createImageRun(
   imageModel: string | null,
   credits = 1000,
   providerCleanupBody?: Record<string, unknown>,
@@ -224,7 +224,7 @@ function createClaimedImageRun(
 }
 
 async function createFundedImageRun(imageModel: string, credits: number) {
-  const fixture = await createClaimedImageRun(imageModel, credits);
+  const fixture = await createImageRun(imageModel, credits);
   // Only the generation's external storage calls belong in upload assertions.
   context.mocks.s3.send.mockReset();
   context.mocks.s3.send.mockResolvedValue({});
@@ -388,7 +388,7 @@ describe("POST /api/image-io/generate", () => {
   });
 
   it("keeps a run's image model snapshot after the member setting changes", async () => {
-    const fixture = await createClaimedImageRun("fal-ai/flux-pro/v1.1");
+    const fixture = await createImageRun("fal-ai/flux-pro/v1.1");
     await fixture.run(async () => {
       await useImageModel(fixture, "gpt-image-1");
       let gptCalls = 0;
@@ -433,7 +433,7 @@ describe("POST /api/image-io/generate", () => {
     });
   });
   it("uses the catalog default in a real Run with an unset member preference", async () => {
-    const fixture = await createClaimedImageRun(null);
+    const fixture = await createImageRun(null);
     await fixture.run(async () => {
       const preferences = setupApp({
         context,
@@ -445,7 +445,7 @@ describe("POST /api/image-io/generate", () => {
         [200],
       );
       expect(selected.body.selectedImageModel).toBeNull();
-      expect(fixture.claim.appendSystemPrompt).toContain(
+      expect(fixture.execution.appendSystemPrompt).toContain(
         "Built-in image generation uses \u0060gpt-image-2.5-flare\u0060",
       );
     });
@@ -484,7 +484,7 @@ describe("POST /api/image-io/generate", () => {
   });
 
   it("settles admitted provider work after the run becomes terminal", async () => {
-    const fixture = await createClaimedImageRun("gpt-image-1");
+    const fixture = await createImageRun("gpt-image-1");
     await fixture.run(async () => {
       let observedRequestUrl: string | null = null;
       server.use(
@@ -562,7 +562,7 @@ describe("POST /api/image-io/generate", () => {
       ],
       prompt: "An admitted image after public credit exhaustion.",
     };
-    const fixture = await createClaimedImageRun("gpt-image-1", 1000, {
+    const fixture = await createImageRun("gpt-image-1", 1000, {
       // Cleanup finishes pending work or replays this same success, never a
       // provider failure after the successful completion under test.
       status: "COMPLETED",

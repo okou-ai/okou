@@ -27,10 +27,9 @@ describe("Billing model reporting", () => {
     const {
       actor,
       agentId,
-      runnerGroup,
       run: own,
       sendChatRun,
-      claimChatRun,
+      runExecution,
     } = await publicChatActor(context, { clockTime: at });
     await own(async () => {
       const run = await sendChatRun(actor, {
@@ -38,7 +37,7 @@ describe("Billing model reporting", () => {
         prompt: "Publish first usage while completing",
         model: "auto",
       });
-      const claim = await claimChatRun(runnerGroup, run.runId);
+      const execution = await runExecution(run.runId);
       await fixture.webhooks.requestAgentEvents(
         {
           runId: run.runId,
@@ -51,7 +50,7 @@ describe("Billing model reporting", () => {
             { type: "result", sequenceNumber: 2, result: "Completed" },
           ],
         },
-        claim.sandboxHeaders,
+        execution.sandboxHeaders,
         [200],
       );
       const usage = {
@@ -80,17 +79,17 @@ describe("Billing model reporting", () => {
               cliAgentSessionHistoryDisposition: "native_only",
             },
           },
-          claim.sandboxHeaders,
+          execution.sandboxHeaders,
           [200],
         ),
         fixture.webhooks.requestAgentUsageEvent(
           usage,
-          claim.sandboxHeaders,
+          execution.sandboxHeaders,
           [200],
         ),
         fixture.webhooks.requestAgentUsageEvent(
           usage,
-          claim.sandboxHeaders,
+          execution.sandboxHeaders,
           [200],
         ),
       ]);
@@ -138,7 +137,7 @@ describe("Billing model reporting", () => {
       ]);
       await fixture.webhooks.requestAgentUsageEvent(
         usage,
-        claim.sandboxHeaders,
+        execution.sandboxHeaders,
         [200],
       );
       await flushWaitUntilForTest();
@@ -154,10 +153,9 @@ describe("Billing model reporting", () => {
       const {
         actor,
         agentId,
-        runnerGroup,
         run: own,
         sendChatRun,
-        claimChatRun,
+        runExecution,
       } = await publicChatActor(context, { clockTime: at });
       await own(async () => {
         const run = await sendChatRun(actor, {
@@ -165,7 +163,7 @@ describe("Billing model reporting", () => {
           prompt: "Report usage before unsuccessful completion",
           model: "auto",
         });
-        const claim = await claimChatRun(runnerGroup, run.runId);
+        const execution = await runExecution(run.runId);
         const chatUsage = () => {
           createRouteMocks(context).clerk.session(
             actor.userId,
@@ -196,7 +194,7 @@ describe("Billing model reporting", () => {
               },
             ],
           },
-          claim.sandboxHeaders,
+          execution.sandboxHeaders,
           [200],
         );
         await flushWaitUntilForTest();
@@ -207,11 +205,15 @@ describe("Billing model reporting", () => {
         if (status === "failed") {
           await fixture.failChatRun(
             run.runId,
-            claim.sandboxHeaders,
+            execution.sandboxHeaders,
             "Expected unsuccessful completion",
           );
         } else {
-          await fixture.cancelChatRun(actor, run.runId, claim.sandboxHeaders);
+          await fixture.cancelChatRun(
+            actor,
+            run.runId,
+            execution.sandboxHeaders,
+          );
         }
         await fixture.waitForRunStatus(actor, run.runId, status);
         expect((await chatUsage()).body.runs).toStrictEqual([
@@ -241,10 +243,9 @@ describe("Billing model reporting", () => {
     const {
       actor,
       agentId,
-      runnerGroup,
       run: own,
       sendChatRun,
-      claimChatRun,
+      runExecution,
     } = await publicChatActor(context, { clockTime: at });
     fixture.mockPiResourceArchiveDownloads();
     const historyObjects = fixture.mockPiObjectStore();
@@ -255,8 +256,8 @@ describe("Billing model reporting", () => {
         model: "auto",
       });
       await flushWaitUntilForTest();
-      const claim = await claimChatRun(runnerGroup, run.runId);
-      expect(claim.claim.modelUsageProvider).toBe("@preset/okou-1-0");
+      const execution = await runExecution(run.runId);
+      expect(execution.execution.modelUsageProvider).toBe("@preset/okou-1-0");
       const chatUsage = () => {
         createRouteMocks(context).clerk.session(
           actor.userId,
@@ -294,7 +295,7 @@ describe("Billing model reporting", () => {
             },
           ],
         },
-        claim.sandboxHeaders,
+        execution.sandboxHeaders,
         [200],
       );
       await flushWaitUntilForTest();
@@ -304,7 +305,7 @@ describe("Billing model reporting", () => {
       await fixture.completeSandboxFirstPiRun({
         actor,
         run,
-        claim,
+        execution,
         historyObjects,
         prompt: "Report captured usage",
         answer: "Usage captured",

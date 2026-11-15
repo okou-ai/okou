@@ -147,7 +147,7 @@ fn instruction_reference<'de, D: serde::Deserializer<'de>>(
     BundleReference::deserialize(deserializer).map(Some)
 }
 
-/// Normalize the same complete publication without a Claim transport or timing.
+/// Normalize a complete execution publication for the local executor.
 /// Decode errors intentionally contain no supplied values or secret field paths.
 pub fn decode_execution_publication(body: &[u8]) -> Result<ExecutionContext, String> {
     let context = super::decode_api_json_bytes(body).map_err(|_| "Invalid execution context")?;

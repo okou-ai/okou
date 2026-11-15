@@ -66,7 +66,7 @@ pub enum RunCleanupDisposition {
     ActiveOrUnknown,
     /// The sandbox has been accepted by the idle pool.
     IdlePoolOwned,
-    /// The sandbox and budget were delivered to a claimed exact successor.
+    /// The sandbox and budget were delivered to an exact successor.
     HandoffOwned,
     /// The active sandbox was explicitly destroyed and destroy returned normally.
     DestroyCompleted,
@@ -74,7 +74,7 @@ pub enum RunCleanupDisposition {
     StatusRemoved,
 }
 
-/// Shared monotonic cleanup state for a claimed run.
+/// Shared monotonic cleanup state for an execution.
 #[derive(Clone, Debug)]
 pub struct RunCleanupState {
     state: Arc<AtomicU8>,
@@ -134,7 +134,7 @@ impl RunCleanupState {
     }
 }
 
-/// Budget ownership while a claimed job is active in the outer task.
+/// Budget ownership while an accepted job is active in the outer task.
 pub struct ActiveBudgetLease(BudgetLease);
 
 impl ActiveBudgetLease {
@@ -163,7 +163,7 @@ pub enum BudgetOwnership {
     /// The idle pool accepted the sandbox and its lease, so settlement performs no
     /// release. Reuse transfers the lease; idle destruction drops it.
     IdleOwned,
-    /// A claimed exact successor owns the sandbox and lease directly.
+    /// An exact successor owns the sandbox and lease directly.
     HandoffOwned,
     /// Orphan reconciliation retains capacity until physical absence is proven.
     OrphanOwned,
@@ -253,7 +253,7 @@ impl CompletionPayload {
     /// report and finalization resolve, then settle before returning telemetry
     /// for Runner's deferred uploads. Carry finalization inputs in the constructor
     /// so the large future is created once, on polling the report coordinator.
-    pub async fn complete_claimed_run<C, F>(
+    pub async fn complete_execution_run<C, F>(
         self,
         provider: &dyn JobProvider,
         make_finalization: C,

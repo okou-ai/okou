@@ -13,7 +13,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
+import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 
 const context = testContext();
 const {
@@ -21,7 +21,7 @@ const {
   connectors,
   entitledNativeChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   cancelChatRun,
   sessionHeaders,
 } = createChatEventsFixture(context);
@@ -53,7 +53,7 @@ describe("shared context statement projections through normal sends", () => {
   it.each(["providers", "all"] as const)(
     "preserves %s rowsets in first and continuation sends",
     async (mode) => {
-      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+      const { actor, agentId } = await entitledNativeChatActor();
       const s3 = installWorkflowVolumeS3Fixture(context);
       const hasAgentRows = mode === "all";
       await misc.upsertPersonalModelProvider(
@@ -141,9 +141,9 @@ describe("shared context statement projections through normal sends", () => {
           prompt: `${mode} ${flow}`,
         });
         threadId = run.threadId;
-        const claimed = await claimChatRun(runnerGroup, run.runId);
-        expect(claimed.claim.modelUsageProvider).toBe(MODEL);
-        const targets = claimed.claim.connectorRuntimeTargets;
+        const execution = await runExecution(run.runId);
+        expect(execution.execution.modelUsageProvider).toBe(MODEL);
+        const targets = execution.execution.connectorRuntimeTargets;
         if (customId) {
           expect(targets).toContainEqual(
             expect.objectContaining({
@@ -157,13 +157,13 @@ describe("shared context statement projections through normal sends", () => {
               connectorSlug: "slack",
             }),
           );
-          expect(claimed.claim.networkPolicies?.slack?.unknownPolicy).toBe(
-            "deny",
-          );
+          expect(
+            execution.execution.networkPolicies?.slack?.unknownPolicy,
+          ).toBe("deny");
         } else {
           expect(targets).toStrictEqual([]);
         }
-        const skills = claimed.claim.contentBundles.skills;
+        const skills = execution.execution.contentBundles.skills;
         if (workflowName) {
           const skill = skills.find((item) => {
             return item.mountPath.endsWith(`/${workflowName}`);
@@ -172,7 +172,7 @@ describe("shared context statement projections through normal sends", () => {
             throw new Error("Expected the selected Workflow bundle");
           }
           expect(
-            readClaimedContentBundle(s3.objects, skill)
+            readExecutionContentBundle(s3.objects, skill)
               .get("SKILL.md")
               ?.toString(),
           ).toContain("Preserve this selected workflow.");
@@ -183,7 +183,7 @@ describe("shared context statement projections through normal sends", () => {
             }),
           ).toStrictEqual(SEED_SKILLS);
         }
-        await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+        await cancelChatRun(actor, run.runId, execution.sandboxHeaders);
       }
     },
   );

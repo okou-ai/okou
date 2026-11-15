@@ -79,7 +79,7 @@ pub struct IdleDestroyTracker {
     reuse_state_notify: Arc<Notify>,
     activation_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
     finalizing_owners:
-        Arc<std::sync::Mutex<Vec<crate::finalizing_admission::GuardedFinalizingRecovery>>>,
+        Arc<std::sync::Mutex<Vec<crate::finalizing_handoff::GuardedFinalizingRecovery>>>,
     pressure_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
     #[cfg(any(test, feature = "test-support"))]
     pressure_pool_waits: tokio::sync::watch::Sender<u64>,
@@ -253,10 +253,9 @@ impl IdleDestroyTracker {
 
     pub(crate) fn retain_finalizing_recovery(
         &self,
-        recovery: crate::finalizing_admission::GuardedFinalizingRecovery,
+        recovery: crate::finalizing_handoff::GuardedFinalizingRecovery,
     ) {
-        if recovery.claimed.is_some() || recovery.resource.is_some() || recovery.delivery_uncertain
-        {
+        if recovery.job.is_some() || recovery.resource.is_some() || recovery.delivery_uncertain {
             // Preserve actual custody on an advisory poisoned lock. Recovery
             // still reports that error; this never fabricates a valid receipt.
             let mut owners = match self.finalizing_owners.lock() {
@@ -271,7 +270,7 @@ impl IdleDestroyTracker {
     /// Taking custody supplies neither physical credit nor completion proof.
     pub fn take_retained_finalizing_owners(
         &self,
-    ) -> Result<Vec<crate::finalizing_admission::GuardedFinalizingRecovery>, MemoryOperationError>
+    ) -> Result<Vec<crate::finalizing_handoff::GuardedFinalizingRecovery>, MemoryOperationError>
     {
         if !self.tasks.is_closed() || !self.tasks.is_empty() {
             return Err(MemoryOperationError::OwnershipInvariant);
@@ -463,7 +462,7 @@ pub async fn reserve_source_idle_for_spawn(
 }
 
 /// Reserve exactly the predecessor's generation, retaining a typed miss reason
-/// from the same locked observation when no matching entry can be claimed.
+/// from the same locked observation when no matching entry can be reserved.
 pub async fn reserve_exact_idle_for_spawn(
     idle_pool: &SharedIdlePool,
     reuse_key: &str,
@@ -502,7 +501,7 @@ pub async fn rollback_reserved_idle_for_spawn(
         let destroy_task = match restore_result {
             RestoreReservedIdleResult::Restored => None,
             RestoreReservedIdleResult::Replaced(job) | RestoreReservedIdleResult::Rejected(job) => {
-                Some(tracker.spawn_job(*job, "finalizing_claim_reserved_idle_rollback"))
+                Some(tracker.spawn_job(*job, "finalizing_activation_reserved_idle_rollback"))
             }
         };
         (destroy_task, snapshot)
@@ -545,7 +544,7 @@ impl RetiringIdleEntry {
 /// consumed. Resource-budget substitution takes only its short synchronous
 /// mutex inside that pool lock and never carries a guard across an await. Every
 /// evicted payload obtains tracked cleanup ownership before the final pool
-/// snapshot is captured. The caller owns publication so pre-claim admission
+/// snapshot is captured. The caller owns publication so pre-claim acceptance
 /// can register it independently without waiting for status state or IO.
 pub async fn select_idle_entries_for_pressure(
     idle_pool: &SharedIdlePool,
@@ -594,7 +593,7 @@ pub async fn select_idle_entries_for_pressure(
                         profile = %retiring.profile_name(),
                         vcpu = retiring.budget_vcpu(),
                         memory_mb = retiring.budget_memory_mb(),
-                        "evicting idle sandbox for admission pressure"
+                        "evicting idle sandbox for execution capacity pressure"
                     );
                     retiring_leases.push(retiring.into_budget_lease());
                     fresh_lease = try_substitute_retiring_leases(

@@ -1180,13 +1180,13 @@ function claimedTeamsDownloadFixture() {
   return {
     fixture,
     actor,
-    claim(runId: string) {
+    executionInput(runId: string) {
       return ownedRuns.run(async () => {
         const attempt: TeamsDownloadClaimAttempt = { runId, state: "pending" };
         attempts.push(attempt);
         const result = await settleIncludingAbort(() => {
           return captured(() => {
-            return ownedRuns.claim(runId);
+            return ownedRuns.executionInput(runId);
           });
         });
         if (!result.ok) {
@@ -1360,7 +1360,7 @@ async function claimHistoricalTeamsDownload(
   await owned.run(() => {
     return runsApi.heartbeatRunner(runnerGroup);
   });
-  return await owned.claim(run.id);
+  return await owned.executionInput(run.id);
 }
 
 describe("POST /api/webhooks/teams/bot", () => {
@@ -2292,12 +2292,14 @@ describe("POST /api/webhooks/teams/bot", () => {
       throw new Error("Expected Teams file run id");
     }
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.executionInput(runId);
-    expect(claim.prompt).toContain("please inspect this");
-    expect(claim.prompt).toContain(canonicalFilePrompt);
-    expect(claim.appendSystemPrompt).toContain("okou teams download-file -h");
+    const execution = await runsApi.executionInput(runId);
+    expect(execution.prompt).toContain("please inspect this");
+    expect(execution.prompt).toContain(canonicalFilePrompt);
+    expect(execution.appendSystemPrompt).toContain(
+      "okou teams download-file -h",
+    );
 
-    const fileIdMatch = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u);
+    const fileIdMatch = execution.prompt.match(/ {3}\[ID\] ([^\n]+)/u);
     const fileId = fileIdMatch?.[1];
     expect(fileId).toBeTruthy();
     expect(fileId).not.toContain(contentUrl);
@@ -2356,7 +2358,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       contentType: "image/png",
       bytes: fileBytes,
       uploads,
-      okouToken: claim.platformEnvironment.OKOU_TOKEN,
+      okouToken: execution.platformEnvironment.OKOU_TOKEN,
     });
   });
 
@@ -2518,8 +2520,8 @@ describe("POST /api/webhooks/teams/bot", () => {
       throw new Error("Expected Teams personal file run");
     }
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.executionInput(run.id);
-    const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
+    const execution = await runsApi.executionInput(run.id);
+    const fileId = execution.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
     expect(fileId).toMatch(/^teams_file_[A-Za-z0-9_-]{22}$/u);
     expect(fileId?.length).toBeLessThan(64);
     await expect(
@@ -2717,10 +2719,12 @@ describe("POST /api/webhooks/teams/bot", () => {
         "start the pinned reply thread",
       );
       await runsApi.heartbeatRunner(runnerGroup);
-      const initialClaim = await runsApi.executionInput(initialRunId);
-      expect(initialClaim.appendSystemPrompt).toContain("Your name is Okou.");
+      const initialExecution = await runsApi.executionInput(initialRunId);
+      expect(initialExecution.appendSystemPrompt).toContain(
+        "Your name is Okou.",
+      );
       await runsApi.requestCancelRun(actor, initialRunId, [200]);
-      await completeCancelledRun(initialRunId, initialClaim.sandboxToken);
+      await completeCancelledRun(initialRunId, initialExecution.sandboxToken);
 
       await userConfigApi.updateModelPreference(actor, {
         selectedModel: "gpt-6-astra",
@@ -2743,13 +2747,17 @@ describe("POST /api/webhooks/teams/bot", () => {
         "continue the pinned reply thread",
       );
       await runsApi.heartbeatRunner(runnerGroup);
-      const followUpClaim = await runsApi.executionInput(followUpRunId);
-      expect(followUpClaim.appendSystemPrompt).toContain("Your name is Okou.");
+      const followUpExecution = await runsApi.executionInput(followUpRunId);
+      expect(followUpExecution.appendSystemPrompt).toContain(
+        "Your name is Okou.",
+      );
       // A member default change does not alter an existing conversation.
       // Missing native history does not rotate the session or replay prior turns.
-      expect(followUpClaim.cliAgentType).toBe(initialClaim.cliAgentType);
+      expect(followUpExecution.cliAgentType).toBe(
+        initialExecution.cliAgentType,
+      );
 
-      expect(followUpClaim.modelUsageProvider).toBe("claude-fable-5-1");
+      expect(followUpExecution.modelUsageProvider).toBe("claude-fable-5-1");
       await runsApi.requestCancelRun(actor, followUpRunId, [200]);
     });
   });
@@ -3268,15 +3276,15 @@ describe("POST /api/webhooks/teams/bot", () => {
         ]);
         const channelContextRunId = await runIdForPrompt(actor, "@Nova");
         await runsApi.heartbeatRunner(runnerGroup);
-        const channelContextClaim =
+        const channelContextExecution =
           await runsApi.executionInput(channelContextRunId);
         const channelContextAppendSystemPrompt =
-          channelContextClaim.appendSystemPrompt ?? "";
+          channelContextExecution.appendSystemPrompt ?? "";
         const recentChannelContext = promptSection(
           channelContextAppendSystemPrompt,
           "# Recent Channel Messages",
         );
-        expect(channelContextClaim.prompt).toBe("@Nova");
+        expect(channelContextExecution.prompt).toBe("@Nova");
         expect(graphRequests).toContain("channel-messages");
         expect(recentChannelContext).toContain("api channel planning");
         expect(recentChannelContext).not.toContain("start another topic");
@@ -3287,7 +3295,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         await runsApi.requestCancelRun(actor, channelContextRunId, [200]);
         await completeCancelledRun(
           channelContextRunId,
-          channelContextClaim.sandboxToken,
+          channelContextExecution.sandboxToken,
         );
         return;
       }
@@ -3354,8 +3362,8 @@ describe("POST /api/webhooks/teams/bot", () => {
       }
       const runId = dispatchRun.id;
       await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await ownedRuns.claim(runId);
-      const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+      const execution = await ownedRuns.executionInput(runId);
+      const appendSystemPrompt = execution.appendSystemPrompt ?? "";
       const currentUserPrompt = promptSection(
         appendSystemPrompt,
         "# Current User Info",
@@ -3375,12 +3383,12 @@ describe("POST /api/webhooks/teams/bot", () => {
         appendSystemPrompt,
         "# Microsoft Teams Thread Context",
       );
-      expect(claim.prompt).toContain("ship the Teams dispatch");
-      expect(claim.prompt).toContain(
+      expect(execution.prompt).toContain("ship the Teams dispatch");
+      expect(execution.prompt).toContain(
         "[Teams file] current-task.txt (text/plain)",
       );
-      expect(claim.prompt).not.toContain("deployment-plan.pdf");
-      expect(claim.prompt).not.toContain("release-checklist.txt");
+      expect(execution.prompt).not.toContain("deployment-plan.pdf");
+      expect(execution.prompt).not.toContain("release-checklist.txt");
       expect(currentIntegrationPrompt).toContain(
         "You are currently running inside: Microsoft Teams",
       );
@@ -3447,7 +3455,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       expect(graphRequests).toContain(`thread-replies:${rootDispatchId}`);
       expect(graphRequests).toContain(`user:${fixture.teamsUserId}`);
       await runsApi.requestCancelRun(actor, runId, [200]);
-      await completeCancelledRun(runId, claim.sandboxToken);
+      await completeCancelledRun(runId, execution.sandboxToken);
     },
   );
 
@@ -3550,13 +3558,13 @@ describe("POST /api/webhooks/teams/bot", () => {
         }),
       );
       await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await ownedRuns.claim(runId);
+      const execution = await ownedRuns.executionInput(runId);
       const threadContext = promptSection(
-        claim.appendSystemPrompt ?? "",
+        execution.appendSystemPrompt ?? "",
         "# Microsoft Teams Thread Context",
       );
 
-      expect(claim.prompt).toBe("continue this private task");
+      expect(execution.prompt).toBe("continue this private task");
       expect(threadContext).toContain("remember the private deployment target");
       expect(threadContext).toContain("the target is staging");
       expect(threadContext).toContain("unrelated private task");
@@ -3691,7 +3699,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       await scenario.run(() => {
         return runsApi.heartbeatRunner(runnerGroup);
       });
-      const firstClaim = await scenario.claimExisting(actor, firstRunId);
+      const firstClaim = await scenario.executionInput(actor, firstRunId);
       const firstOkouToken = firstClaim.platformEnvironment.OKOU_TOKEN;
       if (!firstOkouToken) {
         throw new Error("Claimed Teams runner job did not include OKOU_TOKEN");
@@ -3727,7 +3735,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       await scenario.run(() => {
         return runsApi.heartbeatRunner(runnerGroup);
       });
-      const secondClaim = await scenario.claimExisting(actor, secondRunId);
+      const secondClaim = await scenario.executionInput(actor, secondRunId);
       const secondOkouToken = secondClaim.platformEnvironment.OKOU_TOKEN;
       if (!secondOkouToken) {
         throw new Error("Claimed Teams runner job did not include OKOU_TOKEN");

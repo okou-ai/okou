@@ -439,11 +439,11 @@ test("keeps captured workspace Workflow scope after claim and a live switch chan
         prompt: "Make my private Workflow copy",
         model: "auto",
       });
-      const claim = await runs.executionInput(queued.runId);
-      owner.rememberClaim(queued.runId, claim.sandboxToken);
+      const execution = await runs.executionInput(queued.runId);
+      owner.rememberExecution(queued.runId, execution.sandboxToken);
       await billing.updateFeatureSwitches(member, { singleAgent: false });
       const runHeaders = {
-        authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN!}`,
+        authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN!}`,
       };
       const copied = await accept(
         detail().copy({
@@ -491,12 +491,12 @@ test("keeps captured workspace Workflow scope after claim and a live switch chan
         model: "auto",
       });
       await billing.updateFeatureSwitches(member, { singleAgent: true });
-      const retainedClaim = await runs.executionInput(retained.runId);
-      owner.rememberClaim(retained.runId, retainedClaim.sandboxToken);
+      const retainedExecution = await runs.executionInput(retained.runId);
+      owner.rememberExecution(retained.runId, retainedExecution.sandboxToken);
       await accept(
         detail().copy({
           headers: {
-            authorization: `Bearer ${retainedClaim.platformEnvironment.OKOU_TOKEN!}`,
+            authorization: `Bearer ${retainedExecution.platformEnvironment.OKOU_TOKEN!}`,
           },
           params: { workflowId: source.body.id },
           body: { toAgentId: defaultAgentId },

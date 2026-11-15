@@ -14,8 +14,8 @@ import type {
 import { x } from "tar";
 
 /** A real CLI/RPC child, with only its external model provider replaced. */
-export async function readClaimedPiMemory(
-  claim: Pick<
+export async function readPiExecutionMemory(
+  execution: Pick<
     ExecutionContext,
     | "runId"
     | "piSessionId"
@@ -46,20 +46,24 @@ export async function readClaimedPiMemory(
       await writeFile(archiveFile, Buffer.from(await downloaded.arrayBuffer()));
       await x({ file: archiveFile, cwd: memory, strict: true });
     }
-    if (!claim.piModelConfig || !claim.piLaunchConfig || !claim.piSessionId) {
-      throw new Error("Expected a complete ordinary Pi claim");
+    if (
+      !execution.piModelConfig ||
+      !execution.piLaunchConfig ||
+      !execution.piSessionId
+    ) {
+      throw new Error("Expected a complete ordinary Pi execution");
     }
     const payloadFile = join(root, "launch.json");
     await writeFile(
       payloadFile,
       JSON.stringify({
         schemaVersion: 1,
-        appendSystemPrompt: claim.appendSystemPrompt,
-        launchConfig: claim.piLaunchConfig,
+        appendSystemPrompt: execution.appendSystemPrompt,
+        launchConfig: execution.piLaunchConfig,
       }),
     );
     const credentials = Object.fromEntries(
-      claim.piModelConfig.credentialBindings.map((binding) => {
+      execution.piModelConfig.credentialBindings.map((binding) => {
         return [binding.environment, "test-memory-provider-credential"];
       }),
     );
@@ -91,11 +95,11 @@ export async function readClaimedPiMemory(
         env: {
           PI_CODING_AGENT_DIR: agentDir,
           ...credentials,
-          OKOU_RUN_ID: claim.runId,
-          OKOU_PI_SESSION_ID: claim.piSessionId,
+          OKOU_RUN_ID: execution.runId,
+          OKOU_PI_SESSION_ID: execution.piSessionId,
           OKOU_PI_LAUNCH_PAYLOAD_FILE: payloadFile,
           OKOU_PI_MODEL_CONFIG: JSON.stringify({
-            ...claim.piModelConfig,
+            ...execution.piModelConfig,
             baseUrl: "https://memory-provider.example/v1",
             transport: "sse",
           }),

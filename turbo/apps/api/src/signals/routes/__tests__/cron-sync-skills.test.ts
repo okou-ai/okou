@@ -18,7 +18,7 @@ import { cronSyncSkillsRoutes } from "../cron-sync-skills";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
+import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { setPaidToolDisabled } from "./helpers/paid-tools";
 
@@ -234,10 +234,7 @@ describe("Seed Skill bundles through sync-skills", () => {
       );
     });
     const run = await queued.launch();
-    const { claim, sandboxHeaders } = await owned.claimChatRun(
-      owned.runnerGroup,
-      run.runId,
-    );
+    const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
     const laterSource = await sourceArchive("later gen instructions");
     await owned.run(async () => {
       githubSource("1".repeat(40), laterSource.archive);
@@ -248,9 +245,9 @@ describe("Seed Skill bundles through sync-skills", () => {
         [200],
       );
     });
-    expect(claim.cliAgentType).toBe("claude-code");
+    expect(execution.cliAgentType).toBe("claude-code");
     expect(
-      claim.contentBundles.skills.map((bundle) => {
+      execution.contentBundles.skills.map((bundle) => {
         return bundle.mountPath;
       }),
     ).toStrictEqual(
@@ -259,7 +256,7 @@ describe("Seed Skill bundles through sync-skills", () => {
       }),
     );
     for (const name of SEED_SKILLS) {
-      const bundle = claim.contentBundles.skills.find((entry) => {
+      const bundle = execution.contentBundles.skills.find((entry) => {
         return entry.mountPath === `${root}/${name}`;
       })!;
       const expected = new Map(
@@ -271,15 +268,15 @@ describe("Seed Skill bundles through sync-skills", () => {
             return [path.slice(name.length + 1), content];
           }),
       );
-      expect(readClaimedContentBundle(s3.objects, bundle)).toStrictEqual(
+      expect(readExecutionContentBundle(s3.objects, bundle)).toStrictEqual(
         expected,
       );
     }
     const mountPaths = [
-      ...claim.contentBundles.skills.map((bundle) => {
+      ...execution.contentBundles.skills.map((bundle) => {
         return bundle.mountPath;
       }),
-      ...(claim.storageManifest?.storageMounts ?? []).map((mount) => {
+      ...(execution.storageManifest?.storageMounts ?? []).map((mount) => {
         return mount.mountPath;
       }),
     ];
@@ -297,15 +294,15 @@ describe("Seed Skill bundles through sync-skills", () => {
       prompt: "Use the later Seed publication",
       model: "claude-fable-5-1",
     });
-    const later = await owned.claimChatRun(owned.runnerGroup, next.runId);
-    const selected = later.claim.contentBundles.skills.find((bundle) => {
+    const later = await owned.runExecution(next.runId);
+    const selected = later.execution.contentBundles.skills.find((bundle) => {
       return bundle.mountPath === `${root}/gen`;
     })!;
-    expect(readClaimedContentBundle(s3.objects, selected)).toStrictEqual(
+    expect(readExecutionContentBundle(s3.objects, selected)).toStrictEqual(
       new Map([["SKILL.md", laterSource.files.get("gen/SKILL.md")]]),
     );
     expect(selected.sha256).not.toBe(
-      claim.contentBundles.skills.find((bundle) => {
+      execution.contentBundles.skills.find((bundle) => {
         return bundle.mountPath === `${root}/gen`;
       })!.sha256,
     );
@@ -347,13 +344,10 @@ describe("Seed Skill bundle delivery", () => {
         prompt: "Inspect system skills",
         model: "gpt-6-luna",
       });
-      const { claim, sandboxHeaders } = await owned.claimChatRun(
-        owned.runnerGroup,
-        run.runId,
-      );
-      expect(claim.cliAgentType).toBe(framework);
+      const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
+      expect(execution.cliAgentType).toBe(framework);
       expect(
-        claim.contentBundles.skills.map((bundle) => {
+        execution.contentBundles.skills.map((bundle) => {
           return bundle.mountPath;
         }),
       ).toStrictEqual(
@@ -361,16 +355,16 @@ describe("Seed Skill bundle delivery", () => {
           return `${root}/${name}`;
         }),
       );
-      for (const bundle of claim.contentBundles.skills) {
+      for (const bundle of execution.contentBundles.skills) {
         expect(
-          readClaimedContentBundle(s3.objects, bundle).get("SKILL.md"),
+          readExecutionContentBundle(s3.objects, bundle).get("SKILL.md"),
         ).toBeDefined();
       }
       const mountPaths = [
-        ...claim.contentBundles.skills.map((bundle) => {
+        ...execution.contentBundles.skills.map((bundle) => {
           return bundle.mountPath;
         }),
-        ...(claim.storageManifest?.storageMounts ?? []).map((mount) => {
+        ...(execution.storageManifest?.storageMounts ?? []).map((mount) => {
           return mount.mountPath;
         }),
       ];
@@ -398,18 +392,15 @@ describe("Seed Skill bundle delivery", () => {
       agentId: owned.agentId,
       prompt: "Use permitted Seed skills",
     });
-    const { claim, sandboxHeaders } = await owned.claimChatRun(
-      owned.runnerGroup,
-      run.runId,
-    );
+    const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
     expect(
-      claim.contentBundles.skills.map((bundle) => {
+      execution.contentBundles.skills.map((bundle) => {
         return bundle.mountPath.split("/").at(-1);
       }),
     ).toStrictEqual(["computer-use", "workflow-setup"]);
-    for (const bundle of claim.contentBundles.skills) {
+    for (const bundle of execution.contentBundles.skills) {
       expect(
-        readClaimedContentBundle(s3.objects, bundle).get("SKILL.md"),
+        readExecutionContentBundle(s3.objects, bundle).get("SKILL.md"),
       ).toBeDefined();
     }
     await owned.run(() => {

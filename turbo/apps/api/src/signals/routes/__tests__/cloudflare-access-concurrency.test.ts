@@ -27,7 +27,7 @@ import { nowDate } from "../../../lib/time";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { runnerSshRoutes } from "../runner-ssh";
-import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
+import { createSshExecutionApi } from "./helpers/ssh-execution";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
@@ -96,7 +96,7 @@ const hostKey = Object.freeze({
   algorithm: "ssh-ed25519" as const,
   fingerprint: `SHA256:${Buffer.alloc(32, 3).toString("base64").replace(/=+$/u, "")}`,
 });
-const ordinary = createClaimedSshRuntimeApi(context, {
+const ordinary = createSshExecutionApi(context, {
   runnerHeaders,
   authenticate: authenticateSessions,
 });

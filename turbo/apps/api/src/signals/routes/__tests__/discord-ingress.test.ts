@@ -1236,27 +1236,27 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected Discord run launch");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.executionInput(input.runId);
+    const execution = await runsApi.executionInput(input.runId);
 
-    expect(claim.appendSystemPrompt).toContain(
+    expect(execution.appendSystemPrompt).toContain(
       "# Integration Note\n\n- Discord messaging and files: only your final reply is delivered to the Discord channel or thread in the integration context, so do not duplicate it with `okou discord message send`;",
     );
-    expect(claim.appendSystemPrompt).toContain(
+    expect(execution.appendSystemPrompt).toContain(
       "`okou discord upload-file -h` can attach a local file to a Discord channel or thread",
     );
-    expect(claim.appendSystemPrompt).toContain(
+    expect(execution.appendSystemPrompt).toContain(
       'okou discord install-link --invite "<invitation-url>" --json',
     );
-    expect(claim.appendSystemPrompt).toContain(
+    expect(execution.appendSystemPrompt).toContain(
       "Never claim Okou has joined based only on link generation",
     );
-    expect(claim.appendSystemPrompt).toContain(
+    expect(execution.appendSystemPrompt).toContain(
       "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help`",
     );
     const privateArtifactRule =
       "A private `/artifacts/...` address is not openable from Discord, so a link alone shows the user nothing.";
-    expect(claim.appendSystemPrompt).toContain(privateArtifactRule);
-    expect(claim.appendSystemPrompt).toContain(
+    expect(execution.appendSystemPrompt).toContain(privateArtifactRule);
+    expect(execution.appendSystemPrompt).toContain(
       "upload it with `okou discord upload-file` so the user has something they can open there",
     );
   });
@@ -1990,10 +1990,10 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the next DM input to launch");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.executionInput(nextInput.runId);
-    expect(claim.prompt).toBe(nextDm.content);
-    expect(claim.modelUsageProvider).toBe("claude-opus-5-5");
-    expect(claim.appendSystemPrompt).not.toContain("ship on Friday");
+    const execution = await runsApi.executionInput(nextInput.runId);
+    expect(execution.prompt).toBe(nextDm.content);
+    expect(execution.modelUsageProvider).toBe("claude-opus-5-5");
+    expect(execution.appendSystemPrompt).not.toContain("ship on Friday");
     await cancelAndCompleteChatRun(actor.actor, nextInput.runId);
   });
 
@@ -2051,8 +2051,8 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the current DM input to launch");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.executionInput(input.runId);
-    expect(claim.prompt).toBe(next.content);
+    const execution = await runsApi.executionInput(input.runId);
+    expect(execution.prompt).toBe(next.content);
     await cancelAndCompleteChatRun(actor.actor, input.runId);
   });
 
@@ -2134,9 +2134,9 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the DM input to launch with its stored model");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.executionInput(input.runId);
-    expect(claim.modelUsageProvider).toBe("gpt-6-astra");
-    expect(claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe("fast");
+    const execution = await runsApi.executionInput(input.runId);
+    expect(execution.modelUsageProvider).toBe("gpt-6-astra");
+    expect(execution.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe("fast");
     await cancelAndCompleteChatRun(actor.actor, input.runId);
   });
 
@@ -2204,9 +2204,9 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected the queued web input to launch");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.executionInput(input.runId);
-    expect(claim.modelUsageProvider).toBe("gpt-6-astra");
-    expect(claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe("fast");
+    const execution = await runsApi.executionInput(input.runId);
+    expect(execution.modelUsageProvider).toBe("gpt-6-astra");
+    expect(execution.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe("fast");
     await cancelAndCompleteChatRun(actor.actor, input.runId);
   });
 
@@ -2582,11 +2582,11 @@ describe("canonical Discord ingress", () => {
       throw new Error("Expected run with canonical file input");
     }
     await runsApi.heartbeatRunner(actor.runnerGroup);
-    const claim = await runsApi.executionInput(input.runId);
-    expect(claim.prompt).toContain("[Web file] notes.txt");
-    expect(claim.appendSystemPrompt).toContain("private-history-1:");
-    expect(claim.appendSystemPrompt).not.toContain("private-history-25:");
-    expect(claim.appendSystemPrompt).toContain("untrusted");
+    const execution = await runsApi.executionInput(input.runId);
+    expect(execution.prompt).toContain("[Web file] notes.txt");
+    expect(execution.appendSystemPrompt).toContain("private-history-1:");
+    expect(execution.appendSystemPrompt).not.toContain("private-history-25:");
+    expect(execution.appendSystemPrompt).toContain("untrusted");
   });
 
   it("replies to the original message while queued without creating an empty thread", async () => {

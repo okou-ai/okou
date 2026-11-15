@@ -10,7 +10,7 @@ import {
   manualHttpCustomConnectorCreateBody,
 } from "./helpers/api-bdd-connectors";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
+import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
@@ -70,8 +70,8 @@ describe("Connector Skill bundle delivery", () => {
         });
       });
       const run = await queued.launch();
-      const claimed = await owner.claimChatRun(owner.runnerGroup, run.runId);
-      const firewall = claimed.claim.firewalls?.find((entry) => {
+      const execution = await owner.runExecution(run.runId);
+      const firewall = execution.execution.firewalls?.find((entry) => {
         return (
           entry.kind === "inline" && entry.customConnectorId === selected.id
         );
@@ -88,18 +88,20 @@ describe("Connector Skill bundle delivery", () => {
         },
       });
       const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(selected.slug, selected.id)}`;
-      const bundle = claimed.claim.contentBundles.skills.find((candidate) => {
-        return candidate.mountPath === mountPath;
-      })!;
+      const bundle = execution.execution.contentBundles.skills.find(
+        (candidate) => {
+          return candidate.mountPath === mountPath;
+        },
+      )!;
       expect(
-        readClaimedContentBundle(s3.objects, bundle)
+        readExecutionContentBundle(s3.objects, bundle)
           .get("SKILL.md")
           ?.toString(),
       ).toContain("Selected Skill instructions.");
       await owner.run(() => {
         return fixture.failChatRun(
           run.runId,
-          claimed.sandboxHeaders,
+          execution.sandboxHeaders,
           "Default bundle inspected",
         );
       });
@@ -184,12 +186,12 @@ describe("Connector Skill bundle delivery", () => {
         });
       });
       const run = await queued.launch();
-      const first = await owner.claimChatRun(owner.runnerGroup, run.runId);
-      expect(first.claim.cliAgentType).toBe(framework);
-      expect(first.claim.contentBundles.skills).toContainEqual(
+      const first = await owner.runExecution(run.runId);
+      expect(first.execution.cliAgentType).toBe(framework);
+      expect(first.execution.contentBundles.skills).toContainEqual(
         expect.objectContaining({ mountPath: `${root}/nintendo-store` }),
       );
-      const firstBundles = first.claim.contentBundles.skills.filter(
+      const firstBundles = first.execution.contentBundles.skills.filter(
         (bundle) => {
           return bundle.mountPath.includes("/custom-");
         },
@@ -198,7 +200,7 @@ describe("Connector Skill bundle delivery", () => {
       const bundle = firstBundles[0]!;
       expect(bundle.mountPath).toBe(mountPath);
       expect(
-        readClaimedContentBundle(s3.objects, bundle)
+        readExecutionContentBundle(s3.objects, bundle)
           .get("SKILL.md")
           ?.toString(),
       ).toContain("Updated instructions while the Run is queued.");
@@ -221,13 +223,15 @@ describe("Connector Skill bundle delivery", () => {
         prompt: "Use the updated Connector Skill",
         model,
       });
-      const second = await owner.claimChatRun(owner.runnerGroup, next.runId);
-      const updated = second.claim.contentBundles.skills.find((candidate) => {
-        return candidate.mountPath === mountPath;
-      })!;
+      const second = await owner.runExecution(next.runId);
+      const updated = second.execution.contentBundles.skills.find(
+        (candidate) => {
+          return candidate.mountPath === mountPath;
+        },
+      )!;
       expect(updated.sha256).not.toBe(bundle.sha256);
       expect(
-        readClaimedContentBundle(s3.objects, updated)
+        readExecutionContentBundle(s3.objects, updated)
           .get("SKILL.md")
           ?.toString(),
       ).toContain("Updated instructions for the next Run.");
@@ -266,19 +270,16 @@ describe("Connector Skill bundle delivery", () => {
         prompt: "Use the overriding Workflows",
         model,
       });
-      const collision = await owner.claimChatRun(
-        owner.runnerGroup,
-        collisionRun.runId,
-      );
+      const collision = await owner.runExecution(collisionRun.runId);
       for (const name of workflowNames) {
-        const mounts = collision.claim.contentBundles.skills.filter(
+        const mounts = collision.execution.contentBundles.skills.filter(
           (candidate) => {
             return candidate.mountPath === `${root}/${name}`;
           },
         );
         expect(mounts).toHaveLength(1);
         expect(
-          readClaimedContentBundle(s3.objects, mounts[0]!)
+          readExecutionContentBundle(s3.objects, mounts[0]!)
             .get("SKILL.md")
             ?.toString(),
         ).toContain(`Workflow overrides ${name}`);

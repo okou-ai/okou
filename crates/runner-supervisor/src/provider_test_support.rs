@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use runner_provider::{
-    ActiveInputSource, ClaimedJob, CompletionAuth, CompletionReportTiming, JobCandidate,
+    ActiveInputSource, CompletionAuth, CompletionReportTiming, ExecutionJob, JobCandidate,
     JobProvider, ProviderError, ProviderResult,
 };
 use runner_types::ids::RunId;
@@ -381,7 +381,7 @@ impl MockJobProvider {
             );
     }
 
-    /// Attach an active-input source at the same claimed-job boundary as a real provider.
+    /// Attach an active-input source when binding execution input, as a real provider does.
     pub fn set_claim_with_active_input(
         &self,
         run_id: RunId,
@@ -639,8 +639,8 @@ impl JobProvider for MockJobProvider {
         self.startup_readiness.prepare(&self.cancel).await
     }
 
-    async fn bind_supplied(&self, context: ExecutionContext) -> ProviderResult<ClaimedJob> {
-        Ok(ClaimedJob::supplied(context, None))
+    async fn bind_supplied(&self, context: ExecutionContext) -> ProviderResult<ExecutionJob> {
+        Ok(ExecutionJob::supplied(context, None))
     }
 
     fn completion_report_timing(&self) -> CompletionReportTiming {
@@ -741,7 +741,7 @@ impl runner_provider::LocalJobSource for MockJobProvider {
             () = self.cancel.cancelled() => None,
         }
     }
-    async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob> {
+    async fn claim(&self, candidate: JobCandidate) -> Option<ExecutionJob> {
         let run_id = candidate.run_id();
         self.claim_candidates
             .lock()
@@ -771,13 +771,13 @@ impl runner_provider::LocalJobSource for MockJobProvider {
             .unwrap_or_else(|e| e.into_inner())
             .remove(&run_id)
             .flatten()?;
-        match ClaimedJob::local_with_active_input_source(run_id, context, active_input_source) {
-            Ok(claimed) => Some(claimed),
+        match ExecutionJob::local_with_active_input_source(run_id, context, active_input_source) {
+            Ok(job) => Some(job),
             Err(err) => {
                 warn!(
                     run_id = %err.expected_run_id,
                     context_run_id = %err.context_run_id,
-                    "mock: claimed job run_id mismatch"
+                    "mock: accepted job run_id mismatch"
                 );
                 None
             }

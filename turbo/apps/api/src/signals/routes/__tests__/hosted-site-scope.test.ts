@@ -11,7 +11,7 @@ import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostBddApi } from "./helpers/api-bdd-host";
 import {
   createChatEventsFixture,
-  okouTokenFromClaim,
+  okouTokenFromExecution,
 } from "./helpers/chat-events-fixture";
 
 const context = testContext();
@@ -60,13 +60,10 @@ async function claimedChatRun(
       await fixture.api.requestCancelRun(entitled.actor, run.runId, [200]);
     }
   });
-  const { claim, sandboxHeaders } = await fixture.claimChatRun(
-    entitled.runnerGroup,
-    run.runId,
-  );
+  const { execution, sandboxHeaders } = await fixture.runExecution(run.runId);
   return {
     ...run,
-    bearer: `Bearer ${okouTokenFromClaim(claim)}`,
+    bearer: `Bearer ${okouTokenFromExecution(execution)}`,
     async complete() {
       await fixture.completeChatRunOk(run.runId, sandboxHeaders);
       active = false;

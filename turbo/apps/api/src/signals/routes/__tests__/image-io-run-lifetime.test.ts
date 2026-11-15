@@ -6,7 +6,7 @@ import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
-  createClaimedImageRun,
+  createImageRun,
   createImageIoTestApp,
   orgCredits,
   postFalWebhookEnvelope,
@@ -38,7 +38,7 @@ test.each(["completed", "failed"] as const)(
     mockEnv("OKOU_WEB_URL", "https://www.okou.test");
     context.mocks.ably.createTokenRequest.mockResolvedValue(tokenRequest);
     context.mocks.ably.publish.mockResolvedValue(undefined);
-    const fixture = await createClaimedImageRun(context, "gpt-image-1", 0);
+    const fixture = await createImageRun(context, "gpt-image-1", 0);
     context.mocks.s3.send.mockReset();
     context.mocks.s3.send.mockResolvedValue({});
     await fixture.run(async () => {

@@ -23,7 +23,7 @@ import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   createChatEventsFixture,
   type ChatRunSendBody,
-  okouTokenFromClaim,
+  okouTokenFromExecution,
   assistantMessages,
   userMessages,
   assistantEvent,
@@ -40,7 +40,7 @@ const {
   connectors,
   entitledChatActor: createEntitledChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   waitForThreadMessages,
   waitForRunStatus,
   completeChatRunOk,
@@ -118,7 +118,7 @@ describe("CHAT-02: on-demand member memory initialization", () => {
         prompt: "run after on-demand memory initialization",
       });
       expect(launched.runId).toStrictEqual(expect.any(String));
-      const claim = await lifecycle.claimExisting(member, launched.runId);
+      const claim = await lifecycle.executionInput(member, launched.runId);
       const memory = expectCanonicalStorageManifest(
         claim.storageManifest,
       )?.storageMounts.find((mount) => {
@@ -143,7 +143,7 @@ describe("CHAT-02: on-demand member memory initialization", () => {
         model: "claude-fable-5-1",
         prompt: "Observe repeated memory initialization",
       });
-      const repeated = await lifecycle.claimExisting(member, next.runId);
+      const repeated = await lifecycle.executionInput(member, next.runId);
       expect(
         expectCanonicalStorageManifest(
           repeated.storageManifest,
@@ -460,7 +460,7 @@ describe("CHAT-02: interrupting active chat runs", () => {
       prompt: "long task to interrupt",
     });
     await api.heartbeatRunner(runnerGroup);
-    const firstClaim = await api.executionInput(first.runId);
+    const firstExecution = await api.executionInput(first.runId);
     context.mocks.ably.publish.mockClear();
 
     const peer = bdd.user({ orgId: actor.orgId });
@@ -499,7 +499,7 @@ describe("CHAT-02: interrupting active chat runs", () => {
     });
     await webhooks.requestAgentComplete(
       { runId: first.runId, exitCode: 1 },
-      { authorization: `Bearer ${firstClaim.sandboxToken}` },
+      { authorization: `Bearer ${firstExecution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
@@ -648,7 +648,7 @@ describe("CHAT-02: interrupting active chat runs", () => {
     expect(appended).toContain("RUN_STATUS: cancelled");
     expect(appended).toContain("User: long task to interrupt");
     expect(appended).toContain("User: cancelled through the cancel api");
-    await claimChatRun(runnerGroup, third.runId);
+    await runExecution(third.runId);
 
     await cancelChatRun(actor, third.runId);
   }, 90_000);
@@ -939,7 +939,7 @@ describe("CHAT-02: admission without spendable credits", () => {
 
 describe("CHAT-02: Okou Mail link delivery", () => {
   it("delivers a linked Gmail draft exactly once through the agent reply", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
     mockGmailConnectorOAuth({
       accessToken: "gmail-agent-reply-token",
       email: "sender@example.com",
@@ -961,10 +961,7 @@ describe("CHAT-02: Okou Mail link delivery", () => {
       agentId,
       prompt: "Create a Gmail draft and let me review it",
     });
-    const { claim, sandboxHeaders } = await claimChatRun(
-      runnerGroup,
-      run.runId,
-    );
+    const { execution, sandboxHeaders } = await runExecution(run.runId);
     const gmailDraftId = "r-agent-reply-draft";
     server.use(
       http.get(
@@ -1000,7 +997,7 @@ describe("CHAT-02: Okou Mail link delivery", () => {
     const linked = await accept(
       setupApp({ context, routes: mailRoutes })(mailContract).linkDraft({
         headers: {
-          authorization: `Bearer ${okouTokenFromClaim(claim)}`,
+          authorization: `Bearer ${okouTokenFromExecution(execution)}`,
         },
         body: {
           threadId: run.threadId,
@@ -1047,23 +1044,27 @@ describe("CHAT-02: Okou Mail link delivery", () => {
 
 describe("CHAT-02: network body capture", () => {
   it("carries a send's network body capture into the run the pick launches", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
 
     const captured = await sendChatRun(actor, {
       agentId,
       prompt: "capture this run's network bodies",
       captureNetworkBodies: true,
     });
-    const capturedClaim = await claimChatRun(runnerGroup, captured.runId);
-    expect(capturedClaim.claim.captureNetworkBodies).toBeTruthy();
-    await cancelChatRun(actor, captured.runId, capturedClaim.sandboxHeaders);
+    const capturedExecution = await runExecution(captured.runId);
+    expect(capturedExecution.execution.captureNetworkBodies).toBeTruthy();
+    await cancelChatRun(
+      actor,
+      captured.runId,
+      capturedExecution.sandboxHeaders,
+    );
 
     const plain = await sendChatRun(actor, {
       agentId,
       prompt: "do not capture network bodies",
     });
-    const plainClaim = await claimChatRun(runnerGroup, plain.runId);
-    expect(plainClaim.claim.captureNetworkBodies).toBeFalsy();
-    await cancelChatRun(actor, plain.runId, plainClaim.sandboxHeaders);
+    const plainExecution = await runExecution(plain.runId);
+    expect(plainExecution.execution.captureNetworkBodies).toBeFalsy();
+    await cancelChatRun(actor, plain.runId, plainExecution.sandboxHeaders);
   });
 });

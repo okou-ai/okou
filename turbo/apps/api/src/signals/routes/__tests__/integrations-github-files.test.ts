@@ -21,11 +21,11 @@ import { integrationsGithubUploadInitRoutes } from "../integrations-github-uploa
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createGithubBddApi } from "./helpers/api-bdd-github";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const claimedToken = credentials.okouToken;
 const mocks = createRouteMocks(context);
 const github = createGithubBddApi(context);
@@ -104,9 +104,9 @@ describe("GitHub file integration routes", () => {
         prompt: "deliver github file",
       });
       await api.heartbeatRunner(runnerGroup);
-      const claim = await owner.claim(run.runId);
+      const execution = await owner.executionInput(run.runId);
       restoreAccepted = captureConnectorExternalState(context);
-      const token = claim.platformEnvironment?.OKOU_TOKEN;
+      const token = execution.platformEnvironment?.OKOU_TOKEN;
       if (!token) {
         throw new Error("Expected a claimed GitHub caller");
       }

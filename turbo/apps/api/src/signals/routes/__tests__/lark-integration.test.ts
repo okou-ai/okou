@@ -29,12 +29,12 @@ import { integrationsFeishuMessageRoutes } from "../integrations-feishu-message"
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const runsApi = createRunsApi(context);
@@ -397,7 +397,7 @@ describe("Lark integration", () => {
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.LarkIntegration]: false,
     });
-    const { token: feishuOnlyToken } = await credentials.freshClaim(actor);
+    const { token: feishuOnlyToken } = await credentials.freshForActor(actor);
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.LarkIntegration]: true,
     });

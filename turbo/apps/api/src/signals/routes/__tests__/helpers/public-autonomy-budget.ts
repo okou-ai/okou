@@ -11,8 +11,8 @@ interface PublicBudgetRun {
   readonly agentId: string;
 }
 
-/** Issue credentials through a real claim, then release the Run's live slot. */
-export async function claimBudgetRun(
+/** Issue execution credentials, then release the Run's live slot. */
+export async function launchBudgetRun(
   context: TestContext,
   owned: Owner,
   run: {
@@ -21,11 +21,8 @@ export async function claimBudgetRun(
     readonly agentId?: string;
   },
 ): Promise<PublicBudgetRun> {
-  const { claim, sandboxHeaders } = await owned.claimChatRun(
-    owned.runnerGroup,
-    run.runId,
-  );
-  const token = claim.platformEnvironment.OKOU_TOKEN;
+  const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
+  const token = execution.platformEnvironment.OKOU_TOKEN;
   if (!token) {
     throw new Error("Expected the Runner to issue an agent token");
   }

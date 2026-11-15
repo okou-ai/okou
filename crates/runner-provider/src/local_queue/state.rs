@@ -484,7 +484,7 @@ impl LocalQueue {
                 // spin. Keep the claim until after the result attempt so other
                 // local runners do not repeatedly process the same poison job.
                 // If the result write fails, record backoff before releasing
-                // the claim so sequential admission cannot immediately retry.
+                // the claim so sequential acceptance cannot immediately retry.
                 // On success, the result becomes the durable terminal marker
                 // before the bad job is removed.
                 self.record_failed_claim_sync(run_id, format!("invalid job JSON: {e}"));

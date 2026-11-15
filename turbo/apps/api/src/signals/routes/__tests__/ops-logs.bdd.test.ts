@@ -1,4 +1,4 @@
-import { claimPublicToolRun } from "./helpers/public-tool-actor";
+import { launchPublicToolRun } from "./helpers/public-tool-actor";
 import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 import { commitMemoryVersion } from "./helpers/memory";
 import {
@@ -208,7 +208,7 @@ describe("OPS-01: user data export", () => {
       const peer = bdd.user({ orgId: actor.orgId });
       const peerOnboarded = await bdd.completeOnboarding(peer);
       expect(peerOnboarded.status).toBe(200);
-      const oldRun = await claimPublicToolRun(
+      const oldRun = await launchPublicToolRun(
         context,
         actor,
         registerRunCleanup,
@@ -218,14 +218,14 @@ describe("OPS-01: user data export", () => {
         {
           runId: oldRun.runId,
           sandboxHeaders: {
-            authorization: `Bearer ${oldRun.claim.sandboxToken}`,
+            authorization: `Bearer ${oldRun.execution.sandboxToken}`,
           },
-          storageManifest: oldRun.claim.storageManifest,
+          storageManifest: oldRun.execution.storageManifest,
         },
         [{ path: "removed.md", content: "An old memory version" }],
       );
       await oldRun.cleanup();
-      const currentRun = await claimPublicToolRun(
+      const currentRun = await launchPublicToolRun(
         context,
         actor,
         registerRunCleanup,
@@ -235,9 +235,9 @@ describe("OPS-01: user data export", () => {
         {
           runId: currentRun.runId,
           sandboxHeaders: {
-            authorization: `Bearer ${currentRun.claim.sandboxToken}`,
+            authorization: `Bearer ${currentRun.execution.sandboxToken}`,
           },
-          storageManifest: currentRun.claim.storageManifest,
+          storageManifest: currentRun.execution.storageManifest,
         },
         [
           { path: "MEMORY.md", content: "# Exported memory" },
@@ -250,7 +250,7 @@ describe("OPS-01: user data export", () => {
       expect(memory.storageId).toBe(oldMemory.storageId);
       expect(memory.versionId).not.toBe(oldMemory.versionId);
       await currentRun.cleanup();
-      const peerRun = await claimPublicToolRun(
+      const peerRun = await launchPublicToolRun(
         context,
         peer,
         registerRunCleanup,
@@ -260,21 +260,21 @@ describe("OPS-01: user data export", () => {
         {
           runId: peerRun.runId,
           sandboxHeaders: {
-            authorization: `Bearer ${peerRun.claim.sandboxToken}`,
+            authorization: `Bearer ${peerRun.execution.sandboxToken}`,
           },
-          storageManifest: peerRun.claim.storageManifest,
+          storageManifest: peerRun.execution.storageManifest,
         },
         [{ path: "peer-secret.md", content: "Another user's memory" }],
       );
       expect(peerMemory.storageId).not.toBe(memory.storageId);
       await peerRun.cleanup();
-      const reader = await claimPublicToolRun(
+      const reader = await launchPublicToolRun(
         context,
         actor,
         registerRunCleanup,
       );
       expect(
-        expectCanonicalStorageManifest(reader.claim.storageManifest)
+        expectCanonicalStorageManifest(reader.execution.storageManifest)
           ?.storageMounts,
       ).toContainEqual(
         expect.objectContaining({

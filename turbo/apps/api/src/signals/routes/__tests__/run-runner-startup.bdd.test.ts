@@ -81,10 +81,7 @@ test.each(["sandbox", "home", "blank", "cold"] as const)(
         prompt: "Persist actual startup resource",
       });
       await expect(readStartupPath(owned.actor, run.runId)).resolves.toBeNull();
-      const { sandboxHeaders, claim } = await owned.claimChatRun(
-        owned.runnerGroup,
-        run.runId,
-      );
+      const { sandboxHeaders, execution } = await owned.runExecution(run.runId);
       await writeStartupPath(run.runId, path, sandboxHeaders);
       await expect(readStartupPath(owned.actor, run.runId)).resolves.toBe(path);
 
@@ -103,7 +100,7 @@ test.each(["sandbox", "home", "blank", "cold"] as const)(
         method: "POST",
         headers: { ...sandboxHeaders, "content-type": "application/json" },
         body: JSON.stringify({
-          ...completionBody(run, claim.cliAgentType),
+          ...completionBody(run, execution.cliAgentType),
           sandboxReuseResult,
           homeReuseResult,
         }),
@@ -129,10 +126,7 @@ test("telemetry and completion leave startup unknown until an authenticated repo
       agentId: owned.agentId,
       prompt: "Keep unreported startup unknown",
     });
-    const { sandboxHeaders, claim } = await owned.claimChatRun(
-      owned.runnerGroup,
-      run.runId,
-    );
+    const { sandboxHeaders, execution } = await owned.runExecution(run.runId);
     await callbacks.requestAgentTelemetry(
       {
         runId: run.runId,
@@ -148,7 +142,7 @@ test("telemetry and completion leave startup unknown until an authenticated repo
     await expect(readStartupPath(owned.actor, run.runId)).resolves.toBeNull();
     await callbacks.requestAgentComplete(
       {
-        ...completionBody(run, claim.cliAgentType),
+        ...completionBody(run, execution.cliAgentType),
       },
       sandboxHeaders,
       [200],
@@ -172,15 +166,12 @@ test("same-value retries succeed and conflicting or telemetry reports cannot ove
       agentId: owned.agentId,
       prompt: "Replay startup receipt",
     });
-    const { sandboxHeaders, claim } = await owned.claimChatRun(
-      owned.runnerGroup,
-      run.runId,
-    );
+    const { sandboxHeaders, execution } = await owned.runExecution(run.runId);
     await writeStartupPath(run.runId, "blank", sandboxHeaders);
     await writeStartupPath(run.runId, "blank", sandboxHeaders);
     await writeStartupPath(run.runId, "cold", sandboxHeaders, [409]);
     await callbacks.requestAgentComplete(
-      completionBody(run, claim.cliAgentType),
+      completionBody(run, execution.cliAgentType),
       sandboxHeaders,
       [200],
     );
@@ -204,10 +195,7 @@ test("concurrent conflicting startup reports accept exactly one immutable fact",
       agentId: owned.agentId,
       prompt: "Arbitrate startup receipts",
     });
-    const { sandboxHeaders } = await owned.claimChatRun(
-      owned.runnerGroup,
-      run.runId,
-    );
+    const { sandboxHeaders } = await owned.runExecution(run.runId);
     const paths = ["blank", "cold"] as const;
     const responses = await Promise.all(
       paths.map((path) => {
@@ -242,10 +230,7 @@ test("startup writes and reads preserve Run token, user and organization boundar
       agentId: owned.agentId,
       prompt: "Authorize startup setting",
     });
-    const { sandboxHeaders } = await owned.claimChatRun(
-      owned.runnerGroup,
-      run.runId,
-    );
+    const { sandboxHeaders } = await owned.runExecution(run.runId);
     await writeStartupPath(randomUUID(), "blank", sandboxHeaders, [401]);
     await writeStartupPath(run.runId, "blank", {}, [401]);
     await writeStartupPath(

@@ -17,7 +17,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, onRejection } from "../../utils";
 import { browserRoutes } from "../browser";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 
 import { publicChatActor } from "./helpers/public-chat-actor";
 
@@ -164,9 +164,9 @@ async function browserOwner() {
         cloudBrowserEnabled: true,
       });
       threadIds.push(sent.threadId);
-      const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+      const execution = await owned.runExecution(sent.runId);
       return {
-        authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
+        authorization: `Bearer ${okouTokenFromExecution(execution.execution)}`,
       };
     },
   };

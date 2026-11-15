@@ -23,7 +23,7 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { buildTelegramBotAvatarUrl } from "../../external/telegram-avatar";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createPublicTelegramActor } from "./helpers/public-telegram-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
@@ -34,7 +34,7 @@ import { createRouteMocks } from "./helpers/route-test";
 const TEST_APP_ROUTES = Object.freeze([...integrationsTelegramRoutes]);
 
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const store = createStore();
 const mocks = createRouteMocks(context);
 

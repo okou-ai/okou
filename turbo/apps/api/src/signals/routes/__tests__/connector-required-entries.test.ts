@@ -6,7 +6,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 import {
   createChatEventsFixture,
-  okouTokenFromClaim,
+  okouTokenFromExecution,
 } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 
@@ -18,10 +18,9 @@ describe("authorized connector admission", () => {
     const {
       actor,
       agentId,
-      runnerGroup,
       run: own,
       sendChatRun,
-      claimChatRun,
+      runExecution,
     } = await publicChatActor(context);
     await own(() => {
       return api.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -42,12 +41,12 @@ describe("authorized connector admission", () => {
       agentId,
       prompt: "use the enabled OpenAI connection",
     });
-    const claimed = await claimChatRun(runnerGroup, run.runId);
+    const execution = await runExecution(run.runId);
     expect(
-      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+      execution.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
     ).toMatchObject({ sourceId: connection.id });
     await own(() => {
-      return cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+      return cancelChatRun(actor, run.runId, execution.sandboxHeaders);
     });
   });
 
@@ -55,10 +54,9 @@ describe("authorized connector admission", () => {
     const {
       actor,
       agentId,
-      runnerGroup,
       run: own,
       sendChatRun,
-      claimChatRun,
+      runExecution,
     } = await publicChatActor(context);
     await own(() => {
       return api.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -79,17 +77,16 @@ describe("authorized connector admission", () => {
       agentId,
       prompt: "admit the builtin MCP account",
     });
-    const { claim, sandboxHeaders } = await claimChatRun(
-      runnerGroup,
-      run.runId,
-    );
+    const { execution, sandboxHeaders } = await runExecution(run.runId);
     const mcp = setupApp({ context, routes: mcpConnectorsRoutes })(
       mcpConnectorsContract,
     );
     const admitted = await own(() => {
       return accept(
         mcp.list({
-          headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+          headers: {
+            authorization: `Bearer ${okouTokenFromExecution(execution)}`,
+          },
         }),
         [200],
       );

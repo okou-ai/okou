@@ -66,7 +66,7 @@ function createCatalogStorage() {
   };
 }
 const catalogStorage = createCatalogStorage();
-type RunnerClaim = Awaited<ReturnType<typeof api.executionInput>>;
+type RunnerExecutionInput = Awaited<ReturnType<typeof api.executionInput>>;
 interface CatalogActor {
   readonly actor: ApiTestUser;
   readonly agentId: string;
@@ -127,23 +127,23 @@ async function sendChatRun(
   return { runId: sent.runId, threadId: sent.threadId };
 }
 
-async function claimChatRun(
+async function runExecution(
   runnerGroup: string,
   runId: string,
 ): Promise<{
-  readonly claim: RunnerClaim;
+  readonly execution: RunnerExecutionInput;
   readonly sandboxHeaders: { readonly authorization: string };
 }> {
   await api.heartbeatRunner(runnerGroup);
-  const claim = await api.executionInput(runId);
+  const execution = await api.executionInput(runId);
   return {
-    claim,
-    sandboxHeaders: { authorization: `Bearer ${claim.sandboxToken}` },
+    execution,
+    sandboxHeaders: { authorization: `Bearer ${execution.sandboxToken}` },
   };
 }
 
-function okouTokenFromClaim(claim: RunnerClaim): string {
-  const token = claim.platformEnvironment.OKOU_TOKEN;
+function okouTokenFromExecution(execution: RunnerExecutionInput): string {
+  const token = execution.platformEnvironment.OKOU_TOKEN;
   if (!token || !token.startsWith("vm0_sandbox_")) {
     throw new Error(
       "Expected the claim platform environment to carry an OKOU_TOKEN",
@@ -283,7 +283,7 @@ async function completeChatRunWithMessage(
   runId: string,
   assistantText: string,
 ): Promise<void> {
-  const { sandboxHeaders } = await claimChatRun(owner.runnerGroup, runId);
+  const { sandboxHeaders } = await runExecution(owner.runnerGroup, runId);
   chatCallbacks.mockChatOutputEvents([
     {
       eventType: "assistant",
@@ -323,11 +323,11 @@ async function uploadFile(args: {
     prompt: args.prompt,
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
-  const { claim, sandboxHeaders } = await claimChatRun(
+  const { execution: claim, sandboxHeaders } = await runExecution(
     args.owner.runnerGroup,
     run.runId,
   );
-  const bearer = `Bearer ${okouTokenFromClaim(claim)}`;
+  const bearer = `Bearer ${okouTokenFromExecution(claim)}`;
   const fileId = args.fileId ?? randomUUID();
   stageUploadObject(
     `artifacts/${args.owner.actor.userId}/${fileId}/${args.filename}`,
@@ -366,8 +366,8 @@ async function publishHostedSite(args: {
     prompt: `publish ${args.site}`,
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
-  const claimed = await claimChatRun(args.owner.runnerGroup, run.runId);
-  const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
+  const execution = await runExecution(args.owner.runnerGroup, run.runId);
+  const bearer = `Bearer ${okouTokenFromExecution(execution.execution)}`;
   const body = {
     site: args.site,
     title: args.title ?? args.site,
@@ -382,7 +382,7 @@ async function publishHostedSite(args: {
     "/index.html": `<main>${args.site}</main>`,
   });
   await chat.completeHostedSiteWithBearer(bearer, prepared.deploymentId);
-  await completeChatRunOk(run.runId, claimed.sandboxHeaders);
+  await completeChatRunOk(run.runId, execution.sandboxHeaders);
   return {
     url: prepared.url,
     siteId: prepared.siteId,
@@ -403,8 +403,8 @@ describe("GET /api/artifacts/catalog", () => {
       agentId: owner.agentId,
       prompt: "Produce a private video",
     });
-    const claimed = await claimChatRun(owner.runnerGroup, first.runId);
-    const bearer = `Bearer ${okouTokenFromClaim(claimed.claim)}`;
+    const execution = await runExecution(owner.runnerGroup, first.runId);
+    const bearer = `Bearer ${okouTokenFromExecution(execution.execution)}`;
     installHostedUploadTransport(context, owner.storage);
     const prepared = await accept(
       setupApp({ context, routes: uploadsPrepareRoutes })(
@@ -468,13 +468,13 @@ describe("GET /api/artifacts/catalog", () => {
     const originalCatalog = await chat.listArtifactCatalog(owner.actor, {
       chatThreadId: first.threadId,
     });
-    await completeChatRunOk(first.runId, claimed.sandboxHeaders);
+    await completeChatRunOk(first.runId, execution.sandboxHeaders);
     const second = await sendChatRun(owner.actor, {
       agentId: owner.agentId,
       prompt: "Reuse the private video",
     });
-    const secondClaim = await claimChatRun(owner.runnerGroup, second.runId);
-    const secondBearer = `Bearer ${okouTokenFromClaim(secondClaim.claim)}`;
+    const secondExecution = await runExecution(owner.runnerGroup, second.runId);
+    const secondBearer = `Bearer ${okouTokenFromExecution(secondExecution.execution)}`;
     await chat.completeUploadWithBearer(
       secondBearer,
       { id: prepared.body.id },
@@ -500,7 +500,7 @@ describe("GET /api/artifacts/catalog", () => {
     await expect(chat.listArtifactCatalog(owner.actor)).resolves.toMatchObject({
       artifacts: [{ id: originalCatalog.artifacts[0]!.id }],
     });
-    await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
+    await completeChatRunOk(second.runId, secondExecution.sandboxHeaders);
   });
 
   it("withdraws the owned object for a historical public file", async () => {
@@ -890,8 +890,8 @@ describe("GET /api/artifacts/catalog", () => {
         agentId: owner.agentId,
         prompt: "Record the sharing demo",
       });
-      const firstClaim = await claimChatRun(owner.runnerGroup, first.runId);
-      const firstBearer = `Bearer ${okouTokenFromClaim(firstClaim.claim)}`;
+      const firstExecution = await runExecution(owner.runnerGroup, first.runId);
+      const firstBearer = `Bearer ${okouTokenFromExecution(firstExecution.execution)}`;
       const filename = "sharing-demo.mp4";
       const size = 6 * 1024 * 1024;
       const storage = context.mocks.s3.send.getMockImplementation()!;
@@ -964,14 +964,17 @@ describe("GET /api/artifacts/catalog", () => {
       await expect(
         chat.listArtifactCatalog(owner.actor),
       ).resolves.toStrictEqual(original);
-      await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
+      await completeChatRunOk(first.runId, firstExecution.sandboxHeaders);
 
       const second = await sendChatRun(owner.actor, {
         agentId: owner.agentId,
         prompt: "Review the same demo in another conversation",
       });
-      const secondClaim = await claimChatRun(owner.runnerGroup, second.runId);
-      const secondBearer = `Bearer ${okouTokenFromClaim(secondClaim.claim)}`;
+      const secondExecution = await runExecution(
+        owner.runnerGroup,
+        second.runId,
+      );
+      const secondBearer = `Bearer ${okouTokenFromExecution(secondExecution.execution)}`;
       await chat.completeUploadWithBearer(secondBearer, upload, [200]);
       const inOriginalThread = await chat.listArtifactCatalog(owner.actor, {
         chatThreadId: first.threadId,
@@ -1002,7 +1005,7 @@ describe("GET /api/artifacts/catalog", () => {
           chatThreadId: second.threadId,
         }),
       ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
-      await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
+      await completeChatRunOk(second.runId, secondExecution.sandboxHeaders);
     },
   );
 
@@ -1112,14 +1115,17 @@ describe("GET /api/artifacts/catalog", () => {
         agentId: owner.agentId,
         prompt: "Upload an artifact through the Runner protocol",
       });
-      const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
+      const { execution: claim } = await runExecution(
+        owner.runnerGroup,
+        run.runId,
+      );
       const fileId = randomUUID();
       stageUploadObject(
         `artifacts/${owner.actor.userId}/${fileId}/source-fallback.${container}`,
         1024,
       );
       const completed = await chat.completeUploadWithBearer(
-        `Bearer ${okouTokenFromClaim(claim)}`,
+        `Bearer ${okouTokenFromExecution(claim)}`,
         { id: fileId, contentType: `video/${container}` },
         [200],
       );
@@ -1394,8 +1400,13 @@ describe("GET /api/artifacts/catalog", () => {
       prompt: "update the existing website",
     });
     activeRuns.add(firstChat.runId);
-    const firstClaim = await claimChatRun(owner.runnerGroup, firstChat.runId);
-    const firstBearer = { bearerToken: okouTokenFromClaim(firstClaim.claim) };
+    const firstExecution = await runExecution(
+      owner.runnerGroup,
+      firstChat.runId,
+    );
+    const firstBearer = {
+      bearerToken: okouTokenFromExecution(firstExecution.execution),
+    };
     const firstHistory = await host.readHostedSiteDeployments(
       firstBearer,
       site,
@@ -1412,7 +1423,7 @@ describe("GET /api/artifacts/catalog", () => {
       url: first.url,
       deploymentVersion: 2,
     });
-    await completeChatRunOk(firstChat.runId, firstClaim.sandboxHeaders);
+    await completeChatRunOk(firstChat.runId, firstExecution.sandboxHeaders);
     activeRuns.delete(firstChat.runId);
 
     const secondChat = await sendChatRun(actor, {
@@ -1421,8 +1432,13 @@ describe("GET /api/artifacts/catalog", () => {
     });
     activeRuns.add(secondChat.runId);
     expect(secondChat.threadId).not.toBe(firstChat.threadId);
-    const secondClaim = await claimChatRun(owner.runnerGroup, secondChat.runId);
-    const secondBearer = { bearerToken: okouTokenFromClaim(secondClaim.claim) };
+    const secondExecution = await runExecution(
+      owner.runnerGroup,
+      secondChat.runId,
+    );
+    const secondBearer = {
+      bearerToken: okouTokenFromExecution(secondExecution.execution),
+    };
     await host.completeHostedSite(secondBearer, first.deploymentId);
     await host.completeHostedSite(secondBearer, second.deploymentId);
     const third = await host.prepareHostedSite(secondBearer, {
@@ -1500,7 +1516,7 @@ describe("GET /api/artifacts/catalog", () => {
       id: first.siteId,
       deploymentVersion: 3,
     });
-    await completeChatRunOk(secondChat.runId, secondClaim.sandboxHeaders);
+    await completeChatRunOk(secondChat.runId, secondExecution.sandboxHeaders);
     activeRuns.delete(secondChat.runId);
   }, 180_000);
 
@@ -1682,7 +1698,7 @@ describe("GET /api/artifacts/catalog", () => {
       agentId: owner.agentId,
       prompt: "Upload an artifact through the Runner protocol",
     });
-    const { claim, sandboxHeaders } = await claimChatRun(
+    const { execution: claim, sandboxHeaders } = await runExecution(
       owner.runnerGroup,
       run.runId,
     );
@@ -1692,7 +1708,7 @@ describe("GET /api/artifacts/catalog", () => {
       128,
     );
     await chat.completeUploadWithBearer(
-      `Bearer ${okouTokenFromClaim(claim)}`,
+      `Bearer ${okouTokenFromExecution(claim)}`,
       { id: fileId, contentType: "text/plain" },
       [200],
     );

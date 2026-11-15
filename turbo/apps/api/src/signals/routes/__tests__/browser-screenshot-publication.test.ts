@@ -191,7 +191,7 @@ test("reconciles concurrent thread deletions and cron while retaining sibling re
       previews.push({ current, key, screenshotUrl, url });
       await callbacks.requestAgentComplete(
         { runId: current.runId, exitCode: 0 },
-        { authorization: `Bearer ${current.claim.sandboxToken}` },
+        { authorization: `Bearer ${current.execution.sandboxToken}` },
         [200],
       );
     }

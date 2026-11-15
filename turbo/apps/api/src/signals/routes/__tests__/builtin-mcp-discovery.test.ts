@@ -9,7 +9,7 @@ import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import {
   createChatEventsFixture,
-  okouTokenFromClaim,
+  okouTokenFromExecution,
 } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRouteMocks } from "./helpers/route-test";
@@ -35,16 +35,13 @@ describe("builtin MCP discovery authority", () => {
   it("keeps absent and deleted account bindings unavailable without choosing a default", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
-      const { actor, agentId, runnerGroup } = owned;
+      const { actor, agentId } = owned;
       const absentRun = await owned.sendChatRun(actor, {
         agentId,
         prompt: "Discover without a binding",
       });
-      const absentClaim = await owned.claimChatRun(
-        runnerGroup,
-        absentRun.runId,
-      );
-      const absentToken = okouTokenFromClaim(absentClaim.claim);
+      const absentExecution = await owned.runExecution(absentRun.runId);
+      const absentToken = okouTokenFromExecution(absentExecution.execution);
       expect((await discovery(absentToken)).body.connectors).toStrictEqual([]);
       const account = await connectors.connectManualGrant(
         actor,
@@ -56,15 +53,15 @@ describe("builtin MCP discovery authority", () => {
       await chat.cancelChatRun(
         actor,
         absentRun.runId,
-        absentClaim.sandboxHeaders,
+        absentExecution.sandboxHeaders,
       );
       await runs.enableAgentConnectors(actor, agentId, ["manual-mcp"]);
       const admitted = await owned.sendChatRun(actor, {
         agentId,
         prompt: "Discover admitted accounts",
       });
-      const claimed = await owned.claimChatRun(runnerGroup, admitted.runId);
-      const token = okouTokenFromClaim(claimed.claim);
+      const execution = await owned.runExecution(admitted.runId);
+      const token = okouTokenFromExecution(execution.execution);
       expect((await discovery(token)).body.connectors).toMatchObject([
         {
           target: { kind: "builtin", connectorSlug: "manual-mcp" },
@@ -87,7 +84,7 @@ describe("builtin MCP discovery authority", () => {
   it("returns reconnect guidance for the exact non-default account", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
-      const { actor, agentId, runnerGroup } = owned;
+      const { actor, agentId } = owned;
       mockEnv("APP_URL", "https://app.okou.ai");
       await connectors.connectManualGrant(actor, "manual-mcp", "api-token", {
         apiKey: "default-secret",
@@ -133,9 +130,9 @@ describe("builtin MCP discovery authority", () => {
         threadId: thread.body.id,
         prompt: "Reconnect the selected account",
       });
-      const claimed = await owned.claimChatRun(runnerGroup, run.runId);
+      const execution = await owned.runExecution(run.runId);
       const headers = {
-        authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
+        authorization: `Bearer ${okouTokenFromExecution(execution.execution)}`,
       };
       const body = {
         target: { kind: "builtin" as const, connectorSlug: "manual-mcp" },

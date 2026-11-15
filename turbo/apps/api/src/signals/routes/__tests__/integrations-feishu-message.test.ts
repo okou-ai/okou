@@ -38,7 +38,7 @@ import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -50,7 +50,7 @@ const TEST_APP_ROUTES = Object.freeze([
 ]);
 
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const mocks = createRouteMocks(context);
 const authOrgApi = createAuthOrgAgentsBddApi(context);
 const chatApi = createChatFilesBddApi(context);
@@ -963,12 +963,12 @@ describe("POST /api/integrations/feishu/message", () => {
           prompt: "Create a run for Feishu file upload completion",
         });
       });
-      const claim = await owner.run(() => {
-        return owner.claim(sent.runId);
+      const execution = await owner.run(() => {
+        return owner.executionInput(sent.runId);
       });
-      const token = claim.platformEnvironment?.OKOU_TOKEN;
+      const token = execution.platformEnvironment?.OKOU_TOKEN;
       if (!token) {
-        throw new Error("Expected the claimed Okou token");
+        throw new Error("Expected the execution's Okou token");
       }
       const content = Buffer.from("feishu upload bytes");
       installSharedThreadStorage(context);

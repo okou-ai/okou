@@ -41,7 +41,7 @@ import {
   withMockNowForTest,
 } from "../../../lib/time";
 import {
-  okouTokenFromClaim,
+  okouTokenFromExecution,
   createChatEventsFixture,
 } from "./helpers/chat-events-fixture";
 import { createDeferredPromise } from "../../utils";
@@ -86,11 +86,8 @@ async function observeCustomSkill(
     prompt: "Read the current custom connector skill",
     model: "claude-fable-5-1",
   });
-  const { claim, sandboxHeaders } = await fixture.claimChatRun(
-    fixture.runnerGroup,
-    sent.runId,
-  );
-  const mount = claim.contentBundles.skills.find((item) => {
+  const { execution, sandboxHeaders } = await fixture.runExecution(sent.runId);
+  const mount = execution.contentBundles.skills.find((item) => {
     return item.mountPath.endsWith(
       `-${connectorId.replaceAll("-", "").slice(0, 8)}`,
     );
@@ -106,7 +103,7 @@ async function createBuiltinCredentialConsumer(
   fixture: Awaited<ReturnType<typeof publicChatActor>>,
   connectorSlug: string,
 ) {
-  const { actor, agentId, runnerGroup, run: own } = fixture;
+  const { actor, agentId, run: own } = fixture;
   const runs = createRunsApi(context);
   const firewall = createFirewallApi(context);
   const callbacks = createWebhookCallbackApi(context);
@@ -117,19 +114,16 @@ async function createBuiltinCredentialConsumer(
     agentId,
     prompt: "Consume the connected account's current credential",
   });
-  const { claim, sandboxHeaders } = await fixture.claimChatRun(
-    runnerGroup,
-    sent.runId,
-  );
-  const encryptedSecrets = claim.encryptedSecrets;
+  const { execution, sandboxHeaders } = await fixture.runExecution(sent.runId);
+  const encryptedSecrets = execution.encryptedSecrets;
   if (!encryptedSecrets) {
     throw new Error("Expected encrypted secrets from the actual claim");
   }
   return {
-    claim,
+    execution,
     resolve(alias: string, claimedAlias = alias) {
-      expect(claim.secretConnectorMap?.[claimedAlias]).toBe(connectorSlug);
-      const source = claim.secretConnectorMetadataMap?.[claimedAlias];
+      expect(execution.secretConnectorMap?.[claimedAlias]).toBe(connectorSlug);
+      const source = execution.secretConnectorMetadataMap?.[claimedAlias];
       expect(source).toMatchObject({
         sourceType: "connector",
         sourceId: expect.any(String),
@@ -146,11 +140,11 @@ async function createBuiltinCredentialConsumer(
               Authorization: "Bearer ${{ secrets." + alias + " }}",
             },
             secretConnectorMap: {
-              ...claim.secretConnectorMap,
+              ...execution.secretConnectorMap,
               [alias]: connectorSlug,
             },
             secretConnectorMetadataMap: {
-              ...claim.secretConnectorMetadataMap,
+              ...execution.secretConnectorMetadataMap,
               [alias]: source,
             },
           },
@@ -2797,7 +2791,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         agent.agentId,
         {
           intent: "reconnect",
-          connectionId: connectionId,
+          connectionId,
         },
       );
     });
@@ -2834,7 +2828,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         undefined,
         {
           intent: "reconnect",
-          connectionId: connectionId,
+          connectionId,
         },
       );
     });
@@ -3000,7 +2994,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       initialExpiresIn: 3600,
     });
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, runnerGroup, run: own } = fixture;
+    const { actor: admin, agentId, run: own } = fixture;
     const runs = createRunsApi(context);
     const callbacks = createWebhookCallbackApi(context);
     const firewall = createFirewallApi(context);
@@ -3098,17 +3092,16 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       agentId,
       prompt: "Use the replacement manual credential",
     });
-    const { claim, sandboxHeaders } = await fixture.claimChatRun(
-      runnerGroup,
+    const { execution, sandboxHeaders } = await fixture.runExecution(
       sent.runId,
     );
-    const entry = claim.firewalls?.find((candidate) => {
+    const entry = execution.firewalls?.find((candidate) => {
       return (
         candidate.kind === "inline" &&
         candidate.customConnectorId === created.id
       );
     });
-    const target = claim.connectorRuntimeTargets.find((candidate) => {
+    const target = execution.connectorRuntimeTargets.find((candidate) => {
       return (
         candidate.kind === "custom" &&
         candidate.customConnectorId === created.id
@@ -3747,7 +3740,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
     });
     await expectCustomAccountReadiness(admin, noAuth.body.connector, {
       ready: true,
-      connectionId: connectionId,
+      connectionId,
     });
     await expect(
       own(() => {
@@ -5137,7 +5130,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("lets an admin agent with an okou-scoped token create a manual definition that Connect can configure", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, runnerGroup, run: own } = fixture;
+    const { actor: admin, agentId, run: own } = fixture;
     await own(async () => {
       if (!admin.orgId) {
         throw new Error("Expected an org-scoped admin");
@@ -5147,8 +5140,8 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         agentId,
         prompt: "Create the requested connector definition",
       });
-      const { claim } = await fixture.claimChatRun(runnerGroup, sent.runId);
-      const writeToken = okouTokenFromClaim(claim);
+      const { execution } = await fixture.runExecution(sent.runId);
+      const writeToken = okouTokenFromExecution(execution);
       const connectorsClient = setupApp({
         context,
         routes: customConnectorsRoutes,
@@ -5220,7 +5213,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("sets all manual custom connector values through the values endpoint", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, runnerGroup, run: own } = fixture;
+    const { actor: admin, agentId, run: own } = fixture;
     const firewall = createFirewallApi(context);
     const runs = createRunsApi(context);
     const callbacks = createWebhookCallbackApi(context);
@@ -5309,17 +5302,16 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         agentId,
         prompt: "Use the configured custom connector values",
       });
-      const { claim, sandboxHeaders } = await fixture.claimChatRun(
-        runnerGroup,
+      const { execution, sandboxHeaders } = await fixture.runExecution(
         sent.runId,
       );
-      const entry = claim.firewalls?.find((candidate) => {
+      const entry = execution.firewalls?.find((candidate) => {
         return (
           candidate.kind === "inline" &&
           candidate.customConnectorId === created.id
         );
       });
-      const target = claim.connectorRuntimeTargets.find((candidate) => {
+      const target = execution.connectorRuntimeTargets.find((candidate) => {
         return (
           candidate.kind === "custom" &&
           candidate.customConnectorId === created.id
@@ -5416,7 +5408,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("revokes usable custom credentials when the member disconnects", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, runnerGroup, run: own } = fixture;
+    const { actor: admin, agentId, run: own } = fixture;
     const firewall = createFirewallApi(context);
     await own(async () => {
       const created = await own(() => {
@@ -5481,17 +5473,16 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         agentId,
         prompt: "Use the configured custom credential",
       });
-      const { claim, sandboxHeaders } = await fixture.claimChatRun(
-        runnerGroup,
+      const { execution, sandboxHeaders } = await fixture.runExecution(
         sent.runId,
       );
-      const entry = claim.firewalls?.find((candidate) => {
+      const entry = execution.firewalls?.find((candidate) => {
         return (
           candidate.kind === "inline" &&
           candidate.customConnectorId === created.id
         );
       });
-      const target = claim.connectorRuntimeTargets.find((candidate) => {
+      const target = execution.connectorRuntimeTargets.find((candidate) => {
         return (
           candidate.kind === "custom" &&
           candidate.customConnectorId === created.id
@@ -5625,7 +5616,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("isolates identical manual variable names by Custom connection", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, runnerGroup, run: own } = fixture;
+    const { actor: admin, agentId, run: own } = fixture;
     const firewall = createFirewallApi(context);
     await own(async () => {
       const definition = {
@@ -5688,12 +5679,11 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         agentId,
         prompt: "Use both independent regions",
       });
-      const { claim, sandboxHeaders } = await fixture.claimChatRun(
-        runnerGroup,
+      const { execution, sandboxHeaders } = await fixture.runExecution(
         sent.runId,
       );
       function resolveRegion(customConnectorId: string) {
-        const entry = claim.firewalls?.find((candidate) => {
+        const entry = execution.firewalls?.find((candidate) => {
           return (
             candidate.kind === "inline" &&
             candidate.customConnectorId === customConnectorId
@@ -5707,7 +5697,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           throw new Error("Expected the claimed custom API identity");
         }
         const apiId = api.id;
-        const target = claim.connectorRuntimeTargets.find((candidate) => {
+        const target = execution.connectorRuntimeTargets.find((candidate) => {
           return (
             candidate.kind === "custom" &&
             candidate.customConnectorId === customConnectorId
@@ -5751,7 +5741,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
 
   it("rolls back Custom values when a shared write fails", async () => {
     const fixture = await publicChatActor(context);
-    const { actor: admin, agentId, runnerGroup, run: own } = fixture;
+    const { actor: admin, agentId, run: own } = fixture;
     const runs = createRunsApi(context);
     const firewall = createFirewallApi(context);
     await own(async () => {
@@ -5808,10 +5798,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
           prompt: "Use the authorized custom connector",
         });
       });
-      const { claim, sandboxHeaders } = await own(() => {
-        return fixture.claimChatRun(runnerGroup, sent.runId);
+      const { execution, sandboxHeaders } = await own(() => {
+        return fixture.runExecution(sent.runId);
       });
-      const entry = claim.firewalls?.find((candidate) => {
+      const entry = execution.firewalls?.find((candidate) => {
         return (
           candidate.kind === "inline" &&
           candidate.customConnectorId === created.id
@@ -5824,7 +5814,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       if (!api?.id) {
         throw new Error("Expected the actual custom API identity");
       }
-      const target = claim.connectorRuntimeTargets.find((candidate) => {
+      const target = execution.connectorRuntimeTargets.find((candidate) => {
         return (
           candidate.kind === "custom" &&
           candidate.customConnectorId === created.id
@@ -8196,7 +8186,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
     // its newly published alias through the normal firewall refresh before a new
     // Run snapshots the manual method's lazily created access-token secret.
     expect(
-      oauthConsumer.claim.secretConnectorMetadataMap?.TEST_OAUTH_TOKEN,
+      oauthConsumer.execution.secretConnectorMetadataMap?.TEST_OAUTH_TOKEN,
     ).toMatchObject({ sourceType: "connector", sourceId: manual.id });
     const refreshedManual = await oauthConsumer.resolve(
       "TEST_OAUTH_API_TOKEN",
@@ -8221,7 +8211,7 @@ describe("CONN-02: test-oauth auth-code journey", () => {
           "Bearer fresh-test-oauth-api-token:bdd-successful-replacement-token:bdd-successful-replacement-input",
       },
     });
-    expect(manualConsumer.claim.environment).toMatchObject({
+    expect(manualConsumer.execution.environment).toMatchObject({
       TEST_OAUTH_TENANT_ID: "bdd-successful-replacement-tenant",
     });
     await manualConsumer.cancel();

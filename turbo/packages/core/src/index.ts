@@ -108,7 +108,6 @@ export {
   heartbeatBodySchema,
   runnerGroupSchema,
   executionContextSchema,
-  executionInputSchema,
   secretConnectorMetadataSchema,
   secretConnectorMetadataMapSchema,
   DEFAULT_PROFILE,

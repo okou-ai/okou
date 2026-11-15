@@ -159,7 +159,7 @@ export function createPublicTelegramActor(
     token: "clerk-session",
     run,
     session,
-    rememberClaim: owner.rememberClaim,
+    rememberExecution: owner.rememberExecution,
     ownsFeatureSwitches() {
       cleanupFeatures = true;
     },

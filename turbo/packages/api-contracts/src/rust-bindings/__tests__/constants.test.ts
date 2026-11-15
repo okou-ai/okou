@@ -165,15 +165,15 @@ const runnerHostnameMaxLengthDoc = [
 ] as const;
 const sessionHistoryEncodingGzipDoc = [
   "Wire and blob metadata value for gzip-compressed resume session history.",
-  "Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.",
+  "Rust and TypeScript components use this shared contract value when negotiating session history uploads and execution publications.",
 ] as const;
 const sessionHistoryEncodingIdentityDoc = [
   "Wire and blob metadata value for uncompressed resume session history.",
-  "Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.",
+  "Rust and TypeScript components use this shared contract value when negotiating session history uploads and execution publications.",
 ] as const;
 const sessionHistoryEncodingZstdDoc = [
   "Wire and blob metadata value for zstd-compressed resume session history.",
-  "Rust and TypeScript components use this shared contract value when negotiating session history uploads and claim responses.",
+  "Rust and TypeScript components use this shared contract value when negotiating session history uploads and execution publications.",
 ] as const;
 const clientVersionHeaderDoc = [
   "HTTP header carrying the sending platform client component version.",

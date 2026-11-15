@@ -15,7 +15,7 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
+import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -71,17 +71,14 @@ describe("Captured personal Instructions in direct Runs", () => {
       });
       await save(owned.actor, "latest before claim");
       await mode(owned.actor, false);
-      const { claim } = await owned.claimChatRun(
-        owned.runnerGroup,
-        queued.runId,
-      );
-      const selected = claim.contentBundles.instructions!;
+      const { execution } = await owned.runExecution(queued.runId);
+      const selected = execution.contentBundles.instructions!;
       expect(
-        readClaimedContentBundle(s3.objects, selected)
+        readExecutionContentBundle(s3.objects, selected)
           .get("instructions.md")
           ?.toString(),
       ).toBe("personal at admission");
-      const token = claim.platformEnvironment.OKOU_TOKEN!;
+      const token = execution.platformEnvironment.OKOU_TOKEN!;
       const runHeaders = { authorization: `Bearer ${token}` };
       const saved = await accept(
         client().update({
@@ -94,7 +91,7 @@ describe("Captured personal Instructions in direct Runs", () => {
         (await accept(client().get({ headers: runHeaders }), [200])).body,
       ).toMatchObject(saved.body);
       expect(
-        readClaimedContentBundle(s3.objects, selected)
+        readExecutionContentBundle(s3.objects, selected)
           .get("instructions.md")
           ?.toString(),
       ).toBe("personal at admission");
@@ -106,11 +103,11 @@ describe("Captured personal Instructions in direct Runs", () => {
         model: "auto",
       });
       await mode(owned.actor, true);
-      const next = await owned.claimChatRun(owned.runnerGroup, legacy.runId);
+      const next = await owned.runExecution(legacy.runId);
       expect(
-        readClaimedContentBundle(
+        readExecutionContentBundle(
           s3.objects,
-          next.claim.contentBundles.instructions!,
+          next.execution.contentBundles.instructions!,
         )
           .get("instructions.md")
           ?.toString(),
@@ -118,7 +115,7 @@ describe("Captured personal Instructions in direct Runs", () => {
       await accept(
         client().get({
           headers: {
-            authorization: `Bearer ${next.claim.platformEnvironment.OKOU_TOKEN!}`,
+            authorization: `Bearer ${next.execution.platformEnvironment.OKOU_TOKEN!}`,
           },
         }),
         [403],
@@ -143,13 +140,10 @@ describe("Captured personal Instructions in direct Runs", () => {
         prompt: "clear personal file",
         model: "auto",
       });
-      const { claim } = await owned.claimChatRun(
-        owned.runnerGroup,
-        queued.runId,
-      );
-      const files = readClaimedContentBundle(
+      const { execution } = await owned.runExecution(queued.runId);
+      const files = readExecutionContentBundle(
         s3.objects,
-        claim.contentBundles.instructions!,
+        execution.contentBundles.instructions!,
       );
       expect([...files.keys()]).toStrictEqual(["instructions.md"]);
       expect(files.get("instructions.md")?.byteLength).toBe(0);
@@ -163,22 +157,19 @@ describe("Captured personal Instructions in direct Runs", () => {
         prompt: "legacy non-default",
         model: "auto",
       });
-      const nonDefault = await owned.claimChatRun(
-        owned.runnerGroup,
-        retained.runId,
-      );
+      const nonDefault = await owned.runExecution(retained.runId);
       await accept(
         client().get({
           headers: {
-            authorization: `Bearer ${nonDefault.claim.platformEnvironment.OKOU_TOKEN!}`,
+            authorization: `Bearer ${nonDefault.execution.platformEnvironment.OKOU_TOKEN!}`,
           },
         }),
         [403],
       );
       expect(
-        readClaimedContentBundle(
+        readExecutionContentBundle(
           s3.objects,
-          nonDefault.claim.contentBundles.instructions!,
+          nonDefault.execution.contentBundles.instructions!,
         )
           .get("instructions.md")
           ?.toString(),
@@ -215,11 +206,11 @@ describe("Captured personal Instructions in direct Runs", () => {
         prompt: "first personal use",
         model: "auto",
       });
-      const initial = await owned.claimChatRun(owned.runnerGroup, first.runId);
+      const initial = await owned.runExecution(first.runId);
       expect(
-        readClaimedContentBundle(
+        readExecutionContentBundle(
           s3.objects,
-          initial.claim.contentBundles.instructions!,
+          initial.execution.contentBundles.instructions!,
         )
           .get("instructions.md")
           ?.toString(),
@@ -244,24 +235,21 @@ describe("Captured personal Instructions in direct Runs", () => {
           prompt: "Bob",
           model: "auto",
         });
-        const aliceClaim = await owned.claimChatRun(
-          owned.runnerGroup,
-          aliceRun.runId,
-        );
-        const bobClaim = await api.executionInput(bobRun.runId);
-        bobOwner.rememberClaim(bobRun.runId, bobClaim.sandboxToken);
+        const aliceExecution = await owned.runExecution(aliceRun.runId);
+        const bobExecution = await api.executionInput(bobRun.runId);
+        bobOwner.rememberExecution(bobRun.runId, bobExecution.sandboxToken);
         expect(
-          readClaimedContentBundle(
+          readExecutionContentBundle(
             s3.objects,
-            aliceClaim.claim.contentBundles.instructions!,
+            aliceExecution.execution.contentBundles.instructions!,
           )
             .get("instructions.md")
             ?.toString(),
         ).toBe("Alice only");
         expect(
-          readClaimedContentBundle(
+          readExecutionContentBundle(
             s3.objects,
-            bobClaim.contentBundles.instructions!,
+            bobExecution.contentBundles.instructions!,
           )
             .get("instructions.md")
             ?.toString(),
@@ -269,7 +257,7 @@ describe("Captured personal Instructions in direct Runs", () => {
         const bobSaved = await accept(
           client().get({
             headers: {
-              authorization: `Bearer ${bobClaim.platformEnvironment.OKOU_TOKEN!}`,
+              authorization: `Bearer ${bobExecution.platformEnvironment.OKOU_TOKEN!}`,
             },
           }),
           [200],

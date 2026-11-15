@@ -8,9 +8,9 @@ use runner_lifecycle::idle_pool::{
     ActivationCleanupOutcome, IdleParkCandidate, IdleParkOutcome, IdleParkRequest,
     IdleParkRequestParts,
 };
-use runner_provider::ClaimedJob;
-use runner_supervisor::finalizing_admission::{
-    GuardedFinalizingAdmission, GuardedFinalizingOffer, GuardedFinalizingOfferOutcome,
+use runner_provider::ExecutionJob;
+use runner_supervisor::finalizing_handoff::{
+    GuardedFinalizingHandoff, GuardedFinalizingOffer, GuardedFinalizingOfferOutcome,
 };
 use sandbox::{Sandbox, SandboxFinalExecParkHandoffPoint};
 
@@ -145,15 +145,17 @@ pub async fn exercise(
     let mut actual_context =
         runner_executor::test_fixtures::execution_context::execution_context_for_test(successor);
     actual_context.reuse_key = Some(reuse_key.clone());
-    let claimed = ClaimedJob::local_with_active_input_source(successor, actual_context, None)
+    let job = ExecutionJob::local_with_active_input_source(successor, actual_context, None)
         .map_err(|_| io::Error::other("native finalizing claim mismatch"))?;
-    let mut admission = GuardedFinalizingAdmission::new(claimed, request, run_id, tracker.clone());
+    let mut guarded_handoff = GuardedFinalizingHandoff::new(job, request, run_id, tracker.clone());
     let cleanup: TestResult<()> = async {
         if producer.offer(&guard.reuse_publisher())? != GuardedFinalizingOfferOutcome::Delivered {
             return Err(io::Error::other("native finalizing delivery was refused").into());
         }
-        admission.cancel_delivery();
-        let mut task = admission.cleanup(&operations, inputs.envelope()).await?;
+        guarded_handoff.cancel_delivery();
+        let mut task = guarded_handoff
+            .cleanup(&operations, inputs.envelope())
+            .await?;
         if !matches!(
             task.join().await??,
             ActivationCleanupOutcome::Completed {
@@ -169,18 +171,18 @@ pub async fn exercise(
     .await;
     if let Err(error) = cleanup {
         if let Some(receipts) = receipts {
-            receipts.retain(admission);
+            receipts.retain(guarded_handoff);
             receipts.retain(producer);
             receipts.retain(guard);
         }
         return Err(error);
     }
     drop(
-        admission
-            .take_claim_for_completion()
+        guarded_handoff
+            .take_job_for_completion()
             .ok_or_else(|| io::Error::other("native finalizing original claim disappeared"))?,
     );
-    drop(admission);
+    drop(guarded_handoff);
     drop(producer);
     if !tracker.take_retained_activation_owners()?.is_empty()
         || !tracker.take_retained_finalizing_owners()?.is_empty()

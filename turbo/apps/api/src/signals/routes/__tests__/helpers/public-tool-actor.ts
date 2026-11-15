@@ -124,8 +124,8 @@ export async function purchaseToolCredits(
   await flushWaitUntilForTest();
 }
 
-/** Normal personal model authorization and actual Runner claim; no signed test token. */
-export async function claimPublicToolRun(
+/** Personal model authorization and credentials from a dispatched Run. */
+export async function launchPublicToolRun(
   context: TestContext,
   actor: ApiTestUser,
   registerCleanup: (cleanup: () => Promise<void>) => void,
@@ -180,16 +180,16 @@ export async function claimPublicToolRun(
   });
   owned.runId = run.runId;
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.executionInput(run.runId);
-  owned.sandboxToken = claim.sandboxToken;
-  const token = claim.platformEnvironment.OKOU_TOKEN;
+  const execution = await runs.executionInput(run.runId);
+  owned.sandboxToken = execution.sandboxToken;
+  const token = execution.platformEnvironment.OKOU_TOKEN;
   if (!token) {
-    throw new Error("Expected the claimed Runner's Okou credential");
+    throw new Error("Expected the executing Runner's Okou credential");
   }
   return {
     ...run,
     providerId: personal.providerId,
-    claim,
+    execution,
     cleanup,
     token,
     headers: { authorization: `Bearer ${token}` },

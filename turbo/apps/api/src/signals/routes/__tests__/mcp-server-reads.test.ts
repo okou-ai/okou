@@ -467,7 +467,7 @@ describe("thin MCP Web adapters", () => {
       });
 
       await runs.heartbeatRunner(f.runnerGroup);
-      await f.claimRunnerRun(run.runId);
+      await f.executionInput(run.runId);
       expect((await runs.readRun(f.actor, run.runId)).status).toBe("running");
       const running = await mcp.call(token(), "get_chat_indicators");
       expect(running.isError).not.toBeTruthy();

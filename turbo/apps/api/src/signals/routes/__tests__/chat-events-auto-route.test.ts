@@ -18,15 +18,14 @@ describe("Auto native routing", () => {
     const {
       actor,
       agentId,
-      runnerGroup,
       run: own,
       sendChatRun,
-      claimChatRun,
+      runExecution,
     } = await publicChatActor(context);
     mockPiResourceArchiveDownloads();
     const historyObjects = mockPiObjectStore();
     const preset = "@preset/okou-1-0";
-    const expectedClaim = {
+    const expectedExecution = {
       cliAgentType: "pi",
       piModelConfig: {
         baseUrl: "https://openrouter.ai/api/v1",
@@ -48,13 +47,13 @@ describe("Auto native routing", () => {
       model: "auto",
     });
     await flushWaitUntilForTest();
-    const initialClaim = await claimChatRun(runnerGroup, initial.runId);
-    expect(initialClaim.claim).toMatchObject(expectedClaim);
+    const initialExecution = await runExecution(initial.runId);
+    expect(initialExecution.execution).toMatchObject(expectedExecution);
     await own(async () => {
       return await completeSandboxFirstPiRun({
         actor,
         run: initial,
-        claim: initialClaim,
+        execution: initialExecution,
         historyObjects,
         prompt: initialPrompt,
         answer: "initial Auto answer",
@@ -80,13 +79,13 @@ describe("Auto native routing", () => {
     expect(successor.runId).not.toBe(initial.runId);
     expect(successor.threadId).toBe(initial.threadId);
     await flushWaitUntilForTest();
-    const successorClaim = await claimChatRun(runnerGroup, successor.runId);
-    expect(successorClaim.claim).toMatchObject(expectedClaim);
+    const successorExecution = await runExecution(successor.runId);
+    expect(successorExecution.execution).toMatchObject(expectedExecution);
     await own(async () => {
       return await completeSandboxFirstPiRun({
         actor,
         run: successor,
-        claim: successorClaim,
+        execution: successorExecution,
         historyObjects,
         prompt: successorPrompt,
         answer: "continued Auto answer",

@@ -20,7 +20,7 @@ const chat = createChatFilesBddApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 const host = createHostBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
-type RunnerClaim = Awaited<ReturnType<typeof api.executionInput>>;
+type RunnerExecutionInput = Awaited<ReturnType<typeof api.executionInput>>;
 
 interface ArtifactActor {
   readonly actor: ApiTestUser;
@@ -64,23 +64,23 @@ async function sendChatRun(
   return { runId: sent.runId, threadId: sent.threadId };
 }
 
-async function claimChatRun(
+async function runExecution(
   runnerGroup: string,
   runId: string,
 ): Promise<{
-  readonly claim: RunnerClaim;
+  readonly execution: RunnerExecutionInput;
   readonly sandboxHeaders: { readonly authorization: string };
 }> {
   await api.heartbeatRunner(runnerGroup);
-  const claim = await api.executionInput(runId);
+  const execution = await api.executionInput(runId);
   return {
-    claim,
-    sandboxHeaders: { authorization: `Bearer ${claim.sandboxToken}` },
+    execution,
+    sandboxHeaders: { authorization: `Bearer ${execution.sandboxToken}` },
   };
 }
 
-function okouTokenFromClaim(claim: RunnerClaim): string {
-  const token = claim.platformEnvironment.OKOU_TOKEN;
+function okouTokenFromExecution(execution: RunnerExecutionInput): string {
+  const token = execution.platformEnvironment.OKOU_TOKEN;
   if (!token || !token.startsWith("vm0_sandbox_")) {
     throw new Error(
       "Expected the claim platform environment to carry an OKOU_TOKEN",
@@ -129,8 +129,11 @@ describe("GET /api/chat-threads/:threadId/artifacts", () => {
       agentId: owner.agentId,
       prompt: "publish two hosted sites",
     });
-    const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
-    const bearer = `Bearer ${okouTokenFromClaim(claim)}`;
+    const { execution: claim } = await runExecution(
+      owner.runnerGroup,
+      run.runId,
+    );
+    const bearer = `Bearer ${okouTokenFromExecution(claim)}`;
     host.captureHostedSitesS3();
 
     const site = `artifact-versions-${randomUUID().slice(0, 8)}`;
@@ -187,11 +190,11 @@ describe("hosted artifacts without a supplied cover", () => {
       agentId: owner.agentId,
       prompt: "Publish a site without a supplied cover",
     });
-    const { claim, sandboxHeaders } = await claimChatRun(
+    const { execution: claim, sandboxHeaders } = await runExecution(
       owner.runnerGroup,
       run.runId,
     );
-    const bearer = `Bearer ${okouTokenFromClaim(claim)}`;
+    const bearer = `Bearer ${okouTokenFromExecution(claim)}`;
     host.captureHostedSitesS3();
     const site = `optional-cover-${randomUUID().slice(0, 8)}`;
     const prepared = await chat.prepareHostedSiteWithBearer(bearer, {

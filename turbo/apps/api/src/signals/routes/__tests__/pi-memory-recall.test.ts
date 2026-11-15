@@ -7,7 +7,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { createPublicRunnerMemory } from "./helpers/public-runner-memory";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { readClaimedPiMemory } from "./helpers/pi-memory-session";
+import { readPiExecutionMemory } from "./helpers/pi-memory-session";
 
 const context = testContext();
 
@@ -47,7 +47,7 @@ describe("ordinary Pi published personal Memory", () => {
       fixture.installObjects();
 
       async function publish(
-        claimed: Awaited<ReturnType<typeof fixture.claim>>,
+        claimed: Awaited<ReturnType<typeof fixture.startExecution>>,
         suffix: string,
       ) {
         const files = [
@@ -67,12 +67,12 @@ describe("ordinary Pi published personal Memory", () => {
         ).toBe("completed");
         return version;
       }
-      const writer = await fixture.claim(
+      const writer = await fixture.startExecution(
         agentId,
         "Publish a verified personal fact",
       );
       const published = await publish(writer, "selected-version");
-      const selected = await fixture.claim(
+      const selected = await fixture.startExecution(
         agentId,
         "Recall published personal Memory",
         "gpt-6-luna",
@@ -87,12 +87,12 @@ describe("ordinary Pi published personal Memory", () => {
         "Keep the accepted Memory version while queued",
         "gpt-6-luna",
       );
-      const laterWriter = await fixture.claim(
+      const laterWriter = await fixture.startExecution(
         agentId,
         "Publish a newer version after reader startup",
       );
       let newerVersion = "";
-      const read = await readClaimedPiMemory(
+      const read = await readPiExecutionMemory(
         selected.execution,
         selected.memory,
         context.signal,
@@ -114,10 +114,10 @@ describe("ordinary Pi published personal Memory", () => {
           return record.type === "tool_execution_end";
         }),
       ).toHaveLength(4);
-      const claimedQueued = await fixture.claimQueued(queued);
+      const claimedQueued = await fixture.readExecution(queued);
       expect(claimedQueued.memory).toStrictEqual(selected.memory);
       await fixture.cancel(claimedQueued);
-      const next = await fixture.claim(
+      const next = await fixture.startExecution(
         agentId,
         "A new Run selects the newly published version",
         "gpt-6-luna",
@@ -133,7 +133,7 @@ describe("ordinary Pi published personal Memory", () => {
         const foreignAgent = await foreign.initializeNative();
         await chat.configureSubscriptionPiModel(foreign.actor);
         foreign.installObjects();
-        const claimed = await foreign.claim(
+        const claimed = await foreign.startExecution(
           foreignAgent,
           "Read my own personal Memory",
           "gpt-6-luna",
@@ -145,7 +145,7 @@ describe("ordinary Pi published personal Memory", () => {
         );
         expect(claimed.memory.storageId).not.toBe(selected.memory.storageId);
         expect(claimed.memory.empty).toBeTruthy();
-        const otherRead = await readClaimedPiMemory(
+        const otherRead = await readPiExecutionMemory(
           claimed.execution,
           claimed.memory,
           context.signal,

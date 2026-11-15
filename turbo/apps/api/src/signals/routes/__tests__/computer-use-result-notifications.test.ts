@@ -393,7 +393,7 @@ describe("Computer Use CLI result subscriptions", () => {
         const host = await scenario.computerUse.startComputerUseHost(actor, {
           supportedCapabilities: runtime.supportedCapabilities,
         });
-        const agent = await scenario.claim(actor, host.hostId);
+        const agent = await scenario.launchRun(actor, host.hostId);
         signTokenRequests();
         const created = await scenario.computerUse.createComputerUseReadCommand(
           { bearer: agent.token },
@@ -405,7 +405,7 @@ describe("Computer Use CLI result subscriptions", () => {
               ["subscribe"],
           }),
         );
-        const unbound = await scenario.claim(actor, undefined);
+        const unbound = await scenario.launchRun(actor, undefined);
         await scenario.computerUse.requestCreateComputerUseReadCommand(
           { bearer: unbound.token },
           { kind: "apps.list", realtime: true },

@@ -25,7 +25,7 @@ import {
   createPublicDiscordBinding,
 } from "./helpers/discord";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
-import { claimPublicDiscordTestRun } from "./helpers/discord-run";
+import { launchPublicDiscordTestRun } from "./helpers/discord-run";
 
 const context = testContext();
 const API = "https://discord.com/api/v10";
@@ -83,9 +83,9 @@ async function fixture(
   const actor = { ...auth.user({ orgId, userId }), orgId };
   let headers: { authorization: string };
   if (options.runToken || options.sandboxToken) {
-    const run = await claimPublicDiscordTestRun(context, actor);
+    const run = await launchPublicDiscordTestRun(context, actor);
     headers = options.sandboxToken
-      ? { authorization: `Bearer ${run.claim.sandboxToken}` }
+      ? { authorization: `Bearer ${run.execution.sandboxToken}` }
       : run.headers;
   } else {
     const { token } = await auth.createCliToken(actor);
@@ -326,7 +326,7 @@ async function bindAnotherOrganization(f: Fixture, runToken = false) {
   const auth = createAuthOrgAgentsBddApi(context);
   const actor = auth.user({ orgId, userId: f.userId });
   const headers = runToken
-    ? (await claimPublicDiscordTestRun(context, actor)).headers
+    ? (await launchPublicDiscordTestRun(context, actor)).headers
     : { authorization: `Bearer ${(await auth.createCliToken(actor)).token}` };
   mockDiscordMemberships(context, [
     { orgId: f.orgId, userId: f.userId },

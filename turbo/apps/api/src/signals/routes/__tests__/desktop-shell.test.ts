@@ -42,8 +42,8 @@ const shellSession = {
 
 async function approveAndResume(
   scenario: ReturnType<typeof createPublicComputerUseScenario>,
-  actor: Parameters<typeof scenario.claim>[0],
-  initial: Awaited<ReturnType<typeof scenario.claim>>,
+  actor: Parameters<typeof scenario.launchRun>[0],
+  initial: Awaited<ReturnType<typeof scenario.launchRun>>,
 ) {
   const api = scenario.computerUse;
   const requested = await api.requestDesktopShellAccess(
@@ -137,7 +137,7 @@ async function approveAndResume(
   if (!launched?.runId) {
     throw new Error("The explicit callback must launch the next Run");
   }
-  const claim = await scenario.claimExisting(actor, launched.runId);
+  const claim = await scenario.executionInput(actor, launched.runId);
   const token = claim.platformEnvironment.OKOU_TOKEN;
   if (!token) {
     throw new Error("Expected claimed Run token");
@@ -166,7 +166,7 @@ describe("Desktop Shell command pipeline", () => {
         const host = await api.startComputerUseHost(actor, {
           supportedCapabilities: capabilities,
         });
-        const source = await scenario.claim(actor, host.hostId);
+        const source = await scenario.launchRun(actor, host.hostId);
         const requested = await api.requestDesktopShellAccess(
           { bearer: source.token },
           "Inspect the project in Terminal",
@@ -214,7 +214,7 @@ describe("Desktop Shell command pipeline", () => {
           if (!blockingRunId) {
             throw new Error("Expected a blocking Run in the chat");
           }
-          await scenario.claimExisting(actor, blockingRunId);
+          await scenario.executionInput(actor, blockingRunId);
         }
         const nextEventId = randomUUID();
         if (pick === "queued") {
@@ -286,7 +286,7 @@ describe("Desktop Shell command pipeline", () => {
         const host = await api.startComputerUseHost(actor, {
           supportedCapabilities: capabilities,
         });
-        const source = await scenario.claim(actor, host.hostId);
+        const source = await scenario.launchRun(actor, host.hostId);
         const requested = await api.requestDesktopShellAccess(
           { bearer: source.token },
           "Inspect the project in Terminal",
@@ -454,7 +454,7 @@ describe("Desktop Shell command pipeline", () => {
         const run = await approveAndResume(
           scenario,
           actor,
-          await scenario.claim(actor, host.hostId),
+          await scenario.launchRun(actor, host.hostId),
         );
         await api.readDesktopShellAccess(other, run.authorization.id, [404]);
         await api.actDesktopShellAccess(
@@ -485,7 +485,7 @@ describe("Desktop Shell command pipeline", () => {
           { kind: "shell.list", waitMs: 1000 },
           [403],
         );
-        const differentChat = await scenario.claim(actor, host.hostId);
+        const differentChat = await scenario.launchRun(actor, host.hostId);
         await api.requestCreateDesktopShellCommand(
           { bearer: differentChat.token },
           { kind: "shell.list", waitMs: 1000 },
@@ -553,7 +553,7 @@ describe("Desktop Shell command pipeline", () => {
         const run = await approveAndResume(
           scenario,
           actor,
-          await scenario.claim(actor, host.hostId),
+          await scenario.launchRun(actor, host.hostId),
         );
         const running = await api.requestCreateDesktopShellCommand(
           { bearer: run.token },
@@ -671,7 +671,7 @@ describe("Desktop Shell command pipeline", () => {
         const run = await approveAndResume(
           scenario,
           actor,
-          await scenario.claim(actor, host.hostId),
+          await scenario.launchRun(actor, host.hostId),
         );
         const expiresAt = Date.parse(run.authorization.grantExpiresAt ?? "");
         mockNow(expiresAt - 1);
@@ -756,7 +756,7 @@ describe("Desktop Shell command pipeline", () => {
           [403],
         );
         await switches.updateFeatureSwitches(actor, { desktopShell: true });
-        const initial = await scenario.claim(actor, host.hostId);
+        const initial = await scenario.launchRun(actor, host.hostId);
         const denied = await api.requestCreateDesktopShellCommand(
           { bearer: initial.token },
           { kind: "shell.list", waitMs: 1000 },
@@ -877,7 +877,7 @@ describe("Desktop Shell command pipeline", () => {
         const old = await api.startComputerUseHost(actor, {
           supportedCapabilities: [],
         });
-        const oldRun = await scenario.claim(actor, old.hostId);
+        const oldRun = await scenario.launchRun(actor, old.hostId);
         await api.requestCreateDesktopShellCommand(
           { bearer: oldRun.token },
           { kind: "shell.list", waitMs: 1000 },
@@ -886,7 +886,7 @@ describe("Desktop Shell command pipeline", () => {
         await expect(
           api.claimNextComputerUseCommand(old.connection, []),
         ).resolves.toMatchObject({ status: "idle" });
-        const unbound = await scenario.claim(actor);
+        const unbound = await scenario.launchRun(actor);
         await api.requestCreateDesktopShellCommand(
           { bearer: unbound.token },
           { kind: "shell.list", waitMs: 1000 },

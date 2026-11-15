@@ -13,7 +13,7 @@ const {
   chat,
   entitledChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   waitForThreadMessages,
   cancelChatRun,
   configureSubscriptionPiModel,
@@ -23,7 +23,7 @@ const {
 describe("CHAT effort: thread configuration", () => {
   it("dispatches gpt-6-luna with xhigh as the default Pi effort", async () => {
     const model = "gpt-6-luna";
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
 
     await configureSubscriptionPiModel(actor, {}, model);
     const thread = await chat.createThread(actor, {
@@ -37,17 +37,17 @@ describe("CHAT effort: thread configuration", () => {
       prompt: "/unknown-command use the Luna default",
     });
     await flushWaitUntilForTest();
-    const claimed = await claimChatRun(runnerGroup, sent.runId);
-    expect(claimed.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
+    const execution = await runExecution(sent.runId);
+    expect(execution.execution.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
       "xhigh",
     );
-    expect(claimed.claim.piModelConfig).toMatchObject({
+    expect(execution.execution.piModelConfig).toMatchObject({
       thinkingLevel: "xhigh",
     });
-    await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, sent.runId, execution.sandboxHeaders);
   }, 90_000);
   it("applies requested and saved native effort through the existing claim protocol", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
 
     await configureSubscriptionPiModel(actor).then(() => {
       return api.ensurePersonalSubscriptionModel(actor, {
@@ -71,28 +71,32 @@ describe("CHAT effort: thread configuration", () => {
       threadId: thread.id,
       prompt: "Use saved effort",
     });
-    const savedClaim = await claimChatRun(runnerGroup, saved.runId);
-    expect(savedClaim.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
-      "high",
-    );
-    await cancelChatRun(actor, saved.runId, savedClaim.sandboxHeaders);
+    const savedExecution = await runExecution(saved.runId);
+    expect(
+      savedExecution.execution.platformEnvironment.OKOU_REASONING_EFFORT,
+    ).toBe("high");
+    await cancelChatRun(actor, saved.runId, savedExecution.sandboxHeaders);
 
     const explicit = await sendChatRun(actor, {
       agentId,
       prompt: "New explicit effort",
       runOptions: { reasoningEffort: "extra" },
     });
-    const explicitClaim = await claimChatRun(runnerGroup, explicit.runId);
+    const explicitExecution = await runExecution(explicit.runId);
     // Storage and dispatch retain the user's Claude name. The guest maps it.
-    expect(explicitClaim.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
-      "extra",
-    );
+    expect(
+      explicitExecution.execution.platformEnvironment.OKOU_REASONING_EFFORT,
+    ).toBe("extra");
     await expect(
       chat.readThreadMetadata(actor, explicit.threadId),
     ).resolves.toMatchObject({
       modelSettings: { "claude-fable-5-1": { effort: "extra" } },
     });
-    await cancelChatRun(actor, explicit.runId, explicitClaim.sandboxHeaders);
+    await cancelChatRun(
+      actor,
+      explicit.runId,
+      explicitExecution.sandboxHeaders,
+    );
 
     const override = await sendChatRun(actor, {
       agentId,
@@ -100,10 +104,10 @@ describe("CHAT effort: thread configuration", () => {
       prompt: "Use another model's native default",
       model: "gpt-6-astra",
     });
-    const overrideClaim = await claimChatRun(runnerGroup, override.runId);
-    expect(overrideClaim.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
-      "max",
-    );
+    const overrideExecution = await runExecution(override.runId);
+    expect(
+      overrideExecution.execution.platformEnvironment.OKOU_REASONING_EFFORT,
+    ).toBe("max");
     // A send's model selection is persisted on the thread and runs with
     // Astra's default effort, keeping Fable's saved effort.
     await expect(
@@ -112,7 +116,11 @@ describe("CHAT effort: thread configuration", () => {
       selectedModel: "gpt-6-astra",
       modelSettings: { "claude-fable-5-1": { effort: "high" } },
     });
-    await cancelChatRun(actor, override.runId, overrideClaim.sandboxHeaders);
+    await cancelChatRun(
+      actor,
+      override.runId,
+      overrideExecution.sandboxHeaders,
+    );
   }, 90_000);
 
   it.each([
@@ -134,7 +142,7 @@ describe("CHAT effort: thread configuration", () => {
   ] as const)(
     "falls back from unavailable $model $effort without deleting the preference",
     async ({ model, effort, pi, effectiveEffort }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId } = await entitledChatActor();
 
       await (pi
         ? configureSubscriptionPiModel(actor, {}, model)
@@ -164,12 +172,12 @@ describe("CHAT effort: thread configuration", () => {
         if (pi) {
           await flushWaitUntilForTest();
         }
-        const claimed = await claimChatRun(runnerGroup, sent.runId);
-        expect(claimed.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
-          effectiveEffort,
-        );
+        const execution = await runExecution(sent.runId);
+        expect(
+          execution.execution.platformEnvironment.OKOU_REASONING_EFFORT,
+        ).toBe(effectiveEffort);
         if (pi) {
-          expect(claimed.claim.piModelConfig).toMatchObject({
+          expect(execution.execution.piModelConfig).toMatchObject({
             thinkingLevel: effectiveEffort,
           });
         }
@@ -178,7 +186,7 @@ describe("CHAT effort: thread configuration", () => {
         ).resolves.toMatchObject({
           modelSettings: { [model]: { effort } },
         });
-        await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);
+        await cancelChatRun(actor, sent.runId, execution.sandboxHeaders);
       }
     },
     90_000,
@@ -208,7 +216,7 @@ describe("CHAT effort: thread configuration", () => {
   ] as const)(
     "preserves enqueued settings after thread edits and retries with Pi $pi and $requestedEffort effort",
     async ({ requestedEffort, effectiveEffort, pi }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId } = await entitledChatActor();
 
       const selectedModel = pi ? "gpt-6-sol" : "claude-fable-5-1";
 
@@ -223,7 +231,7 @@ describe("CHAT effort: thread configuration", () => {
         agentId,
         prompt: "Active task",
       });
-      const activeClaim = await claimChatRun(runnerGroup, active.runId);
+      const activeExecution = await runExecution(active.runId);
       await chat.updateThreadModelSelection(
         actor,
         active.threadId,
@@ -279,7 +287,7 @@ describe("CHAT effort: thread configuration", () => {
       if (pi) {
         mockPiObjectStore();
       }
-      await cancelChatRun(actor, active.runId, activeClaim.sandboxHeaders);
+      await cancelChatRun(actor, active.runId, activeExecution.sandboxHeaders);
       const messages = await waitForThreadMessages(
         actor,
         active.threadId,
@@ -314,20 +322,20 @@ describe("CHAT effort: thread configuration", () => {
       if (pi) {
         await flushWaitUntilForTest();
       }
-      const claimed = await claimChatRun(runnerGroup, promoted.runId);
+      const execution = await runExecution(promoted.runId);
       if (pi) {
-        expect(claimed.claim.piModelConfig).toMatchObject({
+        expect(execution.execution.piModelConfig).toMatchObject({
           model: selectedModel,
           thinkingLevel: effectiveEffort,
           serviceTier: "fast",
         });
       }
-      expect(claimed.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
-        effectiveEffort,
-      );
-      expect(claimed.claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe(
-        pi ? "fast" : undefined,
-      );
+      expect(
+        execution.execution.platformEnvironment.OKOU_REASONING_EFFORT,
+      ).toBe(effectiveEffort);
+      expect(
+        execution.execution.platformEnvironment.OKOU_CODEX_SERVICE_TIER,
+      ).toBe(pi ? "fast" : undefined);
       await expect(
         chat.readThreadMetadata(actor, active.threadId),
       ).resolves.toMatchObject({
@@ -338,7 +346,7 @@ describe("CHAT effort: thread configuration", () => {
           "claude-fable-5-1": { effort: "extra" },
         },
       });
-      await cancelChatRun(actor, promoted.runId, claimed.sandboxHeaders);
+      await cancelChatRun(actor, promoted.runId, execution.sandboxHeaders);
     },
     90_000,
   );
@@ -373,7 +381,7 @@ describe("CHAT effort: thread configuration", () => {
   }, 90_000);
 
   it("preserves Fast when changing effort", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
 
     await configureSubscriptionPiModel(actor).then(() => {
       return api.updateUserModelPreference(actor, "gpt-6-astra");
@@ -397,20 +405,22 @@ describe("CHAT effort: thread configuration", () => {
       threadId: thread.id,
       prompt: "Fast with saved effort",
     });
-    const claimed = await claimChatRun(runnerGroup, sent.runId);
-    expect(claimed.claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe(
-      "fast",
+    const execution = await runExecution(sent.runId);
+    expect(
+      execution.execution.platformEnvironment.OKOU_CODEX_SERVICE_TIER,
+    ).toBe("fast");
+    expect(execution.execution.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
+      "low",
     );
-    expect(claimed.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe("low");
-    await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, sent.runId, execution.sandboxHeaders);
     const explicit = await sendChatRun(actor, {
       agentId,
       threadId: thread.id,
       prompt: "Change effort and retain Fast",
       runOptions: { reasoningEffort: "ultra" },
     });
-    const explicitClaim = await claimChatRun(runnerGroup, explicit.runId);
-    expect(explicitClaim.claim.platformEnvironment).toMatchObject({
+    const explicitExecution = await runExecution(explicit.runId);
+    expect(explicitExecution.execution.platformEnvironment).toMatchObject({
       OKOU_CODEX_SERVICE_TIER: "fast",
       OKOU_REASONING_EFFORT: "ultra",
     });
@@ -420,6 +430,10 @@ describe("CHAT effort: thread configuration", () => {
       modelSettings: { "gpt-6-astra": { effort: "ultra" } },
       serviceTier: "priority",
     });
-    await cancelChatRun(actor, explicit.runId, explicitClaim.sandboxHeaders);
+    await cancelChatRun(
+      actor,
+      explicit.runId,
+      explicitExecution.sandboxHeaders,
+    );
   }, 90_000);
 });

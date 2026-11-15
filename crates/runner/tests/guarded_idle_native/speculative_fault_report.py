@@ -139,7 +139,7 @@ def validate(directory):
             "native_speculative_callback_loss_complete": True,
             "fault_boundary": "borrowed restore callback after joined actual production restore and original-data RPC",
             "inflight_unpark_or_guest_rpc_cancellation_proven": False,
-            "api_claim_arbitration_proven": False, "full_supervisor_shutdown_proven": False}
+             "full_supervisor_shutdown_proven": False}
 
 
 if __name__ == "__main__":

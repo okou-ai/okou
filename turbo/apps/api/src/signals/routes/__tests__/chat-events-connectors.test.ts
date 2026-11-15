@@ -26,7 +26,7 @@ const {
   connectors,
   entitledChatActor: createEntitledChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   completeChatRunOk,
   cancelAndCompleteChatRun,
   cancelChatRun,
@@ -95,7 +95,7 @@ async function configurePersonalRuntimeContext(
 
 describe("chat eager connector credentials", () => {
   it("keeps firewall-only credentials deferred when the Runner claims the Run", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
     const figma = await connectors.connectManualGrant(
       actor,
       "figma",
@@ -116,15 +116,12 @@ describe("chat eager connector credentials", () => {
       model: "claude-fable-5-1",
       prompt: "Use my firewall-only connectors",
     });
-    const { claim, sandboxHeaders } = await claimChatRun(
-      runnerGroup,
-      run.runId,
-    );
+    const { execution, sandboxHeaders } = await runExecution(run.runId);
     expect(kms.decryptCalls).toBe(0);
-    expect(claim.environment).toMatchObject({
+    expect(execution.environment).toMatchObject({
       FIGMA_TOKEN: "fixture-figma-token",
     });
-    expect(claim.secretConnectorMetadataMap?.FIGMA_TOKEN).toMatchObject({
+    expect(execution.secretConnectorMetadataMap?.FIGMA_TOKEN).toMatchObject({
       sourceId: figma.id,
       sourceType: "connector",
     });
@@ -132,7 +129,7 @@ describe("chat eager connector credentials", () => {
   });
 
   it("decrypts only the eager connector at Claim and delivers its plaintext to the runner", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
     const openai = await connectors.connectManualGrant(
       actor,
       "openai",
@@ -153,25 +150,22 @@ describe("chat eager connector credentials", () => {
       model: "claude-fable-5-1",
       prompt: "Use eager and deferred connector credentials",
     });
-    const { claim, sandboxHeaders } = await claimChatRun(
-      runnerGroup,
-      run.runId,
-    );
+    const { execution, sandboxHeaders } = await runExecution(run.runId);
     expect(kms.decryptCalls).toBe(1);
-    expect(claim.environment).toMatchObject({
+    expect(execution.environment).toMatchObject({
       OPENAI_TOKEN: "eager-openai-token",
       FIGMA_TOKEN: "fixture-figma-token",
     });
-    expect(claim.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
+    expect(execution.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
       sourceId: openai.id,
     });
-    if (!claim.encryptedSecrets) {
+    if (!execution.encryptedSecrets) {
       throw new Error("Expected runner launch secrets");
     }
     const plaintext = await createFirewallApi(context).requestFirewallAuth(
       sandboxHeaders,
       {
-        encryptedSecrets: claim.encryptedSecrets,
+        encryptedSecrets: execution.encryptedSecrets,
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
         },
@@ -184,13 +178,13 @@ describe("chat eager connector credentials", () => {
     const deferred = await createFirewallApi(context).requestFirewallAuth(
       sandboxHeaders,
       {
-        encryptedSecrets: claim.encryptedSecrets,
+        encryptedSecrets: execution.encryptedSecrets,
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("FIGMA_TOKEN")}`,
         },
-        secretConnectorMap: claim.secretConnectorMap ?? undefined,
+        secretConnectorMap: execution.secretConnectorMap ?? undefined,
         secretConnectorMetadataMap:
-          claim.secretConnectorMetadataMap ?? undefined,
+          execution.secretConnectorMetadataMap ?? undefined,
       },
       [200],
     );
@@ -201,7 +195,7 @@ describe("chat eager connector credentials", () => {
   });
 
   it("isolates an undecryptable unselected account from the selected eager account", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
     let badAccount = true;
     const kms = useSecretKmsProbe(
       (request) => {
@@ -257,21 +251,18 @@ describe("chat eager connector credentials", () => {
       model: "claude-fable-5-1",
       prompt: "Use only my selected healthy account",
     });
-    const { claim, sandboxHeaders } = await claimChatRun(
-      runnerGroup,
-      run.runId,
-    );
+    const { execution, sandboxHeaders } = await runExecution(run.runId);
     expect(kms.decryptCalls - beforeLaunch).toBe(1);
-    expect(claim.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
+    expect(execution.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
       sourceId: good.id,
     });
-    if (!claim.encryptedSecrets) {
+    if (!execution.encryptedSecrets) {
       throw new Error("Expected runner launch secrets");
     }
     const resolved = await createFirewallApi(context).requestFirewallAuth(
       sandboxHeaders,
       {
-        encryptedSecrets: claim.encryptedSecrets,
+        encryptedSecrets: execution.encryptedSecrets,
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
         },
@@ -325,11 +316,11 @@ describe("CHAT-02: thread connector account selection", () => {
       threadId: fixture.threadId,
       prompt: "Use the selected account from its current projection",
     });
-    const claimed = await claimChatRun(fixture.runnerGroup, run.runId);
+    const execution = await runExecution(run.runId);
     expect(
-      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+      execution.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
     ).toMatchObject({ sourceId: fixture.connectionId });
-    await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
+    await cancelChatRun(fixture.actor, run.runId, execution.sandboxHeaders);
   });
 
   describe("with a thread with a selected connector", () => {
@@ -351,11 +342,11 @@ describe("CHAT-02: thread connector account selection", () => {
         threadId: fixture.threadId,
         prompt: "Do not use the connector removed from the agent scope",
       });
-      const claimed = await claimChatRun(fixture.runnerGroup, run.runId);
+      const execution = await runExecution(run.runId);
       expect(
-        claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+        execution.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
       ).toBeUndefined();
-      await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
+      await cancelChatRun(fixture.actor, run.runId, execution.sandboxHeaders);
       await api.enableAgentConnectors(fixture.actor, fixture.agentId, [
         "openai",
       ]);
@@ -377,17 +368,15 @@ describe("CHAT-02: thread connector account selection", () => {
         threadId: fixture.threadId,
         prompt: "Use the preserved account after reauthorization",
       });
-      const reauthorizedClaim = await claimChatRun(
-        fixture.runnerGroup,
-        reauthorized.runId,
-      );
+      const reauthorizedExecution = await runExecution(reauthorized.runId);
       expect(
-        reauthorizedClaim.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+        reauthorizedExecution.execution.secretConnectorMetadataMap
+          ?.OPENAI_TOKEN,
       ).toMatchObject({ sourceId: fixture.connectionId });
       await cancelChatRun(
         fixture.actor,
         reauthorized.runId,
-        reauthorizedClaim.sandboxHeaders,
+        reauthorizedExecution.sandboxHeaders,
       );
     });
   });
@@ -402,20 +391,20 @@ describe("CHAT-02: thread connector account selection", () => {
       threadId: fixture.threadId,
       prompt: "Use the selected connector with my subscription",
     });
-    const claimed = await claimChatRun(fixture.runnerGroup, run.runId);
-    expect(claimed.claim.environment).toMatchObject({
+    const execution = await runExecution(run.runId);
+    expect(execution.execution.environment).toMatchObject({
       ANTHROPIC_MODEL: "claude-fable-5-1",
     });
     expect(
-      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+      execution.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
     ).toMatchObject({ sourceId: fixture.connectionId });
-    await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
+    await cancelChatRun(fixture.actor, run.runId, execution.sandboxHeaders);
   });
 
   it.each(["revocation", "reauthorization"] as const)(
     "uses the default connector account across %s without an override",
     async (transition) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId } = await entitledChatActor();
       if (!actor.orgId) {
         throw new Error("Expected an organization-scoped chat actor");
       }
@@ -434,11 +423,12 @@ describe("CHAT-02: thread connector account selection", () => {
           agentId,
           prompt: "Use my OpenAI connector account",
         });
-        const { claim, sandboxHeaders } = await claimChatRun(
-          runnerGroup,
+        const { execution, sandboxHeaders } = await runExecution(
           authorized.runId,
         );
-        expect(claim.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
+        expect(
+          execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
+        ).toMatchObject({
           sourceId: connection.id,
         });
 
@@ -472,16 +462,14 @@ describe("CHAT-02: thread connector account selection", () => {
         threadId,
         prompt: "Continue while OpenAI is unauthorized",
       });
-      const unauthorizedClaim = await claimChatRun(
-        runnerGroup,
-        unauthorized.runId,
-      );
+      const unauthorizedExecution = await runExecution(unauthorized.runId);
       expect(
-        unauthorizedClaim.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+        unauthorizedExecution.execution.secretConnectorMetadataMap
+          ?.OPENAI_TOKEN,
       ).toBeUndefined();
       await completeChatRunOk(
         unauthorized.runId,
-        unauthorizedClaim.sandboxHeaders,
+        unauthorizedExecution.sandboxHeaders,
       );
       await flushWaitUntilForTest();
 
@@ -495,19 +483,17 @@ describe("CHAT-02: thread connector account selection", () => {
         threadId,
         prompt: "Continue after OpenAI is authorized again",
       });
-      const reauthorizedClaim = await claimChatRun(
-        runnerGroup,
-        reauthorized.runId,
-      );
+      const reauthorizedExecution = await runExecution(reauthorized.runId);
       expect(
-        reauthorizedClaim.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+        reauthorizedExecution.execution.secretConnectorMetadataMap
+          ?.OPENAI_TOKEN,
       ).toMatchObject({ sourceId: connection.id });
       await cancelAndCompleteChatRun(actor, reauthorized.runId);
     },
   );
 
   it("uses default custom HTTP and MCP accounts without persisting overrides", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
     const storage = context.mocks.s3.send.getMockImplementation();
     const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
     const kmsKeyId = env("SECRETS_KMS_KEY_ID");
@@ -609,17 +595,17 @@ describe("CHAT-02: thread connector account selection", () => {
       await api.requestCancelRun(actor, run.runId, [200]);
       await flushWaitUntilForTest();
     };
-    const claimed = await claimChatRun(runnerGroup, run.runId);
+    const execution = await runExecution(run.runId);
     cleanupRun = async () => {
-      await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+      await cancelChatRun(actor, run.runId, execution.sandboxHeaders);
     };
-    expect(claimed.claim.connectorRuntimeTargets).toContainEqual({
+    expect(execution.execution.connectorRuntimeTargets).toContainEqual({
       kind: "custom",
       customConnectorId: httpConnector.id,
       baseUrlVars: {},
       sourceId: httpConnectorId,
     });
-    expect(claimed.claim.connectorRuntimeTargets).toContainEqual({
+    expect(execution.execution.connectorRuntimeTargets).toContainEqual({
       kind: "custom",
       customConnectorId: mcpConnector.id,
       baseUrlVars: {},
@@ -638,7 +624,7 @@ describe("CHAT-02: thread connector account selection", () => {
 
   it("starts the run when a selected custom connector becomes unavailable", async () => {
     const fixture = await publicChatActor(context);
-    const { actor, agentId, runnerGroup, run: own } = fixture;
+    const { actor, agentId, run: own } = fixture;
     const orgId = actor.orgId;
     if (!orgId) {
       throw new Error("Expected an organization-scoped chat actor");
@@ -709,9 +695,9 @@ describe("CHAT-02: thread connector account selection", () => {
         connectionStatus: "connected",
       },
     ]);
-    const firstClaim = await fixture.claimChatRun(runnerGroup, first.runId);
+    const firstExecution = await fixture.runExecution(first.runId);
     await own(() => {
-      return cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
+      return cancelChatRun(actor, first.runId, firstExecution.sandboxHeaders);
     });
     await own(() => {
       return connectors.updateCustomConnector(actor, customConnector.id, {
@@ -742,8 +728,8 @@ describe("CHAT-02: thread connector account selection", () => {
       threadId: first.threadId,
       prompt: "Continue despite the unavailable connector account",
     });
-    const claimed = await fixture.claimChatRun(runnerGroup, fallback.runId);
-    expect(claimed.claim.connectorRuntimeTargets).not.toContainEqual(
+    const execution = await fixture.runExecution(fallback.runId);
+    expect(execution.execution.connectorRuntimeTargets).not.toContainEqual(
       expect.objectContaining({ customConnectorId: customConnector.id }),
     );
     const selections = await own(() => {
@@ -760,7 +746,7 @@ describe("CHAT-02: thread connector account selection", () => {
       target: { kind: "custom", customConnectorId: customConnector.id },
     });
     await own(() => {
-      return cancelChatRun(actor, fallback.runId, claimed.sandboxHeaders);
+      return cancelChatRun(actor, fallback.runId, execution.sandboxHeaders);
     });
   });
 });

@@ -62,7 +62,7 @@ class BatchReparkReportTests(batch_test.BatchAbaReportTests):
         self.assertEqual(set(value["cases"]), repark.CASES)
         self.assertTrue(value["native_batch_repark_complete"])
         for key in ("memory_envelope_calibrated","production_protection_proven",
-                    "bootstrap_provenance_verified","actual_api_claim_loss_proven"):
+                    "bootstrap_provenance_verified"):
             self.assertIs(value[key], False)
 
     def test_real_file_cli_accepts_complete_proof_and_refuses_missing_phase(self):

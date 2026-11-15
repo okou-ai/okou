@@ -16,13 +16,13 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { integrationsSlackMessageRoutes } from "../integrations-slack-message";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 
 // Connecting a Slack user resolves the built-in Slack connector OAuth method.
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const store = createStore();
 const slackOrgs = createPublicSlackOrgApi(context);
 const bdd = createBddApi(context);
@@ -139,8 +139,8 @@ describe("POST /api/integrations/slack/message", () => {
         context.signal,
       );
       await api.heartbeatRunner();
-      const claim = await owner.claim(run.runId);
-      const token = claim.platformEnvironment?.OKOU_TOKEN;
+      const execution = await owner.executionInput(run.runId);
+      const token = execution.platformEnvironment?.OKOU_TOKEN;
       if (!token) {
         throw new Error("Expected the claimed Okou token");
       }
@@ -215,7 +215,7 @@ describe("POST /api/integrations/slack/message", () => {
           routes: integrationsSlackMessageRoutes,
         })(integrationsSlackMessageContract);
         for (const [index, request] of requests.entries()) {
-          const claim = await scenario.claim(request.actor);
+          const execution = await scenario.launchRun(request.actor);
           await flushWaitUntilForTest();
           context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
             {
@@ -239,7 +239,7 @@ describe("POST /api/integrations/slack/message", () => {
           const clients = context.mocks.slack.createClient.mock.calls.length;
           const posts = context.mocks.slack.chat.postMessage.mock.calls.length;
           const response = client.sendMessage({
-            headers: { authorization: `Bearer ${claim.token}` },
+            headers: { authorization: `Bearer ${execution.token}` },
             body: { channel, text, threadTs },
           });
           if (!request.installation) {

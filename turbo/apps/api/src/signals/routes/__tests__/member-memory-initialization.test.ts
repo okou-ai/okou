@@ -110,7 +110,7 @@ async function observeMemory(
     model: "claude-fable-5-1",
   });
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await owner.claimExisting(actor, run.runId);
+  const claim = await owner.executionInput(actor, run.runId);
   const memories =
     expectCanonicalStorageManifest(claim.storageManifest)?.storageMounts.filter(
       (mount) => {
@@ -332,7 +332,7 @@ describe("member memory account initialization", () => {
     await fixture.run(async () => {
       const actor = fixture.actor;
       const agentId = await fixture.initializeNative();
-      const initial = await fixture.claim(
+      const initial = await fixture.startExecution(
         agentId,
         "Publish existing member Memory",
       );
@@ -379,7 +379,7 @@ describe("member memory account initialization", () => {
       });
       await completeOnboarding(actor);
       await membershipCreated(actor);
-      const repeated = await fixture.claim(
+      const repeated = await fixture.startExecution(
         agentId,
         "Read preserved member Memory",
       );

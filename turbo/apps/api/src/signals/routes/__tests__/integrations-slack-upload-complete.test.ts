@@ -345,8 +345,8 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       mockSharedSlackConversations(undefined, connection.slackUserId);
       return { ...base, slackWorkspaceId: installed.slackWorkspaceId };
     }
-    async function rememberClaim(actor: ApiTestUser, runId: string) {
-      const claim = await scenario.claimExisting(actor, runId);
+    async function rememberExecution(actor: ApiTestUser, runId: string) {
+      const claim = await scenario.executionInput(actor, runId);
       claimed.set(runId, { actor, claim });
       return claim;
     }
@@ -366,7 +366,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           model: "claude-fable-5-1",
         });
       });
-      await rememberClaim(actor, sent.runId);
+      await rememberExecution(actor, sent.runId);
       return {
         ...base,
         agentId,
@@ -418,7 +418,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       okouToken,
       sandboxToken,
       claimRun,
-      rememberClaim,
+      rememberExecution,
     };
   }
 
@@ -1079,8 +1079,8 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     let previous:
       { assetId: string; operationId: string; fileId: string } | undefined;
     for (const [index, request] of requests.entries()) {
-      const claim = await fixture.claim(request.actor);
-      claimedRunIds.push(claim.runId);
+      const execution = await fixture.launchRun(request.actor);
+      claimedRunIds.push(execution.runId);
       await flushWaitUntilForTest();
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
         {
@@ -1093,7 +1093,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           ],
         },
       );
-      const headers = { authorization: `Bearer ${claim.token}` };
+      const headers = { authorization: `Bearer ${execution.token}` };
       const clients = context.mocks.slack.createClient.mock.calls.length;
       const uploads =
         context.mocks.slack.files.getUploadURLExternal.mock.calls.length;
@@ -1262,7 +1262,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       ).toStrictEqual([[{ file: fileId }]]);
       const files = await chatApi.listThreadArtifacts(
         request.actor,
-        claim.threadId,
+        execution.threadId,
       );
       expect(
         files.runs.flatMap((run) => {
@@ -2325,7 +2325,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         });
         expect(destination.threadId).not.toBe(threadId);
         await fixture.run(() => {
-          return fixture.rememberClaim(actor, destination.runId);
+          return fixture.rememberExecution(actor, destination.runId);
         });
         const uploaded = await fixture.run(() => {
           return accept(

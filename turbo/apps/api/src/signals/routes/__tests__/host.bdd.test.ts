@@ -13,7 +13,7 @@ import { createHostBddApi } from "./helpers/api-bdd-host";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import {
   createChatEventsFixture,
-  okouTokenFromClaim,
+  okouTokenFromExecution,
 } from "./helpers/chat-events-fixture";
 
 /* Host deployments and run-token attribution through public APIs. Provider
@@ -320,11 +320,8 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       agentId: entitled.agentId,
       prompt: "Publish a hosted site from the Runner",
     });
-    const { claim } = await fixture.claimChatRun(
-      entitled.runnerGroup,
-      run.runId,
-    );
-    const okouToken = okouTokenFromClaim(claim);
+    const { execution } = await fixture.runExecution(run.runId);
+    const okouToken = okouTokenFromExecution(execution);
     const okouSite = `bdd-okou-brand-${randomUUID().slice(0, 8)}`;
     const createdWithOkouToken = await api.prepareHostedSite(
       { bearerToken: okouToken },
@@ -635,7 +632,7 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
     const api = createHostBddApi(context);
     const runs = createRunsApi(context);
     const owned = await publicChatActor(context);
-    const { actor, agentId, runnerGroup } = owned;
+    const { actor, agentId } = owned;
     await owned.run(() => {
       return runs.updateUserModelPreference(actor, "claude-fable-5-1");
     });
@@ -643,9 +640,9 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
       agentId,
       prompt: "attribute hosted-site artifacts",
     });
-    const { claim } = await owned.claimChatRun(runnerGroup, created.runId);
+    const { execution } = await owned.runExecution(created.runId);
     await owned.run(async () => {
-      const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+      const okouToken = execution.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
         throw new Error("Expected a claimed agent token");
       }

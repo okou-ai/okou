@@ -81,7 +81,7 @@ async fn startup_report_drains_after_completion_and_resource_release() {
         .expect("guest must execute with the startup response held");
     assert_eq!(overrides.start_agent_process_calls().len(), 1);
 
-    // Soft drain stops admission without cancelling the Run or its report.
+    // Soft drain stops acceptance without cancelling the Run or its report.
     env.drain();
     guest.release_one();
     tokio::select! {

@@ -20,11 +20,10 @@ describe("thread connector selection", () => {
     const {
       actor,
       agentId,
-      runnerGroup,
       run: own,
       sendChatRun,
       sendWaitingChatInput,
-      claimChatRun,
+      runExecution,
     } = await publicChatActor(context);
     await own(() => {
       return api.updateUserModelPreference(actor, "claude-fable-5-1");
@@ -127,19 +126,19 @@ describe("thread connector selection", () => {
       prompt: "Continue with the selected connections",
     });
     expect(run.threadId).toBe(thread.id);
-    const claimed = await claimChatRun(runnerGroup, run.runId);
-    expect(claimed.claim.environment).toMatchObject({
+    const execution = await runExecution(run.runId);
+    expect(execution.execution.environment).toMatchObject({
       OPENAI_TOKEN: "thread-selected-openai-key",
       RUNTIME_API_KEY: "thread-runtime-key",
     });
     expect(
-      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+      execution.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
     ).toMatchObject({
       sourceType: "connector",
       sourceId: connection.id,
     });
     expect(
-      claimed.claim.secretConnectorMetadataMap?.RUNTIME_API_KEY,
+      execution.execution.secretConnectorMetadataMap?.RUNTIME_API_KEY,
     ).toMatchObject({
       sourceType: "connector",
       sourceId: runtimeConnection.id,
@@ -177,23 +176,25 @@ describe("thread connector selection", () => {
       },
     ]);
     await own(() => {
-      return cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+      return cancelChatRun(actor, run.runId, execution.sandboxHeaders);
     });
     const promoted = await own(() => {
       return waiting.launchedRun();
     });
     expect(promoted.threadId).toBe(thread.id);
-    const next = await claimChatRun(runnerGroup, promoted.runId);
-    expect(next.claim.environment).toMatchObject({
+    const next = await runExecution(promoted.runId);
+    expect(next.execution.environment).toMatchObject({
       OPENAI_TOKEN: "thread-openai-key",
       RUNTIME_API_KEY: "thread-runtime-key",
     });
-    expect(next.claim.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
+    expect(
+      next.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
+    ).toMatchObject({
       sourceType: "connector",
       sourceId: defaultConnection.id,
     });
     expect(
-      next.claim.secretConnectorMetadataMap?.RUNTIME_API_KEY,
+      next.execution.secretConnectorMetadataMap?.RUNTIME_API_KEY,
     ).toMatchObject({
       sourceType: "connector",
       sourceId: runtimeConnection.id,

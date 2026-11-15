@@ -14,7 +14,7 @@ import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { browserRoutes } from "../browser";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -109,9 +109,9 @@ async function viewerScenario() {
       cloudBrowserEnabled: true,
     });
     threadIds.push(sent.threadId);
-    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    const execution = await owned.runExecution(sent.runId);
     const runHeaders = {
-      authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
+      authorization: `Bearer ${okouTokenFromExecution(execution.execution)}`,
     };
     await accept(client().use({ headers: runHeaders, body: {} }), [200]);
     return { params: { threadId: sent.threadId }, runHeaders };

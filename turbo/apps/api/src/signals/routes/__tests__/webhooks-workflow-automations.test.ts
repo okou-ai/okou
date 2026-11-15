@@ -196,8 +196,8 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
     if (!job) {
       throw new Error("Expected the accepted delivery to launch a run");
     }
-    const workflowClaim = await runsApi.executionInput(job.runId);
-    const workflowPrompt = workflowClaim.appendSystemPrompt ?? "";
+    const workflowExecution = await runsApi.executionInput(job.runId);
+    const workflowPrompt = workflowExecution.appendSystemPrompt ?? "";
     expect(workflowPrompt).toContain("okou slack message send --help");
     expect(workflowPrompt).not.toContain("Never use SLACK_TOKEN directly");
 

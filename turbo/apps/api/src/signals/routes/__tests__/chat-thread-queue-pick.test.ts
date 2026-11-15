@@ -39,7 +39,7 @@ const {
   entitledNativeChatActor,
   sendChatRun,
   sendWaitingChatInput,
-  claimChatRun,
+  runExecution,
   completeChatRunOk,
   failChatRun,
   cancelChatRun,
@@ -125,9 +125,9 @@ async function sendWaiting(
   return { ...waiting, clientEventId };
 }
 
-/** Claim a run through the Runner and complete it successfully. */
+/** Observe the dispatched execution and complete it successfully. */
 async function finishRun(runnerGroup: string, runId: string): Promise<void> {
-  const { sandboxHeaders } = await claimChatRun(runnerGroup, runId);
+  const { sandboxHeaders } = await runExecution(runId);
   chatCallbacks.mockChatOutputEvents([]);
   await completeChatRunOk(runId, sandboxHeaders);
   await flushWaitUntilForTest();
@@ -258,8 +258,8 @@ describe("CHAT-02: queued chat thread picks", () => {
     await expect(
       runOfInput(actor, first.threadId, second.clientEventId),
     ).resolves.toBeUndefined();
-    const resumed = await claimChatRun(runnerGroup, picked.runId);
-    expect(resumed.claim.nativeContinuation?.sessionId).toBe(
+    const resumed = await runExecution(picked.runId);
+    expect(resumed.execution.nativeContinuation?.sessionId).toBe(
       `bdd-cli-${first.runId}`,
     );
 
@@ -269,8 +269,8 @@ describe("CHAT-02: queued chat thread picks", () => {
     await flushWaitUntilForTest();
     const next = await second.launchedRun();
     expect(next.runId).not.toBe(picked.runId);
-    const nextClaim = await claimChatRun(runnerGroup, next.runId);
-    expect(nextClaim.claim.nativeContinuation?.sessionId).toBe(
+    const nextExecution = await runExecution(next.runId);
+    expect(nextExecution.execution.nativeContinuation?.sessionId).toBe(
       `bdd-cli-${picked.runId}`,
     );
     await cancelChatRun(actor, next.runId);
@@ -283,7 +283,7 @@ describe("CHAT-02: queued chat thread picks", () => {
       agentId,
       prompt: "thread A holds the only slot",
     });
-    const runningClaim = await claimChatRun(runnerGroup, running.runId);
+    const runningExecution = await runExecution(running.runId);
     await waitForRunStatus(actor, running.runId, "running");
 
     const olderThread = await sendWaiting(
@@ -299,7 +299,7 @@ describe("CHAT-02: queued chat thread picks", () => {
     );
 
     chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(running.runId, runningClaim.sandboxHeaders);
+    await completeChatRunOk(running.runId, runningExecution.sandboxHeaders);
     await flushWaitUntilForTest();
 
     // The organization pick goes oldest first: the other thread's input
@@ -319,12 +319,12 @@ describe("CHAT-02: queued chat thread picks", () => {
 
   it("gives the slot of a cancelled running run to a waiting thread", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const running = await sendChatRun(actor, {
       agentId,
       prompt: "thread A holds the only slot",
     });
-    const runningClaim = await claimChatRun(runnerGroup, running.runId);
+    const runningExecution = await runExecution(running.runId);
     await waitForRunStatus(actor, running.runId, "running");
 
     const waiting = await sendWaiting(actor, agentId, "thread B waits");
@@ -341,7 +341,7 @@ describe("CHAT-02: queued chat thread picks", () => {
     // The Runner's end report releases the slot to the waiting thread.
     await failChatRun(
       running.runId,
-      runningClaim.sandboxHeaders,
+      runningExecution.sandboxHeaders,
       "Run cancelled",
     );
     await flushWaitUntilForTest();
@@ -399,12 +399,12 @@ describe("CHAT-02: queued chat thread picks", () => {
   }, 90_000);
 
   it("takes over input sent while the thread's run was running", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const running = await sendChatRun(actor, {
       agentId,
       prompt: "the thread's running run",
     });
-    const runningClaim = await claimChatRun(runnerGroup, running.runId);
+    const runningExecution = await runExecution(running.runId);
     await waitForRunStatus(actor, running.runId, "running");
 
     // The send only steers the running run; the run end launches it.
@@ -416,7 +416,7 @@ describe("CHAT-02: queued chat thread picks", () => {
     );
 
     chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(running.runId, runningClaim.sandboxHeaders);
+    await completeChatRunOk(running.runId, runningExecution.sandboxHeaders);
     await flushWaitUntilForTest();
 
     const takeover = await steered.launchedRun();
@@ -426,12 +426,12 @@ describe("CHAT-02: queued chat thread picks", () => {
 
   it("launches input exactly once when its send overlaps the thread's run failure", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const running = await sendChatRun(actor, {
       agentId,
       prompt: "the run failing during publication",
     });
-    const runningClaim = await claimChatRun(runnerGroup, running.runId);
+    const runningExecution = await runExecution(running.runId);
     const clientEventId = randomUUID();
     const prompt = "sent while the previous run fails";
 
@@ -443,7 +443,7 @@ describe("CHAT-02: queued chat thread picks", () => {
       ),
       failChatRun(
         running.runId,
-        runningClaim.sandboxHeaders,
+        runningExecution.sandboxHeaders,
         "Provider unavailable",
       ),
     ]);
@@ -463,23 +463,20 @@ describe("CHAT-02: queued chat thread picks", () => {
       running.runId,
       runId,
     ]);
-    const claimed = await claimChatRun(runnerGroup, runId);
-    expect(claimed.claim.prompt).toBe(prompt);
-    await cancelChatRun(actor, runId, claimed.sandboxHeaders);
+    const execution = await runExecution(runId);
+    expect(execution.execution.prompt).toBe(prompt);
+    await cancelChatRun(actor, runId, execution.sandboxHeaders);
   }, 90_000);
 
   it("leaves a queued automation event for the pick while steering later prompts", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor(
-      {},
-      "team",
-    );
+    const { actor, agentId } = await entitledNativeChatActor({}, "team");
     const automation = await createWebhookAutomation(actor, agentId);
     const running = await sendChatRun(actor, {
       agentId,
       threadId: automation.threadId,
       prompt: "the automation thread's running run",
     });
-    const runningClaim = await claimChatRun(runnerGroup, running.runId);
+    const runningExecution = await runExecution(running.runId);
     await waitForRunStatus(actor, running.runId, "running");
 
     await postWorkflowWebhook(automation, "automation while the run runs");
@@ -502,7 +499,10 @@ describe("CHAT-02: queued chat thread picks", () => {
     );
 
     await expect(
-      api.nextSteerableInput(runningClaim.claim.sandboxToken, running.runId),
+      api.nextSteerableInput(
+        runningExecution.execution.sandboxToken,
+        running.runId,
+      ),
     ).resolves.toStrictEqual({
       input: { eventId: promptEventId, prompt: "steer past the automation" },
     });
@@ -580,9 +580,9 @@ describe("CHAT-02: queued chat thread picks", () => {
 
     await finishRun(runnerGroup, blocker.runId);
     const launched = await waiting.launchedRun();
-    const claimed = await claimChatRun(runnerGroup, launched.runId);
-    expect(claimed.claim.modelUsageProvider).toBe("gpt-6-astra");
-    expect(claimed.claim.platformEnvironment).toMatchObject({
+    const execution = await runExecution(launched.runId);
+    expect(execution.execution.modelUsageProvider).toBe("gpt-6-astra");
+    expect(execution.execution.platformEnvironment).toMatchObject({
       OKOU_CODEX_SERVICE_TIER: "fast",
       OKOU_REASONING_EFFORT: "low",
     });
@@ -593,7 +593,7 @@ describe("CHAT-02: queued chat thread picks", () => {
       serviceTier: null,
       modelSettings: { "gpt-6-astra": { effort: "ultra" } },
     });
-    await cancelChatRun(actor, launched.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, launched.runId, execution.sandboxHeaders);
   }, 90_000);
 
   it("skips a recalled head and launches a later message on the thread", async () => {

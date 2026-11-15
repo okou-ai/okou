@@ -184,7 +184,7 @@ async fn blocked_heartbeat_does_not_block_job_discovery_or_reaping() {
 }
 
 #[tokio::test]
-async fn routine_delivery_failure_after_startup_keeps_job_admission_available() {
+async fn routine_delivery_failure_after_startup_keeps_job_acceptance_available() {
     let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
     let (trigger, receiver) = tokio::sync::mpsc::unbounded_channel();
     config.test_hooks.manual_routine_heartbeat_rx = Some(receiver);
@@ -210,7 +210,7 @@ async fn routine_delivery_failure_after_startup_keeps_job_admission_available() 
             .wait_completion(run_id, Duration::from_secs(5))
             .await
             .is_some(),
-        "a later heartbeat failure must not turn healthy startup into an admission failure"
+        "a later heartbeat failure must not turn healthy startup into an acceptance failure"
     );
     shutdown(&env, run_handle).await;
 }
@@ -229,7 +229,7 @@ async fn failed_report_retries_without_waiting_for_a_routine_tick() {
         .wait_after(
             cursor,
             Duration::from_secs(5),
-            "heartbeat retry admission",
+            "heartbeat retry acceptance",
             &mut |event| matches!(event, StartLoopEvent::HeartbeatRetryScheduled).then_some(()),
         )
         .await;

@@ -134,7 +134,7 @@ async fn claim_while_blank_publication_is_held(origin: PublicationOrigin, wait: 
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
-        .expect("the admitted job should complete after the publication gate opens");
+        .expect("the accepted job should complete after the publication gate opens");
     assert_eq!(completion.exit_code, 0);
     if let Some(blank_id) = blank_id {
         assert_eq!(completion.sandbox_id, Some(blank_id));

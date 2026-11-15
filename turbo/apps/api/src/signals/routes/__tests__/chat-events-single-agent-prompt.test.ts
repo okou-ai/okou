@@ -11,7 +11,7 @@ const fixture = createChatEventsFixture(context);
 describe("captured My Okou execution guidance", () => {
   it("keeps fixed identity and personal scope through claim after a live flag change", async () => {
     const owned = await publicChatActor(context);
-    const { actor, runnerGroup } = owned;
+    const { actor } = owned;
     if (!actor.orgId) {
       throw new Error("Expected a workspace member");
     }
@@ -37,8 +37,8 @@ describe("captured My Okou execution guidance", () => {
       await updateFeatureSwitchesForUser(context, member, {
         [FeatureSwitchKey.SingleAgent]: false,
       });
-      const { claim } = await owned.claimChatRun(runnerGroup, run.runId);
-      const prompt = claim.appendSystemPrompt ?? "";
+      const { execution } = await owned.runExecution(run.runId);
+      const prompt = execution.appendSystemPrompt ?? "";
       expect(prompt).toContain(
         "# Identity\nYour name is Okou. You are the user's personal AI assistant in the current workspace.",
       );
@@ -75,11 +75,11 @@ describe("captured My Okou execution guidance", () => {
         agentId: status.defaultAgentId,
         prompt: "Use the legacy saved mode",
       });
-      const legacyClaim = await owned.claimChatRun(runnerGroup, legacy.runId);
-      expect(legacyClaim.claim.appendSystemPrompt).toContain(
+      const legacyExecution = await owned.runExecution(legacy.runId);
+      expect(legacyExecution.execution.appendSystemPrompt).toContain(
         "MUTABLE_SHARED_ROLE_DO_NOT_INHERIT",
       );
-      expect(legacyClaim.claim.appendSystemPrompt).toContain(
+      expect(legacyExecution.execution.appendSystemPrompt).toContain(
         "Agent instructions are team-shared",
       );
     });
@@ -87,7 +87,7 @@ describe("captured My Okou execution guidance", () => {
 
   it("retains legacy configuration for a non-default executor even when the member switch is enabled", async () => {
     const owned = await publicChatActor(context);
-    const { actor, agentId, runnerGroup } = owned;
+    const { actor, agentId } = owned;
     if (!actor.orgId) {
       throw new Error("Expected a workspace member");
     }
@@ -102,14 +102,14 @@ describe("captured My Okou execution guidance", () => {
         agentId,
         prompt: "Read this retained executor's history",
       });
-      const { claim } = await owned.claimChatRun(runnerGroup, run.runId);
-      expect(claim.appendSystemPrompt).toContain(
+      const { execution } = await owned.runExecution(run.runId);
+      expect(execution.appendSystemPrompt).toContain(
         "Exercises the web chat send route.",
       );
-      expect(claim.appendSystemPrompt).toContain(
+      expect(execution.appendSystemPrompt).toContain(
         "Agent instructions are team-shared",
       );
-      expect(claim.appendSystemPrompt).not.toContain(
+      expect(execution.appendSystemPrompt).not.toContain(
         "# Personal Instructions and memory",
       );
     });

@@ -122,23 +122,23 @@ async function connectorActor() {
           model: "claude-fable-5-1",
         });
       },
-      async claim(runId: string) {
+      async executionInput(runId: string) {
         await api.heartbeatRunner(runnerGroup);
-        return await owner.claim(runId);
+        return await owner.executionInput(runId);
       },
       async queue(prompt: string) {
         const queued = await createChatEventsFixture(context).queueChatRun(
           actor,
           { agentId: agent.agentId, prompt, model: "claude-fable-5-1" },
           (blocker) => {
-            owner.rememberClaim(blocker.runId, blocker.sandboxToken);
+            owner.rememberExecution(blocker.runId, blocker.sandboxToken);
             waitingThreads.add(blocker.threadId);
           },
         );
         return {
           async launch() {
             const run = await queued.launch();
-            await owner.claim(run.runId);
+            await owner.executionInput(run.runId);
             waitingThreads.delete(queued.blocker.threadId);
             return run;
           },
@@ -163,17 +163,17 @@ describe("Run connector selection through normal user changes", () => {
     const { actor, agentId, api } = fixture;
     await api.enableAgentConnectors(actor, agentId, []);
     const run = await fixture.send("omit an unselected connector");
-    const claim = await fixture.claim(run.runId);
-    expect(claim.environment ?? {}).not.toHaveProperty("X_TOKEN");
-    expect(claim.secretConnectorMap ?? {}).not.toHaveProperty("X_TOKEN");
+    const execution = await fixture.executionInput(run.runId);
+    expect(execution.environment ?? {}).not.toHaveProperty("X_TOKEN");
+    expect(execution.secretConnectorMap ?? {}).not.toHaveProperty("X_TOKEN");
     expect(
-      claim.firewalls?.some((entry) => {
+      execution.firewalls?.some((entry) => {
         return entry.kind === "builtin" && entry.name === "x";
       }),
     ).toBeFalsy();
-    expect(claim.billableFirewalls).not.toContain("x");
-    expect(claim.networkPolicies ?? {}).not.toHaveProperty("x");
-    await fixture.cancel(run.runId, claim.sandboxToken);
+    expect(execution.billableFirewalls).not.toContain("x");
+    expect(execution.networkPolicies ?? {}).not.toHaveProperty("x");
+    await fixture.cancel(run.runId, execution.sandboxToken);
   });
 
   it("uses current native connector selections at Claim and keeps the delivered Run configuration", async () => {
@@ -197,24 +197,30 @@ describe("Run connector selection through normal user changes", () => {
     const queued = await fixture.queue("use the prepared connector selection");
     await api.enableAgentConnectors(actor, agentId, ["runtime"]);
     const prepared = await queued.launch();
-    const claimed = await fixture.claim(prepared.runId);
-    expect(claimed.secretConnectorMetadataMap?.RUNTIME_API_KEY).toMatchObject({
-      sourceId: runtime.id,
-    });
-    expect(claimed.environment ?? {}).not.toHaveProperty("OPENAI_TOKEN");
-    expect(claimed.secretConnectorMap ?? {}).not.toHaveProperty("OPENAI_TOKEN");
+    const execution = await fixture.executionInput(prepared.runId);
+    expect(execution.secretConnectorMetadataMap?.RUNTIME_API_KEY).toMatchObject(
+      {
+        sourceId: runtime.id,
+      },
+    );
+    expect(execution.environment ?? {}).not.toHaveProperty("OPENAI_TOKEN");
+    expect(execution.secretConnectorMap ?? {}).not.toHaveProperty(
+      "OPENAI_TOKEN",
+    );
     await api.enableAgentConnectors(actor, agentId, ["openai"]);
-    expect(claimed.environment).toHaveProperty("RUNTIME_API_KEY");
-    await fixture.cancel(prepared.runId, claimed.sandboxToken);
+    expect(execution.environment).toHaveProperty("RUNTIME_API_KEY");
+    await fixture.cancel(prepared.runId, execution.sandboxToken);
     const next = await fixture.send(
       "use the new connector selection",
       prepared.threadId,
     );
-    const nextClaim = await fixture.claim(next.runId);
-    expect(nextClaim.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
+    const nextExecution = await fixture.executionInput(next.runId);
+    expect(
+      nextExecution.secretConnectorMetadataMap?.OPENAI_TOKEN,
+    ).toMatchObject({
       sourceId: connection.id,
     });
-    expect(nextClaim.environment).not.toHaveProperty("RUNTIME_API_KEY");
-    await fixture.cancel(next.runId, nextClaim.sandboxToken);
+    expect(nextExecution.environment).not.toHaveProperty("RUNTIME_API_KEY");
+    await fixture.cancel(next.runId, nextExecution.sandboxToken);
   });
 });

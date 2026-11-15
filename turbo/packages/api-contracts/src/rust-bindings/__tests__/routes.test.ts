@@ -222,7 +222,7 @@ describe("Rust route bindings", () => {
       "/// Generated route bindings under `runners::runs::by_run_id::cancellation`.",
     );
     expect(rendered).toContain(
-      "/// Read the stop intent or confirmed absence of a claimed Run.",
+      "/// Read the stop intent or confirmed absence of an executing Run.",
     );
     expect(rendered).toContain(
       "/// Route contract: `GET /api/runners/runs/:runId/cancellation`.",

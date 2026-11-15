@@ -31,7 +31,7 @@ interface BearerCredential {
 
 /**
  * Session actor (Clerk mocks set on use) or a raw bearer token minted through
- * the CLI device flow (PAT) or a real Runner claim.
+ * the CLI device flow (PAT) or a dispatched Run.
  */
 type Credential = ApiTestUser | BearerCredential;
 

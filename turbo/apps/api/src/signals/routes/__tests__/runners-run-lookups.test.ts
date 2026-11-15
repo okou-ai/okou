@@ -40,7 +40,7 @@ describe("Runner run lookup ownership", () => {
         body,
         [403],
       );
-      const execution = await owned.claimRunnerRun(run.runId);
+      const execution = await owned.executionInput(run.runId);
       expect(execution).toMatchObject({
         prompt: "the owner's queued lookup",
         isFirstRun: true,
@@ -122,8 +122,8 @@ describe("Runner run lookup ownership", () => {
         agentId,
         prompt: "complete this lookup first",
       });
-      const firstClaim = await owned.claimRunnerRun(first.runId);
-      expect(firstClaim.cliAgentType).toBe("claude-code");
+      const firstExecution = await owned.executionInput(first.runId);
+      expect(firstExecution.cliAgentType).toBe("claude-code");
       await webhooks.requestAgentComplete(
         {
           runId: first.runId,
@@ -135,7 +135,7 @@ describe("Runner run lookup ownership", () => {
             cliAgentSessionHistoryDisposition: "native_only",
           },
         },
-        { authorization: `Bearer ${firstClaim.sandboxToken}` },
+        { authorization: `Bearer ${firstExecution.sandboxToken}` },
         [200],
       );
       await expect(api.readRun(actor, first.runId)).resolves.toMatchObject({
@@ -149,8 +149,8 @@ describe("Runner run lookup ownership", () => {
       expect(next.status).toBe("running");
       await api.requestSyncConnectorRuntimeAs(bearer, first.runId, body, [409]);
 
-      const nextClaim = await owned.claimRunnerRun(next.runId);
-      expect(nextClaim).toMatchObject({
+      const nextExecution = await owned.executionInput(next.runId);
+      expect(nextExecution).toMatchObject({
         prompt: "a distinct queued lookup",
         isFirstRun: true,
       });

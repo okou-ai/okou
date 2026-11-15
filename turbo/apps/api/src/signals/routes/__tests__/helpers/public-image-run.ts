@@ -21,7 +21,7 @@ import { createRouteMocks } from "./route-test";
 import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
 import {
   createChatEventsFixture,
-  okouTokenFromClaim,
+  okouTokenFromExecution,
 } from "./chat-events-fixture";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { publicRunOwner } from "./public-run-owner";
@@ -155,7 +155,7 @@ export function readGenerationResult(body: unknown): unknown {
 }
 
 // These selected callers use real personal-model Runs and the existing image tariffs.
-export async function createClaimedImageRun(
+export async function createImageRun(
   context: TestContext,
   imageModel: string | null,
   credits = 1000,
@@ -411,17 +411,19 @@ export async function createClaimedImageRun(
       model: "claude-fable-5-1",
     });
   });
-  const claimedRunnerGroup = runnerGroup;
+  const executionRunnerGroup = runnerGroup;
   await run(() => {
-    return chat.api.heartbeatRunner(claimedRunnerGroup);
+    return chat.api.heartbeatRunner(executionRunnerGroup);
   });
-  const claimed = await run(async () => {
-    const claim = await chat.api.executionInput(sent.runId);
-    owner.rememberClaim(sent.runId, claim.sandboxToken);
+  const execution = await run(async () => {
+    const executionInput = await chat.api.executionInput(sent.runId);
+    owner.rememberExecution(sent.runId, executionInput.sandboxToken);
     return {
       ...sent,
-      claim,
-      sandboxHeaders: { authorization: `Bearer ${claim.sandboxToken}` },
+      execution: executionInput,
+      sandboxHeaders: {
+        authorization: `Bearer ${executionInput.sandboxToken}`,
+      },
     };
   });
   restoreAcceptedState = captureExternalState();
@@ -429,10 +431,10 @@ export async function createClaimedImageRun(
     ...fixture,
     actor,
     initialCredits,
-    runId: claimed.runId,
-    claim: claimed.claim,
+    runId: execution.runId,
+    execution: execution.execution,
     run,
-    token: okouTokenFromClaim(claimed.claim),
+    token: okouTokenFromExecution(execution.execution),
     request(
       app: ReturnType<typeof createImageIoTestApp>,
       ...args: Parameters<ReturnType<typeof createImageIoTestApp>["request"]>
@@ -443,7 +445,11 @@ export async function createClaimedImageRun(
     },
     cancelRun: () => {
       return run(() => {
-        return chat.cancelChatRun(actor, claimed.runId, claimed.sandboxHeaders);
+        return chat.cancelChatRun(
+          actor,
+          execution.runId,
+          execution.sandboxHeaders,
+        );
       });
     },
   };

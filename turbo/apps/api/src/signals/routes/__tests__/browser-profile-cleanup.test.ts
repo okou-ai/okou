@@ -10,7 +10,7 @@ import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { createBrowserFixtures, PROVIDER_URL } from "./helpers/browser-fixture";
 
 const context = testContext();
@@ -21,7 +21,9 @@ function client() {
 }
 function use(chat: Chat) {
   return client().use({
-    headers: { authorization: `Bearer ${okouTokenFromClaim(chat.claim)}` },
+    headers: {
+      authorization: `Bearer ${okouTokenFromExecution(chat.execution)}`,
+    },
     body: {},
   });
 }
@@ -168,7 +170,7 @@ describe("server-owned shared Browser recovery", () => {
             exitCode: 1,
             error: "Run ended during preparation",
           },
-          { authorization: `Bearer ${a.claim.sandboxToken}` },
+          { authorization: `Bearer ${a.execution.sandboxToken}` },
           [200],
         );
       });

@@ -14,15 +14,15 @@ import { generateSandboxToken } from "../auth/tokens";
 import type { ExecutionContextRun } from "./execution-context";
 import type { ExecutionNetworkPolicyInputs } from "./execution-runtime-context";
 import {
-  signClaimedContentBundle$,
-  type ClaimedContentBundleSignature,
-} from "./content-bundle-claim";
+  signExecutionContentBundle$,
+  type ExecutionContentBundleSignature,
+} from "./execution-content-bundle";
 import type { ContentBundleUrlCacheContext } from "./content-bundle-presigned-url-cache";
 import type { StoragePresignedUrlCacheWrite } from "./system-storage-presigned-url-cache.service";
 import type {
-  WorkflowClaimInput,
-  ClaimedWorkflow,
-} from "./workflow-claim.service";
+  ExecutionWorkflowInput,
+  ExecutionWorkflow,
+} from "./execution-workflow-selection";
 import {
   activeNetworkPolicyRefreshesFromGrants,
   mergeNetworkPolicyRefreshes,
@@ -37,7 +37,7 @@ export interface ExecutionPublicationRun extends ExecutionContextRun {
 }
 
 export interface ExecutionPackageSelection {
-  readonly workflows: readonly ClaimedWorkflow[];
+  readonly workflows: readonly ExecutionWorkflow[];
   readonly instructionsBundle: ContentBundle | null;
   readonly cachedBundleUrls: readonly {
     readonly sha256: string;
@@ -47,7 +47,7 @@ export interface ExecutionPackageSelection {
 }
 
 const runVarsSchema = record(string(), string()).nullable();
-type BaseExecutionResponse = Omit<ExecutionContext, "contentBundles">;
+type BaseExecutionContext = Omit<ExecutionContext, "contentBundles">;
 
 function mergeExecutionVars(args: {
   readonly runVars: Record<string, string> | null;
@@ -64,7 +64,7 @@ function mergeExecutionVars(args: {
 }
 
 function withContentBundleMounts(
-  responseBody: BaseExecutionResponse,
+  executionContext: BaseExecutionContext,
   contentBundles: ExecutionContext["contentBundles"],
 ): ExecutionContext {
   const bundledMountPaths = new Set([
@@ -74,59 +74,59 @@ function withContentBundleMounts(
     ...(contentBundles.templates ?? []).map(templateGuidanceMountPath),
   ]);
   return {
-    ...responseBody,
+    ...executionContext,
     contentBundles,
     storageManifest: {
-      storageMounts: (responseBody.storageManifest?.storageMounts ?? []).filter(
-        (mount) => {
-          return (
-            !mount.name.startsWith("custom-skill@") &&
-            !bundledMountPaths.has(mount.mountPath)
-          );
-        },
-      ),
+      storageMounts: (
+        executionContext.storageManifest?.storageMounts ?? []
+      ).filter((mount) => {
+        return (
+          !mount.name.startsWith("custom-skill@") &&
+          !bundledMountPaths.has(mount.mountPath)
+        );
+      }),
     },
   };
 }
 
-interface ClaimedContentBundlesInput {
-  readonly responseBody: BaseExecutionResponse;
-  readonly claim: ExecutionPackageSelection;
-  readonly workflowInput: WorkflowClaimInput;
+interface ExecutionContentBundlesInput {
+  readonly executionContext: BaseExecutionContext;
+  readonly packages: ExecutionPackageSelection;
+  readonly workflowInput: ExecutionWorkflowInput;
   readonly officialWorkflowBundles: PreparedExecutionContext["officialWorkflowBundles"];
   readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
   readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
   readonly bundleUrlCache: ContentBundleUrlCacheContext;
 }
 
-const signClaimedContentBundles$ = command(
+const signExecutionContentBundles$ = command(
   async (
     { set },
-    args: ClaimedContentBundlesInput,
+    args: ExecutionContentBundlesInput,
     signal: AbortSignal,
   ): Promise<{
     readonly contentBundles: ExecutionContext["contentBundles"];
     readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
   }> => {
     const cachedUrls = new Map(
-      args.claim.cachedBundleUrls.map((row) => {
+      args.packages.cachedBundleUrls.map((row) => {
         return [row.sha256, row];
       }),
     );
     const signatures = new Map<
       string,
-      Promise<ClaimedContentBundleSignature>
+      Promise<ExecutionContentBundleSignature>
     >();
     const signBundle = (
       reference: ContentBundle | TemplateGuidanceBundle,
-    ): Promise<ClaimedContentBundleSignature> => {
+    ): Promise<ExecutionContentBundleSignature> => {
       const identity = `${reference.sha256}:${reference.archiveBytes}`;
       const pending = signatures.get(identity);
       if (pending) {
         return pending;
       }
       const signed = set(
-        signClaimedContentBundle$,
+        signExecutionContentBundle$,
         {
           reference,
           cache: args.bundleUrlCache,
@@ -138,18 +138,18 @@ const signClaimedContentBundles$ = command(
       return signed;
     };
     const signedInstructions =
-      args.claim.instructionsBundle === null
+      args.packages.instructionsBundle === null
         ? undefined
-        : await signBundle(args.claim.instructionsBundle);
+        : await signBundle(args.packages.instructionsBundle);
     const instructions = signedInstructions?.bundle;
     const workflowMountPaths = new Set(
-      args.claim.workflows.map((workflow) => {
+      args.packages.workflows.map((workflow) => {
         return `${args.workflowInput.skillRoot}/${workflow.name}`;
       }),
     );
     const skills = await Promise.all(
       [
-        ...args.claim.workflows.map((workflow) => {
+        ...args.packages.workflows.map((workflow) => {
           return {
             contentBundle: workflow.contentBundle,
             mountPath: `${args.workflowInput.skillRoot}/${workflow.name}`,
@@ -157,8 +157,7 @@ const signClaimedContentBundles$ = command(
         }),
         ...[
           ...(args.officialWorkflowBundles ?? []),
-          // Workflow claims previously replaced Connector Storage mounts at
-          // the same path. Preserve that precedence for captured bundles too.
+          // Selected Workflows take precedence over seed skills at the same path.
           ...args.seedSkillBundles.filter((bundle) => {
             return !workflowMountPaths.has(bundle.mountPath);
           }),
@@ -207,28 +206,28 @@ const signClaimedContentBundles$ = command(
 );
 
 export const withExecutionContentBundles$ = command(
-  async ({ set }, args: ClaimedContentBundlesInput, signal: AbortSignal) => {
-    const signed = await set(signClaimedContentBundles$, args, signal);
+  async ({ set }, args: ExecutionContentBundlesInput, signal: AbortSignal) => {
+    const signed = await set(signExecutionContentBundles$, args, signal);
     signal.throwIfAborted();
-    const responseBody = withContentBundleMounts(
-      args.responseBody,
+    const executionContext = withContentBundleMounts(
+      args.executionContext,
       signed.contentBundles,
     );
-    return { responseBody, cacheWrites: signed.cacheWrites };
+    return { executionContext, cacheWrites: signed.cacheWrites };
   },
 );
 
 function secretValuesForRunner(
-  storedContext: PreparedExecutionContext,
+  preparedContext: PreparedExecutionContext,
 ): string[] | null {
-  const keys = storedContext.secretValueEnvironmentKeys;
+  const keys = preparedContext.secretValueEnvironmentKeys;
   if (keys === null) {
     return null;
   }
 
   const environment = {
-    ...storedContext.environment,
-    ...storedContext.platformEnvironment,
+    ...preparedContext.environment,
+    ...preparedContext.platformEnvironment,
   };
   const secretValues: string[] = [];
   for (const key of keys) {
@@ -247,23 +246,23 @@ const prepareExecutionNetworkPolicyRefreshes$ = command(
     _context,
     args: {
       readonly run: ExecutionPublicationRun;
-      readonly storedContext: PreparedExecutionContext;
+      readonly preparedContext: PreparedExecutionContext;
       readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
     },
   ): Promise<
     Pick<ExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
   > => {
-    assertExecutionConnectorIdentity(args.run, args.storedContext);
+    assertExecutionConnectorIdentity(args.run, args.preparedContext);
     const builtinConnectorSlugs = [
       ...new Set(
-        args.storedContext.connectorRuntimeTargets.flatMap((target) => {
+        args.preparedContext.connectorRuntimeTargets.flatMap((target) => {
           return target.kind === "builtin" ? [target.connectorSlug] : [];
         }),
       ),
     ];
     if (builtinConnectorSlugs.length === 0) {
       return {
-        networkPolicies: args.storedContext.networkPolicies,
+        networkPolicies: args.preparedContext.networkPolicies,
         networkPolicyRefreshes: undefined,
       };
     }
@@ -281,7 +280,7 @@ const prepareExecutionNetworkPolicyRefreshes$ = command(
     );
     return {
       networkPolicies: mergeNetworkPolicyRefreshes(
-        args.storedContext.networkPolicies,
+        args.preparedContext.networkPolicies,
         refreshes,
       ),
       networkPolicyRefreshes: networkPolicyRefreshesRecord(refreshes),
@@ -291,11 +290,11 @@ const prepareExecutionNetworkPolicyRefreshes$ = command(
 
 function assertExecutionConnectorIdentity(
   run: ExecutionPublicationRun,
-  storedContext: PreparedExecutionContext,
+  preparedContext: PreparedExecutionContext,
 ): void {
   if (
     run.agentId === null &&
-    storedContext.connectorRuntimeTargets.length > 0
+    preparedContext.connectorRuntimeTargets.length > 0
   ) {
     throw new Error(
       "Runs without an agent cannot use connector runtime targets",
@@ -303,28 +302,28 @@ function assertExecutionConnectorIdentity(
   }
 }
 
-export function executionResponseBody(args: {
+export function executionContextBody(args: {
   readonly run: ExecutionPublicationRun;
   readonly reuseKey: string | null;
-  readonly storedContext: PreparedExecutionContext;
+  readonly preparedContext: PreparedExecutionContext;
   readonly secretValues: ExecutionContext["secretValues"];
   readonly refreshedPolicies: Pick<
     ExecutionContext,
     "networkPolicies" | "networkPolicyRefreshes"
   >;
-}): BaseExecutionResponse {
+}): BaseExecutionContext {
   const {
     secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
     customWorkflowSelection: _customWorkflowSelection,
     officialWorkflowBundles: _officialWorkflowBundles,
     seedSkillBundles: _seedSkillBundles,
     templateGuidanceBundles: _templateGuidanceBundles,
-    storageMounts: _storedStorageMounts,
+    storageMounts: _storageMounts,
     featureFlags: _featureFlags,
-    ...runnerStoredContext
-  } = args.storedContext;
+    ...runnerContext
+  } = args.preparedContext;
   return {
-    ...runnerStoredContext,
+    ...runnerContext,
     ...(args.run.isFirstRun === null
       ? {}
       : { isFirstRun: args.run.isFirstRun }),
@@ -334,11 +333,11 @@ export function executionResponseBody(args: {
     appendSystemPrompt: args.run.appendSystemPrompt,
     vars: mergeExecutionVars({
       runVars: runVarsSchema.parse(args.run.vars),
-      connectorVars: args.storedContext.vars,
+      connectorVars: args.preparedContext.vars,
     }),
     storageManifest: {
-      storageMounts: args.storedContext.storageMounts.map((storedMount) => {
-        const { orgId: _orgId, userId: _userId, ...mount } = storedMount;
+      storageMounts: args.preparedContext.storageMounts.map((storageMount) => {
+        const { orgId: _orgId, userId: _userId, ...mount } = storageMount;
         return mount;
       }),
     },
@@ -348,18 +347,18 @@ export function executionResponseBody(args: {
       args.run.orgId,
     ),
     secretValues: args.secretValues,
-    connectorRuntimeTargets: args.storedContext.connectorRuntimeTargets,
+    connectorRuntimeTargets: args.preparedContext.connectorRuntimeTargets,
     networkPolicies: args.refreshedPolicies.networkPolicies,
     networkPolicyRefreshes: args.refreshedPolicies.networkPolicyRefreshes,
   };
 }
 
-export const prepareExecutionResponse$ = command(
+export const prepareExecutionPublication$ = command(
   async (
     { set },
     args: {
       readonly run: ExecutionPublicationRun;
-      readonly storedContext: PreparedExecutionContext;
+      readonly preparedContext: PreparedExecutionContext;
       readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
     },
     signal: AbortSignal,
@@ -371,13 +370,13 @@ export const prepareExecutionResponse$ = command(
     >;
   }> => {
     // Fallible preparation must finish before durable direct dispatch ownership.
-    const secretValues = secretValuesForRunner(args.storedContext);
+    const secretValues = secretValuesForRunner(args.preparedContext);
     signal.throwIfAborted();
     const refreshedPolicies = await set(
       prepareExecutionNetworkPolicyRefreshes$,
       {
         run: args.run,
-        storedContext: args.storedContext,
+        preparedContext: args.preparedContext,
         networkPolicyInputs: args.networkPolicyInputs,
       },
     );

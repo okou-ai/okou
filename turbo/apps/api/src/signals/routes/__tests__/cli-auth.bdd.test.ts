@@ -1,4 +1,4 @@
-import { claimPublicToolRun } from "./helpers/public-tool-actor";
+import { launchPublicToolRun } from "./helpers/public-tool-actor";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { createPublicFirewallConnections } from "./helpers/public-firewall-connections";
@@ -459,12 +459,12 @@ describe("Codex auth.json through the personal model-provider API", () => {
     const { actor, paste, ownProvider } = codexActor();
     await publicPlanLifecycle(context, actor).update("active");
     await bdd.completeOnboarding(actor);
-    const run = await claimPublicToolRun(context, actor, onTestFinished);
+    const run = await launchPublicToolRun(context, actor, onTestFinished);
     ownProvider(run.providerId);
     const firewall = createFirewallApi(context);
     const cacheExpiry = async (sourceId: string) => {
       const response = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${run.claim.sandboxToken}` },
+        { authorization: `Bearer ${run.execution.sandboxToken}` },
         {
           encryptedSecrets: firewall.encryptedSecretsBody({}),
           authHeaders: {

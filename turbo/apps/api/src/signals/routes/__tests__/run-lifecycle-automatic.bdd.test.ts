@@ -214,16 +214,19 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         }
       });
       await api.heartbeatRunner(runnerGroup);
-      const claim = await api.executionInput(run.runId);
-      runOwner.sandboxToken = claim.sandboxToken;
-      const target = builtinConnectorRuntimeRegistration(claim, catalog.slug);
+      const execution = await api.executionInput(run.runId);
+      runOwner.sandboxToken = execution.sandboxToken;
+      const target = builtinConnectorRuntimeRegistration(
+        execution,
+        catalog.slug,
+      );
       expect(target.sourceId).toBe(connectionId);
       const discovery = await accept(
         setupApp({ context, routes: mcpConnectorsRoutes })(
           mcpConnectorsContract,
         ).list({
           headers: {
-            authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+            authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
           },
         }),
         [200],
@@ -235,18 +238,22 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           endpoint: catalog.endpoint,
         }),
       );
-      const firewall = builtinFirewallEntry(claim.firewalls, catalog.slug);
+      const firewall = builtinFirewallEntry(execution.firewalls, catalog.slug);
       expect(firewall).toMatchObject({
         kind: "builtin",
         name: catalog.slug,
         sourceId: connectionId,
       });
-      expect(JSON.stringify(claim)).not.toContain(
+      expect(JSON.stringify(execution)).not.toContain(
         "automatic-initial-access-token",
       );
-      expect(JSON.stringify(claim)).not.toContain("automatic-refresh-token");
-      expect(claim.environment).not.toHaveProperty("AUTOMATIC_ACCESS_TOKEN");
-      expect(claim.appendSystemPrompt).toContain(`\`${catalog.slug}\``);
+      expect(JSON.stringify(execution)).not.toContain(
+        "automatic-refresh-token",
+      );
+      expect(execution.environment).not.toHaveProperty(
+        "AUTOMATIC_ACCESS_TOKEN",
+      );
+      expect(execution.appendSystemPrompt).toContain(`\`${catalog.slug}\``);
       const checkClient = setupApp({ context, routes: connectorCheckRoutes })(
         connectorCheckContract,
       );
@@ -257,7 +264,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         connectorSlug: catalog.slug,
       };
       const checkHeaders = {
-        authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+        authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
       };
       for (const headers of [
         { authorization: "Bearer clerk-session" },
@@ -275,13 +282,13 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           },
         });
       }
-      if (!claim.encryptedSecrets) {
+      if (!execution.encryptedSecrets) {
         throw new Error(
           "Expected encrypted secrets from the authenticated Runner claim",
         );
       }
       const authBody = {
-        encryptedSecrets: claim.encryptedSecrets,
+        encryptedSecrets: execution.encryptedSecrets,
         authHeaders: catalog.firewallAuthHeaders,
         matchedFirewall: {
           name: catalog.slug,
@@ -293,7 +300,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         },
       };
       const resolved = await fw.requestFirewallAuth(
-        { authorization: `Bearer ${claim.sandboxToken}` },
+        { authorization: `Bearer ${execution.sandboxToken}` },
         authBody,
         [200],
       );
@@ -328,7 +335,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         });
         expect(updated).not.toHaveProperty("firewall");
         const mismatched = await fw.requestFirewallAuth(
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${execution.sandboxToken}` },
           authBody,
           [424],
         );

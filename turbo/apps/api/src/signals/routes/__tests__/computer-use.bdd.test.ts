@@ -147,7 +147,7 @@ function createScenario() {
       return args.runs.heartbeatRunner(args.runnerGroup);
     });
     const runId = input.runId;
-    const claim = await scenario.claimExisting(args.actor, runId);
+    const claim = await scenario.executionInput(args.actor, runId);
     expect(claim.prompt).toContain(args.prompt);
     const log = await scenario.run(() => {
       return createRunReadsApi(context).requestReadLogById(
@@ -175,7 +175,7 @@ function createScenario() {
 
   async function createAuthorizationScenario(actor: ApiTestUser) {
     const chat = createChatFilesBddApi(context);
-    const run = await scenario.claim(actor);
+    const run = await scenario.launchRun(actor);
     const token = run.token;
     mockClerkMembership(context, actor, "org:admin");
     const created = await api.createComputerUseAuthorizationRequest({
@@ -731,7 +731,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
       return scenario.run(async () => {
         const orgId = `org_${randomUUID()}`;
         const actor = bdd.user({ orgId });
-        const run = await scenario.claim(actor);
+        const run = await scenario.launchRun(actor);
         const base = now();
         mockNow(base);
         const staleHost = await api.startComputerUseHost(actor, {
@@ -1346,7 +1346,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         });
         mockClerkMembership(context, actor, "org:admin");
 
-        const bound = await scenario.claim(actor, host.hostId);
+        const bound = await scenario.launchRun(actor, host.hostId);
         const listed = await api.listComputerUseHosts({ bearer: bound.token });
         expect(listed.hosts).toHaveLength(1);
         expect(listed.hosts[0]).toMatchObject({
@@ -1355,7 +1355,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
           supportedCapabilities: ["app.state"],
         });
 
-        const unbound = await scenario.claim(actor);
+        const unbound = await scenario.launchRun(actor);
         const rejected = await api.requestListComputerUseHosts(
           { bearer: unbound.token },
           [403],
@@ -1523,7 +1523,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
 
         const missingCapability = await api.requestCreateComputerUseReadCommand(
           {
-            bearer: (await scenario.claim(actor)).token,
+            bearer: (await scenario.launchRun(actor)).token,
           },
           { kind: "apps.list" },
           [403],
@@ -1533,7 +1533,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
           "Computer Use is not authorized for this run. Authorize a computer once in the conversation, then retry.",
         );
 
-        const granted = await scenario.claim(actor, hostB.hostId);
+        const granted = await scenario.launchRun(actor, hostB.hostId);
         const readCreated = await api.createComputerUseReadCommand(
           { bearer: granted.token },
           { kind: "apps.list" },
@@ -1664,7 +1664,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
           JSON.stringify(audit.auditEvents[0]?.redactedResult),
         ).not.toContain("<app_state>");
 
-        const grantedOffline = await scenario.claim(actor, hostA.hostId);
+        const grantedOffline = await scenario.launchRun(actor, hostA.hostId);
         mockNow(base + 182_000);
         const idleB = await api.claimNextComputerUseCommand(hostB.connection);
         expect(idleB.status).toBe("idle");

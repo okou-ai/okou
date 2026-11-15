@@ -131,7 +131,7 @@ describe("Independent finalizing resource dispatch", () => {
         next.runId,
         resource === "other-profile-home" ? f.runnerId : ready.runnerId,
       );
-      const input = await f.owned.claimRunnerRun(next.runId);
+      const input = await f.owned.executionInput(next.runId);
       expect(input.nativeContinuation).toMatchObject({
         sessionId: null,
         generationRunId: null,
@@ -166,7 +166,7 @@ describe("Independent finalizing resource dispatch", () => {
       });
       const next = await continuation(f, "gpt-6-astra");
       await expectOwner(f, next.runId, f.runnerId);
-      const input = await f.owned.claimRunnerRun(next.runId);
+      const input = await f.owned.executionInput(next.runId);
       expect(input.cliAgentType).toBe("codex");
     },
   );
@@ -186,7 +186,7 @@ describe("Independent finalizing resource dispatch", () => {
     });
     const next = await continuation(f);
     await expectOwner(f, next.runId, f.runnerId);
-    const input = await f.owned.claimRunnerRun(next.runId);
+    const input = await f.owned.executionInput(next.runId);
     expect(input.nativeContinuation).toMatchObject({
       sessionId: null,
       generationRunId: null,
@@ -259,7 +259,7 @@ describe("Independent finalizing resource dispatch", () => {
         other.heartbeatGeneration,
       );
       expect(
-        (await f.owned.claimRunnerRun(next.runId)).isFirstRun,
+        (await f.owned.executionInput(next.runId)).isFirstRun,
       ).toBeTruthy();
     });
   });
@@ -310,7 +310,7 @@ describe("Independent finalizing resource dispatch", () => {
       });
     });
     await expectOwner(f, next.runId, f.runnerId);
-    const input = await f.owned.claimRunnerRun(next.runId);
+    const input = await f.owned.executionInput(next.runId);
     expect(next.status).toBe("running");
     await f.owned.run(async () => {
       await createWebhookCallbackApi(context).requestAgentComplete(

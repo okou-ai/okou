@@ -26,7 +26,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   createChatEventsFixture,
-  okouTokenFromClaim,
+  okouTokenFromExecution,
 } from "./helpers/chat-events-fixture";
 import {
   cronCleanupSuggestionsContract,
@@ -164,14 +164,14 @@ async function primaryRun(
     model: "claude-fable-5-1",
     prompt: "Curate useful suggestions",
   });
-  const claim = await runs.executionInput(run.runId);
+  const execution = await runs.executionInput(run.runId);
   return {
     actor: { ...actor, orgId: actor.orgId },
     agentId,
     runnerGroup,
     feedbackObjects,
-    headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
-    prompt: claim.appendSystemPrompt ?? "",
+    headers: { authorization: `Bearer ${okouTokenFromExecution(execution)}` },
+    prompt: execution.appendSystemPrompt ?? "",
   };
 }
 const feedbackContextSchema = object({
@@ -285,10 +285,10 @@ async function feedbackContext(
   const json = run.appendSystemPrompt?.match(/^(\{"asOf":.*\})$/mu)?.[1];
   expect(json).toBeDefined();
   const parsed = feedbackContextSchema.parse(JSON.parse(json ?? ""));
-  const claim = await runs.executionInput(runId);
+  const execution = await runs.executionInput(runId);
   await createChatEventsFixture(context).failChatRun(
     runId,
-    { authorization: `Bearer ${claim.sandboxToken}` },
+    { authorization: `Bearer ${execution.sandboxToken}` },
     "Feedback context inspected",
   );
   await flushWaitUntilForTest();

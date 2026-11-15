@@ -8,7 +8,7 @@ import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import {
   createChatEventsFixture,
-  claimEnvironment,
+  executionEnvironment,
 } from "./helpers/chat-events-fixture";
 
 const context = testContext();
@@ -17,7 +17,7 @@ const {
   chat,
   entitledNativeChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   cancelChatRun,
   sessionHeaders,
   threadPiAutomationsClient,
@@ -34,10 +34,9 @@ describe("personal native subscription activation", () => {
       const {
         actor,
         agentId,
-        runnerGroup,
         run: own,
         ownsFeatureSwitches,
-        claimChatRun,
+        runExecution,
       } = await publicChatActor(context, {
         tier: source === "event" ? "team" : "pro",
       });
@@ -93,13 +92,12 @@ describe("personal native subscription activation", () => {
         }
         const runId = await lastThreadPiAutomationRun(actor, threadId);
         await flushWaitUntilForTest();
-        const { claim, sandboxHeaders } = await claimChatRun(
-          runnerGroup,
-          runId,
-        );
-        expect(claim.cliAgentType).toBe("claude-code");
-        expect(claim.piModelConfig).toBeUndefined();
-        expect(claimEnvironment(claim).CLAUDE_CODE_OAUTH_TOKEN).toBeTruthy();
+        const { execution, sandboxHeaders } = await runExecution(runId);
+        expect(execution.cliAgentType).toBe("claude-code");
+        expect(execution.piModelConfig).toBeUndefined();
+        expect(
+          executionEnvironment(execution).CLAUDE_CODE_OAUTH_TOKEN,
+        ).toBeTruthy();
         await expect(api.readRun(actor, runId)).resolves.toMatchObject({
           source: {
             model: "claude-fable-5-1",
@@ -132,19 +130,18 @@ describe("personal native subscription activation", () => {
   );
 
   it("keeps official Claude member subscription credentials on Claude Code with Pi enabled", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const run = await sendChatRun(actor, {
       agentId,
       model: "claude-fable-5-1",
       prompt: "retain official Claude subscription ownership",
     });
-    const { claim, sandboxHeaders } = await claimChatRun(
-      runnerGroup,
-      run.runId,
-    );
-    expect(claim.cliAgentType).toBe("claude-code");
-    expect(claim.piModelConfig).toBeUndefined();
-    expect(claimEnvironment(claim).CLAUDE_CODE_OAUTH_TOKEN).toBeTruthy();
+    const { execution, sandboxHeaders } = await runExecution(run.runId);
+    expect(execution.cliAgentType).toBe("claude-code");
+    expect(execution.piModelConfig).toBeUndefined();
+    expect(
+      executionEnvironment(execution).CLAUDE_CODE_OAUTH_TOKEN,
+    ).toBeTruthy();
     await cancelChatRun(actor, run.runId, sandboxHeaders);
   }, 90_000);
 });

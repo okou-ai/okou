@@ -36,7 +36,7 @@ function seedSkillRows(builder: QueryBuilder) {
     .where(inArray(skillCatalog.url, SEED_SKILLS.map(resolveSkillRef)));
 }
 
-/** One statement snapshot makes every global read gate enqueue with the catalog. */
+/** Read execution-wide configuration and the model catalog in one snapshot. */
 export function createGlobalModelContext() {
   const keys = {
     id: builtInModelKeys.id,

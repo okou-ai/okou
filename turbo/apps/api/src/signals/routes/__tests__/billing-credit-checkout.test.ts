@@ -16,7 +16,7 @@ const {
   TEST_PRICE_CUSTOM_CREDIT_UNIT,
   setTierPrices,
   currentSecond,
-  claimAgentToken,
+  issueAgentToken,
   createOrgFixture,
   createSubscriptionOrg,
   createPublicBillingOrg,
@@ -1004,7 +1004,7 @@ describe("POST /api/billing/credit-checkout", () => {
 
   it("creates credit checkout with a real claim-issued agent token", async () => {
     const fixture = await createSubscriptionOrg({ tier: "pro" });
-    const token = await claimAgentToken(fixture);
+    const token = await issueAgentToken(fixture);
     const customerId = fixture.customerId;
     context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
       url: "https://checkout.stripe.com/session/zero-credit",

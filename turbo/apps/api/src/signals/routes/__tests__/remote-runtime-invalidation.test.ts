@@ -11,7 +11,7 @@ import { runnerSshRoutes } from "../runner-ssh";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createBddApi } from "./helpers/api-bdd";
-import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
+import { createSshExecutionApi } from "./helpers/ssh-execution";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import {
@@ -26,7 +26,7 @@ const context = testContext();
 const vnc = createVncRuntimeApi(context);
 const runs = createRunsApi(context);
 const bdd = createBddApi(context);
-const claimed = createClaimedSshRuntimeApi(context, {
+const claimed = createSshExecutionApi(context, {
   runnerHeaders: vncRunnerHeaders,
   authenticate: vnc.authenticate,
 });

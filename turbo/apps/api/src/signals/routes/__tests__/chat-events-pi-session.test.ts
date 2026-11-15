@@ -7,7 +7,7 @@ import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import {
   createChatEventsFixture,
   GPT_PI_BDD_MODELS,
-  claimEnvironment,
+  executionEnvironment,
   eventBackedContents,
   assistantEvent,
 } from "./helpers/chat-events-fixture";
@@ -32,8 +32,7 @@ describe("CHAT-02: personal subscription model selection", () => {
       run: own,
       actor,
       agentId,
-      runnerGroup,
-      claimChatRun,
+      runExecution,
       sendChatRun,
     } = await publicChatActor(context);
     await own(async () => {
@@ -54,21 +53,23 @@ describe("CHAT-02: personal subscription model selection", () => {
       });
       threadId = run.threadId;
       await flushWaitUntilForTest();
-      const claim = await claimChatRun(runnerGroup, run.runId);
-      expect(claim.claim.piModelConfig).toMatchObject({ model });
+      const execution = await runExecution(run.runId);
+      expect(execution.execution.piModelConfig).toMatchObject({ model });
       if (index === 0) {
-        expect(claim.claim.piSessionId).toBe(run.threadId);
-        expect(claim.claim.piModelConfig).toMatchObject({
+        expect(execution.execution.piSessionId).toBe(run.threadId);
+        expect(execution.execution.piModelConfig).toMatchObject({
           thinkingLevel:
             model === "gpt-6-luna" || model === "gpt-6.1-sol" ? "xhigh" : "max",
         });
-        expect(claim.claim.piModelConfig).not.toHaveProperty("serviceTier");
+        expect(execution.execution.piModelConfig).not.toHaveProperty(
+          "serviceTier",
+        );
       }
       await own(async () => {
         return await completeSandboxFirstPiRun({
           actor,
           run,
-          claim,
+          execution,
           historyObjects,
           prompt: `continue with ${model}`,
           answer: `answer ${index + 1}`,
@@ -93,8 +94,7 @@ describe("CHAT-02: personal subscription model selection", () => {
       run: own,
       actor,
       agentId,
-      runnerGroup,
-      claimChatRun,
+      runExecution,
       sendChatRun,
     } = await publicChatActor(context);
     const orgId = actor.orgId;
@@ -124,7 +124,7 @@ describe("CHAT-02: personal subscription model selection", () => {
       return await completeSandboxFirstPiRun({
         actor,
         run: firstPi,
-        claim: await claimChatRun(runnerGroup, firstPi.runId),
+        execution: await runExecution(firstPi.runId),
         historyObjects,
         prompt: firstPiPrompt,
         answer: firstPiAnswer,
@@ -149,25 +149,26 @@ describe("CHAT-02: personal subscription model selection", () => {
     const firstCodexRun = await api.readRun(actor, firstCodex.runId);
     expect(firstCodexRun.appendSystemPrompt).not.toContain(firstPiPrompt);
     expect(firstCodexRun.appendSystemPrompt).not.toContain(firstPiAnswer);
-    const firstCodexClaim = await claimChatRun(runnerGroup, firstCodex.runId);
-    expect(firstCodexClaim.claim.cliAgentType).toBe("codex");
+    const firstCodexExecution = await runExecution(firstCodex.runId);
+    expect(firstCodexExecution.execution.cliAgentType).toBe("codex");
     expect(
-      claimEnvironment(firstCodexClaim.claim).OKOU_CODEX_SERVICE_TIER,
+      executionEnvironment(firstCodexExecution.execution)
+        .OKOU_CODEX_SERVICE_TIER,
     ).toBe("fast");
-    expect(firstCodexClaim.claim.piLaunchConfig).toBeUndefined();
+    expect(firstCodexExecution.execution.piLaunchConfig).toBeUndefined();
 
-    expect(firstCodexClaim.claim.nativeContinuation).toMatchObject({
+    expect(firstCodexExecution.execution.nativeContinuation).toMatchObject({
       sessionId: null,
       generationRunId: null,
     });
-    expect(firstCodexClaim.claim.nativeContinuation?.recoveryPrompt).toContain(
-      "okou chat messages --output-dir /tmp/okou-chat-history",
-    );
+    expect(
+      firstCodexExecution.execution.nativeContinuation?.recoveryPrompt,
+    ).toContain("okou chat messages --output-dir /tmp/okou-chat-history");
     chatCallbacks.mockChatOutputEvents([assistantEvent(0, firstCodexAnswer)]);
     await own(async () => {
       return await completeChatRunOk(
         firstCodex.runId,
-        firstCodexClaim.sandboxHeaders,
+        firstCodexExecution.sandboxHeaders,
         {
           cliAgentType: "codex",
           lastEventSequence: 0,
@@ -194,16 +195,16 @@ describe("CHAT-02: personal subscription model selection", () => {
       model: piModel,
     });
     await flushWaitUntilForTest();
-    const returnedPiClaim = await claimChatRun(runnerGroup, returnedPi.runId);
+    const returnedPiExecution = await runExecution(returnedPi.runId);
 
-    expect(returnedPiClaim.claim.prompt).toBe(returnedPiPrompt);
-    expect(returnedPiClaim.claim.nativeContinuation).toMatchObject({
+    expect(returnedPiExecution.execution.prompt).toBe(returnedPiPrompt);
+    expect(returnedPiExecution.execution.nativeContinuation).toMatchObject({
       sessionId: null,
       generationRunId: null,
     });
-    expect(returnedPiClaim.claim.nativeContinuation?.recoveryPrompt).toContain(
-      "okou chat messages --output-dir /tmp/okou-chat-history",
-    );
+    expect(
+      returnedPiExecution.execution.nativeContinuation?.recoveryPrompt,
+    ).toContain("okou chat messages --output-dir /tmp/okou-chat-history");
     const returnedPiRun = await api.readRun(actor, returnedPi.runId);
     for (const prior of [
       firstPiPrompt,
@@ -212,13 +213,15 @@ describe("CHAT-02: personal subscription model selection", () => {
       firstCodexAnswer,
     ]) {
       expect(returnedPiRun.appendSystemPrompt).not.toContain(prior);
-      expect(returnedPiClaim.claim.appendSystemPrompt).not.toContain(prior);
+      expect(returnedPiExecution.execution.appendSystemPrompt).not.toContain(
+        prior,
+      );
     }
     await own(async () => {
       return await completeSandboxFirstPiRun({
         actor,
         run: returnedPi,
-        claim: returnedPiClaim,
+        execution: returnedPiExecution,
         historyObjects,
         prompt: returnedPiPrompt,
         answer: returnedPiAnswer,
@@ -238,21 +241,21 @@ describe("CHAT-02: personal subscription model selection", () => {
     const piFollowUpAppend = piFollowUpRun.appendSystemPrompt ?? "";
     expect(piFollowUpAppend).not.toContain(firstPiPrompt);
     expect(piFollowUpAppend).not.toContain(firstCodexPrompt);
-    const piFollowUpClaim = await claimChatRun(runnerGroup, piFollowUp.runId);
+    const piFollowUpExecution = await runExecution(piFollowUp.runId);
 
-    expect(piFollowUpClaim.claim.nativeContinuation).toMatchObject({
+    expect(piFollowUpExecution.execution.nativeContinuation).toMatchObject({
       sessionId: firstPi.threadId,
       generationRunId: returnedPi.runId,
     });
-    expect(piFollowUpClaim.claim.piSessionId).toBe(firstPi.threadId);
-    expect(piFollowUpClaim.claim.piLaunchConfig).toMatchObject({
+    expect(piFollowUpExecution.execution.piSessionId).toBe(firstPi.threadId);
+    expect(piFollowUpExecution.execution.piLaunchConfig).toMatchObject({
       schemaVersion: 2,
     });
     await own(async () => {
       return await cancelChatRun(
         actor,
         piFollowUp.runId,
-        piFollowUpClaim.sandboxHeaders,
+        piFollowUpExecution.sandboxHeaders,
       );
     });
 
@@ -265,15 +268,13 @@ describe("CHAT-02: personal subscription model selection", () => {
       model: "gpt-6-astra",
       runOptions: { codexServiceTier: "fast" },
     });
-    const repeatedCodexClaim = await claimChatRun(
-      runnerGroup,
-      repeatedCodex.runId,
-    );
-    expect(repeatedCodexClaim.claim.cliAgentType).toBe("codex");
+    const repeatedCodexExecution = await runExecution(repeatedCodex.runId);
+    expect(repeatedCodexExecution.execution.cliAgentType).toBe("codex");
     expect(
-      claimEnvironment(repeatedCodexClaim.claim).OKOU_CODEX_SERVICE_TIER,
+      executionEnvironment(repeatedCodexExecution.execution)
+        .OKOU_CODEX_SERVICE_TIER,
     ).toBe("fast");
-    expect(repeatedCodexClaim.claim.piLaunchConfig).toBeUndefined();
+    expect(repeatedCodexExecution.execution.piLaunchConfig).toBeUndefined();
 
     const repeatedCodexRun = await api.readRun(actor, repeatedCodex.runId);
     expect(repeatedCodexRun.appendSystemPrompt).toContain(piFollowUpPrompt);
@@ -284,7 +285,7 @@ describe("CHAT-02: personal subscription model selection", () => {
     await own(async () => {
       return await completeChatRunOk(
         repeatedCodex.runId,
-        repeatedCodexClaim.sandboxHeaders,
+        repeatedCodexExecution.sandboxHeaders,
         { cliAgentType: "codex", lastEventSequence: 0 },
       );
     });
@@ -308,9 +309,9 @@ describe("CHAT-02: personal subscription model selection", () => {
       model: piModel,
     });
     await flushWaitUntilForTest();
-    const repeatedPiClaim = await claimChatRun(runnerGroup, repeatedPi.runId);
+    const repeatedPiExecution = await runExecution(repeatedPi.runId);
 
-    expect(repeatedPiClaim.claim.prompt).toBe(repeatedPiPrompt);
+    expect(repeatedPiExecution.execution.prompt).toBe(repeatedPiPrompt);
     const repeatedPiRun = await api.readRun(actor, repeatedPi.runId);
     const repeatedPiAppend = repeatedPiRun.appendSystemPrompt ?? "";
     for (const prior of [
@@ -324,21 +325,23 @@ describe("CHAT-02: personal subscription model selection", () => {
       repeatedCodexAnswer,
     ]) {
       expect(repeatedPiAppend).not.toContain(prior);
-      expect(repeatedPiClaim.claim.appendSystemPrompt).not.toContain(prior);
+      expect(repeatedPiExecution.execution.appendSystemPrompt).not.toContain(
+        prior,
+      );
     }
     expect(repeatedPiAppend).not.toContain(piFollowUpPrompt);
-    expect(repeatedPiClaim.claim.nativeContinuation).toMatchObject({
+    expect(repeatedPiExecution.execution.nativeContinuation).toMatchObject({
       sessionId: null,
       generationRunId: null,
     });
-    expect(repeatedPiClaim.claim.nativeContinuation?.recoveryPrompt).toContain(
-      "okou chat messages --output-dir /tmp/okou-chat-history",
-    );
+    expect(
+      repeatedPiExecution.execution.nativeContinuation?.recoveryPrompt,
+    ).toContain("okou chat messages --output-dir /tmp/okou-chat-history");
     await own(async () => {
       return await completeSandboxFirstPiRun({
         actor,
         run: repeatedPi,
-        claim: repeatedPiClaim,
+        execution: repeatedPiExecution,
         historyObjects,
         prompt: repeatedPiPrompt,
         answer: repeatedPiAnswer,

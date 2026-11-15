@@ -1,4 +1,4 @@
-import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
+import { createSshExecutionApi } from "./helpers/ssh-execution";
 import { inlineSshKey, sshCredentialId } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 
@@ -121,7 +121,7 @@ interface Fixture extends Owner {
   readonly credentialId: string;
 }
 
-const ordinary = createClaimedSshRuntimeApi(context, {
+const ordinary = createSshExecutionApi(context, {
   runnerHeaders,
   authenticate,
 });
@@ -224,7 +224,7 @@ function useClaimedFixture() {
     claimedRunCleanups.push(async () => {
       await runs.requestCancelRun(actor, runId, [200]);
       await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId: runId, exitCode: 137 },
+        { runId, exitCode: 137 },
         { authorization: `Bearer ${input.sandboxToken}` },
         [200],
       );
@@ -496,7 +496,7 @@ function createPublicHostApi() {
       userId: `user_ssh_public_${randomUUID()}`,
     };
     const run = await selectedRuns.start(owner);
-    const claimed = await selectedRuns.claim(run, runnerHeaders);
+    const claimed = await selectedRuns.executionInput(run, runnerHeaders);
     authenticate(owner);
     const connection = await accept(
       config().create({
@@ -1362,7 +1362,7 @@ describe("official Runner SSH authority", () => {
     expect(kms.decryptCalls).toBe(0);
     for (const status of ["completed", "cancelled", "failed"] as const) {
       const run = await selected.runs.start(f);
-      const claimed = await selected.runs.claim(run, runnerHeaders);
+      const claimed = await selected.runs.executionInput(run, runnerHeaders);
       await selected.runs.finish(claimed, status);
       kms = useSecretKmsProbe();
       await expect(resolve({ ...f, ...claimed })).resolves.toStrictEqual({
@@ -1395,7 +1395,7 @@ describe("official Runner SSH authority", () => {
     );
     await enableHostDefault(owner, connection.body.id);
     const run = await publicRuns.start(owner, "automation-event");
-    const runtime = await publicRuns.claim(run, runnerHeaders);
+    const runtime = await publicRuns.executionInput(run, runnerHeaders);
     const f = {
       ...runtime,
       connectionId: connection.body.id,

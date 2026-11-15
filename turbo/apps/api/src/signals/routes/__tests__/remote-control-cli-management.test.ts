@@ -14,7 +14,7 @@ import { mockEnv } from "../../../lib/env";
 import { cliAuthRoutes } from "../cli-auth";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { vncConnectionsRoutes } from "../vnc-connections";
-import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
+import { createSshExecutionApi } from "./helpers/ssh-execution";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
@@ -84,7 +84,7 @@ async function personalHeaders(actor: Owner) {
   return { authorization: `Bearer ${issued.body.access_token}` };
 }
 
-const claimed = createClaimedSshRuntimeApi(context, {
+const claimed = createSshExecutionApi(context, {
   runnerHeaders: { authorization: `Bearer vm0_official_${runnerSecret}` },
   authenticate,
 });
