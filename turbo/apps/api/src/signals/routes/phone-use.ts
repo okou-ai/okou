@@ -170,7 +170,11 @@ const runGrant$ = command(async ({ get }, signal: AbortSignal) => {
     );
   }
   const [grant] = await get(db$)
-    .select({ id: grants.id, deviceId: grants.deviceId })
+    .select({
+      id: grants.id,
+      deviceId: grants.deviceId,
+      sessionId: devices.sessionId,
+    })
     .from(grants)
     .innerJoin(
       devices,
@@ -202,7 +206,15 @@ const runGrant$ = command(async ({ get }, signal: AbortSignal) => {
   if (!grant) {
     deny("This Run no longer has an active Phone Use grant");
   }
-  return { ...grant, runId: auth.runId };
+  const valid = await verifyClerkComputerUseSession(
+    { userId: auth.userId, orgId: auth.orgId, sessionId: grant.sessionId },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!valid) {
+    deny("The owner's Phone Use session has ended");
+  }
+  return { id: grant.id, deviceId: grant.deviceId, runId: auth.runId };
 });
 function deviceView(value: typeof devices.$inferSelect) {
   return {
@@ -392,7 +404,11 @@ const chats$ = command(async ({ get }, signal: AbortSignal) => {
     .where(
       and(eq(chatThreads.userId, auth.userId), eq(agents.orgId, auth.orgId)),
     )
-    .orderBy(desc(chatThreads.createdAt))
+    .orderBy(
+      desc(
+        sql`coalesce(${chatThreads.lastMessageAt}, ${chatThreads.createdAt})`,
+      ),
+    )
     .limit(30);
   signal.throwIfAborted();
   return { status: 200 as const, body: { chats: rows } };
@@ -619,6 +635,38 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
     body.data.generation,
     signal,
   );
+  if (body.data.activeRunId) {
+    const [active] = await get(db$)
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .innerJoin(
+        grants,
+        and(
+          eq(grants.threadId, agentRuns.chatThreadId),
+          eq(grants.deviceId, device.id),
+          eq(grants.deviceGeneration, device.generation),
+        ),
+      )
+      .where(
+        and(
+          eq(agentRuns.id, body.data.activeRunId),
+          eq(agentRuns.userId, device.userId),
+          eq(agentRuns.orgId, device.orgId),
+          eq(agentRuns.status, "running"),
+          body.data.activeGrantId
+            ? eq(grants.id, body.data.activeGrantId)
+            : undefined,
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!active) {
+      return {
+        status: 200 as const,
+        body: { operation: null, sessionEnded: true },
+      };
+    }
+  }
   if (!device.ready) {
     return { status: 200 as const, body: { operation: null } };
   }
@@ -750,9 +798,17 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     .update(operations)
     .set({
       status: result.status,
-      result: result.data,
+      result: {
+        ...result.data,
+        ...(screenshotKey || row.screenshotKey
+          ? {
+              screenshotPhase:
+                row.action.kind === "observe" ? "observation" : "before_input",
+            }
+          : {}),
+      },
       error: result.error ?? null,
-      screenshotKey: screenshotKey ?? null,
+      screenshotKey: screenshotKey ?? row.screenshotKey,
       completedAt: nowDate(),
     })
     .where(

@@ -240,6 +240,22 @@ test(
         [403],
       );
     });
+    const retired = await scenario.run(async () => {
+      authenticate(actor.userId, staffOrg, sessionId);
+      return await accept(
+        client.next({
+          headers,
+          params,
+          body: {
+            generation,
+            activeRunId: run.runId,
+            activeGrantId: submitted.body.grantId,
+          },
+        }),
+        [200],
+      );
+    });
+    expect(retired.body).toMatchObject({ operation: null, sessionEnded: true });
     const stale = await scenario.run(() => {
       return accept(
         client.create({

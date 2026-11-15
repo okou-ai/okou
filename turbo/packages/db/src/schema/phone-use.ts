@@ -28,13 +28,15 @@ export const phoneUseDevices = pgTable(
     lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (table) => {return [
-    uniqueIndex("phone_use_device_installation").on(
-      table.orgId,
-      table.userId,
-      table.installationId,
-    ),
-  ]},
+  (table) => {
+    return [
+      uniqueIndex("phone_use_device_installation").on(
+        table.orgId,
+        table.userId,
+        table.installationId,
+      ),
+    ];
+  },
 );
 export const phoneUseGrants = pgTable(
   "phone_use_grants",
@@ -44,20 +46,32 @@ export const phoneUseGrants = pgTable(
     userId: text("user_id").notNull(),
     threadId: uuid("thread_id")
       .notNull()
-      .references(() => {return chatThreads.id}, { onDelete: "cascade" }),
+      .references(
+        () => {
+          return chatThreads.id;
+        },
+        { onDelete: "cascade" },
+      ),
     deviceId: uuid("device_id")
       .notNull()
-      .references(() => {return phoneUseDevices.id}, { onDelete: "cascade" }),
+      .references(
+        () => {
+          return phoneUseDevices.id;
+        },
+        { onDelete: "cascade" },
+      ),
     deviceGeneration: integer("device_generation").notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (table) => {return [
-    uniqueIndex("phone_use_grant_chat_owner").on(
-      table.orgId,
-      table.userId,
-      table.threadId,
-    ),
-  ]},
+  (table) => {
+    return [
+      uniqueIndex("phone_use_grant_chat_owner").on(
+        table.orgId,
+        table.userId,
+        table.threadId,
+      ),
+    ];
+  },
 );
 export const phoneUseOperations = pgTable(
   "phone_use_operations",
@@ -69,7 +83,12 @@ export const phoneUseOperations = pgTable(
     grantId: uuid("grant_id").notNull(),
     deviceId: uuid("device_id")
       .notNull()
-      .references(() => {return phoneUseDevices.id}, { onDelete: "cascade" }),
+      .references(
+        () => {
+          return phoneUseDevices.id;
+        },
+        { onDelete: "cascade" },
+      ),
     action: jsonb("action").$type<PhoneUseObject>().notNull(),
     payloadHash: text("payload_hash").notNull(),
     status: text("status").notNull().default("queued"),
@@ -81,13 +100,15 @@ export const phoneUseOperations = pgTable(
     expiresAt: timestamp("expires_at").notNull(),
     completedAt: timestamp("completed_at"),
   },
-  (table) => {return [
-    index("phone_use_operations_device_status").on(
-      table.deviceId,
-      table.status,
-    ),
-    uniqueIndex("phone_use_running_operation")
-      .on(table.deviceId)
-      .where(sql`status = 'running'`),
-  ]},
+  (table) => {
+    return [
+      index("phone_use_operations_device_status").on(
+        table.deviceId,
+        table.status,
+      ),
+      uniqueIndex("phone_use_running_operation")
+        .on(table.deviceId)
+        .where(sql`status = 'running'`),
+    ];
+  },
 );

@@ -39,8 +39,9 @@ export const phoneActionSchema = object({
 })
   .strict()
   .superRefine((value, context) => {
-    const invalid = (message: string) =>
-      {return context.addIssue({ code: "custom", message })};
+    const invalid = (message: string) => {
+      return context.addIssue({ code: "custom", message });
+    };
     if (value.kind === "session.start" && !value.goal)
       invalid("A concrete task goal is required");
     if (value.kind === "app.open" && !value.app) invalid("app is required");
@@ -209,10 +210,16 @@ export const phoneUseContract = c.router({
     method: "POST",
     path: "/api/phone-use/devices/:deviceId/next",
     pathParams: devicePath,
-    body: authority,
+    body: authority.extend({
+      activeRunId: uuid().optional(),
+      activeGrantId: uuid().optional(),
+    }),
     responses: {
       ...errors,
-      200: object({ operation: phoneOperationSchema.nullable() }),
+      200: object({
+        operation: phoneOperationSchema.nullable(),
+        sessionEnded: boolean().optional(),
+      }),
     },
   },
   validate: {
