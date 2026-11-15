@@ -76,7 +76,12 @@ data class UpdateUiState(
     val sdk: Int = Int.MAX_VALUE,
 ) {
     val release
-        get() = target ?: info?.release
+        get() =
+            when (transfer) {
+                UpdateTransfer.Downloading,
+                UpdateTransfer.Ready -> target
+                else -> info?.release
+            }
 
     val available
         get() =

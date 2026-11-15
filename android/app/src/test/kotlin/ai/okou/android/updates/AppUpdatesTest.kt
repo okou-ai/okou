@@ -74,6 +74,49 @@ internal class ControlledUpdates : UpdateService {
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppUpdatesTest {
     @Test
+    fun discoveryRetainsActiveTransfersAndRetriesTheLatestReleaseAfterFailure() = runTest {
+        val service = ControlledUpdates()
+        val owner =
+            AppUpdates(
+                service,
+                MemoryUpdateStore(),
+                "0.12.0",
+                35,
+                StandardTestDispatcher(testScheduler),
+            )
+        try {
+            owner.check()
+            advanceUntilIdle()
+            owner.download()
+            runCurrent()
+            service.response = AndroidUpdates(true, null, updateRelease("0.14.0"))
+            owner.check()
+            advanceUntilIdle()
+            assertEquals("0.13.0", owner.state.value.release!!.version)
+            assertEquals(UpdateTransfer.Downloading, owner.state.value.transfer)
+            service.transfer.completeExceptionally(IOException("The old download is unavailable"))
+            advanceUntilIdle()
+            assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
+            assertEquals("0.14.0", owner.state.value.release!!.version)
+            service.transfer = CompletableDeferred()
+            owner.download()
+            runCurrent()
+            assertEquals("0.14.0", owner.state.value.target!!.version)
+            assertEquals(UpdateTransfer.Downloading, owner.state.value.transfer)
+            service.transfer.complete(File("new.apk"))
+            advanceUntilIdle()
+            service.response = AndroidUpdates(true, null, updateRelease("0.15.0"))
+            owner.check()
+            advanceUntilIdle()
+            assertEquals(UpdateTransfer.Ready, owner.state.value.transfer)
+            assertEquals("0.14.0", owner.state.value.release!!.version)
+        } finally {
+            owner.close()
+            runCurrent()
+        }
+    }
+
+    @Test
     fun obsoleteInstallVerificationCannotFailANewerDownload() = runTest {
         val service = ControlledUpdates()
         val owner =
@@ -266,14 +309,24 @@ class AppUpdatesTest {
                     35,
                     StandardTestDispatcher(testScheduler),
                 )
-            advanceUntilIdle()
-            assertTrue(owner.state.value.required)
-            assertEquals(
-                if (complete) UpdateTransfer.Ready else UpdateTransfer.Interrupted,
-                owner.state.value.transfer,
-            )
-            owner.close()
-            runCurrent()
+            try {
+                advanceUntilIdle()
+                assertTrue(owner.state.value.required)
+                assertEquals(
+                    if (complete) UpdateTransfer.Ready else UpdateTransfer.Interrupted,
+                    owner.state.value.transfer,
+                )
+                service.response = AndroidUpdates(true, null, updateRelease("0.14.0"))
+                owner.check()
+                advanceUntilIdle()
+                assertEquals(
+                    if (complete) "0.13.0" else "0.14.0",
+                    owner.state.value.release!!.version,
+                )
+            } finally {
+                owner.close()
+                runCurrent()
+            }
         }
         val updated =
             AppUpdates(
