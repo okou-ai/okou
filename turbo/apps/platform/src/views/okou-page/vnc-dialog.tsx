@@ -4,6 +4,9 @@ import { useLastResolved, useGet, useLoadable, useSet } from "ccstate-react";
 import {
   remoteVncConnectionOptionsAvailable$,
   remoteSetup$,
+  remoteVncSetupActive$,
+  remoteSetupFromComputer$,
+  remoteVncSetupStep$,
   updateRemoteSetup$,
   type RemoteVncStep,
 } from "../../signals/remote-control-setup.ts";
@@ -421,6 +424,23 @@ function VncTrustFields({
   );
 }
 
+function VncSetupStep({
+  step,
+  guided,
+  children,
+}: {
+  readonly step: RemoteVncStep;
+  readonly guided: boolean | undefined;
+  readonly children: ReactNode;
+}) {
+  const currentStep = useGet(remoteVncSetupStep$);
+  return (
+    <div data-remote-vnc-step={step} hidden={guided && currentStep !== step}>
+      {children}
+    </div>
+  );
+}
+
 function VncConnectionFields({
   guided,
   connection,
@@ -430,14 +450,14 @@ function VncConnectionFields({
   readonly connection: VncDialogState["connection"];
   readonly disabled: boolean;
 }) {
-  const setup = useGet(remoteSetup$);
+  const fromComputer = useGet(remoteSetupFromComputer$);
   const connectionOptions = useLoadable(remoteVncConnectionOptionsAvailable$);
   const hideConnectionDetails =
     guided &&
     (connectionOptions.state !== "hasData" || !connectionOptions.data);
   return (
     <div className="grid gap-4">
-      {guided && setup?.fromComputer ? (
+      {guided && fromComputer ? (
         <ComputerNetworkSummary />
       ) : (
         <VncTransportFields
@@ -470,10 +490,9 @@ function VncHostFields({
 }) {
   const profile = useGet(vncProfile$);
   const { t } = useTranslation();
-  const setup = useGet(remoteSetup$);
-  const guided =
-    inline && dialog.kind === "create" && setup?.protocol === "vnc";
-  const step = setup?.vncStep;
+  const vncSetup = useGet(remoteVncSetupActive$);
+  const fromComputer = useGet(remoteSetupFromComputer$);
+  const guided = inline && dialog.kind === "create" && vncSetup;
   if (dialog.kind === "edit") {
     return (
       <div className="grid gap-6">
@@ -515,40 +534,34 @@ function VncHostFields({
           })}
         </legend>
         {!guided && <VncDisplayNameField connection={dialog.connection} />}
-        <div
-          data-remote-vnc-step="profile"
-          hidden={guided && step !== "profile"}
-        >
+        <VncSetupStep step="profile" guided={guided}>
           <div className="grid gap-4">
-            {guided && setup.fromComputer ? (
+            {guided && fromComputer ? (
               <ComputerScreenService disabled={disabled} />
             ) : (
               <VncSecurityProfileField profile={profile} disabled={disabled} />
             )}
           </div>
-        </div>
-        <div
-          data-remote-vnc-step="connection"
-          hidden={guided && step !== "connection"}
-        >
+        </VncSetupStep>
+        <VncSetupStep step="connection" guided={guided}>
           <VncConnectionFields
             guided={guided}
             connection={dialog.connection}
             disabled={disabled}
           />
-        </div>
-        <div data-remote-vnc-step="trust" hidden={guided && step !== "trust"}>
+        </VncSetupStep>
+        <VncSetupStep step="trust" guided={guided}>
           <VncTrustFields guided={guided} disabled={disabled} />
-        </div>
+        </VncSetupStep>
       </fieldset>
-      <div data-remote-vnc-step="login" hidden={guided && step !== "login"}>
+      <VncSetupStep step="login" guided={guided}>
         <div className="grid gap-5">
           {profile !== "x509_none" && (
             <VncCredentialSelection disabled={disabled} />
           )}
           {guided && <VncDisplayNameField connection={dialog.connection} />}
         </div>
-      </div>
+      </VncSetupStep>
     </>
   );
 }

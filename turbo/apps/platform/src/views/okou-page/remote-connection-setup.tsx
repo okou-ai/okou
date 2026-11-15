@@ -180,6 +180,14 @@ function SetupEntry({ setup }: { readonly setup: RemoteSetup }) {
     </div>
   );
 }
+function RemoteVncSetupForm() {
+  const leave = useSet(leaveRemoteSetup$);
+  return <VncDialog inline saveAction={saveRemoteVnc$} onCancel={leave} />;
+}
+
+// This UI description captures no runtime state; its child resolves the current store.
+const vncSetupForm = <RemoteVncSetupForm />;
+
 function RemoteSetupForms({ setup }: { readonly setup: RemoteSetup }) {
   const leave = useSet(leaveRemoteSetup$);
   return (
@@ -195,7 +203,7 @@ function RemoteSetupForms({ setup }: { readonly setup: RemoteSetup }) {
               initialPort={setup.port}
             />
           ) : (
-            <VncDialog inline saveAction={saveRemoteVnc$} onCancel={leave} />
+            vncSetupForm
           )}
         </div>
       )}
