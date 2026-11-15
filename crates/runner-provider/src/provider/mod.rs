@@ -80,7 +80,6 @@ pub struct ExecutionJob {
     context: ExecutionContext,
     completion_auth: CompletionAuth,
     active_input_source: Option<ActiveInputSource>,
-    supplied: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -101,7 +100,6 @@ impl ExecutionJob {
             context,
             completion_auth,
             active_input_source,
-            supplied: true,
         }
     }
 
@@ -137,7 +135,6 @@ impl ExecutionJob {
             context,
             completion_auth: CompletionAuth::local(),
             active_input_source,
-            supplied: false,
         })
     }
 
@@ -151,7 +148,10 @@ impl ExecutionJob {
 
     /// Complete input was delivered directly, rather than acquired through discovery.
     pub fn is_supplied(&self) -> bool {
-        self.supplied
+        matches!(
+            self.completion_auth.kind,
+            CompletionAuthKind::Sandbox { .. }
+        )
     }
 
     #[cfg(test)]

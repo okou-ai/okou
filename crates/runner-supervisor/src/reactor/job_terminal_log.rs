@@ -1,4 +1,4 @@
-//! Claimed job terminal outcome logging.
+//! Execution terminal outcome logging.
 //!
 //! This module owns the terminal tracing event, diagnostic field projection,
 //! and failure severity policy. The job spawn module owns when the event is

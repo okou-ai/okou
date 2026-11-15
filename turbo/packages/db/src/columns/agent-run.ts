@@ -80,10 +80,9 @@ export function agentRunColumns() {
     sandboxStartupPath: varchar("sandbox_startup_path", {
       length: 20,
     }).$type<SandboxStartupPath>(),
-    // Null identifies a historical claim without cancellation recovery.
-    // Current claims initialize false; false/true records whether recovery
-    // completion has been reported. The barrier is active only while the
-    // public run status is cancelled.
+    // Null identifies a historical execution without cancellation recovery.
+    // Assignment initializes false; the value records whether recovery completion
+    // has been reported. The barrier is active only while the Run is cancelled.
     cancellationRecoveryCompleted: boolean("cancellation_recovery_completed"),
     result: jsonb("result").$type<AgentRunResult>(),
     error: text("error"),
@@ -93,9 +92,9 @@ export function agentRunColumns() {
     createdAt: timestamp("created_at").defaultNow().notNull(),
     startedAt: timestamp("started_at"),
     completedAt: timestamp("completed_at"),
-    // Immutable winning official claim attribution. ID/generation is the
-    // authority; hostname is advisory locality and version is diagnostic.
-    // Null covers historical, rollout-omitting, and non-official claims.
+    // Immutable assigned Runner identity. ID/generation is the authority;
+    // hostname is advisory locality and version is diagnostic.
+    // Null covers historical, rollout-omitting, and non-official executions.
     runnerId: uuid("runner_id"),
     runnerHeartbeatGeneration: bigint("runner_heartbeat_generation", {
       mode: "number",
