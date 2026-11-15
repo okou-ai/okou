@@ -21,6 +21,14 @@ final class WorkspaceStore {
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private let historyWarmingSleep: @Sendable (Duration) async throws -> Void
   private let didRefreshReadState: @MainActor () -> Void
+  private struct NotificationReadState: Equatable {
+    let agentID: String
+    let hidden: Bool
+    let muted: Bool
+    let unreadAt: Date?
+  }
+  private var notificationReadState: [String: NotificationReadState]?
+  private var notificationReadRevision = 0
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
   var settingsResources: WorkspaceResources { resources }
@@ -123,6 +131,7 @@ final class WorkspaceStore {
     client: client, sync: sync, commands: commands, resources: resources,
     didRefresh: { [weak self] in self?.applyThreads($0) },
     didFail: { [weak self] in self?.handle($0) },
+    didChangeReadState: { [weak self] in self?.notificationReadStateChanged() },
     didLoadAgents: { [weak self] in self?.prepareDefaultDraft(from: $0) },
     readRetrySleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
   @ObservationIgnored lazy var projects = ChatProjectStore(
@@ -471,6 +480,7 @@ final class WorkspaceStore {
     }
     let generation = refreshGeneration
     let full = batch.contains(where: \.requiresFullRefresh)
+    let notificationRevision = notificationReadRevision
     let selectedBeforeRefresh = selectedThreadID
     let awaitingSelectedThread = selectedThreadID != nil && selectedConversation == nil
     async let historyRefresh: Void = refreshConversations(batch, generation: generation)
@@ -499,6 +509,14 @@ final class WorkspaceStore {
       await selectedConversation?.modelSelection?.refresh()
     }
     await trimConversations(limit: conversationLimit)
+    if notificationReadRevision == notificationRevision,
+      batch.contains(.indicators) || batch.contains(.readCursor)
+        || batch.contains(.initialSubscriptions) || batch.contains(.realtimeGap)
+        || batch.contains(.reconnected)
+    {
+      // These signals can affect receipts outside the sidebar or leave unreadAt unchanged.
+      notificationReadStateChanged()
+    }
     if batch.contains(.startup), !startupHistoryWarmingRequested {
       startupHistoryWarmingRequested = true
       warmAgain = true
@@ -1036,7 +1054,14 @@ final class WorkspaceStore {
 
   private func applyThreads(_ threads: [ChatThread]) {
     guard !closed else { return }
-    didRefreshReadState()
+    let state = Dictionary(
+      uniqueKeysWithValues: threads.map {
+        ($0.id, NotificationReadState(
+          agentID: $0.agentID, hidden: $0.isHidden, muted: $0.isMuted, unreadAt: $0.unreadAt))
+      })
+    let changed = notificationReadState.map { $0 != state } ?? false
+    notificationReadState = state
+    if changed { notificationReadStateChanged() }
     for thread in threads { conversations[thread.id]?.thread = thread }
     if let selectedThreadID {
       if threads.contains(where: { $0.id == selectedThreadID }) {
@@ -1045,6 +1070,11 @@ final class WorkspaceStore {
         self.selectedThreadID = nil
       }
     }
+  }
+
+  private func notificationReadStateChanged() {
+    notificationReadRevision += 1
+    didRefreshReadState()
   }
 
   private func trimConversations(limit: Int) async {
