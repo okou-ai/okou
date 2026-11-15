@@ -115,6 +115,22 @@ final class WorkspaceProjectSyncTests: XCTestCase {
     XCTAssertEqual(fixture.reads, 1)
   }
 
+  func testFirstSubscriptionWhileBackgroundedRetainsTheEarlyHTTPReadDebt() async throws {
+    let fixture = try makeFixture()
+    fixture.allowHTTP()
+    await fixture.workspace.projects.activate()
+    XCTAssertEqual(fixture.reads, 1)
+    fixture.workspace.setPhase(.background)
+    fixture.remote.withLock { $0 = 1 }
+    try await fixture.start(backgrounded: true)
+
+    fixture.workspace.setPhase(.active)
+    await fixture.workspace.resumePendingRefresh()?.value
+
+    XCTAssertEqual(fixture.workspace.projects.projects.first?.name, "Release")
+    XCTAssertEqual(fixture.reads, 2)
+  }
+
   func testClosingWhileWaitingForSubscriptionsCancelsWithoutProjectHTTP() async throws {
     let waiting = expectation(description: "Project activation awaits subscription readiness")
     let fixture = try makeFixture(waiting: waiting)
@@ -222,10 +238,10 @@ private final class ProjectSyncFixture {
       scope: ChatCacheScope(apiBaseURL: http.baseURL, userID: userID, workspaceID: workspaceID))
   }
 
-  func start() async throws {
+  func start(backgrounded: Bool = false) async throws {
     try await realtime.start()
     server.attachAutomatically()
-    workspace.setPhase(.active)
+    if !backgrounded { workspace.setPhase(.active) }
     async let projects: Void = workspace.projects.activate()
     await workspace.start(userID: userID, workspaceID: workspaceID)
     await projects

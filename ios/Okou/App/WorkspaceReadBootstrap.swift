@@ -62,6 +62,7 @@ final class WorkspaceReadBootstrap {
     guard phase != .closed, !recovering else { return }
     recovering = true
     revision += 1
+    if readBeforeSubscriptions { requiredRecoveryRead = true }
     readBeforeSubscriptions = false
     deadline?.cancel()
     deadline = nil
@@ -107,7 +108,10 @@ final class WorkspaceReadBootstrap {
     case .waiting:
       release(.subscribed)
     case .http:
-      if readBeforeSubscriptions { revision += 1 }
+      if readBeforeSubscriptions {
+        revision += 1
+        requiredRecoveryRead = true
+      }
       readBeforeSubscriptions = false
       phase = .subscribed
     case .subscribed, .closed: break
