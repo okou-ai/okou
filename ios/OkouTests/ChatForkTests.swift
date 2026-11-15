@@ -48,7 +48,7 @@ final class ChatForkTests: XCTestCase {
   }
 
   func testFailedSendRetainsSheetAndRetriesTheSameMessageAndThread() async throws {
-    let fixture = ForkFixture(failFirstSend: true)
+    let fixture = ForkFixture(firstSendStatus: 503)
     let workspace = try await fixture.workspace()
     defer { workspace.close() }
     let source = try XCTUnwrap(workspace.selectedConversation)
@@ -73,8 +73,8 @@ final class ChatForkTests: XCTestCase {
     XCTAssertEqual(workspace.selectedThreadID, source.thread.id)
   }
 
-  func testCancelCreatesNothingAndRemovingQuoteDropsOnlyItsSource() async throws {
-    let fixture = ForkFixture()
+  func testCancelCreatesNothingAndRemovingRejectedQuoteKeepsItsNote() async throws {
+    let fixture = ForkFixture(firstSendStatus: 400)
     let workspace = try await fixture.workspace()
     defer { workspace.close() }
     let source = try XCTUnwrap(workspace.selectedConversation)
@@ -86,6 +86,8 @@ final class ChatForkTests: XCTestCase {
     let fork = try XCTUnwrap(workspace.fork)
     let block = try XCTUnwrap(fork.composer.editorBlocks.first(where: \.isFeedback))
     fork.composer.editBlock(block.id, text: "An independent question")
+    let rejected = await fork.send()
+    XCTAssertFalse(rejected)
     fork.composer.removeFeedback(block.id)
     XCTAssertEqual(fork.composer.text, "An independent question")
     let accepted = await fork.send()
@@ -114,7 +116,7 @@ private final class ForkFixture: Sendable {
   let writes = ForkWrites()
   let history: ConversationHistoryFixture
 
-  init(failFirstSend: Bool = false) {
+  init(firstSendStatus: Int? = nil) {
     let writes = writes
     history = ConversationHistoryFixture(
       rows: [
@@ -127,9 +129,9 @@ private final class ForkFixture: Sendable {
           state.messages.append(chatRequestBody(request))
           return state.messages.count
         }
-        if failFirstSend && count == 1 {
+        if let firstSendStatus, count == 1 {
           return ChatHTTPResponse(
-            status: 503, body: #"{"error":{"message":"Delivery unavailable"}}"#)
+            status: firstSendStatus, body: #"{"error":{"message":"Delivery unavailable"}}"#)
         }
         return ChatHTTPResponse(
           status: 201, body: "{\"threadId\":\"\(writes.value.withLock { $0.threadID })\"}")

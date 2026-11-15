@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+      "Delivery hasn’t been confirmed. Closing this sheet won’t cancel the message.": {
+        "localizations": {
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "发送结果尚未确认。关闭此窗口不会取消这条消息。"
+            }
+          }
+        }
+      },
       "Fork": {
         "localizations": {
           "zh-Hans": {

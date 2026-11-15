@@ -15,6 +15,7 @@ final class ChatForkStore: Identifiable {
   private(set) var isSending = false
   private(set) var error: String?
   private(set) var hasPendingAttempt = false
+  private(set) var deliveryUnconfirmed = false
   private let sourceRunID: String
   private let sourceEventID: String
   private let commands: ChatCommands
@@ -125,6 +126,7 @@ final class ChatForkStore: Identifiable {
           thread = target
           didCreate(target)
         }
+        deliveryUnconfirmed = true
         _ = try await commands.send(
           thread: target, text: pending.text, attachments: pending.attachments,
           document: pending.document, clientEventID: pending.messageID,
@@ -134,11 +136,20 @@ final class ChatForkStore: Identifiable {
           expectedAgentID: agentID, sourceRunID: pending.sourceRunID)
         try Task.checkCancellation()
         guard !closed else { return nil }
+        deliveryUnconfirmed = false
         workflowSource.recordUse(workflows)
         return target
       } catch is CancellationError {
       } catch {
         guard !closed, !Task.isCancelled else { return nil }
+        if let status = (error as? APIClientError)?.statusCode,
+          (400..<500).contains(status), ![408, 409].contains(status)
+        {
+          // A definite rejection permits editing with a new message identity.
+          deliveryUnconfirmed = false
+          self.pending = nil
+          hasPendingAttempt = false
+        }
         self.error = ChatRequestFailure.message(for: error)
         didFail(error)
       }

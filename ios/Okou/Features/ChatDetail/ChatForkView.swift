@@ -69,7 +69,11 @@ struct ChatForkView: View {
         Button("Discard", role: .destructive, action: dismiss)
         Button("Keep editing", role: .cancel) {}
       } message: {
-        Text("Your message hasn’t been sent.")
+        if flow.deliveryUnconfirmed {
+          Text("Delivery hasn’t been confirmed. Closing this sheet won’t cancel the message.")
+        } else {
+          Text("Your message hasn’t been sent.")
+        }
       }
     }
     .interactiveDismissDisabled(flow.isSending || flow.hasEdits)
