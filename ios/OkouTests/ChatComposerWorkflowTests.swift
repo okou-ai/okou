@@ -528,14 +528,32 @@ final class ChatComposerWorkflowTests: XCTestCase {
     }
     return view.subviews.compactMap { workflowTable(in: $0) }.first
   }
-  private func workflowCell(_ id: String, in view: UIView) async throws -> UITableViewCell {
+  private func workflowCell(
+    _ id: String, in view: UIView, file: StaticString = #filePath, line: UInt = #line
+  ) async throws -> UITableViewCell {
     func cell() -> UITableViewCell? {
       nativeViews(in: view).compactMap { $0 as? UITableViewCell }.first {
         $0.accessibilityIdentifier == "workflow-" + id
       }
     }
-    try await eventually { cell() != nil }
-    return try XCTUnwrap(cell())
+    try await eventually(
+      file: file, line: line,
+      message: "Missing Workflow row \(id); \(workflowDiagnostics(in: view))"
+    ) { cell() != nil }
+    return try XCTUnwrap(cell(), "Missing Workflow row \(id)", file: file, line: line)
+  }
+  private func workflowDiagnostics(in view: UIView) -> String {
+    let input = inputs(in: view).first
+    let workflows = input?.workflowSuggestions
+    let table = workflowTable(in: view)
+    return [
+      "text=\(String(reflecting: input?.text))",
+      "focused=\(input?.isFirstResponder == true), current=\(input?.isCurrent() == true)",
+      "marked=\(input?.markedTextRange != nil), settling=\(input?.isSettlingComposition == true)",
+      "query=\(String(reflecting: workflows?.query)), candidates=\(workflows?.matches.map(\.id) ?? [])",
+      "table bounds=\(String(describing: table?.bounds)), content=\(String(describing: table?.contentSize))",
+      "rows=\(table?.numberOfRows(inSection: 0) ?? 0), cells=\(table?.visibleCells.compactMap(\.accessibilityIdentifier) ?? [])",
+    ].joined(separator: "; ")
   }
   private func type(_ text: String, in input: ComposerTextView, conversation: ConversationStore)
     async throws
