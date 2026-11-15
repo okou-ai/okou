@@ -31,6 +31,7 @@ final class WorkspaceStore {
   var error: String?
   private(set) var chatLinkError: String?
   private(set) var threadFeedback: ChatThreadFeedback?
+  private(set) var fork: ChatForkStore?
   private(set) var threadPreview: ChatThreadPreviewResources?
   let sidebarInteraction = SidebarInteraction()
   private var chatLinkRequestID = UUID()
@@ -338,6 +339,8 @@ final class WorkspaceStore {
 
   @discardableResult
   func close() -> Task<Void, Never> {
+    fork?.close()
+    fork = nil
     sidebarDrafts.close()
     threadPreview?.close()
     threadPreview = nil
@@ -866,6 +869,38 @@ final class WorkspaceStore {
     newComposer.requestSync()
     newModelSelection.resetNewChat()
     error = nil
+  }
+
+  func startFork(_ selection: ChatFeedbackSelection, from conversation: ConversationStore) {
+    guard !closed, !needsUpgrade, fork == nil,
+      selectedConversation === conversation, let agentID = defaultAgentID,
+      let message = conversation.messages.first(where: { $0.id == selection.eventID }),
+      message.role == .assistant, !message.isError, !message.isQueued,
+      message.text.utf16.elementsEqual(selection.text.utf16), let runID = message.runID
+    else { return }
+    fork = ChatForkStore(
+      selection: selection, sourceRunID: runID, sourceTitle: conversation.thread.displayTitle,
+      agentID: agentID, commands: commands, models: modelStore, workflowSource: composerWorkflows,
+      lifecycleTasks: lifecycleTasks,
+      didCreate: { [weak self] thread in self?.list.insertCreated(thread) },
+      didSend: { [weak self] thread in self?.finishFork(thread) },
+      didFail: { [weak self] in self?.handle($0) })
+  }
+
+  func dismissFork() {
+    guard fork?.isSending != true else { return }
+    fork?.close()
+    fork = nil
+  }
+
+  private func finishFork(_ thread: ChatThread) {
+    guard !closed else { return }
+    dismissFork()
+    requestRefresh(.threadList)
+    threadFeedback = ChatThreadFeedback(
+      threadID: thread.id, message: String(localized: "New chat created"),
+      actionTitle: String(localized: "Open"), requiresNavigation: true,
+      action: { [weak self] in self?.selectChat(thread.id) })
   }
 
   func removeNewChatProject() { newChatProjectID = nil }

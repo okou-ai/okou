@@ -9,6 +9,7 @@ struct ChatDetailView: View {
   let topContentInset: CGFloat
   let mentionSource: ComposerMentionSource?
   let onFirstMessagePresented: (@MainActor (String) -> Void)?
+  let fork: ((ChatFeedbackSelection) -> Void)?
   private var thread: ChatThread { conversation.thread }
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -26,7 +27,8 @@ struct ChatDetailView: View {
     didSend: (@MainActor () async -> Void)? = nil,
     topContentInset: CGFloat = 0,
     mentionSource: ComposerMentionSource? = nil,
-    onFirstMessagePresented: (@MainActor (String) -> Void)? = nil
+    onFirstMessagePresented: (@MainActor (String) -> Void)? = nil,
+    fork: ((ChatFeedbackSelection) -> Void)? = nil
   ) {
     self.conversation = conversation
     self.agents = agents
@@ -34,6 +36,7 @@ struct ChatDetailView: View {
     self.topContentInset = topContentInset
     self.mentionSource = mentionSource
     self.onFirstMessagePresented = onFirstMessagePresented
+    self.fork = fork
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
   }
 
@@ -209,6 +212,7 @@ struct ChatDetailView: View {
       },
       earlierMessages: conversation.earlierWindowMessages,
       quote: conversation.quote,
+      fork: fork,
       refresh: {
         await conversation.refresh()
         await conversation.connectorActions.refreshKnown()

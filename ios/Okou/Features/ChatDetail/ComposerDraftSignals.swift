@@ -105,18 +105,26 @@ final class ComposerDraftSignals {
   }
 
   @discardableResult
-  func removeFeedback(_ id: UUID, focusedID: UUID?) -> Bool {
+  func removeFeedback(_ id: UUID, focusedID: UUID?, keepingNote: Bool = false) -> Bool {
     guard !snapshot.closed, let ordinal = snapshot.quoteIDs.firstIndex(of: id),
       let block = editorBlocks.first(where: { $0.id == id })
     else { return false }
     let blocks = editorBlocks
     let separatesParagraphs =
       blocks[ordinal * 2].hasParagraph && blocks[ordinal * 2 + 2].hasParagraph
+    let newline = MessageJSON.object(["type": .string("text"), "text": .string("\n")])
+    let note = keepingNote ? block.content.parts : []
+    let replacement: [MessageJSON]
+    if note.isEmpty {
+      replacement = separatesParagraphs ? [newline] : []
+    } else {
+      replacement =
+        (blocks[ordinal * 2].hasParagraph ? [newline] : []) + note
+        + (blocks[ordinal * 2 + 2].hasParagraph ? [newline] : [])
+    }
     update {
       $0.document.parts.replaceSubrange(
-        block.indices,
-        with: separatesParagraphs
-          ? [.object(["type": .string("text"), "text": .string("\n")])] : [])
+        block.indices, with: replacement)
       // Keep the native first responder when adjacent text gaps merge.
       if let focusedID, [$0.textIDs[ordinal], id, $0.textIDs[ordinal + 1]].contains(focusedID) {
         $0.textIDs[ordinal] = focusedID

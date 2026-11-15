@@ -100,7 +100,9 @@ final class ComposerDraftStore {
   func removeFeedback(_ id: UUID) {
     guard !closed, editorBlocks.contains(where: { $0.id == id }) else { return }
     let focusedID = editor.prepareForFeedbackRemoval(id)
-    if signals.removeFeedback(id, focusedID: focusedID) { changed() }
+    if signals.removeFeedback(id, focusedID: focusedID, keepingNote: preservesFeedbackNotes) {
+      changed()
+    }
   }
 
   private(set) var document: ChatDraftDocument {
@@ -176,6 +178,7 @@ final class ComposerDraftStore {
     }
   }
   private let target: ChatDraftTarget
+  private let preservesFeedbackNotes: Bool
   private let repository: ChatDraftRepository?
   private let storage: ChatDraftStorage?
   private let didFail: @MainActor (Error) -> Void
@@ -200,11 +203,12 @@ final class ComposerDraftStore {
     syncSleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
-    lifecycleTasks: LifecycleTasks? = nil
+    lifecycleTasks: LifecycleTasks? = nil, preservesFeedbackNotes: Bool = false
   ) {
     self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     self.syncSleep = syncSleep
     self.target = target
+    self.preservesFeedbackNotes = preservesFeedbackNotes
     self.repository = repository
     self.storage = storage
     self.didFail = didFail

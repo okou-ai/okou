@@ -1,6 +1,86 @@
 {
   "sourceLanguage": "en",
   "strings": {
+      "Fork": {
+        "localizations": {
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Fork"
+            }
+          }
+        }
+      },
+      "Continue from this passage.": {
+        "localizations": {
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "基于这段引用继续讨论。"
+            }
+          }
+        }
+      },
+      "New chat created": {
+        "localizations": {
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "已创建新聊天"
+            }
+          }
+        }
+      },
+      "From %@": {
+        "localizations": {
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "来自 %@"
+            }
+          }
+        }
+      },
+      "Discard draft?": {
+        "localizations": {
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "放弃草稿？"
+            }
+          }
+        }
+      },
+      "Keep editing": {
+        "localizations": {
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "继续编辑"
+            }
+          }
+        }
+      },
+      "Your message hasn’t been sent.": {
+        "localizations": {
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "你的消息尚未发送。"
+            }
+          }
+        }
+      },
+      "Open": {
+        "localizations": {
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "打开"
+            }
+          }
+        }
+      },
     "Host": {
       "localizations": {
         "zh-Hans": {
