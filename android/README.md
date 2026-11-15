@@ -662,15 +662,15 @@ update destination. No self-clear/retry is provided for an installed
 version that needs an update. The backend Android floor starts unset; see
 [Android compatibility](../docs/deployment-compatibility.md#android-contract-gate).
 
-GitHub Release is the Android distribution source for the compatibility gate.
-Publish the packaged APK as a nonempty `.apk` asset on a non-draft, non-prerelease
-`android-vX.Y.Z` release, with the tag matching the APK's `versionName`. CI reads
-release metadata and uses the highest qualifying version among the 20 highest
-stable Android tags; it does not require an app-store availability check. The
-publisher owns APK signing, the packaged version and installability. A local
-build or an Actions artifact alone is not publication. The [release pipeline](#github-releases)
-owns packaging and upload; a floor raise still requires a reviewed policy change
-after the compatible build is available.
+R2 is the release-information authority for the compatibility gate. CI reads
+`release.version` through the same public `/api/android/updates` endpoint used
+by the installed updater; the API validates the published R2 manifest before
+returning it. A GitHub APK copy, a local build or an Actions artifact alone does
+not establish that availability. The publisher owns APK signing, the packaged
+version and installability. The [release pipeline](#github-releases) owns packaging,
+R2 publication and the GitHub copy; a floor raise remains a reviewed source-policy
+change after the compatible build is available through discovery. Ordinary
+business API requests compare the source floor without querying release storage.
 
 API requests do not follow redirects or automatically retry connection/status
 failures, including `503 Retry-After: 0`. A lost response is not remote rollback;
