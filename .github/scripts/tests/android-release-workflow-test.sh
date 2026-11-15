@@ -171,7 +171,7 @@ from pathlib import Path
 import sys
 if Path(sys.argv[0]).name == 'aapt2':
     print("package: name='ai.okou.android' versionCode='" + os.environ['FIXTURE_VERSION_CODE'] + "' versionName='0.2.0' ")
-    print("sdkVersion:'24'")
+    print("minSdkVersion:'24'")
 else:
     assert sys.argv[1] == 'verify'
 ''')
@@ -195,9 +195,10 @@ else:
     result = run_publication()
     assert result.returncode != 0  # The immutable GitHub copy still refuses overwrite.
     manifest = work / 'r2/android-updates/manifest.json'
-    assert manifest.exists(), 'An existing GitHub APK prevented R2 publication repair'
+    assert manifest.exists(), f'R2 manifest was not published before the GitHub APK upload: {result.stderr}'
     data = json.loads(manifest.read_text())
     assert data['release']['version'] == '0.2.0'
+    assert data['release']['minimumSdk'] == 24
     assert (work / 'r2' / data['release']['url'].removeprefix('https://static.okou.io/')).read_bytes() == b'fixture-apk'
     assert (work / 'uploaded').read_text() == 'android-v0.2.0'
 
