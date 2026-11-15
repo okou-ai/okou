@@ -186,7 +186,7 @@ private fun UpdateDetails(state: UpdateUiState, canInstall: Boolean, showNotes: 
         Text(stringResource(R.string.updates_current))
     if (state.transfer == UpdateTransfer.Downloading) {
         val fraction =
-            (state.downloadedBytes.toFloat() / (state.release?.size ?: 1)).coerceIn(0f, 1f)
+            (state.downloadedBytes.toFloat() / checkNotNull(state.release).size).coerceIn(0f, 1f)
         LinearProgressIndicator(
             progress = { fraction },
             modifier = Modifier.fillMaxWidth(),

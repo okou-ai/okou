@@ -73,7 +73,7 @@ data class UpdateUiState(
     val target: AndroidUpdatesRelease? = null,
     val downloadedBytes: Long = 0,
     val problem: UpdateProblem? = null,
-    val sdk: Int = Int.MAX_VALUE,
+    val sdk: Int,
 ) {
     val release
         get() =
@@ -85,16 +85,15 @@ data class UpdateUiState(
 
     val available
         get() =
-            release?.let {
-                it.versionCode > (androidVersionCode(installedVersion) ?: Long.MAX_VALUE)
-            } == true
+            release?.let { it.versionCode > checkNotNull(androidVersionCode(installedVersion)) } ==
+                true
 
     val suitable
         get() =
             available &&
                 release!!.minimumSdk <= sdk &&
                 (minimum == null ||
-                    release!!.versionCode >= (androidVersionCode(minimum) ?: Long.MAX_VALUE))
+                    release!!.versionCode >= checkNotNull(androidVersionCode(minimum)))
 
     val announce
         get() =
@@ -206,8 +205,7 @@ class AppUpdates(
                     val blocked =
                         mutable.value.required ||
                             floor?.let {
-                                (androidVersionCode(it) ?: Long.MAX_VALUE) >
-                                    androidVersionCode(version)!!
+                                checkNotNull(androidVersionCode(it)) > androidVersionCode(version)!!
                             } == true
                     checkedAt = now()
                     mutable.update {
