@@ -46,13 +46,7 @@ impl Budget {
             .try_reserve_exact(len)
             .map_err(|_| Error::ResourceLimit)?;
         // Account actual capacity, including any allocator over-allocation.
-        if bytes.capacity() > len {
-            let extra = self.reserve(bytes.capacity() - len)?;
-            reservation.bytes += extra.bytes;
-            // Transfer this reservation without subtracting the transferred bytes.
-            let mut extra = extra;
-            extra.bytes = 0;
-        }
+        reservation.grow_to(bytes.capacity())?;
         bytes.resize(len, 0);
         Ok(Buffer {
             bytes,
@@ -74,6 +68,16 @@ pub(crate) struct Reservation {
 }
 
 impl Reservation {
+    /// Cover actual allocator capacity using only this reservation's budget.
+    fn grow_to(&mut self, bytes: usize) -> Result<(), Error> {
+        if bytes > self.bytes {
+            let mut extra = self.budget.reserve(bytes - self.bytes)?;
+            // Transfer the charge without refunding it when the donor drops.
+            self.bytes += std::mem::take(&mut extra.bytes);
+        }
+        Ok(())
+    }
+
     fn release(&mut self) {
         self.budget
             .0
@@ -121,20 +125,12 @@ impl Buffer {
         self.bytes
             .try_reserve_exact(capacity - self.bytes.len())
             .map_err(|_| Error::ResourceLimit)?;
-        if self.bytes.capacity() > capacity {
-            let extra = match budget.reserve(self.bytes.capacity() - capacity) {
-                Ok(extra) => extra,
-                Err(error) => {
-                    // Do not retain capacity that cannot be charged. The writer
-                    // will abort and drop this now-empty buffer.
-                    self.bytes = Vec::new();
-                    self._reservation.release();
-                    return Err(error);
-                }
-            };
-            next.bytes += extra.bytes;
-            let mut extra = extra;
-            extra.bytes = 0;
+        if let Err(error) = next.grow_to(self.bytes.capacity()) {
+            // Do not retain capacity that cannot be charged. The writer
+            // will abort and drop this now-empty buffer.
+            self.bytes = Vec::new();
+            self._reservation.release();
+            return Err(error);
         }
         let old = std::mem::replace(&mut self._reservation, next);
         drop(old);
