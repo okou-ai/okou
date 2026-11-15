@@ -831,9 +831,8 @@ const preparedExecutionContextBaseSchema = object({
   // API-only intent. No custom Workflow body or attachment is frozen here.
   customWorkflowSelection: object({
     agentId: uuid(),
-    invokedWorkflowId: uuid().nullable().optional(),
     automationId: uuid().optional(),
-    protectedMountPaths: array(string()).optional(),
+    protectedMountPaths: array(string()),
   })
     .strict()
     .optional(),

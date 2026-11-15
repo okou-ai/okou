@@ -1,9 +1,9 @@
 use super::super::super::*;
 use super::super::support::{
     MockRunEnv, TEST_RUNNER_ID, assert_run_exits_within, minimal_context, mock_run_config,
-    mock_run_config_with_delay, mock_run_config_with_overrides, push_job, shutdown, test_profiles,
-    wait_budget_count, wait_budget_exhausted_reactor, wait_cancel_token, wait_cancel_token_removed,
-    wait_discover_entered, wait_heartbeat_matching_after,
+    mock_run_config_with_discovery_delay, mock_run_config_with_overrides, push_job, shutdown,
+    test_profiles, wait_budget_count, wait_budget_exhausted_reactor, wait_cancel_token,
+    wait_cancel_token_removed, wait_discover_entered, wait_heartbeat_matching_after,
     wait_status_idle_reuse_keys_and_active_runs, wait_status_mode,
 };
 use crate::status::StatusPersistenceError;
@@ -112,17 +112,17 @@ async fn status_retry_does_not_wait_for_routine_heartbeat() {
 #[tokio::test(start_paused = true)]
 async fn discover_survives_heartbeat_ticks() {
     let (config, env) =
-        mock_run_config_with_delay(test_profiles(), 8, 32768, 4, HEARTBEAT_PERIOD * 2);
+        mock_run_config_with_discovery_delay(test_profiles(), 8, 32768, 4, HEARTBEAT_PERIOD * 2);
     let run_handle = tokio::spawn(run(config));
     assert!(
         env.handle
-            .wait_discover_poll_started(Duration::from_secs(5))
+            .wait_discovery_delay_started(Duration::from_secs(5))
             .await,
-        "discover poll delay should start before virtual time advances"
+        "discovery delay should start before virtual time advances"
     );
 
     // Push job immediately — it's in the channel, waiting for
-    // discover to finish its poll delay and read it.
+    // local discovery to finish its delay and read it.
     let run_id = RunId::new_v4();
     push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
 
@@ -134,7 +134,7 @@ async fn discover_survives_heartbeat_ticks() {
         env.handle
             .wait_heartbeat_past(1, Duration::from_secs(1))
             .await,
-        "heartbeat should fire while discover poll delay is running"
+        "heartbeat should fire while discovery delay is running"
     );
 
     // Pass the original delay, but not a delay restarted by the first tick.

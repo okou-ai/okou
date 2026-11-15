@@ -283,7 +283,6 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_prepare_storage_manifest_cache_join_results"
   | "api_dispatch_prepare_storage_manifest_construct_entries"
   | "api_dispatch_prepare_storage_manifest_assemble"
-  | "api_dispatch_build_stored_execution_context"
   | "api_dispatch_connector_catalog_load_runtime_snapshot"
   | "api_dispatch_connector_catalog_query_identity"
   | "api_dispatch_connector_catalog_query_payload"
@@ -291,18 +290,11 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_connector_catalog_materialize_accepted_snapshot"
   | "api_dispatch_connector_catalog_materialize_runtime_snapshot"
   | "api_dispatch_connector_catalog_materialize_server_firewalls"
-  | "api_dispatch_phase_pre_create"
-  | "api_dispatch_phase_prepare_context"
   | "api_dispatch_phase_prepare_launch"
-  | "api_dispatch_phase_queue_insert"
   | "api_dispatch_phase_commit";
 
 type ApiDispatchPhaseActionType =
-  | "api_dispatch_phase_pre_create"
-  | "api_dispatch_phase_prepare_context"
-  | "api_dispatch_phase_prepare_launch"
-  | "api_dispatch_phase_queue_insert"
-  | "api_dispatch_phase_commit";
+  "api_dispatch_phase_prepare_launch" | "api_dispatch_phase_commit";
 
 interface ApiDispatchPhaseRecord {
   readonly actionType: ApiDispatchPhaseActionType;
@@ -516,7 +508,6 @@ export class ApiDispatchTimingCollector {
     readonly runId: string;
     readonly runnerGroup: string;
     readonly profile: string;
-    readonly dispatchPath: "direct";
     readonly triggerSource?: TriggerSource;
     readonly dimensions?: ApiDispatchTimingDimensions;
   }): void {
@@ -548,7 +539,7 @@ export class ApiDispatchTimingCollector {
             ...processDimensions,
             runner_group: args.runnerGroup,
             profile: args.profile,
-            dispatch_path: args.dispatchPath,
+            dispatch_path: "direct",
             span_kind: record.spanKind,
             ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
             ...(args.triggerSource

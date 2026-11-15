@@ -53,7 +53,6 @@ function retainedStaffWorkflowAdmission(): SQL {
 export interface ExecutionWorkflowInput {
   readonly selection: PreparedExecutionContext["customWorkflowSelection"];
   readonly skillRoot: string;
-  readonly ambiguousMountPaths: readonly string[];
 }
 
 function officialWorkflowSelection(
@@ -82,7 +81,7 @@ function officialWorkflowSelection(
     ? {
         ...context.customWorkflowSelection,
         protectedMountPaths: [
-          ...(context.customWorkflowSelection.protectedMountPaths ?? []),
+          ...context.customWorkflowSelection.protectedMountPaths,
           ...officialPaths,
         ],
       }
@@ -108,20 +107,9 @@ export function executionWorkflowInput(
       throw new Error("Unsupported legacy Workflow identity");
     }
   }
-  const otherMounts = context.storageMounts.filter((mount) => {
-    return !ordinaryMount.test(mount.name);
-  });
   return {
     selection,
     skillRoot,
-    // Stage 1 captured Agent identity, but not source precedence. A collision
-    // with an unclassified old mount is rejected rather than guessed by slug.
-    ambiguousMountPaths:
-      context.customWorkflowSelection?.protectedMountPaths === undefined
-        ? otherMounts.map((mount) => {
-            return mount.mountPath;
-          })
-        : [],
   };
 }
 
@@ -173,17 +161,13 @@ export function executionWorkflowSelectionSql(
       ORDER BY ${workflows.name}, (${workflows.visibility} = 'private' AND ${workflows.ownerUserId} = admitted_run."userId") DESC, ${workflows.createdAt}, ${workflows.id}
     ), workflow_selection AS MATERIALIZED (
       SELECT COALESCE(jsonb_agg(to_jsonb(selected_workflows)), '[]'::jsonb) AS documents,
-        COALESCE(bool_and(NOT (${JSON.stringify(input.ambiguousMountPaths)}::jsonb ? (${input.skillRoot} || '/' || name))), true) AS available,
         COALESCE(bool_and(${contentBundleAvailableCondition(sql`selected_workflows."contentBundle"`)}), true) AS "bundlesAvailable"
       FROM selected_workflows
     ), workflow_admission AS MATERIALIZED (
       SELECT * FROM workflow_selection, admitted_run
-      WHERE workflow_selection.available AND (
+      WHERE (
         admitted_run."agentId" IS NULL OR (
           admitted_run."agentId" = ${selection?.agentId ?? null}::uuid
-          AND (NOT ${selection?.protectedMountPaths === undefined}
-            OR admitted_run."triggerSource" NOT IN ('automation-schedule', 'automation-event')
-            OR admitted_run."workflowAutomationId" IS NOT NULL)
           AND EXISTS (SELECT 1 FROM selected_agent)
           AND (COALESCE(${automationId}::uuid, admitted_run."workflowAutomationId") IS NULL OR EXISTS (
             SELECT 1 FROM ${workflowAutomations} INNER JOIN ${workflows} ON ${eq(workflows.id, workflowAutomations.workflowId)}

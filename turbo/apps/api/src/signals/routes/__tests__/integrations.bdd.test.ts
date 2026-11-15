@@ -339,7 +339,7 @@ async function ownedThreadWhere(
 async function pollSlackRun(runnerGroup: string): Promise<string> {
   return await pollRunnerRun(
     runnerGroup,
-    "Expected a Slack-triggered run in the runner queue",
+    "Expected a Slack-triggered execution to be delivered",
   );
 }
 
