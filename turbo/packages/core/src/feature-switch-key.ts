@@ -4,7 +4,6 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  AndroidUpdateAnnouncements = "androidUpdateAnnouncements",
   CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
   UserNotifications = "userNotifications",
   AutomationDisableNotifications = "automationDisableNotifications",

@@ -1,12 +1,4 @@
-import {
-  boolean,
-  literal,
-  number,
-  object,
-  string,
-  url,
-  type infer as Infer,
-} from "zod";
+import { literal, number, object, string, url, type infer as Infer } from "zod";
 import { apiErrorSchema } from "./api-error";
 import { initContract } from "./trpc-contract";
 
@@ -25,7 +17,6 @@ export const androidReleaseManifestSchema = object({
   release: androidReleaseSchema,
 });
 export const androidUpdatesResponseSchema = object({
-  optionalUpdatesEnabled: boolean(),
   minimumSupportedVersion: version.nullable(),
   release: androidReleaseSchema,
 });

@@ -46,7 +46,6 @@ open class TestOkouApplication : OkouApplication() {
                 override suspend fun check() =
                     updateService?.check()
                         ?: AndroidUpdates(
-                            true,
                             null,
                             AndroidUpdatesRelease(
                                 BuildConfig.VERSION_NAME,

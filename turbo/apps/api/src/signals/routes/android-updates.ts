@@ -1,7 +1,5 @@
 import { androidUpdatesContract } from "@okouai/api-contracts/contracts/android-updates";
 import { command } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { androidMinimumSupportedVersion } from "../../lib/android-client-compatibility";
 import { setResHeader$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
@@ -32,10 +30,6 @@ const getAndroidUpdate$ = command(async ({ set }, signal: AbortSignal) => {
   return {
     status: 200 as const,
     body: {
-      optionalUpdatesEnabled: isFeatureEnabled(
-        FeatureSwitchKey.AndroidUpdateAnnouncements,
-        {},
-      ),
       minimumSupportedVersion: androidMinimumSupportedVersion(),
       release: loaded.value,
     },

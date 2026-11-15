@@ -48,7 +48,7 @@ class NativeUpdateTest {
 
                     override suspend fun check(): AndroidUpdates {
                         gate.await()
-                        return AndroidUpdates(true, null, release)
+                        return AndroidUpdates(null, release)
                     }
 
                     override suspend fun recover(release: AndroidUpdatesRelease?): File? = null

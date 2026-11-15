@@ -46,13 +46,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.AndroidUpdateAnnouncements]: {
-    maintainer: "liangyou@okou.ai",
-    displayName: "Android update announcements",
-    description:
-      "Offer optional native Android update announcements; mandatory and manual recovery remain available.",
-    enabled: true,
-  },
   [FeatureSwitchKey.SshChatApproval]: {
     maintainer: "yuma@okou.ai",
     displayName: "Remote host chat approval",

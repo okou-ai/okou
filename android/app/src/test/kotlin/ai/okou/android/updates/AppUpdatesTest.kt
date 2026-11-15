@@ -40,7 +40,7 @@ internal class MemoryUpdateStore(var record: UpdateRecord? = null) : UpdateStore
 internal class ControlledUpdates : UpdateService {
     override suspend fun initialize() = Unit
 
-    var response = AndroidUpdates(true, null, updateRelease())
+    var response = AndroidUpdates(null, updateRelease())
     var heldCheck: CompletableDeferred<Unit>? = null
     var failCheck = false
     var checks = 0
@@ -89,7 +89,7 @@ class AppUpdatesTest {
             advanceUntilIdle()
             owner.download()
             runCurrent()
-            service.response = AndroidUpdates(true, null, updateRelease("0.14.0"))
+            service.response = AndroidUpdates(null, updateRelease("0.14.0"))
             owner.check()
             advanceUntilIdle()
             assertEquals("0.13.0", owner.state.value.release!!.version)
@@ -105,7 +105,7 @@ class AppUpdatesTest {
             assertEquals(UpdateTransfer.Downloading, owner.state.value.transfer)
             service.transfer.complete(File("new.apk"))
             advanceUntilIdle()
-            service.response = AndroidUpdates(true, null, updateRelease("0.15.0"))
+            service.response = AndroidUpdates(null, updateRelease("0.15.0"))
             owner.check()
             advanceUntilIdle()
             assertEquals(UpdateTransfer.Ready, owner.state.value.transfer)
@@ -137,7 +137,7 @@ class AppUpdatesTest {
             service.heldRecovery = CompletableDeferred()
             val oldInstall = async { owner.installationFile() }
             runCurrent()
-            service.response = AndroidUpdates(true, "0.14.0", updateRelease("0.14.0"))
+            service.response = AndroidUpdates("0.14.0", updateRelease("0.14.0"))
             owner.requireUpdate(RequiredUpdate("0.14.0"))
             advanceUntilIdle()
             service.transfer = CompletableDeferred()
@@ -187,7 +187,7 @@ class AppUpdatesTest {
             owner.check()
             advanceUntilIdle()
             assertEquals(2, service.checks)
-            service.response = AndroidUpdates(true, null, updateRelease("0.14.0"))
+            service.response = AndroidUpdates(null, updateRelease("0.14.0"))
             owner.check()
             advanceUntilIdle()
             assertTrue(owner.state.value.announce)
@@ -227,7 +227,7 @@ class AppUpdatesTest {
     @Test
     fun incompatibleOrUnavailablePackageNeverOffersInstallation() = runTest {
         val service =
-            ControlledUpdates().apply { response = AndroidUpdates(true, "0.14.0", updateRelease()) }
+            ControlledUpdates().apply { response = AndroidUpdates("0.14.0", updateRelease()) }
         val owner =
             AppUpdates(
                 service,
@@ -293,7 +293,7 @@ class AppUpdatesTest {
         val saved =
             UpdateRecord(
                 "0.12.0",
-                AndroidUpdates(true, null, updateRelease()),
+                AndroidUpdates(null, updateRelease()),
                 true,
                 "0.13.0",
                 target = updateRelease(),
@@ -316,7 +316,7 @@ class AppUpdatesTest {
                     if (complete) UpdateTransfer.Ready else UpdateTransfer.Interrupted,
                     owner.state.value.transfer,
                 )
-                service.response = AndroidUpdates(true, null, updateRelease("0.14.0"))
+                service.response = AndroidUpdates(null, updateRelease("0.14.0"))
                 owner.check()
                 advanceUntilIdle()
                 assertEquals(

@@ -98,7 +98,6 @@ data class UpdateUiState(
     val announce
         get() =
             !required &&
-                info?.optionalUpdatesEnabled == true &&
                 available &&
                 (deferred != release?.version ||
                     transfer == UpdateTransfer.Downloading ||

@@ -34,14 +34,12 @@ class AndroidUpdateClientTest {
             val notes = "\uD83D\uDE80".repeat(8_000)
             val release = updateRelease().copy(notes = notes)
             server.enqueue(
-                MockResponse().setBody(Json.encodeToString(AndroidUpdates(true, null, release)))
+                MockResponse().setBody(Json.encodeToString(AndroidUpdates(null, release)))
             )
             server.enqueue(
                 MockResponse()
                     .setBody(
-                        Json.encodeToString(
-                            AndroidUpdates(true, null, release.copy(notes = notes + "!"))
-                        )
+                        Json.encodeToString(AndroidUpdates(null, release.copy(notes = notes + "!")))
                     )
             )
             AndroidUpdateClient(
@@ -76,7 +74,7 @@ class AndroidUpdateClientTest {
                                 .toString()
                     )
             server.enqueue(
-                MockResponse().setBody(Json.encodeToString(AndroidUpdates(true, null, release)))
+                MockResponse().setBody(Json.encodeToString(AndroidUpdates(null, release)))
             )
             server.enqueue(MockResponse().setResponseCode(404))
             val client =
@@ -129,8 +127,7 @@ class AndroidUpdateClientTest {
                         )
                 )
                 server.enqueue(
-                    MockResponse()
-                        .setBody(Json.encodeToString(AndroidUpdates(true, "0.13.0", release)))
+                    MockResponse().setBody(Json.encodeToString(AndroidUpdates("0.13.0", release)))
                 )
                 val requirements = mutableListOf<String?>()
                 ApiClient(
@@ -218,7 +215,7 @@ class AndroidUpdateClientTest {
         val record =
             UpdateRecord(
                 "0.12.0",
-                AndroidUpdates(true, null, updateRelease()),
+                AndroidUpdates(null, updateRelease()),
                 true,
                 "0.13.0",
                 "0.13.0",

@@ -24,8 +24,7 @@ import org.robolectric.annotation.Config
 class UpdateRootApplication : TestOkouApplication() {
     internal val fixture =
         ControlledUpdates().apply {
-            response =
-                ai.okou.android.api.generated.AndroidUpdates(true, null, updateRelease("99.0.0"))
+            response = ai.okou.android.api.generated.AndroidUpdates(null, updateRelease("99.0.0"))
             heldCheck = CompletableDeferred()
         }
 

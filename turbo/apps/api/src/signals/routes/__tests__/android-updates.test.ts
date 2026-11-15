@@ -40,7 +40,6 @@ describe("Android public update recovery", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     await expect(response.json()).resolves.toStrictEqual({
-      optionalUpdatesEnabled: true,
       minimumSupportedVersion: "0.12.0",
       release,
     });
@@ -58,7 +57,6 @@ describe("Android public update recovery", () => {
     }).request("/api/android/updates");
     expect(anonymous.status).toBe(200);
     await expect(anonymous.json()).resolves.toStrictEqual({
-      optionalUpdatesEnabled: true,
       minimumSupportedVersion: null,
       release,
     });

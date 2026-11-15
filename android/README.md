@@ -448,9 +448,10 @@ The direct-APK updater reads the public `GET /api/android/updates` contract,
 independently of authentication and the retained business-API 426 state. The
 API combines the source-owned compatibility floor with the published Android
 release; only its exact GET recovery path bypasses installed-client exclusion.
-`androidUpdateAnnouncements` controls optional announcements, while manual and
-required-update recovery remain available. Automatic checks run on foreground
-without holding the first native frame, at most once per day after success.
+Optional announcements follow available versions and the user's per-release
+deferral. Manual and required-update recovery remain available. Automatic checks
+run on foreground without holding the first native frame, at most once per day
+after success.
 
 Users initiate credential-free APK downloads inside Okou. The app streams into
 private files, validates byte count, SHA-256, package/version and signer, then

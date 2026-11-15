@@ -33,7 +33,6 @@ data class AndroidUpdatesRelease(
 
 @Serializable
 data class AndroidUpdates(
-    val `optionalUpdatesEnabled`: Boolean,
     val `minimumSupportedVersion`: String?,
     val `release`: AndroidUpdatesRelease,
 )
