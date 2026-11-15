@@ -15,7 +15,9 @@ const getAndroidUpdate$ = command(async ({ set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const loaded = await settle(loadAndroidRelease(signal), signal);
   if (!loaded.ok) {
-    if (!(loaded.error instanceof AndroidUpdateUnavailable)) throw loaded.error;
+    if (!(loaded.error instanceof AndroidUpdateUnavailable)) {
+      throw loaded.error;
+    }
     set(setResHeader$, "Retry-After", "60");
     return {
       status: 503 as const,

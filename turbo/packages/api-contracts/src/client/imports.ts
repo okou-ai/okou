@@ -55,6 +55,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "android-updates",
+    contracts: ["androidUpdatesContract"],
+    bindings: [],
+  },
+  {
     module: "artifact-catalog",
     contracts: ["artifactCatalogContract"],
     bindings: [

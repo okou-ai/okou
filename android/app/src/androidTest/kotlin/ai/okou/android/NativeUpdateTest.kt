@@ -21,6 +21,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.runners.model.MultipleFailureException
 
 @RunWith(AndroidJUnit4::class)
 class NativeUpdateTest {
@@ -70,6 +71,7 @@ class NativeUpdateTest {
         val previous = app.updateOwner
         app.updateOwner = owner
         var scenario: ActivityScenario<MainActivity>? = null
+        val failures = mutableListOf<Throwable>()
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             fun text(value: String) =
@@ -84,11 +86,21 @@ class NativeUpdateTest {
             assertNotNull(text(app.getString(R.string.updates_required)))
             assertTrue(owner.state.value.required)
             takeScreenshot().writeToTestStorage("android-update-required.png")
+        } catch (error: Throwable) {
+            failures += error
         } finally {
             gate.complete(Unit)
-            scenario?.close()
-            owner.close()
-            app.updateOwner = previous
+            for (cleanup in
+                listOf<() -> Unit>(
+                    { scenario?.close() },
+                    { owner.close() },
+                    { app.updateOwner = previous },
+                )) try {
+                cleanup()
+            } catch (error: Throwable) {
+                failures += error
+            }
         }
+        MultipleFailureException.assertEmpty(failures)
     }
 }

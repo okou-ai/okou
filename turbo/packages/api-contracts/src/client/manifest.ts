@@ -27,6 +27,10 @@ export const clientDescriptorManifest = [
     ],
   },
   {
+    module: "android-updates",
+    contracts: ["androidUpdatesContract"],
+  },
+  {
     module: "artifact-catalog",
     contracts: ["artifactCatalogContract"],
   },

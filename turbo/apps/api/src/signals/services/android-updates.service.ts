@@ -18,18 +18,21 @@ export class AndroidUpdateUnavailable extends Error {
 }
 
 async function readManifest(signal: AbortSignal): Promise<string> {
-  const deadline = AbortSignal.any([signal, AbortSignal.timeout(5_000)]);
+  const deadline = AbortSignal.any([signal, AbortSignal.timeout(5000)]);
   const response = await fetch(MANIFEST_URL, {
     signal: deadline,
     redirect: "error",
   });
   if (!response.ok) {
-    if (response.body) startUntrackedBestEffortCleanup(response.body.cancel());
+    if (response.body) {
+      startUntrackedBestEffortCleanup(response.body.cancel());
+    }
     throw new AndroidUpdateUnavailable();
   }
   const body = await readBoundedResponseText(response, 65_536, deadline);
-  if (body.kind !== "text")
+  if (body.kind !== "text") {
     throw new Error("Android release manifest exceeds its limit");
+  }
   return body.text;
 }
 
@@ -42,8 +45,9 @@ export async function loadAndroidRelease(
     if (
       loaded.error instanceof TypeError ||
       loaded.error instanceof DOMException
-    )
+    ) {
       throw new AndroidUpdateUnavailable();
+    }
     throw loaded.error;
   }
   const { release } = androidReleaseManifestSchema.parse(
@@ -54,12 +58,13 @@ export async function loadAndroidRelease(
     major === undefined ||
     minor === undefined ||
     patch === undefined ||
-    minor >= 1_000 ||
-    patch >= 1_000 ||
-    major * 1_000_000 + minor * 1_000 + patch !== release.versionCode ||
+    minor >= 1000 ||
+    patch >= 1000 ||
+    major * 1_000_000 + minor * 1000 + patch !== release.versionCode ||
     release.url !==
       `https://static.okou.io/android-updates/releases/${release.version}/${release.sha256}.apk`
-  )
+  ) {
     throw new Error("Android release identity is inconsistent");
+  }
   return release;
 }
