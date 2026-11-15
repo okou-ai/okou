@@ -121,6 +121,27 @@ if run_lint; then
 fi
 grep -F 'okou_check_after_await' "$test_root/lint.log" >/dev/null
 rm "$fixture/Okou/CollectionWrite.swift"
+cat > "$fixture/Okou/ResourceCancellation.swift" <<'SWIFT'
+import CCState
+let read = computedTask { get, options in
+  do { return try await service.load() }
+  catch {
+    let cause = error
+    let cancelled = cause is CancellationError
+    switch cancelled {
+    case true: return []
+    case false: throw error
+    }
+  }
+}
+SWIFT
+if run_lint; then
+  echo 'An aliased cancellation switch passed the configured lint entry point.' >&2
+  exit 1
+fi
+grep -F 'ResourceCancellation.swift' "$test_root/lint.log" >/dev/null
+grep -F 'okou_resource_failures' "$test_root/lint.log" >/dev/null
+rm "$fixture/Okou/ResourceCancellation.swift"
 for path in "${test_paths[@]}"; do
   printf 'var fixtureState = 0\n' >> "$fixture/$path/Fixture.swift"
 done
