@@ -306,3 +306,88 @@ async fn custom_task_join_preserves_its_output() {
         "custom fixture output"
     );
 }
+
+async fn drop_pending_observer(observer: impl std::future::Future) {
+    let mut observer = Box::pin(observer);
+    std::future::poll_fn(|cx| {
+        assert!(std::future::Future::poll(observer.as_mut(), cx).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
+    drop(observer);
+}
+
+async fn assert_peer_closed(mut socket: TcpStream) {
+    let mut byte = [0];
+    assert_eq!(
+        tokio::time::timeout(RAW_HTTP_FIXTURE_TIMEOUT, socket.read(&mut byte))
+            .await
+            .expect("cancelled observer must close its peer connection")
+            .unwrap(),
+        0
+    );
+}
+
+async fn assert_server_observer_cancellation(with_requests: bool) {
+    let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::Stall]).await;
+    let mut socket = connect(&server).await;
+    socket.write_all(b"GET / HTTP/1.1\r\n\r\n").await.unwrap();
+    assert_eq!(
+        server
+            .next_request("request before finish cancellation")
+            .await,
+        "GET / HTTP/1.1\r\n\r\n"
+    );
+
+    drop_pending_observer(async move {
+        if with_requests {
+            server.assert_finished_with_requests().await;
+        } else {
+            server.assert_finished().await;
+        }
+    })
+    .await;
+
+    assert_peer_closed(socket).await;
+}
+
+#[tokio::test]
+async fn server_finish_observer_cancellation_closes_connection() {
+    assert_server_observer_cancellation(false).await;
+}
+
+#[tokio::test]
+async fn server_finish_with_requests_observer_cancellation_closes_connection() {
+    assert_server_observer_cancellation(true).await;
+}
+
+async fn assert_custom_join_observer_cancellation(poll_before_drop: bool) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let socket = TcpStream::connect(listener.local_addr().unwrap())
+        .await
+        .unwrap();
+    let (accepted, _) = listener.accept().await.unwrap();
+    let task = tokio::spawn(async move {
+        let _accepted = accepted;
+        pending::<()>().await;
+    });
+    let observer = join_raw_http_task(task, "custom peer cancellation");
+
+    if poll_before_drop {
+        drop_pending_observer(observer).await;
+    } else {
+        drop(observer);
+    }
+
+    assert_peer_closed(socket).await;
+}
+
+#[tokio::test]
+async fn custom_join_observer_cancellation_before_poll_closes_connection() {
+    assert_custom_join_observer_cancellation(false).await;
+}
+
+#[tokio::test]
+async fn custom_join_observer_cancellation_while_pending_closes_connection() {
+    assert_custom_join_observer_cancellation(true).await;
+}
