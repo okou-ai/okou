@@ -570,7 +570,8 @@ final class WorkspaceStore {
 
   private func refreshProjects(_ batch: Set<ChatInvalidation>) async {
     let generation = refreshGeneration
-    let recovery = batch.contains(.foregroundResume) || batch.contains(.realtimeResume)
+    let recovery =
+      batch.contains(.foregroundResume) || batch.contains(.realtimeResume)
       || batch.contains(.realtimeGap)
     var reload = batch.contains(.threadList) || batch.contains(.reconnected)
     if batch.contains(.startup) {

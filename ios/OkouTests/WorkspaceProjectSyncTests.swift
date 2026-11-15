@@ -207,8 +207,11 @@ private final class ProjectSyncFixture {
               """)
         case "/api/projects/events":
           projectReads.withLock { $0 += 1 }
-          let since = request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?
-            .queryItems?.first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
+          let components = request.url.flatMap {
+            URLComponents(url: $0, resolvingAgainstBaseURL: false)
+          }
+          let cursor = components?.queryItems?.first { $0.name == "sinceSeqId" }?.value
+          let since = Int(cursor ?? "0") ?? 0
           let version = remote.withLock { $0 }
           let events = (1...2).filter { $0 > since && $0 <= version }.map { sequence in
             """
