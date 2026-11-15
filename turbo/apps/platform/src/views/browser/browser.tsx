@@ -1021,8 +1021,12 @@ function BrowserTab({
   return (
     <div
       className={cn(
-        "@container/browser-tab relative flex h-9 min-w-14 max-w-56 flex-1 basis-0 items-center rounded-lg pr-1",
+        "@container/browser-tab relative flex h-9 min-w-14 max-w-56 flex-1 basis-0 items-center rounded-lg pr-1 transition-colors",
         selected && "bg-state-selected",
+        !triggerDisabled && [
+          "group/browser-tab",
+          selected ? "hover:bg-state-selected-hover" : "hover:bg-state-hover",
+        ],
       )}
     >
       <Tooltip>
@@ -1033,7 +1037,7 @@ function BrowserTab({
               data-browser-tab-id={target.id}
               aria-label={name}
               disabled={triggerDisabled}
-              className="min-w-0 flex-1 justify-start rounded-lg px-1.5 text-xs data-active:bg-transparent data-active:shadow-none"
+              className="min-w-0 flex-1 justify-start rounded-lg px-1.5 text-xs group-hover/browser-tab:text-foreground not-data-active:hover:bg-transparent data-active:bg-transparent data-active:shadow-none"
             />
           }
         >
@@ -1054,7 +1058,10 @@ function BrowserTab({
           { title: name },
         )}
         disabled={!canMutateTabs || closing || selecting}
-        className="size-6 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+        className={cn(
+          "size-6 shrink-0 rounded-md text-muted-foreground hover:bg-transparent",
+          canMutateTabs && "group-hover/browser-tab:text-foreground",
+        )}
         onClick={() => {
           detach(closeTab(target.id, pageSignal), Reason.DomCallback);
         }}
