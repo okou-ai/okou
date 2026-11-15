@@ -74,12 +74,17 @@ export function useComposerCapabilities(signals: ComposerSignals) {
   const open = useSet(signals.taskChips.home.openCapability$);
   const focusEditor = useSet(signals.editor.focus$);
   const pageSignal = useGet(pageSignal$);
-  const copy = t(
-    ($) => {
-      return $.chat.capabilityHome;
-    },
-    { returnObjects: true },
-  );
+  const labels = {
+    search: t(($) => {
+      return $.chat.capabilityHome.search.title;
+    }),
+    research: t(($) => {
+      return $.chat.capabilityHome.research.title;
+    }),
+    create: t(($) => {
+      return $.chat.capabilityHome.create.title;
+    }),
+  };
   const workflow = t(($) => {
     return $.chat.taskChips.tasks.workflow;
   });
@@ -97,21 +102,21 @@ export function useComposerCapabilities(signals: ComposerSignals) {
         {
           id: "search",
           Icon: UserRoundSearch,
-          label: copy.search.title,
+          label: labels.search,
           keywords: ["find", "people", "search"],
           run: run("search"),
         },
         {
           id: "research",
           Icon: Telescope,
-          label: copy.research.title,
+          label: labels.research,
           keywords: ["research"],
           run: run("research"),
         },
         {
           id: "create",
           Icon: Shapes,
-          label: copy.create.title,
+          label: labels.create,
           keywords: ["create"],
           run: run("create"),
         },
