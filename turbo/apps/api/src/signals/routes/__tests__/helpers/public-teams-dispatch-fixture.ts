@@ -215,7 +215,7 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
       // Register the UUID owner before onboarding, billing, or installation.
       owned.push(fixture);
       configureExternalMocks(fixture);
-      if (options.withDefaultAgent) {
+      if (options.withDefaultAgent && !options.paidNative) {
         fixture.defaultAgentId = await bdd.bootstrapLimitedFreeOnboarding(
           fixture.actor,
           { displayName: "Teams dispatch" },
@@ -234,10 +234,13 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
         },
       });
       if (options.paidNative) {
-        await runs.grantProEntitlement(fixture.actor, {
+        const entitlement = await runs.grantProEntitlement(fixture.actor, {
           customerId: fixture.customerId,
           subscriptionId: fixture.subscriptionId,
         });
+        if (options.withDefaultAgent) {
+          fixture.defaultAgentId = entitlement.defaultAgentId;
+        }
         await runs.ensurePersonalSubscriptionModel(fixture.actor, {
           model: "claude-fable-5-1",
         });
