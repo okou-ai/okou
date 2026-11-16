@@ -2,6 +2,9 @@ import {
   chatThreadsContract,
   type ChatThreadEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { projectsContract } from "@okouai/api-contracts/contracts/projects";
+import type { ProjectEvent } from "@okouai/api-contracts/validators/projects";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -163,4 +166,99 @@ test("A realtime continuity gap catches up without another chat notification", a
   await expect(
     screen.findByText("Reply received while away"),
   ).resolves.toBeInTheDocument();
+});
+
+test("A realtime continuity gap catches up Project changes without another notification", async () => {
+  installChat();
+  const renamedId = "30000000-0000-4000-8000-000000000071";
+  const deletedId = "30000000-0000-4000-8000-000000000072";
+  const createdId = "30000000-0000-4000-8000-000000000073";
+  const at = "2026-11-02T00:00:00.000Z";
+  const events: ProjectEvent[] = [];
+  context.mocks.api(projectsContract.snapshot, ({ respond }) => {
+    return respond(200, {
+      projects: [
+        {
+          id: renamedId,
+          name: "Earlier Project",
+          createdAt: at,
+          updatedAt: at,
+        },
+        {
+          id: deletedId,
+          name: "Retired Project",
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      latestEventId: "40000000-0000-4000-8000-000000000070",
+      latestSeqId: 2,
+    });
+  });
+  context.mocks.api(projectsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: events.filter((event) => {
+        return event.seqId > query.sinceSeqId;
+      }),
+      hasMore: false,
+    });
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    sharedWorkerTestTransport: "message-port",
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  await expect(
+    screen.findByText("Earlier Project"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByText("Retired Project")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(
+        "user:test-user-123",
+        "userPreferenceChanged",
+      ),
+    ).toBeTruthy();
+  });
+
+  act(() => {
+    context.mocks.ably.triggerSharedWorkerConnectionState("suspended");
+  });
+  events.push(
+    {
+      id: "40000000-0000-4000-8000-000000000071",
+      projectId: renamedId,
+      seqId: 3,
+      kind: "renamed",
+      name: "Renamed Project",
+      createdAt: at,
+    },
+    {
+      id: "40000000-0000-4000-8000-000000000072",
+      projectId: deletedId,
+      seqId: 4,
+      kind: "deleted",
+      name: null,
+      createdAt: at,
+    },
+    {
+      id: "40000000-0000-4000-8000-000000000073",
+      projectId: createdId,
+      seqId: 5,
+      kind: "created",
+      name: "New Project",
+      createdAt: at,
+    },
+  );
+  act(() => {
+    return context.mocks.ably.triggerSharedWorkerReconnect();
+  });
+
+  await expect(screen.findByText("New Project")).resolves.toBeInTheDocument();
+  expect(screen.getByText("Renamed Project")).toBeInTheDocument();
+  expect(screen.queryByText("Earlier Project")).not.toBeInTheDocument();
+  expect(screen.queryByText("Retired Project")).not.toBeInTheDocument();
+  expect(screen.getByText("Already loaded reply")).toBeInTheDocument();
+  expect(location.pathname).toBe(RUN_PATH);
 });
