@@ -79,15 +79,9 @@ impl PostOpenMockGate {
     }
 }
 
-/// Build a mock in a Cargo test's output profile and cache it for one build session.
-pub fn build_and_locate_mock_package_in_workspace(
-    workspace_dir: &Path,
-    test_executable: &Path,
-    package: &str,
-    binary: &str,
-    build_session: Option<&str>,
-) -> Result<PathBuf, String> {
-    let target_profile_dir = match test_executable.parent() {
+/// Resolve the output profile directory of a test built by the pinned Cargo.
+pub fn cargo_test_profile_dir(test_executable: &Path) -> Result<&Path, String> {
+    match test_executable.parent() {
         // Cargo 1.100: <target>/<profile>/build/<package>/<hash>/out/<test>.
         Some(dir) if dir.file_name() == Some(OsStr::new("out")) => dir
             .ancestors()
@@ -101,7 +95,18 @@ pub fn build_and_locate_mock_package_in_workspace(
             "unsupported Cargo test executable layout: {}",
             test_executable.display()
         )
-    })?;
+    })
+}
+
+/// Build a mock in a Cargo test's output profile and cache it for one build session.
+pub fn build_and_locate_mock_package_in_workspace(
+    workspace_dir: &Path,
+    test_executable: &Path,
+    package: &str,
+    binary: &str,
+    build_session: Option<&str>,
+) -> Result<PathBuf, String> {
+    let target_profile_dir = cargo_test_profile_dir(test_executable)?;
     let target_dir = target_profile_dir
         .parent()
         .ok_or_else(|| "target dir".to_string())?;

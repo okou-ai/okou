@@ -1051,11 +1051,18 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Cross-compile nbd-cow tests for ${{ matrix.label }}
+        shell: bash
         run: |
+          set -euo pipefail
           cd crates
-          cargo test --no-run --release --target "$TARGET_TRIPLE" -p nbd-cow
-          TEST_BIN=$(find "target/$TARGET_TRIPLE/release/deps" -name "integration-*" -executable -type f | head -1)
-          cp "$TEST_BIN" "target/nbd-cow-integration-test"
+          TEST_BIN=$(cargo test --no-run --release --locked --target "$TARGET_TRIPLE" \
+            -p nbd-cow --test integration --message-format=json-render-diagnostics | jq -ers '
+              [.[] | select(.reason == "compiler-artifact" and .target.name == "integration"
+                and .target.kind == ["test"] and .profile.test == true)
+                | .executable | select(. != null)]
+              | if length == 1 then .[0] else error("expected exactly one integration executable") end
+            ')
+          cp -- "$TEST_BIN" "target/nbd-cow-integration-test"
           echo "TEST_BIN=crates/target/nbd-cow-integration-test" >> "$GITHUB_ENV"
 
       - name: Setup SSH via Cloudflare Tunnel
