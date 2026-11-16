@@ -421,6 +421,38 @@ describe("okou wallet", () => {
     expect(output.mock.calls).toStrictEqual([[JSON.stringify(method)]]);
   });
 
+  it("reads saved-card summaries without expiry through list and get", async () => {
+    const method = {
+      id: "pm_summary",
+      type: "CARD",
+      name: "Visa",
+      isDefault: true,
+      cardSummary: { brand: "visa", last4: "4242" },
+    };
+    const providerMethod = {
+      ...method,
+      cardSummary: {
+        ...method.cardSummary,
+        number: "private-pan",
+        cvc: "private-cvc",
+      },
+    };
+    server.use(
+      http.get(`${origin}/api/wallet/payment-methods`, () => {
+        return HttpResponse.json({ data: [providerMethod] });
+      }),
+      http.get(`${origin}/api/wallet/payment-methods/pm_summary`, () => {
+        return HttpResponse.json(providerMethod);
+      }),
+    );
+    await run(["payment-methods", "list", "--json"]);
+    await run(["payment-methods", "get", method.id, "--json"]);
+    expect(output.mock.calls).toStrictEqual([
+      [JSON.stringify({ data: [method] })],
+      [JSON.stringify(method)],
+    ]);
+  });
+
   it("preserves verification URLs and nullable limits in user info", async () => {
     const actionUrl = "https://app.link.com/verify?session=keep%2Fexact";
     server.use(

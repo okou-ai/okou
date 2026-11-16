@@ -132,6 +132,13 @@ export const walletPaymentMethodSchema = object({
   name: string(),
   nickname: string().nullable().optional(),
   isDefault: boolean(),
+  cardSummary: object({
+    brand: string(),
+    last4: string().regex(/^\d{4}$/),
+  })
+    .nullable()
+    .optional(),
+  // Retain the legacy projection until the App/Runner reader gates in #47624 pass.
   card: object({
     brand: string(),
     last4: string().regex(/^\d{4}$/),
