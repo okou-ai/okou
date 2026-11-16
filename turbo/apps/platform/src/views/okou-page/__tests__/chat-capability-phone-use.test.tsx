@@ -159,6 +159,7 @@ test.each([true, false])(
     const primary = await screen.findByRole("switch", {
       name: /^Owner iPhone/u,
     });
+    expect(primary).toHaveAccessibleName("Owner iPhone Ready");
     const second = await screen.findByRole("switch", {
       name: /^Second iPhone/u,
     });

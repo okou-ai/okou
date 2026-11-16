@@ -71,7 +71,6 @@ function PhoneRow({
             );
           })}
           size="sm"
-          ariaLabel={device.displayName}
         />
       </label>
     </li>
