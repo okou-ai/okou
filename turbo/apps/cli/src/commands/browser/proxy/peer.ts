@@ -1,5 +1,5 @@
 import type { WebSocket as ClientSocket } from "ws";
-import { ProtocolError, record, scopedError } from "./wire";
+import { ProtocolError, record, scopedError, type PeerWire } from "./wire";
 import {
   WindowScope,
   targetInfo,
@@ -112,7 +112,7 @@ export class ProxyPeer {
 
   constructor(
     private readonly downstream: ClientSocket,
-    private readonly upstream: WebSocket,
+    private readonly upstream: PeerWire,
     private readonly scope: WindowScope,
     private readonly finished: () => void,
   ) {
@@ -137,21 +137,10 @@ export class ProxyPeer {
     downstream.on("close", () => {
       return this.close();
     });
-    upstream.addEventListener("error", () => {
+    upstream.onClose(() => {
       return this.close();
     });
-    upstream.addEventListener("close", () => {
-      return this.close();
-    });
-    upstream.addEventListener("message", ({ data }: { data: unknown }) => {
-      if (typeof data !== "string") return this.close();
-      let value: unknown;
-      try {
-        value = JSON.parse(data);
-      } catch {
-        return this.close();
-      }
-      if (!record(value)) return this.close();
+    upstream.onMessage((value, data) => {
       const channel =
         typeof value.sessionId === "string" ? value.sessionId : undefined;
       const internal = this.internal.get(key(channel, value.id));

@@ -67,8 +67,18 @@ async function client(endpoint: string) {
       entry.reject(new Error("Fixture connection closed"));
     pending.clear();
   });
+  const closed = new Promise<void>((resolve) => {
+    socket.addEventListener(
+      "close",
+      () => {
+        resolve();
+      },
+      { once: true },
+    );
+  });
   return {
     socket,
+    closed,
     listeners,
     request(
       method: string,
@@ -131,6 +141,73 @@ describe("chat-window CDP proxy protocol", () => {
     for (const connection of clients.splice(0)) connection.close();
     await proxy?.close();
     await provider?.close();
+  });
+
+  it("serves independent clients when the provider admits only one connection", async () => {
+    provider.limitConnections(1);
+    const peer = await client(proxy.endpoint);
+    clients.push(peer);
+    expect(
+      await Promise.all([
+        connection.request("Future.echo", { client: "first" }, undefined, -1),
+        peer.request("Future.echo", { client: "second" }, undefined, -1),
+      ]),
+    ).toStrictEqual([
+      { opaque: { client: "first" } },
+      { opaque: { client: "second" } },
+    ]);
+    peer.close();
+    await peer.closed;
+    await expect(
+      connection.request("Target.getTargets"),
+    ).resolves.toMatchObject({
+      targetInfos: expect.arrayContaining([
+        expect.objectContaining({ targetId: "A" }),
+      ]),
+    });
+    await expect(
+      connection.request("Future.echo", { afterPeerClose: true }),
+    ).resolves.toStrictEqual({
+      opaque: { afterPeerClose: true },
+    });
+  });
+
+  it("ends all clients on transport loss during a native close and preserves the window for a new proxy", async () => {
+    provider.addPage("C", 0);
+    const peer = await client(proxy.endpoint);
+    clients.push(peer);
+    const held = provider.holdClose("A", "transport");
+    try {
+      await expect(
+        connection.request("Target.closeTarget", { targetId: "A" }),
+      ).rejects.toThrow("Fixture connection closed");
+      await held.observed;
+      await Promise.all([connection.closed, peer.closed, proxy.closed]);
+    } finally {
+      held.resume();
+    }
+    expect(provider.hasWindow(0)).toBe(true);
+    expect(provider.hasWindow(1)).toBe(true);
+    proxy = await startWindowProxy(
+      { cdpUrl: provider.endpoint, runtimeId: EXTENSION_RUNTIME, windowId: 0 },
+      new AbortController().signal,
+    );
+    server.use(
+      ws
+        .link(proxy.endpoint)
+        .addEventListener("connection", ({ server: remote }) => {
+          remote.connect();
+        }),
+    );
+    const recovered = await client(proxy.endpoint);
+    clients.push(recovered);
+    await expect(recovered.request("Target.getTargets")).resolves.toMatchObject(
+      {
+        targetInfos: expect.arrayContaining([
+          expect.objectContaining({ targetId: "C" }),
+        ]),
+      },
+    );
   });
 
   it("filters native page and unattributed iframe discovery while preserving result fields and global workers", async () => {
@@ -1561,12 +1638,12 @@ describe("chat-window CDP proxy protocol", () => {
     }
   });
 
-  it("preserves the window when an earlier close loses its native acknowledgement", async () => {
+  it("preserves the window when an earlier client's session loses its native close acknowledgement", async () => {
     provider.addPage("C", 0);
     await connection.request("Target.getTargets");
     const peer = await client(proxy.endpoint);
     clients.push(peer);
-    const held = provider.holdClose("A", true);
+    const held = provider.holdClose("A", "session");
     try {
       await expect(
         connection.request("Target.closeTarget", { targetId: "A" }),

@@ -55,11 +55,15 @@ async function traceRelay(endpoint) {
   await once(listener, "listening");
   const pairs = new Set();
   const attachments = [];
+  let peakConnections = 0;
+  let totalConnections = 0;
   listener.on("connection", (client) => {
     const upstream = new WebSocket(endpoint);
     const pair = { client, upstream };
     const queued = [];
     pairs.add(pair);
+    totalConnections++;
+    peakConnections = Math.max(peakConnections, pairs.size);
     client.on("message", (data) => {
       if (upstream.readyState === WebSocket.OPEN)
         upstream.send(data.toString());
@@ -91,6 +95,13 @@ async function traceRelay(endpoint) {
   const relay = {
     endpoint: `ws://127.0.0.1:${listener.address().port}/devtools/browser`,
     attachments,
+    get connections() {
+      return {
+        active: pairs.size,
+        peak: peakConnections,
+        total: totalConnections,
+      };
+    },
     async close() {
       for (const { client, upstream } of pairs) {
         client.terminate();
@@ -990,6 +1001,14 @@ try {
   const relay = await traceRelay(endpoint);
   const traced = await proxy(relay.endpoint, runtimeId, winA);
   const scopedTrace = await wire(traced.endpoint);
+  const independentTrace = await wire(traced.endpoint);
+  await Promise.all([
+    scopedTrace.request("Target.getTargets"),
+    independentTrace.request("Target.getTargets"),
+  ]);
+  assert.deepEqual(relay.connections, { active: 1, peak: 1, total: 1 });
+  independentTrace.close();
+  assert.ok((await pages(scopedTrace)).length);
   const browserRoot = (await scopedTrace.request("Target.getTargetInfo"))
     .targetInfo.targetId;
   await scopedTrace.request("Target.autoAttachRelated", {
@@ -1452,6 +1471,7 @@ try {
         handlerFilterSurvivesRootRemoval: true,
         nativeRootDestructionPreservesOtherSessions: true,
         noForeignNativeDebuggerAttachment: true,
+        sharedProviderConnections: relay.connections,
         oopifParentage: true,
         agentBrowser: true,
         guestTaskAdmission: options["guest-task"],

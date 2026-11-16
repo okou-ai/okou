@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { OkouBrowserClient } from "@okouai/browser-extension-client";
 import { WebSocketServer } from "ws";
-import { ControlWire, record } from "./wire";
+import { ControlWire, record, type PeerWire } from "./wire";
 import { WindowScope } from "./scope";
 import { ProxyPeer } from "./peer";
 
@@ -100,61 +100,48 @@ export async function startWindowProxy(
     signal.throwIfAborted();
     if (closing) throw new Error("Scoped Browser setup was retired");
     const activeScope = scope;
+    const activeControl = control;
     server.on("upgrade", (request, socket, head) => {
       if (request.url !== path || closing) {
         socket.destroy();
         return;
       }
-      const upstream = new WebSocket(endpoint);
+      let upstream: PeerWire | undefined;
+      let cancelled = false;
       const cancel = () => {
+        cancelled = true;
         clearTimeout(timer);
         socket.destroy();
-        upstream.close();
+        upstream?.close();
         handshakes.delete(cancel);
       };
       const timer = setTimeout(() => {
         cancel();
       }, 15_000);
       handshakes.add(cancel);
-      const lost = () => {
-        upstream.close();
-      };
-      socket.once("close", lost);
-      upstream.addEventListener("error", () => {
-        socket.destroy();
-      });
-      upstream.addEventListener("close", () => {
-        clearTimeout(timer);
-        socket.destroy();
-        handshakes.delete(cancel);
-      });
-      upstream.addEventListener(
-        "open",
-        () => {
+      socket.once("close", cancel);
+      activeControl
+        .openPeer()
+        .then((channel) => {
+          upstream = channel;
           clearTimeout(timer);
           handshakes.delete(cancel);
-          socket.removeListener("close", lost);
-          if (closing || socket.destroyed) {
+          socket.removeListener("close", cancel);
+          if (cancelled || closing || socket.destroyed || channel.closed) {
             upstream.close();
             return;
           }
           sockets.handleUpgrade(request, socket, head, (downstream) => {
             claimed = true;
             clearTimeout(unclaimed);
-            const peer = new ProxyPeer(
-              downstream,
-              upstream,
-              activeScope,
-              () => {
-                peers.delete(peer);
-                if (claimed && !peers.size) abort();
-              },
-            );
+            const peer = new ProxyPeer(downstream, channel, activeScope, () => {
+              peers.delete(peer);
+              if (claimed && !peers.size) abort();
+            });
             peers.add(peer);
           });
-        },
-        { once: true },
-      );
+        })
+        .catch(cancel);
     });
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
