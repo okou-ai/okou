@@ -8,6 +8,7 @@ import Observation
 final class ChatForkStore: Identifiable {
   let id = UUID()
   let agentID: String
+  let projectID: String?
   let composer: ComposerDraftStore
   private(set) var modelSelection: ChatModelSelectionStore
   let workflowSource: ComposerWorkflowSource
@@ -43,7 +44,7 @@ final class ChatForkStore: Identifiable {
   }
 
   init(
-    selection: ChatFeedbackSelection, sourceRunID: String,
+    selection: ChatFeedbackSelection, sourceRunID: String, projectID: String?,
     agentID: String, commands: ChatCommands, models: ChatModelStore,
     workflowSource: ComposerWorkflowSource, lifecycleTasks: LifecycleTasks,
     didCreate: @escaping @MainActor (ChatThread) -> Void,
@@ -52,6 +53,7 @@ final class ChatForkStore: Identifiable {
   ) {
     self.sourceRunID = sourceRunID
     sourceEventID = selection.eventID
+    self.projectID = projectID
     self.agentID = agentID
     self.commands = commands
     self.models = models
@@ -122,7 +124,7 @@ final class ChatForkStore: Identifiable {
         } else {
           target = try await commands.createThread(
             modelSelection: pending.model, reasoningEffort: pending.effort,
-            composerOptions: pending.options, clientThreadID: clientThreadID)
+            composerOptions: pending.options, projectID: projectID, clientThreadID: clientThreadID)
           try Task.checkCancellation()
           guard !closed else { return nil }
           thread = target

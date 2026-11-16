@@ -365,6 +365,7 @@ private struct WorkspaceRootView: View {
     ) { flow in
       ChatForkView(
         flow: flow, webURL: store.webURL, threads: store.list.threads,
+        project: store.projects.projects.first(where: { $0.id == flow.projectID }),
         needsUpgrade: store.needsUpgrade, dismiss: store.dismissFork)
     }
     .chatFeedbackOverlay(store: store, isPresented: !sidebar.isOpen)
