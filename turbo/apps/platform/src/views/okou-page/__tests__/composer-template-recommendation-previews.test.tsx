@@ -90,7 +90,13 @@ async function expectDismissed(eye: HTMLElement) {
   expect(composerInlineTemplates()).toHaveLength(0);
 }
 
-function mockCustomTemplate(kind: CustomKind): UserTemplateDetail {
+function mockCustomTemplate(
+  kind: CustomKind,
+  deleteFails: () => boolean = () => {
+    return false;
+  },
+): UserTemplateDetail {
+  let deleted = false;
   const detail: UserTemplateDetail = {
     id:
       kind === "presentation"
@@ -117,10 +123,19 @@ function mockCustomTemplate(kind: CustomKind): UserTemplateDetail {
   };
   const { pageUrls: _pageUrls, sourceUrl: _sourceUrl, ...entry } = detail;
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    return respond(200, [entry]);
+    return respond(200, deleted ? [] : [entry]);
   });
   context.mocks.api(userTemplatesContract.get, ({ respond }) => {
     return respond(200, detail);
+  });
+  context.mocks.api(userTemplatesContract.delete, ({ respond }) => {
+    if (deleteFails()) {
+      return respond(500, {
+        error: { code: "INTERNAL_SERVER_ERROR", message: "Delete failed" },
+      });
+    }
+    deleted = true;
+    return respond(204);
   });
   return detail;
 }
@@ -315,6 +330,58 @@ test("A report recommendation previews its sample pages, dismisses and attaches 
     selection: { documentTemplateId: report.id },
   });
 });
+
+test.each(["presentation", "document"] as const)(
+  "Deleting a custom %s recommendation dismisses to a surviving shelf control only on success",
+  async (kind) => {
+    const capture = mockTemplateChat();
+    let deleteFails = true;
+    const detail = mockCustomTemplate(kind, () => {
+      return deleteFails;
+    });
+    const { editor, shelf } = await openTray(
+      kind === "presentation" ? "Presentation" : "Document",
+    );
+    const user = userEvent.setup({ delay: null });
+    const eye = await waitFor(() => {
+      return control("button", `Preview template ${detail.title}`, shelf);
+    });
+    await user.click(eye);
+    const preview = await customDetail(kind);
+    click(control("button", "Delete", preview));
+    const cancelled = await screen.findByRole("dialog", {
+      name: "Delete template?",
+    });
+    click(control("button", "Cancel", cancelled));
+    await waitFor(() => {
+      expect(cancelled).not.toBeInTheDocument();
+    });
+    expect(preview).toBeInTheDocument();
+    click(control("button", "Delete", preview));
+    const confirmation = await screen.findByRole("dialog", {
+      name: "Delete template?",
+    });
+    click(control("button", "Delete template", confirmation));
+    await within(confirmation).findByText("Couldn't delete the template.");
+    expect(preview).toBeInTheDocument();
+    deleteFails = false;
+    click(control("button", "Delete template", confirmation));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(within(shelf).queryByText(detail.title)).not.toBeInTheDocument();
+    });
+    const importLabel =
+      kind === "presentation"
+        ? "Import your own deck"
+        : "Import your own document";
+    await waitFor(() => {
+      expect(within(shelf).getByLabelText(importLabel)).toHaveFocus();
+    });
+    expect(editor).toHaveTextContent(DRAFT);
+    expect(composerInlineTemplates()).toHaveLength(0);
+    expect(capture.sentMessages).toHaveLength(0);
+  },
+);
 
 async function dismissCustomPresentation(
   dialog: HTMLElement,

@@ -59,7 +59,6 @@ import {
   cancelRenameCustomTemplate$,
   customTemplateActiveExample$,
   customTemplateCatalog$,
-  deleteCustomTemplate$,
   openCustomTemplate$,
   openCustomTemplateKind$,
   pendingCustomTemplateDeletion$,
@@ -542,8 +541,10 @@ function CustomTemplateCard({
  * only on success.
  */
 function CustomTemplateDeleteConfirmSlot({
+  signals,
   returnFocus,
 }: {
+  readonly signals: ComposerSignals;
   readonly returnFocus: (interactionType: string) => HTMLElement | null;
 }) {
   const pending = useGet(pendingCustomTemplateDeletion$);
@@ -553,15 +554,18 @@ function CustomTemplateDeleteConfirmSlot({
       templateId={pending.id}
       title={pending.title}
       returnFocus={returnFocus}
+      signals={signals}
     />
   ) : null;
 }
 
 function CustomTemplateDeleteConfirm({
+  signals,
   templateId,
   title,
   returnFocus,
 }: {
+  readonly signals: ComposerSignals;
   readonly templateId: string;
   readonly title: string;
   readonly returnFocus: (interactionType: string) => HTMLElement | null;
@@ -570,7 +574,7 @@ function CustomTemplateDeleteConfirm({
   const pageSignal = useGet(pageSignal$);
   const cancel = useSet(cancelDeleteCustomTemplate$);
   const [deleteLoadable, deleteTemplate] = useLoadableSet(
-    deleteCustomTemplate$,
+    signals.template.deleteCustomTemplate$,
   );
   const deleting = deleteLoadable.state === "loading";
   const previewKind = useGet(openCustomTemplateKind$);
@@ -843,7 +847,10 @@ export function CustomTemplatePickerSection({
         returnFocus={returnFocus}
         onClose={onPreviewClose}
       />
-      <CustomTemplateDeleteConfirmSlot returnFocus={returnFocus} />
+      <CustomTemplateDeleteConfirmSlot
+        signals={signals}
+        returnFocus={returnFocus}
+      />
       <CustomTemplateRenameSlot returnFocus={returnFocus} />
     </>
   );

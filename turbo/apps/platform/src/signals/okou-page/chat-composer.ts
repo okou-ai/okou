@@ -4,6 +4,7 @@ import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/
 import { onRef } from "../utils.ts";
 import { createPresentationTemplatePreviewSignals } from "./presentation-template-preview.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
+import { deleteCustomTemplate$ as deleteCustomTemplateRecord$ } from "./custom-template-library.ts";
 
 /** `category` is null until an entry point or the member names one. */
 export function resolveTemplatePickerCategory(category: string | null): string {
@@ -113,12 +114,34 @@ function createBasicComposerUiSignals() {
   };
 }
 
-function createTemplatePickerDialogSignals() {
-  const returnFocus$ = state<HTMLElement | null>(null);
-  const templatePickerFinalFocus$ = command(({ get }) => {
-    const element = get(returnFocus$);
-    return element?.isConnected ? element : null;
+function createTemplatePickerReturnFocusSignals() {
+  const trigger$ = state<HTMLElement | null>(null);
+  const shelf$ = state<HTMLElement | null>(null);
+  const capture$ = command(({ set }) => {
+    const active = document.activeElement;
+    const trigger = active instanceof HTMLElement ? active : null;
+    set(trigger$, trigger);
+    set(shelf$, trigger?.closest<HTMLElement>("[data-rail-root]") ?? null);
   });
+  const finalFocus$ = command(({ get }) => {
+    const trigger = get(trigger$);
+    if (trigger?.isConnected) {
+      return trigger;
+    }
+    // Deleting a custom template removes its Eye. Keep focus on a surviving
+    // shelf control rather than falling back to the page body.
+    const shelf = get(shelf$);
+    return shelf?.isConnected
+      ? shelf.querySelector<HTMLElement>(
+          'input[type="file"]:not(:disabled), button:not(:disabled)',
+        )
+      : null;
+  });
+  return { capture$, finalFocus$ };
+}
+
+function createTemplatePickerDialogSignals() {
+  const focus = createTemplatePickerReturnFocusSignals();
   const internalTemplatePickerDirectPreview$ = state(false);
   const templatePickerDirectPreview$ = computed((get) => {
     return get(internalTemplatePickerDirectPreview$);
@@ -167,8 +190,7 @@ function createTemplatePickerDialogSignals() {
     if (open) {
       // Detail refs focus before the dialog mounts. Remember the originating
       // shelf control now, so dismissal cannot restore an unmounted breadcrumb.
-      const active = document.activeElement;
-      set(returnFocus$, active instanceof HTMLElement ? active : null);
+      set(focus.capture$);
       set(internalTemplatePickerMounted$, true);
     }
     set(internalTemplatePickerOpen$, open);
@@ -225,7 +247,7 @@ function createTemplatePickerDialogSignals() {
   return {
     templatePickerDirectPreview$,
     setTemplatePickerDirectPreview$,
-    templatePickerFinalFocus$,
+    templatePickerFinalFocus$: focus.finalFocus$,
     templatePickerMounted$,
     templatePickerOpen$,
     templatePickerInitialFocus$,
@@ -370,6 +392,15 @@ function createTemplatePickerFocusSignals(
   previews: ReturnType<typeof createPresentationTemplatePreviewSignals>,
 ) {
   const pendingPreviewTriggerId$ = state<string | null>(null);
+  const deleteCustomTemplate$ = command(
+    async ({ get, set }, templateId: string, signal: AbortSignal) => {
+      await set(deleteCustomTemplateRecord$, templateId, signal);
+      signal.throwIfAborted();
+      if (get(dialog.templatePickerDirectPreview$)) {
+        set(dialog.setTemplatePickerOpen$, false);
+      }
+    },
+  );
   const closeOpenedTemplate$ = command(({ get, set }) => {
     const templateId = get(previews.openedTemplateId$);
     set(
@@ -399,6 +430,7 @@ function createTemplatePickerFocusSignals(
     set(dialog.completeTemplatePickerClose$);
   });
   return {
+    deleteCustomTemplate$,
     closeOpenedTemplate$,
     restoreTemplatePreviewTriggerRef$,
     focusTemplatePreviewRef$,
