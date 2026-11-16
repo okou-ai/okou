@@ -14,9 +14,11 @@ import {
   isDiscordOauthTelemetryUrl,
 } from "./lib/discord-oauth-telemetry";
 import {
-  filterTelegramAuthSentryBreadcrumb,
-  filterTelegramAuthSentryEvent,
+  containsTelegramBotTelemetryUrl,
+  filterTelegramSentryBreadcrumb,
+  filterTelegramSentryEvent,
   isTelegramAuthTelemetryUrl,
+  TELEGRAM_BOT_TELEMETRY_URL,
 } from "./lib/telegram-auth-telemetry";
 
 const OTEL_SERVICE_NAME = "vm0-api";
@@ -26,8 +28,32 @@ const OTEL_SERVICE_NAME = "vm0-api";
 const AXIOM_INGEST_URL =
   /^https:\/\/api\.axiom\.co\/v1\/datasets\/[^/?#]+\/ingest(?:[?#]|$)/u;
 
+class AxiomTraceExporter extends OTLPTraceExporter {
+  override export(
+    spans: Parameters<OTLPTraceExporter["export"]>[0],
+    callback: Parameters<OTLPTraceExporter["export"]>[1],
+  ): void {
+    // Ignoring the outbound fetch does not protect a parent span that records
+    // its exception. Inspect the public OTLP content, not SDK object internals.
+    super.export(
+      spans.filter((span) => {
+        return !containsTelegramBotTelemetryUrl({
+          name: span.name,
+          attributes: span.attributes,
+          status: span.status,
+          events: span.events,
+          links: span.links,
+          resource: span.resource.attributes,
+          scope: span.instrumentationScope,
+        });
+      }),
+      callback,
+    );
+  }
+}
+
 function buildAxiomTraceExporter(): OTLPTraceExporter {
-  return new OTLPTraceExporter({
+  return new AxiomTraceExporter({
     url: "https://api.axiom.co/v1/traces",
     headers: {
       authorization: `Bearer ${env("AXIOM_TOKEN_TELEMETRY")}`,
@@ -43,7 +69,9 @@ function setupOpenTelemetry() {
     traceExporter: buildAxiomTraceExporter(),
     spanProcessors: ["auto"],
     instrumentationConfig: {
-      fetch: { ignoreUrls: [AXIOM_INGEST_URL] },
+      fetch: {
+        ignoreUrls: [AXIOM_INGEST_URL, TELEGRAM_BOT_TELEMETRY_URL],
+      },
     },
   });
 }
@@ -71,23 +99,31 @@ function setupSentry() {
       httpIntegration({
         spans: false,
         tracePropagation: false,
+        ignoreOutgoingRequests: (url) => {
+          return TELEGRAM_BOT_TELEMETRY_URL.test(url);
+        },
         ignoreIncomingRequestBody: (url) => {
           return (
             isDiscordOauthTelemetryUrl(url) || isTelegramAuthTelemetryUrl(url)
           );
         },
       }),
-      nativeNodeFetchIntegration({ tracePropagation: false }),
+      nativeNodeFetchIntegration({
+        tracePropagation: false,
+        ignoreOutgoingRequests: (url) => {
+          return TELEGRAM_BOT_TELEMETRY_URL.test(url);
+        },
+      }),
     ],
     release,
     sendDefaultPii: false,
     beforeSend: (event) => {
-      return filterTelegramAuthSentryEvent(event)
+      return filterTelegramSentryEvent(event)
         ? filterDiscordOauthSentryEvent(event)
         : null;
     },
     beforeBreadcrumb: (breadcrumb) => {
-      return filterTelegramAuthSentryBreadcrumb(breadcrumb)
+      return filterTelegramSentryBreadcrumb(breadcrumb)
         ? filterDiscordOauthSentryBreadcrumb(breadcrumb)
         : null;
     },
