@@ -8,6 +8,7 @@ import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/c
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import {
   ExternalConnectorCatalogUnavailableError,
+  getConnectorCatalogResolutionDetail,
   type ConnectorCatalogSlugSource,
 } from "./connector-catalog-external-reader.service";
 import {
@@ -135,6 +136,7 @@ export function connectorCatalogSlugRuntimeFromRows(
   ]);
   return materializeConnectorRuntimeLookup({
     connectors: source.connectors,
+    catalogDetailForConnector: getConnectorCatalogResolutionDetail,
     filteredMethodKeys: source.filteredMethodKeys,
     catalogIdentity: source.identity,
     runtimeConnectorSlugs: uniqueSortedConnectorSlugs(runtimeConnectorSlugs),

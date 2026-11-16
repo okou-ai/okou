@@ -35,7 +35,6 @@ import type {
 import { singleton } from "../../lib/singleton";
 import {
   authMethodDetailForCatalog,
-  getConnectorCatalogResolutionDetail,
   listAcceptedConnectorCatalogAvailableSlugs,
   type AcceptedConnectorCatalogSnapshot,
 } from "./connector-catalog-external-reader.service";
@@ -45,7 +44,10 @@ import type {
   ConnectorCatalogView,
   ExternalCatalogIdentity,
 } from "./connector-catalog-view";
-import type { ConnectorCatalogRuntimeConnector } from "./connector-catalog-columns";
+import type {
+  ConnectorCatalogExecutionConnector,
+  ConnectorCatalogRuntimeConnector,
+} from "./connector-catalog-columns";
 import { ConnectorCatalogLoadTiming } from "./connector-catalog-load-timing.service";
 import {
   createAcceptedConnectorServerFirewallCatalogFromConnectors,
@@ -64,18 +66,22 @@ export interface ConnectorRuntimeMethod {
   readonly registration: ConnectorAuthProviderRegistrationCapability | null;
 }
 
+export type ConnectorRuntimeCatalogDetail = Pick<
+  PublicConnectorCatalogDetail,
+  "label" | "authMethods" | "mcp"
+>;
+
 interface ConnectorRuntimeCatalogConnector {
   readonly connectorSlug: ConnectorSlug;
-  readonly catalogConnector: Pick<
-    PublicConnectorCatalogDetail,
-    "label" | "authMethods" | "mcp"
-  >;
+  readonly catalogConnector: ConnectorRuntimeCatalogDetail;
   readonly methods: ReadonlyMap<ConnectorAuthMethodId, ConnectorRuntimeMethod>;
   readonly authoredVisibleMethodIds: ReadonlySet<ConnectorAuthMethodId>;
 }
 
-export interface ConnectorRuntimeConnector extends ConnectorRuntimeCatalogConnector {
-  readonly catalogConnector: PublicConnectorCatalogDetail;
+export interface ConnectorRuntimeConnector<
+  Detail extends ConnectorRuntimeCatalogDetail = PublicConnectorCatalogDetail,
+> extends ConnectorRuntimeCatalogConnector {
+  readonly catalogConnector: Detail;
   readonly skill: ConnectorCatalogSkill;
 }
 
@@ -96,15 +102,25 @@ export interface ConnectorRuntimeAuthLookup {
   >;
 }
 
-export interface ConnectorRuntimeLookup {
-  readonly connectors: ReadonlyMap<ConnectorSlug, ConnectorRuntimeConnector>;
+export interface ConnectorRuntimeLookup<
+  Detail extends ConnectorRuntimeCatalogDetail = ConnectorRuntimeCatalogDetail,
+> {
+  readonly connectors: ReadonlyMap<
+    ConnectorSlug,
+    ConnectorRuntimeConnector<Detail>
+  >;
   readonly serverFirewalls: ConnectorServerFirewallSelection;
   readonly serverFirewallMetadata: ConnectorServerFirewallMetadataCatalog;
 }
 
-export interface ConnectorRuntimeSelection extends ConnectorRuntimeLookup {
+export interface ConnectorRuntimeSelection<
+  Detail extends ConnectorRuntimeCatalogDetail = PublicConnectorCatalogDetail,
+> extends ConnectorRuntimeLookup<Detail> {
   readonly catalogIdentity: ExternalCatalogIdentity;
 }
+
+export type ConnectorExecutionRuntimeSelection =
+  ConnectorRuntimeSelection<ConnectorRuntimeCatalogDetail>;
 
 /** Full firewall iteration/host ownership, without the accepted storage snapshot. */
 export interface ConnectorRuntimeCatalogView extends Omit<
@@ -581,11 +597,11 @@ function runtimeConnectorMethods(
   return { methods, authoredVisibleMethodIds };
 }
 
-function runtimeConnector(
-  connector: ConnectorCatalogArtifactConnector,
+function runtimeConnector<Detail extends ConnectorRuntimeCatalogDetail>(
+  connector: ConnectorCatalogExecutionConnector,
   filteredMethodKeys: ReadonlySet<string>,
-): ConnectorRuntimeConnector {
-  const catalogConnector = getConnectorCatalogResolutionDetail(connector);
+  catalogConnector: Detail,
+): ConnectorRuntimeConnector<Detail> {
   return {
     connectorSlug: connector.slug,
     catalogConnector,
@@ -598,19 +614,32 @@ function runtimeConnector(
   };
 }
 
+export function connectorRuntimeCatalogDetail(
+  connector: Pick<
+    ConnectorCatalogArtifactConnector,
+    "label" | "authMethods" | "mcp"
+  >,
+): ConnectorRuntimeCatalogDetail {
+  return {
+    label: connector.label,
+    authMethods: connector.authMethods.map(authMethodDetailForCatalog),
+    ...(connector.mcp === undefined ? {} : { mcp: { ...connector.mcp } }),
+  };
+}
+
 function runtimeCatalogConnector(
   connector: ConnectorCatalogRuntimeConnector,
   filteredMethodKeys: ReadonlySet<string>,
 ): ConnectorRuntimeCatalogConnector {
-  const authMethods = connector.authMethods.map(authMethodDetailForCatalog);
+  const catalogConnector = connectorRuntimeCatalogDetail(connector);
   return {
     connectorSlug: connector.slug,
-    catalogConnector: {
-      label: connector.label,
-      authMethods,
-      ...(connector.mcp === undefined ? {} : { mcp: { ...connector.mcp } }),
-    },
-    ...runtimeConnectorMethods(connector, authMethods, filteredMethodKeys),
+    catalogConnector,
+    ...runtimeConnectorMethods(
+      connector,
+      catalogConnector.authMethods,
+      filteredMethodKeys,
+    ),
   };
 }
 
@@ -771,13 +800,12 @@ export function uniqueSortedConnectorSlugs(
   return [...new Set(connectorSlugs)].sort(compareStrings);
 }
 
-function selectedArtifacts(args: {
-  readonly connectorBySlug: ReadonlyMap<
-    ConnectorSlug,
-    ConnectorCatalogArtifactConnector
-  >;
+function selectedArtifacts<
+  Connector extends { readonly slug: ConnectorSlug },
+>(args: {
+  readonly connectorBySlug: ReadonlyMap<ConnectorSlug, Connector>;
   readonly connectorSlugs: readonly ConnectorSlug[];
-}): readonly ConnectorCatalogArtifactConnector[] {
+}): readonly Connector[] {
   return args.connectorSlugs.flatMap((connectorSlug) => {
     const connector = args.connectorBySlug.get(connectorSlug);
     return connector === undefined ? [] : [connector];
@@ -785,13 +813,17 @@ function selectedArtifacts(args: {
 }
 
 /** Plain captured entries only; metadata dependencies never grant execution. */
-export function materializeConnectorRuntimeLookup(args: {
+export function materializeConnectorRuntimeLookup<
+  Connector extends ConnectorCatalogExecutionConnector,
+  Detail extends ConnectorRuntimeCatalogDetail,
+>(args: {
   readonly catalogIdentity: ExternalCatalogIdentity;
   readonly filteredMethodKeys: ReadonlySet<string>;
-  readonly connectors: readonly ConnectorCatalogArtifactConnector[];
+  readonly connectors: readonly Connector[];
+  readonly catalogDetailForConnector: (connector: Connector) => Detail;
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs: readonly ConnectorSlug[];
-}): ConnectorRuntimeLookup {
+}): ConnectorRuntimeLookup<Detail> {
   const builtinConnectorBySlug = new Map(
     args.connectors.map((connector) => {
       return [connector.slug, connector] as const;
@@ -805,7 +837,11 @@ export function materializeConnectorRuntimeLookup(args: {
     runtimeArtifacts.map((connector) => {
       return [
         connector.slug,
-        runtimeConnector(connector, args.filteredMethodKeys),
+        runtimeConnector(
+          connector,
+          args.filteredMethodKeys,
+          args.catalogDetailForConnector(connector),
+        ),
       ] as const;
     }),
   );

@@ -19,7 +19,7 @@ import {
 import {
   connectorScopeForRuntimeSnapshot,
   getConnectorRuntimeConnector,
-  type ConnectorRuntimeSelection,
+  type ConnectorExecutionRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
 
@@ -70,7 +70,7 @@ export function createAuthorizedConnectors(
       >
     >
   >,
-  catalog$: Computed<Promise<ConnectorRuntimeSelection | null>>,
+  catalog$: Computed<Promise<ConnectorExecutionRuntimeSelection | null>>,
 ): Computed<Promise<AuthorizedConnectors>> {
   return computed(async (get) => {
     const [selection, catalog] = await Promise.all([
@@ -156,7 +156,7 @@ function authorizedConnectorsFromBundles({
   customBundles,
 }: {
   readonly scope: AgentConnectorScopeSnapshot;
-  readonly catalog: ConnectorRuntimeSelection;
+  readonly catalog: ConnectorExecutionRuntimeSelection;
   readonly builtinBundles: ReadonlyMap<
     string,
     {
