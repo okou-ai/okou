@@ -129,7 +129,7 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
     return (await get(model$))?.provider ?? null;
   });
   const modelEnvironment$ = createModelProviderEnvironmentSignals(
-    connectors.bodyEnvironment$,
+    connectors.runVariables$,
     modelRoute$,
   );
   const storage$ = createExecutionStorage(input$);
@@ -294,17 +294,13 @@ function createExecutionConnectorContext(
     features$,
     timing$,
   });
-  const bodyEnvironment$ = computed(async (get) => {
-    const { run, context } = await get(input$);
-    const token = context.platformEnvironment.OKOU_TOKEN;
-    return {
-      vars: variablesSchema.parse(run.vars) ?? undefined,
-      secrets: token === undefined ? undefined : { OKOU_TOKEN: token },
-    };
+  const runVariables$ = computed(async (get) => {
+    const { run } = await get(input$);
+    return variablesSchema.parse(run.vars) ?? undefined;
   });
   const connectorEnvironment$ = createConnectorEnvironmentSignals(
     {
-      bodyEnvironment$,
+      runVariables$,
       permissionPolicies$: sources.signals.permissionPolicies$,
       featureSwitches$: features$,
     },
@@ -315,7 +311,7 @@ function createExecutionConnectorContext(
       dispatchTiming$: timing$,
     },
   );
-  return { bodyEnvironment$, connectorEnvironment$, timing$ };
+  return { runVariables$, connectorEnvironment$, timing$ };
 }
 
 function createExecutionModel(input$: ExecutionInput$) {
