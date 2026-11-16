@@ -3951,7 +3951,8 @@ test.each(["Page.enable", "Page.getFrameTree"])(
   },
 );
 
-test("A split viewer retries its selected image after frames loss during page admission", async () => {
+test("A split viewer recovers its selected image after frames loss during page admission", async () => {
+  const advanceRecovery = browserRecoveryClock(context.signal);
   const browser = await setupScopedPair();
   await userEvent.click(screen.getByLabelText("Browser settings"));
   await userEvent.click(await screen.findByText("Connection mode"));
@@ -3966,18 +3967,22 @@ test("A split viewer retries its selected image after frames loss during page ad
   act(() => {
     browser.disconnect({ code: 1006, wasClean: false }, 1);
   });
-  await screen.findByText("Retry live image");
+  await screen.findByText("Reconnecting…");
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-  const reconnect = queryAllByRoleFast("button").find((button) => {
-    return button.textContent?.trim() === "Retry live image";
+  const image = browser.holdTargetFrames("other-page");
+  // Automatic recovery owns the retry; its manual control is disabled meanwhile.
+  advanceRecovery(1000);
+  await image.received;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    image.release();
   });
-  if (!reconnect) {
-    throw new Error("Missing image recovery control");
-  }
-  click(reconnect);
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
+  expect(
+    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
   const current = browser.pageSession("other-page");
   await act(async () => {
     await admission.release();
