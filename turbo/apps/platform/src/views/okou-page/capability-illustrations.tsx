@@ -204,11 +204,11 @@ const BELL_GLOW = (
  */
 const MAGNIFIER_LENS = (
   <>
-    <span className="absolute top-[6.06px] left-[5.94px] -z-2 size-[45.86px] overflow-hidden rounded-full motion-safe:group-has-[[data-art=explore]:is(:hover,:focus-visible)]/card:animate-capability-lens-replay">
+    <span className="absolute top-[6.36px] left-[6.23px] -z-2 size-[48.15px] overflow-hidden rounded-full motion-safe:group-has-[[data-art=explore]:is(:hover,:focus-visible)]/card:animate-capability-lens-replay">
       <img
         src={ASSETS.page}
         alt=""
-        className="absolute top-0 left-0 w-[80px] max-w-none origin-top-left translate-x-[-97.89px] translate-y-[-81.04px] -rotate-8 scale-190 transition-[translate,rotate] duration-700 ease-[cubic-bezier(0.2,0.8,0.2,1)] capability-active:translate-x-[-53.24px] capability-active:translate-y-[-34.9px] capability-active:rotate-2 motion-reduce:transition-none dark:brightness-93"
+        className="absolute top-0 left-0 w-[84px] max-w-none origin-top-left translate-x-[-100.01px] translate-y-[-79.2px] -rotate-8 scale-190 transition-[translate,rotate] duration-700 ease-[cubic-bezier(0.2,0.8,0.2,1)] capability-active:translate-x-[-53.56px] capability-active:translate-y-[-29.8px] capability-active:rotate-2 motion-reduce:transition-none dark:brightness-93"
       />
     </span>
     <img
@@ -269,15 +269,15 @@ const ARTS = {
   research: [
     {
       src: ASSETS.page,
-      width: "w-[80px]",
-      pose: "top-[78px] left-[127px] z-4 -rotate-6 [--capability-from-rotate:-14deg] [--capability-from-scale:0.88] [--capability-from-y:14px] capability-active:translate-x-[-2px] capability-active:-rotate-4",
+      width: "w-[84px]",
+      pose: "top-[80px] left-[127px] z-4 -rotate-6 [--capability-from-rotate:-14deg] [--capability-from-scale:0.88] [--capability-from-y:14px] capability-active:translate-x-[-2px] capability-active:-rotate-4",
     },
     {
       // Rests on the lines of text and glides up onto the chart; the lens
       // stays inside the page in both poses.
       src: ASSETS.magnifierRim,
-      width: "w-[80px]",
-      pose: "top-[101px] left-[154px] z-12 rotate-2 [--capability-duration:900ms] [--capability-from-rotate:2deg] [--capability-from-x:14px] [--capability-from-y:6px] capability-active:translate-x-[-17px] capability-active:translate-y-[-34px] capability-active:-rotate-6",
+      width: "w-[84px]",
+      pose: "top-[101px] left-[154px] z-12 rotate-2 [--capability-duration:900ms] [--capability-from-rotate:2deg] [--capability-from-x:14px] [--capability-from-y:6px] capability-active:translate-x-[-18px] capability-active:translate-y-[-36px] capability-active:-rotate-6",
       detail: MAGNIFIER_LENS,
     },
   ],
@@ -352,8 +352,8 @@ const ARTS = {
   triggers: [
     {
       src: ASSETS.bell,
-      width: "w-[98px]",
-      pose: "top-[66px] left-[104px] z-8 [--capability-from-scale:0.86] [--capability-from-y:10px] capability-active:translate-y-[-3px]",
+      width: "w-[104px]",
+      pose: "top-[65px] left-[104px] z-8 [--capability-from-scale:0.86] [--capability-from-y:10px] capability-active:translate-y-[-3px]",
       turn: "origin-[50%_85%] motion-safe:capability-active:animate-capability-ding",
       detail: BELL_GLOW,
     },
