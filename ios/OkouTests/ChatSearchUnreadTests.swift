@@ -186,19 +186,88 @@ final class ChatSearchUnreadTests: XCTestCase {
   }
 
   func testNewServerDeliveryCanBeReadAfterManualUnreadWithoutReopening() async throws {
+    try await assertNewDeliveryIsRead(indicatorsFirst: false)
+  }
+
+  func testNewServerDeliveryCanBeReadWhenIndicatorsPublishBeforeRecovery() async throws {
+    try await assertNewDeliveryIsRead(indicatorsFirst: true)
+  }
+
+  func testReadCursorRefreshAwaitsAResidentConversationRefresh() async throws {
+    try await assertNewDeliveryIsRead(indicatorsFirst: true, residentRefresh: true)
+  }
+
+  private func assertNewDeliveryIsRead(indicatorsFirst: Bool, residentRefresh: Bool = false)
+    async throws
+  {
     let fixture = SearchUnreadFixture()
     let store = fixture.workspace()
-    defer { store.close() }
+    addTeardownBlock { await store.close().value }
     await store.refresh()
     store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
-    await store.selectedConversation?.refresh()
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    await conversation.refresh(waitForCurrent: true)
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
     await store.setRead(thread, read: false)
     await store.refresh([.readCursor])
     XCTAssertEqual(fixture.state.value.withLock { $0.writes }, ["read", "unread"])
-    fixture.state.value.withLock { $0.marker = "2026-10-19T12:01:00Z" }
-    await store.refresh([.readCursor])
+
+    let indicatorsStarted = expectation(description: "New unread indicators reached HTTP")
+    let recoveryStarted =
+      indicatorsFirst ? expectation(description: "Conversation recovery reached HTTP") : nil
+    let gate = SearchResponseGate()
+    defer { gate.open() }
+    fixture.state.value.withLock {
+      $0.marker = "2026-10-19T12:01:00Z"
+      $0.indicatorsStarted = { indicatorsStarted.fulfill() }
+      if indicatorsFirst {
+        $0.recoveryGate = gate
+        $0.recoveryStarted = { recoveryStarted?.fulfill() }
+      } else {
+        $0.indicatorsGate = gate
+      }
+    }
+    let resident = Task {
+      if residentRefresh { await conversation.refresh() }
+    }
+    addTeardownBlock {
+      resident.cancel()
+      gate.open()
+      await resident.value
+    }
+    if residentRefresh, let recoveryStarted {
+      await fulfillment(of: [recoveryStarted], timeout: 3)
+    }
+    // Capture the business result at the workspace's own completion boundary, before
+    // a resident refresh could conceal an early return by finishing later.
+    let refresh = Task {
+      await store.refresh([.readCursor])
+      return fixture.state.value.withLock { $0.writes }
+    }
+    addTeardownBlock {
+      refresh.cancel()
+      gate.open()
+      _ = await refresh.value
+    }
+    await fulfillment(of: [indicatorsStarted], timeout: 3)
+    if indicatorsFirst {
+      if !residentRefresh, let recoveryStarted {
+        await fulfillment(of: [recoveryStarted], timeout: 3)
+      }
+      await store.list.refreshIndicators()
+      XCTAssertEqual(
+        conversation.thread.unreadAt,
+        ISO8601DateFormatter().date(from: "2026-10-19T12:01:00Z"))
+    } else {
+      // A complete history/recovery operation still sees the manually unread delivery.
+      await conversation.refresh(waitForCurrent: true)
+      XCTAssertEqual(fixture.state.value.withLock { $0.writes }, ["read", "unread"])
+    }
+    gate.open()
+    let writesAtCompletion = await refresh.value
+    XCTAssertEqual(writesAtCompletion, ["read", "unread", "read"])
+    await resident.value
     XCTAssertEqual(fixture.state.value.withLock { $0.writes }, ["read", "unread", "read"])
     XCTAssertFalse(store.list.threads.first { $0.id == thread.id }?.isUnread == true)
   }
@@ -801,6 +870,10 @@ private final class SearchUnreadFixture: Sendable {
     var bulkReadStarted: (@Sendable () -> Void)?
     var readGate: SearchResponseGate?
     var readStarted: (@Sendable () -> Void)?
+    var indicatorsGate: SearchResponseGate?
+    var indicatorsStarted: (@Sendable () -> Void)?
+    var recoveryGate: SearchResponseGate?
+    var recoveryStarted: (@Sendable () -> Void)?
   }
   final class LockedState: Sendable { let value = Mutex(State()) }
   let state: LockedState
@@ -833,6 +906,14 @@ private final class SearchUnreadFixture: Sendable {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
+        let gate = state.value.withLock { value -> SearchResponseGate? in
+          let gate = value.indicatorsGate
+          value.indicatorsGate = nil
+          value.indicatorsStarted?()
+          value.indicatorsStarted = nil
+          return gate
+        }
+        if let gate { await gate.wait() }
         return state.value.withLock { value in
           let indicators = value.unread.filter { $0 != 1 }.sorted().map {
             "\"\(Self.id($0))\":\"unread\""
@@ -925,6 +1006,14 @@ private final class SearchUnreadFixture: Sendable {
           )
         }
         if path == "/api/chat-threads/\(id)" {
+          let gate = state.value.withLock { value -> SearchResponseGate? in
+            let gate = value.recoveryGate
+            value.recoveryGate = nil
+            value.recoveryStarted?()
+            value.recoveryStarted = nil
+            return gate
+          }
+          if let gate { await gate.wait() }
           return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
         }
         throw URLError(.unsupportedURL)
