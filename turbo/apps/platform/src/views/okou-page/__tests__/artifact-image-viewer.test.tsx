@@ -18,6 +18,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 
 const context = testContext();
 const THREAD_ID = "b0000000-0000-4000-a000-000000000050";
@@ -59,6 +60,22 @@ function getButtonByName(
     throw new Error(`Expected button named "${name}"`);
   }
   return button;
+}
+
+function wheelImage(image: HTMLElement, init: WheelEventInit): void {
+  const event = new WheelEvent("wheel", {
+    ...init,
+    bubbles: true,
+    cancelable: true,
+  });
+  // Happy-dom's WheelEvent omits the MouseEvent fields emitted by browsers.
+  Object.defineProperties(event, {
+    ctrlKey: { value: init.ctrlKey ?? false },
+    metaKey: { value: init.metaKey ?? false },
+    clientX: { value: 0 },
+    clientY: { value: 0 },
+  });
+  fireEvent(image, event);
 }
 
 function getLightboxImage(): HTMLImageElement {
@@ -278,3 +295,110 @@ test("The image viewer resolves and decodes the next image during keyboard navig
     screen.queryByRole("status", { name: "Loading artifacts" }),
   ).toBeNull();
 });
+
+test.each(["lightbox", "sidebar", "fullscreen"] as const)(
+  "Image gestures use the approved continuous zoom in the %s",
+  async (surface) => {
+    context.mocks.browser.matchMedia((query) => {
+      return (
+        query === SIDEBAR_DESKTOP_MEDIA_QUERY || query === "(min-width: 1280px)"
+      );
+    });
+    const { dialog } = await openImageViewer(false);
+    let preview = dialog;
+    if (surface !== "lightbox") {
+      click(getButtonByName("Open in split view", dialog));
+      preview = await screen.findByTestId("artifact-sidebar");
+      if (surface === "fullscreen") {
+        click(getButtonByName("Enter fullscreen", preview));
+        await waitFor(() => {
+          return getButtonByName("Exit fullscreen", preview);
+        });
+      }
+    }
+    const image = await within(preview).findByTestId(
+      surface === "lightbox"
+        ? "attachment-lightbox-image"
+        : "artifact-sidebar-body-image",
+    );
+    const zoom = await within(preview).findByTestId(
+      surface === "lightbox"
+        ? "artifact-dialog-image-zoom-level"
+        : "artifact-sidebar-image-zoom-level",
+    );
+    await waitFor(() => {
+      expect(image).toBeVisible();
+      expect(zoom).toHaveTextContent("100%");
+    });
+
+    // Buttons keep their existing discrete step, independently of gestures.
+    click(getButtonByName("Zoom in", preview));
+    await waitFor(() => {
+      expect(zoom).toHaveTextContent("112%");
+    });
+    click(getButtonByName("Zoom out", preview));
+    await waitFor(() => {
+      expect(zoom).toHaveTextContent("100%");
+    });
+
+    wheelImage(image, { ctrlKey: true, deltaY: -1 });
+    await waitFor(() => {
+      expect(zoom).toHaveTextContent("101%");
+    });
+    wheelImage(image, { ctrlKey: true, deltaY: 1 });
+    await waitFor(() => {
+      expect(zoom).toHaveTextContent("100%");
+    });
+
+    // Equal total movement must produce the same zoom despite event frequency.
+    for (let index = 0; index < 20; index++) {
+      wheelImage(image, { ctrlKey: true, deltaY: -1 });
+    }
+    await waitFor(() => {
+      expect(zoom).toHaveTextContent("120%");
+    });
+    click(getButtonByName("Reset zoom", preview));
+    wheelImage(image, { ctrlKey: true, deltaY: -20 });
+    await waitFor(() => {
+      expect(zoom).toHaveTextContent("120%");
+    });
+    wheelImage(image, { ctrlKey: true, deltaY: 20 });
+    await waitFor(() => {
+      expect(zoom).toHaveTextContent("100%");
+    });
+
+    // A line-mode event is normalized to the same 16-pixel movement.
+    wheelImage(image, { ctrlKey: true, deltaY: -16 });
+    await waitFor(() => {
+      expect(zoom).toHaveTextContent("115%");
+    });
+    click(getButtonByName("Reset zoom", preview));
+    wheelImage(image, { ctrlKey: true, deltaY: -1, deltaMode: 1 });
+    await waitFor(() => {
+      expect(zoom).toHaveTextContent("115%");
+    });
+    click(getButtonByName("Reset zoom", preview));
+
+    wheelImage(image, { ctrlKey: true, deltaY: 0 });
+    wheelImage(image, { deltaY: -20 });
+    expect(zoom).toHaveTextContent("100%");
+    wheelImage(image, { metaKey: true, deltaY: -16 });
+    await waitFor(() => {
+      expect(zoom).toHaveTextContent("115%");
+    });
+
+    wheelImage(image, { ctrlKey: true, deltaY: 100_000 });
+    await waitFor(() => {
+      expect(zoom).toHaveTextContent("10%");
+      expect(getButtonByName("Zoom out", preview)).toBeDisabled();
+    });
+    wheelImage(image, { ctrlKey: true, deltaY: -100_000 });
+    await waitFor(() => {
+      expect(getButtonByName("Zoom in", preview)).toBeDisabled();
+    });
+    click(getButtonByName("Reset zoom", preview));
+    await waitFor(() => {
+      expect(zoom).toHaveTextContent("100%");
+    });
+  },
+);
