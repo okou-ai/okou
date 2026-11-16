@@ -52,6 +52,7 @@ ASYNC_HELPER_FAILURE_CASES = [
         "okou_resource_failures",
         """
         import Foundation
+        import CCState
         func readItems() async throws -> [String] {
           do { return try await service.load() }
           catch { // violation
@@ -88,6 +89,30 @@ ASYNC_HELPER_FAILURE_CASES = [
           catch {
             if Task.isCancelled { return snapshot }
             throw error
+          }
+        }
+        func makeIndependentRead(Task: OperationState) {
+          let read = Computed { get in
+            func readItems() async throws -> [String] {
+              do { return try await service.load() }
+              catch {
+                if Task.isCancelled { return snapshot }
+                throw error
+              }
+            }
+            return readItems
+          }
+        }
+        func makeCancelledRead() {
+          let read = Computed { get in
+            func readItems() async throws -> [String] {
+              do { return try await service.load() }
+              catch { // violation
+                if Task.isCancelled { return [] }
+                throw error
+              }
+            }
+            return readItems
           }
         }
     """,
