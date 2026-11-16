@@ -975,7 +975,6 @@ function atomGrantInvoiceDetails(
       invoiceId: invoice.id,
       hasOrgId: Boolean(orgId),
       tier: metadata.tier ?? metadata.planId ?? null,
-      metadata,
     });
     return null;
   }
