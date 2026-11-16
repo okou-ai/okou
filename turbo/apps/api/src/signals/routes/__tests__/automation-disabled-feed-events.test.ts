@@ -38,13 +38,14 @@ import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { feedRoutes } from "../feed";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
-import type { ApiTestUser } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createPublicAutomationRunApi } from "./helpers/public-automation-run";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -300,6 +301,92 @@ async function completeFailedOccurrence(
 }
 
 describe("recurring automation auto-disable platform feed events", () => {
+  it("keeps platform events intact when an Agent reuses their identity for a suggestion", async () => {
+    await setupApp({
+      context,
+      routes: cronExecuteWorkflowAutomationsRoutes,
+      isolatePg: true,
+    });
+    const scenario = await createScenario();
+    for (let failure = 0; failure < 3; failure++) {
+      await completeFailedOccurrence(scenario);
+    }
+    const [event] = await inbox(scenario.actor);
+    if (!event) {
+      throw new Error("Expected the disabled automation's platform event");
+    }
+    const { defaultAgentId } = await createBddApi(context).readOnboardingStatus(
+      scenario.actor,
+    );
+    if (!defaultAgentId) {
+      throw new Error("Expected the owner's primary Agent");
+    }
+    await runs.heartbeatRunner(scenario.runnerGroup);
+    const run = await runs.createThreadRun(scenario.actor, {
+      agentId: defaultAgentId,
+      model: "claude-fable-5-1",
+      prompt: "Review the failed automation and curate a useful suggestion.",
+    });
+    const owned = publicRuns.track(
+      scenario.actor,
+      run.runId,
+      scenario.runnerGroup,
+    );
+    const execution = await runs.executionInput(run.runId);
+    owned.sandboxToken = execution.sandboxToken;
+    await accept(
+      feedClient().create({
+        headers: {
+          authorization: `Bearer ${okouTokenFromExecution(execution)}`,
+        },
+        body: {
+          id: event.id,
+          type: "suggestion",
+          priority: 0,
+          content: {
+            title: "Review the failed automation",
+            rationale: "The scheduled report stopped after repeated failures.",
+            options: [
+              {
+                id: "review",
+                label: "Review automation",
+                description: "Investigate the report's failures.",
+                threadId: null,
+                draft: {
+                  draftUserMessage: {
+                    version: 1,
+                    parts: [{ type: "text", text: "Review this automation." }],
+                  },
+                  draftAttachments: null,
+                },
+              },
+            ],
+            customOption: {
+              id: "custom",
+              threadId: null,
+              draft: {
+                draftUserMessage: {
+                  version: 1,
+                  parts: [
+                    {
+                      type: "feedback",
+                      quote:
+                        "The scheduled report stopped after repeated failures.",
+                      note: [],
+                    },
+                  ],
+                },
+                draftAttachments: null,
+              },
+            },
+          },
+        },
+      }),
+      [409],
+    );
+    await expect(inbox(scenario.actor)).resolves.toStrictEqual([event]);
+  });
+
   it("excludes credit failures and deduplicates the runtime disable feed event", async () => {
     await setupApp({
       context,
