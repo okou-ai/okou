@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
+import {
+  billingRedeemCodeContract,
+  billingStatusContract,
+} from "@okouai/api-contracts/contracts/billing";
 import { http, HttpResponse } from "msw";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -10,6 +13,10 @@ import { server } from "../../../mocks/server";
 import { createRouteMocks } from "./helpers/route-test";
 import { billingRedeemCodeRoutes } from "../billing-redeem-code";
 import { ClerkUserNotFoundTestError } from "./helpers/clerk-users";
+import { createBddApi } from "./helpers/api-bdd";
+import { postSubscriptionInvoicePaid } from "./helpers/stripe-billing-webhook";
+import { billingStatusRoutes } from "../billing-status";
+import { now } from "../../../lib/time";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -40,14 +47,17 @@ function expectValueFree(payload: string, values: readonly string[]): void {
   }
 }
 
-function setAdminSession(): SessionFixture {
+async function setAdminSession(): Promise<SessionFixture> {
   const userId = `user_${randomUUID()}`;
   const fixture = {
     userId,
     orgId: `org_${randomUUID()}`,
     email: `${userId}@example.test`,
   };
-  mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+  await createBddApi(context).readOnboardingStatus({
+    ...fixture,
+    orgRole: "org:admin",
+  });
   context.mocks.clerk.users.getUser.mockResolvedValue({
     id: fixture.userId,
     primaryEmailAddressId: `email_${fixture.userId}`,
@@ -67,6 +77,78 @@ describe("POST /api/billing/redeem-code", () => {
     mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", ATOM_MACHINE_SECRET_KEY);
     context.mocks.clerk.m2m.createToken.mockResolvedValue({
       token: ATOM_M2M_TOKEN,
+    });
+  });
+
+  it.each(["pro", "team"] as const)(
+    "leaves a %s plan and the redeem code unchanged",
+    async (tier) => {
+      const fixture = await setAdminSession();
+      await postSubscriptionInvoicePaid(context.signal, {
+        ...fixture,
+        tier,
+        customerId: `cus_${randomUUID()}`,
+        subscriptionId: `sub_${randomUUID()}`,
+        currentPeriodEnd: new Date(now() + 30 * 86_400_000),
+      });
+      let calledAtom = false;
+      server.use(
+        http.post(`${ATOM_URL}/api/redeem-codes/consume`, () => {
+          calledAtom = true;
+          return HttpResponse.json({ ok: true });
+        }),
+      );
+
+      const response = await accept(
+        setupApp({ context, routes: billingRedeemCodeRoutes })(
+          billingRedeemCodeContract,
+        ).create({
+          body: { code: "PRO-CAMPAIGN" },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(response.body).toStrictEqual({ redeemed: false });
+      expect(calledAtom).toBeFalsy();
+      expect(context.mocks.clerk.m2m.createToken).not.toHaveBeenCalled();
+      const status = await accept(
+        setupApp({ context, routes: billingStatusRoutes })(
+          billingStatusContract,
+        ).get({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      );
+      expect(status.body).toMatchObject({ tier, hasSubscription: true });
+    },
+  );
+
+  it("redeems for a free workspace after onboarding is complete", async () => {
+    const fixture = await setAdminSession();
+    await createBddApi(context).completeOnboarding({
+      ...fixture,
+      orgRole: "org:admin",
+    });
+    let redeemedCode: unknown;
+    server.use(
+      http.post(`${ATOM_URL}/api/redeem-codes/consume`, async ({ request }) => {
+        redeemedCode = await request.json();
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+
+    const response = await accept(
+      setupApp({ context, routes: billingRedeemCodeRoutes })(
+        billingRedeemCodeContract,
+      ).create({
+        body: { code: "PRO-CAMPAIGN" },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(response.body).toStrictEqual({ redeemed: true });
+    expect(redeemedCode).toMatchObject({
+      code: "PRO-CAMPAIGN",
+      org_id: fixture.orgId,
+      user_id: fixture.userId,
     });
   });
 
@@ -129,7 +211,7 @@ describe("POST /api/billing/redeem-code", () => {
   it("returns 503 when ATOM_URL is not configured", async () => {
     mockOptionalEnv("ATOM_URL", undefined);
     mockEnv("ENV", "production");
-    setAdminSession();
+    await setAdminSession();
 
     const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
       billingRedeemCodeContract,
@@ -153,7 +235,7 @@ describe("POST /api/billing/redeem-code", () => {
 
   it("returns 503 when Atom Clerk M2M auth is not configured", async () => {
     mockOptionalEnv("OKOU_MACHINE_SECRET_KEY", undefined);
-    setAdminSession();
+    await setAdminSession();
 
     const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
       billingRedeemCodeContract,
@@ -186,7 +268,7 @@ describe("POST /api/billing/redeem-code", () => {
     context.mocks.clerk.m2m.createToken.mockRejectedValueOnce(
       new Error("M2M unavailable"),
     );
-    setAdminSession();
+    await setAdminSession();
 
     const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
       billingRedeemCodeContract,
@@ -214,7 +296,7 @@ describe("POST /api/billing/redeem-code", () => {
         return HttpResponse.error();
       }),
     );
-    setAdminSession();
+    await setAdminSession();
 
     const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
       billingRedeemCodeContract,
@@ -241,7 +323,7 @@ describe("POST /api/billing/redeem-code", () => {
         return HttpResponse.json({ error: "invalid code" }, { status: 404 });
       }),
     );
-    setAdminSession();
+    await setAdminSession();
 
     const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
       billingRedeemCodeContract,
@@ -295,7 +377,7 @@ describe("POST /api/billing/redeem-code", () => {
           return HttpResponse.json(body, { status });
         }),
       );
-      setAdminSession();
+      await setAdminSession();
 
       const client = setupApp({ context, routes: billingRedeemCodeRoutes })(
         billingRedeemCodeContract,
@@ -321,7 +403,7 @@ describe("POST /api/billing/redeem-code", () => {
     ["missing user", new ClerkUserNotFoundTestError()],
     ["provider failure", new Error("Clerk unavailable")],
   ])("preserves the unavailable response for %s", async (_label, error) => {
-    const fixture = setAdminSession();
+    const fixture = await setAdminSession();
     context.mocks.clerk.users.getUser.mockRejectedValue(error);
     let calledAtom = false;
     server.use(
@@ -355,7 +437,7 @@ describe("POST /api/billing/redeem-code", () => {
   it.each([true, false])(
     "redeems a code with a primary-email match of %s",
     async (hasPrimary) => {
-      const fixture = setAdminSession();
+      const fixture = await setAdminSession();
       context.mocks.clerk.users.getUser.mockResolvedValue({
         id: fixture.userId,
         primaryEmailAddressId: hasPrimary ? "primary" : "deleted-primary",
