@@ -2356,6 +2356,25 @@
       "updated": "権限が更新されました",
       "updateFailed": "権限を更新できませんでした"
     },
+    "phoneUse": {
+      "allowChat": "スマートフォンでこのチャットを許可",
+      "allowChatDescription": "Use でこのチャットを選択し、操作ウィンドウを開始して、iPhone でアクセスを確認してください。",
+      "connectMyPhone": "スマートフォンを接続",
+      "createChatDescription": "まずメッセージを送信してこのチャットを作成してください。その後、Use で選択し、操作ウィンドウを開始して iPhone でアクセスを確認してください。",
+      "done": "完了",
+      "loadError": "読み込めませんでした。再試行してください。",
+      "loading": "読み込み中…",
+      "noPhones": "接続されたスマートフォンはありません",
+      "notReady": "準備未完了",
+      "openApp": "Okou iOS Use を開く",
+      "openAppDescription": "iPhone に開発版をインストールし、同じアカウントとワークスペースでサインインしてください。",
+      "ready": "操作可能",
+      "refresh": "スマートフォンを更新",
+      "setupDescription": "このチャットで Okou に iPhone の操作を許可します。",
+      "startTask": "次のタスクを送信",
+      "startTaskDescription": "許可後、ここに新しいメッセージを送信してください。スマートフォンの操作ウィンドウを有効に保ってください。",
+      "yourPhone": "あなたのスマートフォン"
+    },
     "promptDocumentTitle": "プロンプト",
     "queue": {
       "aboutAutomationEvent": "このオートメーションイベントについて",

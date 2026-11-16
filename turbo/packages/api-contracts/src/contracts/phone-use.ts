@@ -98,6 +98,7 @@ export const phoneDeviceSchema = object({
   ready: boolean(),
   lastSeenAt: string(),
 });
+export type PhoneDevice = zInfer<typeof phoneDeviceSchema>;
 const errors = {
   400: apiErrorSchema,
   401: apiErrorSchema,

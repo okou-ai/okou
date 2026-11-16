@@ -8,6 +8,9 @@ import { phoneUseContract as contract } from "@okouai/api-contracts/contracts/ph
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { phoneUseRoutes } from "../phone-use";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitchesRoutes } from "../feature-switches";
 
 const context = testContext();
 afterEach(clearMockNow);
@@ -53,9 +56,24 @@ const body = Object.freeze({
 function api() {
   return setupApp({ context, routes: phoneUseRoutes })(contract);
 }
+function featureApi() {
+  return setupApp({ context, routes: featureSwitchesRoutes })(
+    featureSwitchesContract,
+  );
+}
+function setPhoneUse(enabled: boolean) {
+  return accept(
+    featureApi().update({
+      headers,
+      body: { switches: { [FeatureSwitchKey.PhoneUse]: enabled } },
+    }),
+    [200],
+  );
+}
 describe("Phone Use native connection authority", () => {
   it("replaces a connection without allowing its previous generation to become ready", async () => {
     authenticate();
+    await setPhoneUse(true);
     const client = api();
     const first = await accept(client.register({ headers, body }), [200]);
     await accept(
@@ -87,6 +105,7 @@ describe("Phone Use native connection authority", () => {
   });
   it("fences a delayed disconnect after a replacement connection becomes ready", async () => {
     const actor = authenticate();
+    await setPhoneUse(true);
     const client = api();
     const first = await accept(client.register({ headers, body }), [200]);
     const entered = createDeferredPromise<void>(context.signal),
@@ -137,9 +156,11 @@ describe("Phone Use native connection authority", () => {
   });
   it("keeps device ownership private and prevents another account from disconnecting it", async () => {
     authenticate();
+    await setPhoneUse(true);
     const client = api();
     const registered = await accept(client.register({ headers, body }), [200]);
     authenticate();
+    await setPhoneUse(true);
     const other = await accept(client.devices({ headers }), [200]);
     expect(other.body.devices).toStrictEqual([]);
     await accept(
@@ -151,26 +172,56 @@ describe("Phone Use native connection authority", () => {
       [409],
     );
   });
-  it("requires a native session and internal organization for device admission", async () => {
-    authenticate(undefined, `org_external_${randomUUID()}`);
-    const rejected = await accept(api().register({ headers, body }), [403]);
-    expect(rejected.body.error.message).toContain("internal");
-    authenticate();
-    context.mocks.clerk.sessions.getSession.mockResolvedValue({
-      id: "retired",
-      userId: "another-user",
-      status: "revoked",
-    });
-    await accept(api().register({ headers, body }), [403]);
-  });
+  it.each([
+    { name: "a staff organization", orgId: staffOrg },
+    { name: "another organization", orgId: `org_${randomUUID()}` },
+  ])(
+    "requires explicit opt-in and a live native session in $name",
+    async ({ orgId }) => {
+      authenticate(undefined, orgId);
+      const initial = await accept(featureApi().get({ headers }), [200]);
+      expect(
+        initial.body.effectiveSwitches[FeatureSwitchKey.PhoneUse],
+      ).toBeFalsy();
+      const disabled = await accept(api().register({ headers, body }), [403]);
+      expect(disabled.body.error.message).toContain("disabled");
+
+      const enabled = await setPhoneUse(true);
+      expect(
+        enabled.body.effectiveSwitches[FeatureSwitchKey.PhoneUse],
+      ).toBeTruthy();
+      const registered = await accept(api().register({ headers, body }), [200]);
+
+      await setPhoneUse(false);
+      await accept(api().devices({ headers }), [403]);
+      // Turning the feature off must still let the owner retire the connection.
+      await accept(
+        api().disconnect({
+          headers,
+          params: { deviceId: registered.body.id },
+          body: { generation: registered.body.generation },
+        }),
+        [200],
+      );
+
+      await setPhoneUse(true);
+      context.mocks.clerk.sessions.getSession.mockResolvedValue({
+        id: "retired",
+        userId: "another-user",
+        status: "revoked",
+      });
+      await accept(api().register({ headers, body }), [403]);
+    },
+  );
 });
 
 test(
   "binds real Run tokens to a replaceable chat grant and validates every native commit",
   { timeout: 30_000 },
   async () => {
+    const orgId = `org_${randomUUID()}`;
     const scenario = createPublicComputerUseScenario(context);
-    const actor = scenario.user({ orgId: staffOrg });
+    const actor = scenario.user({ orgId });
     const setup = await scenario.prepareActor(actor);
     const chat = createChatFilesBddApi(context);
     const thread = await scenario.run(() => {
@@ -181,14 +232,15 @@ test(
     });
     const sessionId = `sess_${randomUUID()}`;
     const client = api();
-    const device = await scenario.run(() => {
-      authenticate(actor.userId, staffOrg, sessionId);
+    const device = await scenario.run(async () => {
+      authenticate(actor.userId, orgId, sessionId);
+      await setPhoneUse(true);
       return accept(client.register({ headers, body }), [200]);
     });
     const params = { deviceId: device.body.id };
     const generation = device.body.generation;
     await scenario.run(async () => {
-      authenticate(actor.userId, staffOrg, sessionId);
+      authenticate(actor.userId, orgId, sessionId);
       await accept(
         client.grant({
           headers,
@@ -244,7 +296,7 @@ test(
       );
     });
     const claimed = await scenario.run(() => {
-      authenticate(actor.userId, staffOrg, sessionId);
+      authenticate(actor.userId, orgId, sessionId);
       return accept(
         client.next({
           headers,
@@ -256,7 +308,7 @@ test(
     });
     expect(claimed.body.operation).toMatchObject({ id, status: "running" });
     await scenario.run(async () => {
-      authenticate(actor.userId, staffOrg, sessionId);
+      authenticate(actor.userId, orgId, sessionId);
       await accept(
         client.validate({
           headers,
@@ -296,7 +348,7 @@ test(
     // Review remains possible after the ordinary 45-second dispatch deadline.
     mockNow(new Date(submitted.body.expiresAt).getTime() + 15_000);
     await scenario.run(async () => {
-      authenticate(actor.userId, staffOrg, sessionId);
+      authenticate(actor.userId, orgId, sessionId);
       await accept(
         client.validate({
           headers,
@@ -336,7 +388,7 @@ test(
     // A native result that arrives after review expiry cannot turn uncertainty
     // into a failure that invites replay, or overwrite the settled receipt.
     await scenario.run(async () => {
-      authenticate(actor.userId, staffOrg, sessionId);
+      authenticate(actor.userId, orgId, sessionId);
       await accept(
         client.complete({
           headers,
@@ -361,7 +413,7 @@ test(
     });
     expect(lateReceipt.body.status).toBe("unknown");
     await scenario.run(async () => {
-      authenticate(actor.userId, staffOrg, sessionId);
+      authenticate(actor.userId, orgId, sessionId);
       await accept(
         client.validate({
           headers,
@@ -384,7 +436,7 @@ test(
     });
     expect(loggedOut.body.error.message).toContain("session has ended");
     await scenario.run(async () => {
-      authenticate(actor.userId, staffOrg, sessionId);
+      authenticate(actor.userId, orgId, sessionId);
       await accept(
         client.grant({
           headers,
@@ -402,7 +454,7 @@ test(
       );
     });
     const retired = await scenario.run(async () => {
-      authenticate(actor.userId, staffOrg, sessionId);
+      authenticate(actor.userId, orgId, sessionId);
       return await accept(
         client.next({
           headers,
@@ -433,7 +485,7 @@ test(
     const followingHeaders = { authorization: `Bearer ${following.token}` };
     const followingId = randomUUID();
     await scenario.run(async () => {
-      authenticate(actor.userId, staffOrg, sessionId);
+      authenticate(actor.userId, orgId, sessionId);
       await accept(
         client.heartbeat({
           headers,
@@ -453,7 +505,7 @@ test(
       );
     });
     const nextTask = await scenario.run(() => {
-      authenticate(actor.userId, staffOrg, sessionId);
+      authenticate(actor.userId, orgId, sessionId);
       return accept(
         client.next({
           headers,
@@ -469,7 +521,7 @@ test(
       status: "running",
     });
     await scenario.run(async () => {
-      authenticate(actor.userId, staffOrg, sessionId);
+      authenticate(actor.userId, orgId, sessionId);
       await accept(
         client.complete({
           headers,
@@ -510,7 +562,7 @@ test(
       );
     });
     await scenario.run(async () => {
-      authenticate(actor.userId, staffOrg, sessionId);
+      authenticate(actor.userId, orgId, sessionId);
       await accept(
         client.next({
           headers,
@@ -546,7 +598,7 @@ test(
       result: { admissionClosed: true, nativeAcknowledged: false },
     });
     await scenario.run(async () => {
-      authenticate(actor.userId, staffOrg, sessionId);
+      authenticate(actor.userId, orgId, sessionId);
       await accept(
         client.validate({
           headers,
@@ -567,7 +619,7 @@ test(
     });
     expect(closed.body.status).toBe("unknown");
     const stopSignal = await scenario.run(() => {
-      authenticate(actor.userId, staffOrg, sessionId);
+      authenticate(actor.userId, orgId, sessionId);
       return accept(
         client.next({
           headers,

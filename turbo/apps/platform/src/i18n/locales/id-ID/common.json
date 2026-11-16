@@ -2356,6 +2356,25 @@
       "updated": "Izin diperbarui",
       "updateFailed": "Tidak dapat memperbarui izin"
     },
+    "phoneUse": {
+      "allowChat": "Izinkan obrolan ini di ponsel",
+      "allowChatDescription": "Di Use, pilih obrolan ini, mulai jendela kontrol, lalu konfirmasikan akses di iPhone Anda.",
+      "connectMyPhone": "Hubungkan ponsel saya",
+      "createChatDescription": "Kirim pesan terlebih dahulu untuk membuat obrolan ini. Lalu pilih di Use, mulai jendela kontrol, dan konfirmasikan akses di iPhone Anda.",
+      "done": "Selesai",
+      "loadError": "Tidak dapat memuat ponsel. Coba muat ulang.",
+      "loading": "Memuat ponsel…",
+      "noPhones": "Tidak ada ponsel terhubung",
+      "notReady": "Belum siap",
+      "openApp": "Buka Okou iOS Use",
+      "openAppDescription": "Instal build pengembangan di iPhone dan masuk dengan akun serta ruang kerja yang sama.",
+      "ready": "Siap",
+      "refresh": "Muat ulang ponsel",
+      "setupDescription": "Izinkan Okou menggunakan iPhone Anda dari obrolan ini.",
+      "startTask": "Kirim tugas berikutnya",
+      "startTaskDescription": "Setelah mengizinkan akses, kirim pesan baru di sini. Biarkan jendela kontrol tetap aktif di ponsel Anda.",
+      "yourPhone": "Ponsel Anda"
+    },
     "promptDocumentTitle": "Prompt",
     "queue": {
       "aboutAutomationEvent": "Tentang peristiwa otomatisasi ini",

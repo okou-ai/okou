@@ -20,7 +20,6 @@ import {
   phoneActionSchema,
   phoneOperationSchema,
 } from "@okouai/api-contracts/contracts/phone-use";
-import { isStaffOrg } from "@okouai/core/staff-org";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -74,9 +73,6 @@ function operationOwner(auth: OrganizationAuthContext) {
 }
 const feature$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (!isStaffOrg(auth.orgId)) {
-    deny("Phone Use is internal only");
-  }
   const context = await set(
     loadUserFeatureSwitchContext$,
     auth.orgId,
@@ -90,11 +86,7 @@ function guard<T>(
   mode: "session" | "agent" | "both",
   cleanup = false,
 ) {
-  const admitted$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    if (!isStaffOrg(auth.orgId)) {
-      deny("Phone Use is internal only");
-    }
+  const admitted$ = command(async ({ set }, signal: AbortSignal) => {
     if (!cleanup && !(await set(feature$, signal))) {
       deny("Phone Use is disabled");
     }

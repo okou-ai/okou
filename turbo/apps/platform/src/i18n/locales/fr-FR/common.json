@@ -2401,6 +2401,25 @@
       "updated": "Permissions mises à jour",
       "updateFailed": "Impossible de mettre à jour les permissions"
     },
+    "phoneUse": {
+      "allowChat": "Autoriser cette discussion sur le téléphone",
+      "allowChatDescription": "Dans Use, sélectionnez cette discussion, démarrez une fenêtre de contrôle et confirmez l’accès sur votre iPhone.",
+      "connectMyPhone": "Connecter mon téléphone",
+      "createChatDescription": "Envoyez d’abord un message pour créer cette discussion. Puis sélectionnez-la dans Use, démarrez une fenêtre de contrôle et confirmez l’accès sur votre iPhone.",
+      "done": "Terminé",
+      "loadError": "Impossible de charger les téléphones. Réessayez en actualisant.",
+      "loading": "Chargement des téléphones…",
+      "noPhones": "Aucun téléphone connecté",
+      "notReady": "Non prêt",
+      "openApp": "Ouvrir Okou iOS Use",
+      "openAppDescription": "Installez la version de développement sur votre iPhone et connectez-vous avec le même compte et espace de travail.",
+      "ready": "Prêt",
+      "refresh": "Actualiser les téléphones",
+      "setupDescription": "Autorisez Okou à utiliser votre iPhone dans cette discussion.",
+      "startTask": "Envoyer votre prochaine tâche",
+      "startTaskDescription": "Après avoir autorisé l’accès, envoyez un nouveau message ici. Gardez la fenêtre de contrôle active sur votre téléphone.",
+      "yourPhone": "Votre téléphone"
+    },
     "promptDocumentTitle": "Prompt",
     "queue": {
       "aboutAutomationEvent": "À propos de cet événement d'automatisation",

@@ -74,6 +74,7 @@ export interface ComposerConnectorUiState {
   readonly addDialogSearch: string;
   readonly popoverSearch: string;
   readonly popoverOpen: boolean;
+  readonly phoneUseSetupOpen: boolean;
   readonly remoteAccessDialogOpen: boolean;
   readonly remoteAccessScopeId: string;
   readonly remoteAccessFilter: "all" | "allowed";
@@ -122,6 +123,7 @@ export interface ComposerConnectorSignals {
   >;
   readonly connectorUiState$: Computed<ComposerConnectorUiState>;
   readonly popoverOpen$: Computed<boolean>;
+  readonly phoneUseSetupOpen$: Computed<boolean>;
   readonly remoteAccessDialogOpen$: Computed<boolean>;
   readonly remoteAccessScopeId$: Computed<string>;
   readonly dialogsOpen$: Computed<boolean>;
@@ -183,6 +185,7 @@ function initialComposerConnectorUiState(): ComposerConnectorUiState {
     addDialogSearch: "",
     popoverSearch: "",
     popoverOpen: false,
+    phoneUseSetupOpen: false,
     ...remoteAccessDialogState(false),
     remoteAccessScopeId: `remote-access-${crypto.randomUUID()}`,
     popoverSortOrder: null,
@@ -376,6 +379,7 @@ function createConnectorUiSelectors(
 ): Pick<
   ComposerConnectorSignals,
   | "popoverOpen$"
+  | "phoneUseSetupOpen$"
   | "remoteAccessDialogOpen$"
   | "remoteAccessScopeId$"
   | "dialogsOpen$"
@@ -384,6 +388,9 @@ function createConnectorUiSelectors(
   return {
     popoverOpen$: computed((get) => {
       return get(connectorUiState$).popoverOpen;
+    }),
+    phoneUseSetupOpen$: computed((get) => {
+      return get(connectorUiState$).phoneUseSetupOpen;
     }),
     remoteAccessDialogOpen$: computed((get) => {
       return get(connectorUiState$).remoteAccessDialogOpen;
@@ -395,6 +402,7 @@ function createConnectorUiSelectors(
       const uiState = get(connectorUiState$);
       return (
         uiState.showAddDialog ||
+        uiState.phoneUseSetupOpen ||
         uiState.selectedConnector !== null ||
         uiState.selectedCustomConnectorId !== null
       );

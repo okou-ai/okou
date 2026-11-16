@@ -1,4 +1,3 @@
-import { isStaffOrg } from "@okouai/core/staff-org";
 import { singleAgentRuntimeContextSchema } from "@okouai/api-contracts/contracts/single-agent";
 import { createHmac, hkdfSync } from "node:crypto";
 
@@ -205,11 +204,7 @@ function isAgentCapabilityEnabled(
 function isCapabilityAvailableToAgent(
   capability: Capability,
   options: OkouTokenOptions | undefined,
-  orgId: string,
 ): boolean {
-  if (capability.startsWith("phone-use:") && !isStaffOrg(orgId)) {
-    return false;
-  }
   if (
     capability === "instructions:read" ||
     capability === "instructions:write"
@@ -429,7 +424,7 @@ function buildOkouTokenClaims(
   const nowSeconds = Math.floor(now() / 1000);
   const capabilities: Capability[] = [];
   for (const capability of CAPABILITIES) {
-    if (!isCapabilityAvailableToAgent(capability, options, orgId)) {
+    if (!isCapabilityAvailableToAgent(capability, options)) {
       continue;
     }
     if (isAgentCapabilityEnabled(capability, featureEnabled)) {

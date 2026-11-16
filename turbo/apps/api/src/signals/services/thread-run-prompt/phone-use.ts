@@ -1,5 +1,4 @@
 import { computed, type Computed } from "ccstate";
-import { isStaffOrg } from "@okouai/core/staff-org";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
@@ -7,16 +6,13 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { RunPromptAndSkills } from "../run-prompt-and-skills";
 export function createPhoneUsePrompt(
-  orgId: string,
   grant$: Computed<Promise<{ deviceId: string; grantId: string } | null>>,
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
 ) {
   return computed(async (get): Promise<RunPromptAndSkills> => {
     const features = await get(featureSwitches$);
     const grant = await get(grant$);
-    const enabled =
-      isStaffOrg(orgId) &&
-      isFeatureEnabled(FeatureSwitchKey.PhoneUse, features);
+    const enabled = isFeatureEnabled(FeatureSwitchKey.PhoneUse, features);
     return {
       systemPromptVariables: {
         phoneUseContext: enabled
