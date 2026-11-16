@@ -1265,7 +1265,10 @@ function createScrollContainerOnRef(
   scroll: InternalScrollSignals,
   navigation: ScrollNavigationSignals,
   runtime: ScrollRuntime,
-  restoreHiddenLayout$: Command<Promise<void>, [AbortSignal]>,
+  hiddenLayout: Pick<
+    ReturnType<typeof createHiddenScrollLayoutSignals>,
+    "restoreHiddenLayout$" | "preserveHiddenLayout$"
+  >,
 ) {
   const handleContainerScroll$ = createHandleContainerScroll(
     threadId,
@@ -1292,10 +1295,16 @@ function createScrollContainerOnRef(
         return set(navigation.restoreScrollPositionForLayout$, signal);
       });
       const restoreViewportLayout = onDomEventFn(() => {
+        if (!hasScrollViewport(container)) {
+          // CSS can cover a previously revealed transcript without changing
+          // sidebar state. Keep its last measured intent in the same owner.
+          set(hiddenLayout.preserveHiddenLayout$);
+          return;
+        }
         // CSS can reveal the transcript at xl while the utility stays open.
         // Its existing hidden-layout owner must complete that reveal too.
         return runtime.hiddenLayout
-          ? set(restoreHiddenLayout$, signal)
+          ? set(hiddenLayout.restoreHiddenLayout$, signal)
           : set(navigation.restoreScrollPositionForLayout$, signal);
       });
       const handleScrollEnd = (event: Event) => {
@@ -1401,23 +1410,27 @@ function createHiddenScrollLayoutSignals(
 ) {
   const preserveHiddenLayout$ = command(({ get, set }) => {
     const container = get(scroll.scrollContainer$);
+    const measurable = container !== null && hasScrollViewport(container);
     if (
       runtime.hiddenLayout ||
       !runtime.initialized ||
       runtime.programmaticSmoothScrollTop !== null ||
       get(pendingRequest$) !== null ||
       !container?.isConnected ||
-      container.clientWidth <= 0 ||
-      container.clientHeight <= 0
+      (!measurable && !runtime.hasMeasuredPosition)
     ) {
       return;
     }
-    let position = isAtBottom(container)
-      ? null
-      : captureScrollPosition(container);
+    // A viewport breakpoint can hide the DOM before its resize event. Use
+    // the last native reading point instead of measuring zero-size content.
+    let position = measurable
+      ? isAtBottom(container)
+        ? null
+        : captureScrollPosition(container)
+      : get(scroll.threadScrollPosition$);
     // Capture live reader movement, but keep a valid logical point across
     // native reflow even when its paragraph no longer fits the scrollport.
-    if (position) {
+    if (position && measurable) {
       preserveReadingBookmark(runtime, container, position);
       const bookmark = runtime.readingBookmark;
       const anchor = bookmark
@@ -1433,7 +1446,7 @@ function createHiddenScrollLayoutSignals(
             container.getBoundingClientRect().top,
         };
       }
-    } else {
+    } else if (!position) {
       runtime.readingBookmark = null;
     }
     runtime.hiddenLayout = {
@@ -1558,7 +1571,7 @@ export function createChatThreadScrollSignals(
     scroll,
     navigation,
     runtime,
-    hiddenLayout.restoreHiddenLayout$,
+    hiddenLayout,
   );
   const scrollToEvent$ = command(
     async (

@@ -1601,6 +1601,55 @@ test.each(["history", "tail"] as const)(
   },
 );
 
+test.each(["history", "tail"] as const)(
+  "Keep %s intent when viewport CSS covers a previously revealed transcript",
+  async (intent) => {
+    context.mocks.browser.matchMedia(() => {
+      return false;
+    });
+    const fixture = await openSemanticReadingFixture();
+    const readingDelta = () => {
+      return intent === "tail"
+        ? fixture.container.scrollTop - fixture.geometry.bottomScrollTop()
+        : fixture.passage.getBoundingClientRect().top - 34.75;
+    };
+    if (intent === "tail") {
+      click(buttonByLabel("Scroll to bottom"));
+    }
+    await waitFor(() => {
+      expect(readingDelta()).toBe(0);
+    });
+    await openUtilityAutomations();
+    fixture.setHeight(0);
+    fixture.reflow(275, 75);
+    fixture.setHeight(INITIAL_VIEWPORT_HEIGHT_PX);
+    fixture.container.scrollTop = 0;
+    fireEvent.scroll(fixture.container);
+    await act(() => {
+      fireEvent.resize(window);
+    });
+    await waitFor(() => {
+      expect(readingDelta()).toBe(0);
+    });
+    // The pane is covered by CSS again; no sidebar command runs this time.
+    fixture.setHeight(0);
+    await act(() => {
+      fireEvent.resize(window);
+    });
+    fixture.reflow(275, 75);
+    fixture.setHeight(INITIAL_VIEWPORT_HEIGHT_PX);
+    fixture.container.scrollTop = 0;
+    fireEvent.scroll(fixture.container);
+    const frames = controlRevealFrames();
+    click(buttonByLabel("Close automations"));
+    await frames.paint();
+    await frames.paint();
+    await waitFor(() => {
+      expect(readingDelta()).toBe(0);
+    });
+  },
+);
+
 test.each(
   (["font", "resize", "resource", "commit"] as const).flatMap((cause) => {
     return [75, 275].map((nativeAdjustment) => {
