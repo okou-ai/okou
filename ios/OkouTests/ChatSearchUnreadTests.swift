@@ -354,6 +354,7 @@ final class ChatSearchUnreadTests: XCTestCase {
         // must not clear the locally confirmed unread state while backgrounded.
         XCTAssertTrue(store.list.threads.first { $0.id == thread.id }?.isUnread == true)
         store.setPhase(.active)
+        await store.list.refreshIndicators()
         await store.refresh([.readCursor])
       }
     }
