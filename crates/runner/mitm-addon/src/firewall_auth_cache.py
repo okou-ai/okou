@@ -516,12 +516,13 @@ async def get_firewall_headers(
                 _release_firewall_auth_fetch()
                 raise
 
-            state.in_flight = fetch_task
+            # Eager task construction may already have run terminal cleanup.
+            # Only unfinished work can own the shared in-flight slot.
+            if not fetch_task.done():
+                state.in_flight = fetch_task
 
-            # Task selection and publication contain no await, so consuming
-            # the marker here is still atomic with choosing this shared fetch.
-            # Recording before the task runs preserves the intentional
-            # failed-refresh cooldown once task ownership has transferred.
+            # Task construction succeeded, so consume the selected refresh.
+            # Failed forced fetches intentionally still burn the cooldown.
             state.force_refresh_pending = False
             if force_refresh:
                 state.last_force_refresh_monotonic_at = force_refresh_started_at
