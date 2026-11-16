@@ -10,6 +10,39 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.76.0](https://github.com/okou-ai/okou/compare/api-v2.75.1...api-v2.76.0) (2026-11-16)
+
+
+### Features
+
+* **api:** add dedicated reward receipt lookup ([#47848](https://github.com/okou-ai/okou/issues/47848)) ([fcc0ab8](https://github.com/okou-ai/okou/commit/fcc0ab87f7cdde80581b8b496f1689585f5c0ac9))
+
+
+### Bug Fixes
+
+* make system updates configurable ([#47882](https://github.com/okou-ai/okou/issues/47882)) ([f1bf918](https://github.com/okou-ai/okou/commit/f1bf918e9c3d2033a956b51a8bcb3ee0ad77cb3c))
+
+
+### Refactoring
+
+* **api:** consolidate execution admission facts ([#47899](https://github.com/okou-ai/okou/issues/47899)) ([270a932](https://github.com/okou-ai/okou/commit/270a932913e030a8d3628889d04d7a11ff213761))
+* **api:** consume captured execution inputs directly ([#47885](https://github.com/okou-ai/okou/issues/47885)) ([e761a45](https://github.com/okou-ai/okou/commit/e761a45ea5a1569151e19169b0ab3e0b2accf761))
+
+
+### Performance Improvements
+
+* **api:** trim run preparation credential and template projections ([#47886](https://github.com/okou-ai/okou/issues/47886)) ([7daca56](https://github.com/okou-ai/okou/commit/7daca560b2b79e6d1722b9b599fa715c4d71764d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.74.0
+    * @okouai/core bumped to 8.844.2
+    * @okouai/db bumped to 2.39.2
+    * @okouai/pi-agent-runtime bumped to 1.51.138
+
 ## [2.75.1](https://github.com/okou-ai/okou/compare/api-v2.75.0...api-v2.75.1) (2026-11-16)
 
 

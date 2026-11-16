@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.12](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.11...guest-contracts-v0.32.12) (2026-11-16)
+
+
+### Refactoring
+
+* **runtime:** share sorted environment entry validation ([#47883](https://github.com/okou-ai/okou/issues/47883)) ([2170f64](https://github.com/okou-ai/okou/commit/2170f647745a06ae5957e4e230ff3701a9b14e1f))
+
 ## [0.32.11](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.10...guest-contracts-v0.32.11) (2026-11-16)
 
 ## [0.32.10](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.9...guest-contracts-v0.32.10) (2026-11-16)
