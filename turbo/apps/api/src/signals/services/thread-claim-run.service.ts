@@ -4105,7 +4105,7 @@ function launchRunValues(
     status: "pending",
     agentId: args.resolved.agentId,
     prompt: args.content.prompt,
-    appendSystemPrompt: args.content.appendSystemPrompt ?? null,
+    appendSystemPrompt: args.content.appendSystemPrompt,
     vars: args.content.vars,
     secretNames: ["OKOU_TOKEN"],
     storageMounts: [...args.runStorageMounts],
@@ -4688,7 +4688,7 @@ interface ThreadRunArgsInput {
 
 interface ThreadRunContent {
   readonly prompt: string;
-  readonly appendSystemPrompt?: string;
+  readonly appendSystemPrompt: string;
   readonly triggerSource: TriggerSource;
   readonly vars: Record<string, string>;
 }
@@ -4703,7 +4703,7 @@ interface ThreadRunArgs {
   readonly agentRunMetadata: AgentRunMetadata;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
   readonly prompt: string;
-  readonly appendSystemPrompt?: string;
+  readonly appendSystemPrompt: string;
   readonly realAgentInPreview?: boolean;
   readonly captureNetworkBodies?: boolean;
   readonly triggerSource: TriggerSource;
@@ -4917,7 +4917,7 @@ function admittedRunLaunch(
       launchSnapshot: rows.launchSnapshot,
       officialWorkflowProvenance: rows.officialWorkflowProvenance ?? null,
       prompt: rows.content.prompt,
-      appendSystemPrompt: rows.content.appendSystemPrompt ?? null,
+      appendSystemPrompt: rows.content.appendSystemPrompt,
       vars: rows.content.vars,
       storageMounts: [...args.launch.runStorageMounts],
       modelProvider: metadata.modelProvider,
