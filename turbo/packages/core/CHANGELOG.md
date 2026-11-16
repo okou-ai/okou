@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.842.0](https://github.com/okou-ai/okou/compare/core-v8.841.1...core-v8.842.0) (2026-11-16)
+
+
+### Features
+
+* **run:** add opt-in artifact phase timing ([#47655](https://github.com/okou-ai/okou/issues/47655)) ([3e71f58](https://github.com/okou-ai/okou/commit/3e71f58b819fe638d46df9ecb8596fef07ddf88f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.71.0
+
 ## [8.841.1](https://github.com/okou-ai/okou/compare/core-v8.841.0...core-v8.841.1) (2026-11-16)
 
 

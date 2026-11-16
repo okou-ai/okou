@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.18...runner-rs-v0.249.19) (2026-11-16)
+
+
+### Bug Fixes
+
+* **build:** pin rust 1.100 across toolchain and sandbox images ([#47647](https://github.com/okou-ai/okou/issues/47647)) ([f6fe91d](https://github.com/okou-ai/okou/commit/f6fe91dee7ab33d2aba08cc317fa71487bd815e6))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.17...runner-rs-v0.249.18) (2026-11-16)
 
 ### Release Dependencies
