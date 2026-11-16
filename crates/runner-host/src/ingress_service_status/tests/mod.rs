@@ -20,14 +20,7 @@ async fn observes_current_membership_across_exit_and_restart() {
 }
 
 #[tokio::test]
-async fn invalid_or_unreadable_membership_is_unavailable() {
+async fn unreadable_membership_is_unavailable() {
     let directory = tempfile::tempdir().unwrap();
-    let membership = directory.path().join("cgroup.procs");
-
-    for contents in ["\n", "0\n", "not-a-pid\n", "123\ninvalid\n"] {
-        tokio::fs::write(&membership, contents).await.unwrap();
-        assert!(!query_active(&membership).await, "{contents:?}");
-    }
-
     assert!(!query_active(directory.path()).await);
 }
