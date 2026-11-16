@@ -4806,7 +4806,7 @@
             "label": "Présentation"
           },
           "report": {
-            "instruction": "Crée un document complet avec les résultats dans le format de fichier demandé (Markdown par défaut). Téléverse-le comme artefact et inclus un lien fonctionnel vers cet artefact dans ta réponse finale.",
+            "instruction": "Crée un document complet avec les résultats dans le format de fichier demandé (PDF par défaut). Téléverse-le comme artefact et inclus un lien fonctionnel vers cet artefact dans ta réponse finale.",
             "label": "Document"
           },
           "research": {

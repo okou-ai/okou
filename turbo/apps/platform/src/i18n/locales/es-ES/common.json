@@ -4806,7 +4806,7 @@
             "label": "Presentación"
           },
           "report": {
-            "instruction": "Crea un documento completo con los resultados en el formato de archivo solicitado (Markdown por defecto). Súbelo como artefacto e incluye un enlace funcional al artefacto en tu respuesta final.",
+            "instruction": "Crea un documento completo con los resultados en el formato de archivo solicitado (PDF por defecto). Súbelo como artefacto e incluye un enlace funcional al artefacto en tu respuesta final.",
             "label": "Documento"
           },
           "research": {

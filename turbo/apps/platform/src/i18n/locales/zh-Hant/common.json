@@ -4733,7 +4733,7 @@
             "label": "簡報"
           },
           "report": {
-            "instruction": "將完整結果製作成文件，使用要求的檔案格式（預設使用 Markdown）。將文件上傳為 artifact，並在最終回覆中提供可開啟的 artifact 連結。",
+            "instruction": "將完整結果製作成文件，使用要求的檔案格式（預設使用 PDF）。將文件上傳為 artifact，並在最終回覆中提供可開啟的 artifact 連結。",
             "label": "文件"
           },
           "research": {

@@ -4733,7 +4733,7 @@
             "label": "Presentasi"
           },
           "report": {
-            "instruction": "Buat dokumen lengkap berisi hasil dalam format file yang diminta (Markdown secara default). Unggah sebagai artefak dan sertakan tautan artefak yang dapat dibuka dalam jawaban akhir.",
+            "instruction": "Buat dokumen lengkap berisi hasil dalam format file yang diminta (PDF secara default). Unggah sebagai artefak dan sertakan tautan artefak yang dapat dibuka dalam jawaban akhir.",
             "label": "Dokumen"
           },
           "research": {

@@ -24,7 +24,7 @@ const TASK =
 const PRESENTATION =
   "Present the findings as a concise presentation with key results, recommendations, and next steps.";
 const DOCUMENT =
-  "Create a complete document with the results in the requested file format (Markdown by default). Upload it as an artifact and include the working artifact link in your final response.";
+  "Create a complete document with the results in the requested file format (PDF by default). Upload it as an artifact and include the working artifact link in your final response.";
 
 async function openReady(
   pageContext: TestContext = context,

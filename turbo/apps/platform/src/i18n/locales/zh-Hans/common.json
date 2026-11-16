@@ -4733,7 +4733,7 @@
             "label": "演示文稿"
           },
           "report": {
-            "instruction": "将完整结果制作成文档，使用要求的文件格式（默认使用 Markdown）。将文档上传为 artifact，并在最终回复中提供可打开的 artifact 链接。",
+            "instruction": "将完整结果制作成文档，使用要求的文件格式（默认使用 PDF）。将文档上传为 artifact，并在最终回复中提供可打开的 artifact 链接。",
             "label": "文档"
           },
           "research": {
