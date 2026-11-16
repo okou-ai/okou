@@ -4,10 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/android-updates";
 import { command } from "ccstate";
 import { env } from "../../lib/env";
-import {
-  downloadS3BufferWithMaxBytes$,
-  isS3NotFoundError,
-} from "../external/s3";
+import { downloadS3BufferWithMaxBytes$ } from "../external/s3";
 import { safeJsonParse, settleIncludingAbort } from "../utils";
 
 const MANIFEST_KEY = "android-updates/manifest.json";
@@ -26,7 +23,8 @@ function isStorageUnavailable(error: unknown): boolean {
     return false;
   }
   if (
-    isS3NotFoundError(error) ||
+    // A missing manifest is retryable; NoSuchBucket is a configuration error.
+    error.name === "NoSuchKey" ||
     error.name === "TimeoutError" ||
     error.name === "NetworkingError"
   ) {

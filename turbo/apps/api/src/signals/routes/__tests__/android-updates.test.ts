@@ -175,6 +175,18 @@ describe("Android public update recovery", () => {
     );
   });
 
+  it("surfaces an incorrect static bucket as a configuration error", async () => {
+    context.mocks.s3.send.mockRejectedValue(
+      Object.assign(new Error("The specified bucket does not exist"), {
+        name: "NoSuchBucket",
+        $metadata: { httpStatusCode: 404 },
+      }),
+    );
+    await expect(apiClient(true).get()).rejects.toThrow(
+      "The specified bucket does not exist",
+    );
+  });
+
   it("preserves caller cancellation instead of reporting a retryable release", async () => {
     const caller = new AbortController();
     context.mocks.s3.send.mockImplementation(() => {
