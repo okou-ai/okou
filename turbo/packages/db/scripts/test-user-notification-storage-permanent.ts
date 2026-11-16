@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 
-/** The operator's DB-only delivery format, on replayed and generated schemas. */
+/** Historical notification storage remains readable on both schema construction paths. */
 export async function validateUserNotificationStorage(databaseUrl: string) {
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();

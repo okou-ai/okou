@@ -124,11 +124,11 @@ export class MessagePortSharedDatabaseBridge implements SharedDatabaseBridge {
         }
         return;
       }
-      if (message.type === "realtime-resync") {
-        this.pendingRealtimeSubscriptions
-          .get(message.subscriptionId)
-          ?.onResync();
-        await this.events.realtimeResynced?.();
+      if (
+        message.type === "realtime-resync" ||
+        message.type === "realtime-gap"
+      ) {
+        await this.handleRealtimeResync(message);
         return;
       }
       if (message.type === "realtime-event") {
@@ -167,6 +167,18 @@ export class MessagePortSharedDatabaseBridge implements SharedDatabaseBridge {
     bridgeSignal.addEventListener("abort", this.handleBridgeAbort, {
       once: true,
     });
+  }
+
+  private async handleRealtimeResync(
+    message: Extract<
+      SharedDatabaseWorkerMessage,
+      { readonly type: "realtime-resync" | "realtime-gap" }
+    >,
+  ): Promise<void> {
+    if (message.type === "realtime-resync") {
+      this.pendingRealtimeSubscriptions.get(message.subscriptionId)?.onResync();
+    }
+    await this.events.realtimeResynced?.();
   }
 
   registerTab(signal: AbortSignal): Promise<void> {

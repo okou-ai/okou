@@ -4309,6 +4309,26 @@
     "previousFeature": "上一個功能",
     "tryPrompt": "試試這個任務"
   },
+  "feedEvents": {
+    "automationDisabled": {
+      "backToWorkflows": "返回工作流程",
+      "disabledAt": "停用時間：{{time}}",
+      "loadFailed": "無法載入此自動化",
+      "loadingAutomation": "正在載入自動化",
+      "otherWorkspace": "此自動化位於 {{workspace}}。請切換工作區以查看。",
+      "reason_one": "執行失敗 {{count}} 次。請在重新啟用前檢查此自動化。",
+      "reason_other": "連續執行失敗 {{count}} 次。請在重新啟用前檢查此自動化。",
+      "switchFailed": "無法切換工作區。請重試或使用工作區切換器。",
+      "switchWorkspace": "切換工作區",
+      "systemManaged": "此自動化由系統管理。下方顯示其目前狀態。",
+      "systemSource": "平台事件",
+      "title": "自動化已停用",
+      "unavailable": "找不到此自動化，或你無權存取",
+      "viewAutomation": "查看自動化",
+      "workspaceFallback": "原工作區"
+    },
+    "retry": "重試"
+  },
   "friendReferrals": {
     "copied": "已複製",
     "copyFailed": "複製失敗，請重試。",
@@ -6588,48 +6608,6 @@
       "thread_one": "{{value}} 個會話",
       "thread_other": "{{value}} 個會話"
     }
-  },
-  "userNotifications": {
-    "automationDisabled": {
-      "backToWorkflows": "返回工作流程",
-      "disabled": "已停用",
-      "disabledAt": "停用時間：{{time}}",
-      "loadFailed": "無法載入此自動化",
-      "loadingAutomation": "正在載入自動化",
-      "notNow": "暫時不用",
-      "otherWorkspace": "此自動化位於 {{workspace}}。請切換工作區以查看。",
-      "reason_one": "執行失敗 {{count}} 次。請在重新啟用前檢查此自動化。",
-      "reason_other": "連續執行失敗 {{count}} 次。請在重新啟用前檢查此自動化。",
-      "switchFailed": "無法切換工作區。請重試或使用工作區切換器。",
-      "switchWorkspace": "切換工作區",
-      "systemManaged": "此自動化由系統管理。下方顯示其目前狀態。",
-      "systemSource": "系統通知",
-      "title": "自動化已停用",
-      "unavailable": "找不到此自動化，或你無權存取",
-      "viewAutomation": "查看自動化",
-      "workspace": "工作區",
-      "workspaceFallback": "原工作區"
-    },
-    "close": "關閉",
-    "countUnavailable": "未讀數量暫不可用",
-    "detailFailed": "未能載入這則通知",
-    "empty": "暫無通知",
-    "emptyDescription": "Okou 的更新會顯示在這裡。",
-    "loadFailed": "未能載入通知",
-    "loading": "正在載入通知",
-    "loadMore": "查看更早的通知",
-    "nextPage": "下一頁",
-    "pageNavigation": "訊息中的頁面",
-    "pageOf": "第 {{current}} / {{total}} 頁",
-    "previousPage": "上一頁",
-    "readAll": "全部已讀",
-    "readFailed": "未能標記為已讀",
-    "retry": "重試",
-    "sender": "Okou 團隊",
-    "title": "通知",
-    "unread": "未讀",
-    "unreadCount_one": "{{count}} 則未讀通知",
-    "unreadCount_other": "{{count}} 則未讀通知"
   },
   "vnc": {
     "add": "新增主機",

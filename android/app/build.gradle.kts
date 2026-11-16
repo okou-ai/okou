@@ -46,9 +46,7 @@ val appVersionCode =
         }
         .standardOutput
         .asText
-        .get()
-        .trim()
-        .toInt()
+        .map { it.trim().toInt() }
 
 android {
     namespace = "ai.okou.android"
@@ -57,7 +55,6 @@ android {
         applicationId = "ai.okou.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = appVersionCode
         versionName = appVersion
         testInstrumentationRunner = "ai.okou.android.OkouTestRunner"
         testInstrumentationRunnerArguments["useTestStorageService"] = "true"
@@ -225,6 +222,7 @@ androidComponents {
 }
 
 androidComponents.onVariants { variant ->
+    variant.outputs.forEach { it.versionCode.set(appVersionCode) }
     variant.sources.res?.addGeneratedSourceDirectory(generateBrandFonts) { it.outputDirectory }
     variant.sources.assets?.addGeneratedSourceDirectory(generateLicenseAssets) {
         it.outputDirectory

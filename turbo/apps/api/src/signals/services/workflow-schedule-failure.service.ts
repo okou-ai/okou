@@ -1,3 +1,4 @@
+import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
@@ -12,11 +13,11 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { prepareAutomationDisabledNotification$ } from "./automation-disabled-notification.service";
+import { prepareAutomationDisabledFeedEvent$ } from "./automation-disabled-feed-event.service";
 import {
-  automationDisabledNotificationInsertSql,
+  automationDisabledFeedEventInsertSql,
   automationDisableTransitionColumns,
-} from "./automation-disabled-notification-sql";
+} from "./automation-disabled-feed-event-sql";
 import { settleMorningBriefSchedulePreRunFailure$ } from "./morning-brief-schedule-claim.service";
 import { calculateNextRun } from "./time-automation";
 import { scheduleFailurePauseValues } from "./workflow-schedule-failure-policy";
@@ -123,9 +124,9 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
           !failure.isCreditError &&
           current.consecutiveFailures + 1 >= MAX_CONSECUTIVE_FAILURES;
         const nextRunAt = advanceAfterPreRunFailure(current, failureTime);
-        const notification = shouldDisable
+        const feedEvent = shouldDisable
           ? await set(
-              prepareAutomationDisabledNotification$,
+              prepareAutomationDisabledFeedEvent$,
               current,
               failureTime,
               signal,
@@ -149,10 +150,10 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
             .returning(automationDisableTransitionColumns()),
         );
         const notice = db
-          .$with("automation_disable_notification", {})
+          .$with("automation_disable_feed_event", {})
           .as(
-            automationDisabledNotificationInsertSql(
-              notification,
+            automationDisabledFeedEventInsertSql(
+              feedEvent,
               sql.identifier("automation_disable_transition"),
             ),
           );
@@ -166,6 +167,9 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
           throw new StalePreRunFailure();
         }
         signal.throwIfAborted();
+        if (feedEvent && shouldDisable) {
+          await publishAgentSuggestionsChangedSafely(feedEvent);
+        }
         return preRunFailureOutcome(updated, failure);
       })(),
       signal,
@@ -211,10 +215,10 @@ export const recordPreRunFailure$ = command(
     const increment = failure.isCreditError ? 0 : 1;
     const threshold = sql`${workflowAutomations.consecutiveFailures} + ${increment} >= ${MAX_CONSECUTIVE_FAILURES}`;
     const nextRunAt = advanceAfterPreRunFailure(automation, failureTime);
-    const notification = failure.isCreditError
+    const feedEvent = failure.isCreditError
       ? null
       : await set(
-          prepareAutomationDisabledNotification$,
+          prepareAutomationDisabledFeedEvent$,
           automation,
           failureTime,
           signal,
@@ -247,10 +251,10 @@ export const recordPreRunFailure$ = command(
         .returning(automationDisableTransitionColumns()),
     );
     const notice = db
-      .$with("automation_disable_notification", {})
+      .$with("automation_disable_feed_event", {})
       .as(
-        automationDisabledNotificationInsertSql(
-          notification,
+        automationDisabledFeedEventInsertSql(
+          feedEvent,
           sql.identifier("automation_disable_transition"),
         ),
       );
@@ -268,6 +272,9 @@ export const recordPreRunFailure$ = command(
       !updated.enabled &&
       updated.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES
     ) {
+      if (feedEvent) {
+        await publishAgentSuggestionsChangedSafely(feedEvent);
+      }
       log.debug(
         "Workflow automation auto-disabled after consecutive failures",
         {

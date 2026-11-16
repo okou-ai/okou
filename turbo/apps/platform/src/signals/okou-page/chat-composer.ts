@@ -1,9 +1,18 @@
+import type { DocumentTemplateCategory } from "@okouai/core/document-template-items";
 import { createDocumentTemplateSignals } from "./document-template-picker.ts";
 import { command, computed, state, type Command } from "ccstate";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { onRef } from "../utils.ts";
-import { createPresentationTemplatePreviewSignals } from "./presentation-template-preview.ts";
+import {
+  createPresentationTemplatePreviewSignals,
+  type SelectTemplatePreview,
+} from "./presentation-template-preview.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
+import {
+  deleteCustomTemplate$ as deleteCustomTemplateRecord$,
+  openCustomTemplate$,
+} from "./custom-template-library.ts";
+import type { WorkflowComposerSignals } from "./tiptap-workflow-composer.ts";
 
 /** `category` is null until an entry point or the member names one. */
 export function resolveTemplatePickerCategory(category: string | null): string {
@@ -89,6 +98,7 @@ export const resetNewThreadComputerAccess$ = command(({ set }) => {
 export interface OpenTemplatePickerDialogOptions {
   readonly category: string;
   readonly referenceValue: GenerationTemplateRequest | null;
+  readonly directPreview?: boolean;
 }
 
 export type OpenTemplatePickerDialogCommand = Command<
@@ -112,7 +122,43 @@ function createBasicComposerUiSignals() {
   };
 }
 
+function createTemplatePickerReturnFocusSignals() {
+  const trigger$ = state<HTMLElement | null>(null);
+  const shelf$ = state<HTMLElement | null>(null);
+  const capture$ = command(({ set }) => {
+    const active = document.activeElement;
+    const trigger = active instanceof HTMLElement ? active : null;
+    set(trigger$, trigger);
+    set(shelf$, trigger?.closest<HTMLElement>("[data-rail-root]") ?? null);
+  });
+  const finalFocus$ = command(({ get }) => {
+    const trigger = get(trigger$);
+    if (trigger?.isConnected) {
+      return trigger;
+    }
+    // Deleting a custom template removes its Eye. Keep focus on a surviving
+    // shelf control rather than falling back to the page body.
+    const shelf = get(shelf$);
+    return shelf?.isConnected
+      ? shelf.querySelector<HTMLElement>(
+          'input[type="file"]:not(:disabled), button:not(:disabled)',
+        )
+      : null;
+  });
+  return { capture$, finalFocus$ };
+}
+
 function createTemplatePickerDialogSignals() {
+  const focus = createTemplatePickerReturnFocusSignals();
+  const internalTemplatePickerDirectPreview$ = state(false);
+  const templatePickerDirectPreview$ = computed((get) => {
+    return get(internalTemplatePickerDirectPreview$);
+  });
+  const setTemplatePickerDirectPreview$ = command(
+    ({ set }, direct: boolean) => {
+      set(internalTemplatePickerDirectPreview$, direct);
+    },
+  );
   const internalTemplatePickerMounted$ = state(false);
   const internalTemplatePickerOpen$ = state(false);
   const templatePickerMounted$ = computed((get) => {
@@ -150,6 +196,9 @@ function createTemplatePickerDialogSignals() {
   );
   const setTemplatePickerOpen$ = command(({ set }, open: boolean) => {
     if (open) {
+      // Detail refs focus before the dialog mounts. Remember the originating
+      // shelf control now, so dismissal cannot restore an unmounted breadcrumb.
+      set(focus.capture$);
       set(internalTemplatePickerMounted$, true);
     }
     set(internalTemplatePickerOpen$, open);
@@ -204,6 +253,9 @@ function createTemplatePickerDialogSignals() {
   });
 
   return {
+    templatePickerDirectPreview$,
+    setTemplatePickerDirectPreview$,
+    templatePickerFinalFocus$: focus.finalFocus$,
     templatePickerMounted$,
     templatePickerOpen$,
     templatePickerInitialFocus$,
@@ -312,6 +364,7 @@ function createOpenTemplatePickerDialogCommand(
     set(list.signals.setTemplatePickerSearch$, "");
     set(previews.clearPresentationTemplatePreviews$);
     set(dialog.setTemplatePickerReferenceValue$, options.referenceValue);
+    set(dialog.setTemplatePickerDirectPreview$, options.directPreview ?? false);
     set(list.signals.setTemplatePickerCategory$, options.category);
     set(dialog.setTemplatePickerOpen$, true);
   });
@@ -347,6 +400,15 @@ function createTemplatePickerFocusSignals(
   previews: ReturnType<typeof createPresentationTemplatePreviewSignals>,
 ) {
   const pendingPreviewTriggerId$ = state<string | null>(null);
+  const deleteCustomTemplate$ = command(
+    async ({ get, set }, templateId: string, signal: AbortSignal) => {
+      await set(deleteCustomTemplateRecord$, templateId, signal);
+      signal.throwIfAborted();
+      if (get(dialog.templatePickerDirectPreview$)) {
+        set(dialog.setTemplatePickerOpen$, false);
+      }
+    },
+  );
   const closeOpenedTemplate$ = command(({ get, set }) => {
     const templateId = get(previews.openedTemplateId$);
     set(
@@ -376,6 +438,7 @@ function createTemplatePickerFocusSignals(
     set(dialog.completeTemplatePickerClose$);
   });
   return {
+    deleteCustomTemplate$,
     closeOpenedTemplate$,
     restoreTemplatePreviewTriggerRef$,
     focusTemplatePreviewRef$,
@@ -423,3 +486,76 @@ export function createComposerUiSignals() {
 }
 
 export type ComposerUiSignalGroups = ReturnType<typeof createComposerUiSignals>;
+
+type TemplateRecommendationPreview =
+  | {
+      readonly type: "presentation";
+      readonly selection: SelectTemplatePreview;
+    }
+  | {
+      readonly type: "website";
+      readonly templateId: string;
+    }
+  | {
+      readonly type: "document";
+      readonly templateId: string;
+      readonly category: DocumentTemplateCategory | "custom" | "all";
+    }
+  | {
+      readonly type: "custom";
+      readonly kind: "presentation";
+      readonly templateId: string;
+    }
+  | {
+      readonly type: "custom";
+      readonly kind: "document";
+      readonly templateId: string;
+      readonly category: DocumentTemplateCategory | "custom" | "all";
+    };
+
+export function createTemplateRecommendationPreviewCommand(
+  template: ComposerUiSignalGroups["template"],
+  openTemplatePicker$: WorkflowComposerSignals["openTemplatePicker$"],
+) {
+  return command(({ set }, preview: TemplateRecommendationPreview) => {
+    if (
+      preview.type === "document" ||
+      (preview.type === "custom" && preview.kind === "document")
+    ) {
+      set(template.setDocumentCategory$, preview.category);
+    }
+    const category =
+      preview.type === "presentation" ||
+      (preview.type === "custom" && preview.kind === "presentation")
+        ? "slides"
+        : preview.type === "custom"
+          ? "document"
+          : preview.type;
+    set(openTemplatePicker$, {
+      kind: "insert",
+      category,
+      directPreview: true,
+    });
+    switch (preview.type) {
+      case "presentation": {
+        set(template.openPresentationTemplate$, preview.selection);
+        break;
+      }
+      case "document": {
+        set(template.openDocumentPreview$, preview.templateId);
+        break;
+      }
+      case "website": {
+        set(template.openWebsiteTemplatePreview$, preview.templateId);
+        break;
+      }
+      case "custom": {
+        set(openCustomTemplate$, {
+          templateId: preview.templateId,
+          kind: preview.kind,
+        });
+        break;
+      }
+    }
+  });
+}

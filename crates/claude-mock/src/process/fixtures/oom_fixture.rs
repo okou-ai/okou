@@ -1,4 +1,4 @@
-//! Disposable-Guest task pressure programs used by the registered OOM fixture.
+//! Disposable-Guest tool and task programs used by the registered OOM fixture.
 
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::{FileExt, OpenOptionsExt};
@@ -13,7 +13,8 @@ use super::{read_trimmed, validate_tool_cgroup};
 pub(super) const STARTUP: &str = "/tmp/vm0-task-oom.startup";
 pub(super) const RELEASE: &str = "/tmp/vm0-task-oom.release";
 pub(super) const READY: &str = "/tmp/vm0-task-oom.ready";
-pub(super) const DIAGNOSTICS: &str = "/tmp/vm0-task-oom.stderr";
+pub(super) const TOOL_ARMED: &str = "/tmp/vm0-tool-oom.armed";
+pub(super) const DIAGNOSTICS: &str = "/tmp/vm0-oom-fixture.stderr";
 const DIAGNOSTIC_TAIL_BYTES: u64 = 8192;
 
 pub(super) const OFFENDER_SCRIPT: &str = r#"
@@ -26,7 +27,8 @@ pub(super) const LAUNCH_SUPPORT: &str = r#"
 import json, math, os, select, subprocess, sys, time
 
 def task_stage(stage):
-    print("task OOM stage: " + stage, file=sys.stderr, flush=True)
+    # Forked workers share stderr; publish each short stage as one write.
+    os.write(sys.stderr.fileno(), ("task OOM stage: " + stage + "\n").encode())
 
 def task_remaining(stage):
     deadline = float(os.environ["VM0_TEST_TASK_DEADLINE"])
@@ -85,6 +87,84 @@ task_stage("controller await task runtime exit")
 status = child.wait(timeout=task_remaining("task runtime exit"))
 assert status == 0, "task did not recover from its nested OOM: " + str(status)
 task_stage("controller completed")
+"#;
+
+pub(super) const INJECTED_TOOL_PROGRAM: &str = r#"
+import os, pathlib, signal, traceback
+exec(os.environ["VM0_TEST_TASK_SUPPORT"])
+task_remaining("tool controller start")
+assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"
+relative = pathlib.Path("/proc/self/cgroup").read_text().strip().removeprefix("0::")
+worker_bytes = int(os.environ["VM0_TEST_OOM_ALLOCATOR_BYTES"]) // 4
+ready_read, ready_write = os.pipe()
+children = set()
+try:
+    for _ in range(4):
+        task_remaining("tool allocator launch")
+        # SIGINT raises in Python. Register the new child before an interruption
+        # can unwind the controller's owner; the child restores its own mask.
+        old_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+        try:
+            pid = os.fork()
+        except BaseException:
+            signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
+            raise
+        if pid == 0:
+            try:
+                children.clear()
+                signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
+                os.close(ready_read)
+                task_stage("tool worker allocating pid=" + str(os.getpid()) + " bytes=" + str(worker_bytes))
+                assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"
+                memory = bytearray(worker_bytes)
+                memory[::4096] = b"\x01" * ((len(memory) + 4095) // 4096)
+                task_stage("tool worker resident pid=" + str(os.getpid()) + " bytes=" + str(len(memory)))
+                os.write(ready_write, b"R")
+                os.close(ready_write)
+                while True:
+                    signal.pause()
+            except BaseException:
+                traceback.print_exc()
+            finally:
+                os._exit(1)
+        children.add(pid)
+        signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
+    os.close(ready_write)
+    ready_write = None
+    wait_for_allocators(ready_read, 4)
+    task_remaining("tool resident marker")
+    pathlib.Path(os.environ["VM0_TEST_TOOL_OOM_CGROUP_MARKER"]).write_text(relative)
+    task_stage("all four tool allocators resident; awaiting injection handoff")
+    if not select.select([sys.stdin], [], [], task_remaining("tool OOM arm"))[0]:
+        raise TimeoutError("tool OOM arm: missing injection handoff")
+    if os.read(sys.stdin.fileno(), 1) != b"I":
+        raise RuntimeError("tool OOM arm: invalid injection handoff")
+    # Observe without reaping so SIGINT cannot leave a recycled cleanup PID.
+    # The shell's sentinel is also our child after exec; its early exit fails
+    # preparation just like an allocator exit.
+    exited = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOWAIT | os.WNOHANG)
+    if exited is not None:
+        children.add(exited.si_pid)
+        raise RuntimeError("tool child exited before OOM: pid=" + str(exited.si_pid) + " status=" + str(exited.si_status))
+    task_remaining("tool armed marker")
+    pathlib.Path(os.environ["VM0_TEST_TOOL_OOM_ARMED_MARKER"]).write_text(relative)
+    task_stage("tool controller armed for Guest OOM injection")
+    # Linux kills the selected victim before sweeping its OOM group. A worker
+    # exit is expected after this handoff; retain the remaining payload until
+    # the kernel kills us too. The Rust owner holds the pipe through injection
+    # and enforces the original deadline. EOF releases cleanup if it disappears.
+    request = os.read(sys.stdin.fileno(), 1)
+    raise RuntimeError("OOM control pipe closed before group termination" if not request
+        else "unexpected OOM control input after injection handoff")
+finally:
+    if ready_write is not None:
+        os.close(ready_write)
+    # Every recorded child is still unreaped, including the observed exit, so
+    # none of these PIDs can refer to a recycled process during group cleanup.
+    for pid in children:
+        os.kill(pid, signal.SIGKILL)
+    for pid in children:
+        os.waitpid(pid, 0)
 "#;
 
 pub(super) const RUNTIME_PROGRAM: &str = r#"

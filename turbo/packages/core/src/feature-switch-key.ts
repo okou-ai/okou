@@ -8,8 +8,6 @@ export enum FeatureSwitchKey {
   ArtifactGenerationTiming = "_artifactGenerationTimingV1",
   PhoneUse = "_phoneUse",
   CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
-  UserNotifications = "userNotifications",
-  AutomationDisableNotifications = "automationDisableNotifications",
   EmailIntegration = "emailIntegration",
   HomeCapabilities = "homeCapabilities",
   PresentationOutputFormat = "presentationOutputFormat",

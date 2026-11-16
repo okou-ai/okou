@@ -396,7 +396,8 @@ function currentCustomConnectorStoredConnectionIsRuntimeAvailable(
   );
 }
 
-function customConnectorCredentialAccesses(
+/** Resolve current capability from connection metadata, without credential values. */
+export function customConnectorCredentialAccesses(
   definitions: readonly CustomConnectorCredentialDefinition[],
   rows: readonly CustomConnectorStoredConnection[],
   memberConnectorIdsByCustomConnectorId: ReadonlyMap<string, string>,

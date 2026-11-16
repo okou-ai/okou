@@ -38,7 +38,7 @@ function notificationPayloadCheck(payload: SQLWrapper) {
     ELSE false END) IS TRUE`.inlineParams();
 }
 
-/** Insert one row per recipient. Read receipts are personal, across workspaces. */
+/** Historical rows and outgoing API statements outlive the retired bell runtime. */
 export const userNotifications = pgTable(
   "user_notifications",
   {

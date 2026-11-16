@@ -7,6 +7,7 @@ import {
   feedContract,
   type Suggestion,
   type SuggestionOption,
+  type PlatformEvent,
 } from "@okouai/api-contracts/contracts/feed";
 import {
   chatEventsContract,
@@ -1511,4 +1512,52 @@ test("Disabling Suggestions returns a direct For you link to the regular homepag
   });
   await screen.findByTestId("chat-tagline");
   expect(pathname()).toBe(homePath);
+});
+
+test("For you handles a suggestion and a platform event in the same deck", async () => {
+  const suggestion = makeSuggestion();
+  const pool = mockPool([suggestion]);
+  let dismissed = false;
+  const event: PlatformEvent = {
+    id: "11111111-1111-4111-8111-111111111111",
+    type: "event",
+    sourceType: "platform-event",
+    priority: 0,
+    createdAt: suggestion.createdAt,
+    updatedAt: suggestion.updatedAt,
+    expiresAt: null,
+    state: { status: "active" },
+    content: {
+      eventType: "automation-disabled",
+      workflowId: "d0000000-0000-4000-a000-000000000201",
+      automationId: "e0000000-0000-4000-a000-000000000201",
+      workspaceId: "org_example",
+      automationName: "Daily work summary",
+      disabledAt: suggestion.createdAt,
+      consecutiveFailures: 3,
+      recoveryScheduled: false,
+    },
+  };
+  context.mocks.api(feedContract.list, ({ respond }) => {
+    return respond(200, {
+      items: [
+        ...(pool.consumed.includes(suggestion.id) ? [] : [suggestion]),
+        ...(dismissed ? [] : [event]),
+      ],
+    });
+  });
+  context.mocks.api(feedContract.dismiss, ({ respond }) => {
+    dismissed = true;
+    notifySuggestionsChanged();
+    return respond(204);
+  });
+  await openForYou();
+  const first = await activeForYouCard(suggestion.content.title);
+  click(button("Dismiss", "button", first));
+  await screen.findByRole("heading", { name: "Automation disabled" });
+  expect(screen.getByText("Platform event")).toBeInTheDocument();
+  click(button("Dismiss"));
+  await screen.findByRole("heading", { name: "All caught up" });
+  expect(pool.consumed).toStrictEqual([suggestion.id]);
+  expect(dismissed).toBeTruthy();
 });

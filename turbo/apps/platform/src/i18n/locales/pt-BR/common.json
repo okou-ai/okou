@@ -4378,6 +4378,27 @@
     "previousFeature": "Recurso anterior",
     "tryPrompt": "Experimentar esta tarefa"
   },
+  "feedEvents": {
+    "automationDisabled": {
+      "backToWorkflows": "Voltar aos fluxos de trabalho",
+      "disabledAt": "Desativada em {{time}}",
+      "loadFailed": "Não foi possível carregar esta automação",
+      "loadingAutomation": "Carregando automação",
+      "otherWorkspace": "Esta automação está em {{workspace}}. Troque de espaço de trabalho para visualizá-la.",
+      "reason_one": "{{count}} execução falhou. Revise a automação antes de reativá-la.",
+      "reason_many": "{{count}} execuções consecutivas falharam. Revise a automação antes de reativá-la.",
+      "reason_other": "{{count}} execuções consecutivas falharam. Revise a automação antes de reativá-la.",
+      "switchFailed": "Não foi possível trocar de espaço de trabalho. Tente novamente ou use o seletor de espaços de trabalho.",
+      "switchWorkspace": "Trocar de espaço de trabalho",
+      "systemManaged": "Esta automação é gerenciada pelo sistema. O estado atual é mostrado abaixo.",
+      "systemSource": "Evento da plataforma",
+      "title": "Automação desativada",
+      "unavailable": "Automação não encontrada ou acesso não permitido",
+      "viewAutomation": "Ver automação",
+      "workspaceFallback": "Espaço de trabalho original"
+    },
+    "retry": "Tentar novamente"
+  },
   "friendReferrals": {
     "copied": "Copiado",
     "copyFailed": "Não foi possível copiar. Tente novamente.",
@@ -6678,50 +6699,6 @@
       "thread_many": "{{value}} conversas",
       "thread_other": "{{value}} conversas"
     }
-  },
-  "userNotifications": {
-    "automationDisabled": {
-      "backToWorkflows": "Voltar aos fluxos de trabalho",
-      "disabled": "Desativada",
-      "disabledAt": "Desativada em {{time}}",
-      "loadFailed": "Não foi possível carregar esta automação",
-      "loadingAutomation": "Carregando automação",
-      "notNow": "Agora não",
-      "otherWorkspace": "Esta automação está em {{workspace}}. Troque de espaço de trabalho para visualizá-la.",
-      "reason_one": "{{count}} execução falhou. Revise a automação antes de reativá-la.",
-      "reason_many": "{{count}} execuções consecutivas falharam. Revise a automação antes de reativá-la.",
-      "reason_other": "{{count}} execuções consecutivas falharam. Revise a automação antes de reativá-la.",
-      "switchFailed": "Não foi possível trocar de espaço de trabalho. Tente novamente ou use o seletor de espaços de trabalho.",
-      "switchWorkspace": "Trocar de espaço de trabalho",
-      "systemManaged": "Esta automação é gerenciada pelo sistema. O estado atual é mostrado abaixo.",
-      "systemSource": "Notificação do sistema",
-      "title": "Automação desativada",
-      "unavailable": "Automação não encontrada ou acesso não permitido",
-      "viewAutomation": "Ver automação",
-      "workspace": "Espaço de trabalho",
-      "workspaceFallback": "Espaço de trabalho original"
-    },
-    "close": "Fechar",
-    "countUnavailable": "Contagem de notificações não lidas indisponível",
-    "detailFailed": "Não foi possível carregar esta notificação",
-    "empty": "Nenhuma notificação ainda",
-    "emptyDescription": "As novidades do Okou aparecerão aqui.",
-    "loadFailed": "Não foi possível carregar as notificações",
-    "loading": "Carregando notificações",
-    "loadMore": "Mostrar anteriores",
-    "nextPage": "Próxima página",
-    "pageNavigation": "Páginas desta mensagem",
-    "pageOf": "Página {{current}} de {{total}}",
-    "previousPage": "Página anterior",
-    "readAll": "Marcar todas como lidas",
-    "readFailed": "Não foi possível marcar como lida",
-    "retry": "Tentar novamente",
-    "sender": "Equipe Okou",
-    "title": "Notificações",
-    "unread": "Não lida",
-    "unreadCount_one": "{{count}} notificação não lida",
-    "unreadCount_many": "{{count}} notificações não lidas",
-    "unreadCount_other": "{{count}} notificações não lidas"
   },
   "vnc": {
     "add": "Adicionar host",

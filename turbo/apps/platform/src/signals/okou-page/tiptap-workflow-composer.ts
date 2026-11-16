@@ -304,7 +304,12 @@ export interface WorkflowComposerSignals {
 }
 
 export type OpenComposerTemplatePickerIntent =
-  | { readonly kind: "insert"; readonly category: string }
+  | {
+      readonly kind: "insert";
+      readonly category: string;
+      /** A shelf preview dismisses back to the shelf, not the picker gallery. */
+      readonly directPreview?: boolean;
+    }
   | {
       readonly kind: "edit-selected";
       readonly category: string;
@@ -3058,6 +3063,7 @@ function createTemplateCommands(
       set(openTemplatePickerDialog$, {
         category: intent.category,
         referenceValue,
+        directPreview: intent.kind === "insert" && intent.directPreview,
       });
     },
   );

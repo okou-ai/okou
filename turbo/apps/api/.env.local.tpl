@@ -39,6 +39,11 @@ R2_ACCOUNT_ID=op://Development/cloudflare/R2_ACCOUNT_ID
 R2_ACCESS_KEY_ID=op://Development/cloudflare/R2_ACCESS_KEY_ID
 R2_SECRET_ACCESS_KEY=op://Development/cloudflare/R2_SECRET_ACCESS_KEY
 R2_USER_STORAGES_BUCKET_NAME=op://Development/cloudflare/R2_USER_STORAGES_BUCKET_NAME
+# Android update discovery reads the release publisher's static bucket directly.
+# Supply a token scoped to that bucket; no user-storage credential fallback.
+R2_STATIC_BUCKET_NAME=
+R2_STATIC_ACCESS_KEY_ID=
+R2_STATIC_SECRET_ACCESS_KEY=
 # Private uploads and generation require scoped private-bucket credentials.
 R2_PRIVATE_ARTIFACTS_BUCKET_NAME=user-artifact-private-dev
 R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID=

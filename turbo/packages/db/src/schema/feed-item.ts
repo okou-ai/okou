@@ -24,6 +24,7 @@ export const feedItems = pgTable(
     userId: text("user_id").notNull(),
     id: uuid("id").notNull(),
     type: text("type").$type<FeedItemType>().notNull(),
+    sourceType: text("source_type").notNull().default("agent"),
     priority: integer("priority").notNull().default(0),
     content: jsonb("content").$type<FeedItemContent>(),
     state: jsonb("state").$type<FeedItemState>().notNull(),
@@ -34,10 +35,14 @@ export const feedItems = pgTable(
   (table) => {
     return [
       primaryKey({ columns: [table.orgId, table.userId, table.id] }),
-      check("feed_items_type", sql`${table.type} = 'suggestion'`),
+      check("feed_items_type", sql`${table.type} IN ('suggestion', 'event')`),
+      check(
+        "feed_items_source_type",
+        sql`(${table.type} = 'suggestion' AND ${table.sourceType} = 'agent') OR (${table.type} = 'event' AND ${table.sourceType} = 'platform-event')`,
+      ),
       check(
         "feed_items_suggestion_state",
-        sql`(
+        sql`${table.type} <> 'suggestion' OR (
     jsonb_typeof(${table.state}) = 'object'
     AND ${table.state}->>'status' IN ('active', 'consumed', 'removed')
     AND ${table.state} ? 'selectedOptionId'
@@ -48,12 +53,38 @@ export const feedItems = pgTable(
       ),
       check(
         "feed_items_suggestion_content",
-        sql`${table.state}->>'status' <> 'active' OR ${table.content} IS NOT NULL`,
+        sql`${table.type} <> 'suggestion' OR ${table.state}->>'status' <> 'active' OR ${table.content} IS NOT NULL`,
       ),
       check(
         "feed_items_suggestion_expiry",
-        sql`${table.expiresAt} IS NOT NULL`,
+        sql`${table.type} <> 'suggestion' OR ${table.expiresAt} IS NOT NULL`,
       ),
+      check(
+        "feed_items_event",
+        sql`${table.type} <> 'event' OR (
+          jsonb_typeof(${table.state}) = 'object'
+          AND ${table.state}->>'status' IN ('active', 'dismissed')
+          AND jsonb_typeof(${table.content}) = 'object'
+          AND ${table.content}->>'eventType' = 'automation-disabled'
+          AND jsonb_typeof(${table.content}->'automationId') = 'string'
+          AND jsonb_typeof(${table.content}->'workflowId') = 'string'
+          AND jsonb_typeof(${table.content}->'automationName') = 'string'
+          AND jsonb_typeof(${table.content}->'disabledAt') = 'string'
+          AND jsonb_typeof(${table.content}->'consecutiveFailures') = 'number'
+          AND jsonb_typeof(${table.content}->'recoveryScheduled') = 'boolean'
+        ) IS TRUE`,
+      ),
+      index("feed_items_active_events")
+        .on(
+          table.orgId,
+          table.userId,
+          table.priority.desc(),
+          table.createdAt,
+          table.id,
+        )
+        .where(
+          sql`${table.type} = 'event' AND ${table.state}->>'status' = 'active'`,
+        ),
       index("feed_items_active_order")
         .on(
           table.orgId,

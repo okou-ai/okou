@@ -5,13 +5,13 @@ import { setResHeader$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
 import {
   AndroidUpdateUnavailable,
-  loadAndroidRelease,
+  loadAndroidRelease$,
 } from "../services/android-updates.service";
 import { settle } from "../utils";
 
 const getAndroidUpdate$ = command(async ({ set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
-  const loaded = await settle(loadAndroidRelease(signal), signal);
+  const loaded = await settle(set(loadAndroidRelease$, signal), signal);
   if (!loaded.ok) {
     if (!(loaded.error instanceof AndroidUpdateUnavailable)) {
       throw loaded.error;

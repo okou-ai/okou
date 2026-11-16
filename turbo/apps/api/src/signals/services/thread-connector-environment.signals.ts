@@ -6,6 +6,9 @@ import {
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { expandVariablesInString } from "@okouai/core/variable-expander";
 import { computed, type Computed } from "ccstate";
+import { secrets } from "@okouai/db/schema/secret";
+import { and, inArray } from "drizzle-orm";
+import { db$ } from "../external/db";
 import { badRequestMessage } from "../../lib/error";
 import { safeSync, settle } from "../utils";
 import {
@@ -24,6 +27,7 @@ import {
   mergeRecords,
 } from "./connector-runtime-preparation.service";
 import { countBucket } from "./dispatch-count-bucket";
+import { builtinConnectorCredentialSecretReadCondition } from "./builtin-connector-credential-access.service";
 import { buildPermissionManifest } from "./permission-manifest.service";
 import type { Environment } from "./run-environment";
 import {
@@ -223,7 +227,7 @@ function createEagerSecretPlanSignals(inputs: ConnectorRuntimeInputSignals) {
 
 type ConnectorSecretSignals = ReturnType<typeof createConnectorSecretSignals>;
 
-function createConnectorSecretSignals(
+function createNativeConnectorCredentialRows(
   threadContext: Pick<ThreadContext, "selectedConnectorSources$">,
   plan: EagerSecretPlanSignals,
 ) {
@@ -238,20 +242,25 @@ function createConnectorSecretSignals(
       if (isConnectorRuntimeError(plan) || plan.names.size === 0) {
         return [];
       }
-      // Account identity, revision and values were captured in one statement.
-      // Only catalog-owned names from the selected binding sets may escape it.
-      const keys = new Set(
-        plan.bindingSets.flatMap((bindingSet) => {
-          return storedConnectorCredentialNames({
+      const groups = plan.bindingSets.map((bindingSet) => {
+        return {
+          access: bindingSet.access,
+          connectorStateRevision: bindingSet.connectorStateRevision,
+          names: storedConnectorCredentialNames({
             runtimeBindings: bindingSet.runtimeBindings,
             kind: "secret",
             names: plan.names,
-          }).map((name) => {
-            return JSON.stringify([bindingSet.access.connectorId, name]);
+          }),
+        };
+      });
+      const keys = new Set(
+        groups.flatMap((group) => {
+          return group.names.map((name) => {
+            return JSON.stringify([group.access.connectorId, name]);
           });
         }),
       );
-      return sources.flatMap((result) => {
+      const expected = sources.flatMap((result) => {
         return result.kind === "available"
           ? result.snapshot.credentials.filter((credential) => {
               return keys.has(
@@ -263,7 +272,56 @@ function createConnectorSecretSignals(
             })
           : [];
       });
+      if (expected.length === 0) {
+        return [];
+      }
+      // Native environments alone need values. A changed account must not mix
+      // its new credentials with the selected metadata and variable snapshot.
+      const rows = await get(db$)
+        .select({
+          id: secrets.id,
+          name: secrets.name,
+          encryptedValue: secrets.encryptedValue,
+        })
+        .from(secrets)
+        .where(
+          and(
+            inArray(
+              secrets.id,
+              expected.map((credential) => {
+                return credential.id;
+              }),
+            ),
+            builtinConnectorCredentialSecretReadCondition({ groups }),
+          ),
+        );
+      const byId = new Map(
+        rows.map((row) => {
+          return [row.id, row];
+        }),
+      );
+      return expected.map((credential) => {
+        const row = byId.get(credential.id);
+        if (!row || row.name !== credential.name) {
+          throw new Error(
+            "Selected connector credentials changed during execution preparation",
+          );
+        }
+        return row;
+      });
     },
+  );
+  return encryptedRows$;
+}
+
+function createConnectorSecretSignals(
+  threadContext: Pick<ThreadContext, "selectedConnectorSources$">,
+  plan: EagerSecretPlanSignals,
+) {
+  const { eagerSecretPlan$ } = plan;
+  const encryptedRows$ = createNativeConnectorCredentialRows(
+    threadContext,
+    plan,
   );
   const eagerCredentialInput$ = computed(async (get) => {
     const resolveStartedAt = performance.now();

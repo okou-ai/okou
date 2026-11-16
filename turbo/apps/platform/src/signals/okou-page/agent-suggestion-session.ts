@@ -5,6 +5,7 @@ import { getSuggestionExpiresAt } from "@okouai/api-contracts/validators/suggest
 import type {
   Suggestion,
   SuggestionFeedbackRequest,
+  PlatformEvent,
 } from "@okouai/api-contracts/contracts/feed";
 import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
@@ -17,6 +18,7 @@ import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { onDomEventFn, onRef, resetSignal } from "../utils.ts";
 import { createDraftSignals } from "./chat-draft.ts";
+import { createPlatformEventEntry } from "./platform-feed-events.ts";
 
 type FeedbackKind =
   "already_done" | "not_planned" | "less_like_this" | "dismissed";
@@ -171,8 +173,11 @@ const agentSuggestionsEnabled$ = computed(async (get) => {
   return (await get(defaultAgentId$)) !== null;
 });
 
-const readAgentSuggestions$ = command(
-  async ({ get }, signal: AbortSignal): Promise<readonly Suggestion[]> => {
+const readForYouFeed$ = command(
+  async (
+    { get },
+    signal: AbortSignal,
+  ): Promise<readonly (Suggestion | PlatformEvent)[]> => {
     const enabled = await get(agentSuggestionsEnabled$);
     signal.throwIfAborted();
     if (!enabled) {
@@ -208,7 +213,7 @@ export const waitingSuggestionCount$ = computed(async (get) => {
     return 0;
   }
   return result.body.items.filter((item) => {
-    return getSuggestionExpiresAt(item) > now();
+    return item.type === "event" || getSuggestionExpiresAt(item) > now();
   }).length;
 });
 const reloadWaitingSuggestionCount$ = command(({ set }) => {
@@ -237,6 +242,20 @@ export const followWaitingSuggestionCountOnRef$ = onRef(
 );
 
 function createSuggestionSession() {
+  const settledOrder$ = state<readonly string[]>([]);
+  const feed$ = state<
+    | readonly (Suggestion | PlatformEvent)[]
+    | Promise<readonly (Suggestion | PlatformEvent)[]>
+  >([]);
+  const events$ = computed(async (get) => {
+    return (await get(feed$))
+      .filter((item) => {
+        return item.type === "event";
+      })
+      .map((item) => {
+        return createPlatformEventEntry(item, settledOrder$);
+      });
+  });
   // A visit owns its cards, independent of reactive metadata invalidations.
   // They are read again only when a write finds that a card has left the pool.
   const entries$ = state<
@@ -265,6 +284,9 @@ function createSuggestionSession() {
     },
   );
   return {
+    feed$,
+    events$,
+    settledOrder$,
     entries$,
     listItems$,
     settled$,
@@ -282,6 +304,12 @@ export const agentSuggestionEntries$ = computed((get) => {
 export const agentSuggestionListItems$ = computed((get) => {
   return get(get(session$).listItems$);
 });
+export const platformEventEntries$ = computed((get) => {
+  return get(get(session$).events$);
+});
+export const settledFeedOrder$ = computed((get) => {
+  return get(get(session$).settledOrder$);
+});
 /** A replaced review heading is the keyboard destination for the next card. */
 export const focusSuggestionTitleOnRef$ = onRef<HTMLHeadingElement>(
   command((_context, title: HTMLHeadingElement) => {
@@ -290,16 +318,21 @@ export const focusSuggestionTitleOnRef$ = onRef<HTMLHeadingElement>(
 );
 
 const loadAgentSuggestionEntries$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    return (await set(readAgentSuggestions$, signal)).map(
-      createSuggestionEntry,
-    );
+  async ({ get }, signal: AbortSignal) => {
+    const items = await get(get(session$).feed$);
+    signal.throwIfAborted();
+    return items
+      .filter((item) => {
+        return item.type === "suggestion";
+      })
+      .map(createSuggestionEntry);
   },
 );
-/** Each visit loads one snapshot of the default Agent's suggestions. */
+/** Each visit loads one owner-scoped feed snapshot. */
 export const enterSuggestionSession$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(visit$, get(visit$) + 1);
+    set(get(session$).feed$, set(readForYouFeed$, signal));
     const entries = set(loadAgentSuggestionEntries$, signal);
     set(get(session$).entries$, entries);
     await entries;
@@ -334,7 +367,9 @@ const refreshAfterUnavailableSuggestion$ = command(
     // The latest read replaces an earlier one, which could drop its cards.
     const signal = set(resetSuggestionRefresh$, pageSignal);
     const session = get(session$);
-    const offered = await set(readAgentSuggestions$, signal);
+    const offered = (await set(readForYouFeed$, signal)).filter((item) => {
+      return item.type === "suggestion";
+    });
     const loaded = await get(session.entries$);
     signal.throwIfAborted();
     const offeredIds = new Set(
@@ -393,6 +428,14 @@ export const settleAgentSuggestion$ = command(
     }
     const session = get(session$);
     set(entry.hidden$, true);
+    set(session.settledOrder$, (ids) => {
+      return [
+        ...ids.filter((id) => {
+          return id !== entry.item.id;
+        }),
+        entry.item.id,
+      ];
+    });
     set(session.settled$, [
       ...get(session.settled$).filter((candidate) => {
         return candidate.entry !== entry;

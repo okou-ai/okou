@@ -41,6 +41,7 @@ import { ComposerPresentationOutputPicker } from "./composer-presentation-output
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 import { ComposerTaskChipRow } from "./composer-task-chip-row.tsx";
 import { ComposerTemplatePickerButton } from "./composer-template-picker-button.tsx";
+import { ComposerTemplateSuggestion } from "./composer-template-suggestion.tsx";
 
 /**
  * An idea is a sentence, not a label, so it gets a card rather than the pill
@@ -161,6 +162,7 @@ function ComposerTemplateCover({
   ratio,
   documentPage,
   onSelect,
+  onPreview,
 }: {
   readonly title: string;
   readonly coverUrl: string | null;
@@ -172,36 +174,39 @@ function ComposerTemplateCover({
    */
   readonly documentPage?: { readonly hasMorePages: boolean };
   readonly onSelect: () => void;
+  readonly onPreview?: () => void;
 }) {
   const { t } = useTranslation();
   return (
-    <TemplateCard
-      title={title}
-      label={t(
-        ($) => {
-          return $.chat.composer.slashPanel.useTemplate;
-        },
-        { title },
-      )}
-      ratio={ratio}
-      onSelect={onSelect}
-    >
-      {coverUrl && documentPage ? (
-        <DocumentTemplateCover
-          coverUrl={coverUrl}
-          hasMorePages={documentPage.hasMorePages}
-        />
-      ) : coverUrl ? (
-        <img
-          src={coverUrl}
-          alt=""
-          loading="lazy"
-          className="h-full w-full object-cover object-center"
-        />
-      ) : (
-        <Image size={24} aria-hidden />
-      )}
-    </TemplateCard>
+    <ComposerTemplateSuggestion title={title} onPreview={onPreview}>
+      <TemplateCard
+        title={title}
+        label={t(
+          ($) => {
+            return $.chat.composer.slashPanel.useTemplate;
+          },
+          { title },
+        )}
+        ratio={ratio}
+        onSelect={onSelect}
+      >
+        {coverUrl && documentPage ? (
+          <DocumentTemplateCover
+            coverUrl={coverUrl}
+            hasMorePages={documentPage.hasMorePages}
+          />
+        ) : coverUrl ? (
+          <img
+            src={coverUrl}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-cover object-center"
+          />
+        ) : (
+          <Image size={24} aria-hidden />
+        )}
+      </TemplateCard>
+    </ComposerTemplateSuggestion>
   );
 }
 
@@ -262,6 +267,7 @@ function ComposerTemplateShelf({
   const custom = useCustomTemplateRecommendations(signals, "illustration");
   const setMode = useSet(signals.create.setMode$);
   const insertTemplate = useSet(signals.template.insertTemplate$);
+  const previewRecommendation = useSet(signals.template.previewRecommendation$);
   const browse = useTaskTemplateBrowse(signals, task);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
@@ -335,12 +341,26 @@ function ComposerTemplateShelf({
             );
           }),
           ...previews.map((preview) => {
+            const websiteTemplateId =
+              preview.template.type === "website"
+                ? preview.template.selection.websiteTemplateId
+                : null;
             return (
               <ComposerTemplateCover
                 key={preview.slug}
                 title={preview.title}
                 coverUrl={preview.coverUrl}
                 ratio={ratio}
+                onPreview={
+                  websiteTemplateId === null
+                    ? undefined
+                    : () => {
+                        previewRecommendation({
+                          type: "website",
+                          templateId: websiteTemplateId,
+                        });
+                      }
+                }
                 onSelect={() => {
                   insertTemplate(preview.template, preview.attachment);
                   detach(saveDraft(pageSignal), Reason.DomCallback);
@@ -430,6 +450,7 @@ function ComposerDocumentTemplateRail({
 }) {
   const setMode = useSet(signals.create.setMode$);
   const selectTemplate = useSet(signals.taskChips.selectTemplate$);
+  const previewRecommendation = useSet(signals.template.previewRecommendation$);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
   return (
@@ -458,6 +479,14 @@ function ComposerDocumentTemplateRail({
                     ratio="aspect-[4/3]"
                     documentPage={{
                       hasMorePages: template.coverHasMorePages,
+                    }}
+                    onPreview={() => {
+                      previewRecommendation({
+                        type: "custom",
+                        templateId: template.id,
+                        kind: "document",
+                        category: category ?? "all",
+                      });
                     }}
                     onSelect={() => {
                       selectTemplate(
@@ -489,6 +518,13 @@ function ComposerDocumentTemplateRail({
               })}
               ratio="aspect-[4/3]"
               documentPage={{ hasMorePages: item.previewPages.length > 1 }}
+              onPreview={() => {
+                previewRecommendation({
+                  type: "document",
+                  templateId: item.id,
+                  category: category ?? "all",
+                });
+              }}
               onSelect={() => {
                 selectTemplate(toDocumentGenerationTemplate(item), {
                   type: "document",

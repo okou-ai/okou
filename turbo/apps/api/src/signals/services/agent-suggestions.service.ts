@@ -268,7 +268,10 @@ export const createSuggestion$ = command(
           updatedAt: at,
           expiresAt: new Date(expiresAt),
         },
-        setWhere: not(retainedSuggestion(at)),
+        setWhere: and(
+          eq(feedItems.type, "suggestion"),
+          not(retainedSuggestion(at)),
+        ),
       })
       .returning();
     signal.throwIfAborted();
@@ -475,7 +478,10 @@ const consumeCachedSuggestion$ = command(
           updatedAt: at,
           expiresAt: new Date(getSuggestionExpiresAt(snapshot)),
         },
-        setWhere: not(retainedSuggestion(at)),
+        setWhere: and(
+          eq(feedItems.type, "suggestion"),
+          not(retainedSuggestion(at)),
+        ),
       })
       .returning({ id: feedItems.id });
     signal.throwIfAborted();

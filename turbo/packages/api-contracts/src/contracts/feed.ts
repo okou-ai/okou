@@ -1,5 +1,6 @@
 import {
   array,
+  boolean,
   iso,
   literal,
   number,
@@ -155,16 +156,18 @@ export const suggestionStateSchema = object({
   feedbacks: array(suggestionFeedbackSchema).max(100),
 }).strict();
 export type SuggestionState = zInfer<typeof suggestionStateSchema>;
-export const feedItemTypeSchema = literal("suggestion");
+export const feedItemTypeSchema = zEnum(["suggestion", "event"]);
 const feedItemBaseSchema = object({
   id: suggestionIdSchema,
   type: feedItemTypeSchema,
+  sourceType: literal("agent").optional(),
   priority: number().int().min(-2147483648).max(2147483647),
   createdAt: iso.datetime(),
   updatedAt: iso.datetime(),
   expiresAt: iso.datetime().nullable(),
 });
 export const suggestionSchema = feedItemBaseSchema.extend({
+  type: literal("suggestion"),
   content: suggestionContentSchema,
   state: suggestionStateSchema,
   expiresAt: iso.datetime(),
@@ -173,6 +176,7 @@ export const suggestionSchema = feedItemBaseSchema.extend({
     .optional(),
 });
 export const suggestionReceiptSchema = feedItemBaseSchema.extend({
+  type: literal("suggestion"),
   content: literal(null),
   state: suggestionStateSchema.extend({
     status: zEnum(["consumed", "removed"]),
@@ -181,10 +185,26 @@ export const suggestionReceiptSchema = feedItemBaseSchema.extend({
 });
 export type SuggestionReceipt = zInfer<typeof suggestionReceiptSchema>;
 export type Suggestion = zInfer<typeof suggestionSchema>;
-export type FeedItem = Suggestion | SuggestionReceipt;
+export const platformEventSchema = feedItemBaseSchema.extend({
+  type: literal("event"),
+  sourceType: literal("platform-event"),
+  content: object({
+    eventType: literal("automation-disabled"),
+    automationId: uuid(),
+    workflowId: uuid(),
+    workspaceId: string().min(1),
+    automationName: string().min(1).max(200),
+    disabledAt: iso.datetime(),
+    consecutiveFailures: number().int().positive(),
+    recoveryScheduled: boolean(),
+  }),
+  state: object({ status: zEnum(["active", "dismissed"]) }).strict(),
+});
+export type PlatformEvent = zInfer<typeof platformEventSchema>;
+export type FeedItem = Suggestion | SuggestionReceipt | PlatformEvent;
 export const suggestionCreateSchema = object({
   id: suggestionIdSchema,
-  type: feedItemTypeSchema,
+  type: literal("suggestion"),
   priority: feedItemBaseSchema.shape.priority.default(0),
   content: suggestionContentSchema,
   expiresAt: iso.datetime().optional(),
@@ -231,7 +251,7 @@ export const feedContract = c.router({
     headers: authHeadersSchema,
     query: object({
       after: suggestionIdSchema.optional(),
-      type: feedItemTypeSchema.optional(),
+      type: literal("suggestion").optional(),
     }),
     responses: {
       200: object({
@@ -250,12 +270,22 @@ export const feedContract = c.router({
     query: object({ type: feedItemTypeSchema.optional() }),
     responses: {
       200: object({
-        items: array(suggestionSchema).max(SUGGESTION_LIMIT),
+        items: array(suggestionSchema.or(platformEventSchema)).max(
+          SUGGESTION_LIMIT,
+        ),
         receipts: array(suggestionReceiptSchema).optional(),
       }),
       ...errors,
     },
-    summary: "Read your actionable suggestions",
+    summary: "Read your actionable feed items",
+  },
+  dismiss: {
+    method: "POST",
+    path: "/api/feed/items/:id/dismiss",
+    headers: authHeadersSchema,
+    pathParams: params,
+    responses: { 204: c.noBody(), ...errors },
+    summary: "Dismiss a platform event",
   },
   create: {
     method: "POST",

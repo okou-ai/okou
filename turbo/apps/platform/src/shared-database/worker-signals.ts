@@ -445,7 +445,16 @@ const runSharedDatabaseWorkerDaemons$ = command(
         topic: null,
         loopCommand$: handleSharedDatabaseRealtimeMessage$,
         includeMessage: true,
-        options: { onError },
+        options: {
+          onError,
+          onResync: () => {
+            // Tabs need to catch up even when they have no topic subscription
+            // on this Worker-owned channel to forward a per-subscription resync.
+            set(broadcastSharedDatabaseWorkerMessage$, {
+              type: "realtime-gap",
+            });
+          },
+        },
       },
       signal,
     );

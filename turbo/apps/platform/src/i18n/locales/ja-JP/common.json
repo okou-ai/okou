@@ -4309,6 +4309,26 @@
     "previousFeature": "前の機能",
     "tryPrompt": "このタスクを試す"
   },
+  "feedEvents": {
+    "automationDisabled": {
+      "backToWorkflows": "ワークフローに戻る",
+      "disabledAt": "無効化日時：{{time}}",
+      "loadFailed": "この自動化を読み込めませんでした",
+      "loadingAutomation": "自動化を読み込み中",
+      "otherWorkspace": "この自動化は {{workspace}} にあります。ワークスペースを切り替えて確認してください。",
+      "reason_one": "実行が {{count}} 回失敗しました。再度有効にする前に自動化を確認してください。",
+      "reason_other": "実行が {{count}} 回連続で失敗しました。再度有効にする前に自動化を確認してください。",
+      "switchFailed": "ワークスペースを切り替えられませんでした。再試行するか、ワークスペース切り替えを使用してください。",
+      "switchWorkspace": "ワークスペースを切り替える",
+      "systemManaged": "この自動化はシステムが管理しています。現在の状態を以下に表示します。",
+      "systemSource": "プラットフォームイベント",
+      "title": "自動化が無効になりました",
+      "unavailable": "自動化が見つからないか、アクセス権がありません",
+      "viewAutomation": "自動化を表示",
+      "workspaceFallback": "元のワークスペース"
+    },
+    "retry": "再試行"
+  },
   "friendReferrals": {
     "copied": "コピー済み",
     "copyFailed": "コピーできませんでした。もう一度お試しください。",
@@ -6588,48 +6608,6 @@
       "thread_one": "{{value}}件のスレッド",
       "thread_other": "{{value}}件のスレッド"
     }
-  },
-  "userNotifications": {
-    "automationDisabled": {
-      "backToWorkflows": "ワークフローに戻る",
-      "disabled": "無効",
-      "disabledAt": "無効化日時：{{time}}",
-      "loadFailed": "この自動化を読み込めませんでした",
-      "loadingAutomation": "自動化を読み込み中",
-      "notNow": "後で",
-      "otherWorkspace": "この自動化は {{workspace}} にあります。ワークスペースを切り替えて確認してください。",
-      "reason_one": "実行が {{count}} 回失敗しました。再度有効にする前に自動化を確認してください。",
-      "reason_other": "実行が {{count}} 回連続で失敗しました。再度有効にする前に自動化を確認してください。",
-      "switchFailed": "ワークスペースを切り替えられませんでした。再試行するか、ワークスペース切り替えを使用してください。",
-      "switchWorkspace": "ワークスペースを切り替える",
-      "systemManaged": "この自動化はシステムが管理しています。現在の状態を以下に表示します。",
-      "systemSource": "システム通知",
-      "title": "自動化が無効になりました",
-      "unavailable": "自動化が見つからないか、アクセス権がありません",
-      "viewAutomation": "自動化を表示",
-      "workspace": "ワークスペース",
-      "workspaceFallback": "元のワークスペース"
-    },
-    "close": "閉じる",
-    "countUnavailable": "未読件数を取得できません",
-    "detailFailed": "この通知を読み込めませんでした",
-    "empty": "通知はまだありません",
-    "emptyDescription": "Okou からのお知らせがここに表示されます。",
-    "loadFailed": "通知を読み込めませんでした",
-    "loading": "通知を読み込み中",
-    "loadMore": "以前の通知を表示",
-    "nextPage": "次のページ",
-    "pageNavigation": "このメッセージのページ",
-    "pageOf": "{{current}} / {{total}} ページ",
-    "previousPage": "前のページ",
-    "readAll": "すべて既読にする",
-    "readFailed": "既読にできませんでした",
-    "retry": "再試行",
-    "sender": "Okou チーム",
-    "title": "通知",
-    "unread": "未読",
-    "unreadCount_one": "未読の通知 {{count}} 件",
-    "unreadCount_other": "未読の通知 {{count}} 件"
   },
   "vnc": {
     "add": "ホストを追加",

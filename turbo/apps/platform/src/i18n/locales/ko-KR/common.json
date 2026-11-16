@@ -4309,6 +4309,26 @@
     "previousFeature": "이전 기능",
     "tryPrompt": "이 작업 시작하기"
   },
+  "feedEvents": {
+    "automationDisabled": {
+      "backToWorkflows": "워크플로로 돌아가기",
+      "disabledAt": "비활성화 시간: {{time}}",
+      "loadFailed": "이 자동화를 불러올 수 없습니다",
+      "loadingAutomation": "자동화 불러오는 중",
+      "otherWorkspace": "이 자동화는 {{workspace}}에 있습니다. 워크스페이스를 전환하여 확인하세요.",
+      "reason_one": "{{count}}회 실행에 실패했습니다. 다시 활성화하기 전에 자동화를 검토하세요.",
+      "reason_other": "{{count}}회 연속 실행에 실패했습니다. 다시 활성화하기 전에 자동화를 검토하세요.",
+      "switchFailed": "워크스페이스를 전환할 수 없습니다. 다시 시도하거나 워크스페이스 전환 메뉴를 이용하세요.",
+      "switchWorkspace": "워크스페이스 전환",
+      "systemManaged": "시스템에서 관리하는 자동화입니다. 아래에 현재 상태가 표시됩니다.",
+      "systemSource": "플랫폼 이벤트",
+      "title": "자동화가 비활성화됨",
+      "unavailable": "자동화를 찾을 수 없거나 접근 권한이 없습니다",
+      "viewAutomation": "자동화 보기",
+      "workspaceFallback": "원래 워크스페이스"
+    },
+    "retry": "다시 시도"
+  },
   "friendReferrals": {
     "copied": "복사됨",
     "copyFailed": "복사하지 못했습니다. 다시 시도해 주세요.",
@@ -6588,48 +6608,6 @@
       "thread_one": "{{value}}개 스레드",
       "thread_other": "{{value}}개 스레드"
     }
-  },
-  "userNotifications": {
-    "automationDisabled": {
-      "backToWorkflows": "워크플로로 돌아가기",
-      "disabled": "비활성화됨",
-      "disabledAt": "비활성화 시간: {{time}}",
-      "loadFailed": "이 자동화를 불러올 수 없습니다",
-      "loadingAutomation": "자동화 불러오는 중",
-      "notNow": "나중에",
-      "otherWorkspace": "이 자동화는 {{workspace}}에 있습니다. 워크스페이스를 전환하여 확인하세요.",
-      "reason_one": "{{count}}회 실행에 실패했습니다. 다시 활성화하기 전에 자동화를 검토하세요.",
-      "reason_other": "{{count}}회 연속 실행에 실패했습니다. 다시 활성화하기 전에 자동화를 검토하세요.",
-      "switchFailed": "워크스페이스를 전환할 수 없습니다. 다시 시도하거나 워크스페이스 전환 메뉴를 이용하세요.",
-      "switchWorkspace": "워크스페이스 전환",
-      "systemManaged": "시스템에서 관리하는 자동화입니다. 아래에 현재 상태가 표시됩니다.",
-      "systemSource": "시스템 알림",
-      "title": "자동화가 비활성화됨",
-      "unavailable": "자동화를 찾을 수 없거나 접근 권한이 없습니다",
-      "viewAutomation": "자동화 보기",
-      "workspace": "워크스페이스",
-      "workspaceFallback": "원래 워크스페이스"
-    },
-    "close": "닫기",
-    "countUnavailable": "읽지 않은 알림 수를 확인할 수 없어요",
-    "detailFailed": "이 알림을 불러오지 못했어요",
-    "empty": "아직 알림이 없어요",
-    "emptyDescription": "Okou의 소식이 여기에 표시됩니다.",
-    "loadFailed": "알림을 불러오지 못했어요",
-    "loading": "알림을 불러오는 중",
-    "loadMore": "이전 알림 보기",
-    "nextPage": "다음 페이지",
-    "pageNavigation": "이 메시지의 페이지",
-    "pageOf": "{{current}} / {{total}} 페이지",
-    "previousPage": "이전 페이지",
-    "readAll": "모두 읽음으로 표시",
-    "readFailed": "읽음으로 표시하지 못했어요",
-    "retry": "다시 시도",
-    "sender": "Okou 팀",
-    "title": "알림",
-    "unread": "읽지 않음",
-    "unreadCount_one": "읽지 않은 알림 {{count}}개",
-    "unreadCount_other": "읽지 않은 알림 {{count}}개"
   },
   "vnc": {
     "add": "호스트 추가",
