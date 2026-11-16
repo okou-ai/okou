@@ -76,42 +76,30 @@ pub(super) async fn wait_for_child_exit_without_reaping(child_id: u32) -> io::Re
 
 #[cfg(unix)]
 pub(super) fn child_exited_without_reaping(child_id: u32) -> io::Result<bool> {
+    use rustix::process::{Pid, WaitId, WaitIdOptions, waitid};
+
     let child_pid = libc::pid_t::try_from(child_id).map_err(|_| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
             "child PID cannot be represented as libc::pid_t",
         )
     })?;
-    let child_wait_id = libc::id_t::try_from(child_pid).map_err(|_| {
+    let child_wait_id = Pid::from_raw(child_pid).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
-            "child PID cannot be represented as libc::id_t",
+            "child PID cannot be represented as rustix::process::Pid",
         )
     })?;
 
     loop {
-        let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
-        // SAFETY: child_wait_id names a direct child still owned by the caller.
-        // WNOWAIT observes terminal state without releasing its PID identity.
-        let result = unsafe {
-            libc::waitid(
-                libc::P_PID,
-                child_wait_id,
-                info.as_mut_ptr(),
-                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
-            )
-        };
-        if result == 0 {
-            // SAFETY: zero is valid for siginfo_t, and waitid may have updated
-            // it. Zero initialization keeps si_pid() at zero when WNOHANG
-            // observes no status.
-            let info = unsafe { info.assume_init() };
-            return Ok(unsafe { info.si_pid() } != 0);
-        }
-
-        let error = io::Error::last_os_error();
-        if error.kind() != io::ErrorKind::Interrupted {
-            return Err(error);
+        // The caller retains the direct child and its PID identity until reap.
+        match waitid(
+            WaitId::Pid(child_wait_id),
+            WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT,
+        ) {
+            Ok(status) => return Ok(status.is_some()),
+            Err(rustix::io::Errno::INTR) => continue,
+            Err(error) => return Err(error.into()),
         }
     }
 }
