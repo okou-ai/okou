@@ -25,6 +25,7 @@ import ai.okou.android.chat.AblyRealtimeConnection
 import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ChatSnapshotUnavailable
+import ai.okou.android.chat.HistoryBatch
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.HistoryPage
@@ -206,6 +207,17 @@ class CanonicalWorkspaceSession(
     }
 
     override suspend fun historySnapshot(threadId: String) = api.historySnapshot(threadId)
+
+    override suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>): HistoryBatch =
+        withContext(Dispatchers.Default) {
+            val batch = api.historyCatchUp(cursors)
+            HistoryBatch(
+                batch.events.mapValues { (_, rows) ->
+                    rows.map { HistoryEvent.decode(historyJson.encodeToJsonElement(it).jsonObject) }
+                },
+                batch.notFoundThreads,
+            )
+        }
 
     override suspend fun threadDetail(threadId: String) = api.threadDetail(threadId)
 

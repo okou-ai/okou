@@ -1,7 +1,19 @@
-import { object, string, union, number, enum as zEnum } from "zod";
+import { object, string, union, number, tuple, enum as zEnum } from "zod";
 import { renderKotlinFiles, renderKotlinTypes } from "../generate";
 
 describe("selected Kotlin wire generation", () => {
+  it("preserves fixed tuple position types", () => {
+    const source = renderKotlinTypes([
+      {
+        name: "Cursor",
+        direction: "input",
+        schema: tuple([string(), number().int()]),
+      },
+    ]);
+    expect(source).toContain("val item1: String");
+    expect(source).toContain("val item2: Long");
+  });
+
   it("preserves required nullable values, optional input fields and wire enums", () => {
     const source = renderKotlinTypes([
       {

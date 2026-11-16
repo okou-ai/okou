@@ -635,6 +635,21 @@ mark-read changes wake delayed demand immediately. Manual refresh is unthrottled
 Queued history invalidations retain the selected conversation's generation.
 Drafts and pending sends retain their existing durable journal ownership.
 
+Foreground message/recovery signals also request independent confirmed-history
+warming. Like Web, its cohort combines the 100 most recent non-hidden conversations
+with indicator thread IDs. The selected conversation keeps its own reader. A
+one-second serialized trailing worker reads lightweight Room cursors and uses the
+canonical batch catch-up endpoint; missing cursors rebuild through snapshots.
+Warming never marks content read or drives list loading. Conditional transactions
+reject an obsolete baseline or a now-selected target, preserving newer foreground
+history. STOP/retirement cancels the worker, and failures remain owned separately
+from visible reads. Every conversation remains fully readable on demand regardless
+of warming eligibility; the cohort is not a row, content or history-size limit.
+
+`HistoryWarmingTest` exercises actual batch HTTPS/tuple codecs, cursor reuse,
+large Unicode rows and disk reopen, snapshot/missing-thread recovery, held-background
+independence, stale foreground/background publication and stop/restart/retirement.
+
 The native connection notice reports connecting or unavailable with explicit
 retry; transport attachment is not a claim of confirmed-data freshness. Ordinary
 manual refresh/navigation remains available. The generated empty-object
@@ -669,7 +684,9 @@ joint selectors require every variant pair to be provably disjoint.
 Union selection rejects unknown or ambiguous variants and preserves the original
 wire object without inserting a discriminator wrapper. Nullable/optional fields,
 combined string-enum vocabularies, explicit nulls and empty tuples retain their
-wire representation. Unsupported mixed/ambiguous unions, arbitrary tuples and
+wire representation. Fixed-length tuples retain typed positions and serialize as
+exact-length JSON arrays, including the installed `historyCatchUp` request.
+Unsupported mixed/ambiguous unions, variable-length tuples and
 unrepresented values still fail generation. Canonical safe-integer literals have
 an exact singleton wire representation, including history's literal zero and
 structured messages' version one. Optional nullable outbound request fields preserve omitted,

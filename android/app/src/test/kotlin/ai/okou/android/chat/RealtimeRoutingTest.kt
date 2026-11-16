@@ -96,6 +96,7 @@ class RealtimeRoutingTest {
                 ready()
                 model.history.open(model.uiState.value.threads.single { it.id == CHAT_PERSONAL })
                 model.history.uiState.first { it.phase == HistoryPhase.Ready }
+                model.warming.state.first { it.phase == ChatReadPhase.Ready }
                 runCurrent()
                 block(api, model, realtime)
             }
@@ -223,11 +224,15 @@ class RealtimeRoutingTest {
         withReadyModel { api, model, realtime ->
             val paths = record(api)
             val confirmation = model.history.uiState.value.confirmation
+            val warmed = model.warming.state.value.revision
             realtime.invalidate(ChatChanges(threads = setOf(CHAT_IN_PROJECT)))
+            advanceTimeBy(1_000)
             runCurrent()
+            model.warming.state.first { it.phase == ChatReadPhase.Ready && it.revision > warmed }
             assertEquals(confirmation, model.history.uiState.value.confirmation)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
-            assertTrue(paths.isEmpty())
+            assertEquals(listOf("/api/chat/events/catch-up"), paths.toList())
+            paths.clear()
 
             val stamp = "2026-11-13T00:00:01Z"
             indicators(api, stamp)
@@ -430,7 +435,12 @@ class RealtimeRoutingTest {
                 }
                 runCurrent()
                 assertEquals(2, paths.count { it.endsWith("/event-rows") })
-                assertTrue(paths.all { it.startsWith("/api/chat-threads/$CHAT_PERSONAL") })
+                assertTrue(
+                    paths.all {
+                        it == "/api/chat/events/catch-up" ||
+                            it.startsWith("/api/chat-threads/$CHAT_PERSONAL")
+                    }
+                )
             } finally {
                 release.countDown()
             }

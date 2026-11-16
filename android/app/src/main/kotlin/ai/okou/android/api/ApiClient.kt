@@ -11,6 +11,7 @@ import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.FeatureSwitches
+import ai.okou.android.api.generated.HistoryCatchUpRequestItem
 import ai.okou.android.api.generated.HistoryRowsQueryVariant1
 import ai.okou.android.api.generated.HistoryRowsQueryVariant2
 import ai.okou.android.api.generated.Indicators
@@ -180,6 +181,16 @@ class ApiClient(
     suspend fun featureSwitches(): FeatureSwitches = execute { api.featureSwitches(it) }
 
     suspend fun historySnapshot(threadId: String) = execute { api.historySnapshot(it, threadId) }
+
+    suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>) = execute { token ->
+        api.historyCatchUp(
+            token,
+            cursors.map { (threadId, cursor) ->
+                cursor.validate()
+                HistoryCatchUpRequestItem(threadId, cursor.seqId)
+            },
+        )
+    }
 
     suspend fun historyRows(threadId: String, cursor: HistoryCursor) = execute {
         cursor.validate()
