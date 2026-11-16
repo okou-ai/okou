@@ -26,10 +26,8 @@ const requiredOfficialWorkflowIdsDecoder = zodDriverValueDecoder(
 );
 
 /** Canonical payload leaves projected from chat_events.payload. */
-export function canonicalChatEventContent(
-  payload: SQLWrapper = chatEvents.payload,
-) {
-  return canonicalChatEventText(sql`${payload}->>'content'`);
+export function canonicalChatEventContent() {
+  return canonicalChatEventText(sql`${chatEvents.payload}->>'content'`);
 }
 
 export function canonicalChatEventUserMessage(
@@ -49,10 +47,8 @@ export function parseCanonicalChatEventRequiredOfficialWorkflowIds(
     : requiredOfficialWorkflowIdsDecoder.mapFromDriverValue(workflowIds);
 }
 
-export function canonicalChatEventError(
-  payload: SQLWrapper = chatEvents.payload,
-) {
-  return canonicalChatEventText(sql`${payload}->>'error'`);
+export function canonicalChatEventError() {
+  return canonicalChatEventText(sql`${chatEvents.payload}->>'error'`);
 }
 
 function canonicalChatEventText(ordinaryText: SQLWrapper) {

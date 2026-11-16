@@ -19,16 +19,7 @@ function requiredRowField<T>(
   return value;
 }
 
-/**
- * Projects one decoded canonical row into the public ChatEvent response shape
- * preserving message text and generating Run failure copy from structured facts.
- * The API
- * validates user-message and usage documents when it writes them, and snapshot
- * publication additionally checks projected rows with `chatEventResponse`.
- * Callers that need a validated public event apply that check themselves. A
- * control.interrupt target is emitted as interruptsRunId, never as run
- * ownership.
- */
+/** Generate terminal presentation without mutating a retained archive row. */
 export function projectRunFailureRow(row: ChatEventRow): ChatEventRow {
   if (row.eventType === "run.failed") {
     const failureReason = normalizeRunFailureReason(row.failureReason);
@@ -57,6 +48,12 @@ export function projectRunFailureRow(row: ChatEventRow): ChatEventRow {
   return row;
 }
 
+/**
+ * Project a decoded row into the public ChatEvent shape. Message documents stay
+ * intact; Run terminal copy comes from structured facts. Writers validate the
+ * documents, and snapshot publication checks this projection with chatEventResponse.
+ * A control.interrupt target becomes interruptsRunId, never Run ownership.
+ */
 export function chatEventFromRow(source: ChatEventRow): ChatEvent {
   const row = projectRunFailureRow(source);
   const payload = row.payload;

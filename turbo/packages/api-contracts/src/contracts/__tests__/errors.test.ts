@@ -390,7 +390,7 @@ describe("formatRunErrorForExternalSurface", () => {
   });
 
   it.each([undefined, "usage_limit"] as const)(
-    "shows Codex usage limit errors verbatim with reason %s",
+    "formats Codex quota errors with structured reason %s",
     (failureReason) => {
       const codexUsageLimit =
         "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 6:17 AM.";
@@ -409,7 +409,7 @@ describe("formatRunErrorForExternalSurface", () => {
   );
 
   it.each([undefined, "usage_limit"] as const)(
-    "shows Claude session limit errors verbatim with reason %s",
+    "formats Claude session limits with structured reason %s",
     (failureReason) => {
       const sessionLimit =
         "You've hit your session limit · resets 12:50pm (Asia/Shanghai)";
@@ -428,7 +428,7 @@ describe("formatRunErrorForExternalSurface", () => {
   );
 
   it.each([undefined, "usage_limit"] as const)(
-    "shows Claude weekly limit errors verbatim with reason %s",
+    "formats Claude weekly limits with structured reason %s",
     (failureReason) => {
       const weeklyLimit =
         "You've hit your weekly limit · resets 10am (Asia/Shanghai)";
@@ -447,7 +447,7 @@ describe("formatRunErrorForExternalSurface", () => {
   );
 
   it.each([undefined, "usage_limit"] as const)(
-    "shows raw Claude five-hour limit reset messages verbatim with reason %s",
+    "formats Claude five-hour limits with structured reason %s",
     (failureReason) => {
       for (const message of [
         "You've hit your 5-hour limit · resets 1:50am (Asia/Shanghai)",
@@ -596,7 +596,7 @@ describe("formatRunErrorForExternalSurface", () => {
   });
 
   it.each([undefined, "unsupported_model"] as const)(
-    "shows Codex ChatGPT account model support errors verbatim with reason %s",
+    "formats Codex account model support errors with structured reason %s",
     (failureReason) => {
       const unsupportedModel =
         '{"type":"error","status":400,"error":{"type":"invalid_request_error","message":"The \'gpt-5.6-sol\' model is not supported when using Codex with a ChatGPT account."}}';
