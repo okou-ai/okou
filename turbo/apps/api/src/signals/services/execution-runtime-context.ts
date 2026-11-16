@@ -3,23 +3,17 @@ import {
   DISABLED_PAID_TOOLS_ENV_VAR,
   paidToolIdSchema,
 } from "@okouai/api-contracts/contracts/paid-tools";
-import {
-  agentRunConnectorDiagnosticRegistrationPayloadSchema,
-  type ExecutionInput as AdmittedExecutionInput,
-  type PreparedExecutionContext,
+import type {
+  ExecutionInput as AdmittedExecutionInput,
+  PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import { AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
-import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
-import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
-import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { computed, type Computed } from "ccstate";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { array, record, string } from "zod";
 import { previewAutomationBypassSecret } from "../../lib/preview-automation-bypass";
 import { db$ } from "../external/db";
@@ -27,13 +21,13 @@ import { safeJsonParse } from "../utils";
 import { billableFirewallsForPermissions } from "./built-in-route-pricing";
 import { createExecutionConnectorSources } from "./agent-run-context.signals";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
-import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
+import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
 import type { ExecutionContextRun } from "./execution-context";
 import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
 import { createConnectorsContext } from "./connectors-context.service";
 import { dataRouterEnvironment } from "./data-router-environment";
-import { createGlobalModelContext } from "./execution-global-model-context.service";
+import { createExecutionSeedSkills } from "./execution-global-model-context.service";
 import { createAcceptedExecutionStorageObjects } from "./execution-storage.service";
 import { createUserFeatureSwitchContext } from "./feature-switches.service";
 import {
@@ -46,10 +40,6 @@ import {
   prepareSubscriptionModelEnvironment,
 } from "./model-provider.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
-import {
-  materializePreparedPiProvider,
-  resolvePreparedPiModelConfig,
-} from "./pi-sandbox-config";
 import {
   emptyEnvironment,
   environmentPermissionManifest,
@@ -86,6 +76,7 @@ export interface ExecutionNetworkPolicyInputs {
 type ExecutionInput = {
   readonly run: ExecutionContextRun;
   readonly context: AdmittedExecutionInput;
+  readonly facts: AdmittedExecutionFacts;
 };
 
 const variablesSchema = record(string(), string()).nullable();
@@ -93,13 +84,9 @@ type ExecutionInput$ = Computed<Promise<ExecutionInput>>;
 type ExecutionRun$ = Computed<Promise<ExecutionContextRun>>;
 type ExecutionIdentities = ReturnType<typeof createExecutionIdentities>;
 type ExecutionSources = ReturnType<typeof createExecutionConnectorSources>;
-type GlobalModels = ReturnType<typeof createGlobalModelContext>;
 type ExecutionModel$ = ReturnType<typeof createExecutionModel>;
 type ExecutionModel =
   ExecutionModel$ extends Computed<infer T> ? Awaited<T> : never;
-type InitialInput$ = ReturnType<typeof createExecutionInitialInput>;
-type InitialInput =
-  InitialInput$ extends Computed<infer T> ? Awaited<T> : never;
 type DisabledTools$ = Computed<Promise<readonly string[]>>;
 
 /** Assemble runtime input from this Run's authoritative sources. */
@@ -129,7 +116,7 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
       };
     },
   );
-  const global = createGlobalModelContext();
+  const seedSkills$ = createExecutionSeedSkills();
   const preferences$ = createExecutionPreferences(run$);
   const disabledTools$ = createExecutionDisabledTools(input$);
   const connectors = createExecutionConnectorContext(
@@ -137,7 +124,7 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
     identities,
     sources,
   );
-  const model$ = createExecutionModel(run$, global);
+  const model$ = createExecutionModel(input$);
   const modelRoute$ = computed(async (get) => {
     return (await get(model$))?.provider ?? null;
   });
@@ -145,21 +132,12 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
     connectors.bodyEnvironment$,
     modelRoute$,
   );
-  const initialInput$ = createExecutionInitialInput(run$);
   const storage$ = createExecutionStorage(input$);
-  const packages$ = createExecutionPackages(
-    input$,
-    initialInput$,
-    disabledTools$,
-    sources,
-    { global, storage$ },
-  );
-  const platform$ = createExecutionPlatform(
-    input$,
-    model$,
-    initialInput$,
-    disabledTools$,
-  );
+  const packages$ = createExecutionPackages(input$, disabledTools$, sources, {
+    seedSkills$,
+    storage$,
+  });
+  const platform$ = createExecutionPlatform(input$, model$, disabledTools$);
   const environment$ = createExecutionEnvironment(
     input$,
     connectors.connectorEnvironment$,
@@ -168,7 +146,6 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
   );
   return createExecutionPreparedContext(input$, {
     model$,
-    initialInput$,
     preferences$,
     packages$,
     environment$,
@@ -292,17 +269,7 @@ function createExecutionConnectorContext(
 ) {
   const { run$, identity$, features$ } = identities;
   const targets$ = computed(async (get) => {
-    const run = await get(run$);
-    const [row] = await get(db$)
-      .select({ payload: agentRunConnectorDiagnosticRegistrations.payload })
-      .from(agentRunConnectorDiagnosticRegistrations)
-      .where(eq(agentRunConnectorDiagnosticRegistrations.runId, run.id));
-    if (!row) {
-      throw new Error("Run execution sources are unavailable");
-    }
-    return agentRunConnectorDiagnosticRegistrationPayloadSchema.parse(
-      row.payload,
-    ).targets;
+    return (await get(input$)).facts.connectorRuntimeTargets;
   });
   const connectorIdentity$ = computed(async (get) => {
     const [identity, run] = await Promise.all([get(identity$), get(run$)]);
@@ -351,14 +318,19 @@ function createExecutionConnectorContext(
   return { bodyEnvironment$, connectorEnvironment$, timing$ };
 }
 
-function createExecutionModel(run$: ExecutionRun$, global: GlobalModels) {
+function createExecutionModel(input$: ExecutionInput$) {
   const memberIdentity$ = computed(async (get) => {
-    const run = await get(run$);
-    return { orgId: run.orgId, userId: run.userId, runId: run.id };
+    const { run } = await get(input$);
+    return {
+      orgId: run.orgId,
+      userId: run.userId,
+      runId: run.id,
+      accountId: run.modelProviderId,
+    };
   });
   const memberModels$ = createRunModelSources(memberIdentity$);
   return computed(async (get) => {
-    const run = await get(run$);
+    const { run, facts } = await get(input$);
     if (run.modelProvider === null) {
       return null;
     }
@@ -369,15 +341,7 @@ function createExecutionModel(run$: ExecutionRun$, global: GlobalModels) {
     ) {
       throw new Error("Admitted Run is missing its pinned model route");
     }
-    const catalog = await get(global.catalog$);
     const piExecution = run.launchSnapshot?.framework === "pi";
-    const preparation = {
-      catalog,
-      piExecution,
-      codexServiceTier:
-        run.codexServiceTier === "fast" ? ("fast" as const) : undefined,
-      reasoningEffort: run.reasoningEffort,
-    };
     let provider: ResolvedModelProviderEnvironment | null;
     if (run.modelProvider === "built-in") {
       if (
@@ -388,9 +352,14 @@ function createExecutionModel(run$: ExecutionRun$, global: GlobalModels) {
       ) {
         throw new Error("Admitted managed model route is unavailable");
       }
-      const key = (await get(global.managedModelKeys$)).find((candidate) => {
-        return candidate.id === run.builtInModelKeyId;
-      });
+      const [key] = await get(db$)
+        .select({
+          id: builtInModelKeys.id,
+          vendor: builtInModelKeys.vendor,
+          apiKey: builtInModelKeys.apiKey,
+        })
+        .from(builtInModelKeys)
+        .where(eq(builtInModelKeys.id, run.builtInModelKeyId));
       const source = managedSourceFromSnapshot(key);
       if (!source) {
         throw new Error("Run execution sources are unavailable");
@@ -437,87 +406,29 @@ function createExecutionModel(run$: ExecutionRun$, global: GlobalModels) {
     if (!provider) {
       throw new Error("Run execution sources are unavailable");
     }
-    const resolved = materializePreparedPiProvider(preparation, provider);
+    const piModelConfig = facts.piModelConfig;
     return {
-      provider: resolved,
-      piModelConfig: resolvePreparedPiModelConfig({
-        input: preparation,
-        modelProvider: resolved,
-      }),
+      provider: { ...provider, piModelConfig },
+      piModelConfig,
     };
-  });
-}
-
-function createExecutionInitialInput(run$: ExecutionRun$) {
-  return computed(async (get) => {
-    const run = await get(run$);
-    const [row] = await get(db$)
-      .select({
-        userMessage: canonicalChatEventUserMessage(),
-        contextType: chatEvents.contextType,
-        captureId: chatNetworkBodyCaptures.chatEventId,
-        phoneChannel: chatAgentphoneContext.channel,
-        feishuPlatform: feishuOrgInstallations.platform,
-      })
-      .from(chatEvents)
-      .leftJoin(
-        chatNetworkBodyCaptures,
-        and(
-          eq(chatNetworkBodyCaptures.chatEventId, chatEvents.revokesEventId),
-          eq(chatNetworkBodyCaptures.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
-      .leftJoin(
-        chatAgentphoneContext,
-        and(
-          eq(chatEvents.contextType, "agentphone"),
-          eq(chatAgentphoneContext.id, chatEvents.contextId),
-          eq(chatAgentphoneContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
-      .leftJoin(
-        chatFeishuContext,
-        and(
-          eq(chatEvents.contextType, "feishu"),
-          eq(chatFeishuContext.id, chatEvents.contextId),
-          eq(chatFeishuContext.chatThreadId, chatEvents.chatThreadId),
-        ),
-      )
-      .leftJoin(
-        feishuOrgInstallations,
-        and(
-          eq(feishuOrgInstallations.id, chatFeishuContext.installationId),
-          eq(feishuOrgInstallations.orgId, run.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(chatEvents.runId, run.id),
-          inArray(chatEvents.eventType, ["input.prompt", "input.automation"]),
-        ),
-      )
-      .orderBy(asc(chatEvents.seqId))
-      .limit(1);
-    return row ? { ...row, userId: run.userId } : null;
   });
 }
 
 function createExecutionPackages(
   input$: ExecutionInput$,
-  initialInput$: InitialInput$,
   disabledTools$: DisabledTools$,
   sources: ExecutionSources,
   {
-    global,
+    seedSkills$,
     storage$,
   }: {
-    readonly global: GlobalModels;
+    readonly seedSkills$: ReturnType<typeof createExecutionSeedSkills>;
     readonly storage$: ReturnType<typeof createExecutionStorage>;
   },
 ) {
   const templateInput$ = computed(async (get) => {
-    const input = await get(initialInput$);
-    return input?.userMessage ? input : null;
+    const { templateInput } = (await get(input$)).facts;
+    return templateInput.userMessage ? templateInput : null;
   });
   const templates$ = createRunTemplates(
     templateInput$,
@@ -526,7 +437,7 @@ function createExecutionPackages(
     }),
     disabledTools$,
   );
-  const seeds$ = createSystemSkillsContext(disabledTools$, global.seedSkills$);
+  const seeds$ = createSystemSkillsContext(disabledTools$, seedSkills$);
   const connectorSkills$ = createConnectorsContext(
     sources.signals.authorizedConnectors$,
     computed(async (get) => {
@@ -597,43 +508,19 @@ function executionFramework(run: ExecutionContextRun) {
   return framework;
 }
 
-function executionIntegration(input: InitialInput) {
-  switch (input?.contextType) {
-    case "web":
-    case "agent_run": {
-      return "web";
-    }
-    case "feishu": {
-      return input.feishuPlatform;
-    }
-    case "agentphone": {
-      return input.phoneChannel === "whatsapp" ? "whatsapp" : "phone";
-    }
-    case "automation": {
-      return undefined;
-    }
-    default: {
-      return input?.contextType;
-    }
-  }
-}
-
 function createExecutionPlatform(
   input$: ExecutionInput$,
   model$: ExecutionModel$,
-  initialInput$: InitialInput$,
   disabledTools$: DisabledTools$,
 ) {
   return computed(async (get) => {
-    const [{ run, context }, model, originalInput, disabledTools] =
-      await Promise.all([
-        get(input$),
-        get(model$),
-        get(initialInput$),
-        get(disabledTools$),
-      ]);
+    const [{ run, context, facts }, model, disabledTools] = await Promise.all([
+      get(input$),
+      get(model$),
+      get(disabledTools$),
+    ]);
     const framework = executionFramework(run);
-    const integration = executionIntegration(originalInput);
+    const integration = facts.integration;
     const bypass = context.previewBypassAuthorized
       ? previewAutomationBypassSecret()
       : undefined;
@@ -736,7 +623,6 @@ function createExecutionPreparedContext(
   input$: ExecutionInput$,
   dependencies: {
     readonly model$: ExecutionModel$;
-    readonly initialInput$: InitialInput$;
     readonly preferences$: ReturnType<typeof createExecutionPreferences>;
     readonly packages$: ReturnType<typeof createExecutionPackages>;
     readonly environment$: ReturnType<typeof createExecutionEnvironment>;
@@ -750,16 +636,16 @@ function createExecutionPreparedContext(
   },
 ) {
   return computed(async (get) => {
-    const { run, context } = await get(input$);
-    const [model, originalInput, preferences, packages, resolved, storage] =
-      await Promise.all([
+    const { run, context, facts } = await get(input$);
+    const [model, preferences, packages, resolved, storage] = await Promise.all(
+      [
         get(dependencies.model$),
-        get(dependencies.initialInput$),
         get(dependencies.preferences$),
         get(dependencies.packages$),
         get(dependencies.environment$),
         get(dependencies.storage$),
-      ]);
+      ],
+    );
     const { environment, untrustedEnvironment, secretKeys } = resolved;
     const prepared: PreparedExecutionContext = {
       ...context,
@@ -792,7 +678,7 @@ function createExecutionPreparedContext(
       }),
       disallowedTools: [...DEFAULT_DISALLOWED_TOOLS],
       userTimezone: preferences.timezone,
-      captureNetworkBodies: originalInput?.captureId ? true : undefined,
+      captureNetworkBodies: facts.captureNetworkBodies ? true : undefined,
       seedSkillBundles: packages.seedSkillBundles,
       officialWorkflowBundles: executionOfficialBundles(
         run,

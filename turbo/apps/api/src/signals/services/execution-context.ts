@@ -5,6 +5,7 @@ import {
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
 import { computed, type Computed } from "ccstate";
 import { createExecutionRuntimeContext } from "./execution-runtime-context";
+import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 
 export type ExecutionContextRun = Pick<
   typeof agentRuns.$inferSelect,
@@ -37,6 +38,7 @@ export function createExecutionContext(
     Promise<{
       readonly run: ExecutionContextRun;
       readonly context: ExecutionInput;
+      readonly facts: AdmittedExecutionFacts;
     }>
   >,
 ) {
