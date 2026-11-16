@@ -1663,6 +1663,15 @@
         "next": "次の提案",
         "previous": "前の提案",
         "remaining": "残り {{total}} 件",
+        "sources": {
+          "alwaysOn": "常にオン",
+          "description": "今後受け取る内容を選択します。届いたカードは対応するまで残ります。未読通知には、有効な配信元の内容だけが含まれます。",
+          "offers": "オファー",
+          "suggestions": "提案",
+          "systemUpdates": "システム更新",
+          "title": "For you の配信元",
+          "whatsNew": "新着情報"
+        },
         "subtitle": "ひとつずつ進めましょう",
         "title": "あなたへ"
       },

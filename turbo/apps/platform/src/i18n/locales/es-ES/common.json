@@ -1690,6 +1690,15 @@
         "next": "Siguiente sugerencia",
         "previous": "Sugerencia anterior",
         "remaining": "Quedan {{total}}",
+        "sources": {
+          "alwaysOn": "Siempre activadas",
+          "description": "Elige qué recibir a continuación. Las tarjetas ya recibidas se conservan hasta que las gestiones. Los avisos de contenido sin leer solo incluyen las fuentes activadas.",
+          "offers": "Ofertas",
+          "suggestions": "Sugerencias",
+          "systemUpdates": "Actualizaciones del sistema",
+          "title": "Fuentes para ti",
+          "whatsNew": "Novedades"
+        },
         "subtitle": "Una cosa a la vez",
         "title": "Para ti"
       },

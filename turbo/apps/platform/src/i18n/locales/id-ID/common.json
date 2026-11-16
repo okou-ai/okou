@@ -1663,6 +1663,15 @@
         "next": "Saran berikutnya",
         "previous": "Saran sebelumnya",
         "remaining": "{{total}} tersisa",
+        "sources": {
+          "alwaysOn": "Selalu aktif",
+          "description": "Pilih konten yang akan diterima. Kartu yang sudah ada tetap tersedia sampai Anda menanganinya. Pemberitahuan belum dibaca hanya mencakup sumber yang diaktifkan.",
+          "offers": "Penawaran",
+          "suggestions": "Saran",
+          "systemUpdates": "Pembaruan sistem",
+          "title": "Sumber Untuk Anda",
+          "whatsNew": "Yang baru"
+        },
         "subtitle": "Satu per satu",
         "title": "Untuk Anda"
       },

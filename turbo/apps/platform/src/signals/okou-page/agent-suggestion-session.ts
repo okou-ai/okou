@@ -19,6 +19,10 @@ import { rootSignal$ } from "../root-signal.ts";
 import { onDomEventFn, onRef, resetSignal } from "../utils.ts";
 import { createDraftSignals } from "./chat-draft.ts";
 import { createPlatformEventEntry } from "./platform-feed-events.ts";
+import {
+  createForYouReadRef,
+  reloadForYouSources$,
+} from "./for-you-sources.ts";
 
 type FeedbackKind =
   "already_done" | "not_planned" | "less_like_this" | "dismissed";
@@ -126,6 +130,7 @@ function createSuggestionEntry(item: Suggestion) {
   const sending$ = state<Promise<void> | undefined>(undefined);
   return {
     item,
+    readOnRef$: createForYouReadRef(item.id),
     hidden$,
     unavailable$,
     acted$,
@@ -233,7 +238,7 @@ export const followWaitingSuggestionCountOnRef$ = onRef(
       {
         scope: "credential",
         topic: "agentSuggestionsChanged",
-        invalidations: [reloadWaitingSuggestionCount$],
+        invalidations: [reloadWaitingSuggestionCount$, reloadForYouSources$],
         options: { runOnSubscribe: true },
       },
       signal,

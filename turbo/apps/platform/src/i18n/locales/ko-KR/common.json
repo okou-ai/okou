@@ -1663,6 +1663,15 @@
         "next": "다음 제안",
         "previous": "이전 제안",
         "remaining": "{{total}}개 남음",
+        "sources": {
+          "alwaysOn": "항상 켜짐",
+          "description": "앞으로 받을 콘텐츠를 선택하세요. 이미 도착한 카드는 처리할 때까지 유지됩니다. 읽지 않음 알림에는 켜둔 출처의 콘텐츠만 포함됩니다.",
+          "offers": "혜택",
+          "suggestions": "제안",
+          "systemUpdates": "시스템 업데이트",
+          "title": "추천 소식의 출처",
+          "whatsNew": "새 소식"
+        },
         "subtitle": "한 번에 하나씩",
         "title": "추천"
       },
