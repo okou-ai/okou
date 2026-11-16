@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.72](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.71...codex-mock-v0.12.72) (2026-11-16)
+
+
+### Refactoring
+
+* **rust:** borrow files for advisory locking ([#47963](https://github.com/okou-ai/okou/issues/47963)) ([1ce772e](https://github.com/okou-ai/okou/commit/1ce772ecd56bd86b0bb212327e78fa4ba28d5b1a))
+
 ## [0.12.71](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.70...codex-mock-v0.12.71) (2026-11-16)
 
 

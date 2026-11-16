@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.209](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.208...guest-telemetry-v0.3.209) (2026-11-16)
+
+
+### Refactoring
+
+* **rust:** borrow files for advisory locking ([#47963](https://github.com/okou-ai/okou/issues/47963)) ([1ce772e](https://github.com/okou-ai/okou/commit/1ce772ecd56bd86b0bb212327e78fa4ba28d5b1a))
+
 ## [0.3.208](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.207...guest-telemetry-v0.3.208) (2026-11-16)
 
 ## [0.3.207](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.206...guest-telemetry-v0.3.207) (2026-11-16)

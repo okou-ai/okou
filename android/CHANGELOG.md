@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/okou-ai/okou/compare/android-v0.15.0...android-v0.16.0) (2026-11-16)
+
+
+### Features
+
+* route presentation templates by output format ([#47842](https://github.com/okou-ai/okou/issues/47842)) ([b342805](https://github.com/okou-ai/okou/commit/b342805293be679b34781d7ff4811669feccbb77))
+
 ## [0.15.0](https://github.com/okou-ai/okou/compare/android-v0.14.2...android-v0.15.0) (2026-11-16)
 
 

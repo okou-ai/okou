@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.112](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.111...guest-control-server-v0.24.112) (2026-11-16)
+
+
+### Refactoring
+
+* **guest-control:** delegate pipe read initialization to rustix ([#47968](https://github.com/okou-ai/okou/issues/47968)) ([b350b0c](https://github.com/okou-ai/okou/commit/b350b0cf2cfd4549e1e6ca296a340713a4e8a7ef))
+
 ## [0.24.111](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.110...guest-control-server-v0.24.111) (2026-11-16)
 
 

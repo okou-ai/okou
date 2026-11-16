@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.77.0](https://github.com/okou-ai/okou/compare/api-v2.76.1...api-v2.77.0) (2026-11-16)
+
+
+### Features
+
+* route presentation templates by output format ([#47842](https://github.com/okou-ai/okou/issues/47842)) ([b342805](https://github.com/okou-ai/okou/commit/b342805293be679b34781d7ff4811669feccbb77))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.75.0
+    * @okouai/core bumped to 8.845.0
+    * @okouai/db bumped to 2.40.0
+    * @okouai/pi-agent-runtime bumped to 1.51.140
+
 ## [2.76.1](https://github.com/okou-ai/okou/compare/api-v2.76.0...api-v2.76.1) (2026-11-16)
 
 
