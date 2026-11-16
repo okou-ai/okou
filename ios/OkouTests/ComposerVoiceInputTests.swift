@@ -10,6 +10,37 @@ import XCTest
 
 @MainActor
 final class ComposerVoiceInputTests: XCTestCase {
+  func testStartingVoiceInputPreservesExistingEditorFocus() async throws {
+    for initiallyFocused in [false, true] {
+      let fixture = VoiceComposerFixture()
+      let root = temporaryRoot()
+      defer { try? FileManager.default.removeItem(at: root) }
+      let capture = VoiceCaptureFixture()
+      let composer = fixture.composer(root: root, capture: capture)
+      defer { composer.close() }
+      composer.text = "Keep these notes"
+      let voice = try XCTUnwrap(composer.voice)
+      let recordingPresented = expectation(description: "Composer observed recording")
+      let host = UIHostingController(
+        rootView: MentionComposerHarness(state: composer)
+          .onChange(of: voice.phase) { _, phase in
+            if phase == .recording { recordingPresented.fulfill() }
+          })
+      let window = try await mountMentionHost(host)
+      defer { unmount(window) }
+      let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+      if initiallyFocused { try await focusMentionInput(input) }
+      XCTAssertEqual(input.isFirstResponder, initiallyFocused)
+
+      await voice.start()
+      await fulfillment(of: [recordingPresented], timeout: 3)
+
+      XCTAssertEqual(input.isFirstResponder, initiallyFocused)
+      XCTAssertEqual(composer.text, "Keep these notes")
+      await voice.discard()
+    }
+  }
+
   func testConfirmedSilenceLeavesDraftUnchangedWithoutVoiceRequests() async throws {
     let fixture = VoiceComposerFixture()
     let root = temporaryRoot()
