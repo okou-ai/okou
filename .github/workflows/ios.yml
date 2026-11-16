@@ -345,6 +345,8 @@ jobs:
             -only-testing:OkouTests/ChatSearchUnreadTests/testConcurrentReadReconciliationSharesOneMarkRead \
             -only-testing:OkouTests/ChatSearchUnreadTests/testBackgroundCancelsReadReconciliationAfterLateIndicators \
             -only-testing:OkouTests/ChatSearchUnreadTests/testFailedAutomaticReadRequiresAnotherRefreshInsteadOfAJoinRetry \
+            -only-testing:OkouTests/ChatSyncRecoveryTests/testLeavingOneCallerKeepsTheCoalescedHistoryRefreshAlive \
+            -only-testing:OkouTests/WorkspaceStoreTests/testRefreshDuringOldHistoryReadRendersFinalAnswer \
             -test-iterations 5 \
             -resultBundlePath "$RUNNER_TEMP/okou-ios-ci/Unread-47761.xcresult" \
             test-without-building
