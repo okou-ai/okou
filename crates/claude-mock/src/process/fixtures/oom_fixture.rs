@@ -136,18 +136,17 @@ try:
     task_stage("all four tool allocators resident; awaiting Guest OOM injection")
     # A prepared worker must remain resident until the kernel kills this leaf.
     pid, status = os.wait()
-    children.remove(pid)
-    raise RuntimeError("resident tool allocator exited before OOM: pid=" + str(pid) + " status=" + str(status))
+    # The shell's TERM-resistant sentinel also becomes our child after exec.
+    # Its early exit is a fixture failure, but it is not an owned allocator PID.
+    children.discard(pid)
+    raise RuntimeError("tool child exited before OOM: pid=" + str(pid) + " status=" + str(status))
 finally:
     if ready_write is not None:
         os.close(ready_write)
     # Unreaped children pin their PIDs, including an early failed worker. Remove
     # a reaped PID above before cleanup so no recycled process can be targeted.
     for pid in children:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        os.kill(pid, signal.SIGKILL)
     for pid in children:
         os.waitpid(pid, 0)
 "#;

@@ -144,16 +144,26 @@ def bounded_wait(signum, frame):
 
 signal.signal(signal.SIGALRM, bounded_wait)
 signal.alarm(15)
-for outcome in ["interrupt", "worker-exit"]:
+for outcome in ["interrupt", "worker-exit", "sentinel-exit"]:
     with tempfile.TemporaryDirectory() as directory:
         marker = pathlib.Path(directory) / "resident.cgroup"
         environment = dict(os.environ,
             VM0_TEST_TASK_DEADLINE=str(time.monotonic() + 15),
             VM0_TEST_OOM_ALLOCATOR_BYTES=str(4 * 1024 * 1024),
             VM0_TEST_TOOL_OOM_CGROUP_MARKER=str(marker))
+        if outcome == "sentinel-exit":
+            environment["VM0_TEST_SENTINEL_PID"] = str(pathlib.Path(directory) / "sentinel.pid")
         # Increase only this disposable child's OOM score, as the real launcher
         # does. The full native lane owns managed placement and kernel OOM.
-        wrapper = "import os,pathlib; pathlib.Path('/proc/self/oom_score_adj').write_text('1000'); exec(os.environ['VM0_TEST_TOOL_OOM_PROGRAM'])"
+        wrapper = '''
+import os, pathlib, subprocess
+pathlib.Path('/proc/self/oom_score_adj').write_text('1000')
+if "VM0_TEST_SENTINEL_PID" in os.environ:
+    sentinel = subprocess.Popen(["sleep", "3600"], stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    pathlib.Path(os.environ["VM0_TEST_SENTINEL_PID"]).write_text(str(sentinel.pid))
+exec(os.environ['VM0_TEST_TOOL_OOM_PROGRAM'])
+'''
         controller = subprocess.Popen(["python3", "-u", "-c", wrapper], env=environment,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE, start_new_session=True)
@@ -183,12 +193,16 @@ for outcome in ["interrupt", "worker-exit"]:
                 assert private_dirty >= 1024 * 1024, private_dirty
             if outcome == "interrupt":
                 controller.send_signal(signal.SIGINT)
-            else:
+            elif outcome == "worker-exit":
                 os.kill(next(iter(worker_pids)), signal.SIGKILL)
+            else:
+                sentinel_pid = int(pathlib.Path(environment["VM0_TEST_SENTINEL_PID"]).read_text())
+                identities[sentinel_pid] = pathlib.Path(f"/proc/{sentinel_pid}/stat").read_text().split()[21]
+                os.kill(sentinel_pid, signal.SIGKILL)
             _, remaining = controller.communicate(timeout=5)
             assert controller.returncode != 0
-            if outcome == "worker-exit":
-                assert b"resident tool allocator exited before OOM" in remaining, remaining
+            if outcome != "interrupt":
+                assert b"tool child exited before OOM" in remaining, remaining
             for pid, start_time in identities.items():
                 stat = pathlib.Path(f"/proc/{pid}/stat")
                 try:
