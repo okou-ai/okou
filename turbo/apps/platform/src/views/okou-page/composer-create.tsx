@@ -109,11 +109,21 @@ function ComposerSelectedTask({
 }) {
   const { t } = useTranslation();
   const selectTask = useSet(signals.taskChips.selectTask$);
-  const label = t(($) => {
-    return task === "search" || task === "research"
-      ? $.chat.capabilityHome[task].title
-      : $.chat.taskChips.tasks[task];
-  });
+  const labels = {
+    ...t(
+      ($) => {
+        return $.chat.taskChips.tasks;
+      },
+      { returnObjects: true },
+    ),
+    search: t(($) => {
+      return $.chat.capabilityHome.search.title;
+    }),
+    research: t(($) => {
+      return $.chat.capabilityHome.research.title;
+    }),
+  };
+  const label = labels[task];
   const Icon = TASK_ICONS[task];
   return (
     <ComposerChoiceChip
