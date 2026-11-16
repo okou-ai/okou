@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.27.0](https://github.com/okou-ai/okou/compare/cli-v10.26.10...cli-v10.27.0) (2026-11-16)
+
+
+### Features
+
+* add internal phone use api and cli ([#47520](https://github.com/okou-ai/okou/issues/47520)) ([e6491e5](https://github.com/okou-ai/okou/commit/e6491e5c74670fcdb572681e652c08576136bd19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.69.0
+    * @okouai/core bumped to 8.840.0
+    * @okouai/pi-agent-runtime bumped to 1.51.130
+
 ## [10.26.10](https://github.com/okou-ai/okou/compare/cli-v10.26.9...cli-v10.26.10) (2026-11-16)
 
 
