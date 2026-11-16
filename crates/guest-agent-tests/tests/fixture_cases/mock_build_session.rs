@@ -157,7 +157,7 @@ fn build_mock(
 ) -> io::Result<PathBuf> {
     common::build_and_locate_mock_package_in_workspace(
         workspace,
-        &target_profile_dir.join("deps/mock-build-session"),
+        &target_profile_dir.join("build/mock-client/0123456789abcdef/out/mock-build-session"),
         "mock-package",
         "mock-package",
         build_session,

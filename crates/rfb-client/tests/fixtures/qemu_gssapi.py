@@ -701,7 +701,11 @@ def main():
     if args.test_executable:
         assert (args.controlled_peer_only or args.source_built_full_private or args.local_source_qemu) and not args.test_executable.is_symlink()
         executable = args.test_executable.resolve(strict=True)
-        assert executable.parent == REPO / "crates/target/local/deps" and executable.name.startswith("qemu_gssapi-")
+        assert (
+            executable.parent.name == "out"
+            and executable.parent.parent.parent == REPO / "crates/target/local/build/rfb-client"
+            and executable.name.startswith("qemu_gssapi-")
+        )
         cargo, separator = [str(executable)], []
     else:
         run_tests(cargo + ["--no-run"], timeout=500)
