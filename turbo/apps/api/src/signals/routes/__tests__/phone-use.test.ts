@@ -457,5 +457,102 @@ test(
       status: "succeeded",
       result: { bundleID: "com.apple.Preferences" },
     });
+    const reviewId = randomUUID();
+    await scenario.run(() => {
+      return accept(
+        client.create({
+          headers: followingHeaders,
+          body: { id: reviewId, action },
+        }),
+        [200],
+      );
+    });
+    await scenario.run(async () => {
+      authenticate(actor.userId, staffOrg, sessionId);
+      await accept(
+        client.next({
+          headers,
+          params,
+          body: { generation, threadId: thread.id },
+        }),
+        [200],
+      );
+      await accept(
+        client.complete({
+          headers,
+          params,
+          body: {
+            generation,
+            operationId: reviewId,
+            result: { status: "approval_required", data: { target: "Send" } },
+          },
+        }),
+        [200],
+      );
+    });
+    const stopped = await scenario.run(() => {
+      return accept(
+        client.create({
+          headers: followingHeaders,
+          body: { id: randomUUID(), action: { kind: "session.stop" } },
+        }),
+        [200],
+      );
+    });
+    expect(stopped.body).toMatchObject({
+      status: "succeeded",
+      result: { admissionClosed: true, nativeAcknowledged: false },
+    });
+    await scenario.run(async () => {
+      authenticate(actor.userId, staffOrg, sessionId);
+      await accept(
+        client.validate({
+          headers,
+          params,
+          body: { generation, operationId: reviewId },
+        }),
+        [403],
+      );
+    });
+    const closed = await scenario.run(() => {
+      return accept(
+        client.get({
+          headers: followingHeaders,
+          params: { operationId: reviewId },
+        }),
+        [200],
+      );
+    });
+    expect(closed.body.status).toBe("unknown");
+    const stopSignal = await scenario.run(() => {
+      authenticate(actor.userId, staffOrg, sessionId);
+      return accept(
+        client.next({
+          headers,
+          params,
+          body: {
+            generation,
+            threadId: thread.id,
+            activeRunId: following.runId,
+            activeGrantId: stopped.body.grantId,
+          },
+        }),
+        [200],
+      );
+    });
+    expect(stopSignal.body).toMatchObject({
+      operation: null,
+      sessionEnded: true,
+      stopRequested: true,
+    });
+    await scenario.run(() => {
+      return accept(
+        client.create({
+          headers: followingHeaders,
+          body: { id: randomUUID(), action: { kind: "observe" } },
+        }),
+        [409],
+      );
+    });
   },
 );

@@ -223,6 +223,7 @@ export const phoneUseContract = c.router({
       200: object({
         operation: phoneOperationSchema.nullable(),
         sessionEnded: boolean().optional(),
+        stopRequested: boolean().optional(),
       }),
     },
   },

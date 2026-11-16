@@ -285,7 +285,10 @@ actionCommand("swipe", "Scroll the current app")
       },
     ),
   );
-actionCommand("stop", "Stop this Run's native session").action(
+actionCommand(
+  "stop",
+  "Close this Run's phone admission; in-flight authorized input may finish",
+).action(
   withErrorHandler(
     async (options: { id?: string; wait?: string; output?: string }) => {
       return execute({ kind: "session.stop" }, options);

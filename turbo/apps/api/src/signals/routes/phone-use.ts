@@ -540,6 +540,57 @@ const grant$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   return { status: 200 as const, body: { ok: true as const } };
 });
+const stoppedPhoneRun$ = command(
+  async (
+    { get },
+    claim: { runId: string; deviceId: string; grantId?: string },
+    signal: AbortSignal,
+  ) => {
+    const [stopped] = await get(db$)
+      .select({ id: operations.id })
+      .from(operations)
+      .where(
+        and(
+          eq(operations.runId, claim.runId),
+          eq(operations.deviceId, claim.deviceId),
+          claim.grantId ? eq(operations.grantId, claim.grantId) : undefined,
+          eq(operations.status, "succeeded"),
+          sql`${operations.action}->>'kind' = 'session.stop'`,
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return Boolean(stopped);
+  },
+);
+const closeRunAdmission$ = command(
+  async (
+    { set },
+    claim: { runId: string; grantId: string },
+    signal: AbortSignal,
+  ) => {
+    await set(writeDb$)
+      .update(operations)
+      .set({
+        status: sql`case when ${operations.status} = 'queued' then 'failed' else 'unknown' end`,
+        error:
+          "Run phone admission closed; authorized in-flight effects may finish",
+        completedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(operations.runId, claim.runId),
+          eq(operations.grantId, claim.grantId),
+          inArray(operations.status, [
+            "queued",
+            "running",
+            "approval_required",
+          ]),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
 const createBody$ = bodyResultOf(contract.create);
 const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(createBody$);
@@ -555,6 +606,19 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const grant = await set(runGrant$, signal);
   const auth = get(organizationAuthContext$);
+  const stopping = body.data.action.kind === "session.stop";
+  if (
+    !stopping &&
+    (await set(
+      stoppedPhoneRun$,
+      { runId: grant.runId, deviceId: grant.deviceId, grantId: grant.id },
+      signal,
+    ))
+  ) {
+    conflict(
+      "This Run's phone session ended. Start a new Run for another task.",
+    );
+  }
   const [device] = await get(db$)
     .select()
     .from(devices)
@@ -562,8 +626,8 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
       and(
         owned(auth),
         eq(devices.id, grant.deviceId),
-        eq(devices.ready, true),
-        gt(devices.lastSeenAt, new Date(now() - 45_000)),
+        stopping ? undefined : eq(devices.ready, true),
+        stopping ? undefined : gt(devices.lastSeenAt, new Date(now() - 45_000)),
       ),
     )
     .limit(1);
@@ -585,6 +649,11 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
       deviceId: device.id,
       action: body.data.action,
       payloadHash,
+      status: stopping ? "succeeded" : "queued",
+      result: stopping
+        ? { admissionClosed: true, nativeAcknowledged: false }
+        : null,
+      completedAt: stopping ? nowDate() : null,
       expiresAt: new Date(now() + 45_000),
     })
     .onConflictDoNothing({ target: operations.id });
@@ -604,6 +673,13 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (!row || row.payloadHash !== payloadHash) {
     conflict("Operation ID was already used with another payload or authority");
+  }
+  if (stopping) {
+    await set(
+      closeRunAdmission$,
+      { runId: grant.runId, grantId: grant.id },
+      signal,
+    );
   }
   await publishPhoneUseHint(
     phoneUseChannel(device.orgId, device.userId, device.id, device.generation),
@@ -751,7 +827,7 @@ const retireEndedOperations$ = command(
 );
 const activeNativeRun$ = command(
   async (
-    { get },
+    { get, set },
     device: typeof devices.$inferSelect,
     claim: { threadId: string; runId: string; grantId?: string },
     signal: AbortSignal,
@@ -779,7 +855,19 @@ const activeNativeRun$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    return Boolean(active);
+    const stopped =
+      Boolean(active) &&
+      (await set(
+        stoppedPhoneRun$,
+        {
+          runId: claim.runId,
+          deviceId: device.id,
+          ...(claim.grantId ? { grantId: claim.grantId } : {}),
+        },
+        signal,
+      ));
+    signal.throwIfAborted();
+    return { active: Boolean(active) && !stopped, stopped };
   },
 );
 const nextBody$ = bodyResultOf(contract.next),
@@ -812,10 +900,14 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
     signal.throwIfAborted();
-    if (!active) {
+    if (!active.active) {
       return {
         status: 200 as const,
-        body: { operation: null, sessionEnded: true },
+        body: {
+          operation: null,
+          sessionEnded: true,
+          stopRequested: active.stopped,
+        },
       };
     }
   }
@@ -1010,7 +1102,11 @@ const validate$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   const [operation] = await get(db$)
-    .select({ id: operations.id })
+    .select({
+      id: operations.id,
+      runId: operations.runId,
+      grantId: operations.grantId,
+    })
     .from(operations)
     .innerJoin(
       grants,
@@ -1041,7 +1137,19 @@ const validate$ = command(async ({ get, set }, signal: AbortSignal) => {
     )
     .limit(1);
   signal.throwIfAborted();
-  if (!device.ready || !operation) {
+  if (
+    !device.ready ||
+    !operation ||
+    (await set(
+      stoppedPhoneRun$,
+      {
+        runId: operation.runId,
+        deviceId: device.id,
+        grantId: operation.grantId,
+      },
+      signal,
+    ))
+  ) {
     deny("Operation authority has expired or was revoked");
   }
   return { status: 200 as const, body: { ok: true as const } };
