@@ -142,7 +142,22 @@ async fn assert_rejection_scenario(
             terminal.pointer("/turn/status").and_then(Value::as_str),
             Some(status)
         );
-        assert!(terminal.get("usage").is_some());
+        assert_eq!(
+            terminal.get("usage"),
+            Some(&common::expected_codex_turn_usage())
+        );
+        let replies = events
+            .iter()
+            .filter(|event| {
+                event.get("type").and_then(Value::as_str) == Some("item.completed")
+                    && event.pointer("/item/type").and_then(Value::as_str) == Some("agent_message")
+            })
+            .filter_map(|event| event.pointer("/item/text").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            replies,
+            ["codex-mock app-server response: retain this original turn accepted follow-up"]
+        );
     } else {
         let error = result
             .err()
