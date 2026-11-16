@@ -22,6 +22,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  Skeleton,
 } from "@okouai/ui";
 import { assistantName$ } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -613,10 +614,37 @@ export function GetStartedEntry() {
   });
 
   if (
+    questsLoadable.state === "hasError" ||
+    summaryLoadable.state === "hasError"
+  ) {
+    return null;
+  }
+  if (
     questsLoadable.state !== "hasData" ||
     summaryLoadable.state !== "hasData"
   ) {
-    return null;
+    return (
+      <Skeleton
+        aria-hidden="true"
+        className="flex h-8 items-center gap-2 whitespace-nowrap rounded-surface-compact px-3"
+      >
+        <span className="size-4 shrink-0" />
+        <span className="invisible text-[13px] font-medium">
+          {t(($) => {
+            return $.chat.agentPage.getStarted.title;
+          })}
+        </span>
+        <span className="h-4 w-px shrink-0" />
+        <span className="invisible text-xs font-semibold tabular-nums">
+          {t(
+            ($) => {
+              return $.chat.agentPage.getStarted.stepCount;
+            },
+            { completed: 0, total: 0 },
+          )}
+        </span>
+      </Skeleton>
+    );
   }
   const summary = summaryLoadable.data;
   if (summary.total === 0) {
