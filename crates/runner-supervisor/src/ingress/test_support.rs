@@ -11,8 +11,6 @@ pub(crate) const TOKEN: &str =
 
 pub(crate) struct PublicIngress {
     pub client: reqwest::Client,
-    pub local_client: reqwest::Client,
-    pub address: SocketAddr,
     connected: Arc<Notify>,
     gate: Arc<Semaphore>,
     cancel: CancellationToken,
@@ -35,16 +33,13 @@ impl PublicIngress {
         )
         .unwrap();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let trust = reqwest::Certificate::from_der(certificate.cert.der()).unwrap();
-        let client = health_client(HEALTH_TIMEOUT)
-            .tls_certs_only([trust.clone()])
-            .resolve(HOST, address)
-            .build()
-            .unwrap();
-        let local_client = local_health_client(HOST)
-            .tls_certs_only([trust])
-            .resolve(HOST, address)
+        let client = reqwest::Client::builder()
+            .https_only(true)
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(HEALTH_TIMEOUT)
+            .tls_certs_only([reqwest::Certificate::from_der(certificate.cert.der()).unwrap()])
+            .resolve(HOST, listener.local_addr().unwrap())
             .build()
             .unwrap();
         let connected = Arc::new(Notify::new());
@@ -69,10 +64,10 @@ impl PublicIngress {
                             let gate = gate.clone();
                             let upstream = upstream.clone();
                             connections.spawn(async move {
-                                let Ok(mut stream) = acceptor.accept(stream).await else { return; };
+                                let mut stream = acceptor.accept(stream).await.unwrap();
                                 connected.notify_one();
                                 let _permit = gate.acquire().await.unwrap();
-                                let Ok(mut upstream) = UnixStream::connect(upstream).await else { return; };
+                                let mut upstream = UnixStream::connect(upstream).await.unwrap();
                                 let _ = tokio::io::copy_bidirectional(&mut stream, &mut upstream).await;
                             });
                         }
@@ -84,8 +79,6 @@ impl PublicIngress {
         };
         Self {
             client,
-            local_client,
-            address,
             connected,
             gate,
             cancel,

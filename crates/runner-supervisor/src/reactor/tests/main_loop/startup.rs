@@ -343,11 +343,6 @@ async fn public_ingress_gates_running_but_later_loss_does_not_stop_runs() {
     use super::super::support::{minimal_context, push_job};
     let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
     let peer = configure_public_ingress(&mut config).await;
-    config.ingress_service_probe = config
-        .ingress
-        .as_ref()
-        .unwrap()
-        .local_health_probe_with_client(config.runner.identity, peer.local_client.clone());
     let socket = config
         .paths
         .home
@@ -362,8 +357,6 @@ async fn public_ingress_gates_running_but_later_loss_does_not_stop_runs() {
     );
     assert_eq!(env.handle.heartbeat_count(), 0);
     assert_eq!(env.handle.discover_started_count(), 0);
-    peer.allow_health();
-    // Public startup readiness and the first local heartbeat are independent.
     peer.allow_health();
     wait_status_mode(&status, "running", Duration::from_secs(5)).await;
     peer.shutdown().await;

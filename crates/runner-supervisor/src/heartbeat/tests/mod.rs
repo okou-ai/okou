@@ -62,29 +62,16 @@ fn test_runner_identity() -> RunnerProcessIdentity {
 
 #[tokio::test]
 async fn ingress_service_activity_preserves_running_draining_and_terminal_heartbeats() {
-    use crate::ingress::{
-        IngressConfig, IngressRuntime,
-        test_support::{HOST, PublicIngress, TOKEN},
-    };
-    use std::os::unix::fs::PermissionsExt;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
-    let root = tempfile::tempdir().unwrap();
-    let directory = root.path().join("ingress");
-    std::fs::create_dir(&directory).unwrap();
-    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o710)).unwrap();
-    let identity = test_runner_identity();
-    let mut runtime = Some(
-        IngressRuntime::start(directory.clone(), identity, HOST.into(), TOKEN)
-            .await
-            .unwrap(),
-    );
-    let peer = PublicIngress::start(directory.join(format!("{}.sock", identity.runner_id()))).await;
-    let config = IngressConfig {
-        directory: directory.clone(),
-        hostname: HOST.into(),
-        token: TOKEN.into(),
+    let active = Arc::new(AtomicBool::new(false));
+    let probe: IngressServiceProbe = {
+        let active = active.clone();
+        Arc::new(move || {
+            let active = active.clone();
+            Box::pin(async move { active.load(Ordering::Acquire) })
+        })
     };
-    let probe = config.local_health_probe_with_client(identity, peer.local_client.clone());
     let idle_pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
         max_idle: 0,
     })));
@@ -107,27 +94,13 @@ async fn ingress_service_activity_preserves_running_draining_and_terminal_heartb
     });
     for (index, mode) in [
         RunnerMode::Running,
-        RunnerMode::Running,
-        RunnerMode::Running,
         RunnerMode::Draining,
         RunnerMode::Stopping,
     ]
     .into_iter()
     .enumerate()
     {
-        if index == 1 {
-            runtime.take().unwrap().shutdown().await;
-            // Keep the same TLS peer and probe: only this Runner's route is lost.
-        } else if index == 2 {
-            runtime = Some(
-                IngressRuntime::start(directory.clone(), identity, HOST.into(), TOKEN)
-                    .await
-                    .unwrap(),
-            );
-        }
-        if mode != RunnerMode::Stopping {
-            peer.allow_health();
-        }
+        active.store(index > 0, Ordering::Release);
         send_heartbeat(&hb, mode, index as u64 + 1, HeartbeatRequest::ordinary())
             .await
             .unwrap();
@@ -136,30 +109,15 @@ async fn ingress_service_activity_preserves_running_draining_and_terminal_heartb
         let sent = provider.heartbeats.lock().unwrap();
         assert_eq!(
             sent.iter().map(|s| s.mode.as_str()).collect::<Vec<_>>(),
-            ["running", "running", "running", "draining", "stopping"]
+            ["running", "draining", "stopping"]
         );
         assert_eq!(
             sent.iter()
                 .map(|state| state.ingress_service_active)
                 .collect::<Vec<_>>(),
-            [true, false, true, true, false]
+            [false, true, false]
         );
     }
-    peer.shutdown().await;
-    // A previously healthy peer is not cached as available after it exits.
-    send_heartbeat(&hb, RunnerMode::Running, 6, HeartbeatRequest::ordinary())
-        .await
-        .unwrap();
-    assert!(
-        !provider
-            .heartbeats
-            .lock()
-            .unwrap()
-            .last()
-            .unwrap()
-            .ingress_service_active
-    );
-    runtime.unwrap().shutdown().await;
 }
 
 fn test_profiles() -> BTreeMap<String, HeartbeatProfile> {

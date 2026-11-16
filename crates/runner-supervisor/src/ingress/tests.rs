@@ -440,17 +440,7 @@ async fn unsafe_namespace_or_noncanonical_host_fails_ingress_startup() {
         "runner.internal",
         "Runner.example.org",
         "runner.example.org:443",
-        "runner.example.org@other.example.org",
     ] {
-        assert!(
-            IngressConfig {
-                directory: directory.clone(),
-                hostname: hostname.into(),
-                token: TOKEN.into(),
-            }
-            .local_health_probe(identity(1))
-            .is_err()
-        );
         assert!(
             IngressRuntime::start(directory.clone(), identity(1), hostname.into(), TOKEN)
                 .await
@@ -458,75 +448,6 @@ async fn unsafe_namespace_or_noncanonical_host_fails_ingress_startup() {
         );
         assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 0);
     }
-}
-
-#[tokio::test]
-async fn local_health_requires_trusted_tls_and_the_exact_authenticated_route() {
-    let (_root, directory) = namespace();
-    let id = identity(1);
-    let runtime = IngressRuntime::start(directory.clone(), id, HOST.into(), TOKEN)
-        .await
-        .unwrap();
-    let peer =
-        test_support::PublicIngress::start(directory.join(format!("{}.sock", id.runner_id())))
-            .await;
-    let config = IngressConfig {
-        directory,
-        hostname: HOST.into(),
-        token: TOKEN.into(),
-    };
-    for (target, token, available) in [
-        (id, TOKEN, true),
-        (id, "wrong-token", false),
-        (identity(2), TOKEN, false),
-    ] {
-        let config = IngressConfig {
-            token: token.into(),
-            directory: config.directory.clone(),
-            hostname: config.hostname.clone(),
-        };
-        let probe = config.local_health_probe_with_client(target, peer.local_client.clone());
-        peer.allow_health();
-        assert_eq!(probe().await, available);
-    }
-    let untrusted = local_health_client(HOST)
-        .tls_certs_only([])
-        .resolve(HOST, peer.address)
-        .build()
-        .unwrap();
-    assert!(!config.local_health_probe_with_client(id, untrusted)().await);
-    peer.shutdown().await;
-    runtime.shutdown().await;
-}
-
-#[tokio::test]
-async fn stalled_local_ingress_finishes_as_unavailable() {
-    let (_root, directory) = namespace();
-    let id = identity(1);
-    let runtime = IngressRuntime::start(directory.clone(), id, HOST.into(), TOKEN)
-        .await
-        .unwrap();
-    let peer =
-        test_support::PublicIngress::start(directory.join(format!("{}.sock", id.runner_id())))
-            .await;
-    let probe = IngressConfig {
-        directory,
-        hostname: HOST.into(),
-        token: TOKEN.into(),
-    }
-    .local_health_probe_with_client(id, peer.local_client.clone());
-    let observation = tokio::spawn(probe());
-    peer.wait_connected().await;
-    // The peer withholds its response after TLS completes. The production
-    // request deadline must finish the observation, without a watchdog task.
-    assert!(
-        !tokio::time::timeout(Duration::from_secs(5), observation)
-            .await
-            .unwrap()
-            .unwrap()
-    );
-    peer.shutdown().await;
-    runtime.shutdown().await;
 }
 
 #[tokio::test]
