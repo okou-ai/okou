@@ -580,7 +580,7 @@ def run_tests(argv, *, env=None, timeout):
     # Query without mutating while no child is owned. A blocking call can change
     # the native mask and then raise before returning its previous-mask value.
     previous = signal.pthread_sigmask(signal.SIG_BLOCK, set())
-    process = subprocess.Popen(argv, env=env, cwd=REPO, start_new_session=True)
+    process = None
 
     def finish_owned_group():
         # Cleanup and restoration do not depend on the mutating call returning.
@@ -621,6 +621,9 @@ def run_tests(argv, *, env=None, timeout):
                 signal.pthread_sigmask(signal.SIG_SETMASK, previous)
 
     try:
+        # Install retirement before acquiring the child: the first post-return
+        # source step can receive a handled interruption too.
+        process = subprocess.Popen(argv, env=env, cwd=REPO, start_new_session=True)
         deadline = time.monotonic() + timeout
         while True:
             event = os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
@@ -631,10 +634,13 @@ def run_tests(argv, *, env=None, timeout):
                 raise subprocess.TimeoutExpired(argv, timeout)
             time.sleep(min(0.01, remaining))
     except ChildProcessError as error:
+        if process is None:
+            raise
         # Lost ownership never authorizes a signal against a numeric reused PGID.
         raise RuntimeError("independent fixture child ownership unavailable") from error
     except BaseException:
-        finish_owned_group()
+        if process is not None:
+            finish_owned_group()
         raise
     else:
         # Reaping/interrupts inside cleanup cannot re-enter a signalling handler.

@@ -715,6 +715,64 @@ class TestProcessOwnership(unittest.TestCase):
 
         return observe
 
+    def test_post_spawn_interruption_joins_the_acquired_process(self):
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=signum):
+                children = []
+                failure = InterruptedError("first post-spawn source step")
+                original_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+                original_trace = sys.gettrace()
+
+                def interrupt(_number, _frame):
+                    raise failure
+
+                def observe(frame, event, _argument):
+                    if event == 'line' and frame.f_code is qemu_gssapi.run_tests.__code__ and not children:
+                        child = frame.f_locals.get('process')
+                        if isinstance(child, subprocess.Popen):
+                            # Observe the real returned child, then interrupt at
+                            # its first subsequent source step, before waiting.
+                            children.append(child)
+                            os.kill(os.getpid(), signum)
+                    return observe
+
+                previous = signal.signal(signum, interrupt)
+                try:
+                    sys.settrace(observe)
+                    with self.assertRaises(InterruptedError) as raised:
+                        qemu_gssapi.run_tests(
+                            [sys.executable, '-I', '-S', '-B', '-c', 'import signal;signal.pause()'],
+                            timeout=10)
+                    self.assertIs(raised.exception, failure)
+                    self.assertEqual(len(children), 1)
+                    with self.assertRaises(ChildProcessError):
+                        os.waitid(os.P_PID, children[0].pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                    self.assertEqual(signal.pthread_sigmask(signal.SIG_BLOCK, set()), original_mask)
+                finally:
+                    sys.settrace(original_trace)
+                    signal.signal(signum, previous)
+                    # Keep the failing baseline safe without supplying the
+                    # retirement that the assertion above requires of the owner.
+                    for child in children:
+                        if child.poll() is None:
+                            child.kill()
+                        child.wait(timeout=5)
+
+    def test_failed_spawn_preserves_error_without_group_cleanup(self):
+        for failure in (OSError(errno.ENOSPC, 'spawn refused'), ChildProcessError(errno.ECHILD, 'spawn refused')):
+            with self.subTest(error=type(failure).__name__):
+                original_mask = signal.pthread_sigmask
+                before = original_mask(signal.SIG_BLOCK, set())
+                with mock.patch.object(subprocess, 'Popen', side_effect=failure), \
+                        mock.patch.object(os, 'killpg', wraps=os.killpg) as groups, \
+                        mock.patch.object(signal, 'pthread_sigmask', wraps=original_mask) as masks:
+                    with self.assertRaises(type(failure)) as raised:
+                        qemu_gssapi.run_tests([sys.executable, '-c', 'pass'], timeout=10)
+                    self.assertIs(raised.exception, failure)
+                groups.assert_not_called()
+                self.assertEqual(masks.call_args_list, [mock.call(signal.SIG_BLOCK, set())])
+                self.assertEqual(original_mask(signal.SIG_BLOCK, set()), before)
+
     def test_completed_leader_is_retained_until_last_destructive_group_signal(self):
         retained, released = [], []
         descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
