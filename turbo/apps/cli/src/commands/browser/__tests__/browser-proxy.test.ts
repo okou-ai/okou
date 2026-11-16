@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createConnection } from "node:net";
 import { http, passthrough, ws } from "msw";
 import { WebSocket as NativeWebSocket } from "ws";
 import { server } from "../../../mocks/server";
@@ -300,6 +301,76 @@ describe("chat-window CDP proxy protocol", () => {
     await Promise.all([connection.closed, peer.closed, proxy.closed]);
     expect(provider.hasWindow(0)).toBe(true);
     expect(provider.hasWindow(1)).toBe(true);
+  });
+
+  it("releases the native peer when a client cancels pending admission", async () => {
+    await connection.request("Target.getTargets");
+    const admission = provider.holdReply(
+      "Target.attachToBrowserTarget",
+      "BROWSER",
+    );
+    server.use(
+      http.get(proxy.endpoint.replace(/^ws/u, "http"), () => {
+        return passthrough();
+      }),
+    );
+    const socket = new NativeWebSocket(proxy.endpoint);
+    const closed = new Promise<void>((resolve) => {
+      socket.on("error", () => {});
+      socket.once("close", () => {
+        resolve();
+      });
+    });
+    let release: ReturnType<typeof provider.holdReply> | undefined;
+    try {
+      await admission.observed;
+      expect(socket.readyState).toBe(NativeWebSocket.CONNECTING);
+      socket.terminate();
+      await closed;
+      admission.resume();
+      release = provider.holdReply("Target.detachFromTarget", "BROWSER");
+      await release.observed;
+      await expect(
+        connection.request("Future.echo", { stillUsable: true }),
+      ).resolves.toStrictEqual({ opaque: { stillUsable: true } });
+    } finally {
+      socket.terminate();
+      admission.resume();
+      release?.resume();
+    }
+  });
+
+  it("releases a rejected upgrade's native peer and retires the transport if cleanup fails", async () => {
+    await connection.request("Target.getTargets");
+    provider.rejectNextDetach();
+    const endpoint = new URL(proxy.endpoint);
+    const socket = createConnection({
+      host: endpoint.hostname,
+      port: Number(endpoint.port),
+    });
+    try {
+      const response = await new Promise<string>((resolve, reject) => {
+        let body = "";
+        socket.on("data", (data) => {
+          body += String(data);
+        });
+        socket.once("error", reject);
+        socket.once("close", () => {
+          resolve(body);
+        });
+        socket.once("connect", () => {
+          socket.write(
+            `GET ${endpoint.pathname} HTTP/1.1\r\nHost: ${endpoint.host}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: invalid\r\n\r\n`,
+          );
+        });
+      });
+      expect(response).toMatch(/^HTTP\/1\.1 400\b/u);
+      await Promise.all([connection.closed, proxy.closed]);
+      expect(provider.hasWindow(0)).toBe(true);
+      expect(provider.hasWindow(1)).toBe(true);
+    } finally {
+      socket.destroy();
+    }
   });
 
   it("filters native page and unattributed iframe discovery while preserving result fields and global workers", async () => {

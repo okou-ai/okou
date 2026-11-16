@@ -124,14 +124,15 @@ export async function startWindowProxy(
         .openPeer()
         .then((channel) => {
           upstream = channel;
-          clearTimeout(timer);
-          handshakes.delete(cancel);
-          socket.removeListener("close", cancel);
           if (cancelled || closing || socket.destroyed || channel.closed) {
-            upstream.close();
+            cancel();
             return;
           }
+          // A rejected upgrade never transfers ownership to a ProxyPeer.
           sockets.handleUpgrade(request, socket, head, (downstream) => {
+            clearTimeout(timer);
+            handshakes.delete(cancel);
+            socket.removeListener("close", cancel);
             claimed = true;
             clearTimeout(unclaimed);
             const peer = new ProxyPeer(downstream, channel, activeScope, () => {
