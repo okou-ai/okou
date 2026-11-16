@@ -129,8 +129,6 @@ function ForYouStack({
                 >
                   <SuggestionSource />
                   <AgentSuggestionCard
-                    embedded
-                    stacked
                     active={active}
                     item={entry.item}
                     onCustomDirection={onCustomDirection}

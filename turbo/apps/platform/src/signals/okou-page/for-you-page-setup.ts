@@ -13,12 +13,12 @@ import { ROUTES } from "../route-paths.ts";
 import { detach, Reason } from "../utils.ts";
 import {
   enterSuggestionSession$,
-  suggestionForYouEnabled$,
+  suggestionsEnabled$,
 } from "./agent-suggestion-session.ts";
 
 export const setupForYouPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    if (!get(suggestionForYouEnabled$)) {
+    if (!get(suggestionsEnabled$)) {
       await set(navigateTo$, ROUTES.home, { replace: true }, signal);
       return;
     }

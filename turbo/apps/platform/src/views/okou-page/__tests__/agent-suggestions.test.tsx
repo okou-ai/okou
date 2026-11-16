@@ -1,6 +1,6 @@
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -110,8 +110,9 @@ function button(
 ) {
   const found = queryAllByRoleFast(role, container).find((element) => {
     return (
-      element.textContent?.trim().startsWith(name) ||
-      element.getAttribute("aria-label") === name
+      !element.closest('[inert], [aria-hidden="true"]') &&
+      (element.textContent?.trim().startsWith(name) ||
+        element.getAttribute("aria-label") === name)
     );
   });
   if (!found) {
@@ -245,16 +246,19 @@ const features = {
   [FeatureSwitchKey.AgentSuggestion]: true,
   [FeatureSwitchKey.ProactiveLearning]: false,
 } as const;
-// Without My Okou, `/` forwards to the default Agent's chat page.
+// Suggestions live independently of the default Agent's new-chat draft.
+const suggestionPath = "/for-you";
 const homePath = `/agents/${agentId}/chat`;
-async function openHome(): Promise<void> {
+async function openSuggestions(): Promise<void> {
+  await setupPage({ context, path: suggestionPath, featureSwitches: features });
+}
+async function openSuggestionsWithDraft(draft: string): Promise<void> {
   await setupPage({ context, path: homePath, featureSwitches: features });
-}
-async function openHomeWithDraft(draft: string): Promise<void> {
-  await openHome();
   await fill(composer(), draft);
+  click(link(suggestionPath));
+  await screen.findByRole("article");
 }
-// Okou's chat-list row opens home.
+// The new-chat row opens home without a suggestion count.
 function okouRow(): HTMLElement {
   const found = queryAllByRoleFast(
     "link",
@@ -270,7 +274,6 @@ function okouRow(): HTMLElement {
 const SENT = "Sent to a new chat";
 const SUGGESTION_UNAVAILABLE =
   "That suggestion is no longer available. Suggestions have been refreshed.";
-const MESSAGE_SENT = "Message sent";
 const REFERENCED_THREAD = {
   type: "chat_thread",
   threadId,
@@ -338,399 +341,48 @@ test("A cached card still sends its action after server cleanup", async () => {
     });
   });
   const sent = captureSend();
-  await openHome();
+  await openSuggestions();
   await screen.findByText(suggestion.content.title);
   pool.withdrawAll();
   click(button(makeOption().label));
   await screen.findByText(SENT);
   expect((await sent).userMessage?.parts).toContainEqual(REFERENCED_THREAD);
   await expect(consumedWith.promise).resolves.toBe(suggestion.consumeToken);
-  expect(pathname()).toBe(homePath);
+  expect(pathname()).toBe(suggestionPath);
 });
-test("The Okou row leads the chat list, counts waiting cards and opens home", async () => {
-  mockPool(numberedSuggestions(2));
-  await setupPage({ context, path: "/agents", featureSwitches: features });
-  await screen.findByRole("heading", { name: "Agents" });
-  const row = await waitFor(() => {
-    return okouRow();
-  });
-  expect(row).toHaveTextContent(/^Okou/);
-  await within(row).findByText("2 waiting");
-  // The row leads the chats, above their scrolling list.
-  const chats = within(screen.getByTestId("chat-list-column")).getByTestId(
-    "sidebar-scroll-area",
-  );
-  expect(
-    row.compareDocumentPosition(chats) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  click(row);
-  await screen.findByText("Suggested action 1");
-  expect(pathname()).toBe(homePath);
-  await waitFor(() => {
-    expect(okouRow()).toHaveAttribute("aria-current", "page");
-  });
-});
-test("My Okou's home speaks the waiting suggestion in its greeting, rotates through them and opens its complete actions", async () => {
-  mockPool(numberedSuggestions(3));
-  await setupPage({
-    context,
-    path: "/",
-    featureSwitches: {
-      ...features,
-      [FeatureSwitchKey.HomeCapabilities]: true,
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
-  });
-  const list = await screen.findByRole("region", { name: "Suggestion" });
-  await within(list).findByRole("heading", { name: "Suggested action 1" });
-  const capabilities = screen.getByRole("group", {
-    name: "Explore Okou capabilities",
-  });
-  expect(within(capabilities).getByText("Workflow")).toBeInTheDocument();
-  // The suggestion takes the greeting's own line beside the avatar, in place
-  // of the tagline, so it never pushes the cards.
-  expect(capabilities).not.toContainElement(list);
-  expect(screen.getByTestId("chat-greeting")).toContainElement(list);
-  expect(screen.queryByTestId("chat-tagline")).toBeNull();
-  const segments = within(list).getByRole("radiogroup", {
-    name: "Browse suggestions",
-  });
-  expect(button("Show suggestion 1 of 3", "radio", segments)).toBeChecked();
-  // jsdom runs no CSS animation; the end of the current segment's fill is the
-  // end of that suggestion's turn.
-  fireEvent.animationEnd(within(segments).getByTestId("suggestion-progress"));
-  await within(list).findByRole("heading", { name: "Suggested action 2" });
-  expect(button("Show suggestion 2 of 3", "radio", segments)).toBeChecked();
-  click(button("Show suggestion 3 of 3", "radio", segments));
-  await within(list).findByRole("heading", { name: "Suggested action 3" });
-  // The rotation wraps from the last suggestion back to the first.
-  fireEvent.animationEnd(within(segments).getByTestId("suggestion-progress"));
-  await within(list).findByRole("heading", { name: "Suggested action 1" });
-  click(button("Show suggestion 3 of 3", "radio", segments));
-  await within(list).findByRole("heading", { name: "Suggested action 3" });
-  click(button("Suggested action 3", "button", list));
-  const dialog = await screen.findByRole("dialog", { name: "Feed" });
-  await within(dialog).findByRole("article", { name: "Suggested action 3" });
-  expect(button("Review decision", "button", dialog)).toBeInTheDocument();
-  click(button("Dismiss", "button", dialog));
-  await within(dialog).findByRole("article", { name: "Suggested action 2" });
-  click(button("Undo"));
-  await within(dialog).findByRole("article", { name: "Suggested action 3" });
-  click(button("Close", "button", dialog));
-  await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  expect(pathname()).toBe("/");
-  await waitFor(() => {
-    expect(okouRow()).toHaveAttribute("aria-current", "page");
-  });
-});
-test("Arrow keys choose suggestion segments that hold one tab stop", async () => {
-  mockPool(numberedSuggestions(3));
-  await setupPage({
-    context,
-    path: "/",
-    featureSwitches: {
-      ...features,
-      [FeatureSwitchKey.HomeCapabilities]: true,
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
-  });
-  const list = await screen.findByRole("region", { name: "Suggestion" });
-  await within(list).findByRole("heading", { name: "Suggested action 1" });
-  const segments = within(list).getByRole("radiogroup", {
-    name: "Browse suggestions",
-  });
-  const first = button("Show suggestion 1 of 3", "radio", segments);
-  expect(first).toHaveAttribute("tabindex", "0");
-  expect(button("Show suggestion 2 of 3", "radio", segments)).toHaveAttribute(
-    "tabindex",
-    "-1",
-  );
-  first.focus();
-  await userEvent.keyboard("{ArrowLeft}");
-  await within(list).findByRole("heading", { name: "Suggested action 3" });
-  expect(button("Show suggestion 3 of 3", "radio", segments)).toHaveFocus();
-  await userEvent.keyboard("{ArrowRight}");
-  await within(list).findByRole("heading", { name: "Suggested action 1" });
-  expect(first).toHaveFocus();
-});
-test("The homepage suggestion card is absent when the Suggestions switch is off", async () => {
-  await setupPage({
-    context,
-    path: "/",
-    featureSwitches: {
-      [FeatureSwitchKey.AgentSuggestion]: false,
-      [FeatureSwitchKey.HomeCapabilities]: true,
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
-  });
-  const capabilities = await screen.findByRole("group", {
-    name: "Explore Okou capabilities",
-  });
-  expect(
-    within(capabilities).getByRole("region", { name: "Workflow" }),
-  ).toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("link").find((link) => {
-      return link.textContent?.trim() === "Explore what's new";
-    }),
-  ).toBeInTheDocument();
-  expect(screen.queryByRole("region", { name: "Suggestion" })).toBeNull();
-  expect(screen.getByTestId("chat-tagline")).toBeInTheDocument();
-});
-test("A homepage suggestion keeps custom directions and sends inside its detail dialog", async () => {
-  const items = numberedSuggestions(2);
-  mockPool(items);
-  const sent = captureSend();
-  await setupPage({
-    context,
-    path: "/",
-    featureSwitches: {
-      ...features,
-      [FeatureSwitchKey.HomeCapabilities]: true,
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
-  });
-  await fill(composer(), "Keep my home draft");
-  const card = await screen.findByRole("region", { name: "Suggestion" });
-  await within(card).findByRole("heading", { name: items[0].content.title });
-  click(button(items[0].content.title, "button", card));
-  const dialog = await screen.findByRole("dialog", { name: "Feed" });
-  click(button("I’d like to…", "button", dialog));
-  const note = await screen.findByRole("textbox", {
-    name: "What do you have in mind?",
-  });
-  await writeDirection(note, "Check the context first");
-  const customDialog = note.closest('[role="dialog"]');
-  if (!customDialog) {
-    throw new Error("Missing custom direction dialog");
-  }
-  click(button("Send", "button", customDialog));
-  expect(JSON.stringify((await sent).userMessage)).toContain(
-    "Check the context first",
-  );
-  expect(composer()).toHaveTextContent("Keep my home draft");
-  await within(dialog).findByRole("article", { name: items[1].content.title });
-});
-test("The review advances in its original order, returns to earlier waiting suggestions and completes", async () => {
-  mockPool(numberedSuggestions(8));
-  const sent = captureSend();
-  await setupPage({
-    context,
-    path: "/",
-    featureSwitches: {
-      ...features,
-      [FeatureSwitchKey.HomeCapabilities]: true,
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
-  });
-  const card = await screen.findByRole("region", { name: "Suggestion" });
-  await within(card).findByRole("heading", { name: "Suggested action 1" });
-  click(button("Show suggestion 3 of 8", "radio", card));
-  await within(card).findByRole("heading", { name: "Suggested action 3" });
-  click(button("Suggested action 3", "button", card));
-  const dialog = await screen.findByRole("dialog", { name: "Feed" });
-  for (const index of [3, 4, 5, 6, 7, 8, 2, 1]) {
-    await within(dialog).findByRole("article", {
-      name: `Suggested action ${index}`,
-    });
-    expect(within(dialog).getByText(`${index} / 8`)).toBeInTheDocument();
-    click(
-      button(
-        index === 5 ? "Review decision" : "Already done",
-        "button",
-        dialog,
-      ),
-    );
-  }
-  await sent;
-  const completeTitle = await within(dialog).findByRole("heading", {
-    name: "All caught up",
-  });
-  expect(completeTitle).toHaveFocus();
-  click(button("Undo"));
-  await within(dialog).findByRole("article", { name: "Suggested action 1" });
-  expect(within(dialog).getByText("1 / 8")).toBeInTheDocument();
-});
-test("An unsuccessful feedback save stays in the review and advances after retry", async () => {
-  mockPool(numberedSuggestions(2));
-  let failing = true;
-  context.mocks.api(feedContract.feedback, ({ respond }) => {
-    return failing
-      ? respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Feedback temporarily unavailable",
-          },
-        })
-      : respond(200, { restored: false });
-  });
-  await setupPage({
-    context,
-    path: "/",
-    featureSwitches: {
-      ...features,
-      [FeatureSwitchKey.HomeCapabilities]: true,
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
-  });
-  const card = await screen.findByRole("region", { name: "Suggestion" });
-  await within(card).findByRole("heading", { name: "Suggested action 1" });
-  click(button("Suggested action 1", "button", card));
-  const dialog = await screen.findByRole("dialog", { name: "Feed" });
-  click(button("Already done", "button", dialog));
-  await within(dialog).findByRole("alert");
-  expect(within(dialog).getByText("1 / 2")).toBeInTheDocument();
-  failing = false;
-  click(button("Try again", "button", dialog));
-  await within(dialog).findByRole("article", { name: "Suggested action 2" });
-});
-test("The open review completes when an unavailable-card refresh withdraws its remaining cards", async () => {
-  const items = numberedSuggestions(2);
-  const pool = mockPool(items);
-  await setupPage({
-    context,
-    path: "/",
-    featureSwitches: {
-      ...features,
-      [FeatureSwitchKey.HomeCapabilities]: true,
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
-  });
-  const card = await screen.findByRole("region", { name: "Suggestion" });
-  await within(card).findByRole("heading", { name: items[0].content.title });
-  click(button(items[0].content.title, "button", card));
-  const dialog = await screen.findByRole("dialog", { name: "Feed" });
-  await within(dialog).findByRole("article", { name: items[0].content.title });
-  pool.withdrawAll();
-  const offered = numberedSuggestions(3)[2];
-  pool.publish(offered);
-  click(button("Already done", "button", dialog));
-  await screen.findByText(SUGGESTION_UNAVAILABLE);
-  const completeTitle = await within(dialog).findByRole("heading", {
-    name: "All caught up",
-  });
-  expect(completeTitle).toHaveFocus();
-  click(button("Close", "button", dialog));
-  await within(card).findByRole("heading", { name: offered.content.title });
-  click(button(offered.content.title, "button", card));
-  const nextReview = await screen.findByRole("dialog", { name: "Feed" });
-  await within(nextReview).findByRole("article", {
-    name: offered.content.title,
-  });
-});
-test("Retrying unavailable feedback completes the review after the server pool empties", async () => {
-  const items = numberedSuggestions(2);
-  const pool = mockPool(items);
-  let failing = true;
-  context.mocks.api(feedContract.feedback, ({ respond }) => {
-    return failing
-      ? respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Feedback temporarily unavailable",
-          },
-        })
-      : respond(409, {
-          error: {
-            code: "CONFLICT",
-            message:
-              "Suggestion is no longer available. Refresh your suggestions.",
-          },
-        });
-  });
-  await setupPage({
-    context,
-    path: "/",
-    featureSwitches: {
-      ...features,
-      [FeatureSwitchKey.HomeCapabilities]: true,
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
-  });
-  const card = await screen.findByRole("region", { name: "Suggestion" });
-  await within(card).findByRole("heading", { name: items[0].content.title });
-  click(button(items[0].content.title, "button", card));
-  const dialog = await screen.findByRole("dialog", { name: "Feed" });
-  click(button("Already done", "button", dialog));
-  const error = await within(dialog).findByRole("alert");
-  pool.withdrawAll();
-  failing = false;
-  click(button("Try again", "button", error));
-  await screen.findByText(SUGGESTION_UNAVAILABLE);
-  const completeTitle = await within(dialog).findByRole("heading", {
-    name: "All caught up",
-  });
-  expect(completeTitle).toHaveFocus();
-});
-test("Handling the last homepage suggestion returns the greeting to its tagline until Undo", async () => {
-  mockPool();
-  await setupPage({
-    context,
-    path: "/",
-    featureSwitches: {
-      ...features,
-      [FeatureSwitchKey.HomeCapabilities]: true,
-      [FeatureSwitchKey.SingleAgent]: true,
-    },
-  });
-  const card = await screen.findByRole("region", { name: "Suggestion" });
-  await within(card).findByRole("heading", {
-    name: makeSuggestion().content.title,
-  });
-  click(button("Suggestion actions", "button", card));
-  const menu = await screen.findByRole("menu");
-  expect(
-    queryAllByRoleFast("menuitem", menu).map((item) => {
-      return item.textContent;
-    }),
-  ).toStrictEqual(["Dismiss", "Already done", "Not planned", "Less like this"]);
-  click(within(menu).getByText("Already done"));
-  await screen.findByText("Noted — this is already done");
-  await screen.findByTestId("chat-tagline");
-  expect(screen.queryByRole("region", { name: "Suggestion" })).toBeNull();
-  click(button("Undo"));
-  const restored = await screen.findByRole("region", { name: "Suggestion" });
-  await within(restored).findByRole("heading", {
-    name: makeSuggestion().content.title,
-  });
-  expect(
-    button(makeSuggestion().content.title, "button", restored),
-  ).toBeInTheDocument();
-  expect(screen.queryByTestId("chat-tagline")).toBeNull();
-});
-test("The Okou row's count follows committed suggestion changes", async () => {
+test("The For you row's count follows committed suggestion changes", async () => {
   const pool = mockPool(numberedSuggestions(2));
-  await openHome();
-  await within(okouRow()).findByText("2 waiting");
+  await openSuggestions();
+  await within(link(suggestionPath)).findByLabelText("2 waiting");
   click(button("Dismiss"));
-  await within(okouRow()).findByText("1 waiting");
+  await within(link(suggestionPath)).findByLabelText("1 waiting");
   pool.publish(numberedSuggestions(3)[2]);
   notifySuggestionsChanged();
-  await within(okouRow()).findByText("2 waiting");
+  await within(link(suggestionPath)).findByLabelText("2 waiting");
   pool.withdrawAll();
   notifySuggestionsChanged();
-  await waitFor(() => {
-    expect(okouRow()).toHaveTextContent(/^Okou$/);
-  });
+  const emptyCount = await within(link(suggestionPath)).findByLabelText(
+    "0 waiting",
+  );
+  expect(emptyCount).toBeInTheDocument();
 });
-test("Each home visit loads new suggestions", async () => {
+test("Each For you visit loads new suggestions", async () => {
   const [first, second] = numberedSuggestions(2);
   const pool = mockPool([first]);
-  await openHome();
+  await openSuggestions();
   await screen.findByText(first.content.title);
   click(link("/agents"));
   await screen.findByRole("heading", { name: "Agents" });
   pool.publish(second);
-  click(okouRow());
-  await screen.findByText(second.content.title);
-  expect(listItemLabels()).toStrictEqual([
-    first.content.title,
-    second.content.title,
-  ]);
+  click(link(suggestionPath));
+  await screen.findByText("2 to go");
+  click(link(`/for-you?suggestion=${second.id}`));
+  const card = await screen.findByRole("article", {
+    name: second.content.title,
+  });
+  expect(card).toBeInTheDocument();
 });
-test("Choosing an action sends it to a new thread and keeps home and its draft", async () => {
+test("Choosing an action sends it to a new thread and keeps the homepage draft", async () => {
   const selected = makeOption({ id: "prepare", label: "Prepare response" });
   const suggestion = {
     ...makeSuggestion(),
@@ -761,14 +413,14 @@ test("Choosing an action sends it to a new thread and keeps home and its draft",
   };
   const pool = mockPool([suggestion, next]);
   const sent = captureSend();
-  await openHomeWithDraft("My original draft");
+  await openSuggestionsWithDraft("My original draft");
   await screen.findByText(suggestion.content.title);
   expect(button("Review decision")).toBeInTheDocument();
   expect(button("Summarize the decision")).toBeInTheDocument();
   click(button(selected.label));
   await screen.findByText(SENT);
-  expect(pathname()).toBe(homePath);
-  expect(listItemLabels()).toStrictEqual([next.content.title, MESSAGE_SENT]);
+  expect(pathname()).toBe(suggestionPath);
+  await screen.findByRole("article", { name: next.content.title });
   await waitFor(() => {
     expect(pool.selections).toStrictEqual([
       { id: suggestion.id, optionId: selected.id },
@@ -779,10 +431,13 @@ test("Choosing an action sends it to a new thread and keeps home and its draft",
   expect(link(`/chats/${sentThreadId}`)).toHaveTextContent(
     suggestion.content.title,
   );
-  expect(openChatLink()).toHaveAttribute("href", `/chats/${sentThreadId}`);
+
   expect(message?.parts).toContainEqual(REFERENCED_THREAD);
   expect(JSON.stringify(message)).not.toContain("Unselected action");
-  expect(composer()).toHaveTextContent("My original draft");
+  click(okouRow());
+  await waitFor(() => {
+    expect(composer()).toHaveTextContent("My original draft");
+  });
   expect(composer()).not.toHaveTextContent("Referenced decision");
 });
 test("An existing-thread suggestion merges its content and attachments with the remote draft", async () => {
@@ -851,7 +506,7 @@ test("An existing-thread suggestion merges its content and attachments with the 
       draftAttachments: [original],
     });
   });
-  await openHome();
+  await openSuggestions();
   await screen.findByText(makeSuggestion().content.title);
   click(button(makeOption().label));
   await waitFor(() => {
@@ -893,7 +548,7 @@ test("A consumed suggestion is saved when target metadata is unavailable", async
     saved.push(body.draftUserMessage);
     return respond(204);
   });
-  await openHome();
+  await openSuggestions();
   await screen.findByText(suggestion.content.title);
   click(button(suggestion.content.options[0].label));
   await waitFor(() => {
@@ -922,13 +577,13 @@ test("A choice is still sent when another session consumed the card", async () =
     });
   });
   const sent = captureSend();
-  await openHome();
+  await openSuggestions();
   await screen.findByText(makeSuggestion().content.title);
   click(button(makeOption().label));
   await screen.findByText(SENT);
   expect((await sent).userMessage?.parts).toContainEqual(REFERENCED_THREAD);
   await consumed.promise;
-  expect(pathname()).toBe(homePath);
+  expect(pathname()).toBe(suggestionPath);
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 test("A suggestion uses the ordinary composer to join a running target chat", async () => {
@@ -966,7 +621,7 @@ test("A suggestion uses the ordinary composer to join a running target chat", as
       },
     ],
   });
-  await openHome();
+  await openSuggestions();
   await screen.findByText(makeSuggestion().content.title);
   click(button(makeOption().label));
   await waitFor(() => {
@@ -1017,7 +672,7 @@ test("The loaded option keeps its draft and destination when the server responds
       },
     });
   });
-  await openHome();
+  await openSuggestions();
   await screen.findByText(makeSuggestion().content.title);
   click(button(makeOption().label));
   const message = await sent;
@@ -1025,7 +680,7 @@ test("The loaded option keeps its draft and destination when the server responds
   expect(message.userMessage?.parts).toContainEqual(REFERENCED_THREAD);
   expect(JSON.stringify(message.userMessage)).not.toContain("Updated action");
   await consumed.promise;
-  expect(pathname()).toBe(homePath);
+  expect(pathname()).toBe(suggestionPath);
 });
 function numberedSuggestions(count: number): Suggestion[] {
   return Array.from({ length: count }, (_, index) => {
@@ -1039,94 +694,11 @@ function numberedSuggestions(count: number): Suggestion[] {
     };
   });
 }
-// The sidebar also links the new thread, so the sent row's own link is read.
-function openChatLink(): HTMLElement {
-  const found = queryAllByRoleFast(
-    "link",
-    screen.getByRole("region", { name: "Feed" }),
-  ).find((element) => {
-    return element.textContent?.trim() === "Open chat";
-  });
-  if (!found) {
-    throw new Error("Missing Open chat link");
-  }
-  return found;
-}
-function listItemLabels(): (string | null)[] {
-  return within(screen.getByRole("region", { name: "Feed" }))
-    .getAllByRole("listitem")
-    .map((row) => {
-      const content =
-        within(row).queryByRole("heading") ?? within(row).getByRole("status");
-      return content.textContent;
-    });
-}
-test("Home lists every suggestion card and sends the chosen card's action in place", async () => {
-  const items = numberedSuggestions(3).map((item, index) => {
-    return {
-      ...item,
-      content: {
-        ...item.content,
-        options: [
-          makeOption({
-            label: `Review option ${index + 1}`,
-            draft: {
-              draftUserMessage: {
-                version: 1,
-                parts: [
-                  {
-                    type: "text",
-                    text: `Draft for suggested action ${index + 1}`,
-                  },
-                ],
-              },
-              draftAttachments: null,
-            },
-          }),
-        ],
-      },
-    };
-  });
-  mockPool(items);
-  const sent = captureSend();
-  await openHome();
-  const suggestions = await screen.findByRole("region", {
-    name: "Feed",
-  });
-  const cards = within(suggestions).getAllByRole("article");
-  expect(
-    cards.map((card) => {
-      return within(card).getByRole("heading").textContent;
-    }),
-  ).toStrictEqual(
-    items.map((item) => {
-      return item.content.title;
-    }),
-  );
-  for (const [index, card] of cards.entries()) {
-    expect(
-      button(items[index].content.options[0].label, "button", card),
-    ).toBeEnabled();
-    expect(button("I’d like to…", "button", card)).toBeEnabled();
-    expect(button("Dismiss", "button", card)).toBeEnabled();
-  }
-  click(button(items[1].content.options[0].label, "button", cards[1]));
-  await screen.findByText(SENT);
-  expect(listItemLabels()).toStrictEqual([
-    items[0].content.title,
-    items[2].content.title,
-    MESSAGE_SENT,
-  ]);
-  expect(JSON.stringify((await sent).userMessage)).toContain(
-    "Draft for suggested action 2",
-  );
-  expect(pathname()).toBe(homePath);
-});
-test("A sent suggestion moves below the waiting cards and opens its new thread", async () => {
+test("A sent suggestion advances the stack and remains reachable in the chat list", async () => {
   const items = numberedSuggestions(2);
   mockPool(items);
   const sent = captureSend();
-  await openHome();
+  await openSuggestions();
   click(
     button(
       makeOption().label,
@@ -1134,13 +706,10 @@ test("A sent suggestion moves below the waiting cards and opens its new thread",
       await screen.findByRole("article", { name: items[0].content.title }),
     ),
   );
-  await screen.findByText(MESSAGE_SENT);
-  expect(listItemLabels()).toStrictEqual([
-    items[1].content.title,
-    MESSAGE_SENT,
-  ]);
+  await screen.findByText(SENT);
+  await screen.findByRole("article", { name: items[1].content.title });
   const { threadId: sentThreadId } = await sent;
-  click(openChatLink());
+  click(link(`/chats/${sentThreadId}`));
   await waitFor(() => {
     expect(pathname()).toBe(`/chats/${sentThreadId}`);
   });
@@ -1153,7 +722,7 @@ test("A choice that sends nothing returns its card to its place", async () => {
   context.mocks.api(runModelsMainContract.list, ({ respond }) => {
     return respond(200, { models: [] });
   });
-  await openHome();
+  await openSuggestions();
   click(
     button(
       makeOption().label,
@@ -1163,11 +732,9 @@ test("A choice that sends nothing returns its card to its place", async () => {
   );
   await screen.findByText("The selected model is not available");
   await screen.findByRole("article", { name: items[0].content.title });
-  expect(listItemLabels()).toStrictEqual(
-    items.map((item) => {
-      return item.content.title;
-    }),
-  );
+  expect(
+    screen.getByRole("article", { name: items[0].content.title }),
+  ).toBeInTheDocument();
 });
 test("A send that fails before its thread is published shows the failure in its row", async () => {
   const items = numberedSuggestions(2);
@@ -1188,7 +755,7 @@ test("A send that fails before its thread is published shows the failure in its 
       });
     },
   );
-  await openHome();
+  await openSuggestions();
   click(
     button(
       makeOption().label,
@@ -1198,59 +765,11 @@ test("A send that fails before its thread is published shows the failure in its 
   );
   await requested.promise;
   await screen.findByText("Sending…");
-  expect(listItemLabels()).toStrictEqual([items[1].content.title, "Sending…"]);
+  await screen.findByRole("article", { name: items[1].content.title });
   release.resolve();
-  const failure = await within(
-    screen.getByRole("region", { name: "Feed" }),
-  ).findByRole("alert");
+  const failure = await screen.findByRole("alert");
   expect(failure).toHaveTextContent("Model routing unavailable");
   expect(screen.queryByText("Sending…")).not.toBeInTheDocument();
-});
-test("Dismissing a suggestion moves only its card below the waiting cards and keeps the rest available", async () => {
-  const pool = mockPool(numberedSuggestions(2));
-  await openHome();
-  await screen.findByText("Suggested action 1");
-  click(button("Dismiss"));
-  await screen.findByText("Suggestion dismissed");
-  expect(listItemLabels()).toStrictEqual([
-    "Suggested action 2",
-    "Suggestion dismissed",
-  ]);
-  expect(
-    screen.queryByRole("article", { name: "Suggested action 1" }),
-  ).not.toBeInTheDocument();
-  await waitFor(() => {
-    expect(pool.consumed).toStrictEqual([
-      "a0000000-0000-4000-a000-000000000001",
-    ]);
-  });
-  expect(pool.selections).toStrictEqual([
-    { id: makeSuggestion().id, optionId: null },
-  ]);
-  expect(pathname()).toBe(homePath);
-  click(button("Dismiss"));
-  await waitFor(() => {
-    expect(pool.consumed).toStrictEqual([
-      "a0000000-0000-4000-a000-000000000001",
-      "a0000000-0000-4000-a000-000000000002",
-    ]);
-  });
-  // Each handled card keeps its own row, in the order it was handled.
-  await waitFor(() => {
-    expect(listItemLabels()).toStrictEqual([
-      "Suggestion dismissed",
-      "Suggestion dismissed",
-    ]);
-  });
-  expect(
-    within(screen.getByRole("region", { name: "Feed" }))
-      .getAllByRole("listitem")
-      .map((row) => {
-        return within(row).getByText(/^Suggested action/).textContent;
-      }),
-  ).toStrictEqual(["Suggested action 1", "Suggested action 2"]);
-  await userEvent.setup().click(button("Close feedback"));
-  expect(listItemLabels()).toStrictEqual(["Suggestion dismissed"]);
 });
 test("A deleted target shows its unavailable page and preserves the home draft", async () => {
   mockPool([
@@ -1277,12 +796,12 @@ test("A deleted target shows its unavailable page and preserves the home draft",
       error: { code: "NOT_FOUND", message: "Chat thread not found" },
     });
   });
-  await openHomeWithDraft("Keep my home draft");
+  await openSuggestionsWithDraft("Keep my home draft");
   await screen.findByText(makeSuggestion().content.title);
   click(button(makeOption().label));
   await screen.findByRole("heading", { name: "Chat thread not found" });
   expect(pathname()).toBe(`/chats/${threadId}`);
-  click(link(homePath));
+  click(okouRow());
   await waitFor(() => {
     expect(composer()).toHaveTextContent("Keep my home draft");
   });
@@ -1331,17 +850,17 @@ test("Suggestion options start in the default Agent after visiting a secondary A
     featureSwitches: features,
   });
   expect(button("Workflow")).toBeInTheDocument();
-  click(okouRow());
+  click(link(suggestionPath));
   await screen.findByText(makeSuggestion().content.title);
-  expect(pathname()).toBe(homePath);
+  expect(pathname()).toBe(suggestionPath);
   click(button(makeOption().label));
   await screen.findByText(SENT);
   await expect(sender.promise).resolves.toBe(agentId);
-  expect(pathname()).toBe(homePath);
+  expect(pathname()).toBe(suggestionPath);
 });
 test("Custom direction opens a dialog composer for the default Agent without touching its home draft", async () => {
   const pool = mockPool();
-  await openHomeWithDraft("Keep my original draft");
+  await openSuggestionsWithDraft("Keep my original draft");
   await screen.findByText(makeSuggestion().content.title);
   const custom = button("I’d like to…");
   expect(custom).toHaveTextContent(
@@ -1352,7 +871,7 @@ test("Custom direction opens a dialog composer for the default Agent without tou
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   const { dialog, note } = await openCustomDirection();
-  expect(pathname()).toBe(homePath);
+  expect(pathname()).toBe(suggestionPath);
   expect(composer(dialog)).toHaveTextContent(makeSuggestion().content.title);
   expect(composer(dialog)).not.toHaveTextContent("launch-plan-v2");
   expect(composer(dialog)).not.toHaveTextContent("Keep my original draft");
@@ -1369,7 +888,10 @@ test("Custom direction opens a dialog composer for the default Agent without tou
   expect(
     screen.getByRole("article", { name: makeSuggestion().content.title }),
   ).toBeInTheDocument();
-  expect(composer()).toHaveTextContent("Keep my original draft");
+  click(okouRow());
+  await waitFor(() => {
+    expect(composer()).toHaveTextContent("Keep my original draft");
+  });
   expect(composer()).not.toHaveTextContent(makeSuggestion().content.title);
 });
 test("Each custom direction dialog starts from its own card's background", async () => {
@@ -1399,7 +921,7 @@ test("Each custom direction dialog starts from its own card's background", async
     },
   };
   mockPool([first, second]);
-  await openHome();
+  await openSuggestions();
   await screen.findByText(first.content.title);
   const opened = await openCustomDirection(
     screen.getByRole("article", { name: first.content.title }),
@@ -1410,6 +932,8 @@ test("Each custom direction dialog starts from its own card's background", async
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+  click(link(`/for-you?suggestion=${second.id}`));
+  await screen.findByRole("article", { name: second.content.title });
   const reopened = await openCustomDirection(
     screen.getByRole("article", { name: second.content.title }),
   );
@@ -1422,10 +946,9 @@ test("Each custom direction dialog starts from its own card's background", async
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  expect(listItemLabels()).toStrictEqual([
-    first.content.title,
-    second.content.title,
-  ]);
+  expect(
+    screen.getByRole("article", { name: second.content.title }),
+  ).toBeInTheDocument();
 });
 test("A custom follow-up retains its dialog on failure and reuses its identities until acceptance", async () => {
   const pool = mockPool();
@@ -1459,7 +982,7 @@ test("A custom follow-up retains its dialog on failure and reuses its identities
       createdAt: "2026-10-27T00:00:00Z",
     });
   });
-  await openHome();
+  await openSuggestions();
   await screen.findByText(makeSuggestion().content.title);
   const { dialog, note } = await openCustomDirection();
   await writeDirection(note, "Assess the budget risk first");
@@ -1468,7 +991,7 @@ test("A custom follow-up retains its dialog on failure and reuses its identities
   });
   click(button("Send", "button", dialog));
   await screen.findByText("Follow-up temporarily unavailable");
-  expect(pathname()).toBe(homePath);
+  expect(pathname()).toBe(suggestionPath);
   expect(composer(dialog)).toHaveTextContent("Assess the budget risk first");
   expect(composer(dialog)).toHaveTextContent(makeSuggestion().content.title);
   failing = false;
@@ -1488,15 +1011,11 @@ test("A custom follow-up retains its dialog on failure and reuses its identities
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  expect(pathname()).toBe(homePath);
+  expect(pathname()).toBe(suggestionPath);
   expect(
     screen.queryByRole("article", { name: makeSuggestion().content.title }),
   ).not.toBeInTheDocument();
-  expect(listItemLabels()).toStrictEqual([MESSAGE_SENT]);
-  expect(openChatLink()).toHaveAttribute(
-    "href",
-    `/chats/${attempts[1].threadId}`,
-  );
+  await screen.findByRole("heading", { name: "All caught up" });
   // The API records the custom follow-up when it accepts the input.
   expect(pool.consumed).toStrictEqual([]);
 });
@@ -1547,8 +1066,9 @@ test("The custom direction dialog sends the background files without the home dr
     });
   });
   const sent = captureSend();
-  await openHome();
+  await setupPage({ context, path: homePath, featureSwitches: features });
   await screen.findByText("my-original.txt");
+  click(link(suggestionPath));
   await screen.findByText(suggestion.content.title);
   const { dialog, note } = await openCustomDirection();
   await within(dialog).findByText("suggestion-background.txt");
@@ -1570,48 +1090,15 @@ test("The custom direction dialog sends the background files without the home dr
   );
   expect(JSON.stringify(message)).not.toContain(original.id);
   expect(JSON.stringify(message)).not.toContain("My saved draft");
-  expect(pathname()).toBe(homePath);
+  expect(pathname()).toBe(suggestionPath);
 });
-test("Feedback stays available after the last card, accepts an optional reason, and undo restores the card", async () => {
-  mockPool([{ ...makeSuggestion(), consumeToken: "a".repeat(64) }]);
-  await openHome();
-  await screen.findByText(makeSuggestion().content.title);
-  const actions = ["Dismiss", "Already done", "Not planned", "Less like this"];
-  const suggestion = screen.getByRole("region", { name: "Feed" });
-  expect(
-    queryAllByRoleFast("button", suggestion)
-      .map((action) => {
-        return action.textContent?.trim();
-      })
-      .filter((label) => {
-        return label !== undefined && actions.includes(label);
-      }),
-  ).toStrictEqual(actions);
-  await userEvent.setup().click(button("Less like this"));
-  await screen.findByText("You’ll see fewer suggestions like this.");
-  await userEvent.setup().click(button("Add a reason"));
-  await userEvent
-    .setup()
-    .type(
-      screen.getByLabelText("Add a reason (optional)"),
-      "Another teammate handles this work",
-    );
-  await userEvent.setup().click(button("Save"));
-  await screen.findByText("Edit reason");
-  await userEvent.setup().click(button("Edit reason"));
-  expect(screen.getByLabelText("Add a reason (optional)")).toHaveValue(
-    "Another teammate handles this work",
-  );
-  await userEvent.setup().click(button("Undo"));
-  await screen.findByText(makeSuggestion().content.title);
-  await userEvent.setup().click(button("Not planned"));
-  await screen.findByText("Noted — this is not planned");
-});
-test("Not planned moves its card below the waiting cards and Undo restores it in place", async () => {
+test("Not planned advances to the next card and Undo restores the selected card", async () => {
   const items = numberedSuggestions(3);
   mockPool(items);
-  await openHome();
-  await screen.findByText(items[1].content.title);
+  await openSuggestions();
+  await screen.findByRole("article", { name: items[0].content.title });
+  click(link(`/for-you?suggestion=${items[1].id}`));
+  await screen.findByRole("article", { name: items[1].content.title });
   click(
     button(
       "Not planned",
@@ -1620,18 +1107,12 @@ test("Not planned moves its card below the waiting cards and Undo restores it in
     ),
   );
   await screen.findByText("Noted — this is not planned");
-  expect(listItemLabels()).toStrictEqual([
-    items[0].content.title,
-    items[2].content.title,
-    "Noted — this is not planned",
-  ]);
+  await screen.findByRole("article", { name: items[2].content.title });
   click(button("Undo"));
-  await screen.findByRole("article", { name: items[1].content.title });
-  expect(listItemLabels()).toStrictEqual(
-    items.map((item) => {
-      return item.content.title;
-    }),
-  );
+  const restored = await screen.findByRole("article", {
+    name: items[1].content.title,
+  });
+  expect(restored).toBeInTheDocument();
 });
 test("Failed feedback keeps the local choice and can retry the same feedback identity", async () => {
   const item = makeSuggestion();
@@ -1652,18 +1133,17 @@ test("Failed feedback keeps the local choice and can retry the same feedback ide
     retried.resolve();
     return respond(200, { restored: false });
   });
-  await openHome();
+  await openSuggestions();
   await screen.findByText(item.content.title);
   click(button("Already done"));
   const error = await screen.findByRole("alert");
   expect(
     within(error).getByText(/Feedback could not be saved/),
   ).toBeInTheDocument();
-  expect(screen.getByText("Noted — this is already done")).toBeInTheDocument();
+  await screen.findByRole("heading", { name: "All caught up" });
   expect(
     screen.queryByRole("article", { name: item.content.title }),
   ).not.toBeInTheDocument();
-  click(button("Close feedback"));
   expect(screen.getByRole("alert")).toBeInTheDocument();
   failing = false;
   click(button("Try again"));
@@ -1676,7 +1156,7 @@ test("Failed feedback keeps the local choice and can retry the same feedback ide
 test("Feedback on a card that left the pool refreshes the suggestions with a notice", async () => {
   const items = numberedSuggestions(3);
   const pool = mockPool(items);
-  await openHome();
+  await openSuggestions();
   await screen.findByText(items[0].content.title);
   click(
     button(
@@ -1685,9 +1165,8 @@ test("Feedback on a card that left the pool refreshes the suggestions with a not
       screen.getByRole("article", { name: items[0].content.title }),
     ),
   );
-  await waitFor(() => {
-    expect(pool.consumed).toStrictEqual([items[0].id]);
-  });
+  await screen.findByText("Suggestion dismissed");
+  expect(pool.consumed).toStrictEqual([items[0].id]);
   // A background check withdraws the rest of the pool and offers a new card
   // while home still shows the cards it loaded.
   const offered = {
@@ -1710,10 +1189,6 @@ test("Feedback on a card that left the pool refreshes the suggestions with a not
   await screen.findByText(SUGGESTION_UNAVAILABLE);
   await screen.findByRole("article", { name: offered.content.title });
   // Every card that left goes; the card handled earlier keeps its row.
-  expect(listItemLabels()).toStrictEqual([
-    offered.content.title,
-    "Suggestion dismissed",
-  ]);
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(
     screen.queryByText(/Refresh your suggestions/),
@@ -1721,10 +1196,6 @@ test("Feedback on a card that left the pool refreshes the suggestions with a not
   // The earlier card is still part of the visit, so Undo restores it.
   click(button("Undo"));
   await screen.findByRole("article", { name: items[0].content.title });
-  expect(listItemLabels()).toStrictEqual([
-    items[0].content.title,
-    offered.content.title,
-  ]);
 });
 test("Retrying feedback for a card that has since left the pool refreshes the suggestions", async () => {
   const item = makeSuggestion();
@@ -1746,7 +1217,7 @@ test("Retrying feedback for a card that has since left the pool refreshes the su
       },
     });
   });
-  await openHome();
+  await openSuggestions();
   await screen.findByText(item.content.title);
   click(button("Already done"));
   const error = await screen.findByRole("alert");
@@ -1791,44 +1262,22 @@ test("Slow feedback leaves other cards usable and Undo restores the original car
       return respond(200, { restored: body.kind === "undo" });
     },
   );
-  await openHome();
+  await openSuggestions();
   await screen.findByText(items[0].content.title);
   click(button("Already done"));
   await requested.promise;
-  await screen.findByText("Noted — this is already done");
-  expect(listItemLabels()).toStrictEqual([
-    items[1].content.title,
-    items[2].content.title,
-    "Noted — this is already done",
-  ]);
-  expect(
-    button(
-      "Not planned",
-      "button",
-      screen.getByRole("article", { name: items[1].content.title }),
-    ),
-  ).toBeEnabled();
-  click(button("Undo"));
-  await screen.findByRole("article", { name: items[0].content.title });
-  expect(listItemLabels()).toStrictEqual(
-    items.map((item) => {
-      return item.content.title;
-    }),
-  );
-  // Another card stays interactive while the restored card's feedback waits.
-  click(
-    button(
-      "Not planned",
-      "button",
-      screen.getByRole("article", { name: items[1].content.title }),
-    ),
-  );
-  await screen.findByText("Noted — this is not planned");
+  const next = await screen.findByRole("article", {
+    name: items[1].content.title,
+  });
+  click(button("Not planned", "button", next));
   await otherCardSaved.promise;
+  await screen.findByText("Noted — this is not planned");
+  await screen.findByRole("article", { name: items[2].content.title });
   release.resolve();
+  await screen.findByText("Noted — this is already done");
+  click(button("Undo"));
   await undone.promise;
-  expect(screen.getByText(items[2].content.title)).toBeInTheDocument();
-  expect(screen.getByText("Noted — this is not planned")).toBeInTheDocument();
+  await screen.findByRole("article", { name: items[0].content.title });
   const feedback = requests.find((request) => {
     return request.kind === "already_done";
   });
@@ -1836,66 +1285,6 @@ test("Slow feedback leaves other cards usable and Undo restores the original car
     return request.kind === "undo";
   });
   expect(undo?.targetId).toBe(feedback?.id);
-});
-test("Reason edits and Undo are local while their writes follow the original feedback", async () => {
-  const item = { ...makeSuggestion(), consumeToken: "a".repeat(64) };
-  mockPool([item]);
-  const requested = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  const reasonRequested = context.mocks.deferred<void>();
-  const releaseReason = context.mocks.deferred<void>();
-  const undone = context.mocks.deferred<void>();
-  let feedbackSaved = false;
-  let reasonSaved = false;
-  context.mocks.api(feedContract.feedback, async ({ body, respond }) => {
-    if (body.kind === "less_like_this") {
-      requested.resolve();
-      await release.promise;
-      feedbackSaved = true;
-    }
-    if (body.kind === "reason") {
-      if (!feedbackSaved) {
-        return respond(409, {
-          error: { code: "CONFLICT", message: "Feedback is not saved" },
-        });
-      }
-      reasonRequested.resolve();
-      await releaseReason.promise;
-      reasonSaved = true;
-    }
-    if (body.kind === "undo") {
-      if (!reasonSaved) {
-        return respond(409, {
-          error: { code: "CONFLICT", message: "Reason is not saved" },
-        });
-      }
-      undone.resolve();
-    }
-    return respond(200, { restored: body.kind === "undo" });
-  });
-  await openHome();
-  await screen.findByText(item.content.title);
-  click(button("Less like this"));
-  await requested.promise;
-  click(button("Add a reason"));
-  await fill(
-    screen.getByLabelText("Add a reason (optional)"),
-    "Handled by my teammate",
-  );
-  click(button("Save"));
-  await screen.findByText("Edit reason");
-  click(button("Edit reason"));
-  expect(screen.getByLabelText("Add a reason (optional)")).toHaveValue(
-    "Handled by my teammate",
-  );
-  click(button("Undo"));
-  await screen.findByText(item.content.title);
-  release.resolve();
-  await reasonRequested.promise;
-  expect(screen.getByText(item.content.title)).toBeInTheDocument();
-  releaseReason.resolve();
-  await undone.promise;
-  expect(screen.getByText(item.content.title)).toBeInTheDocument();
 });
 test("Choosing an action confirms the send while its consumption is still saving", async () => {
   const items = numberedSuggestions(2);
@@ -1915,7 +1304,7 @@ test("Choosing an action confirms the send while its consumption is still saving
       },
     });
   });
-  await openHome();
+  await openSuggestions();
   await screen.findByText(items[0].content.title);
   click(
     button(
@@ -1926,11 +1315,8 @@ test("Choosing an action confirms the send while its consumption is still saving
   );
   await requested.promise;
   await screen.findByText(SENT);
-  expect(listItemLabels()).toStrictEqual([
-    items[1].content.title,
-    MESSAGE_SENT,
-  ]);
-  expect(pathname()).toBe(homePath);
+  await screen.findByRole("article", { name: items[1].content.title });
+  expect(pathname()).toBe(suggestionPath);
   release.resolve();
 });
 test("An existing conversation opens before consumption and its remote draft finish", async () => {
@@ -1970,7 +1356,7 @@ test("An existing conversation opens before consumption and its remote draft fin
       draftAttachments: null,
     });
   });
-  await openHome();
+  await openSuggestions();
   await screen.findByText(item.content.title);
   click(button(makeOption().label));
   await consuming.promise;
@@ -1986,12 +1372,8 @@ test("An existing conversation opens before consumption and its remote draft fin
   releaseConsumption.resolve();
 });
 
-const forYouFeatures = {
-  ...features,
-  [FeatureSwitchKey.SuggestionForYou]: true,
-} as const;
 async function openForYou(path = "/for-you"): Promise<void> {
-  await setupPage({ context, path, featureSwitches: forYouFeatures });
+  await setupPage({ context, path, featureSwitches: features });
 }
 async function activeForYouCard(title: string): Promise<HTMLElement> {
   return await screen.findByRole("article", { name: title });
@@ -2003,7 +1385,7 @@ test("For you moves suggestions out of the homepage into its own chat-list entry
     context,
     path: homePath,
     featureSwitches: {
-      ...forYouFeatures,
+      ...features,
       [FeatureSwitchKey.HomeCapabilities]: true,
     },
   });
@@ -2117,16 +1499,16 @@ test("An empty For you page stays accessible and reports zero suggestions", asyn
   expect(count).toBeInTheDocument();
 });
 
-test("A disabled For you rollout returns a direct link to the existing homepage", async () => {
+test("Disabling Suggestions returns a direct For you link to the regular homepage", async () => {
   mockPool();
   await setupPage({
     context,
     path: "/for-you",
     featureSwitches: {
       ...features,
-      [FeatureSwitchKey.SuggestionForYou]: false,
+      [FeatureSwitchKey.AgentSuggestion]: false,
     },
   });
-  await screen.findByText(makeSuggestion().content.title);
+  await screen.findByTestId("chat-tagline");
   expect(pathname()).toBe(homePath);
 });
