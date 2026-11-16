@@ -51,5 +51,4 @@ export enum FeatureSwitchKey {
   HostedSiteShareRows = "hostedSiteShareRows",
   FreePlanArtifactPaywall = "freePlanArtifactPaywall",
   BillingSurvey = "billingSurvey",
-  IosSettingsCredits = "iosSettingsCredits",
 }
