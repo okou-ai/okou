@@ -54,7 +54,7 @@ final class NotificationAppDelegate: NSObject, UIApplicationDelegate,
     let log = Logger(subsystem: "ai.okou.ios", category: "Notifications")
     @Sendable func record(_ stage: String) {
       log.info(
-        "Background notification completion: delivery=\(delivery, privacy: .public) stage=\(stage, privacy: .public) elapsed=\(started.duration(to: .now).description, privacy: .public)"
+        "event=notification.background.completion delivery=\(delivery, privacy: .public) stage=\(stage, privacy: .public) elapsed=\(started.duration(to: .now).description, privacy: .public)"
       )
     }
     record("received")
