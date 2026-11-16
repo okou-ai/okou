@@ -1,4 +1,4 @@
-//! Host ingress with startup-only public reachability validation.
+//! Host ingress with public startup readiness and host-local heartbeat observation.
 //! Caddy's runtime availability never acquires or cancels Run ownership.
 //! Health and complete-input dispatch share service authentication. Sandbox
 //! paths stay reserved. Caddy terminates TLS and preserves the original URI.
@@ -7,6 +7,7 @@ pub(crate) mod dispatch;
 
 use std::convert::Infallible;
 use std::io;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -26,6 +27,7 @@ use tokio_util::sync::CancellationToken;
 
 const MAX_CONNECTIONS: usize = 32;
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(10);
+const LOCAL_HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_HEALTH_RESPONSE_BYTES: usize = 2;
 
 /// Required only for official, non-local Runner startup.
@@ -33,6 +35,53 @@ pub struct IngressConfig {
     pub directory: PathBuf,
     pub hostname: String,
     pub token: String,
+}
+
+impl IngressConfig {
+    /// Observe the actual local TLS/Unix route without querying the systemd manager.
+    /// Public DNS and network reachability remain a separate startup requirement.
+    pub fn local_health_probe(
+        &self,
+        identity: RunnerProcessIdentity,
+    ) -> io::Result<crate::heartbeat::IngressServiceProbe> {
+        validate_config(&self.hostname, &self.token)?;
+        let client = local_health_client(&self.hostname)
+            .build()
+            .map_err(io::Error::other)?;
+        Ok(self.local_health_probe_with_client(identity, client))
+    }
+
+    pub(crate) fn local_health_probe_with_client(
+        &self,
+        identity: RunnerProcessIdentity,
+        client: reqwest::Client,
+    ) -> crate::heartbeat::IngressServiceProbe {
+        let health = Arc::new(IngressHandler::new(
+            identity,
+            self.hostname.clone(),
+            &self.token,
+        ));
+        Arc::new(move || {
+            let health = health.clone();
+            let client = client.clone();
+            Box::pin(async move { health.check(&client, &health.url()).await.is_ok() })
+        })
+    }
+}
+
+fn health_client(timeout: Duration) -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .https_only(true)
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(timeout)
+}
+
+fn local_health_client(hostname: &str) -> reqwest::ClientBuilder {
+    health_client(LOCAL_HEALTH_TIMEOUT)
+        // Keep the canonical URL, Host and TLS SNI/certificate checks. Only the
+        // connection address changes; neither DNS nor a proxy can route it away.
+        .resolve(hostname, SocketAddr::from((Ipv4Addr::LOCALHOST, 443)))
 }
 
 struct IngressHandler {
@@ -53,11 +102,7 @@ impl IngressHandler {
     }
 
     async fn check_public(&self) -> io::Result<()> {
-        let client = reqwest::Client::builder()
-            .https_only(true)
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(HEALTH_TIMEOUT)
+        let client = health_client(HEALTH_TIMEOUT)
             .build()
             .map_err(io::Error::other)?;
         self.check(&client, &self.url()).await
@@ -264,12 +309,7 @@ impl IngressRuntime {
         hostname: String,
         token: &str,
     ) -> io::Result<Self> {
-        if !canonical_hostname(&hostname) || token.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Runner ingress requires a canonical public hostname and service credential",
-            ));
-        }
+        validate_config(&hostname, token)?;
         let handler = Arc::new(IngressHandler::new(identity, hostname, token));
         let socket = tokio::task::spawn_blocking(move || {
             RunnerIngressSocket::bind(&directory, identity.runner_id())
@@ -363,6 +403,16 @@ impl Drop for IngressRuntime {
             task.abort();
         }
     }
+}
+
+fn validate_config(hostname: &str, token: &str) -> io::Result<()> {
+    if !canonical_hostname(hostname) || token.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Runner ingress requires a canonical public hostname and service credential",
+        ));
+    }
+    Ok(())
 }
 
 fn canonical_hostname(value: &str) -> bool {

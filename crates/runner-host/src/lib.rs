@@ -14,7 +14,6 @@ pub mod host_env;
 pub mod host_file;
 pub mod host_memory;
 pub mod idle_prune_control;
-pub mod ingress_service_status;
 pub mod live_runner_instances;
 pub mod lock;
 pub mod log_file;

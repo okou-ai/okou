@@ -493,6 +493,14 @@ async fn run_start_observed(
     } else {
         None
     };
+    let ingress_service_probe: runner_supervisor::heartbeat::IngressServiceProbe = match &ingress {
+        Some(config) => config
+            .local_health_probe(runner_identity)
+            .map_err(|error| {
+                RunnerError::Config(format!("configure Runner ingress health: {error}"))
+            })?,
+        None => Arc::new(|| Box::pin(async { false })),
+    };
     let group = runner_config.group;
     let cancel_tokens = RunCancellationRegistry::new();
     let local_group_dir = if args.local {
@@ -799,11 +807,7 @@ async fn run_start_observed(
     let active_runs = ActiveRuns::new(Arc::clone(&reuse_state_notify));
     let config = RunConfig {
         ingress,
-        ingress_service_probe: if observe_ingress_service {
-            Arc::new(|| Box::pin(runner_host::ingress_service_status::is_active()))
-        } else {
-            Arc::new(|| Box::pin(async { false }))
-        },
+        ingress_service_probe,
         sandbox_op_reporter: host_telemetry
             .as_ref()
             .map(|telemetry| telemetry.reporter()),
