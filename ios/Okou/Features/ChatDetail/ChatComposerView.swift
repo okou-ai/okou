@@ -91,78 +91,81 @@ struct ChatComposerView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
-      if let project {
-        OkouBanner(Text(verbatim: project.name), icon: "folder", dismiss: removeProject)
-          .accessibilityLabel("Project: \(project.name)")
-          .disabled(isBusy || needsUpgrade)
-      }
-      if let voice = draftState?.voice, voice.error != nil || voiceActive {
-        ComposerVoiceInputTray(voice: voice)
-          .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
-      }
-      // Every notice above the composer is the same quiet banner (OkouBanner): one footnote
-      // sentence, its actions as text buttons, a ✕ where the reader can dismiss it.
-      if let state = draftState {
-        if !state.document.isSupported {
-          OkouBanner(
-            Text("This draft contains content this app cannot edit. Open it on the web."),
-            icon: "file-warning", tone: .problem
-          ) {
-            Link("Open on web", destination: attachmentURL)
+      Group {
+        if let project {
+          OkouBanner(Text(verbatim: project.name), icon: "folder", dismiss: removeProject)
+            .accessibilityLabel("Project: \(project.name)")
+            .disabled(isBusy || needsUpgrade)
+        }
+        if let voice = draftState?.voice, voice.error != nil || voiceActive {
+          ComposerVoiceInputTray(voice: voice)
+            .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))
+        }
+        // Every notice above the composer is the same quiet banner (OkouBanner): one footnote
+        // sentence, its actions as text buttons, a ✕ where the reader can dismiss it.
+        if let state = draftState {
+          if !state.document.isSupported {
+            OkouBanner(
+              Text("This draft contains content this app cannot edit. Open it on the web."),
+              icon: "file-warning", tone: .problem
+            ) {
+              Link("Open on web", destination: attachmentURL)
+            }
+          }
+          let contextLabels = ChatDraftDocument(
+            parts: state.document.parts.filter { !ComposerAttributedDocument.isInline($0) }
+          ).contextLabels
+          if !contextLabels.isEmpty {
+            Text(contextLabels.joined(separator: " · "))
+              .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(3)
+              .padding(.horizontal, OkouSpace.md)
+              .accessibilityLabel("Saved context: " + contextLabels.joined(separator: ", "))
+          }
+          if let draftError = state.error,
+            state.document.isSupported || state.hasLocalFailure || state.conflictingRemote != nil
+          {
+            OkouBanner(Text(draftError), icon: "circle-alert", tone: .problem) {
+              if state.conflictingRemote != nil {
+                Button("Keep this draft") { state.keepLocal() }
+                Button("Use other device's draft") { state.useRemote() }
+              } else if state.hasLocalFailure {
+                Button("Copy draft text") { UIPasteboard.general.string = state.text }
+                  .disabled(state.text.isEmpty)
+                Button("Save on this device") { state.retryLocalSave() }
+                  .disabled(!state.canRetryLocalSave)
+              } else {
+                Button("Retry draft sync") { Task { await state.synchronize() } }
+              }
+            }
           }
         }
-        let contextLabels = ChatDraftDocument(
-          parts: state.document.parts.filter { !ComposerAttributedDocument.isInline($0) }
-        ).contextLabels
-        if !contextLabels.isEmpty {
-          Text(contextLabels.joined(separator: " · "))
-            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(3)
-            .padding(.horizontal, OkouSpace.md)
-            .accessibilityLabel("Saved context: " + contextLabels.joined(separator: ", "))
+        if let state = draftState, let warning = state.syncWarning {
+          OkouBanner(Text(warning), icon: "refresh-cw") {
+            Button("Sync draft") { Task { await state.synchronize() } }
+          }
         }
-        if let draftError = state.error,
-          state.document.isSupported || state.hasLocalFailure || state.conflictingRemote != nil
-        {
-          OkouBanner(Text(draftError), icon: "circle-alert", tone: .problem) {
-            if state.conflictingRemote != nil {
-              Button("Keep this draft") { state.keepLocal() }
-              Button("Use other device's draft") { state.useRemote() }
-            } else if state.hasLocalFailure {
-              Button("Copy draft text") { UIPasteboard.general.string = state.text }
-                .disabled(state.text.isEmpty)
-              Button("Save on this device") { state.retryLocalSave() }
-                .disabled(!state.canRetryLocalSave)
-            } else {
-              Button("Retry draft sync") { Task { await state.synchronize() } }
+        if !attachments.items.isEmpty {
+          ChatAttachmentChips(draft: attachments, isDisabled: isBusy || needsUpgrade)
+        }
+        if attachments.importingCount > 0 {
+          OkouLoadingRow("Preparing attachments…")
+            .padding(.horizontal, OkouSpace.md)
+        }
+        if let importError = attachments.error {
+          OkouBanner(
+            Text(importError), icon: "circle-alert", tone: .problem,
+            dismiss: { attachments.error = nil })
+        }
+        if let error {
+          OkouBanner(Text(error), icon: "circle-alert", tone: .problem) {
+            if let refresh {
+              Button("Refresh") { Task { await refresh() } }
+              Link("Open on web", destination: attachmentURL)
             }
           }
         }
       }
-      if let state = draftState, let warning = state.syncWarning {
-        OkouBanner(Text(warning), icon: "refresh-cw") {
-          Button("Sync draft") { Task { await state.synchronize() } }
-        }
-      }
-      if !attachments.items.isEmpty {
-        ChatAttachmentChips(draft: attachments, isDisabled: isBusy || needsUpgrade)
-      }
-      if attachments.importingCount > 0 {
-        OkouLoadingRow("Preparing attachments…")
-          .padding(.horizontal, OkouSpace.md)
-      }
-      if let importError = attachments.error {
-        OkouBanner(
-          Text(importError), icon: "circle-alert", tone: .problem,
-          dismiss: { attachments.error = nil })
-      }
-      if let error {
-        OkouBanner(Text(error), icon: "circle-alert", tone: .problem) {
-          if let refresh {
-            Button("Refresh") { Task { await refresh() } }
-            Link("Open on web", destination: attachmentURL)
-          }
-        }
-      }
+      .chatFeedbackContentAnchor()
 
       let inputID = attachments.inputID
       VStack(alignment: .trailing, spacing: 0) {
@@ -178,6 +181,7 @@ struct ChatComposerView: View {
             .frame(maxWidth: .infinity, alignment: .trailing)
             .frame(height: reservesModelPickerSpace ? nil : 0, alignment: .bottom)
             .clipped()
+            .chatFeedbackContentAnchor(isPresented: showsModelPicker)
         }
         // Retired native editors must leave immediately. Fading a first responder
         // through a draft reset can restart keyboard avoidance during the send flight.
@@ -276,6 +280,7 @@ struct ChatComposerView: View {
             }
           }
         }
+        .chatFeedbackContentAnchor()
         .anchorPreference(key: ComposerSuggestionPresentation.self, value: .bounds) { bounds in
           guard let editor = draftState?.editor else { return nil }
           let content: ComposerSuggestionPresentation.Content
