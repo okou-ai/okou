@@ -48,7 +48,7 @@ const ASSETS = {
   photo: capabilityAsset("photo-b6f3659f9a28.webp"),
   photoSmall: capabilityAsset("photo-small-16de9d09f7d4.webp"),
   slide: capabilityAsset("slide-f5d83b4e2fa1.webp"),
-  tablet: capabilityAsset("tablet-dbd8d91bfe31.webp"),
+  tablet: capabilityAsset("tablet-e97e60dd292e.webp"),
   gearWhite: capabilityAsset("gear-white-59cfc0d412fd.webp"),
   gearOrange: capabilityAsset("gear-orange-49ed92612d51.webp"),
   clock: capabilityAsset("clock-1b41fed4e5cb.webp"),
