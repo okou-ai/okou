@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
+use std::fs::TryLockError;
 use std::io::{Read, Write};
-use std::os::fd::AsRawFd;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -206,15 +206,10 @@ fn concurrent_app_server_resume_writes_preserve_all_inputs() -> std::io::Result<
             .read(true)
             .write(true)
             .open(lock_path)?;
-        // SAFETY: `probe` owns an open file descriptor. A separate open-file
-        // description must contend with the writer paused after reading history.
-        let result = unsafe { libc::flock(probe.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-        let error = std::io::Error::last_os_error();
-        assert_eq!(
-            result, -1,
-            "resume writer must hold the session lock after reading history"
-        );
-        assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+        let error = probe
+            .try_lock()
+            .expect_err("resume writer must hold the session lock after reading history");
+        assert!(matches!(error, TryLockError::WouldBlock), "{error}");
         writer.write_all(b"C")?;
     }
 

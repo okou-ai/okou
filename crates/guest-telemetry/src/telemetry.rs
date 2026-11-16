@@ -12,9 +12,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-#[cfg(unix)]
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, RawFd};
-
 static SANDBOX_OPS_APPEND_LOCK: Mutex<()> = Mutex::new(());
 static SANDBOX_OPS_LOG_OVERRIDE: Mutex<Option<Arc<SandboxOpsSink>>> = Mutex::new(None);
 
@@ -116,41 +113,31 @@ fn configured_sandbox_ops_log() -> Option<Arc<SandboxOpsSink>> {
 
 #[cfg(unix)]
 struct FileLockGuard<'a> {
-    fd: BorrowedFd<'a>,
+    file: &'a File,
 }
 
 #[cfg(unix)]
 impl<'a> FileLockGuard<'a> {
     fn lock(file: &'a File) -> io::Result<Self> {
-        let fd = file.as_fd();
-        flock_fd(fd.as_raw_fd(), libc::LOCK_EX)?;
-        Ok(Self { fd })
+        retry_interrupted(|| file.lock())?;
+        Ok(Self { file })
     }
 }
 
 #[cfg(unix)]
 impl Drop for FileLockGuard<'_> {
     fn drop(&mut self) {
-        let _ = flock_fd(self.fd.as_raw_fd(), libc::LOCK_UN);
+        let _ = retry_interrupted(|| self.file.unlock());
     }
 }
 
 #[cfg(unix)]
-fn flock_fd(fd: RawFd, operation: libc::c_int) -> io::Result<()> {
+fn retry_interrupted(mut operation: impl FnMut() -> io::Result<()>) -> io::Result<()> {
     loop {
-        // SAFETY: `fd` is borrowed from an open `File`, and `flock` does not
-        // mutate Rust memory. The caller owns the descriptor for the lock's
-        // lifetime.
-        let result = unsafe { libc::flock(fd, operation) };
-        if result == 0 {
-            return Ok(());
+        match operation() {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            result => return result,
         }
-
-        let error = io::Error::last_os_error();
-        if error.kind() == io::ErrorKind::Interrupted {
-            continue;
-        }
-        return Err(error);
     }
 }
 

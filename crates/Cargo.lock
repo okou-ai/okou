@@ -2269,7 +2269,6 @@ dependencies = [
  "chrono",
  "cli-test-support",
  "guest-contracts",
- "libc",
  "serde",
  "serde_json",
  "tempfile",
