@@ -6,7 +6,7 @@ let package = Package(
   platforms: [.macOS(.v14)],
   products: [.library(name: "OkouCore", targets: ["OkouCore"])],
   dependencies: [
-    .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.17.1")
+    .package(url: "https://github.com/getsentry/sentry-cocoa.git", exact: "9.30.0")
   ],
   targets: [
     .target(name: "ShellProcess", path: "ShellProcess", publicHeadersPath: "include"),
