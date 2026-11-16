@@ -131,7 +131,7 @@ class RealtimeRoutingTest {
     }
 
     @Test
-    fun streamedOutputStaysTransientAndPersistenceRefreshesOnlyItsHistory() = runTest {
+    fun streamedOutputStaysTransientWhilePersistenceRefreshesHistoryAndWarming() = runTest {
         withReadyModel { api, model, realtime ->
             val runId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
             val inputId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
@@ -200,6 +200,7 @@ class RealtimeRoutingTest {
             assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
             assertTrue(paths.isEmpty())
 
+            val warmed = model.warming.state.value.revision
             persisted.set(true)
             realtime.invalidate(ChatChanges(threads = setOf(CHAT_PERSONAL)))
             val saved =
@@ -207,6 +208,7 @@ class RealtimeRoutingTest {
                     it.phase == HistoryPhase.Ready &&
                         it.transcript?.messages?.any { message -> message.id == eventId } == true
                 }
+            model.warming.state.first { it.phase == ChatReadPhase.Ready && it.revision > warmed }
             runCurrent()
             val messages =
                 checkNotNull(saved.transcript)
@@ -215,7 +217,13 @@ class RealtimeRoutingTest {
             assertEquals("Saved routed answer", messages.single().blocks.single().text)
             assertTrue(model.history.output.state.value.messages.isEmpty())
             assertEquals(1, paths.count { it.endsWith("/event-rows") })
-            assertTrue(paths.all { it.startsWith("/api/chat-threads/$CHAT_PERSONAL") })
+            assertEquals(1, paths.count { it == "/api/chat/events/catch-up" })
+            assertTrue(
+                paths.all {
+                    it == "/api/chat/events/catch-up" ||
+                        it.startsWith("/api/chat-threads/$CHAT_PERSONAL")
+                }
+            )
         }
     }
 

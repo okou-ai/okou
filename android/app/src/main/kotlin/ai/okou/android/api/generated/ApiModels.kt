@@ -22,6 +22,17 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 
+@Serializable
+data class SessionOutputDelta(
+    val `threadId`: String,
+    val `runId`: String,
+    val `eventId`: String,
+    val `runEventId`: String,
+    val `createdAt`: String,
+    val `chunkIndex`: Long,
+    val `delta`: String,
+)
+
 @Serializable(with = HistoryCatchUpRequestItemSerializer::class)
 data class HistoryCatchUpRequestItem(val item1: String, val item2: Long)
 
@@ -54,17 +65,6 @@ object HistoryCatchUpRequestItemSerializer : KSerializer<HistoryCatchUpRequestIt
 }
 
 typealias HistoryCatchUpRequest = List<HistoryCatchUpRequestItem>
-
-@Serializable
-data class SessionOutputDelta(
-    val `threadId`: String,
-    val `runId`: String,
-    val `eventId`: String,
-    val `runEventId`: String,
-    val `createdAt`: String,
-    val `chunkIndex`: Long,
-    val `delta`: String,
-)
 
 @Serializable data object RealtimeTokenRequest
 
