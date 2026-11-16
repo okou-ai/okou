@@ -50,17 +50,47 @@ data class HistoryTranscript(
     val persistedIds: Set<String> = emptySet(),
     val liveRunIds: List<String> = listOfNotNull(activeRunId),
     val terminatedRunIds: Set<String> = emptySet(),
+    val queuedEventIds: List<String> = emptyList(),
 )
 
 internal fun JsonObject.text(key: String): String? = (get(key) as? JsonPrimitive)?.contentOrNull
 
+internal data class HistoryControlFacts(
+    val rows: List<HistoryEvent>,
+    val liveRunIds: List<String>,
+    val terminatedRunIds: Set<String>,
+    val queuedEventIds: List<String>,
+)
+
+/** Control readback uses event identities without re-decoding user documents on Main. */
+internal fun historyControlFacts(checkpoint: HistoryCheckpoint): HistoryControlFacts {
+    val revoked = checkpoint.rows.mapNotNullTo(hashSetOf()) { it.revokesId }
+    val rows = checkpoint.rows.filter { it.id !in revoked }
+    val ended =
+        checkpoint.rows
+            .filter { it.terminal || it.type == "control.interrupt" }
+            .mapNotNullTo(hashSetOf()) { it.runId }
+    return HistoryControlFacts(
+        rows,
+        rows
+            .asSequence()
+            .filterNot { it.type == "usage.recorded" || it.type == "control.interrupt" }
+            .mapNotNull { it.runId }
+            .filterNot { it in ended }
+            .distinct()
+            .toList(),
+        ended,
+        rows.filter { it.type == "input.automation" && it.runId == null }.map { it.id },
+    )
+}
+
 /** Project confirmed event facts, without reinterpreting unknown JSON as a text-only bubble. */
 fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
     checkpoint.validate()
-    val revoked = checkpoint.rows.mapNotNullTo(hashSetOf()) { it.revokesId }
+    val controls = historyControlFacts(checkpoint)
     val automationInputs =
         checkpoint.rows.filter { it.type == "input.automation" }.mapTo(hashSetOf()) { it.id }
-    val rows = checkpoint.rows.filter { it.id !in revoked }
+    val rows = controls.rows
     val terminals = rows.filter { it.terminal }.mapNotNullTo(hashSetOf()) { it.runId }
     val cancellations = rows.filter { it.type == "run.cancelled" }.associateBy { it.runId }
     val interrupted =
@@ -70,10 +100,7 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
             .filter { it.runId == null && it.type in setOf("input.prompt", "input.automation") }
             .mapTo(hashSetOf()) { it.id }
     // Manual prompts remain in the transcript; only automation occupies Web's queued groups.
-    val queued =
-        rows
-            .filter { it.type == "input.automation" && it.id in pending }
-            .mapTo(hashSetOf()) { it.id }
+    val queued = controls.queuedEventIds.toSet()
     // Match Web's transcript visibility without discarding the underlying confirmed rows.
     val visible =
         rows.filterNot {
@@ -184,19 +211,8 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         }
     val endedRuns = terminals + interrupted
     val running = historyIsRunning(rows, endedRuns)
-    val streamEndedRuns =
-        checkpoint.rows
-            .filter { it.terminal || it.type == "control.interrupt" }
-            .mapNotNullTo(hashSetOf()) { it.runId }
     // Web selects the last distinct live run, independently of the overall run indicator.
-    val liveRunIds =
-        rows
-            .asSequence()
-            .filterNot { it.type == "usage.recorded" || it.type == "control.interrupt" }
-            .mapNotNull { it.runId }
-            .filterNot { it in streamEndedRuns }
-            .distinct()
-            .toList()
+    val liveRunIds = controls.liveRunIds
     val execution =
         when {
             running -> HistoryExecution.Running
@@ -225,7 +241,8 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         liveRunIds.lastOrNull(),
         checkpoint.rows.flatMapTo(hashSetOf()) { listOfNotNull(it.id, it.revokesId) },
         liveRunIds,
-        streamEndedRuns,
+        controls.terminatedRunIds,
+        controls.queuedEventIds,
     )
 }
 

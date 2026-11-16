@@ -10,10 +10,17 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 
+data class HistoryRead(val checkpoint: HistoryCheckpoint, val cancellationRecoveryPending: Boolean)
+
 class ConversationHistorySync(
     private val service: ConversationHistoryService,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
+    suspend fun read(threadId: String, cached: HistoryCheckpoint?): HistoryRead {
+        val detail = service.threadDetail(threadId)
+        return HistoryRead(synchronize(threadId, cached), detail.cancellationRecoveryPending)
+    }
+
     suspend fun synchronize(threadId: String, cached: HistoryCheckpoint?): HistoryCheckpoint =
         withContext(dispatcher) {
             var state =

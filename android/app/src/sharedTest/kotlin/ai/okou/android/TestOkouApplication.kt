@@ -5,6 +5,7 @@ import ai.okou.android.api.generated.AndroidUpdates
 import ai.okou.android.api.generated.AndroidUpdatesRelease
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.OrganizationRole
+import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.UserPreferencesColorTheme
@@ -20,6 +21,8 @@ import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.RealtimeService
+import ai.okou.android.chat.RunControlJournalStore
+import ai.okou.android.chat.RunControlService
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsService
 import ai.okou.android.updates.AppUpdates
@@ -85,6 +88,11 @@ open class TestOkouApplication : OkouApplication() {
     var realtimeService: RealtimeService = TestRealtimeService()
     var composerService: ChatComposerService = TestChatComposerService()
     var journalStore: ComposerJournalStore? = null
+    var controlService: RunControlService? = null
+    var controlJournalStore: RunControlJournalStore? = null
+    override val runControlJournal
+        get() = controlJournalStore ?: super.runControlJournal
+
     override val composerJournal
         get() = journalStore ?: super.composerJournal
 
@@ -116,6 +124,10 @@ open class TestOkouApplication : OkouApplication() {
             RealtimeService by realtimeService,
             ChatListService by chatService,
             ChatComposerService by composerService {
+
+            override suspend fun sendControl(request: SendRequest) =
+                checkNotNull(controlService) { "No control backend in this external fixture" }
+                    .sendControl(request)
 
             override suspend fun personalInstructionsEnabled() =
                 instructionsService?.personalInstructionsEnabled() == true

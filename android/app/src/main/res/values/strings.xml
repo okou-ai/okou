@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="controls_storage_failed">Pending control storage is unavailable.</string>
+    <string name="controls_stop">Stop running work</string>
+    <string name="controls_queued_automation">Queued automation</string>
+    <string name="controls_skip">Skip automation</string>
+    <string name="controls_preparing">Saving control request…</string>
+    <string name="controls_sending">Sending control request…</string>
+    <string name="controls_accepted">Request accepted. Waiting for confirmation.</string>
+    <string name="controls_checking">Checking control outcome…</string>
+    <string name="controls_unknown">Control outcome is unknown.</string>
+    <string name="controls_retryable">The original target is still available.</string>
+    <string name="controls_retry_original">Retry original request</string>
+    <string name="controls_check">Check control outcome</string>
+    <string name="controls_recorded">Control recorded in conversation history.</string>
+    <string name="controls_target_settled">The original target has already settled.</string>
+    <string name="controls_read_failed">Could not verify the control outcome.</string>
+    <string name="controls_recovery_failed">Conversation recovery status is unavailable.</string>
+    <string name="controls_recovering">Preparing the conversation to continue.</string>
     <string name="output_live">Live response</string>
     <string name="output_waiting">Waiting for live response</string>
     <string name="output_catching_up">Catching up with saved messages. Received text is kept.</string>

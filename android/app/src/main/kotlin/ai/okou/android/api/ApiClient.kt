@@ -21,7 +21,7 @@ import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.api.generated.RealtimeTokenRequest
-import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
@@ -173,7 +173,7 @@ class ApiClient(
     suspend fun createThread(body: CreateThreadRequest) =
         execute(201) { api.createThread(it, body) }
 
-    suspend fun sendInput(body: SendRequestVariant1) = execute(201) { api.sendInput(it, body) }
+    suspend fun sendInput(body: SendRequest) = execute(201) { api.sendInput(it, body) }
 
     suspend fun inputStatus(threadId: String, eventId: String) = execute {
         reads.inputStatus(it, threadId, eventId)

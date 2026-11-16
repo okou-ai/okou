@@ -7,6 +7,8 @@ import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.chat.RunControlJournalStore
+import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.chatScopeHash
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsModel
@@ -48,6 +50,7 @@ data class ReadyWorkspace(
     val chats: ChatListModel,
     val instructions: PersonalInstructionsModel,
     val composer: ChatComposerModel,
+    val controls: RunControlsModel,
 )
 
 data class SessionUiState(
@@ -66,6 +69,7 @@ class SessionModel(
     private val chatCache: ChatCacheStore,
     private val instructionsDrafts: PersonalInstructionsDraftStore,
     private val composerJournal: ComposerJournalStore,
+    private val runControlJournal: RunControlJournalStore,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     updatesRequired: Flow<Boolean> = emptyFlow(),
 ) : ViewModel() {
@@ -253,6 +257,24 @@ class SessionModel(
                                         }
                                     },
                                 )[ChatComposerModel::class.java],
+                                ViewModelProvider(
+                                    store,
+                                    viewModelFactory {
+                                        initializer {
+                                            RunControlsModel(
+                                                owner,
+                                                runControlJournal,
+                                                identity,
+                                                chats.history,
+                                                { current(ticket, snapshot) },
+                                                { error ->
+                                                    workspaceFailure(ticket, snapshot, error)
+                                                },
+                                                dispatcher = dispatcher,
+                                            )
+                                        }
+                                    },
+                                )[RunControlsModel::class.java],
                             ),
                         )
                     chats.refresh()

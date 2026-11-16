@@ -65,6 +65,10 @@ class ConversationHistoryModel(
     private var detailJob: Job? = null
     private var visit: ConversationReadSession? = null
     private var confirmed: CachedHistory? = null
+
+    internal fun checkpoint(threadId: String): HistoryCheckpoint? =
+        confirmed?.checkpoint?.takeIf { current(generation) && it.threadId == threadId }
+
     private val dirty = mutableMapOf<String, CachedHistory>()
     private val invalidations = Channel<Long>(Channel.CONFLATED)
     private val invalidationJob = scope.launch { for (ticket in invalidations) catchUp(ticket) }

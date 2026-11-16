@@ -7,6 +7,9 @@ import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.RealtimePhase
 import ai.okou.android.chat.RealtimeSnapshot
+import ai.okou.android.chat.RunControlJournalStore
+import ai.okou.android.chat.RunControlPhase
+import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.RunOutputSignal
 import android.view.KeyEvent
 import androidx.core.view.ViewCompat
@@ -26,12 +29,18 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.nio.file.Files
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import java.util.regex.Pattern
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -48,23 +57,31 @@ class NativeRealtimeTest {
         val oldChats = app.chatService
         val oldRealtime = app.realtimeService
         val oldJournal = app.journalStore
+        val oldControlJournal = app.controlJournalStore
+        val oldControlService = app.controlService
+        val oldComposerService = app.composerService
         val oldPreferences = app.snapshotApiPreferences()
         val cache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
         val directory =
             Files.createTempDirectory(app.cacheDir.toPath(), "realtime-native-").toFile()
         val journal = ComposerJournalStore(app, directory)
+        val controlsJournal = RunControlJournalStore(app, directory.resolve("controls"))
         val fixture = ChatListApiFixture()
         val external = TestRealtimeService()
         external.snapshot.value = RealtimeSnapshot(RealtimePhase.Connecting)
         app.chatService = fixture.service
         app.realtimeService = external
         app.journalStore = journal
+        app.controlJournalStore = controlsJournal
+        app.controlService = fixture.service
+        app.composerService = fixture.service
         authentication.state.value = testAuthenticationState()
         val device = UiDevice.getInstance(instrumentation)
         var scenario: ActivityScenario<MainActivity>? = null
         var composerJob: Job? = null
         var chatJob: Job? = null
         var chats: ChatListModel? = null
+        var controls: RunControlsModel? = null
         val failures = mutableListOf<Throwable>()
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
@@ -122,6 +139,7 @@ class NativeRealtimeTest {
                 composerJob = ready.composer.viewModelScope.coroutineContext[Job]
                 chatJob = ready.chats.viewModelScope.coroutineContext[Job]
                 chats = ready.chats
+                controls = ready.controls
             }
             condition { chats?.uiState?.value?.threads?.any { it.id == CHAT_PERSONAL } == true }
             reveal("Personal chat")
@@ -322,6 +340,151 @@ class NativeRealtimeTest {
             reveal("Saved native answer")
             assertFalse(device.hasObject(label("Live native answer after a gap after reconnect")))
             condition { chats?.history?.output?.state?.value?.messages?.isEmpty() == true }
+            // The real follow-up route accepts a new input; stop keeps that queued input intact.
+            val followup = AtomicReference<String?>()
+            val interrupted = AtomicReference<JsonObject?>()
+            val controlPosts = AtomicInteger()
+            val publishControl = AtomicBoolean()
+            val terminal = AtomicBoolean()
+            fixture.commandResponse = { request ->
+                val path = request.requestUrl?.encodedPath.orEmpty()
+                when {
+                    request.method == "POST" && path == "/api/chat/events" -> {
+                        val wire =
+                            Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                        if ("interruptsRunId" in wire) {
+                            controlPosts.incrementAndGet()
+                            interrupted.set(wire)
+                            // A post-commit failure is uncertain. Recovery must only read back.
+                            jsonResponse(
+                                    """{"error":{"code":"CONTROL_UNCERTAIN","message":"Result unavailable"}}"""
+                                )
+                                .setResponseCode(503)
+                        } else {
+                            followup.set(wire.getValue("clientEventId").jsonPrimitive.content)
+                            jsonResponse("""{"threadId":"$CHAT_PERSONAL"}""").setResponseCode(201)
+                        }
+                    }
+                    path.contains("/inputs/") -> {
+                        val id = checkNotNull(followup.get())
+                        jsonResponse(
+                            """{"threadId":"$CHAT_PERSONAL","eventId":"$id","input":{"eventId":"$id","seqId":55,"createdAt":"$CHAT_DATE"},"replacement":null,"status":"queued","runId":null,"terminal":null}"""
+                        )
+                    }
+                    else -> null
+                }
+            }
+            fixture.historyDetail = {
+                jsonResponse(
+                    """{"lastReadAt":null,"cancellationRecoveryPending":${publishControl.get() && !terminal.get()}}"""
+                )
+            }
+            fixture.historyRows = { request ->
+                val since = request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0
+                val rows =
+                    buildList {
+                            add(
+                                historyEventWire(
+                                    activeInput,
+                                    53,
+                                    type = "input.prompt",
+                                    payload =
+                                        """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Start live output"}]}}""",
+                                    run = activeRun,
+                                )
+                            )
+                            add(
+                                historyEventWire(
+                                    streamedEvent,
+                                    54,
+                                    payload = """{"content":"Saved native answer"}""",
+                                    run = activeRun,
+                                )
+                            )
+                            followup.get()?.let {
+                                add(
+                                    historyEventWire(
+                                        it,
+                                        55,
+                                        type = "input.prompt",
+                                        payload =
+                                            """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Native follow-up"}]}}""",
+                                        run = null,
+                                    )
+                                )
+                            }
+                            if (publishControl.get())
+                                interrupted.get()?.let {
+                                    add(
+                                        historyEventWire(
+                                            it.getValue("clientEventId").jsonPrimitive.content,
+                                            56,
+                                            type = "control.interrupt",
+                                            payload = "null",
+                                            run = activeRun,
+                                        )
+                                    )
+                                }
+                            if (terminal.get())
+                                add(
+                                    historyEventWire(
+                                        "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+                                        57,
+                                        type = "run.cancelled",
+                                        payload = "null",
+                                        run = activeRun,
+                                    )
+                                )
+                        }
+                        .map { ai.okou.android.chat.HistoryEvent.decode(it) }
+                val last = rows.last()
+                jsonResponse(
+                    """{"rows":[${rows.filter { it.seqId > since }.joinToString(",") { it.wire.toString() }}],"cursor":{"lastEventId":"${last.id}","lastSeqId":${last.seqId}},"hasMore":false}"""
+                )
+            }
+            val followupEditor =
+                checkNotNull(
+                    device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
+                )
+            followupEditor.setText("Native follow-up")
+            text("Send").click()
+            condition { followup.get() != null }
+            condition {
+                chats?.history?.uiState?.value?.transcript?.messages?.any {
+                    it.id == followup.get()
+                } == true
+            }
+            checkNotNull(
+                    device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
+                )
+                .setText("Keep this draft")
+            reveal("Stop running work")
+            text("Stop running work").click()
+            condition {
+                controls?.uiState?.value?.phases?.values?.singleOrNull() == RunControlPhase.Unknown
+            }
+            assertEquals(
+                activeRun,
+                interrupted.get()!!.getValue("interruptsRunId").jsonPrimitive.content,
+            )
+            text("Stop running work").click()
+            assertEquals(1, controlPosts.get())
+            external.snapshot.value =
+                external.snapshot.value.copy(phase = RealtimePhase.Unavailable)
+            condition { chats?.updates?.phase?.value == RealtimePhase.Unavailable }
+            publishControl.set(true)
+            external.snapshot.value =
+                external.snapshot.value.copy(
+                    phase = RealtimePhase.Connected,
+                    revision = external.snapshot.value.revision + 1,
+                    changes = ChatChanges(resync = true),
+                )
+            condition { controls?.uiState?.value?.journal?.pending?.isEmpty() == true }
+            reveal("Control recorded in conversation history.")
+            assertEquals(1, controlPosts.get())
+            terminal.set(true)
+            external.invalidate(ChatChanges(threads = setOf(CHAT_PERSONAL)))
+            condition { controls?.uiState?.value?.recovery?.pending == false }
             assertTrue(
                 checkNotNull(
                         device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
@@ -349,6 +512,7 @@ class NativeRealtimeTest {
                         }
                     },
                     { runBlocking { journal.close() } },
+                    { runBlocking { controlsJournal.close() } },
                     { fixture.close() },
                     { cache.restore() },
                     { app.restoreApiPreferences(oldPreferences) },
@@ -356,6 +520,9 @@ class NativeRealtimeTest {
                         app.chatService = oldChats
                         app.realtimeService = oldRealtime
                         app.journalStore = oldJournal
+                        app.controlJournalStore = oldControlJournal
+                        app.controlService = oldControlService
+                        app.composerService = oldComposerService
                     },
                     { authentication.state.value = oldAuth },
                     { check(directory.deleteRecursively()) },

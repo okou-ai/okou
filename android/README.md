@@ -227,6 +227,16 @@ message, character or callback-queue limits that would discard data Web accepts.
 reconciles matching IDs, and the workspace owner releases remaining transient text on close.
 Its external SDK observations are controlled; this is not provider-live evidence.
 
+Run controls use the same authenticated event endpoint and generated request union.
+Stop freezes the displayed live-run IDs; skipping targets one canonical queued
+automation. HTTP acceptance is not completion. The workspace control owner checks
+canonical control/target evidence and never retargets an uncertain request.
+Frozen pending controls live separately in private `noBackupFilesDir/chat-controls`
+format-1 journals scoped by API origin, user and workspace. Disk commitment precedes
+POST, and restored intent only reads back until an explicit same-request retry.
+This adds no confirmed-cache or composer-journal migration and stores no stream text.
+Cancellation metadata and control readback fail independently of ordinary history.
+
 Meaningful drafts and pending text operations live in `noBackupFilesDir/chat-input`,
 scoped by origin/user/workspace, separately from the rebuildable confirmed cache.
 Existing journal files require their stored format header. Unversioned or malformed

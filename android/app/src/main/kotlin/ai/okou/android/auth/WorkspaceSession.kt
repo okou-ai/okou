@@ -17,6 +17,7 @@ import ai.okou.android.api.generated.InputStatusVariant3Status
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectArchive
+import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
@@ -32,6 +33,7 @@ import ai.okou.android.chat.HistoryPage
 import ai.okou.android.chat.InputObservation
 import ai.okou.android.chat.RealtimeService
 import ai.okou.android.chat.RealtimeSnapshot
+import ai.okou.android.chat.RunControlService
 import ai.okou.android.chat.RunOutputSignal
 import ai.okou.android.chat.RunOutputTarget
 import ai.okou.android.chat.TextDisposition
@@ -72,7 +74,12 @@ data class WorkspaceIdentity(
 data class WorkspaceBootstrap(val organization: Organization, val preferences: UserPreferences)
 
 interface WorkspaceSession :
-    Closeable, ChatListService, PersonalInstructionsService, ChatComposerService, RealtimeService {
+    Closeable,
+    ChatListService,
+    PersonalInstructionsService,
+    ChatComposerService,
+    RealtimeService,
+    RunControlService {
     suspend fun bootstrap(): WorkspaceBootstrap
 
     suspend fun preferences(): UserPreferences
@@ -152,6 +159,8 @@ class CanonicalWorkspaceSession(
     override suspend fun createThread(request: CreateThreadRequest) = api.createThread(request)
 
     override suspend fun sendInput(request: SendRequestVariant1) = api.sendInput(request)
+
+    override suspend fun sendControl(request: SendRequest) = api.sendInput(request)
 
     override suspend fun observeInput(threadId: String, eventId: String): InputObservation {
         val observed = api.inputStatus(threadId, eventId)
