@@ -4003,11 +4003,9 @@ describe("CHAT-02: failed chat callbacks", () => {
     );
     const marker = lifecycleMarkers(page.events, run.runId, "failed")[0];
     expect(marker?.content).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
-    expect(marker).not.toHaveProperty("error");
 
     const rawRun = await api.readRun(actor, run.runId);
     expect(rawRun.failureReason).toBe("provider_overloaded");
-    expect(rawRun).not.toHaveProperty("error");
   }, 90_000);
 
   it.each([

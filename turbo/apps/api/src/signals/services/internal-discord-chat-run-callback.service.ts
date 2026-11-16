@@ -353,7 +353,12 @@ export const sendDiscordChatReply$ = command(
           : message;
         const recovery = await set(
           integrationModelRecoveryForDelivery$,
-          { ...request, eventId: request.chatEventId, error: event.error },
+          {
+            ...request,
+            eventId: request.chatEventId,
+            runFailureId: event.runFailureId,
+            error: event.error,
+          },
           signal,
         );
         await postParts(

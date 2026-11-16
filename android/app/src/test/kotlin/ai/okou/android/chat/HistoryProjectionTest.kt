@@ -49,11 +49,11 @@ class HistoryProjectionTest {
         assertTrue(stopped.messages.flatMap { it.blocks }.any { it.text == "Partial reply" })
 
         val terminal =
-            event("terminal", 4, "run.cancelled", payload = """{"error":"Stopped by user"}""")
+            event("terminal", 4, "run.cancelled", payload = """{"content":"Run cancelled"}""")
         val confirmed = transcript(prompt, partial, interrupt, terminal)
         assertEquals(HistoryExecution.Cancelled, confirmed.execution)
         assertEquals(1, confirmed.messages.count { it.status == "run.cancelled" })
-        assertTrue(confirmed.messages.flatMap { it.blocks }.any { it.text == "Stopped by user" })
+        assertTrue(confirmed.messages.flatMap { it.blocks }.any { it.text == "Run cancelled" })
 
         val completed = event("completed", 3, "run.completed")
         val lateInterrupt = event("late-interrupt", 4, "control.interrupt")

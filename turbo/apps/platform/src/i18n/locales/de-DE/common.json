@@ -74,29 +74,12 @@
       },
       "downloadRawData": "Rohdaten herunterladen",
       "errorGuidance": {
-        "computerUseAuthorizationRequired": {
-          "guidance": "Fordern Sie einen Autorisierungslink für die delegierte Computernutzung an, bitten Sie den Benutzer, einen {{assistantName}} Desktop-Host für diesen Chat oder Slack-Thread auszuwählen, und starten Sie dann eine neue Ausführung. Vorhandene Ausführungs-Token können nicht direkt aktualisiert werden.",
-          "title": "Computernutzungsgenehmigung erforderlich"
-        },
         "concurrentRunLimitReached": {
           "guidance": "Warten Sie, bis Ihre aktuelle Ausführung abgeschlossen ist, bevor Sie eine neue starten.",
           "title": "Das Limit für die gleichzeitige Ausführung wurde erreicht"
         },
-        "creditsDepleted": {
-          "guidance": "Führen Sie zunächst eine Credit-Diagnose durch. Kaufen Sie Credits nur, wenn der aktuelle Plan dies zulässt. andernfalls geben Sie den Plan-Upgrade-Link zurück.",
-          "title": "Credits aufgebraucht"
-        },
-        "noModelProvider": {
-          "guidance": "Verbinde in den Einstellungen ein persönliches Claude Code- oder Codex-Abonnement.",
-          "title": "Für diese Ausführung ist kein Modellanbieter verfügbar"
-        },
         "paidPlanRequired": {
-          "guidance": "Die integrierte Videogenerierung ist im aktuellen Plan nicht verfügbar.",
           "title": "Bezahlter Plan erforderlich"
-        },
-        "providerIncompatible": {
-          "guidance": "Diese Sitzung wurde mit einem anderen Anbietertyp erstellt.",
-          "title": "Anbieter nicht kompatibel"
         },
         "providerTemporarilyUnavailable": {
           "guidance": "Der Modellanbieter ist vorübergehend nicht erreichbar.",

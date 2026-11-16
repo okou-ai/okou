@@ -339,7 +339,12 @@ const deliverClaimedTeamsChatCallback$ = command(
     );
     const recovery = await set(
       integrationModelRecoveryForDelivery$,
-      { ...run, eventId: payload.chatEventId, error: messageError },
+      {
+        ...run,
+        eventId: payload.chatEventId,
+        runFailureId,
+        error: messageError,
+      },
       signal,
     );
     const result = await sendTeamsMessageReply(
@@ -693,7 +698,12 @@ export const deliverTeamsChatAdmissionFailure$ = command(
     }
     const recovery = await set(
       integrationModelRecoveryForDelivery$,
-      { ...args, eventId: args.chatEventId, error: "admission_error" },
+      {
+        ...args,
+        eventId: args.chatEventId,
+        runFailureId: null,
+        error: "admission_error",
+      },
       signal,
     );
     const result = await sendTeamsMessageReply(

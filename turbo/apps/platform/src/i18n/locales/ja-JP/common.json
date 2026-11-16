@@ -74,29 +74,12 @@
       },
       "downloadRawData": "生データをダウンロード",
       "errorGuidance": {
-        "computerUseAuthorizationRequired": {
-          "guidance": "委任されたコンピューターの使用認証リンクを要求し、ユーザーにこのチャットの {{assistantName}} Desktop ホストまたは Slack スレッドを選択してから、新しい実行を開始するように依頼します。既存の実行トークンをそのままアップグレードすることはできません。",
-          "title": "コンピュータの使用許可が必要です"
-        },
         "concurrentRunLimitReached": {
           "guidance": "現在の実行が完了するまで待ってから、新しい実行を開始してください。",
           "title": "同時実行制限に達しました"
         },
-        "creditsDepleted": {
-          "guidance": "まずクレジット診断を実行してください。現在のプランで購入できる場合にのみクレジットを購入し、それ以外の場合はプランのアップグレードリンクを返してください。",
-          "title": "クレジットが枯渇しました"
-        },
-        "noModelProvider": {
-          "guidance": "設定で個人の Claude Code または Codex サブスクリプションを接続してください。",
-          "title": "この実行に使用できるモデルプロバイダーがありません"
-        },
         "paidPlanRequired": {
-          "guidance": "組み込みのビデオ生成は、現在のプランでは利用できません。",
           "title": "有料プランが必要です"
-        },
-        "providerIncompatible": {
-          "guidance": "このセッションは別のプロバイダー タイプで作成されました。",
-          "title": "プロバイダーに互換性がありません"
         },
         "providerTemporarilyUnavailable": {
           "guidance": "モデルプロバイダーは一時的に利用できません。",

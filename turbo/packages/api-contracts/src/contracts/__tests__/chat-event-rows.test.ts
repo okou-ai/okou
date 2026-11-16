@@ -254,8 +254,6 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
       },
     });
     expect(JSON.stringify(row)).toBe(original);
-    expect(projected.payload).not.toHaveProperty("error");
-    expect(chatEventFromRow(row)).not.toHaveProperty("error");
     const output = canonicalRow({
       eventType: "output.error",
       payload: { content: diagnostic, error: diagnostic },

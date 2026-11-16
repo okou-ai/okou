@@ -422,7 +422,12 @@ const deliverClaimedSlackChatCallback$ = command(
     );
     const recovery = await set(
       integrationModelRecoveryForDelivery$,
-      { ...run, eventId: payload.chatEventId, error: messageError },
+      {
+        ...run,
+        eventId: payload.chatEventId,
+        runFailureId,
+        error: messageError,
+      },
       signal,
     );
     return await set(postSlackChatMessage$, {
@@ -642,7 +647,12 @@ export const deliverSlackChatAdmissionFailure$ = command(
     signal.throwIfAborted();
     const recovery = await set(
       integrationModelRecoveryForDelivery$,
-      { ...args, eventId: args.chatEventId, error: "admission_error" },
+      {
+        ...args,
+        eventId: args.chatEventId,
+        runFailureId: null,
+        error: "admission_error",
+      },
       signal,
     );
     await set(postSlackChatMessage$, {

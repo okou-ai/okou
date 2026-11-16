@@ -76,7 +76,12 @@ export const formatIntegrationChatMessage$ = command(
       if (args.chatEventId) {
         const recovery = await set(
           integrationModelRecoveryForDelivery$,
-          { ...args, error, eventId: args.chatEventId },
+          {
+            ...args,
+            error,
+            runFailureId: args.runFailureId ?? null,
+            eventId: args.chatEventId,
+          },
           signal,
         );
         if (recovery) {

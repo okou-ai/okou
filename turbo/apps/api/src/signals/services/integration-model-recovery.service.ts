@@ -152,10 +152,13 @@ const loadIntegrationModelRecovery$ = command(
 export const integrationModelRecoveryForDelivery$ = command(
   async (
     { set },
-    args: ModelRecoveryIdentity & { readonly error: string | null },
+    args: ModelRecoveryIdentity & {
+      readonly runFailureId: string | null;
+      readonly error: string | null;
+    },
     signal: AbortSignal,
   ) => {
-    if (!args.error) {
+    if (args.runFailureId === null && !args.error) {
       return null;
     }
     const result = await settle(
