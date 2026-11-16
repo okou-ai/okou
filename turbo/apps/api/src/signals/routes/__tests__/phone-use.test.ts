@@ -2,7 +2,7 @@ import { createPublicComputerUseScenario } from "./helpers/public-computer-use-s
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
-import { clearMockNow, mockNow } from "../../../lib/time";
+import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { phoneUseContract as contract } from "@okouai/api-contracts/contracts/phone-use";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -71,6 +71,90 @@ function setPhoneUse(enabled: boolean) {
   );
 }
 describe("Phone Use native connection authority", () => {
+  it("tracks online presence separately from control readiness and fences replaced connections", async () => {
+    const actor = authenticate();
+    await setPhoneUse(true);
+    const client = api();
+    const registered = await accept(client.register({ headers, body }), [200]);
+    context.mocks.ably.createTokenRequest.mockResolvedValue({
+      keyName: "test.key",
+      nonce: "nonce",
+      mac: "mac",
+      timestamp: now(),
+      clientId: actor.userId,
+      ttl: 300_000,
+      capability: "{}",
+    });
+    const realtime = await accept(
+      client.realtime({
+        headers,
+        params: { deviceId: registered.body.id },
+        body: { generation: registered.body.generation },
+      }),
+      [200],
+    );
+    const present = new Set([realtime.body.channel]);
+    context.mocks.ably.presenceGet.mockImplementation((channel: unknown) => {
+      return Promise.resolve({
+        items:
+          typeof channel === "string" && present.has(channel)
+            ? [{ clientId: actor.userId }]
+            : [],
+      });
+    });
+    mockNow(now() + 120_000);
+    const connected = await accept(client.devices({ headers }), [200]);
+    expect(connected.body.devices).toStrictEqual([
+      expect.objectContaining({
+        id: registered.body.id,
+        online: true,
+        ready: false,
+      }),
+    ]);
+    await accept(
+      client.heartbeat({
+        headers,
+        params: { deviceId: registered.body.id },
+        body: { generation: registered.body.generation, ready: true },
+      }),
+      [200],
+    );
+    present.clear();
+    const disconnected = await accept(client.devices({ headers }), [200]);
+    expect(disconnected.body.devices).toStrictEqual([
+      expect.objectContaining({
+        id: registered.body.id,
+        online: false,
+        ready: true,
+      }),
+    ]);
+    present.add(realtime.body.channel);
+    await accept(client.register({ headers, body }), [200]);
+    const replaced = await accept(client.devices({ headers }), [200]);
+    expect(replaced.body.devices).toStrictEqual([
+      expect.objectContaining({
+        id: registered.body.id,
+        generation: registered.body.generation + 1,
+        online: false,
+      }),
+    ]);
+  });
+  it("reports presence lookup failures without pretending all phones are offline", async () => {
+    authenticate();
+    await setPhoneUse(true);
+    const client = api();
+    await accept(client.register({ headers, body }), [200]);
+    context.mocks.ably.presenceGet.mockRejectedValue(
+      new Error("Presence unavailable"),
+    );
+    const unavailable = await accept(client.devices({ headers }), [503]);
+    expect(unavailable.body.error.code).toBe("PROVIDER_UNAVAILABLE");
+    context.mocks.ably.presenceGet.mockResolvedValue({ items: [] });
+    const recovered = await accept(client.devices({ headers }), [200]);
+    expect(recovered.body.devices).toStrictEqual([
+      expect.objectContaining({ online: false }),
+    ]);
+  });
   it("replaces a connection without allowing its previous generation to become ready", async () => {
     authenticate();
     await setPhoneUse(true);

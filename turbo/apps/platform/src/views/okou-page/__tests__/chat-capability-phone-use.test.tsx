@@ -24,13 +24,14 @@ import {
 const context = testContext();
 const { installRunChat } = createChatRunFixtures(context);
 
-function phone(ready = true): PhoneDevice {
+function phone(ready = true, online = true): PhoneDevice {
   return {
     id: "e0000000-0000-4000-a000-000000001001",
     displayName: "Owner iPhone",
     osVersion: "27.1",
     appVersion: "1",
     generation: 1,
+    online,
     ready,
     lastSeenAt: "2026-11-16T04:00:00.000Z",
   };
@@ -77,22 +78,26 @@ test("Phone Use stays hidden without fetching devices until manually enabled", a
 });
 
 test.each([true, false])(
-  "Show phone readiness and refresh stale devices (account menu: %s)",
+  "Show only online phones without readiness labels (account menu: %s)",
   async (accountAccess) => {
-    let devices = [phone()];
+    const offline = {
+      ...phone(true, false),
+      id: "e0000000-0000-4000-a000-000000001003",
+      displayName: "Offline iPhone",
+    };
+    let devices = [phone(false), offline];
     context.mocks.api(phoneUseContract.devices, ({ respond }) => {
       return respond(200, { devices });
     });
     await setup(true, accountAccess);
     const phones = await screen.findByRole("list", { name: "Your phone" });
     expect(within(phones).getByText("Owner iPhone")).toBeVisible();
-    expect(within(phones).getByText("Ready")).toBeVisible();
-    devices = [phone(false)];
+    expect(within(phones).queryByText("Ready")).toBeNull();
+    expect(within(phones).queryByText("Not ready")).toBeNull();
+    expect(within(phones).queryByText("Offline iPhone")).toBeNull();
+    devices = [phone(false, false), offline];
     click(await findButton("Refresh phones"));
-    await screen.findByText("Not ready");
-    devices = [];
-    click(await findButton("Refresh phones"));
-    await screen.findByText("No phones connected");
+    await screen.findByText("No phones online");
   },
 );
 
@@ -159,7 +164,7 @@ test.each([true, false])(
     const primary = await screen.findByRole("switch", {
       name: /^Owner iPhone/u,
     });
-    expect(primary).toHaveAccessibleName("Owner iPhone Ready");
+    expect(primary).toHaveAccessibleName("Owner iPhone");
     const second = await screen.findByRole("switch", {
       name: /^Second iPhone/u,
     });

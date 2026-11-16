@@ -17,6 +17,7 @@ import {
 } from "@okouai/api-contracts/contracts/realtime";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import type { BuiltInGenerationRealtimeSubscription } from "@okouai/api-contracts/contracts/built-in-generation";
+import { phoneUseChannel } from "@okouai/api-contracts/contracts/phone-use";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -767,6 +768,47 @@ export async function createPhoneUseToken(
   });
   signal.throwIfAborted();
   return result;
+}
+export async function phoneUseDeviceIsPresent(
+  target: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly id: string;
+    readonly generation: number;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  signal.throwIfAborted();
+  const channel = phoneUseChannel(
+    target.orgId,
+    target.userId,
+    target.id,
+    target.generation,
+  );
+  const result = await settleIncludingAbort(
+    awaitWithSignal(
+      ablyClient()
+        .channels.get(channel)
+        .presence.get({ clientId: target.userId, limit: 1 }),
+      AbortSignal.any([signal, AbortSignal.timeout(3000)]),
+    ),
+  );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    throw new HTTPException(503, {
+      res: Response.json(
+        {
+          error: {
+            code: "PROVIDER_UNAVAILABLE",
+            message: "Phone presence is temporarily unavailable",
+          },
+        },
+        { status: 503 },
+      ),
+      cause: result.error,
+    });
+  }
+  return result.value.items.length > 0;
 }
 export async function publishPhoneUseHint(
   channel: string,

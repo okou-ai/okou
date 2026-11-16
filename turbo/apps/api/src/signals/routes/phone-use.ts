@@ -1,4 +1,4 @@
-import { settle } from "../utils";
+import { joinAll, settle } from "../utils";
 import { createHash, randomUUID } from "node:crypto";
 import { command, type Command } from "ccstate";
 import {
@@ -40,7 +40,11 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { verifyClerkComputerUseSession } from "../external/clerk";
-import { createPhoneUseToken, publishPhoneUseHint } from "../external/realtime";
+import {
+  createPhoneUseToken,
+  phoneUseDeviceIsPresent,
+  publishPhoneUseHint,
+} from "../external/realtime";
 import { putS3Object$, signPresignedGetUrl$ } from "../external/s3";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
@@ -221,13 +225,14 @@ const runGrant$ = command(async ({ get }, signal: AbortSignal) => {
   }
   return { id: grant.id, deviceId: grant.deviceId, runId: auth.runId };
 });
-function deviceView(value: typeof devices.$inferSelect) {
+function deviceView(value: typeof devices.$inferSelect, online = false) {
   return {
     id: value.id,
     displayName: value.displayName,
     osVersion: value.osVersion,
     appVersion: value.appVersion,
     generation: value.generation,
+    online,
     ready: value.ready && value.lastSeenAt.getTime() > now() - 45_000,
     lastSeenAt: value.lastSeenAt.toISOString(),
   };
@@ -252,7 +257,13 @@ const list$ = command(async ({ get }, signal: AbortSignal) => {
     .from(devices)
     .where(owned(get(organizationAuthContext$)));
   signal.throwIfAborted();
-  return { status: 200 as const, body: { devices: rows.map(deviceView) } };
+  const listed = await joinAll(
+    rows.map(async (device) => {
+      return deviceView(device, await phoneUseDeviceIsPresent(device, signal));
+    }),
+  );
+  signal.throwIfAborted();
+  return { status: 200 as const, body: { devices: listed } };
 });
 const registerBody$ = bodyResultOf(contract.register);
 const register$ = command(async ({ get, set }, signal: AbortSignal) => {

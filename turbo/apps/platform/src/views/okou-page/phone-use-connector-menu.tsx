@@ -27,7 +27,6 @@ function PhoneRow({
   readonly device: PhoneDevice;
   readonly signals: ComposerConnectorSignals;
 }) {
-  const { t } = useTranslation();
   const selection = useLoadable(signals.phoneAccess.selection$);
   const lastSelection = useLastResolved(signals.phoneAccess.selection$);
   const saving = useLoadable(signals.phoneAccess.saving$);
@@ -48,15 +47,6 @@ function PhoneRow({
             title={device.displayName}
           >
             {device.displayName}
-          </span>
-          <span className="block text-[11px] leading-3 text-muted-foreground">
-            {device.ready
-              ? t(($) => {
-                  return $.chat.phoneUse.ready;
-                })
-              : t(($) => {
-                  return $.chat.phoneUse.notReady;
-                })}
           </span>
         </span>
         <LoadingSwitch
@@ -81,8 +71,11 @@ function PhoneUseDevices({ signals }: { signals: ComposerConnectorSignals }) {
   const { t } = useTranslation();
   const devices = useLoadable(signals.resources.phoneUseDevices$);
   const lastDevices = useLastResolved(signals.resources.phoneUseDevices$);
-  const visibleDevices =
-    devices.state === "hasData" ? devices.data : (lastDevices ?? []);
+  const visibleDevices = (
+    devices.state === "hasData" ? devices.data : (lastDevices ?? [])
+  ).filter((device) => {
+    return device.online;
+  });
   const selection = useLoadable(signals.phoneAccess.selection$);
   const reload = useSet(signals.resources.reloadPhoneUseDevices$);
   const updateUi = useSet(signals.updateConnectorUiState$);

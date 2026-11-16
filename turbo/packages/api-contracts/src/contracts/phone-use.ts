@@ -95,6 +95,7 @@ export const phoneDeviceSchema = object({
   osVersion: string(),
   appVersion: string(),
   generation: number().int(),
+  online: boolean(),
   ready: boolean(),
   lastSeenAt: string(),
 });
