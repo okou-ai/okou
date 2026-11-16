@@ -156,6 +156,7 @@ export interface SlackClient {
     triggerId: string,
     view: SlackView,
   ) => Promise<{ readonly viewId: string | undefined }>;
+  readonly updateView: (viewId: string, view: SlackView) => Promise<void>;
   readonly postEphemeral: (options: {
     readonly channel: string;
     readonly user: string;
@@ -774,6 +775,9 @@ export function createSlackClient(
     },
     openView: (triggerId, view) => {
       return openView(web, triggerId, view);
+    },
+    updateView: async (viewId, view) => {
+      await web.views.update({ view_id: viewId, view });
     },
     postEphemeral: (options) => {
       return postEphemeral(web, options);

@@ -1,4 +1,3 @@
-import { isStaffOrg } from "@okouai/core/staff-org";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { phoneUseDevices, phoneUseGrants } from "@okouai/db/schema/phone-use";
@@ -389,9 +388,6 @@ function createThreadPhoneUseGrant(
   thread$: Computed<Promise<ChatThreadRequestRow | null>>,
 ) {
   return computed(async (get) => {
-    if (!isStaffOrg(bootstrap.orgId)) {
-      return null;
-    }
     const features = await get(bootstrap.featureSwitches$);
     if (!isFeatureEnabled(FeatureSwitchKey.PhoneUse, features)) {
       return null;

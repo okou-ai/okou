@@ -1,4 +1,5 @@
 import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
+import { integrationModelRecoveryForDelivery$ } from "./integration-model-recovery.service";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
@@ -18,6 +19,7 @@ import {
   sendChatAction,
   sendMessage,
   type SendTelegramMessageResult,
+  type TelegramReplyMarkup,
 } from "../external/telegram-client";
 import {
   getOfficialTelegramBotConfig,
@@ -272,11 +274,13 @@ async function sendMessageWithTelegramRateLimitRetry(
     readonly text: string;
     readonly replyToMessageId: number | undefined;
     readonly messageThreadId: number | undefined;
+    readonly replyMarkup?: TelegramReplyMarkup;
   },
   signal: AbortSignal,
 ): Promise<SendTelegramMessageResult> {
   for (let attempt = 0; ; attempt++) {
     const result = await sendMessage(args.botToken, args.chatId, args.text, {
+      ...(args.replyMarkup ? { replyMarkup: args.replyMarkup } : {}),
       ...(args.replyToMessageId !== undefined
         ? { replyToMessageId: args.replyToMessageId }
         : {}),
@@ -305,6 +309,7 @@ async function sendTelegramCompletionMessages(
     readonly botToken: string;
     readonly target: TelegramDeliveryTarget;
     readonly htmlOutput: string;
+    readonly modelRecoveryEventId?: string;
   },
   signal: AbortSignal,
 ): Promise<
@@ -327,6 +332,20 @@ async function sendTelegramCompletionMessages(
         text: chunk,
         replyToMessageId: Number(args.target.messageId),
         messageThreadId: args.target.messageThreadId,
+        ...(index === 0 && args.modelRecoveryEventId
+          ? {
+              replyMarkup: {
+                inline_keyboard: [
+                  [
+                    {
+                      text: "Switch model",
+                      callback_data: `mr:${args.modelRecoveryEventId}`,
+                    },
+                  ],
+                ],
+              },
+            }
+          : {}),
       },
       signal,
     );
@@ -437,11 +456,17 @@ const deliverClaimedTelegramChatCallback$ = command(
     );
     const responseText =
       args.status === "completed" ? messageContent : undefined;
+    const recovery = await set(
+      integrationModelRecoveryForDelivery$,
+      { ...run, eventId: payload.chatEventId, error: messageError },
+      signal,
+    );
     const sent = await sendTelegramCompletionMessages(
       {
         botToken: binding.botToken,
         target: payload,
         htmlOutput: buildTelegramResponse(content),
+        modelRecoveryEventId: recovery?.eventId,
       },
       signal,
     );
@@ -652,11 +677,17 @@ export const deliverTelegramChatAdmissionFailure$ = command(
         return;
       }
     }
+    const recovery = await set(
+      integrationModelRecoveryForDelivery$,
+      { ...args, eventId: args.chatEventId, error: "admission_error" },
+      signal,
+    );
     const sent = await sendTelegramCompletionMessages(
       {
         botToken: binding.botToken,
         target: args.target,
         htmlOutput: buildTelegramResponse(event.content),
+        modelRecoveryEventId: recovery?.eventId,
       },
       signal,
     );

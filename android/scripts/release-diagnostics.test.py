@@ -1,0 +1,182 @@
+"""Exercise native diagnostics and ABI tooling. Requires the README's JDK/SDK setup."""
+
+import gzip
+import json
+import os
+from pathlib import Path
+import signal
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+import zipfile
+
+SCRIPTS = Path(__file__).resolve().parent
+
+
+class ReleaseDiagnosticsTest(unittest.TestCase):
+    def test_tracing_preserves_shared_calls_and_rejects_missing_target_methods(self):
+        android = SCRIPTS.parent
+        r8 = subprocess.check_output(
+            [str(android / "gradlew"), "--quiet", ":app:printRetraceClasspath", "--no-daemon"],
+            cwd=android, text=True, timeout=120,
+        ).strip()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            library, caller = root / "Library.java", root / "Caller.java"
+            library.write_text('package fixture; public class Library { public static void touch() {} }')
+            caller.write_text('package fixture; public class Caller { public static void run() { Library.touch(); } }')
+            provider = root / "Provider.java"
+            provider.write_text('package fixture; public interface Provider { Object token(Object continuation); }')
+            callback = root / "Callback.java"
+            callback.write_text('package fixture; public class Callback implements Provider { public Object token(Object continuation) { return continuation; } }')
+            sam = root / "Sam.java"
+            sam.write_text('package fixture; public interface Sam { String value(String input); }')
+            factory = root / "Factory.java"
+            factory.write_text('package fixture; public class Factory { public static Sam create() { return value -> value; } }')
+            subprocess.run(["javac", "-d", str(root / "classes"),
+                            *map(str, (library, caller, provider, callback, sam, factory))], check=True)
+
+            def jar(name, *classes):
+                path = root / name
+                with zipfile.ZipFile(path, "w") as output:
+                    for klass in classes:
+                        output.write(root / "classes/fixture" / klass, "fixture/" + klass)
+                return str(path)
+
+            source = jar("source.jar", "Caller.class", "Callback.class", "Factory.class")
+            target = jar("target.jar", "Library.class", "Provider.class", "Sam.class")
+            jdk = Path(os.environ.get("JAVA_HOME") or Path(shutil.which("javac")).resolve().parents[1])
+            command = ["java", "-cp", r8, str(SCRIPTS / "TraceNativeTestReferences.java"),
+                       "--keep-rules", "--allowobfuscation", "--source", source, "--target", target,
+                       "--lib", str(jdk), "--output", str(root / "rules")]
+            result = subprocess.run(command, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("touch()", (root / "rules").read_text())
+            self.assertIn("java.lang.Object token(java.lang.Object);", (root / "rules").read_text())
+            self.assertIn("java.lang.String value(java.lang.String);", (root / "rules").read_text())
+            library.write_text('package fixture; public class Library {}')
+            subprocess.run(["javac", "-d", str(root / "classes"), str(library)], check=True)
+            jar("target.jar", "Library.class", "Provider.class", "Sam.class")
+            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+
+    def test_native_gate_rejects_incomplete_failed_and_skipped_results(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "test-result-exit-code.txt").write_text("0")
+            command = [sys.executable, str(SCRIPTS / "check-native-results.py"), str(root), "2"]
+            cases = '<testcase classname="Native" name="one"/><testcase classname="Native" name="two"/>'
+            report = root / "TEST-pixel2Api35.xml"
+            report.write_text(f'<testsuites tests="2">{cases}</testsuites>')
+            result = subprocess.run(command, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for content in (f'<testsuites>{cases.replace("two", "one")}</testsuites>',
+                            '<testsuites><testcase classname="Native" name="one"/></testsuites>',
+                            f'<testsuites skipped="1">{cases}</testsuites>',
+                            f'<testsuites>{cases}<failure>crashed</failure></testsuites>',
+                            f'<!DOCTYPE testsuites [<!ENTITY x "expanded">]><testsuites>{cases}</testsuites>',
+                            f'<!DOCTYPE testsuites SYSTEM "file:///etc/passwd"><testsuites>{cases}</testsuites>'):
+                report.write_text(content)
+                self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+
+    def test_pairing_accepts_signatures_but_rejects_changed_payload_or_mapping(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            unsigned, signed, mapping, compressed, receipt = (
+                root / name for name in ("unsigned.apk", "signed.apk", "mapping.txt", "map.gz", "identity.json")
+            )
+            with zipfile.ZipFile(unsigned, "w") as apk:
+                apk.writestr("classes.dex", b"actual-dex")
+                apk.writestr("META-INF/library.kotlin_module", b"runtime-metadata")
+            signed.write_bytes(unsigned.read_bytes())
+            with zipfile.ZipFile(signed, "a") as apk:
+                apk.writestr("META-INF/TEST.RSA", b"signature")
+            mapping.write_bytes(b"mapping")
+            compressed.write_bytes(gzip.compress(mapping.read_bytes()))
+            command = [sys.executable, str(SCRIPTS / "verify-release-pair.py"),
+                       *map(str, (unsigned, compressed, signed, mapping, receipt))]
+            result = subprocess.run(command, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("classes.dex", json.loads(receipt.read_text())["payload"])
+            mapping.write_bytes(b"different-build-map")
+            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            mapping.write_bytes(b"mapping")
+            with zipfile.ZipFile(signed, "a") as apk:
+                apk.writestr("res/layout.xml", b"different-resource")
+            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+
+    def test_runner_preserves_failure_logs_on_exit_timeout_and_cancellation(self):
+        for outcome in ("failure", "timeout", "cancel"):
+            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                tools = root / "platform-tools"
+                tools.mkdir()
+                adb = tools / "adb"
+                adb.write_text('''#!/usr/bin/env python3
+import os
+from pathlib import Path
+import signal
+import sys
+import time
+root = Path(os.environ['ANDROID_HOME'])
+if sys.argv[1] == 'devices':
+    print('List of devices attached\\nemulator-5554\\tdevice\\nphysical-phone\\tdevice')
+else:
+    assert sys.argv[1:3] == ['-s', 'emulator-5554']
+    def stop(*_):
+        (root / 'reader-stopped').touch()
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, stop)
+    print('FATAL EXCEPTION: fixture obfuscated stack', flush=True)
+    (root / 'reader-ready').touch()
+    while True:
+        time.sleep(0.1)
+''')
+                adb.chmod(0o755)
+                command = root / "command.py"
+                command.write_text('''import os
+from pathlib import Path
+import sys
+import time
+root = Path(os.environ['ANDROID_HOME'])
+while not (root / 'reader-ready').exists():
+    time.sleep(0.01)
+if sys.argv[1] == 'failure':
+    sys.exit(7)
+while True:
+    time.sleep(0.1)
+''')
+                runner = subprocess.Popen(
+                    [sys.executable, str(SCRIPTS / "run-native-tests.py"),
+                     "--timeout-seconds", "2" if outcome == "timeout" else "30",
+                     str(root / "logs"), "--", sys.executable, str(command), outcome],
+                    env=dict(os.environ, ANDROID_HOME=str(root)),
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                try:
+                    if outcome == "cancel":
+                        deadline = time.monotonic() + 10
+                        while not (root / "reader-ready").exists():
+                            if time.monotonic() > deadline:
+                                self.fail("logcat reader never started")
+                            time.sleep(0.01)
+                        runner.send_signal(signal.SIGTERM)
+                    stdout, stderr = runner.communicate(timeout=15)
+                    self.assertEqual(runner.returncode, {"failure": 7, "timeout": 124, "cancel": 143}[outcome],
+                                     (stdout, stderr))
+                    self.assertIn("FATAL EXCEPTION", (root / "logs/emulator-5554.log").read_text())
+                    self.assertTrue((root / "reader-stopped").exists())
+                finally:
+                    if runner.poll() is None:
+                        runner.terminate()
+                        try:
+                            runner.communicate(timeout=15)
+                        except subprocess.TimeoutExpired:
+                            runner.kill()
+                            runner.wait()
+
+
+if __name__ == "__main__":
+    unittest.main()

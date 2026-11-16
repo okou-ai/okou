@@ -6,7 +6,6 @@ import ai.okou.android.auth.WorkspaceIdentity
 import java.io.Closeable
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 
 const val CHAT_AGENT = "22222222-2222-4222-8222-222222222222"
@@ -44,7 +43,8 @@ fun historyEventWire(
 
 /** Only the external HTTP boundary is substituted; native owners/codec/cache/transport are real. */
 class ChatListApiFixture : Closeable {
-    val server = MockWebServer()
+    private val transport = FixtureHttpsServer()
+    val server = transport.server
     @Volatile var beforeResponse: () -> Unit = {}
     @Volatile var commandResponse: (RecordedRequest) -> MockResponse? = { null }
     @Volatile var beforeHistoryResponse: (RecordedRequest) -> Unit = {}
@@ -165,15 +165,30 @@ class ChatListApiFixture : Closeable {
                     }
                 }
             }
-        server.start()
-        identity =
-            WorkspaceIdentity(server.url("/").toString(), "user-a", "session-a", "org-a", "member")
-        service = CanonicalWorkspaceSession(identity, WorkspaceTokenProvider { "fixture-token" })
+        try {
+            server.start()
+            identity =
+                WorkspaceIdentity(
+                    server.url("/").toString(),
+                    "user-a",
+                    "session-a",
+                    "org-a",
+                    "member",
+                )
+            service =
+                CanonicalWorkspaceSession(identity, WorkspaceTokenProvider { "fixture-token" })
+        } catch (error: Throwable) {
+            try {
+                transport.close()
+            } catch (cleanup: Throwable) {
+                error.addSuppressed(cleanup)
+            }
+            throw error
+        }
     }
 
     override fun close() {
-        service.close()
-        server.close()
+        transport.use { service.close() }
     }
 }
 

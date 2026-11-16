@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and align the checked-out Android release without signing credentials.
+# Build/align the Android release and retain its R8 map without signing credentials.
 # Arguments: expected x.y.z and output directory. Requires ANDROID_HOME and JDK.
 set -euo pipefail
 umask 077
@@ -23,6 +23,8 @@ trap 'rm -rf "$work"' EXIT
 cd "$root/android"
 ./gradlew :app:assembleRelease --no-daemon
 unsigned="$root/android/app/build/outputs/apk/release/app-release-unsigned.apk"
+mapping="$root/android/app/build/outputs/mapping/release/mapping.txt"
+test -s "$mapping"
 badging=$("$tools/aapt" dump badging "$unsigned")
 if [[ "$badging" != "package: name='ai.okou.android' versionCode='$version_code' versionName='$version' "* ]]; then
   echo 'Built APK package/version does not match the Android release' >&2
@@ -35,5 +37,7 @@ mkdir -p "$output"
 (
   set -o noclobber
   cat "$work/aligned.apk" > "$output/okou-android-$version-unsigned.apk"
+  gzip -n -c "$mapping" > "$output/okou-android-$version-mapping.txt.gz"
 )
 echo "Unsigned Android APK: $output/okou-android-$version-unsigned.apk"
+echo "R8 mapping: $output/okou-android-$version-mapping.txt.gz"

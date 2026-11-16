@@ -9,6 +9,8 @@ import type {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/client/chat-connector-access";
+import { phoneUseContract } from "@okouai/api-contracts/client/phone-use";
+import type { PhoneUseSelection } from "@okouai/api-contracts/contracts/phone-use";
 import type { PendingChatConnectorAccess } from "../okou-page/chat-connector-access.ts";
 import type { AvailableRunModelsResponse } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
@@ -109,6 +111,7 @@ interface SendNewThreadMessageRequest {
   connectorSelections?: readonly ConnectorAccountSelection[];
   initialConnectorAccess?: PendingChatConnectorAccess;
   initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
+  initialPhoneUse?: PhoneUseSelection;
 }
 
 interface PreparedNewThreadPayload {
@@ -403,6 +406,7 @@ async function createChatThread(
     readonly connectorSelections?: readonly ConnectorAccountSelection[];
     readonly initialConnectorAccess?: PendingChatConnectorAccess;
     readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
+    readonly initialPhoneUse?: PhoneUseSelection;
   },
   signal: AbortSignal,
 ): Promise<void> {
@@ -452,6 +456,20 @@ async function createChatThread(
   signal.throwIfAborted();
   // The Chat must exist before its scoped preferences can be saved, and all
   // preferences must be accepted before its first event starts a Run.
+  if (args.initialPhoneUse) {
+    await accept(
+      args.createClient(phoneUseContract).grant({
+        body: {
+          ...args.initialPhoneUse,
+          threadId: args.clientThreadId,
+          allow: true,
+        },
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
+  }
   if (args.initialConnectorAccess) {
     const accessClient = args.createClient(chatConnectorAccessContract);
     for (const override of args.initialConnectorAccess.overrides) {
@@ -699,6 +717,7 @@ const reserveNewThreadSubmissionIdentity$ = command(
             connectorSelections: request.connectorSelections,
             initialConnectorAccess: request.initialConnectorAccess,
             initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
+            initialPhoneUse: request.initialPhoneUse,
           }),
         );
     signal.throwIfAborted();
@@ -764,7 +783,20 @@ function newThreadRecordOptions(args: {
     connectorSelections: request.connectorSelections,
     initialConnectorAccess: request.initialConnectorAccess,
     initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
+    initialPhoneUse: request.initialPhoneUse,
   };
+}
+
+function requiresThreadBeforeSend(
+  request: SendNewThreadMessageRequest,
+  customDirection: boolean,
+): boolean {
+  return Boolean(
+    request.connectorSelections?.length ||
+    request.initialConnectorAccess ||
+    request.initialPhoneUse ||
+    customDirection,
+  );
 }
 
 const sendNewThreadMessage$ = command(
@@ -828,15 +860,12 @@ const sendNewThreadMessage$ = command(
       resolved,
       codexExecution: features[FeatureSwitchKey.CodexExecution],
     });
-    const createResult =
-      request.connectorSelections?.length ||
-      request.initialConnectorAccess ||
-      customDirection
-        ? createNewThreadRecord(creation, signal)
-        : null;
-    // An explicit account choice must be accepted before publishing an
+    const createResult = requiresThreadBeforeSend(request, customDirection)
+      ? createNewThreadRecord(creation, signal)
+      : null;
+    // Explicit Chat access must be accepted before publishing an
     // optimistic chat or clearing its composer. A rejected creation leaves the
-    // entire draft and its pending connector/remote preferences in place.
+    // entire draft and its pending access preferences in place.
     if (createResult) {
       await createResult;
       signal.throwIfAborted();

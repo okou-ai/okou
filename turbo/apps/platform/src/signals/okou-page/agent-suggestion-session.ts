@@ -10,7 +10,7 @@ import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
-import { defaultAgentChatPageActive$, defaultAgentId$ } from "../agent.ts";
+import { defaultAgentId$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
@@ -141,18 +141,15 @@ interface SuggestionFeedbackOutcome {
   readonly id: string;
   readonly undoId: string;
   readonly kind: FeedbackKind;
-  readonly reasonSaved: boolean;
-  readonly note: string;
 }
 interface SuggestionSentOutcome {
   readonly type: "sent";
   /** Null until the new thread is published. */
   readonly threadId: string | null;
 }
-export type SuggestionOutcome =
-  SuggestionFeedbackOutcome | SuggestionSentOutcome;
+type SuggestionOutcome = SuggestionFeedbackOutcome | SuggestionSentOutcome;
 
-/** A listed row: a waiting card, or a handled one below every waiting card. */
+/** A visit's waiting cards and handled outcomes. */
 interface AgentSuggestionListItem {
   readonly entry: AgentSuggestionEntry;
   readonly outcome: SuggestionOutcome | null;
@@ -161,7 +158,7 @@ interface SettledSuggestion extends AgentSuggestionListItem {
   readonly outcome: SuggestionOutcome;
 }
 
-/** Home's suggestion list and its chat-list row follow the Suggestions rollout. */
+/** The suggestion feature owns both the For you page and its navigation entry. */
 export const suggestionsEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion] === true;
 });
@@ -193,9 +190,8 @@ const readAgentSuggestions$ = command(
 
 const waitingSuggestionCountVersion$ = state(0);
 /**
- * The cards waiting on home, counted on its chat-list row. The row reads the
- * server's actionable cards rather than a home visit's snapshot, so it follows
- * every committed change, including those made on home itself.
+ * The chat-list count reads the server's actionable cards independently of a
+ * review visit's snapshot, so it follows every committed suggestion change.
  */
 export const waitingSuggestionCount$ = computed(async (get) => {
   get(waitingSuggestionCountVersion$);
@@ -272,11 +268,6 @@ function createSuggestionSession() {
     entries$,
     listItems$,
     settled$,
-    previewId$: state<string | null>(null),
-    detailId$: state<string | null>(null),
-    detailQueue$: state<readonly AgentSuggestionEntry[] | null>(null),
-    // The handled card whose feedback reason is being edited.
-    reasonOpen$: state<AgentSuggestionEntry | null>(null),
   };
 }
 
@@ -291,82 +282,6 @@ export const agentSuggestionEntries$ = computed((get) => {
 export const agentSuggestionListItems$ = computed((get) => {
   return get(get(session$).listItems$);
 });
-export const homeSuggestionCard$ = computed(async (get) => {
-  const session = get(session$);
-  const items = await get(session.listItems$);
-  const waiting = items.filter(({ outcome }) => {
-    return outcome === null;
-  });
-  const index = Math.max(
-    0,
-    waiting.findIndex(({ entry }) => {
-      return entry.item.id === get(session.previewId$);
-    }),
-  );
-  const queue = get(session.detailQueue$);
-  const detailId = get(session.detailId$);
-  return {
-    count: waiting.length,
-    index,
-    item: waiting[index]?.entry.item,
-    detail: items.find(({ entry }) => {
-      return entry.item.id === detailId;
-    }),
-    detailsOpen: queue !== null,
-    complete: queue !== null && detailId === null,
-    detailCount: queue?.length ?? 0,
-    detailIndex:
-      queue?.findIndex((entry) => {
-        return entry.item.id === detailId;
-      }) ?? -1,
-  };
-});
-/**
- * Show the waiting suggestion at `index` on home. The index wraps, so the
- * greeting's rotation moves from the last suggestion back to the first.
- */
-export const showHomeSuggestion$ = command(
-  async ({ get, set }, index: number, signal: AbortSignal) => {
-    const session = get(session$);
-    const items = (await get(session.listItems$)).filter(({ outcome }) => {
-      return outcome === null;
-    });
-    signal.throwIfAborted();
-    const next = items.at(index % items.length);
-    if (next) {
-      set(session.previewId$, next.entry.item.id);
-    }
-  },
-);
-export const setHomeSuggestionDetailsOpen$ = command(
-  async ({ get, set }, open: boolean, signal: AbortSignal) => {
-    const session = get(session$);
-    if (!open) {
-      set(session.detailId$, null);
-      set(session.detailQueue$, null);
-      return;
-    }
-    const card = await get(homeSuggestionCard$);
-    signal.throwIfAborted();
-    const items = await get(session.listItems$);
-    signal.throwIfAborted();
-    if (!card.item) {
-      return;
-    }
-    set(
-      session.detailQueue$,
-      items
-        .filter(({ outcome }) => {
-          return outcome === null;
-        })
-        .map(({ entry }) => {
-          return entry;
-        }),
-    );
-    set(session.detailId$, card.item?.id ?? null);
-  },
-);
-
 /** A replaced review heading is the keyboard destination for the next card. */
 export const focusSuggestionTitleOnRef$ = onRef<HTMLHeadingElement>(
   command((_context, title: HTMLHeadingElement) => {
@@ -374,38 +289,6 @@ export const focusSuggestionTitleOnRef$ = onRef<HTMLHeadingElement>(
   }),
 );
 
-/** Keep the open review's order and move only after the current action succeeds. */
-export const advanceHomeSuggestion$ = command(
-  ({ get, set }, entry: AgentSuggestionEntry) => {
-    const session = get(session$);
-    const queue = get(session.detailQueue$);
-    if (
-      !queue ||
-      get(session.detailId$) !== entry.item.id ||
-      !queue.includes(entry) ||
-      (!get(entry.hidden$) && !get(entry.unavailable$))
-    ) {
-      return;
-    }
-    const index = queue.indexOf(entry);
-    const remaining = [
-      ...queue.slice(index + 1),
-      ...queue.slice(0, index).reverse(),
-    ];
-    const next = remaining.find((candidate) => {
-      return (
-        !get(candidate.hidden$) &&
-        !get(candidate.unavailable$) &&
-        getSuggestionExpiresAt(candidate.item) > now()
-      );
-    });
-    set(session.detailId$, next?.item.id ?? null);
-    set(session.previewId$, next?.item.id ?? null);
-  },
-);
-export const suggestionFeedbackReasonOpen$ = computed((get) => {
-  return get(get(session$).reasonOpen$);
-});
 const loadAgentSuggestionEntries$ = command(
   async ({ set }, signal: AbortSignal) => {
     return (await set(readAgentSuggestions$, signal)).map(
@@ -413,20 +296,9 @@ const loadAgentSuggestionEntries$ = command(
     );
   },
 );
-/**
- * The default Agent's new-chat page lists the cards, because their options
- * start chats in that Agent. Each visit reads one snapshot.
- */
-export const enterHomeSuggestions$ = command(
+/** Each visit loads one snapshot of the default Agent's suggestions. */
+export const enterSuggestionSession$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    if (!get(suggestionsEnabled$)) {
-      return;
-    }
-    const active = await get(defaultAgentChatPageActive$);
-    signal.throwIfAborted();
-    if (!active) {
-      return;
-    }
     set(visit$, get(visit$) + 1);
     const entries = set(loadAgentSuggestionEntries$, signal);
     set(get(session$).entries$, entries);
@@ -504,11 +376,10 @@ export const retryAgentSuggestion$ = command(
     await set(entry.retry$, pageSignal);
     await set(refreshAfterUnavailableSuggestion$, entry, pageSignal);
     pageSignal.throwIfAborted();
-    set(advanceHomeSuggestion$, entry);
   },
 );
 
-/** Records how a card was handled and moves it below the waiting cards. */
+/** Records how a card was handled and removes it from the waiting stack. */
 export const settleAgentSuggestion$ = command(
   (
     { get, set },
@@ -551,7 +422,6 @@ const updateSettledSuggestion$ = command(
 export const linkAgentSuggestionThread$ = command(
   ({ set }, entry: AgentSuggestionEntry, threadId: string) => {
     set(updateSettledSuggestion$, entry, { type: "sent", threadId });
-    set(advanceHomeSuggestion$, entry);
   },
 );
 
@@ -566,13 +436,6 @@ export const restoreAgentSuggestion$ = command(
         return candidate.entry !== entry;
       }),
     );
-    if (get(session.reasonOpen$) === entry) {
-      set(session.reasonOpen$, null);
-    }
-    if (get(session.detailQueue$)?.includes(entry)) {
-      set(session.detailId$, entry.item.id);
-      set(session.previewId$, entry.item.id);
-    }
   },
 );
 
@@ -596,18 +459,9 @@ export const closeSettledSuggestion$ = command(
         return candidate.entry !== entry;
       }),
     );
-    if (get(session.reasonOpen$) === entry) {
-      set(session.reasonOpen$, null);
-    }
   },
 );
-export const openSuggestionFeedbackReason$ = command(
-  ({ get, set }, entry: AgentSuggestionEntry) => {
-    set(get(session$).reasonOpen$, entry);
-  },
-);
-
-export const submitAgentSuggestionFeedback$ = command(
+const submitAgentSuggestionFeedback$ = command(
   async (
     { get, set },
     suggestionId: string,
@@ -632,8 +486,6 @@ export const submitAgentSuggestionFeedback$ = command(
         id,
         undoId: crypto.randomUUID(),
         kind,
-        reasonSaved: false,
-        note: "",
       },
       pageSignal,
     );
@@ -647,10 +499,9 @@ export const submitAgentSuggestionFeedback$ = command(
     );
     await set(refreshAfterUnavailableSuggestion$, entry, pageSignal);
     pageSignal.throwIfAborted();
-    set(advanceHomeSuggestion$, entry);
   },
 );
-export const undoSuggestionFeedback$ = command(
+const undoSuggestionFeedback$ = command(
   async (
     { get, set },
     entry: AgentSuggestionEntry,
@@ -678,8 +529,8 @@ export const undoSuggestionFeedback$ = command(
   },
 );
 
-/** Homepage feedback keeps the preview compact and offers the existing Undo. */
-export const submitHomeSuggestionFeedback$ = command(
+/** Handling a card offers Undo without keeping its content in the stack. */
+export const submitSuggestionFeedbackWithUndo$ = command(
   async (
     { get, set },
     suggestionId: string,
@@ -716,49 +567,14 @@ export const submitHomeSuggestionFeedback$ = command(
     }[kind];
     toast.success(message, {
       ...TEXT_TOAST_ACTION,
-      id: "home-suggestion-feedback",
+      id: "suggestion-feedback",
       action: {
         label: messages.undoFeedback,
         onClick: onDomEventFn(async () => {
           signal.throwIfAborted();
-          set(session.previewId$, entry.item.id);
           await set(undoSuggestionFeedback$, entry, signal);
         }),
       },
     });
-  },
-);
-export const saveSuggestionFeedbackReason$ = command(
-  async (
-    { get, set },
-    entry: AgentSuggestionEntry,
-    note: string,
-    pageSignal: AbortSignal,
-  ) => {
-    pageSignal.throwIfAborted();
-    const session = get(session$);
-    const feedback = settledFeedback(get(session.settled$), entry);
-    if (!feedback) {
-      return;
-    }
-    set(updateSettledSuggestion$, entry, {
-      ...feedback,
-      reasonSaved: true,
-      note,
-    });
-    set(session.reasonOpen$, null);
-    await set(
-      entry.enqueue$,
-      {
-        type: "feedback",
-        request: {
-          id: crypto.randomUUID(),
-          kind: "reason",
-          targetId: feedback.id,
-          note,
-        },
-      },
-      get(rootSignal$),
-    );
   },
 );

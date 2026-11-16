@@ -37,6 +37,7 @@ import {
 } from "../utils";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import { getDiscordAppConfig } from "./discord-config";
+import { handleDiscordModelRecovery$ } from "./discord-model-recovery.service";
 import {
   disconnectDiscordBinding$,
   readDiscordDmBinding$,
@@ -254,6 +255,12 @@ const discordAccountAction$ = command(
     signal: AbortSignal,
   ): Promise<DiscordAccountMessage> => {
     let control: DiscordPickerState | null = null;
+    if (
+      interaction.type === 3 &&
+      /^(?:mr|ms):/u.test(interaction.data.custom_id)
+    ) {
+      return set(handleDiscordModelRecovery$, interaction, actor, signal);
+    }
     let selection: string | undefined;
     if (interaction.type === 3) {
       control = parseDiscordPickerCustomId({
@@ -380,7 +387,8 @@ async function acknowledgeDiscordInteraction(
         interactionId: interaction.id,
         interactionToken: interaction.token,
         response:
-          interaction.type === 3
+          interaction.type === 3 &&
+          !interaction.data.custom_id.startsWith("mr:")
             ? { type: 6 }
             : { type: 5, data: { flags: 64 } },
       },

@@ -222,7 +222,6 @@ export function createPromptAndSkillVolumesSignals(
   );
   const userPrompt$ = createUserPrompt(memberMetadata$);
   const deviceUsePrompts = createDeviceUsePrompts(
-    bootstrap.orgId,
     pickedEvent$,
     threadContext,
     featureSwitches$,
@@ -314,7 +313,6 @@ export function createPromptAndSkillVolumesSignals(
 }
 
 function createDeviceUsePrompts(
-  orgId: string,
   event$: Parameters<typeof createComputerUsePrompt>[0],
   threadContext: ThreadContext,
   features$: Parameters<typeof createComputerUsePrompt>[2],
@@ -326,7 +324,6 @@ function createDeviceUsePrompts(
       features$,
     ),
     phoneUsePrompt$: createPhoneUsePrompt(
-      orgId,
       threadContext.phoneUseGrant$,
       features$,
     ),

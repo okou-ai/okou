@@ -7,7 +7,16 @@ import {
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
-import { and, eq, isNull, notInArray, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  isNull,
+  notInArray,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { GetStartedClaimRow } from "./get-started-rewards.service";
 
@@ -146,16 +155,43 @@ export function completedGetStartedQuestPublication(
   const grantId = randomUUID();
   const reward = GET_STARTED_REWARDS[args.questKey];
   const rewardKey = `${args.questKey}:${args.userId}:${args.sourceKey}`;
-  const rewardSlot = args.questKey === "imessage" ? 1 : null;
+  const rewardSlot =
+    args.questKey === "connector"
+      ? sql`connector_reward_slots.slot`
+      : sql`${args.questKey === "imessage" ? 1 : null}`;
   const expiresAt = new Date(at.getTime() + GET_STARTED_REWARD_TTL_MS);
   const values = sql`${claimId}::uuid, ${args.orgId}, ${args.userId}, ${args.userId}, ${args.questKey}, ${args.sourceKey},
       ${reward.amount}, 'user', 'granted', ${rewardKey}, ${rewardSlot}, ${grantId}::uuid,
       ${sql.param(at, getStartedClaims.completedAt)}, ${sql.param(at, getStartedClaims.grantedAt)},
       ${sql.param(expiresAt, getStartedClaims.expiresAt)}, ${sql.param(at, getStartedClaims.nextAttemptAt)},
       ${sql.param(at, getStartedClaims.createdAt)}, ${sql.param(at, getStartedClaims.updatedAt)}`;
-  const source = acceptedSource
-    ? sql`SELECT ${values} FROM (${acceptedSource}) AS accepted_source WHERE true`
-    : sql`VALUES (${values})`;
+  const sources: SQL[] = [];
+  if (acceptedSource) {
+    sources.push(sql`(${acceptedSource}) AS accepted_source`);
+  }
+  if (args.questKey === "connector") {
+    // Historical awards have no slot, but still consume the lifetime limit.
+    // Offer every remaining slot in order: ON CONFLICT can skip a concurrent
+    // winner without losing another eligible connection's reward. The claim's
+    // own unique keys ensure only one candidate publishes a credit grant.
+    const awarded = new QueryBuilder()
+      .select({ total: count() })
+      .from(getStartedClaims)
+      .where(
+        and(
+          eq(getStartedClaims.beneficiaryUserId, args.userId),
+          eq(getStartedClaims.questKey, "connector"),
+          eq(getStartedClaims.status, "granted"),
+        ),
+      );
+    sources.push(
+      sql`generate_series((${awarded})::integer + 1, ${GET_STARTED_REWARDS.connector.limit}) AS connector_reward_slots(slot)`,
+    );
+  }
+  const source =
+    sources.length > 0
+      ? sql`SELECT ${values} FROM ${sql.join(sources, sql` CROSS JOIN `)} WHERE true${args.questKey === "connector" ? sql` ORDER BY connector_reward_slots.slot` : sql.empty()}`
+      : sql`VALUES (${values})`;
   // Concurrent duplicates can collide on the source, reward key, or reward slot.
   // Arbitrate every unique index: targeting only the source can still raise a
   // uniqueness error on another index instead of returning the existing award.

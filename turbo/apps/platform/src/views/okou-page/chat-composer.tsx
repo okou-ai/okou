@@ -3,6 +3,10 @@ import { DocumentTemplatePickerPane } from "./document-template-picker-pane.tsx"
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { ChatConnectorMenu } from "./chat-connector-menu.tsx";
+import {
+  PhoneUseConnectorMenuSection,
+  PhoneUseSetupDialog,
+} from "./phone-use-connector-menu.tsx";
 import { ComposerConnectorMenuShell } from "./composer-connector-menu-shell.tsx";
 import { ConnectorPermissionsDialog } from "./components/settings/connector-permissions-dialog.tsx";
 import { DocumentTemplatePreviewPage } from "./document-template-preview-page.tsx";
@@ -4204,14 +4208,19 @@ function ComposerRemoteAccessMenu({
       onOpen={openRemoteAccessDialog}
     />
   );
-  return computerUse ? (
-    <ComputerUseConnectorMenuSection
-      computerUse={computerUse}
-      onOpenDownloadDialog={onOpenDownloadDialog}
-      remoteAccess={remoteAccess}
-    />
-  ) : (
-    remoteAccess
+  return (
+    <>
+      {computerUse ? (
+        <ComputerUseConnectorMenuSection
+          computerUse={computerUse}
+          onOpenDownloadDialog={onOpenDownloadDialog}
+          remoteAccess={remoteAccess}
+        />
+      ) : (
+        remoteAccess
+      )}
+      <PhoneUseConnectorMenuSection signals={signals.connector} />
+    </>
   );
 }
 
@@ -4917,6 +4926,7 @@ function ConnectorsPopoverButton({
   const setPopoverOpen = useSet(signals.connector.setPopoverOpen$);
   const chatPermissions = useGet(signals.connector.chatAccess.permissions$);
   const setTriggerRef = useSet(signals.connector.setTriggerRef$);
+  const phoneUseSetupOpen = useGet(signals.connector.phoneUseSetupOpen$);
   const accountMenuOpen = useGet(signals.connector.accounts.menuOpen$);
   const closeAccountMenu = useSet(signals.connector.accounts.closeMenu$);
   const downloadDialogOpen = useGet(
@@ -4974,7 +4984,11 @@ function ConnectorsPopoverButton({
         // The modal takes focus during the handoff; ordinary dismissal still
         // returns to this popover's trigger through Base UI.
         finalFocus={
-          remoteAccessDialogOpen || chatPermissions !== null ? false : undefined
+          remoteAccessDialogOpen ||
+          phoneUseSetupOpen ||
+          chatPermissions !== null
+            ? false
+            : undefined
         }
         side="top"
         align="start"
@@ -5002,6 +5016,7 @@ function ConnectorsPopoverButton({
           onOpenChange={setDownloadDialogOpen}
         />
       )}
+      {phoneUseSetupOpen && <PhoneUseSetupDialog signals={signals.connector} />}
     </Popover>
   );
 }

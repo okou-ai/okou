@@ -168,7 +168,7 @@ const checkoutCompleteResponseSchema = object({
 });
 
 const redeemCodeResponseSchema = object({
-  redeemed: literal(true),
+  redeemed: boolean(),
 });
 
 const portalResponseSchema = object({
@@ -1376,7 +1376,7 @@ export const billingRedeemCodeContract = c.router({
       500: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Redeem an onboarding billing code",
+    summary: "Redeem a billing code for a free workspace",
   },
 });
 

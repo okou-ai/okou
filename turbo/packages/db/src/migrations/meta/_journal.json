@@ -3344,8 +3344,15 @@
     {
       "idx": 1556,
       "version": "7",
-      "when": 1794810526385,
-      "tag": "1556_archive_projects",
+      "when": 1794810429438,
+      "tag": "1556_cap_connector_rewards",
+      "breakpoints": true
+    },
+    {
+      "idx": 1557,
+      "version": "7",
+      "when": 1794814096137,
+      "tag": "1557_archive_projects",
       "breakpoints": true
     }
   ]

@@ -98,6 +98,19 @@ export const phoneUseContract: ClientDescriptor<
       503: true,
     },
   },
+  chatGrant: {
+    method: "GET",
+    path: "/api/phone-use/grants/:threadId",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+      503: true,
+    },
+  },
   create: {
     method: "POST",
     path: "/api/phone-use/operations",

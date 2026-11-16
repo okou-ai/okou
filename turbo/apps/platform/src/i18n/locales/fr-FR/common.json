@@ -1685,6 +1685,14 @@
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
       "feedLabel": "Fil",
+      "forYou": {
+        "loading": "Chargement des suggestions",
+        "next": "Suggestion suivante",
+        "previous": "Suggestion précédente",
+        "remaining": "Encore {{total}}",
+        "subtitle": "Une chose à la fois",
+        "title": "Pour vous"
+      },
       "homeCard": {
         "completeTitle": "Tout est à jour",
         "feedback": "Actions de la suggestion",
@@ -2400,6 +2408,21 @@
       "unknown": "Permission inconnue",
       "updated": "Permissions mises à jour",
       "updateFailed": "Impossible de mettre à jour les permissions"
+    },
+    "phoneUse": {
+      "allowChat": "Activer votre téléphone dans cette discussion",
+      "allowChatDescription": "Ouvrez Connectors ici et activez le bouton à côté de votre téléphone. Désactivez-le pour révoquer l’accès.",
+      "connectMyPhone": "Connecter mon téléphone",
+      "done": "Terminé",
+      "loadError": "Impossible de charger les téléphones.",
+      "loading": "Chargement des téléphones…",
+      "noPhones": "Aucun téléphone en ligne",
+      "openApp": "Ouvrir Okou iOS Use",
+      "openAppDescription": "Installez la version de développement sur votre iPhone, connectez-vous avec le même compte et espace de travail, puis démarrez une fenêtre de contrôle.",
+      "setupDescription": "Autorisez Okou à utiliser votre iPhone dans cette discussion.",
+      "startTask": "Envoyer votre prochaine tâche",
+      "startTaskDescription": "Après avoir autorisé l’accès, envoyez un nouveau message ici. Gardez la fenêtre de contrôle active sur votre téléphone.",
+      "yourPhone": "Votre téléphone"
     },
     "promptDocumentTitle": "Prompt",
     "queue": {

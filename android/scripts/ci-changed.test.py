@@ -60,7 +60,9 @@ class ChangeSelectionTest(unittest.TestCase):
                          "ios/Okou/DesignSystem/Foundations/Lucide-LICENSE.txt",
                          "turbo/packages/api-contracts/src/kotlin-bindings/bindings.ts",
                          "turbo/packages/api-contracts/src/validators/user-preferences.ts",
-                         ".github/scripts/artifacts/sign-okou-android-apk.sh"]:
+                         ".github/scripts/artifacts/sign-okou-android-apk.sh",
+                         ".github/scripts/release/archive-android-mapping.py",
+                         ".github/scripts/tests/android-release-workflow-test.sh"]:
                 current = git("rev-parse", "HEAD")
                 write(path)
                 commit()

@@ -1,5 +1,5 @@
 {
-  "id": "b79650c8-66fe-4670-b7c7-98842ea9660e",
+  "id": "ba6523f8-10cd-4f75-aea8-e721dd0e57c0",
   "prevId": "6dad197b-28ff-4620-a008-c2945020c0fb",
   "version": "7",
   "dialect": "postgresql",
@@ -16688,7 +16688,7 @@
         },
         "get_started_slot_check": {
           "name": "get_started_slot_check",
-          "value": "(\"get_started_claims\".\"status\" <> 'granted' AND \"get_started_claims\".\"reward_slot\" IS NULL) OR (\"get_started_claims\".\"status\" = 'granted' AND ((\"get_started_claims\".\"quest_key\" = 'invite' AND \"get_started_claims\".\"reward_slot\" BETWEEN 1 AND 15 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" IN ('imessage', 'workflow', 'share') AND \"get_started_claims\".\"reward_slot\" = 1 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" IN ('connector', 'slack', 'checkin') AND \"get_started_claims\".\"reward_slot\" IS NULL)))"
+          "value": "(\"get_started_claims\".\"status\" <> 'granted' AND \"get_started_claims\".\"reward_slot\" IS NULL) OR (\"get_started_claims\".\"status\" = 'granted' AND ((\"get_started_claims\".\"quest_key\" = 'invite' AND \"get_started_claims\".\"reward_slot\" BETWEEN 1 AND 15 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" IN ('imessage', 'workflow', 'share') AND \"get_started_claims\".\"reward_slot\" = 1 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" = 'connector' AND (\"get_started_claims\".\"reward_slot\" IS NULL OR \"get_started_claims\".\"reward_slot\" BETWEEN 1 AND 10)) OR (\"get_started_claims\".\"quest_key\" IN ('slack', 'checkin') AND \"get_started_claims\".\"reward_slot\" IS NULL)))"
         },
         "get_started_amount_check": {
           "name": "get_started_amount_check",
@@ -25902,12 +25902,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "archived_at": {
-          "name": "archived_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -38800,9 +38794,7 @@
       "values": [
         "created",
         "renamed",
-        "deleted",
-        "archived",
-        "restored"
+        "deleted"
       ]
     }
   },

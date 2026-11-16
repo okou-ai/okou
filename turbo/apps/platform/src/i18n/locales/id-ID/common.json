@@ -1658,6 +1658,14 @@
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
       "feedLabel": "Feed",
+      "forYou": {
+        "loading": "Memuat saran",
+        "next": "Saran berikutnya",
+        "previous": "Saran sebelumnya",
+        "remaining": "{{total}} tersisa",
+        "subtitle": "Satu per satu",
+        "title": "Untuk Anda"
+      },
       "homeCard": {
         "completeTitle": "Semua beres",
         "feedback": "Tindakan saran",
@@ -2355,6 +2363,21 @@
       "unknown": "Izin tidak dikenal",
       "updated": "Izin diperbarui",
       "updateFailed": "Tidak dapat memperbarui izin"
+    },
+    "phoneUse": {
+      "allowChat": "Aktifkan ponsel di obrolan ini",
+      "allowChatDescription": "Buka Connectors di sini dan aktifkan sakelar di samping ponsel Anda. Nonaktifkan untuk mencabut akses.",
+      "connectMyPhone": "Hubungkan ponsel saya",
+      "done": "Selesai",
+      "loadError": "Tidak dapat memuat ponsel.",
+      "loading": "Memuat ponsel…",
+      "noPhones": "Tidak ada ponsel online",
+      "openApp": "Buka Okou iOS Use",
+      "openAppDescription": "Instal build pengembangan di iPhone, masuk dengan akun dan ruang kerja yang sama, lalu mulai jendela kontrol.",
+      "setupDescription": "Izinkan Okou menggunakan iPhone Anda dari obrolan ini.",
+      "startTask": "Kirim tugas berikutnya",
+      "startTaskDescription": "Setelah mengizinkan akses, kirim pesan baru di sini. Biarkan jendela kontrol tetap aktif di ponsel Anda.",
+      "yourPhone": "Ponsel Anda"
     },
     "promptDocumentTitle": "Prompt",
     "queue": {
