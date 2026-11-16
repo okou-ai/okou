@@ -314,7 +314,6 @@ describe("WeChat reply presentation and processing status", () => {
     const fixture = await responseFixture();
     await updateFeatureSwitchesForUser(context, fixture.actor, {
       [FeatureSwitchKey.WechatIntegration]: true,
-      [FeatureSwitchKey.IntegrationModelRecovery]: true,
     });
     await fixture.receive("Review this attachment");
     const run = await fixture.executionInput();

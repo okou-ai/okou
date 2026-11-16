@@ -8,7 +8,6 @@ import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contrac
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
 import { integrationsPhoneMessageContract } from "@okouai/api-contracts/contracts/integrations";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
@@ -55,7 +54,6 @@ import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 // INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
 // real run dispatch through the Runner HTTP receiver, and completion replies through
 // typed internal callback dispatch. All state is constructed through public
@@ -557,14 +555,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       mockEnv("OKOU_WEB_URL", "https://app.okou.ai");
       const { actor, ap, phone, runnerGroup, sends } =
         await entitledLinkedActor();
-      if (!actor.orgId) {
-        throw new Error("Expected an owned workspace");
-      }
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { [FeatureSwitchKey.IntegrationModelRecovery]: true },
-      );
       await ap.postAgentPhoneInboundMessage({
         channel,
         from: phone,

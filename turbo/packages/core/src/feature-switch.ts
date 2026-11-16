@@ -46,14 +46,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.IntegrationModelRecovery]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Integration model recovery",
-    description:
-      "Switch the current conversation's model from an integration error.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ArtifactGenerationTiming]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Artifact generation phase timing",
