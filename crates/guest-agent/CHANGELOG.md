@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.86](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.85...guest-agent-v0.109.86) (2026-11-16)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify claude org admin spend limits ([#47621](https://github.com/okou-ai/okou/issues/47621)) ([03e0996](https://github.com/okou-ai/okou/commit/03e0996200afadcabaf6592e54e15d7f84dfcc25))
+
 ## [0.109.85](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.84...guest-agent-v0.109.85) (2026-11-16)
 
 

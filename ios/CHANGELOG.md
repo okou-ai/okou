@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.45.0](https://github.com/okou-ai/okou/compare/ios-v0.44.0...ios-v0.45.0) (2026-11-16)
+
+
+### Features
+
+* **ios:** show available credits in billing settings ([#47612](https://github.com/okou-ai/okou/issues/47612)) ([7230a84](https://github.com/okou-ai/okou/commit/7230a84274aa093ba3e10103ad493c9572ec2dda))
+
+
+### Bug Fixes
+
+* **ios:** fade model picker while reading chat history ([#47571](https://github.com/okou-ai/okou/issues/47571)) ([52914dc](https://github.com/okou-ai/okou/commit/52914dc836cd741ca384d1a41205211aea7a90bd))
+* **ios:** preserve keyboard state when starting voice input ([#47566](https://github.com/okou-ai/okou/issues/47566)) ([0e8ddc8](https://github.com/okou-ai/okou/commit/0e8ddc8b23be89f5fb027932f814d24b8ebc0a61))
+
 ## [0.44.0](https://github.com/okou-ai/okou/compare/ios-v0.43.9...ios-v0.44.0) (2026-11-15)
 
 
