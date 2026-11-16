@@ -1036,12 +1036,16 @@ const retainScreenshot$ = command(
     if (!linked) {
       missing();
     }
-    await set(putS3Object$, {
-      bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-      key,
-      body: image,
-      contentType: "image/png",
-    });
+    await set(
+      putS3Object$,
+      {
+        bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+        key,
+        body: image,
+        contentType: "image/png",
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return key;
   },
