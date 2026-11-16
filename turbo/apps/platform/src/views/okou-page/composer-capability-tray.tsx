@@ -301,8 +301,8 @@ function CapabilityViewAll({
  * one surface opening upward. The tray is a very light tint of the ink rather
  * than the composer's white, so it carries no border or shadow: the white
  * composer sits on it and the covers keep the picker's own hairline, so it
- * needs no line to separate it from the page. The tint is one mix, so it holds in Dark, where
- * the ink is light.
+ * needs no line to separate it from the page. The tint is one mix, so it holds
+ * in Dark, where the ink is light.
  *
  * Its capability tabs sit on its top edge, the open one in its tint; the tray
  * is that tab's panel.
