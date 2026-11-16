@@ -1,8 +1,4 @@
-import {
-  getCustomSkillStorageName,
-  SYSTEM_ORG_ID,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
+import { SYSTEM_ORG_ID } from "@okouai/core/storage-names";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import type { PersistedStorageMount } from "@okouai/db/types";
@@ -20,7 +16,6 @@ import {
   readOnlyStoragePresignedUrlCacheKey,
   signStorageManifestPresignedUrls,
   systemStoragePresignedUrlCacheKey,
-  workflowSkillStoragePresignedUrlCacheKey,
   type SelectedStoragePresignedUrlCacheRow,
   type StorageManifestPresignedUrlCacheScope,
 } from "./system-storage-presigned-url-cache.service";
@@ -197,8 +192,6 @@ export function createAcceptedExecutionStorageObjects(
       );
       const cacheKey = storageVersionCacheKeySql({
         orgId: sql`${storages.orgId}`,
-        userId: sql`${storages.userId}`,
-        name: sql`${storages.name}`,
         versionId: sql`${storageVersions.id}`,
         s3Key: sql`${storageVersions.s3Key}`,
       });
@@ -271,23 +264,11 @@ function cacheRequest(
     resolvedOrgId: version.orgId,
     publicEndpoint: true,
   };
-  // These are storage/cache namespaces, not Thread/workflow selection policy.
   if (mount.orgId === SYSTEM_ORG_ID) {
     return {
       scope: "system_storage" as const,
       request,
       key: systemStoragePresignedUrlCacheKey(request),
-    };
-  }
-  if (
-    mount.mode === "readonly" &&
-    mount.userId === VOLUME_ORG_USER_ID &&
-    mount.name.startsWith(getCustomSkillStorageName(""))
-  ) {
-    return {
-      scope: "workflow_skill_storage" as const,
-      request,
-      key: workflowSkillStoragePresignedUrlCacheKey(request),
     };
   }
   return {
@@ -324,9 +305,6 @@ function signingRequests(
   const input: CacheInput = {
     systemRequests: selected.flatMap(({ cache }) => {
       return cache?.scope === "system_storage" ? [cache.request] : [];
-    }),
-    workflowSkillRequests: selected.flatMap(({ cache }) => {
-      return cache?.scope === "workflow_skill_storage" ? [cache.request] : [];
     }),
     readOnlyRequests: selected.flatMap(({ cache }) => {
       return cache?.scope === "readonly_storage" ? [cache.request] : [];
@@ -436,11 +414,7 @@ function cacheSnapshot(rows: ExecutionStorageCacheRows): CacheSnapshot {
     Map<string, SelectedStoragePresignedUrlCacheRow>
   >();
   for (const row of rows) {
-    if (
-      row.scope !== "system_storage" &&
-      row.scope !== "workflow_skill_storage" &&
-      row.scope !== "readonly_storage"
-    ) {
+    if (row.scope !== "system_storage" && row.scope !== "readonly_storage") {
       throw new Error("Unexpected execution storage cache scope");
     }
     let scoped = rowsByScope.get(row.scope);

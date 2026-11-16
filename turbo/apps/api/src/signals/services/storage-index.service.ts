@@ -79,8 +79,6 @@ function uniqueStorageRequests(requests: readonly StorageRequest[]) {
 function requestedVersionCacheKeySql() {
   return storageVersionCacheKeySql({
     orgId: sql`${storages.orgId}`,
-    userId: sql`${storages.userId}`,
-    name: sql`${storages.name}`,
     versionId: sql`CASE WHEN requested.version_id IS NULL OR requested.version_id = ${head.id} THEN ${head.id} ELSE ${exact.id} END`,
     s3Key: sql`CASE WHEN requested.version_id IS NULL OR requested.version_id = ${head.id} THEN ${head.s3Key} ELSE ${exact.s3Key} END`,
   });
