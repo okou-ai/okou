@@ -20,7 +20,6 @@ public enum DesktopTelemetry {
       return
     }
     SentrySDK.start { options in
-      options.debug = environment == "integration-test"
       options.dsn = dsn
       options.releaseName = version.map { "okou-desktop@\($0)" }
       options.environment = environment

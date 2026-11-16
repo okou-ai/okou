@@ -81,9 +81,7 @@ final class SentryHTTPCollector {
   }
 
   func events() throws -> [JSONValue] {
-    print("SENTRY_PROBE before SDK flush \(Date())")
     SentrySDK.flush(timeout: 5)
-    print("SENTRY_PROBE after SDK flush \(Date())")
     return try FileManager.default.contentsOfDirectory(
       at: directory, includingPropertiesForKeys: nil
     )
@@ -97,10 +95,6 @@ final class SentryHTTPCollector {
       predicate: NSPredicate { _, _ in
         let files = try? FileManager.default.contentsOfDirectory(
           at: directory, includingPropertiesForKeys: nil)
-        let cached = FileManager.default.enumerator(
-          at: directory.appendingPathComponent("cache"), includingPropertiesForKeys: nil
-        )?.allObjects.compactMap { ($0 as? URL)?.lastPathComponent }
-        print("SENTRY_PROBE \(Date()) receipts=\(files?.filter { $0.pathExtension == "json" }.count ?? -1) cached=\(cached ?? [])")
         return files?.filter { $0.pathExtension == "json" }.count == eventCount
       }, object: nil)
   }

@@ -104,19 +104,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Test native Desktop runtime
-        run: |
-          swift package --package-path desktop resolve
-          swift package --package-path desktop/ComputerUse resolve
-          swift test --package-path desktop -j 4 --parallel --num-workers 2
-
-      - name: Export diagnostic helper lockfile
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: issue-47809-helper-lock
-          path: desktop/ComputerUse/Package.resolved
-          if-no-files-found: error
-          retention-days: 1
+        run: swift test --package-path desktop -j 4 --parallel --num-workers 2
 
       - name: Test Computer Use helper
         run: swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
@@ -144,8 +132,6 @@ jobs:
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY_PROD }}
           SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
         run: |
-          swift package --package-path desktop/ComputerUse resolve
-          xcodebuild -resolvePackageDependencies -project desktop/Okou.xcodeproj -scheme Okou -derivedDataPath desktop/.build-app
           python3 desktop/scripts/build.py
           python3 - 'desktop/out/Okou-darwin-arm64/Okou.app/Contents/MacOS/Okou' 'ai.okou.desktop.native-auth' <<'PY'
           import json
@@ -157,15 +143,6 @@ jobs:
           assert proof["signedIn"] is False, proof
           print(result.stdout)
           PY
-
-      - name: Export diagnostic app lockfile
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: issue-47809-app-lock
-          path: desktop/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-          if-no-files-found: error
-          retention-days: 1
 
       - name: Resolve PR preview URL
         id: preview
