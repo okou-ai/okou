@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1133.2](https://github.com/okou-ai/okou/compare/app-v0.1133.1...app-v0.1133.2) (2026-11-16)
+
+
+### Bug Fixes
+
+* **app:** make image trackpad zoom continuous ([#47615](https://github.com/okou-ai/okou/issues/47615)) ([19eac05](https://github.com/okou-ai/okou/commit/19eac05c6e0d6930880b09201906418553cd6e61))
+* **app:** move feishu and lark setup into the workspace pane ([#47004](https://github.com/okou-ai/okou/issues/47004)) ([b335319](https://github.com/okou-ai/okou/commit/b335319978a6bd0b9de466418b238b01b327ee64))
+
+
+### Performance Improvements
+
+* **app:** avoid translating empty browser operation notices ([#47614](https://github.com/okou-ai/okou/issues/47614)) ([da2c015](https://github.com/okou-ai/okou/commit/da2c015f29eaefc8dad2d4e5d3762bbe1f96fdc7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.69.0
+    * @okouai/core bumped to 8.840.0
+    * @okouai/ui bumped to 1.21.24
+
 ## [0.1133.1](https://github.com/okou-ai/okou/compare/app-v0.1133.0...app-v0.1133.1) (2026-11-16)
 
 

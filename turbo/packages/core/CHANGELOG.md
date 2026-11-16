@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.840.0](https://github.com/okou-ai/okou/compare/core-v8.839.7...core-v8.840.0) (2026-11-16)
+
+
+### Features
+
+* add internal phone use api and cli ([#47520](https://github.com/okou-ai/okou/issues/47520)) ([e6491e5](https://github.com/okou-ai/okou/commit/e6491e5c74670fcdb572681e652c08576136bd19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.69.0
+
 ## [8.839.7](https://github.com/okou-ai/okou/compare/core-v8.839.6...core-v8.839.7) (2026-11-16)
 
 

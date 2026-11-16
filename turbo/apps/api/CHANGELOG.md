@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.72.0](https://github.com/okou-ai/okou/compare/api-v2.71.3...api-v2.72.0) (2026-11-16)
+
+
+### Features
+
+* add internal phone use api and cli ([#47520](https://github.com/okou-ai/okou/issues/47520)) ([e6491e5](https://github.com/okou-ai/okou/commit/e6491e5c74670fcdb572681e652c08576136bd19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.69.0
+    * @okouai/core bumped to 8.840.0
+    * @okouai/db bumped to 2.36.0
+    * @okouai/pi-agent-runtime bumped to 1.51.130
+
 ## [2.71.3](https://github.com/okou-ai/okou/compare/api-v2.71.2...api-v2.71.3) (2026-11-16)
 
 
