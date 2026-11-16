@@ -948,6 +948,9 @@ function mockTabAdmissionGeometry(budget: number, panel = budget + 200) {
     const tabs =
       Object.hasOwn(element.dataset, "browserTabBudget") ||
       element.getAttribute("role") === "tablist";
+    if (!widthOwner && !tabs) {
+      return style;
+    }
     return new Proxy(style, {
       get(target, property) {
         if (panel && property === "flexGrow") {
