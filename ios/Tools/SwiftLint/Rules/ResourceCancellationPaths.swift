@@ -292,10 +292,13 @@ struct ResourceCancellationPaths {
 
   private func shadowed(_ name: String, at node: ExprSyntax?, signalAlias: Bool = false) -> Bool {
     guard let node else { return false }
+    var crossedFunction = false
     for parent in ancestors(of: node) {
       if !signalAlias && parent.id == handler.id { break }
       if signalAlias, let closure = parent.as(ClosureExprSyntax.self) {
-        if closureCall(closure).map({ isGraphCall($0.0, names: graphCallbacks) }) == true {
+        if !crossedFunction,
+          closureCall(closure).map({ isGraphCall($0.0, names: graphCallbacks) }) == true
+        {
           break
         }
         for capture in closure.signature?.capture?.items ?? [] where capture.name.text == name {
@@ -306,6 +309,14 @@ struct ResourceCancellationPaths {
           }
         }
         if closureParameters(closure).contains(name) { return true }
+      }
+      if signalAlias, let function = parent.as(FunctionDeclSyntax.self) {
+        crossedFunction = true
+        if function.signature.parameterClause.parameters.contains(where: {
+          ($0.secondName ?? $0.firstName).text == name
+        }) {
+          return !signals.contains(name)
+        }
       }
       if let branch = parent.as(SwitchCaseSyntax.self),
         let label = branch.label.as(SwitchCaseLabelSyntax.self),

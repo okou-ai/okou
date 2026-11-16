@@ -87,6 +87,13 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   shadowed bindings, unrelated subjects and deferred callbacks are separate
   contracts. Rethrowing an immutable alias still preserves the original error
   when cleanup can fail.
+  The same catch checks apply to explicitly `async throws` functions returning
+  data, including helpers without a CCState import. An unfiltered empty catch
+  or direct `nil`/`[]`/`[:]` recovery cannot erase their failure, and recognized
+  cancellation paths cannot return successful data. Typed domain handling and
+  throwing recovery remain valid. Completion-only functions and explicit
+  Task, Result, graph, loadable, stream, or callback return contracts remain
+  separate; UI waiters can leave the original resource Task holding its error.
   Request phases belong to CCStateSwiftUI loadables; drafts, confirmed snapshots,
   and protocol phases follow their own business contracts.
 - Explicit `_ = Task { ... }` assignments and wildcard declarations such as
@@ -253,6 +260,13 @@ default/fallthrough inference, mixed labels, arbitrary helper predicates, casts
 stored as aliases, switch-expression results and indirect recovery still require
 review. Alias lookup is bounded and does not prove arbitrary mutation or effects.
 Allowing a throwing recovery expression does not prove its cancellation ownership.
+Async-helper catch checks require an explicit throwing signature and direct data
+return type. Visible local aliases and same-owner qualified aliases preserve
+their completion/result contract. Synchronous/nonthrowing helpers, deferred
+cleanup, nested execution scopes, cross-file aliases, other qualified aliases,
+and generic substitutions keep their own review boundaries. Optional-try checks
+remain scoped to graph callbacks; helper error channels and arbitrary recovery
+effects are not inferred from a function's name.
 Discarded-Task checks inspect only direct native Task construction with an inline
 operation closure and an explicit discard. They separate nested closures, local
 functions and type/accessor bodies from the operation's error scope. Cross-file
