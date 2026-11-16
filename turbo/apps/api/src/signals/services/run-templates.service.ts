@@ -4,10 +4,16 @@ import {
   type StoredTemplateGuidanceBundle,
   type TemplateGuidanceBundle,
 } from "@okouai/api-contracts/contracts/template-guidance-bundle";
+import { USER_TEMPLATE_KINDS } from "@okouai/api-contracts/contracts/user-templates";
 import { presentationTemplates } from "@okouai/db/schema/presentation-template";
 import { userTemplates } from "@okouai/db/schema/user-template";
 import { computed, type Computed } from "ccstate";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { enum as zEnum } from "zod";
+import {
+  nullableDriverValueDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import {
   resolveGenerationTemplatesGuidance,
   type LiveGenerationTemplate,
@@ -25,6 +31,11 @@ import {
   selectedUserTemplateIds,
   type MountedUserTemplate,
 } from "./user-template-data.service";
+
+const templateKindSchema = zEnum(USER_TEMPLATE_KINDS);
+const templateKind = sql`${userTemplates.manifest}->>'kind'`.mapWith(
+  nullableDriverValueDecoder(pgTextDecoder),
+);
 
 export type RunTemplatesResult =
   | (RunPromptAndSkills & {
@@ -167,7 +178,7 @@ function createRunTemplateGuidance(
     const rows = await get(db$)
       .select({
         id: userTemplates.id,
-        manifest: userTemplates.manifest,
+        kind: templateKind,
         guidanceBundle: userTemplates.guidanceBundle,
       })
       .from(userTemplates)
@@ -193,7 +204,7 @@ function createRunTemplateGuidance(
         : [
             {
               templateId: id,
-              kind: row.manifest.kind,
+              kind: templateKindSchema.parse(row.kind),
               guidanceBundle: templateGuidanceBundleSchema.parse(
                 row.guidanceBundle,
               ),

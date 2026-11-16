@@ -355,7 +355,7 @@ function createExecutionModel(input$: ExecutionInput$) {
       if (!source) {
         throw new Error("Run execution sources are unavailable");
       }
-      provider = await prepareManagedModelEnvironment(source, {
+      provider = prepareManagedModelEnvironment(source, {
         framework: getFrameworkForType(AUTO_RUN_PROVIDER),
         selectedModel: run.selectedModel,
         builtInModelRuntimeRoute: {
