@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use nix::fcntl::{FcntlArg, OFlag, fcntl};
+use rustix::process::{Pid, WaitId, WaitIdOptions, waitid};
 
 use tokio::io::unix::AsyncFd;
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout};
@@ -250,29 +251,21 @@ impl Child {
 }
 
 async fn observe_exit(pidfd: &AsyncFd<OwnedFd>, pid: u32) -> io::Result<()> {
+    let pid = i32::try_from(pid)
+        .ok()
+        .and_then(Pid::from_raw)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid child PID"))?;
     loop {
         let mut ready = pidfd.readable().await?;
-        // SAFETY: waitid initializes this plain C output structure. WNOWAIT
-        // observes only our unreaped child and does not consume its exit status.
-        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
-        let result = unsafe {
-            libc::waitid(
-                libc::P_PID,
-                pid,
-                &mut info,
-                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
-            )
-        };
-        if result < 0 {
-            let error = io::Error::last_os_error();
-            if error.kind() == io::ErrorKind::Interrupted {
-                continue;
-            }
-            return Err(error);
-        }
-        // SAFETY: a successful waitid initializes the child-status fields.
-        if unsafe { info.si_pid() } != 0 {
-            return Ok(());
+        // NOWAIT observes only our unreaped child without consuming its status.
+        match waitid(
+            WaitId::Pid(pid),
+            WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT,
+        ) {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) => {}
+            Err(rustix::io::Errno::INTR) => continue,
+            Err(error) => return Err(error.into()),
         }
         // Tokio readiness may be spurious; only actual exit permits cleanup.
         ready.clear_ready();

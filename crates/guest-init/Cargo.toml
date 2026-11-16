@@ -12,6 +12,7 @@ nix = { workspace = true, features = ["mount", "signal"] }
 guest-control-server.workspace = true
 
 [dev-dependencies]
+rustix = { workspace = true, features = ["process", "std"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 
 [lints]
