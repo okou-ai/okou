@@ -269,9 +269,11 @@ final class NotificationStateTests: XCTestCase {
     await gate.hold()
     addTeardownBlock { await gate.releaseAll() }
     let fixture = ChatHTTPFixture { request in
-      if request.url?.path == "/api/ios-push-registrations" {
+      if request.httpMethod == "POST", request.url?.path == "/api/ios-push-registrations" {
         return ChatHTTPResponse(body: "{}")
       }
+      guard request.httpMethod == "POST", request.url?.path == "/api/ios-notifications/reconcile"
+      else { throw URLError(.unsupportedURL) }
       let body = try JSONDecoder().decode(
         SubmittedNotifications.self, from: chatRequestBody(request))
       XCTAssertNotNil(body.registrationRevision)
@@ -331,6 +333,8 @@ final class NotificationStateTests: XCTestCase {
     await gate.hold()
     addTeardownBlock { await gate.releaseAll() }
     let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "POST", request.url?.path == "/api/ios-notifications/reconcile"
+      else { throw URLError(.unsupportedURL) }
       let body = chatRequestBody(request)
       let count = requests.withLock { values in
         values.append(body)
@@ -364,7 +368,9 @@ final class NotificationStateTests: XCTestCase {
     let system = NotificationSystemFixture()
     system.delivered = [try receipt("unread", user: "current")]
     let requests = Mutex(0)
-    let fixture = ChatHTTPFixture { _ in
+    let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "POST", request.url?.path == "/api/ios-notifications/reconcile"
+      else { throw URLError(.unsupportedURL) }
       let count = requests.withLock {
         $0 += 1
         return $0

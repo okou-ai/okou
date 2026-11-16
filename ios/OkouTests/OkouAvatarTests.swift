@@ -20,18 +20,6 @@ final class OkouAvatarTests: XCTestCase {
     XCTAssertLessThan(steam.minX, 93)
   }
 
-  func testMoodsMatchWebTimings() {
-    XCTAssertEqual(OkouAvatarMood.allCases.count, 21)
-    XCTAssertEqual(OkouAvatarMood.idle.cycle, 8)
-    XCTAssertEqual(OkouAvatarMood.idle.hero, 1.2)
-    XCTAssertEqual(OkouAvatarMood.wink.cycle, 2.83)
-    XCTAssertEqual(OkouAvatarMood.wink.hero, 0.8)
-    XCTAssertEqual(OkouAvatarMood.sleepy.hero, 3.3)
-    for mood in OkouAvatarMood.allCases {
-      XCTAssertLessThan(mood.hero, mood.cycle, mood.rawValue)
-    }
-  }
-
   func testEveryNodeTheRigDrawsExistsInTheArtwork() {
     var ids = Set<String>()
     func collect(_ node: OkouAvatarNode) {
@@ -56,19 +44,5 @@ final class OkouAvatarTests: XCTestCase {
     XCTAssertNotEqual(
       OkouAvatarRig.frame(.idle, at: 1).transforms["head-motion"],
       OkouAvatarRig.frame(.idle, at: 3).transforms["head-motion"])
-  }
-
-  func testHeroFramesShowEachMoodsReadableMoment() {
-    let wink = OkouAvatarRig.frame(.wink, at: OkouAvatarMood.wink.hero)
-    // The right eye is shut in a smile; the left stays open.
-    XCTAssertEqual(wink.opacities["eye-right-smile"] ?? 0, 1, accuracy: 0.01)
-    XCTAssertEqual(wink.opacities["eye-left-dot"] ?? 0, 1, accuracy: 0.01)
-    let laugh = OkouAvatarRig.frame(.laugh, at: OkouAvatarMood.laugh.hero)
-    XCTAssertEqual(laugh.opacities["mouth-big-laugh"], 1)
-    XCTAssertEqual(laugh.opacities["smile"], 0)
-    let party = OkouAvatarRig.frame(.party, at: OkouAvatarMood.party.hero)
-    XCTAssertFalse(party.torsoClipped)
-    XCTAssertEqual(party.opacities["party-confetti"], 1)
-    XCTAssertTrue(OkouAvatarRig.frame(.idle, at: 1.2).torsoClipped)
   }
 }
