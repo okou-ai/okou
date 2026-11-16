@@ -15,6 +15,7 @@ MOCK = r"""#!/usr/bin/env python3
 import json, os, pathlib, signal, sys, time
 state = pathlib.Path(os.environ['CI_PROCESS_STATE'])
 scenario = os.environ['CI_PROCESS_SCENARIO']
+parallel = os.environ.get('IOS_CI_PARALLEL_SIMULATOR') == 'true'
 role = ''
 def mark(name):
     (state / name).write_text(str(os.getpid()))
@@ -35,18 +36,22 @@ if command == 'xcrun':
         print(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-26-2':
             [{'name': 'iPhone 17 Pro', 'udid': 'configured', 'state': 'Shutdown'}]}}))
     elif args == ['simctl', 'boot', 'configured']:
-        if not (state / 'build-finished').exists():
+        if not parallel and not (state / 'build-finished').exists():
             sys.exit('Simulator boot requested before compilation finished')
     elif args == ['simctl', 'bootstatus', 'configured']:
         role = 'boot'
         if not (state / 'prepare-finished').exists():
             sys.exit('Simulator started before locked dependency resolution finished')
-        if not (state / 'build-finished').exists():
+        if not parallel and not (state / 'build-finished').exists():
             sys.exit('Simulator started before compilation finished')
         mark('boot-started')
+        if parallel:
+            wait_for('build-started')
+        if scenario == 'parallel-boot-failure':
+            sys.exit(29)
         if scenario == 'boot-failure':
             sys.exit('Boot rejected')
-        if scenario == 'cancel-boot':
+        if scenario in ('cancel-boot', 'cancel-parallel', 'parallel-build-failure'):
             wait_for('allow-boot')
         mark('boot-finished')
     elif args[0] != 'swift-format':
@@ -72,16 +77,18 @@ elif command == 'xcodebuild':
         role = 'build'
         if not (state / 'prepare-finished').exists():
             sys.exit('Compilation started before locked dependency resolution finished')
-        if (state / 'boot-started').exists():
+        if not parallel and (state / 'boot-started').exists():
             sys.exit('Compilation overlapped simulator startup')
         for required in ['-onlyUsePackageVersionsFromResolvedFile',
                          '-disableAutomaticPackageResolution', '-skipPackageUpdates']:
             if required not in args:
                 sys.exit('Compilation must enforce locked package inputs: ' + required)
         mark('build-started')
-        if scenario == 'cancel-build':
+        if parallel:
+            wait_for('boot-started')
+        if scenario in ('cancel-build', 'cancel-parallel'):
             wait_for('allow-build')
-        if scenario == 'build-failure':
+        if scenario in ('build-failure', 'parallel-build-failure'):
             sys.exit(23)
         products = pathlib.Path(args[args.index('-derivedDataPath') + 1]) / 'Build/Products'
         products.mkdir(parents=True)
@@ -194,6 +201,49 @@ class CIProcessTests(unittest.TestCase):
         self.env["CI_PROCESS_SCENARIO"] = "package-failure"
         result = self.invoke("ci-package-test.sh")
         self.assertEqual(result.returncode, 19, result.stderr)
+
+    def test_parallel_compilation_and_boot_both_finish_before_native_tests(self):
+        self.env["IOS_CI_PARALLEL_SIMULATOR"] = "true"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.state / "build-finished").exists())
+        self.assertTrue((self.state / "boot-finished").exists())
+        self.assertTrue((self.state / "tests-ran").exists())
+
+    def test_parallel_compiler_failure_retires_boot_and_blocks_tests(self):
+        self.env["IOS_CI_PARALLEL_SIMULATOR"] = "true"
+        self.env["CI_PROCESS_SCENARIO"] = "parallel-build-failure"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 23, result.stderr)
+        self.await_marker("boot-stopped")
+        self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_parallel_boot_failure_blocks_tests_after_compilation(self):
+        self.env["IOS_CI_PARALLEL_SIMULATOR"] = "true"
+        self.env["CI_PROCESS_SCENARIO"] = "parallel-boot-failure"
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_cancellation_retires_parallel_compilation_and_boot(self):
+        self.env["IOS_CI_PARALLEL_SIMULATOR"] = "true"
+        self.env["CI_PROCESS_SCENARIO"] = "cancel-parallel"
+        with subprocess.Popen(
+            self.command(),
+            cwd=self.repo,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ) as process:
+            self.await_marker("build-started")
+            self.await_marker("boot-started")
+            process.send_signal(signal.SIGTERM)
+            _, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 143, stderr)
+        self.await_marker("build-stopped")
+        self.await_marker("boot-stopped")
+        self.assertFalse((self.state / "tests-ran").exists())
 
     def test_resolution_failure_does_not_start_the_simulator_or_native_tests(self):
         self.env["CI_PROCESS_SCENARIO"] = "prepare-failure"

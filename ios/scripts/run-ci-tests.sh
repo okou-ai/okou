@@ -2,6 +2,7 @@
 # Resolve and compile before booting the exact simulator for native tests.
 # Keep simulator post-boot system initialization out of compilation.
 # Uses ci-test.sh's RUNNER_TEMP and IOS_TEST_DESTINATION contracts.
+# IOS_CI_PARALLEL_SIMULATOR=true opts into the concurrent startup experiment.
 set -euo pipefail
 # Each owned job gets a process group, including its compiler/simctl descendants.
 set -m
@@ -29,20 +30,40 @@ wait "$ios_phase_pid"
 ios_phase_pid=""
 ios_dependency_seconds=$((SECONDS - ios_prepare_started))
 
+if [[ "${IOS_CI_PARALLEL_SIMULATOR:-false}" == true ]]; then
+  ios_parallel_started=$SECONDS
+fi
+
 echo "iOS starting build-for-testing"
 bash ios/scripts/ci-test.sh compile &
 ios_phase_pid=$!
+
+if [[ "${IOS_CI_PARALLEL_SIMULATOR:-false}" == true ]]; then
+  (
+    ios_boot_started=$SECONDS
+    python3 ios/scripts/preboot-simulator.py
+    echo "iOS simulator preparation: $((SECONDS - ios_boot_started)) seconds"
+  ) &
+  ios_preboot_pid=$!
+fi
+
 wait "$ios_phase_pid"
 ios_phase_pid=""
 
-ios_boot_started=$SECONDS
-python3 ios/scripts/preboot-simulator.py &
-ios_preboot_pid=$!
-wait "$ios_preboot_pid"
-ios_preboot_pid=""
-ios_boot_seconds=$((SECONDS - ios_boot_started))
-echo "iOS simulator preparation: $ios_boot_seconds seconds"
-echo "iOS total preparation: $((ios_dependency_seconds + ios_boot_seconds)) seconds"
+if [[ "${IOS_CI_PARALLEL_SIMULATOR:-false}" == true ]]; then
+  wait "$ios_preboot_pid"
+  ios_preboot_pid=""
+  echo "iOS parallel compilation and simulator: $((SECONDS - ios_parallel_started)) seconds"
+else
+  ios_boot_started=$SECONDS
+  python3 ios/scripts/preboot-simulator.py &
+  ios_preboot_pid=$!
+  wait "$ios_preboot_pid"
+  ios_preboot_pid=""
+  ios_boot_seconds=$((SECONDS - ios_boot_started))
+  echo "iOS simulator preparation: $ios_boot_seconds seconds"
+  echo "iOS total preparation: $((ios_dependency_seconds + ios_boot_seconds)) seconds"
+fi
 echo "iOS startup before tests: $((SECONDS - ios_prepare_started)) seconds"
 
 echo "iOS starting test-without-building"
