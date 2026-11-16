@@ -10641,6 +10641,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
     describe("RUN-03: sandbox completion reports against missing completion outputs and settled runs", () => {
       describe("completion failure reasons", () => {
         const terminalFailureReasons = [
+          "unknown",
           "provider_image_too_large",
           "insufficient_credits",
           "invalid_api_key",
@@ -10677,7 +10678,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           await api.heartbeatRunner(runnerGroup);
           const execution = await api.executionInput(run.runId);
-          const error = `provider failure for ${run.runId}`;
+          const error =
+            args.failureReason === "unknown"
+              ? undefined
+              : `provider failure for ${run.runId}`;
           const completed = await webhooks.requestAgentComplete(
             {
               runId: run.runId,
@@ -10695,7 +10699,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await flushWaitUntilForTest();
           await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
             status: "failed",
-            error,
+            ...(error === undefined ? {} : { error }),
             source: {
               providerType: modelProvider,
               model: selectedModel,

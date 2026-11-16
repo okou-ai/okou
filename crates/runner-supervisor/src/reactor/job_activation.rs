@@ -27,6 +27,7 @@ use crate::idle_lifecycle::SharedIdlePool;
 use crate::job_acceptance::{
     AcceptanceResources, SandboxAcceptedResource, rollback_sandbox_accepted_resource,
 };
+use crate::job_lifecycle::completion_failure_reason;
 use crate::lifecycle::RunnerMode;
 use crate::resource_activation::{
     ActivationResources, ReservedActivation, ReservedActivationRequest, ReuseActivationRequest,
@@ -614,7 +615,7 @@ async fn complete_execution_failure(
             CompleteRequest {
                 run_id,
                 exit_code: failure.exit_code,
-                failure_reason: None,
+                failure_reason: completion_failure_reason(failure.exit_code, false, Some(&failure)),
                 error: Some(failure.error),
                 sandbox_id: None,
             },

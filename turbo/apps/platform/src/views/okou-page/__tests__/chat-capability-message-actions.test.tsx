@@ -340,7 +340,7 @@ test("Keep run logs under the user message when a run fails without output", asy
     "href",
     `/activities/${FIRST_CAPABILITY_RUN_ID}`,
   );
-  expect(screen.getByText("Connection failed")).toBeInTheDocument();
+  expect(screen.getByText("This run couldn't finish")).toBeInTheDocument();
 });
 
 test("Inspect a response from its prompt or copy it from history", async () => {

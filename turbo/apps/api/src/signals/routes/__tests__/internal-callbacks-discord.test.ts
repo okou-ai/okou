@@ -866,7 +866,8 @@ describe("canonical Discord terminal replies", () => {
     await completeRun({
       runId: started.runId,
       sandboxToken: receivedExecution.sandboxToken,
-      error: "insufficient_credits",
+      error: "Upstream execution stopped",
+      failureReason: "insufficient_credits",
     });
     expect(started.provider.sentMessages).toHaveLength(1);
     expect(started.provider.sentMessages[0]?.content).toContain(

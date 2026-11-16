@@ -60,6 +60,7 @@ const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
   reconnect_required: "suppress-caller-owned",
   usage_limit: "suppress-caller-owned",
   session_history_limit: "retain",
+  unknown: "retain",
   guest_root_filesystem_full: "retain",
   guest_home_filesystem_full: "retain",
   unsupported_model: "retain",

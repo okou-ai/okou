@@ -102,7 +102,7 @@ async fn pi_finalization_reports_full_combined_completion_payload() {
         &runtime,
         0,
         None,
-        None,
+        false,
         Some(42),
         finalization,
     )

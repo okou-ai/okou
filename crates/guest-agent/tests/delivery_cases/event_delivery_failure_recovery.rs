@@ -134,7 +134,7 @@ async fn run_event_failure_case(
                 r#"{{"exitCode":{cli_exit_code},"completion":{{"cliAgentSessionId":"{THREAD_ID}"}}}}"#
             ));
         if cli_exit_code != 0 {
-            when.json_body_includes(json!({"error": PRIMARY_CLI_ERROR}).to_string());
+            when.json_body_includes(json!({"failureReason": "unknown"}).to_string());
         }
         then.status(200)
             .header("Content-Type", "application/json")

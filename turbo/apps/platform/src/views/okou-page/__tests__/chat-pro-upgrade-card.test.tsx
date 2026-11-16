@@ -322,7 +322,7 @@ test("Do not promote an upgrade link from an unsuccessful response", async () =>
     host: "app.okou.ai",
   });
   await readyChat();
-  await screen.findByText("The report could not be completed.");
+  await screen.findByText("This run couldn't finish");
   expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
 });
 

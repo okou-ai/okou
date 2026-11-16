@@ -30,7 +30,9 @@ pub fn completion_failure_reason(
     if exit_code == 0 || cancelled {
         return None;
     }
-    let failure = failure?;
+    let Some(failure) = failure else {
+        return Some(RequestFailureReason::Unknown);
+    };
     match failure.kind {
         ExecutionFailureKind::Generic
             if failure
@@ -52,7 +54,8 @@ pub fn completion_failure_reason(
             .diagnostic
             .as_ref()
             .and_then(|diagnostic| diagnostic.failure_reason)
-            .map(Into::into),
+            .map(Into::into)
+            .or(Some(RequestFailureReason::Unknown)),
         ExecutionFailureKind::RunnerJobTimeout { .. } => {
             Some(RequestFailureReason::ExecutionTimeout)
         }

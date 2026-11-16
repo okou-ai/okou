@@ -188,8 +188,15 @@ async fn unchanged_artifact_finalization_records_content_hash_timing()
     let finalization =
         guest_agent::finalization::prepare_finalization_for_runtime(&runtime, &session_metadata)
             .await?;
-    guest_agent::complete::report_finalization_for_run(&runtime, 0, None, None, None, finalization)
-        .await?;
+    guest_agent::complete::report_finalization_for_run(
+        &runtime,
+        0,
+        None,
+        false,
+        None,
+        finalization,
+    )
+    .await?;
 
     storage_prepare.assert_calls_async(0).await;
     storage_commit.assert_calls_async(0).await;
