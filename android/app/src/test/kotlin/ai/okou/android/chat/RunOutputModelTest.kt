@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.HISTORY_RUN
 import ai.okou.android.api.generated.ChatArchive
@@ -99,17 +100,20 @@ class RunOutputModelTest {
     }
 
     @Test
-    fun gapAndTransportLossKeepObservedPrefixAndRejectUnverifiedContinuation() {
+    fun arrivalOrderAndTransportRecoveryMatchWebWithoutFreezingTheBlock() {
         val owner = Owner()
         owner.model.receive(owner.target, delta(2, "no prefix"))
         assertTrue(owner.model.state.value.messages.isEmpty())
-        owner.model.receive(owner.target, delta(0, "Keep me"))
-        owner.model.receive(owner.target, delta(2, "missing middle"))
-        owner.model.receive(owner.target, delta(1, "late middle"))
+        owner.model.receive(owner.target, delta(0, "A"))
+        owner.model.receive(owner.target, delta(2, "C"))
+        owner.model.receive(owner.target, delta(1, "B"))
         owner.model.transport(RealtimePhase.Unavailable)
-        assertEquals("Keep me", owner.model.state.value.messages.single().blocks.single().text)
         assertEquals(RunOutputPhase.CatchingUp, owner.model.state.value.phase)
         assertTrue(owner.reads > 0)
+        owner.model.transport(RealtimePhase.Connected)
+        owner.model.receive(owner.target, delta(3, "D"))
+        assertEquals("ACBD", owner.model.state.value.messages.single().blocks.single().text)
+        assertEquals(RunOutputPhase.Live, owner.model.state.value.phase)
     }
 
     @Test
@@ -138,51 +142,52 @@ class RunOutputModelTest {
         assertEquals("prefix", owner.model.state.value.messages.single().blocks.single().text)
         owner.current = owner.current.copy(generation = 1)
         owner.model.reconcile()
-        assertTrue(owner.model.state.value.messages.isEmpty())
+        assertEquals("prefix", owner.model.state.value.messages.single().blocks.single().text)
     }
 
     @Test
-    fun cacheAndQueuedInputDoNotSubscribeAndRetainedMemoryIsBounded() {
+    fun cachedRunAcceptsLongUnicodeOutputWhileQueuedInputHasNoRunToSubscribe() {
         val owner = Owner()
         owner.current = owner.current.copy(source = ChatListSource.Cache)
         owner.model.reconcile()
-        assertNull(owner.model.target.value)
-        owner.current = owner.current.copy(source = ChatListSource.Network)
-        owner.model.reconcile()
-        owner.model.receive(owner.target, delta(0, "x".repeat(RunOutputModel.MAX_CHARACTERS - 7)))
-        owner.model.receive(owner.target, delta(1, "overflow"))
+        assertEquals(HISTORY_RUN, owner.target.runId)
+        val text = "含中文 🐈".repeat(50_000)
+        owner.model.receive(owner.target, delta(0, text))
+        owner.model.receive(owner.target, delta(1, " complete"))
         assertEquals(
-            RunOutputModel.MAX_CHARACTERS - 7,
-            owner.model.state.value.messages.single().blocks.single().text.length,
+            text + " complete",
+            owner.model.state.value.messages.single().blocks.single().text,
         )
-        assertEquals(RunOutputPhase.CatchingUp, owner.model.state.value.phase)
-        owner.current =
-            owner.current.copy(
+        val queued = Owner()
+        queued.current =
+            queued.current.copy(
                 transcript = HistoryTranscript(emptyList(), HistoryExecution.Queued, 0)
             )
-        owner.model.reconcile()
-        assertNull(owner.model.target.value)
+        queued.model.reconcile()
+        assertNull(queued.model.target.value)
+        queued.model.close()
         owner.model.close()
         assertTrue(owner.model.state.value.messages.isEmpty())
     }
 
     @Test
-    fun identitiesAndRevocationsCannotMixAndMessageCountIsBounded() {
+    fun eventIdIdentifiesBlocksLikeWebAndAllBlocksSurviveUntilPersistenceOrRevocation() {
         val owner = Owner()
         owner.model.receive(owner.target, delta(0, "first"))
         val changedIdentity = delta(1).value.copy(runEventId = "different")
-        owner.model.receive(owner.target, RunOutputSignal.Delta(changedIdentity))
-        assertEquals("first", owner.model.state.value.messages.single().blocks.single().text)
+        owner.model.receive(
+            owner.target,
+            RunOutputSignal.Delta(changedIdentity.copy(delta = " next")),
+        )
+        assertEquals("first next", owner.model.state.value.messages.single().blocks.single().text)
         owner.model.receive(
             owner.target,
             RunOutputSignal.Delta(delta(0).value.copy(eventId = "other-event")),
         )
-        assertEquals(1, owner.model.state.value.messages.size)
-        repeat(RunOutputModel.MAX_MESSAGES) {
-            owner.model.receive(owner.target, delta(0, "next", "id-$it"))
-        }
-        assertEquals(RunOutputModel.MAX_MESSAGES, owner.model.state.value.messages.size)
-        assertEquals(RunOutputPhase.CatchingUp, owner.model.state.value.phase)
+        assertEquals(2, owner.model.state.value.messages.size)
+        repeat(40) { owner.model.receive(owner.target, delta(0, "next", "id-$it")) }
+        assertEquals(42, owner.model.state.value.messages.size)
+        assertEquals(RunOutputPhase.Live, owner.model.state.value.phase)
         val revoked =
             HistoryEvent.decode(
                 historyEventWire(
@@ -198,7 +203,7 @@ class RunOutputModelTest {
     }
 
     @Test
-    fun outputStaysWithItsRunBeforeLaterInputsAndCapacityRecoversAfterPersistence() {
+    fun outputStaysWithItsRunBeforeLaterInputsAndPersistenceSettlesOnlyTheMatchingBlock() {
         val owner = Owner()
         owner.model.receive(owner.target, delta(0, "first"))
         val first = HistoryMessage("input", HISTORY_RUN, HistoryRole.User, emptyList())
@@ -211,13 +216,92 @@ class RunOutputModelTest {
             listOf("input", eventId, "next", "queued"),
             transcript.withOutput(owner.model.state.value, CHAT_PERSONAL).map { it.id },
         )
-        owner.model.receive(owner.target, delta(1, "x".repeat(RunOutputModel.MAX_CHARACTERS)))
+        owner.model.receive(owner.target, delta(0, "new message", "next-event"))
         owner.current =
             owner.current.copy(
                 transcript = owner.current.transcript!!.copy(persistedIds = setOf(eventId))
             )
         owner.model.reconcile()
-        owner.model.receive(owner.target, delta(0, "new message", "next-event"))
         assertEquals("new message", owner.model.state.value.messages.single().blocks.single().text)
+    }
+
+    @Test
+    fun replacingTheVisibleThreadRetainsItsOutputAndOldRunTargetsStayRetired() {
+        val owner = Owner()
+        val firstState = owner.current
+        val old = owner.target
+        owner.model.receive(old, delta(0, "retained"))
+        owner.current =
+            owner.current.copy(
+                thread = firstState.thread!!.copy(id = CHAT_IN_PROJECT),
+                generation = 1,
+            )
+        owner.model.reconcile()
+        assertTrue(owner.model.state.value.messages.isEmpty())
+        owner.model.receive(old, delta(1, "late"))
+        owner.current = firstState.copy(generation = 2)
+        owner.model.reconcile()
+        assertNotEquals(old, owner.target)
+        owner.model.receive(owner.target, delta(1, " after return"))
+        assertEquals(
+            "retained after return",
+            owner.model.state.value.messages.single().blocks.single().text,
+        )
+        val otherRun = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val previous = owner.target
+        owner.current =
+            owner.current.copy(
+                transcript =
+                    owner.current.transcript!!.copy(
+                        activeRunId = otherRun,
+                        liveRunIds = listOf(HISTORY_RUN, otherRun),
+                    )
+            )
+        owner.model.reconcile()
+        owner.current =
+            owner.current.copy(
+                transcript =
+                    owner.current.transcript!!.copy(
+                        activeRunId = HISTORY_RUN,
+                        liveRunIds = listOf(HISTORY_RUN),
+                    )
+            )
+        owner.model.reconcile()
+        assertNotEquals(previous, owner.target)
+        owner.model.receive(previous, delta(2, "obsolete run visit"))
+        assertEquals(
+            "retained after return",
+            owner.model.state.value.messages.single().blocks.single().text,
+        )
+        owner.model.close()
+        assertTrue(owner.model.state.value.messages.isEmpty())
+    }
+
+    @Test
+    fun retainedOutputParticipatesInRunDemandUntilTheCanonicalTerminalArrives() {
+        val owner = Owner()
+        owner.model.receive(owner.target, delta(0, "prefix"))
+        owner.current =
+            owner.current.copy(
+                transcript = HistoryTranscript(emptyList(), HistoryExecution.Idle, 0),
+                source = ChatListSource.Cache,
+            )
+        owner.model.reconcile()
+        assertEquals(HISTORY_RUN, owner.target.runId)
+        owner.model.receive(owner.target, delta(1, " continuation"))
+        assertEquals(
+            "prefix continuation",
+            owner.model.state.value.messages.single().blocks.single().text,
+        )
+        owner.persisted(
+            HistoryEvent.decode(
+                historyEventWire("terminal", 1, type = "run.completed", payload = "null")
+            )
+        )
+        assertNull(owner.model.target.value)
+        assertEquals(
+            "prefix continuation",
+            owner.model.state.value.messages.single().blocks.single().text,
+        )
     }
 }

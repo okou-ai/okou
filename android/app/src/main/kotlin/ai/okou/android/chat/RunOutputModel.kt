@@ -15,19 +15,13 @@ data class RunOutputState(
     val phase: RunOutputPhase = RunOutputPhase.Waiting,
 )
 
-/** Main-thread, visible-conversation projection. Chunks never enter the confirmed cache. */
+/** Workspace-owned optimistic text, projected for the visible conversation on Main. */
 class RunOutputModel(
     private val history: () -> ConversationUiState,
     private val authorized: () -> Boolean,
     private val catchUp: () -> Unit,
 ) {
-    private data class Buffer(
-        val runId: String,
-        val runEventId: String,
-        val text: String,
-        val index: Long,
-        val interrupted: Boolean = false,
-    )
+    private data class Buffer(val threadId: String, val runId: String, val text: String)
 
     private val buffers = linkedMapOf<String, Buffer>()
     private val mutable = MutableStateFlow(RunOutputState())
@@ -37,14 +31,11 @@ class RunOutputModel(
     private var visible = false
     private var closed = false
     private var epoch = 0L
-    private var size = 0
-    private var full = false
     private var ownerGeneration = -1L
 
     fun visible(value: Boolean) {
         if (closed || visible == value) return
         visible = value
-        if (!value && buffers.isNotEmpty()) discontinuity()
         epoch++
         reconcile()
     }
@@ -55,57 +46,42 @@ class RunOutputModel(
         if (current.generation != ownerGeneration || current.thread?.id != mutable.value.threadId) {
             ownerGeneration = current.generation
             epoch++
-            buffers.clear()
-            size = 0
-            full = false
             mutable.value = RunOutputState(threadId = current.thread?.id)
         }
         val persisted = current.transcript?.persistedIds.orEmpty()
         val removed = buffers.keys.filter { it in persisted }
-        for (id in removed) {
-            val value = checkNotNull(buffers.remove(id))
-            size -= value.text.length + value.runEventId.length
-        }
+        for (id in removed) buffers.remove(id)
         if (removed.isNotEmpty()) {
-            full = false
-            if (buffers.none { it.value.interrupted })
-                mutable.value = mutable.value.copy(phase = RunOutputPhase.Waiting)
+            mutable.value = mutable.value.copy(phase = RunOutputPhase.Waiting)
         }
-        val run = current.transcript?.activeRunId
-        if (buffers.any { it.value.runId != run }) {
-            buffers.replaceAll { _, value ->
-                if (value.runId != run) value.copy(interrupted = true) else value
-            }
+        val run = activeRun(current)
+        if (buffers.any { it.value.threadId == current.thread?.id && it.value.runId != run }) {
             mutable.value = mutable.value.copy(phase = RunOutputPhase.CatchingUp)
         }
         val thread = current.thread?.id
+        val selected =
+            if (visible && authorized() && thread != null && run != null) thread to run else null
+        val previous = demand.value
+        if (previous?.let { it.threadId to it.runId } != selected) epoch++
         demand.value =
-            if (
-                visible &&
-                    authorized() &&
-                    thread != null &&
-                    run != null &&
-                    current.source == ChatListSource.Network
-            )
-                RunOutputTarget(thread, run, epoch)
-            else null
+            selected?.let { (threadId, runId) -> RunOutputTarget(threadId, runId, epoch) }
         publish()
     }
 
     fun transport(phase: RealtimePhase) {
-        if (phase != RealtimePhase.Connected && buffers.isNotEmpty()) discontinuity()
+        if (phase != RealtimePhase.Connected && mutable.value.messages.isNotEmpty()) discontinuity()
     }
 
     fun receive(target: RunOutputTarget, signal: RunOutputSignal) {
         val current = history()
+        val transcript = current.transcript ?: return
         if (
             closed ||
                 !authorized() ||
                 !visible ||
                 demand.value != target ||
                 current.thread?.id != target.threadId ||
-                current.transcript?.activeRunId != target.runId ||
-                current.source != ChatListSource.Network
+                activeRun(current) != target.runId
         )
             return
         if (signal is RunOutputSignal.Discontinuity) {
@@ -116,75 +92,51 @@ class RunOutputModel(
         if (
             delta.threadId != target.threadId ||
                 delta.runId != target.runId ||
-                delta.eventId in current.transcript.persistedIds ||
-                full
+                delta.eventId in transcript.persistedIds
         )
             return
         val previous = buffers[delta.eventId]
-        if (
-            previous == null &&
-                buffers.any { (_, value) ->
-                    value.runId == delta.runId && value.runEventId == delta.runEventId
-                }
-        ) {
-            discontinuity()
-            return
-        }
-        if (
-            previous != null &&
-                (previous.runId != delta.runId ||
-                    previous.runEventId != delta.runEventId ||
-                    previous.interrupted)
-        )
-            return
-        if (previous != null && delta.chunkIndex <= previous.index) return
-        if (delta.chunkIndex != (previous?.index?.plus(1) ?: 0L)) {
-            discontinuity()
-            return
-        }
-        val added =
-            delta.delta.length.toLong() + if (previous == null) delta.runEventId.length else 0
-        if (added > MAX_CHARACTERS - size || previous == null && buffers.size >= MAX_MESSAGES) {
-            full = true
-            discontinuity()
-            return
-        }
+        // Match Web: chunk zero creates a block; later arrivals append in delivery order.
+        if (previous == null && delta.chunkIndex != 0L) return
+        if (previous != null && (previous.runId != delta.runId || delta.chunkIndex == 0L)) return
         buffers[delta.eventId] =
-            Buffer(
-                delta.runId,
-                delta.runEventId,
-                previous?.text.orEmpty() + delta.delta,
-                delta.chunkIndex,
-            )
-        size += added.toInt()
-        mutable.value =
-            mutable.value.copy(
-                phase =
-                    if (buffers.any { it.value.interrupted }) RunOutputPhase.CatchingUp
-                    else RunOutputPhase.Live
-            )
+            Buffer(delta.threadId, delta.runId, previous?.text.orEmpty() + delta.delta)
+        mutable.value = mutable.value.copy(phase = RunOutputPhase.Live)
         publish()
     }
 
     private fun discontinuity() {
-        buffers.replaceAll { _, value -> value.copy(interrupted = true) }
         val changed = mutable.value.phase != RunOutputPhase.CatchingUp
         mutable.value = mutable.value.copy(phase = RunOutputPhase.CatchingUp)
         if (changed) catchUp()
+    }
+
+    private fun activeRun(current: ConversationUiState): String? {
+        val transcript = current.transcript ?: return null
+        // Web derives demand from persisted events followed by retained optimistic blocks.
+        return (transcript.liveRunIds +
+                buffers.values
+                    .filter { it.threadId == current.thread?.id }
+                    .map { it.runId }
+                    .filterNot { it in transcript.terminatedRunIds })
+            .distinct()
+            .lastOrNull()
     }
 
     private fun publish() {
         mutable.value =
             mutable.value.copy(
                 messages =
-                    buffers.map { (id, value) ->
-                        HistoryMessage(
-                            id,
-                            value.runId,
-                            HistoryRole.Assistant,
-                            listOf(HistoryBlock(HistoryBlockKind.Text, value.text)),
-                        )
-                    }
+                    buffers
+                        .filterValues { it.threadId == mutable.value.threadId }
+                        .map { (id, value) ->
+                            HistoryMessage(
+                                id,
+                                value.runId,
+                                HistoryRole.Assistant,
+                                listOf(HistoryBlock(HistoryBlockKind.Text, value.text)),
+                            )
+                        }
             )
     }
 
@@ -193,11 +145,6 @@ class RunOutputModel(
         demand.value = null
         buffers.clear()
         mutable.value = RunOutputState()
-    }
-
-    companion object {
-        const val MAX_CHARACTERS = 256 * 1024
-        const val MAX_MESSAGES = 32
     }
 }
 

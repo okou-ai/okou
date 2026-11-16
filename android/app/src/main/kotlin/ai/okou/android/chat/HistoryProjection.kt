@@ -48,6 +48,8 @@ data class HistoryTranscript(
     val workSteps: Int,
     val activeRunId: String? = null,
     val persistedIds: Set<String> = emptySet(),
+    val liveRunIds: List<String> = listOfNotNull(activeRunId),
+    val terminatedRunIds: Set<String> = emptySet(),
 )
 
 internal fun JsonObject.text(key: String): String? = (get(key) as? JsonPrimitive)?.contentOrNull
@@ -182,15 +184,19 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         }
     val endedRuns = terminals + interrupted
     val running = historyIsRunning(rows, endedRuns)
-    // First occurrence orders runs: a late event cannot make an older run the newest owner.
-    val activeRun =
+    val streamEndedRuns =
+        checkpoint.rows
+            .filter { it.terminal || it.type == "control.interrupt" }
+            .mapNotNullTo(hashSetOf()) { it.runId }
+    // Web selects the last distinct live run, independently of the overall run indicator.
+    val liveRunIds =
         rows
             .asSequence()
             .filterNot { it.type == "usage.recorded" || it.type == "control.interrupt" }
             .mapNotNull { it.runId }
+            .filterNot { it in streamEndedRuns }
             .distinct()
-            .lastOrNull()
-            ?.takeIf { running && it !in endedRuns }
+            .toList()
     val execution =
         when {
             running -> HistoryExecution.Running
@@ -216,8 +222,10 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         messages,
         execution,
         rows.count { it.type == "output.message" },
-        activeRun,
+        liveRunIds.lastOrNull(),
         checkpoint.rows.flatMapTo(hashSetOf()) { listOfNotNull(it.id, it.revokesId) },
+        liveRunIds,
+        streamEndedRuns,
     )
 }
 

@@ -1,7 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.generated.SessionOutputDelta
-import com.google.gson.JsonObject
+import com.google.gson.JsonObject as GsonJsonObject
 import io.ably.pubsub.device.PubSubDevice
 import io.ably.pubsub.http.Auth
 import io.ably.pubsub.realtime.ChannelBase
@@ -22,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -36,6 +37,12 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 private val outputJson = Json { ignoreUnknownKeys = true }
 private val outputUuid =
@@ -51,12 +58,26 @@ internal fun decodeRunOutput(data: Any?): SessionOutputDelta {
     val text =
         when (data) {
             is String -> data
-            is JsonObject -> data.toString()
+            is GsonJsonObject -> data.toString()
             else -> throw IllegalArgumentException("Expected session output JSON")
         }
-    val value = outputJson.decodeFromString<SessionOutputDelta>(text)
+    val document = outputJson.parseToJsonElement(text).jsonObject
+    require(
+        listOf("threadId", "runId", "eventId", "runEventId", "createdAt", "delta").all {
+            (document[it] as? JsonPrimitive)?.isString == true
+        }
+    )
+    val index = document.getValue("chunkIndex").jsonPrimitive
+    require(!index.isString)
+    val number = requireNotNull(index.doubleOrNull)
+    require(number in 0.0..9_007_199_254_740_991.0 && number % 1.0 == 0.0)
+    // Web parses JSON numbers before validating integers, including 1.0 and 1e0.
+    val value =
+        outputJson.decodeFromJsonElement<SessionOutputDelta>(
+            JsonObject(document + ("chunkIndex" to JsonPrimitive(number.toLong())))
+        )
     require(listOf(value.threadId, value.runId, value.eventId).all(outputUuid::matches))
-    require(value.runEventId.isNotEmpty() && value.chunkIndex in 0..9_007_199_254_740_991L)
+    require(value.runEventId.isNotEmpty())
     require(outputTime.matches(value.createdAt))
     val year = value.createdAt.substring(0, 4).toInt()
     val month = value.createdAt.substring(5, 7).toInt()
@@ -227,7 +248,7 @@ internal class AblyRealtimeConnection(
         }
     }
 
-    /** Lossless bounded handoff, separate from conflated connection snapshots. */
+    /** Lossless callback handoff, separate from conflated connection snapshots. */
     fun runOutput(target: RunOutputTarget): Flow<RunOutputSignal> =
         callbackFlow {
                 check(!closed.get())
@@ -235,8 +256,7 @@ internal class AblyRealtimeConnection(
                 val channel = client.channels.get(name)
                 var attached = false
                 fun offer(value: RunOutputSignal) {
-                    if (trySend(value).isFailure)
-                        close(IllegalStateException("Output consumer fell behind"))
+                    trySend(value)
                 }
                 val states = ChannelStateListener { change ->
                     if (change.current == ChannelState.attached) {
@@ -250,13 +270,13 @@ internal class AblyRealtimeConnection(
                 }
                 val messages =
                     ChannelBase.MessageListener { message ->
-                        val signal =
+                        val delta =
                             try {
-                                RunOutputSignal.Delta(decodeRunOutput(message.data))
+                                decodeRunOutput(message.data)
                             } catch (_: Exception) {
-                                RunOutputSignal.Discontinuity
+                                return@MessageListener
                             }
-                        offer(signal)
+                        offer(RunOutputSignal.Delta(delta))
                     }
                 try {
                     channel.on(states)
@@ -300,7 +320,8 @@ internal class AblyRealtimeConnection(
                     }
                 }
             }
-            .buffer(64)
+            // Web queues every received payload. Do not discard valid data for a slow collector.
+            .buffer(Channel.UNLIMITED)
             .catch { error ->
                 if (error is CancellationException) throw error
                 emit(RunOutputSignal.Discontinuity)

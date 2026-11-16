@@ -26,7 +26,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], application = TestOkouApplication::class)
 class AblyRealtimeConnectionTest {
     @Test
-    fun slowConsumerGetsAnOrderedPrefixThenDiscontinuityWithoutBreakingInvalidations() = runTest {
+    fun slowConsumerReceivesEveryPayloadWithoutBreakingIndependentInvalidations() = runTest {
         AblyProtocolFixture().use { remote ->
             withContext(Dispatchers.IO) {
                 AblyRealtimeConnection(
@@ -48,6 +48,7 @@ class AblyRealtimeConnectionTest {
                         val name = "run-output:user-a:org-a:${target.runId}"
                         val entered = CompletableDeferred<Unit>()
                         val release = CompletableDeferred<Unit>()
+                        val delivered = CompletableDeferred<Unit>()
                         val received = mutableListOf<RunOutputSignal>()
                         val job = launch {
                             sdk.runOutput(target).collect {
@@ -56,6 +57,8 @@ class AblyRealtimeConnectionTest {
                                     entered.complete(Unit)
                                     release.await()
                                 }
+                                if (it is RunOutputSignal.Delta && it.value.chunkIndex == 100L)
+                                    delivered.complete(Unit)
                             }
                         }
                         assertEquals(name, remote.attachments.receive())
@@ -66,19 +69,20 @@ class AblyRealtimeConnectionTest {
                             remote.output(name, target.runId, wire(0))
                             entered.await()
                             remote.outputBurst(name, target.runId, (1..100).map(::wire))
-                            assertEquals(name, remote.detachments.receive())
+                            val revision = sdk.state.value.revision
+                            remote.message("user:user-a", "threadListChanged")
+                            sdk.state.first { it.revision > revision }
                             release.complete(Unit)
-                            job.join()
-                            assertEquals(RunOutputSignal.Discontinuity, received.last())
+                            delivered.await()
+                            job.cancelAndJoin()
+                            assertEquals(name, remote.detachments.receive())
+                            assertEquals(101, received.size)
                             assertEquals(
-                                (0L..64L).toList(),
+                                (0L..100L).toList(),
                                 received.filterIsInstance<RunOutputSignal.Delta>().map {
                                     it.value.chunkIndex
                                 },
                             )
-                            val revision = sdk.state.value.revision
-                            remote.message("user:user-a", "threadListChanged")
-                            sdk.state.first { it.revision > revision }
                             assertEquals(RealtimePhase.Connected, sdk.state.value.phase)
                         } finally {
                             release.complete(Unit)
@@ -131,7 +135,7 @@ class AblyRealtimeConnectionTest {
                         remote.output(
                             name,
                             target.runId,
-                            wire.replace("\"chunkIndex\":0", "\"chunkIndex\":1"),
+                            wire.replace("\"chunkIndex\":0", "\"chunkIndex\":1e0"),
                             encoded = false,
                         )
                         assertEquals(
@@ -139,7 +143,6 @@ class AblyRealtimeConnectionTest {
                             (next("string payload") as RunOutputSignal.Delta).value.chunkIndex,
                         )
                         remote.output(name, target.runId, """{"invalid":true}""")
-                        assertEquals(RunOutputSignal.Discontinuity, next("malformed payload"))
                         remote.attach(name)
                         assertEquals(RunOutputSignal.Discontinuity, next("reattachment"))
                         job.cancelAndJoin()
@@ -154,10 +157,18 @@ class AblyRealtimeConnectionTest {
     }
 
     @Test
-    fun outputRefinementsRejectMalformedIdentityTimeAndOrder() {
+    fun outputDecoderMatchesCanonicalIdentityTimeAndNumericSemantics() {
         val wire =
             """{"threadId":"11111111-1111-4111-8111-111111111111","runId":"99999999-9999-4999-8999-999999999999","eventId":"cccccccc-cccc-4ccc-8ccc-cccccccccccc","runEventId":"message","createdAt":"2026-11-16T00:00:00Z","chunkIndex":0,"delta":""}"""
         assertEquals("", decodeRunOutput(wire).delta)
+        assertEquals(
+            0L,
+            decodeRunOutput(wire.replace("\"chunkIndex\":0", "\"chunkIndex\":0.0")).chunkIndex,
+        )
+        assertEquals(
+            1L,
+            decodeRunOutput(wire.replace("\"chunkIndex\":0", "\"chunkIndex\":1e0")).chunkIndex,
+        )
         assertEquals("", decodeRunOutput(wire.replace("00:00:00Z", "00:00:00.123456789123Z")).delta)
         for (invalid in
             listOf(
@@ -166,6 +177,8 @@ class AblyRealtimeConnectionTest {
                 wire.replace("\"message\"", "\"\""),
                 wire.replace("\"chunkIndex\":0", "\"chunkIndex\":-1"),
                 wire.replace("\"chunkIndex\":0", "\"chunkIndex\":9007199254740992"),
+                wire.replace("\"chunkIndex\":0", "\"chunkIndex\":\"0\""),
+                wire.replace("\"delta\":\"\"", "\"delta\":7"),
             )) assertThrows(Exception::class.java) { decodeRunOutput(invalid) }
     }
 

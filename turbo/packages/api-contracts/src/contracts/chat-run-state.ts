@@ -34,6 +34,29 @@ export function chatRunEventContextFromChatEvents(
   };
 }
 
+/** Distinct live runs in first-appearance order; shared by Web and native conformance fixtures. */
+export function liveRunIdsFromChatEvents(
+  events: readonly ChatRunEvent[],
+  { terminatedRunIds, revokedEventIds }: ChatRunEventContext,
+): string[] {
+  const liveRunIds: string[] = [];
+  const seenRunIds = new Set<string>();
+  for (const event of events) {
+    const runId = event.runId;
+    if (
+      runId !== undefined &&
+      !revokedEventIds.has(event.id) &&
+      !terminatedRunIds.has(runId) &&
+      event.eventType !== "usage.recorded" &&
+      !seenRunIds.has(runId)
+    ) {
+      liveRunIds.push(runId);
+      seenRunIds.add(runId);
+    }
+  }
+  return liveRunIds;
+}
+
 function runActivityIndicatorState(
   context: ChatRunEventContext,
   runId: string,

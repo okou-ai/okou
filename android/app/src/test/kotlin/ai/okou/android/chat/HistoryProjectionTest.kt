@@ -8,7 +8,7 @@ import org.junit.Test
 
 class HistoryProjectionTest {
     @Test
-    fun activeOutputTargetUsesNewestRunIdentityAndNeverRevivesAnOlderRun() {
+    fun activeOutputTargetUsesNewestLiveRunLikeWeb() {
         val nextRun = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         val old = input("older", 1)
         val next = input("newer", 2, nextRun)
@@ -16,7 +16,10 @@ class HistoryProjectionTest {
         assertEquals(nextRun, transcript(old, next, lateOld).activeRunId)
         val terminal = event("newer-terminal", 4, "run.completed", nextRun)
         val stillLate = event("still-older-late", 5, "output.message")
-        assertNull(transcript(old, next, lateOld, terminal, stillLate).activeRunId)
+        assertEquals(HISTORY_RUN, transcript(old, next, lateOld, terminal, stillLate).activeRunId)
+        assertNull(
+            transcript(old, next, terminal, event("older-terminal", 5, "run.completed")).activeRunId
+        )
         assertEquals(
             nextRun,
             transcript(old, event("new-output", 2, "output.message", nextRun)).activeRunId,

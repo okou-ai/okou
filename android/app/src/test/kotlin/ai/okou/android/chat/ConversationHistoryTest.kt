@@ -307,7 +307,7 @@ class ConversationHistoryTest {
     }
 
     @Test
-    fun outputDemandWaitsForNetworkAndOldVisitCleanupCannotRetireItsReplacement() = runTest {
+    fun cachedRunSubscribesBeforeNetworkAndOldVisitCleanupCannotRetireItsReplacement() = runTest {
         val held = CompletableDeferred<Unit>()
         val service = Service()
         service.rowsRead = { _, cursor ->
@@ -331,7 +331,7 @@ class ConversationHistoryTest {
             val first =
                 checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
             model.uiState.first { it.source == ChatListSource.Cache }
-            assertNull(model.output.target.value)
+            assertEquals(HISTORY_RUN, model.output.target.value?.runId)
             held.complete(Unit)
             model.uiState.first { it.phase == HistoryPhase.Ready }
             assertEquals(HISTORY_RUN, model.output.target.value?.runId)

@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -32,6 +33,11 @@ class HistoryProjectionContractTest {
                 val actual = projectHistory(HistoryCheckpoint(threadId, prefix, cursor))
                 val expected = checkpoint.getValue("expected").jsonObject
                 val label = "${history.getValue("name").jsonPrimitive.content} at prefix $length"
+                assertEquals(
+                    label,
+                    expected.getValue("activeRunId").jsonPrimitive.contentOrNull,
+                    actual.activeRunId,
+                )
                 // Opaque usage remains inspectable in native UI; Web excludes it from groups.
                 val events =
                     actual.messages

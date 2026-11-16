@@ -290,23 +290,37 @@ class NativeRealtimeTest {
                     ?.text == "Live native answer"
             }
             reveal("Live native answer")
-            external.output(chunk(3, "missing chunk"))
+            external.output(chunk(3, " after a gap"))
+            condition {
+                chats
+                    ?.history
+                    ?.output
+                    ?.state
+                    ?.value
+                    ?.messages
+                    ?.singleOrNull()
+                    ?.blocks
+                    ?.singleOrNull()
+                    ?.text == "Live native answer after a gap"
+            }
             external.snapshot.value =
                 external.snapshot.value.copy(phase = RealtimePhase.Unavailable)
             condition {
                 chats?.history?.output?.state?.value?.phase ==
                     ai.okou.android.chat.RunOutputPhase.CatchingUp
             }
-            text("Live native answer")
+            text("Live native answer after a gap")
             external.snapshot.value =
                 external.snapshot.value.copy(
                     phase = RealtimePhase.Connected,
                     revision = external.snapshot.value.revision + 1,
                 )
+            external.output(chunk(4, " after reconnect"))
+            reveal("Live native answer after a gap after reconnect")
             savedOutput.set(true)
             external.invalidate()
             reveal("Saved native answer")
-            assertFalse(device.hasObject(label("Live native answer")))
+            assertFalse(device.hasObject(label("Live native answer after a gap after reconnect")))
             condition { chats?.history?.output?.state?.value?.messages?.isEmpty() == true }
             assertTrue(
                 checkNotNull(
