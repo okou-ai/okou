@@ -20,6 +20,7 @@ def stop(process):
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
+        # Exiting before termination is normal; wait below still reaps the child.
         pass
     try:
         process.wait(timeout=30)
@@ -27,6 +28,7 @@ def stop(process):
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
+            # The child may exit between the wait deadline and this signal.
             pass
         process.wait()
 
@@ -79,6 +81,7 @@ def run(output, command, timeout=900):
                 try:
                     child.wait(timeout=1)
                 except subprocess.TimeoutExpired:
+                    # The command is still running; continue device/logcat discovery.
                     pass
             return cancelled or (child.returncode if child.returncode >= 0 else 128 - child.returncode)
     finally:
