@@ -705,6 +705,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
         oom_fixture::STARTUP,
         oom_fixture::RELEASE,
         oom_fixture::READY,
+        oom_fixture::TOOL_ARMED,
         oom_fixture::DIAGNOSTICS,
     ] {
         match std::fs::remove_file(marker) {
@@ -798,7 +799,8 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
                 "VM0_TEST_TOOL_OOM_PROGRAM",
                 oom_fixture::INJECTED_TOOL_PROGRAM,
             )
-            .env("VM0_TEST_TOOL_OOM_CGROUP_MARKER", TOOL_OOM_OFFENDER_CGROUP);
+            .env("VM0_TEST_TOOL_OOM_CGROUP_MARKER", TOOL_OOM_OFFENDER_CGROUP)
+            .env("VM0_TEST_TOOL_OOM_ARMED_MARKER", oom_fixture::TOOL_ARMED);
     }
     if mode.managed_tasks() {
         offender_command
@@ -812,7 +814,11 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     }
     fixture.offender = Some(
         offender_command
-            .stdin(Stdio::null())
+            .stdin(if mode == ToolOomMode::GuestInjected {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::null())
             .spawn()
             .map_err(|error| format!("spawn offender Bash tool: {error}"))?,
@@ -848,6 +854,24 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     }
 
     let offender_path = Path::new("/sys/fs/cgroup").join(offender_relative.trim_start_matches('/'));
+    if mode == ToolOomMode::GuestInjected {
+        let controller = fixture
+            .offender
+            .as_mut()
+            .ok_or("tool controller is missing")?;
+        let handoff = controller
+            .stdin
+            .as_mut()
+            .ok_or("tool OOM control pipe is missing")?
+            .write_all(b"I")
+            .map_err(|error| format!("arm tool OOM injection: {error}"));
+        let armed = handoff
+            .and_then(|()| wait_for_tool_marker(oom_fixture::TOOL_ARMED, controller, deadline));
+        let armed_relative = armed.map_err(|error| fixture.with_child_diagnostics(error))?;
+        if armed_relative != offender_relative {
+            return Err("armed tool readiness belongs to a different cgroup".into());
+        }
+    }
     if mode == ToolOomMode::TaskGuestInjected {
         let controller = fixture
             .offender

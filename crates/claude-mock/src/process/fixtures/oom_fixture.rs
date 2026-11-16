@@ -13,6 +13,7 @@ use super::{read_trimmed, validate_tool_cgroup};
 pub(super) const STARTUP: &str = "/tmp/vm0-task-oom.startup";
 pub(super) const RELEASE: &str = "/tmp/vm0-task-oom.release";
 pub(super) const READY: &str = "/tmp/vm0-task-oom.ready";
+pub(super) const TOOL_ARMED: &str = "/tmp/vm0-tool-oom.armed";
 pub(super) const DIAGNOSTICS: &str = "/tmp/vm0-oom-fixture.stderr";
 const DIAGNOSTIC_TAIL_BYTES: u64 = 8192;
 
@@ -133,15 +134,28 @@ try:
     wait_for_allocators(ready_read, 4)
     task_remaining("tool resident marker")
     pathlib.Path(os.environ["VM0_TEST_TOOL_OOM_CGROUP_MARKER"]).write_text(relative)
-    task_stage("all four tool allocators resident; awaiting Guest OOM injection")
-    # A prepared worker must remain resident until the kernel kills this leaf.
-    # Observe without reaping: SIGINT between wait and bookkeeping must not
-    # leave a recycled PID in the cleanup owner.
-    exited = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOWAIT)
-    # The shell's TERM-resistant sentinel also becomes our child after exec.
-    # Its early exit is a fixture failure, but it is not an owned allocator PID.
-    children.add(exited.si_pid)
-    raise RuntimeError("tool child exited before OOM: pid=" + str(exited.si_pid) + " status=" + str(exited.si_status))
+    task_stage("all four tool allocators resident; awaiting injection handoff")
+    if not select.select([sys.stdin], [], [], task_remaining("tool OOM arm"))[0]:
+        raise TimeoutError("tool OOM arm: missing injection handoff")
+    if os.read(sys.stdin.fileno(), 1) != b"I":
+        raise RuntimeError("tool OOM arm: invalid injection handoff")
+    # Observe without reaping so SIGINT cannot leave a recycled cleanup PID.
+    # The shell's sentinel is also our child after exec; its early exit fails
+    # preparation just like an allocator exit.
+    exited = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOWAIT | os.WNOHANG)
+    if exited is not None:
+        children.add(exited.si_pid)
+        raise RuntimeError("tool child exited before OOM: pid=" + str(exited.si_pid) + " status=" + str(exited.si_status))
+    task_remaining("tool armed marker")
+    pathlib.Path(os.environ["VM0_TEST_TOOL_OOM_ARMED_MARKER"]).write_text(relative)
+    task_stage("tool controller armed for Guest OOM injection")
+    # Linux kills the selected victim before sweeping its OOM group. A worker
+    # exit is expected after this handoff; retain the remaining payload until
+    # the kernel kills us too. The Rust owner holds the pipe through injection
+    # and enforces the original deadline. EOF releases cleanup if it disappears.
+    request = os.read(sys.stdin.fileno(), 1)
+    raise RuntimeError("OOM control pipe closed before group termination" if not request
+        else "unexpected OOM control input after injection handoff")
 finally:
     if ready_write is not None:
         os.close(ready_write)

@@ -137,20 +137,31 @@ fn injected_tool_workers_remain_resident_and_are_reaped_on_failure()
 -> Result<(), Box<dyn std::error::Error>> {
     run_protocol(
         r#"
-import os, pathlib, re, signal, subprocess, tempfile, time
+import os, pathlib, re, select, signal, subprocess, tempfile, time
 
 def bounded_wait(signum, frame):
     raise TimeoutError("tool controller process regression did not complete")
 
 signal.signal(signal.SIGALRM, bounded_wait)
 signal.alarm(15)
-for outcome in ["interrupt", "worker-exit", "sentinel-exit"]:
+
+def signal_and_observe_exit(pid, signum):
+    pidfd = os.pidfd_open(pid)
+    try:
+        os.kill(pid, signum)
+        assert select.select([pidfd], [], [], 5)[0], (pid, signum)
+    finally:
+        os.close(pidfd)
+
+for outcome in ["interrupt", "worker-exit", "sentinel-exit", "victim-before-group"]:
     with tempfile.TemporaryDirectory() as directory:
         marker = pathlib.Path(directory) / "resident.cgroup"
+        armed = pathlib.Path(directory) / "armed.cgroup"
         environment = dict(os.environ,
             VM0_TEST_TASK_DEADLINE=str(time.monotonic() + 15),
             VM0_TEST_OOM_ALLOCATOR_BYTES=str(4 * 1024 * 1024),
-            VM0_TEST_TOOL_OOM_CGROUP_MARKER=str(marker))
+            VM0_TEST_TOOL_OOM_CGROUP_MARKER=str(marker),
+            VM0_TEST_TOOL_OOM_ARMED_MARKER=str(armed))
         if outcome == "sentinel-exit":
             environment["VM0_TEST_SENTINEL_PID"] = str(pathlib.Path(directory) / "sentinel.pid")
         # Increase only this disposable child's OOM score, as the real launcher
@@ -165,7 +176,7 @@ if "VM0_TEST_SENTINEL_PID" in os.environ:
 exec(os.environ['VM0_TEST_TOOL_OOM_PROGRAM'])
 '''
         controller = subprocess.Popen(["python3", "-u", "-c", wrapper], env=environment,
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE, start_new_session=True)
         try:
             worker_pids = set()
@@ -191,17 +202,36 @@ exec(os.environ['VM0_TEST_TOOL_OOM_PROGRAM'])
                     for line in (proc / "smaps_rollup").read_text().splitlines()
                     if line.startswith("Private_Dirty:"))
                 assert private_dirty >= 1024 * 1024, private_dirty
+            handoff = None
             if outcome == "interrupt":
-                controller.send_signal(signal.SIGINT)
+                signal_and_observe_exit(controller.pid, signal.SIGINT)
+            elif outcome == "victim-before-group":
+                controller.stdin.write(b"I")
+                controller.stdin.flush()
+                for raw in controller.stderr:
+                    evidence.append(raw.decode())
+                    if b"tool controller armed for Guest OOM injection" in raw:
+                        break
+                assert armed.read_text() == expected_group, evidence
+                signal_and_observe_exit(next(iter(worker_pids)), signal.SIGKILL)
+                # Linux terminates the first victim before sweeping its group.
+                # Closing our control pipe now must reach the owner's EOF path,
+                # rather than misclassify that expected victim as a prep failure.
             elif outcome == "worker-exit":
-                os.kill(next(iter(worker_pids)), signal.SIGKILL)
+                signal_and_observe_exit(next(iter(worker_pids)), signal.SIGKILL)
+                handoff = b"I"
             else:
                 sentinel_pid = int(pathlib.Path(environment["VM0_TEST_SENTINEL_PID"]).read_text())
                 identities[sentinel_pid] = pathlib.Path(f"/proc/{sentinel_pid}/stat").read_text().split()[21]
-                os.kill(sentinel_pid, signal.SIGKILL)
-            _, remaining = controller.communicate(timeout=5)
+                signal_and_observe_exit(sentinel_pid, signal.SIGKILL)
+                handoff = b"I"
+            _, remaining = controller.communicate(input=handoff, timeout=5)
             assert controller.returncode != 0
-            if outcome != "interrupt":
+            if outcome == "victim-before-group":
+                assert b"OOM control pipe closed before group termination" in remaining, remaining
+            else:
+                assert not armed.exists(), outcome
+            if outcome in ["worker-exit", "sentinel-exit"]:
                 assert b"tool child exited before OOM" in remaining, remaining
             for pid, start_time in identities.items():
                 stat = pathlib.Path(f"/proc/{pid}/stat")
