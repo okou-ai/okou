@@ -135,7 +135,6 @@ import {
 } from "@okouai/db/schema/chat-thread-event";
 import { agents } from "@okouai/db/schema/agent";
 import {
-  buildQueuedRunCommand,
   ChatCallbackPreCreateTimingCollector,
   type CreateQueuedChatRunInput,
   deliverQueuedPromptRejection$,
@@ -222,9 +221,9 @@ import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   getFrameworkForType,
   isBuiltInModelProviderType,
+  type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { runCreateBodySchema } from "@okouai/api-contracts/contracts/run-routes";
 import { unifiedRunRequestSchema } from "@okouai/api-contracts/contracts/runs";
 import {
   type FeatureSwitchContext,
@@ -539,7 +538,7 @@ function queuedPromptRunInput(args: {
     prompt: args.prompt,
     threadId: input.threadId,
     queuedMessage: input.queuedMessage,
-    selectedModel: model.selectedModelOverride,
+    selectedModel: model.selectedModel,
     effectiveModelProvider: model.modelProviderType,
     piExecution: model.piExecution,
     codexServiceTier: model.codexServiceTier,
@@ -558,16 +557,55 @@ function queuedPromptRunInput(args: {
 /** Run command model fields, as selected for the picked event. */
 function threadRunModelFields(model: ThreadModelSelection) {
   return {
-    selectedModelOverride: model.selectedModelOverride,
+    ...(model.modelProviderType
+      ? {
+          modelProvider: modelProviderWriteTypeForLaunch(
+            model.modelProviderType,
+          ),
+        }
+      : {}),
+    selectedModel: model.selectedModel,
     codexServiceTier: model.codexServiceTier,
     piExecution: model.piExecution,
+  };
+}
+
+function promptRunCommand(
+  input: CreateQueuedChatRunInput,
+  admissionTime: number,
+): ThreadRunCommand {
+  return {
+    owner: { userId: input.userId, orgId: input.orgId },
+    // Dispatch timing starts at admission; queue waiting is recorded separately.
+    apiStartTime: admissionTime,
+    chatThreadId: input.threadId,
+    selectedModel: input.selectedModel,
+    codexServiceTier: input.codexServiceTier,
+    reasoningEffort: input.reasoningEffort,
+    triggerSource: input.triggerSource,
+    agentRunPreCreateSource: "chat_callback_auto_send",
+    queueFirstAssociation: {
+      threadId: input.threadId,
+      eventId: input.queuedMessage.id,
+    },
+    piExecution: input.piExecution,
+    agentRunMetadata: { autonomyBudget: input.autonomyBudget },
+    ...(input.effectiveModelProvider
+      ? {
+          modelProvider: modelProviderWriteTypeForLaunch(
+            input.effectiveModelProvider,
+          ),
+        }
+      : {}),
+    ...(input.realAgentInPreview ? { realAgentInPreview: true } : {}),
+    ...(input.captureNetworkBodies ? { captureNetworkBodies: true } : {}),
   };
 }
 
 type ChatQueueRunAssembly =
   | {
       readonly kind: "assembled";
-      readonly run: ClaimQueueRunCommandArgs;
+      readonly run: ThreadRunCommand;
       readonly producerBinding: ClaimProducerBinding;
       readonly rejection: ClaimRejectionContext;
       readonly launchRecord: ClaimLaunchRecord;
@@ -605,12 +643,6 @@ function queuedPromptPreparationRejection(
       },
     },
   };
-}
-
-function workflowModelProviderBody(modelProvider: string | null | undefined) {
-  return modelProvider
-    ? { modelProvider: modelProviderWriteTypeForLaunch(modelProvider) }
-    : {};
 }
 
 interface QueuedAutomationEvent {
@@ -690,7 +722,7 @@ function workflowAutomationRunMetadata(
 
 interface AssembledWorkflowAutomationRun {
   readonly kind: "assembled";
-  readonly run: ClaimQueueRunCommandArgs;
+  readonly run: ThreadRunCommand;
   readonly producerBinding: Extract<
     ClaimProducerBinding,
     { kind: "automation" }
@@ -704,18 +736,11 @@ function automationSelectionCommand(
     "due" | "apiStartTime" | "queueEventId" | "triggerSource"
   >,
   model: ThreadModelSelection,
-  identity: {
-    readonly owner: { readonly orgId: string; readonly userId: string };
-    readonly agentId: string;
-  },
+  owner: ThreadRunOwner,
 ): ThreadRunCommand {
   const { chatThreadId } = args.due;
   return {
-    owner: identity.owner,
-    body: {
-      agentId: identity.agentId,
-      ...workflowModelProviderBody(model.modelProviderType),
-    },
+    owner,
     apiStartTime: args.apiStartTime,
     triggerSource: args.triggerSource ?? "automation-schedule",
     chatThreadId,
@@ -929,8 +954,6 @@ type ClaimProducerBinding = {
   readonly kind: "automation";
   readonly queueEventId: string;
 } | null;
-
-type ClaimQueueRunCommandArgs = ThreadRunCommand;
 
 type ClaimRejectionContext =
   | { readonly kind: "prompt"; readonly runInput: CreateQueuedChatRunInput }
@@ -1746,7 +1769,7 @@ export function createThreadClaimRunObjects(
       const { runInput, templateUsageIdentities } = preparedInput;
       return {
         kind: "assembled",
-        run: buildQueuedRunCommand(runInput, head.apiStartTime),
+        run: promptRunCommand(runInput, head.apiStartTime),
         producerBinding: null,
         rejection: { kind: "prompt", runInput },
         launchRecord: {
@@ -1810,10 +1833,6 @@ export function createThreadClaimRunObjects(
       command: {
         owner: identity.owner,
         apiStartTime: identity.apiStartTime,
-        body: {
-          agentId: identity.agentId,
-          ...workflowModelProviderBody(model.modelProviderType),
-        },
         chatThreadId: args.threadId,
         queueFirstAssociation: identity.queueFirstAssociation,
         ...threadRunModelFields(model),
@@ -2056,7 +2075,7 @@ export function createThreadClaimRunObjects(
     return identity && !("kind" in model) && args
       ? {
           timing: identity.timing,
-          command: automationSelectionCommand(args, model, identity),
+          command: automationSelectionCommand(args, model, identity.owner),
         }
       : null;
   });
@@ -3239,7 +3258,7 @@ export function createThreadClaimRunObjects(
       if (isRouteError(model)) {
         if (
           model.body.error.code === "PROVIDER_UNAVAILABLE" &&
-          isBuiltInModelProviderType(input.command.body.modelProvider)
+          isBuiltInModelProviderType(input.command.modelProvider)
         ) {
           const credits = await set(
             checkRunAdmission$,
@@ -3248,7 +3267,7 @@ export function createThreadClaimRunObjects(
               orgId: claim.orgId,
               userId: input.command.owner.userId,
               modelProviderType: "built-in",
-              selectedModel: input.command.selectedModelOverride,
+              selectedModel: input.command.selectedModel,
               enforceBuiltInCredits: true,
             },
             signal,
@@ -3266,8 +3285,7 @@ export function createThreadClaimRunObjects(
           orgId: claim.orgId,
           userId: input.command.owner.userId,
           modelProviderType: model.type,
-          selectedModel:
-            model.selectedModel ?? input.command.selectedModelOverride,
+          selectedModel: model.selectedModel ?? input.command.selectedModel,
           enforceBuiltInCredits: isBuiltInModelProviderType(model.type),
         },
         signal,
@@ -4531,9 +4549,7 @@ function modelProviderFramework(
   return getFrameworkForType(modelProvider.type);
 }
 
-// Selected-agent authorization, bootstrap and canonical session preparation.
-
-type AgentRunCreateBody = zInfer<typeof runCreateBodySchema>;
+// Thread input preparation.
 
 /** The owner a claimed queue head runs as: its user in its organization. */
 interface ThreadRunOwner {
@@ -4541,23 +4557,16 @@ interface ThreadRunOwner {
   readonly orgId: string;
 }
 
-/** The run-request facts Thread sets for a claimed queue head. */
-type ThreadRunBody = Pick<
-  AgentRunCreateBody,
-  "modelProvider" | "realAgentInPreview" | "captureNetworkBodies"
-> & {
-  /** The queue head's Agent; a Thread run always names it. */
-  readonly agentId: string;
-};
-
-/** Thread's run command for one claimed, queue-first input. */
+/** Captured facts used to prepare one claimed Thread input. */
 interface ThreadRunCommand {
   readonly owner: ThreadRunOwner;
-  readonly body: ThreadRunBody;
+  readonly modelProvider?: ModelProviderType;
+  readonly realAgentInPreview?: boolean;
+  readonly captureNetworkBodies?: boolean;
   readonly apiStartTime: number;
   readonly triggerSource?: TriggerSource;
   readonly chatThreadId: string;
-  readonly selectedModelOverride?: string;
+  readonly selectedModel: string;
   readonly codexServiceTier?: CodexServiceTier;
   readonly reasoningEffort?: ReasoningEffort | null;
   readonly agentRunMetadata?: AgentRunMetadata;
@@ -4757,28 +4766,6 @@ function agentRunOrigin(args: {
   return "direct";
 }
 
-function createRunBody(args: {
-  readonly body: Omit<AgentRunCreateBody, "prompt">;
-  readonly agent: AgentRunRecord;
-  readonly permissionPolicies: FirewallPolicies | null | undefined;
-  readonly triggerSource: TriggerSource | undefined;
-  readonly prompt: Pick<
-    PromptAndSkillVolumes,
-    "userPrompt" | "appendedSystemPrompt"
-  >;
-}) {
-  const triggerSource = args.triggerSource ?? "web";
-  return {
-    prompt: args.prompt.userPrompt,
-    agentId: args.agent.id,
-    realAgentInPreview: args.body.realAgentInPreview,
-    captureNetworkBodies: args.body.captureNetworkBodies,
-    permissionPolicies: args.permissionPolicies ?? undefined,
-    triggerSource,
-    appendSystemPrompt: args.prompt.appendedSystemPrompt,
-  };
-}
-
 interface ThreadRunPreparation extends AgentConnectorScopeSnapshot {
   readonly agent: AgentRunRecord;
   readonly agentRunModelPin: AgentRunModelPin;
@@ -4828,13 +4815,15 @@ function buildThreadRunArgs(
     codexServiceTier: command.codexServiceTier,
     queueFirstAssociation: command.queueFirstAssociation,
     catalog: args.catalog,
-    body: createRunBody({
-      body: command.body,
-      agent: args.agent,
-      permissionPolicies: args.runPermissionPolicies,
-      triggerSource: command.triggerSource,
-      prompt,
-    }),
+    body: {
+      prompt: prompt.userPrompt,
+      agentId: args.agent.id,
+      realAgentInPreview: command.realAgentInPreview,
+      captureNetworkBodies: command.captureNetworkBodies,
+      permissionPolicies: args.runPermissionPolicies ?? undefined,
+      triggerSource: command.triggerSource ?? "web",
+      appendSystemPrompt: prompt.appendedSystemPrompt,
+    },
     apiStartTime: command.apiStartTime,
     chatThreadId: command.chatThreadId,
     ...(args.threadContinuation

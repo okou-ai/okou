@@ -108,7 +108,7 @@ export interface ThreadModelSelection {
   readonly agentRunModelPin: AgentRunModelPin;
   readonly modelProviderId: string | undefined;
   readonly modelProviderType: string | undefined;
-  readonly selectedModelOverride: string;
+  readonly selectedModel: string;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
   readonly codexServiceTier: "fast" | undefined;
   readonly reasoningEffort: ReasoningEffort | undefined;
@@ -452,7 +452,7 @@ function createModelSelection(
         },
         modelProviderId: model.pin.modelProviderId ?? undefined,
         modelProviderType: modelProviderType ?? undefined,
-        selectedModelOverride: model.pin.selectedModel,
+        selectedModel: model.pin.selectedModel,
         builtInModelRuntimeRoute: model.builtInModelRuntimeRoute ?? undefined,
         codexServiceTier: model.runCodexServiceTier,
         reasoningEffort: resolveReasoningEffortForDispatch({
@@ -584,7 +584,7 @@ function createModelEnvironment(
         const route = selection.builtInModelRuntimeRoute;
         if (
           !route ||
-          route.selectedModel !== selection.selectedModelOverride ||
+          route.selectedModel !== selection.selectedModel ||
           !isBuiltInModelRuntimeRoutePermitted(route) ||
           getFrameworkForType(route.providerType) !== framework
         ) {
@@ -598,7 +598,7 @@ function createModelEnvironment(
         return source
           ? prepareManagedModelEnvironment(source, {
               framework,
-              selectedModelOverride: selection.selectedModelOverride,
+              selectedModel: selection.selectedModel,
               builtInModelRuntimeRoute: route,
             })
           : null;
@@ -619,7 +619,7 @@ function createModelEnvironment(
       }
       const type = source.configuration.providerType;
       if (
-        !selection.selectedModelOverride ||
+        !selection.selectedModel ||
         !isPersonalSubscriptionProviderType(type) ||
         getFrameworkForType(type) !== framework ||
         selection.modelProviderType !== type
@@ -628,7 +628,7 @@ function createModelEnvironment(
       }
       const upstreamModel = catalogSubscriptionUpstreamModel(
         await get(bootstrap.modelCatalog$),
-        selection.selectedModelOverride,
+        selection.selectedModel,
         type,
       );
       if (!upstreamModel) {
@@ -636,7 +636,7 @@ function createModelEnvironment(
       }
       return prepareSubscriptionModelEnvironment(
         source,
-        selection.selectedModelOverride,
+        selection.selectedModel,
         {
           upstreamModel,
           userId: selection.owner.userId,

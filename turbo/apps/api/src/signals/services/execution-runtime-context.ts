@@ -397,7 +397,7 @@ function createExecutionModel(run$: ExecutionRun$, global: GlobalModels) {
       }
       provider = await prepareManagedModelEnvironment(source, {
         framework: getFrameworkForType(AUTO_RUN_PROVIDER),
-        selectedModelOverride: run.selectedModel,
+        selectedModel: run.selectedModel,
         builtInModelRuntimeRoute: {
           selectedModel: run.selectedModel,
           providerType: AUTO_RUN_PROVIDER,
