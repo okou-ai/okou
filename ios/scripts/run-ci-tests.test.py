@@ -32,8 +32,11 @@ args = sys.argv[1:]
 command = pathlib.Path(sys.argv[0]).name
 if command == 'xcrun':
     if args == ['simctl', 'list', 'devices', 'available', '--json']:
-        print(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-26-2':
-            [{'name': 'iPhone 17 Pro', 'udid': 'configured', 'state': 'Shutdown'}]}}))
+        devices = {'com.apple.CoreSimulator.SimRuntime.iOS-26-2':
+            [{'name': 'iPhone 17 Pro', 'udid': 'configured', 'state': 'Shutdown'}]}
+        print(json.dumps({'devices': {} if scenario == 'selection-mismatch' else devices}))
+    elif args == ['simctl', 'list', '--json']:
+        print(json.dumps({'devices': {}, 'runtimes': []}))
     elif args == ['simctl', 'boot', 'configured']:
         if not (state / 'build-finished').exists():
             sys.exit('Simulator boot requested before compilation finished')
@@ -208,6 +211,15 @@ class CIProcessTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertTrue((self.state / "prepare-finished").exists())
         self.assertTrue((self.state / "build-finished").exists())
+        self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_selection_mismatch_blocks_native_tests_after_successful_compilation(self):
+        self.env["CI_PROCESS_SCENARIO"] = "selection-mismatch"
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.state / "prepare-finished").exists())
+        self.assertTrue((self.state / "build-finished").exists())
+        self.assertIn("Simulator selection failure:", result.stderr)
         self.assertFalse((self.state / "tests-ran").exists())
 
     def test_compilation_failure_blocks_native_tests(self):
