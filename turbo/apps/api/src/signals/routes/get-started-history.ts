@@ -73,7 +73,7 @@ const exportHistory$ = command(async ({ get, set }, signal: AbortSignal) => {
           };
         },
       ),
-      nextCursor: rows.length > query.limit ? (page.at(-1)?.id ?? null) : null,
+      nextCursor: rows.length > query.limit ? page[query.limit - 1]!.id : null,
     },
   };
 });
