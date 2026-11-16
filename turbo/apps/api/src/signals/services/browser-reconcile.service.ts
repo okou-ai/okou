@@ -4,6 +4,10 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { browserSessionScreenshotDeletions } from "@okouai/db/schema/browser-screenshot-deletion";
 import { command } from "ccstate";
 import {
+  BrowserBridgeError,
+  CdpConnectionError,
+} from "@okouai/browser-extension-client";
+import {
   browserChatWindow,
   type BrowserChatWindow,
 } from "./browser-chat-session";
@@ -93,6 +97,12 @@ const RETIREMENT_PROVIDER_ERROR_CODES = Object.freeze([
 
 /** Class names are fixed labels, never arbitrary provider-controlled names. */
 function nativeHealthErrorClass(error: unknown) {
+  if (error instanceof CdpConnectionError) {
+    return "CdpConnectionError";
+  }
+  if (error instanceof BrowserBridgeError) {
+    return "BrowserBridgeError";
+  }
   if (error instanceof ZodError) {
     return "ZodError";
   }
@@ -111,6 +121,27 @@ function nativeHealthErrorClass(error: unknown) {
   return error instanceof Error ? "Error" : "unknown";
 }
 
+function nativeConnectionFailure(error: unknown) {
+  const connection =
+    error instanceof CdpConnectionError
+      ? error.connection
+      : error instanceof BrowserBridgeError
+        ? error.diagnostics.connection
+        : undefined;
+  if (!connection) {
+    return undefined;
+  }
+  return {
+    socketSource: connection.source,
+    socketPhase: connection.phase,
+    socketReadyState: connection.ready_state,
+    ...(connection.code !== undefined ? { closeCode: connection.code } : {}),
+    ...(connection.was_clean !== undefined
+      ? { wasClean: connection.was_clean }
+      : {}),
+  };
+}
+
 /** Never pass provider messages, validation input or SQL to the logger. */
 function browserWindowFailure(error: unknown) {
   if (error instanceof BrowserUseWindowHealthError) {
@@ -118,6 +149,15 @@ function browserWindowFailure(error: unknown) {
       errorKind: error.phase === "validation" ? "validation" : "transport",
       nativePhase: error.phase,
       errorClass: nativeHealthErrorClass(error.cause),
+      ...nativeConnectionFailure(error.cause),
+    };
+  }
+  const connection = nativeConnectionFailure(error);
+  if (connection) {
+    return {
+      errorKind: "transport",
+      errorClass: nativeHealthErrorClass(error),
+      ...connection,
     };
   }
   const sqlState = safeSqlStateCode(error);

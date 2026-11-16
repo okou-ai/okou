@@ -142,7 +142,14 @@ test("keeps OAuth callback stages and exception classes without private details"
 
 // Logger-owned redaction contract: trigger failures at the external CDP boundary
 // through the authenticated production cron, without observing private services.
-test.each(["cdp", "connection", "command"] as const)(
+test.each([
+  "cdp",
+  "connection",
+  "command",
+  "admission-close",
+  "command-close",
+  "normal-close",
+] as const)(
   "keeps private provider details out of native window failure logs: %s",
   async (failure) => {
     const app = await setupApp({
@@ -161,6 +168,8 @@ test.each(["cdp", "connection", "command"] as const)(
         throw new Error("Expected the external Browser provider session");
       }
       const privateDetail = "private-provider-window-detail";
+      const nativeClose = failure.endsWith("-close");
+      const closeCode = failure === "normal-close" ? 1000 : 1013;
       if (failure === "cdp") {
         f.provider.native.windowBoundsError = {
           code: -32_602,
@@ -168,9 +177,24 @@ test.each(["cdp", "connection", "command"] as const)(
         };
       } else if (failure === "connection") {
         f.provider.native.onSocketConnection = controlBrowserDeadline(context);
-      } else {
+      } else if (failure === "command") {
         f.provider.native.windowReply = "withhold";
         f.provider.native.onWithheldReply = controlBrowserDeadline(context);
+      } else if (failure === "admission-close") {
+        f.provider.native.onSocketConnection = (socket) => {
+          socket.close(closeCode, privateDetail);
+        };
+      } else {
+        let nativeSocket: Pick<WebSocket, "close"> | undefined;
+        f.provider.native.onSocketConnection = (socket) => {
+          nativeSocket = socket;
+        };
+        f.provider.native.beforeNativeWindowReply = () => {
+          if (!nativeSocket) {
+            throw new Error("Expected the external CDP socket");
+          }
+          nativeSocket.close(closeCode, privateDetail);
+        };
       }
 
       const result = await accept(
@@ -186,7 +210,7 @@ test.each(["cdp", "connection", "command"] as const)(
         })
         .at(-1);
       const record = object({})
-        .catchall(string().or(number()))
+        .catchall(string().or(number()).or(boolean()))
         .parse(warning?.[1]);
       expect(record).toStrictEqual({
         instanceId: first.window?.instanceId,
@@ -194,12 +218,27 @@ test.each(["cdp", "connection", "command"] as const)(
         phase: "check-native-window",
         ...(failure === "cdp"
           ? { errorKind: "cdp", errorCode: -32_602 }
-          : {
-              errorKind: "provider",
-              providerStatus: 503,
-              errorCode: "BROWSER_USE_TIMEOUT",
-              nativePhase: failure,
-            }),
+          : nativeClose
+            ? {
+                errorKind: "transport",
+                nativePhase:
+                  failure === "admission-close" ? "connection" : "command",
+                errorClass: "CdpConnectionError",
+                socketSource: "native-close",
+                socketPhase:
+                  failure === "admission-close"
+                    ? expect.stringMatching(/^(opening|open)$/u)
+                    : "open",
+                socketReadyState: 3,
+                closeCode,
+                wasClean: true,
+              }
+            : {
+                errorKind: "provider",
+                providerStatus: 503,
+                errorCode: "BROWSER_USE_TIMEOUT",
+                nativePhase: failure,
+              }),
         context: "BrowserReconcile",
       });
       const serialized = JSON.stringify(warning);
@@ -213,6 +252,7 @@ test.each(["cdp", "connection", "command"] as const)(
       f.provider.native.onSocketConnection = undefined;
       f.provider.native.windowReply = "reply";
       f.provider.native.onWithheldReply = undefined;
+      f.provider.native.beforeNativeWindowReply = undefined;
       expect((await view(chat)).window).toStrictEqual(first.window);
       const recovered = await accept(
         cron.reconcile({
