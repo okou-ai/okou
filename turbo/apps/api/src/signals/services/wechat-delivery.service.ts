@@ -9,7 +9,7 @@ import { recordWechatDeliveryPhase } from "./wechat-delivery-timing.service";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { command } from "ccstate";
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
-import { literal, object, string, uuid } from "zod";
+import { object, string, uuid } from "zod";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { settle } from "../utils";
 import {
@@ -42,7 +42,6 @@ interface WechatReplyRequest {
   readonly userId: string;
   readonly target: WechatDeliveryTarget;
   readonly content?: string;
-  readonly runFailurePresentationVersion?: 1;
   readonly deliveryCallbackId?: string;
 }
 
@@ -157,10 +156,7 @@ export const sendWechatChatReply$ = command(
       return;
     }
     let content = args.content;
-    if (
-      content === undefined ||
-      (reply.runFailureId !== null && args.runFailurePresentationVersion !== 1)
-    ) {
+    if (content === undefined) {
       content = await set(
         formatWechatReply$,
         {
@@ -175,11 +171,7 @@ export const sendWechatChatReply$ = command(
     if (args.deliveryCallbackId) {
       const snapshot = await set(
         snapshotWechatReply$,
-        {
-          callbackId: args.deliveryCallbackId,
-          content,
-          runFailure: reply.runFailureId !== null,
-        },
+        { callbackId: args.deliveryCallbackId, content },
         signal,
       );
       if (snapshot === null) {
@@ -252,11 +244,6 @@ const sendWechatReplyChunks$ = command(
         if (result.response.body.error.code === "WECHAT_DELIVERY_UNKNOWN") {
           return "unknown" as const;
         }
-        if (result.response.body.error.code === "CONFLICT") {
-          // An older frozen reply may already own receipts for different text.
-          // Preserve those receipts and stop instead of forwarding old diagnostics.
-          return "conflict" as const;
-        }
         throw new Error(result.response.body.error.message);
       }
     }
@@ -265,7 +252,6 @@ const sendWechatReplyChunks$ = command(
 
 const wechatReplyRequestSchema = object({
   content: string().optional(),
-  runFailurePresentationVersion: literal(1).optional(),
   chatEventId: uuid(),
   chatThreadId: uuid(),
   orgId: string(),
@@ -276,18 +262,14 @@ const wechatReplyRequestSchema = object({
 const snapshotWechatReply$ = command(
   async (
     { set },
-    args: { callbackId: string; content: string; runFailure: boolean },
+    args: { callbackId: string; content: string },
     signal: AbortSignal,
   ): Promise<string | null> => {
-    // Freeze generated Run copy once. Old snapshots have no presentation version;
-    // replace their diagnostic copy without modifying any chunk receipt.
+    // Labels changing during recovery must not change the operation hash/chunks.
     const [saved] = await set(writeDb$)
       .update(agentRunCallbacks)
       .set({
-        payload: sql`CASE
-          WHEN ${args.runFailure} AND ${agentRunCallbacks.payload}->>'runFailurePresentationVersion' IS DISTINCT FROM '1'
-          THEN ${agentRunCallbacks.payload} || jsonb_build_object('content', ${args.content}::text, 'runFailurePresentationVersion', 1)
-          ELSE jsonb_set(${agentRunCallbacks.payload}, '{content}', coalesce(${agentRunCallbacks.payload}->'content', to_jsonb(${args.content}::text))) END`,
+        payload: sql`jsonb_set(${agentRunCallbacks.payload}, '{content}', coalesce(${agentRunCallbacks.payload}->'content', to_jsonb(${args.content}::text)))`,
       })
       .where(
         and(
@@ -381,11 +363,9 @@ export const dispatchWechatChatDelivery$ = command(
     await db
       .update(agentRunCallbacks)
       .set(
-        delivery.value === "conflict"
-          ? { status: "failed", lastError: "WECHAT_REPLY_CONTENT_CONFLICT" }
-          : delivery.value === "unknown"
-            ? { status: "failed", lastError: "WECHAT_DELIVERY_UNKNOWN" }
-            : { status: "delivered", deliveredAt: nowDate(), lastError: null },
+        delivery.value === "unknown"
+          ? { status: "failed", lastError: "WECHAT_DELIVERY_UNKNOWN" }
+          : { status: "delivered", deliveredAt: nowDate(), lastError: null },
       )
       .where(owned);
     signal.throwIfAborted();

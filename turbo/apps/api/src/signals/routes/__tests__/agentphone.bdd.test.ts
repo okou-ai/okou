@@ -3059,6 +3059,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       const beforeCompletion = sends.messages.length;
       await completeSandboxRun(run.sandboxToken, run.runId, 1, {
         error: "insufficient_credits",
+        failureReason: "insufficient_credits",
       });
       await waitForSendCount(sends, beforeCompletion + 1);
       const reply = lastSend(sends).body;
