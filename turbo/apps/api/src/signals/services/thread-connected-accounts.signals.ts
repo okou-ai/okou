@@ -44,7 +44,7 @@ import {
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
 import {
   type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSelection,
+  type ConnectorExecutionRuntimeSelection,
   connectorScopeForRuntimeSnapshot,
   getConnectorRuntimeConnector,
 } from "./connector-catalog-runtime.service";
@@ -1221,7 +1221,7 @@ function runConnectorCatalogSelection(
     AgentConnectorScope,
     "allowedConnectorSlugs" | "allowedCustomConnectorIds"
   >,
-  catalog: ConnectorRuntimeSelection | null,
+  catalog: ConnectorExecutionRuntimeSelection | null,
 ): RunConnectorCatalogSelection {
   if (isEmptyRunConnectorScope(scope)) {
     return { kind: "empty" };
@@ -1434,7 +1434,7 @@ export function emptyBuiltinConnectorRuntimeContext(): BuiltinConnectorRuntimeCo
 function allowedStoredConnectorRows(
   rows: readonly StoredConnectorRuntimeRowCandidate[],
   allowedConnectorSlugs: readonly ConnectorSlug[],
-  snapshot: ConnectorRuntimeSelection,
+  snapshot: ConnectorExecutionRuntimeSelection,
   now: Date,
 ): readonly StoredConnectorRuntimeRow[] {
   const validRows = rows.flatMap((row) => {
@@ -1615,7 +1615,7 @@ export function storedConnectorContextFromSnapshot(
 function buildStoredConnectorMaterializationPlan(args: {
   readonly connectorRows: readonly StoredConnectorRuntimeRowCandidate[];
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
+  readonly connectorCatalogSnapshot: ConnectorExecutionRuntimeSelection;
 }): StoredConnectorMaterializationPlan | null {
   const allowedConnectorRows = allowedStoredConnectorRows(
     args.connectorRows,
@@ -1638,7 +1638,7 @@ function materializeStoredConnectorSnapshotRows(
   args: {
     readonly rows: readonly StoredConnectorMaterializationSnapshotRow[];
     readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-    readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
+    readonly connectorCatalogSnapshot: ConnectorExecutionRuntimeSelection;
     readonly timingDimensions: ApiDispatchTimingDimensions;
   },
   timing?: ApiDispatchTimingCollector,
@@ -1723,7 +1723,7 @@ interface StoredConnectorMaterializationArgs {
   readonly connectorIdCandidatesBySlug:
     ReadonlyMap<ConnectorSlug, readonly string[]> | undefined;
   readonly scopeSource: ConnectorScopeSource;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
+  readonly connectorCatalogSnapshot: ConnectorExecutionRuntimeSelection;
 }
 
 function customConnectorRequiredMemberCredentialsAreComplete(
@@ -1889,7 +1889,7 @@ interface RunConnectorPreparation {
       ReadonlyMap<string, readonly string[]> | undefined;
     readonly customConnectorGrants:
       readonly AgentCustomConnectorGrant[] | undefined;
-    readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
+    readonly connectorCatalogSnapshot: ConnectorExecutionRuntimeSelection;
   } | null;
 }
 
@@ -2106,5 +2106,5 @@ export type RunConnectorCatalogSelection =
   | { readonly kind: "empty" }
   | {
       readonly kind: "scoped";
-      readonly selection: ConnectorRuntimeSelection;
+      readonly selection: ConnectorExecutionRuntimeSelection;
     };

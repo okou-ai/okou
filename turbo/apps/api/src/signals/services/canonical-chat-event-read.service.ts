@@ -76,9 +76,11 @@ export function canonicalArchivedChatEventError(
   return row.payload?.error ?? null;
 }
 
-/** Private immutable model decision; NULL identifies an older queued input. */
-export function canonicalChatInputModelSelection() {
-  return sql`${chatEvents.modelSelection}`.mapWith(
+/** Strictly validate a non-NULL private immutable model decision. */
+export function canonicalChatInputModelSelection(
+  source: SQLWrapper = chatEvents.modelSelection,
+) {
+  return sql`${source}`.mapWith(
     nullableDriverValueDecoder(
       zodDriverValueDecoder(chatInputModelSelectionSchema),
     ),

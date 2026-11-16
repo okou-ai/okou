@@ -74,7 +74,7 @@ import {
   createAuthorizedConnectors,
   type AuthorizedConnectors,
 } from "./authorized-connectors.service";
-import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
+import type { ConnectorExecutionRuntimeSelection } from "./connector-catalog-runtime.service";
 import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
 import type {
@@ -171,7 +171,9 @@ export interface AgentRunContextSignals {
   readonly customConnectorDefinitions$: Computed<
     Promise<readonly CustomConnectorExecutionDefinition[]>
   >;
-  readonly catalog$: Computed<Promise<ConnectorRuntimeSelection | null>>;
+  readonly catalog$: Computed<
+    Promise<ConnectorExecutionRuntimeSelection | null>
+  >;
   readonly connectors$: Computed<Promise<BootstrapConnectorData>>;
 }
 

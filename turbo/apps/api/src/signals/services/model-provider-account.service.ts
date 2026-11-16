@@ -71,7 +71,16 @@ export type PersonalSubscriptionProviderType =
 export interface MemberModelAccountSnapshot {
   readonly orgId: string;
   readonly userId: string;
-  readonly accounts: readonly (typeof modelProviderAccounts.$inferSelect)[];
+  readonly accounts: readonly Pick<
+    typeof modelProviderAccounts.$inferSelect,
+    | "id"
+    | "modelProviderId"
+    | "orgId"
+    | "userId"
+    | "type"
+    | "isActive"
+    | "disconnectedAt"
+  >[];
 }
 
 export function isPersonalSubscriptionProviderType(
