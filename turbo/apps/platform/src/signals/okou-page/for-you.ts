@@ -1,5 +1,6 @@
-import { computed } from "ccstate";
-import { searchParams$ } from "../route.ts";
+import { command, computed, state, type Computed } from "ccstate";
+import { searchParams$, updateSearchParams$ } from "../route.ts";
+import { onRef, waitForToken } from "../utils.ts";
 import {
   agentSuggestionEntries$,
   agentSuggestionListItems$,
@@ -65,3 +66,80 @@ export const forYouDeck$ = computed(async (get) => {
       }),
   };
 });
+
+type ForYouDeck =
+  typeof forYouDeck$ extends Computed<infer Value> ? Awaited<Value> : never;
+type ForYouCard = ForYouDeck["cards"][number];
+type PageDirection = "previous" | "next";
+
+interface Pagination {
+  readonly from: ForYouCard;
+  readonly to: string;
+  readonly direction: PageDirection;
+}
+
+const paginationState$ = state<Pagination | null>(null);
+
+export const forYouPagination$ = computed((get) => {
+  return get(paginationState$);
+});
+
+export const setupForYouPagination$ = command(
+  ({ set }, signal: AbortSignal) => {
+    set(paginationState$, null);
+    signal.addEventListener(
+      "abort",
+      () => {
+        set(paginationState$, null);
+      },
+      { once: true },
+    );
+  },
+);
+
+export const browseForYou$ = command(
+  async (
+    { get, set },
+    id: string,
+    direction: PageDirection,
+    signal: AbortSignal,
+  ) => {
+    const { cards } = await get(forYouDeck$);
+    signal.throwIfAborted();
+    const from = cards[0];
+    if (!from || from.entry.item.id === id) {
+      return;
+    }
+    set(
+      paginationState$,
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? null
+        : { from, to: id, direction },
+    );
+    // Preserve the visit snapshot and native modifier-key navigation.
+    set(updateSearchParams$, new URLSearchParams({ suggestion: id }));
+  },
+);
+
+/** The departing card owns its native animation, including cancellation. */
+export const finishForYouPaginationOnRef$ = onRef(
+  command(async ({ get, set }, card: HTMLElement, signal: AbortSignal) => {
+    const pagination = get(forYouPagination$);
+    const animations =
+      typeof card.getAnimations === "function" ? card.getAnimations() : [];
+    await waitForToken(
+      Promise.allSettled(
+        animations.map((animation) => {
+          return animation.finished;
+        }),
+      ),
+      signal,
+    );
+    signal.throwIfAborted();
+    // A rapid second click replaces this departure; its completion cannot
+    // remove the newer outgoing card.
+    if (get(forYouPagination$) === pagination) {
+      set(paginationState$, null);
+    }
+  }),
+);

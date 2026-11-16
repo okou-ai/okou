@@ -272,6 +272,10 @@
 
   --animate-card-fly-out: card-fly-out 520ms cubic-bezier(0.4, 0, 0.2, 1)
     forwards;
+  --animate-card-page-next-in: card-page-next-in 220ms ease-out both;
+  --animate-card-page-next-out: card-page-next-out 220ms ease-out both;
+  --animate-card-page-previous-in: card-page-previous-in 220ms ease-out both;
+  --animate-card-page-previous-out: card-page-previous-out 220ms ease-out both;
 
   /* Illustration strokes. These are drawn artwork inside a scaled canvas, not
      product chrome, so they are a different decision from `--border-width-surface`
@@ -722,6 +726,46 @@ body {
   }
   to {
     transform: translateY(0);
+  }
+}
+
+@keyframes card-page-next-in {
+  from {
+    transform: translateX(8%) rotate(2deg);
+  }
+  to {
+    transform: translateX(0) rotate(0deg);
+  }
+}
+
+@keyframes card-page-next-out {
+  from {
+    transform: translateX(0) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-12%) rotate(-3deg);
+    opacity: 0;
+  }
+}
+
+@keyframes card-page-previous-in {
+  from {
+    transform: translateX(-8%) rotate(-2deg);
+  }
+  to {
+    transform: translateX(0) rotate(0deg);
+  }
+}
+
+@keyframes card-page-previous-out {
+  from {
+    transform: translateX(0) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(12%) rotate(3deg);
+    opacity: 0;
   }
 }
 

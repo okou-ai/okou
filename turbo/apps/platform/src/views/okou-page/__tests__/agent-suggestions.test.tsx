@@ -24,6 +24,7 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import {
   click,
   fill,
@@ -1445,6 +1446,97 @@ test("For you browses without consuming and restores a card from its URL", async
   expect(pool.consumed).toStrictEqual([]);
   await screen.findByText("3 to go");
   await within(link("/for-you")).findByLabelText("3 waiting");
+});
+
+function holdCardDeparture(article: HTMLElement) {
+  const card = article.closest('[data-slot="suggestion-stack-card"]');
+  if (!card) {
+    throw new Error("Missing suggestion card");
+  }
+  const finished = context.mocks.deferred<void>();
+  Object.defineProperty(card, "getAnimations", {
+    configurable: true,
+    value: () => {
+      return [{ finished: finished.promise }];
+    },
+  });
+  return finished;
+}
+
+test("For you mounts only the foreground content and retains a departure until its animation finishes", async () => {
+  const items = numberedSuggestions(10);
+  const pool = mockPool(items);
+  context.mocks.data.agents([
+    { agentId, isDefaultAgent: true, avatarUrl: DEFAULT_AGENT_AVATAR_URL },
+  ]);
+  await setupPage({
+    context,
+    path: suggestionPath,
+    featureSwitches: {
+      ...features,
+      [FeatureSwitchKey.OkouAnimatedAvatar]: true,
+    },
+  });
+  const first = await activeForYouCard("Suggested action 1");
+  expect(
+    first.parentElement?.querySelector("[data-okou-avatar]"),
+  ).toHaveAttribute("data-okou-avatar", "animated");
+  expect(screen.queryByText("Suggested action 2")).not.toBeInTheDocument();
+  const departure = holdCardDeparture(first);
+  click(link(`/for-you?suggestion=${items[1].id}`));
+  const second = await activeForYouCard("Suggested action 2");
+  expect(first).toBeInTheDocument();
+  expect(first.closest("[inert]")).not.toBeNull();
+  expect(second.closest("[inert]")).toBeNull();
+  expect(
+    first.parentElement?.querySelector("[data-okou-avatar]"),
+  ).toHaveAttribute("data-okou-avatar", "static");
+  expect(screen.queryByText("Suggested action 3")).not.toBeInTheDocument();
+  departure.resolve();
+  await waitFor(() => {
+    expect(first).not.toBeInTheDocument();
+  });
+  expect(pool.consumed).toStrictEqual([]);
+});
+
+test("A superseded departure cannot finish a newer For you transition", async () => {
+  const items = numberedSuggestions(10);
+  mockPool(items);
+  await openForYou();
+  const first = await activeForYouCard("Suggested action 1");
+  const firstDeparture = holdCardDeparture(first);
+  click(link(`/for-you?suggestion=${items[1].id}`));
+  const second = await activeForYouCard("Suggested action 2");
+  const secondDeparture = holdCardDeparture(second);
+  click(link(`/for-you?suggestion=${items[2].id}`));
+  await activeForYouCard("Suggested action 3");
+  firstDeparture.resolve();
+  expect(first).not.toBeInTheDocument();
+  expect(second).toBeInTheDocument();
+  secondDeparture.resolve();
+  await waitFor(() => {
+    expect(second).not.toBeInTheDocument();
+  });
+  expect(new URLSearchParams(window.location.search).get("suggestion")).toBe(
+    items[2].id,
+  );
+});
+
+test("Reduced-motion For you navigation immediately releases the previous card in both directions", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(prefers-reduced-motion: reduce)";
+  });
+  const items = numberedSuggestions(10);
+  const pool = mockPool(items);
+  await openForYou();
+  const first = await activeForYouCard("Suggested action 1");
+  click(link(`/for-you?suggestion=${items[1].id}`));
+  const second = await activeForYouCard("Suggested action 2");
+  expect(first).not.toBeInTheDocument();
+  click(link(`/for-you?suggestion=${items[0].id}`));
+  await activeForYouCard("Suggested action 1");
+  expect(second).not.toBeInTheDocument();
+  expect(pool.consumed).toStrictEqual([]);
 });
 
 test("For you handles cards in order, completes, and restores a dismissed card with Undo", async () => {
