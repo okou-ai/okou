@@ -48,6 +48,7 @@ import { flushWaitUntilForTest } from "../../signals/context/wait-until";
 import { healthRoutes } from "../../signals/routes/health";
 import { cronBrowserReconcileRoutes } from "../../signals/routes/cron-browser-reconcile";
 import { createBrowserFixtures } from "../../signals/routes/__tests__/helpers/browser-fixture";
+import { controlBrowserDeadline } from "../../signals/routes/__tests__/helpers/browser-deadline";
 import { mockOptionalEnv } from "../env";
 import { clearMockMonotonicNow, mockMonotonicNow, mockNow, now } from "../time";
 import { withRequestRuntime } from "../request-runtime";
@@ -141,59 +142,94 @@ test("keeps OAuth callback stages and exception classes without private details"
 
 // Logger-owned redaction contract: trigger failures at the external CDP boundary
 // through the authenticated production cron, without observing private services.
-test("keeps private provider details out of native window failure logs", async () => {
-  const app = await setupApp({
-    context,
-    routes: cronBrowserReconcileRoutes,
-    isolatePg: true,
-  });
-  const cron = app(cronBrowserReconcileContract);
-  const { fixture, open } = createBrowserFixtures(context);
-  const f = await fixture();
-  await f.owned.run(async () => {
-    const chat = await f.start();
-    const first = await open(chat);
-    const [providerSessionId] = f.provider.sessionIds;
-    if (!providerSessionId) {
-      throw new Error("Expected the external Browser provider session");
-    }
-    const privateDetail = "private-provider-window-detail";
-    f.provider.native.windowBoundsError = {
-      code: -32_602,
-      message: privateDetail,
-    };
-
-    const result = await accept(
-      cron.reconcile({
-        headers: { authorization: "Bearer test-cron-secret" },
-      }),
-      [200],
-    );
-    expect(result.body).toMatchObject({ checked: 1, errors: 1, stopped: 0 });
-    const warning = context.mocks.axiomLogging.warn.mock.calls
-      .filter(([message]) => {
-        return message === "Browser window reconciliation failed";
-      })
-      .at(-1);
-    const record = object({})
-      .catchall(string().or(number()))
-      .parse(warning?.[1]);
-    expect(record).toStrictEqual({
-      instanceId: first.window?.instanceId,
-      primaryWindowId: first.window?.primaryWindowId,
-      phase: "check-native-window",
-      errorKind: "cdp",
-      errorCode: -32_602,
-      context: "BrowserReconcile",
+test.each(["cdp", "connection", "command"] as const)(
+  "keeps private provider details out of native window failure logs: %s",
+  async (failure) => {
+    const app = await setupApp({
+      context,
+      routes: cronBrowserReconcileRoutes,
+      isolatePg: true,
     });
-    const serialized = JSON.stringify(warning);
-    expect(serialized).not.toContain(privateDetail);
-    expect(serialized).not.toContain("Private provider");
-    expect(serialized).not.toContain(f.provider.native.url);
-    expect(serialized).not.toContain(chat.threadId);
-    expect(serialized).not.toContain(providerSessionId);
-  });
-});
+    const cron = app(cronBrowserReconcileContract);
+    const { fixture, open, view } = createBrowserFixtures(context);
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const first = await open(chat);
+      const [providerSessionId] = f.provider.sessionIds;
+      if (!providerSessionId) {
+        throw new Error("Expected the external Browser provider session");
+      }
+      const privateDetail = "private-provider-window-detail";
+      if (failure === "cdp") {
+        f.provider.native.windowBoundsError = {
+          code: -32_602,
+          message: privateDetail,
+        };
+      } else if (failure === "connection") {
+        f.provider.native.onSocketConnection = controlBrowserDeadline(context);
+      } else {
+        f.provider.native.windowReply = "withhold";
+        f.provider.native.onWithheldReply = controlBrowserDeadline(context);
+      }
+
+      const result = await accept(
+        cron.reconcile({
+          headers: { authorization: "Bearer test-cron-secret" },
+        }),
+        [200],
+      );
+      expect(result.body).toMatchObject({ checked: 1, errors: 1, stopped: 0 });
+      const warning = context.mocks.axiomLogging.warn.mock.calls
+        .filter(([message]) => {
+          return message === "Browser window reconciliation failed";
+        })
+        .at(-1);
+      const record = object({})
+        .catchall(string().or(number()))
+        .parse(warning?.[1]);
+      expect(record).toStrictEqual({
+        instanceId: first.window?.instanceId,
+        primaryWindowId: first.window?.primaryWindowId,
+        phase: "check-native-window",
+        ...(failure === "cdp"
+          ? { errorKind: "cdp", errorCode: -32_602 }
+          : {
+              errorKind: "provider",
+              providerStatus: 503,
+              errorCode: "BROWSER_USE_TIMEOUT",
+              nativePhase: failure,
+            }),
+        context: "BrowserReconcile",
+      });
+      const serialized = JSON.stringify(warning);
+      expect(serialized).not.toContain(privateDetail);
+      expect(serialized).not.toContain("Private provider");
+      expect(serialized).not.toContain(f.provider.native.url);
+      expect(serialized).not.toContain(chat.threadId);
+      expect(serialized).not.toContain(providerSessionId);
+
+      f.provider.native.windowBoundsError = undefined;
+      f.provider.native.onSocketConnection = undefined;
+      f.provider.native.windowReply = "reply";
+      f.provider.native.onWithheldReply = undefined;
+      expect((await view(chat)).window).toStrictEqual(first.window);
+      const recovered = await accept(
+        cron.reconcile({
+          headers: { authorization: "Bearer test-cron-secret" },
+        }),
+        [200],
+      );
+      expect(recovered.body).toMatchObject({
+        checked: 1,
+        errors: 0,
+        stopped: 0,
+      });
+      expect((await view(chat)).window).toStrictEqual(first.window);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+    });
+  },
+);
 
 // Logger-owned telemetry contract: exercise the production health route rather
 // than constructing a handler or mounting a test-only route.

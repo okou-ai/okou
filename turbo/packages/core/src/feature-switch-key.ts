@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  ArtifactGenerationTiming = "_artifactGenerationTimingV1",
   PhoneUse = "_phoneUse",
   CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
   UserNotifications = "userNotifications",
@@ -55,4 +56,5 @@ export enum FeatureSwitchKey {
   HostedSiteShareRows = "hostedSiteShareRows",
   FreePlanArtifactPaywall = "freePlanArtifactPaywall",
   BillingSurvey = "billingSurvey",
+  IosSettingsCredits = "iosSettingsCredits",
 }

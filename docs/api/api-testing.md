@@ -349,8 +349,8 @@ Select isolation explicitly inside each test body with an awaited
 including fixture or helper calls. Use the returned client for the case's real
 API requests when possible. If a separate setup call is needed to select the
 database before a fixture, use routes that the case actually exercises, never an
-empty route slice or a database cleanup action. Each case receives a separate
-engine; keep `testContext()` at module or describe scope.
+empty route slice or a database cleanup action. Each isolated case receives a
+separate database; keep `testContext()` at module or describe scope.
 
 Helpers must not know about `isolatePg`: do not accept, forward, destructure or
 select it inside a helper. Later plain `setupApp` calls in helpers inherit the
@@ -377,15 +377,7 @@ one short-lived client that closes on success or failure without opening the
 application pool. These test-only files live under `src/test-fixtures/seeds/`,
 outside production migrations and deployment entrypoints. Both database engines
 execute exactly the same files; there are no exported pricing/catalog writers
-or per-case seed options. It also migrates and seeds one PGlite,
-saves a checkpointed immutable snapshot, and provides its path to workers.
-The fixture caches the unpacked files and compiled program for subsequent cases.
-Worker setup only records the snapshot path. Each case that selects
-`isolatePg: true` creates its engine on demand and closes it after its work;
-files that never select isolation do not restore a snapshot or start an engine.
-Every isolated case has separate memory and writable filesystem copies;
-restoring the physical database never creates a case's business state. Cases do not
-repeat gzip/tar decoding, replay migrations, or reseed their database. The catalog seed
+or per-case seed options. The catalog seed
 publishes entries and their schema-version pointer in one atomic statement,
 inserting only a missing pointer and never replacing existing catalog authority.
 The pricing seed preserves existing rows on their `(kind, provider, category)`
@@ -396,6 +388,35 @@ Runner. To update the fixed baseline, review the declarative data alongside its
 source artifact/pricing projection; do not add case-specific variants. This common application baseline is infrastructure; it does
 not authorize changing prices, catalog entries, or business rows to manufacture
 a case's decisive state.
+
+Global setup also chooses the isolated backend once for the run. The
+[database fixture](../../turbo/apps/api/src/test-fixtures/pglite-database.ts)
+checks the connection role's `CREATEDB` or superuser capability and attempts to
+create a run-owned native PostgreSQL template. Missing capability or permission
+denial during template creation selects PGlite; other setup failures remain
+errors. Workers receive the path to a descriptor identifying the selected
+backend. Native case creation fails if permission changes during the run; it
+does not switch an individual case to PGlite.
+
+- **Native PostgreSQL:** global setup creates a fresh template from `template0`,
+  applies migrations and the fixed seeds, and closes its initialization
+  connection. Each isolated case clones that template into its own database
+  with a case-owned connection pool. Case disposal closes the pool before
+  dropping the database. Run teardown drops any remaining case databases in its
+  owned namespace before dropping the template.
+- **PGlite:** global setup migrates and seeds one engine, saves a checkpointed
+  immutable snapshot, and closes that engine. The fixture caches the unpacked
+  files and compiled program for subsequent cases. Each isolated case restores
+  the snapshot into separate memory and writable filesystem copies and closes
+  its own engine during disposal. Cases do not repeat archive decoding.
+
+Worker setup only records the descriptor path. Each case that selects
+`isolatePg: true` creates its database on demand; cases that never select
+isolation allocate no case-owned database. Neither isolated backend copies
+mutable business state from shared PostgreSQL, replays migrations, or reseeds
+the baseline per case. Restoring or cloning the baseline does not construct a
+case's business scenario. Run teardown also removes the temporary descriptor
+and any snapshot files.
 
 `src/__tests__/external-setup.ts` restores the fixed source and provider
 configuration and installs a fresh KMS mock before each case. The mock remains
@@ -418,7 +439,7 @@ without an async-local scope or a database `aroundEach` wrapper. `testContext`
 registers final disposal before user cleanup callbacks. Foreground work is
 aborted before API-based cleanup, which receives a live signal. Final disposal
 runs after those callbacks, aborts cleanup work, drains tracked detached and
-`waitUntil` work, and closes the isolated engine, including initialization that
+`waitUntil` work, and closes the isolated database, including initialization that
 was still pending when a case failed. Background work must remain tracked and
 finish within its case; database selection does not identify untracked work
 that leaks into a later case. Production services, routes, and SQL remain
@@ -430,9 +451,14 @@ mocks remain forbidden. The harness preserves node-postgres int8/numeric text
 decoding through PGlite's driver parsers, without rewriting query results or
 weakening schemas.
 
-PGlite has a single PostgreSQL session. Keep contracts that require the native
-PostgreSQL protocol, such as query cancellation, on native PostgreSQL. Assert
-business-visible outcomes from a publicly constructed lifecycle. Do not preserve a multi-connection lock-state
+`isolatePg: true` alone does not identify which backend ran. When the distinction
+matters, record the actual selected backend and relevant environment and role
+capability evidence in the test validation results. Contracts requiring the
+native PostgreSQL protocol, such as query cancellation, or multiple physical
+connections need a verified native backend; PGlite has a single session.
+Overlapping API requests alone do not establish native multi-connection lock
+semantics. Assert business-visible outcomes from a publicly constructed
+lifecycle. Do not preserve a multi-connection lock-state
 assertion just to retain the previous test mechanism. Never hold advisory locks,
 inspect `pg_locks`, or install transaction barriers or internal admission gates
 to construct an API scenario. Exercise requests and assert their responses and

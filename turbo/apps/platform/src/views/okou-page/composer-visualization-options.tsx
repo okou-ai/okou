@@ -7,11 +7,8 @@ import {
   VISUALIZATION_OUTPUTS,
   type VisualizationChart,
 } from "../../signals/okou-page/composer-visualization.ts";
-import {
-  ComposerRail,
-  RAIL_TILE,
-  RAIL_TILE_CAPTION,
-} from "./composer-rail.tsx";
+import { ComposerRail } from "./composer-rail.tsx";
+import { TEMPLATE_CARD, TemplateCardFace } from "./template-card.tsx";
 import { CURATED_VISUALIZATION_CHARTS } from "./composer-visualization-chart-data.ts";
 import { VisualizationChartPreview } from "./composer-visualization-previews.tsx";
 import {
@@ -76,10 +73,9 @@ function VisualizationChartButton({
     /*
       A persistent pressed state, so the shared toggle owns `aria-pressed`, the
       focus ring and the disabled appearance. Its own selected treatment is for
-      a control that is itself the surface; here the art box is, and the caption
-      sits outside it the way every other type's shelf tile does. So the outer
-      control is neutralised down to the frame the other shelves' tiles use, and
-      the cover below carries the state.
+      a control that is itself the surface; here the card is, so the outer
+      control is neutralised down to the template card's control and the card
+      carries the state in the picker's selection frame.
     */
     <ToggleButton
       selected={selected}
@@ -88,10 +84,8 @@ function VisualizationChartButton({
       // The button base clamps any nested icon to `size-4`; this tile's child is
       // a drawing that has to fill its box, not an icon.
       className={cn(
-        RAIL_TILE,
-        // The cover width every other type's shelf carries; the caption and the
-        // 16:9 box below follow from it.
-        "w-full border-0 text-left font-normal",
+        TEMPLATE_CARD,
+        "border-0",
         // `bg-transparent` alone leaves the toggle's dark selected fill: a
         // theme-prefixed utility is a different merge key, so it survives an
         // unprefixed one and would wash the tile in dark.
@@ -102,34 +96,23 @@ function VisualizationChartButton({
         toggleChart(chart);
       }}
     >
-      <span
-        className={cn(
-          // A cover, at the metrics of the covers on the other shelves: 16:9,
-          // `rounded-xl` and the same `bg-muted` behind it. Only the padding is
-          // this shelf's own -- a drawing sits on the tile rather than bleeding
-          // to its edge the way a screenshot does.
-          "flex aspect-video items-center justify-center overflow-hidden rounded-xl p-3 transition-colors",
-          // Those covers are not selectable and take the hairline; this one is,
-          // and `docs/app/styles.md` gives selection on a picture tile the emphasis
-          // width -- at the hairline the selected rim reads as an antialiasing
-          // artifact rather than as a state. Both branches carry that width so
-          // selecting a tile never moves its siblings.
-          "border-(length:--border-width-emphasis)",
-          selected
-            ? "border-primary bg-primary/10 text-foreground"
-            : "border-transparent bg-muted text-foreground/45 group-hover/tile:text-foreground/70 in-data-[slot=capability-tray]:bg-card in-data-[slot=capability-tray]:shadow-segment-selected",
-        )}
+      <TemplateCardFace
+        title={label}
+        ratio="aspect-video"
+        selected={selected}
+        className={selected ? "bg-primary/10" : undefined}
       >
-        <VisualizationChartPreview chart={chart} />
-      </span>
-      <span
-        className={cn(
-          RAIL_TILE_CAPTION,
-          selected ? "text-foreground" : "text-muted-foreground",
-        )}
-      >
-        {label}
-      </span>
+        {/* A drawing sits on the card rather than bleeding to its edge the
+            way a screenshot does, so it keeps a padding of its own. */}
+        <span
+          className={cn(
+            "flex size-full items-center justify-center p-3 transition-colors",
+            selected ? "text-foreground" : "text-foreground/45",
+          )}
+        >
+          <VisualizationChartPreview chart={chart} />
+        </span>
+      </TemplateCardFace>
     </ToggleButton>
   );
 }

@@ -10,6 +10,34 @@ import XCTest
 
 @MainActor
 final class ComposerVoiceInputTests: XCTestCase {
+  func testStartingVoiceInputPreservesExistingEditorFocus() async throws {
+    for initiallyFocused in [false, true] {
+      let fixture = VoiceComposerFixture()
+      let root = temporaryRoot()
+      defer { try? FileManager.default.removeItem(at: root) }
+      let capture = VoiceCaptureFixture()
+      let composer = fixture.composer(root: root, capture: capture)
+      defer { composer.close() }
+      composer.text = "Keep these notes"
+      let voice = try XCTUnwrap(composer.voice)
+      let recordingPresented = expectation(description: "Composer observed recording")
+      let host = UIHostingController(
+        rootView: VoiceFocusHarness(composer: composer, recordingPresented: recordingPresented))
+      let window = try await mountMentionHost(host)
+      defer { unmount(window) }
+      let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+      if initiallyFocused { try await focusMentionInput(input) }
+      XCTAssertEqual(input.isFirstResponder, initiallyFocused)
+
+      await voice.start()
+      await fulfillment(of: [recordingPresented], timeout: 3)
+
+      XCTAssertEqual(input.isFirstResponder, initiallyFocused)
+      XCTAssertEqual(composer.text, "Keep these notes")
+      await voice.discard()
+    }
+  }
+
   func testConfirmedSilenceLeavesDraftUnchangedWithoutVoiceRequests() async throws {
     let fixture = VoiceComposerFixture()
     let root = temporaryRoot()
@@ -624,6 +652,18 @@ final class ComposerVoiceInputTests: XCTestCase {
     defer { reopened.close() }
     XCTAssertEqual(reopened.text, "Original notes")
     XCTAssertEqual(reopened.voice?.phase, .idle)
+  }
+}
+
+private struct VoiceFocusHarness: View {
+  let composer: ComposerDraftStore
+  let recordingPresented: XCTestExpectation
+
+  var body: some View {
+    MentionComposerHarness(state: composer)
+      .onChange(of: composer.voice?.phase) { _, phase in
+        if phase == .recording { recordingPresented.fulfill() }
+      }
   }
 }
 

@@ -13,6 +13,65 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1133.4](https://github.com/okou-ai/okou/compare/app-v0.1133.3...app-v0.1133.4) (2026-11-16)
+
+
+### Bug Fixes
+
+* **platform:** recover detached browser hover without replay ([#47629](https://github.com/okou-ai/okou/issues/47629)) ([41c58f5](https://github.com/okou-ai/okou/commit/41c58f56993d3f45503ca3e0e4bdb2558b3e6970))
+
+
+### Performance Improvements
+
+* **app:** avoid preparing empty browser address hints ([#47658](https://github.com/okou-ai/okou/issues/47658)) ([aadb08e](https://github.com/okou-ai/okou/commit/aadb08ec17f2a01c93cd1644cbf24aa19db00f8b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.70.1
+    * @okouai/core bumped to 8.841.1
+    * @okouai/ui bumped to 1.21.26
+
+## [0.1133.3](https://github.com/okou-ai/okou/compare/app-v0.1133.2...app-v0.1133.3) (2026-11-16)
+
+
+### Bug Fixes
+
+* **wallet:** accept saved cards without deprecated expiry ([#47627](https://github.com/okou-ai/okou/issues/47627)) ([7a14ea6](https://github.com/okou-ai/okou/commit/7a14ea67b62610689337040be952f906090dc589))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.70.0
+    * @okouai/core bumped to 8.841.0
+    * @okouai/ui bumped to 1.21.25
+
+## [0.1133.2](https://github.com/okou-ai/okou/compare/app-v0.1133.1...app-v0.1133.2) (2026-11-16)
+
+
+### Bug Fixes
+
+* **app:** make image trackpad zoom continuous ([#47615](https://github.com/okou-ai/okou/issues/47615)) ([19eac05](https://github.com/okou-ai/okou/commit/19eac05c6e0d6930880b09201906418553cd6e61))
+* **app:** move feishu and lark setup into the workspace pane ([#47004](https://github.com/okou-ai/okou/issues/47004)) ([b335319](https://github.com/okou-ai/okou/commit/b335319978a6bd0b9de466418b238b01b327ee64))
+
+
+### Performance Improvements
+
+* **app:** avoid translating empty browser operation notices ([#47614](https://github.com/okou-ai/okou/issues/47614)) ([da2c015](https://github.com/okou-ai/okou/commit/da2c015f29eaefc8dad2d4e5d3762bbe1f96fdc7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.69.0
+    * @okouai/core bumped to 8.840.0
+    * @okouai/ui bumped to 1.21.24
+
 ## [0.1133.1](https://github.com/okou-ai/okou/compare/app-v0.1133.0...app-v0.1133.1) (2026-11-16)
 
 

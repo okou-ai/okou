@@ -10,6 +10,30 @@ import {
 
 const IMAGE_ZOOM_STEP = 0.12;
 const IMAGE_DOUBLE_CLICK_ZOOM_STEP = 1;
+// Match the approved prototype's continuous zoom at 1.50x gesture speed.
+const IMAGE_WHEEL_ZOOM_SENSITIVITY = 0.006 * 1.5;
+
+function imageWheelZoomStep(event: WheelEvent, scale: number): number {
+  let delta = event.deltaY;
+  if (event.deltaMode === 1) {
+    delta *= 16;
+  } else if (
+    event.deltaMode === 2 &&
+    event.currentTarget instanceof HTMLElement
+  ) {
+    delta *= event.currentTarget.clientHeight;
+  }
+  if (!Number.isFinite(delta)) {
+    return 0;
+  }
+
+  const exponent = Math.max(
+    -20,
+    Math.min(20, -delta * IMAGE_WHEEL_ZOOM_SENSITIVITY),
+  );
+  // The library supplies direction and owns the pointer anchor and bounds.
+  return Math.abs(scale * Math.expm1(exponent));
+}
 
 function isImageWheelZoomActivated(keys: string[]): boolean {
   return keys.includes("Control") || keys.includes("Meta");
@@ -96,7 +120,7 @@ export function ZoomableArtifactImageCanvas({
       trackPadPanning={{ disabled: false }}
       wheel={{
         activationKeys: isImageWheelZoomActivated,
-        step: IMAGE_ZOOM_STEP,
+        step: imageWheelZoomStep,
       }}
     >
       {({ zoomIn, zoomOut }) => {

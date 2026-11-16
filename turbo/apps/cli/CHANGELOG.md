@@ -1,5 +1,48 @@
 # Changelog
 
+## [10.27.2](https://github.com/okou-ai/okou/compare/cli-v10.27.1...cli-v10.27.2) (2026-11-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.70.1
+    * @okouai/core bumped to 8.841.1
+    * @okouai/pi-agent-runtime bumped to 1.51.132
+
+## [10.27.1](https://github.com/okou-ai/okou/compare/cli-v10.27.0...cli-v10.27.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **wallet:** accept saved cards without deprecated expiry ([#47627](https://github.com/okou-ai/okou/issues/47627)) ([7a14ea6](https://github.com/okou-ai/okou/commit/7a14ea67b62610689337040be952f906090dc589))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.70.0
+    * @okouai/core bumped to 8.841.0
+    * @okouai/pi-agent-runtime bumped to 1.51.131
+
+## [10.27.0](https://github.com/okou-ai/okou/compare/cli-v10.26.10...cli-v10.27.0) (2026-11-16)
+
+
+### Features
+
+* add internal phone use api and cli ([#47520](https://github.com/okou-ai/okou/issues/47520)) ([e6491e5](https://github.com/okou-ai/okou/commit/e6491e5c74670fcdb572681e652c08576136bd19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.69.0
+    * @okouai/core bumped to 8.840.0
+    * @okouai/pi-agent-runtime bumped to 1.51.130
+
 ## [10.26.10](https://github.com/okou-ai/okou/compare/cli-v10.26.9...cli-v10.26.10) (2026-11-16)
 
 

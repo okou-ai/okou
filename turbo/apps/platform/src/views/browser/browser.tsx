@@ -80,14 +80,18 @@ function BrowserOperationError({
   readonly className?: string;
 }) {
   const { t } = useTranslation();
-  const message = t(($) => {
-    return $.browserViewer.operationFailed;
+  const failures = occurrences.filter((occurrence): occurrence is object => {
+    return Boolean(occurrence);
   });
+  const message =
+    failures.length > 0
+      ? t(($) => {
+          return $.browserViewer.operationFailed;
+        })
+      : undefined;
   return (
     <TransientAlert
-      occurrences={occurrences.filter((occurrence): occurrence is object => {
-        return Boolean(occurrence);
-      })}
+      occurrences={failures}
       hidden={message === duplicateMessage}
       className={className}
     >
@@ -826,6 +830,8 @@ function BrowserAddress({
 }) {
   const { t } = useTranslation();
   const blockedSubmission = useGet(signals.addressSubmitNotice$);
+  const notice =
+    blockedSubmission && (!canSubmit || navigating) ? blockedSubmission : null;
   const notifySubmission = useSet(signals.notifyAddressSubmit$);
   const kind = useGet(signals.addressSubmissionKind$);
   const composing = useGet(signals.addressComposing$);
@@ -873,18 +879,16 @@ function BrowserAddress({
         </IconButton>
       </form>
       <TransientAlert
-        occurrences={
-          blockedSubmission && (!canSubmit || navigating)
-            ? [blockedSubmission]
-            : []
-        }
+        occurrences={notice ? [notice] : []}
         className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover px-3 py-2 text-xs text-muted-foreground"
       >
-        {t(($) => {
-          return blockedSubmission?.kind === "opening"
-            ? $.browserViewer.addressOpening
-            : $.browserViewer.addressPreparing;
-        })}
+        {notice
+          ? t(($) => {
+              return notice.kind === "opening"
+                ? $.browserViewer.addressOpening
+                : $.browserViewer.addressPreparing;
+            })
+          : null}
       </TransientAlert>
     </>
   );

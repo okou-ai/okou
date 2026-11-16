@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.106](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.105...runner-lifecycle-v0.17.106) (2026-11-16)
+
+
+### Refactoring
+
+* **runner:** share home image cache resource initialization ([#47652](https://github.com/okou-ai/okou/issues/47652)) ([4bcd17c](https://github.com/okou-ai/okou/commit/4bcd17cbd84624dfb1a7335754cf12ea24a17357))
+
 ## [0.17.105](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.104...runner-lifecycle-v0.17.105) (2026-11-15)
 
 

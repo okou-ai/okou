@@ -216,8 +216,13 @@ def _json_nesting_is_bounded(document: str) -> bool:
 
 
 def parse_content_length(headers: http.Headers) -> content_length.ContentLengthResult:
+    values = (
+        value.decode("utf-8", "surrogateescape")
+        for name, value in headers.fields
+        if len(name) == len(b"content-length") and name.lower() == b"content-length"
+    )
     return content_length.parse(
-        headers.get_all("Content-Length"),
+        values,
         max_value=MAX_ENTRY_BYTES,
     )
 
@@ -248,7 +253,11 @@ def response_headers_bypass_reason(
         return "response_etag"
     parsed_content_length = parse_content_length(headers)
     if parsed_content_length.kind not in ("missing", "valid") or (
-        parsed_content_length.kind == "valid" and headers.get_all("Transfer-Encoding")
+        parsed_content_length.kind == "valid"
+        and any(
+            len(name) == len(b"transfer-encoding") and name.lower() == b"transfer-encoding"
+            for name, _value in headers.fields
+        )
     ):
         return "response_size"
     return None
@@ -308,7 +317,9 @@ def validate_response_snapshot(
         return "response_json"
     if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
         return "response_shape"
-    content_type = headers.get("Content-Type", "")
+    content_type = _bounded_content_type(headers)
+    if content_type is None:
+        return "response_content_type"
     etag = _single_usable_etag(headers)
     if etag is None:
         return "response_etag"

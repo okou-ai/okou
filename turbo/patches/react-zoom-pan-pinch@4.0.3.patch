@@ -1,5 +1,5 @@
 diff --git a/dist/index.cjs.js b/dist/index.cjs.js
-index 3ef5f7484081353a5be94b653378f2a16344bd5f..b483c981fa11a766bc54ddd39e1c9549085adf1e 100644
+index 3ef5f7484081353a5be94b653378f2a16344bd5f..f88c3de41ec8064b3d7c193197c170e19b255ac2 100644
 --- a/dist/index.cjs.js
 +++ b/dist/index.cjs.js
 @@ -936,7 +936,7 @@ function resetTransformations(contextInstance, animationTime, animationType, onR
@@ -19,8 +19,34 @@ index 3ef5f7484081353a5be94b653378f2a16344bd5f..b483c981fa11a766bc54ddd39e1c9549
              animate(contextInstance, targetState, animationTime, animationType);
          }
      };
+@@ -1369,7 +1370,11 @@ var handleWheelZoom = function (contextInstance, event) {
+     event.preventDefault();
+     event.stopPropagation();
+     var delta = getDelta(event, null);
+-    var zoomStep = smooth ? step * Math.abs(event.deltaY) : step;
++    var zoomStep = typeof step === "function"
++        ? step(event, scale)
++        : smooth
++            ? step * Math.abs(event.deltaY)
++            : step;
+     var newScale = handleCalculateWheelZoom(contextInstance, delta, zoomStep, !event.ctrlKey);
+     // if scale not change
+     if (scale === newScale)
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 969a540f3375d4aba84dbaf7d5f3fb27293da18d..c9ef584e05c8c3d6afeea3c02ba893b88b0baa5a 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -177,7 +177,7 @@ type ReactZoomPanPinchProps = {
+     customTransform?: (x: number, y: number, scale: number) => string;
+     smooth?: boolean;
+     wheel?: {
+-        step?: number;
++        step?: number | ((event: WheelEvent, scale: number) => number);
+         disabled?: boolean;
+         wheelDisabled?: boolean;
+         touchPadDisabled?: boolean;
 diff --git a/dist/index.esm.js b/dist/index.esm.js
-index 91b90b46a29b2c6966ce1f64d7d8ef4caf44c469..b6bc3b2e9d7a022fe0bcbf99f9f9dc7f33e93ff4 100644
+index 91b90b46a29b2c6966ce1f64d7d8ef4caf44c469..9bd131f06dc3b596a46133e5d42a45f6a6a6b4c6 100644
 --- a/dist/index.esm.js
 +++ b/dist/index.esm.js
 @@ -934,7 +934,7 @@ function resetTransformations(contextInstance, animationTime, animationType, onR
@@ -40,6 +66,19 @@ index 91b90b46a29b2c6966ce1f64d7d8ef4caf44c469..b6bc3b2e9d7a022fe0bcbf99f9f9dc7f
              animate(contextInstance, targetState, animationTime, animationType);
          }
      };
+@@ -1367,7 +1368,11 @@ var handleWheelZoom = function (contextInstance, event) {
+     event.preventDefault();
+     event.stopPropagation();
+     var delta = getDelta(event, null);
+-    var zoomStep = smooth ? step * Math.abs(event.deltaY) : step;
++    var zoomStep = typeof step === "function"
++        ? step(event, scale)
++        : smooth
++            ? step * Math.abs(event.deltaY)
++            : step;
+     var newScale = handleCalculateWheelZoom(contextInstance, delta, zoomStep, !event.ctrlKey);
+     // if scale not change
+     if (scale === newScale)
 diff --git a/src/core/handlers/handlers.logic.ts b/src/core/handlers/handlers.logic.ts
 index 8b52673373c9082a42291cd1417f369f884bf4e8..ee424b1b5757fe6aecba7929788d09e931aa59ef 100644
 --- a/src/core/handlers/handlers.logic.ts
@@ -81,3 +120,32 @@ index 0174c4829b41633fa699f51282046bf0743002be..67b73d0ce67c6a4766cd41d6f4e76ecd
      contextInstance,
      initialTransformation.scale,
    );
+diff --git a/src/core/wheel/wheel.logic.ts b/src/core/wheel/wheel.logic.ts
+index b9df909a45559ef9968a196d4e344958c3d7655e..3d6c392db0c3a9632c083e62c4e3eb747759ea71 100644
+--- a/src/core/wheel/wheel.logic.ts
++++ b/src/core/wheel/wheel.logic.ts
+@@ -59,5 +59,10 @@ export const handleWheelZoom = (
+   const delta = getDelta(event, null);
+-  const zoomStep = smooth ? step * Math.abs(event.deltaY) : step;
++  const zoomStep =
++    typeof step === "function"
++      ? step(event, scale)
++      : smooth
++        ? step * Math.abs(event.deltaY)
++        : step;
+   const newScale = handleCalculateWheelZoom(
+     contextInstance,
+     delta,
+diff --git a/src/models/context.model.ts b/src/models/context.model.ts
+index 2bb1df377c821ea772ea124a5a89ce1c33bb6b1b..ced74551a3fbeb9139bfc2752c4f77f96a637120 100644
+--- a/src/models/context.model.ts
++++ b/src/models/context.model.ts
+@@ -70,7 +70,7 @@ export type ReactZoomPanPinchProps = {
+   customTransform?: (x: number, y: number, scale: number) => string;
+   smooth?: boolean;
+   wheel?: {
+-    step?: number;
++    step?: number | ((event: WheelEvent, scale: number) => number);
+     disabled?: boolean;
+     wheelDisabled?: boolean;
+     touchPadDisabled?: boolean;

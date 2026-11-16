@@ -4,6 +4,7 @@ import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import type { RunUsageCliOutcome, RunUsageResult } from "./protocol";
 import { queryRunUsage } from "./rpc";
+import { createRunMarkCommand } from "./mark";
 
 function requireCapability(): void {
   if (!decodeSandboxTokenPayload()?.capabilities.includes("run-usage:read")) {
@@ -126,5 +127,6 @@ Values are observations, not billing or settlement. Partial values are lower bou
   );
 
 export const runCommand = new Command("run")
-  .description("Inspect the current assigned Run")
-  .addCommand(usageCommand);
+  .description("Inspect or mark phases of the current assigned Run")
+  .addCommand(usageCommand)
+  .addCommand(createRunMarkCommand());

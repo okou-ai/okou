@@ -81,10 +81,17 @@ describe("instrument", () => {
           options: {
             spans: false,
             tracePropagation: false,
+            ignoreOutgoingRequests: expect.any(Function),
             ignoreIncomingRequestBody: expect.any(Function),
           },
         },
-        { name: "NodeFetch", options: { tracePropagation: false } },
+        {
+          name: "NodeFetch",
+          options: {
+            tracePropagation: false,
+            ignoreOutgoingRequests: expect.any(Function),
+          },
+        },
       ],
       release: "abc123",
       sendDefaultPii: false,
@@ -95,12 +102,14 @@ describe("instrument", () => {
     expect(context.mocks.sentry.httpIntegration).toHaveBeenCalledWith({
       spans: false,
       tracePropagation: false,
+      ignoreOutgoingRequests: expect.any(Function),
       ignoreIncomingRequestBody: expect.any(Function),
     });
     expect(
       context.mocks.sentry.nativeNodeFetchIntegration,
     ).toHaveBeenCalledWith({
       tracePropagation: false,
+      ignoreOutgoingRequests: expect.any(Function),
     });
     // Body capture happens before beforeSend. Keep this collection boundary
     // covered in addition to the real transport assertions in instrument-export.

@@ -13,6 +13,7 @@ from collection_publication_cases import COLLECTION_PUBLICATION_CASES
 from global_state_cases import GLOBAL_STATE_CASES
 from graph_factory_cases import GRAPH_FACTORY_CASES
 from import_cases import IMPORT_CASES
+from resource_cancellation_binding_cases import RESOURCE_CANCELLATION_BINDING_CASES
 from resource_failure_cases import RESOURCE_FAILURE_CASES
 from resource_failure_path_cases import RESOURCE_FAILURE_PATH_CASES
 from storage_cases import STORAGE_CASES
@@ -35,6 +36,7 @@ CASES = [
     *COLLECTION_PUBLICATION_CASES,
     *THROWING_TASK_CASES,
     *CANCELLATION_CASES,
+    *RESOURCE_CANCELLATION_BINDING_CASES,
     *RESOURCE_FAILURE_CASES,
     *RESOURCE_FAILURE_PATH_CASES,
     *SUBSCRIPTION_CASES,

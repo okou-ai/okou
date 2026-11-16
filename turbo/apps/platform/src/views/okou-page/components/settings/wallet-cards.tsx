@@ -19,7 +19,9 @@ const CARD_BRAND_ICONS: ReadonlyMap<string, string> = new Map([
 
 function WalletCardRow({ method }: { readonly method: WalletPaymentMethod }) {
   const { t } = useTranslation();
-  const card = method.card;
+  // Remove with #47624 once APIs without cardSummary no longer serve or remain
+  // available as supported production rollback targets.
+  const card = method.cardSummary ?? method.card;
   const icon = card && CARD_BRAND_ICONS.get(card.brand.toLowerCase());
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-4">
@@ -60,14 +62,14 @@ function WalletCardRow({ method }: { readonly method: WalletPaymentMethod }) {
           </p>
         )}
       </div>
-      {card && (
+      {method.card && (
         <span className="w-full pl-15 text-sm tabular-nums text-muted-foreground sm:w-auto sm:pl-0">
           {t(
             ($) => {
               return $.settings.wallet.cards.expires;
             },
             {
-              date: `${String(card.expMonth).padStart(2, "0")}/${card.expYear}`,
+              date: `${String(method.card.expMonth).padStart(2, "0")}/${method.card.expYear}`,
             },
           )}
         </span>
