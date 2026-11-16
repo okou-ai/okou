@@ -156,59 +156,79 @@ describe("chat-window CDP proxy protocol", () => {
       { opaque: { client: "first" } },
       { opaque: { client: "second" } },
     ]);
-    peer.close();
-    await peer.closed;
-    await expect(
-      connection.request("Target.getTargets"),
-    ).resolves.toMatchObject({
-      targetInfos: expect.arrayContaining([
-        expect.objectContaining({ targetId: "A" }),
-      ]),
-    });
-    await expect(
-      connection.request("Future.echo", { afterPeerClose: true }),
-    ).resolves.toStrictEqual({
-      opaque: { afterPeerClose: true },
-    });
+    const release = provider.holdReply("Target.detachFromTarget", "BROWSER");
+    try {
+      peer.close();
+      await Promise.all([peer.closed, release.observed]);
+      await expect(
+        connection.request("Target.getTargets"),
+      ).resolves.toMatchObject({
+        targetInfos: expect.arrayContaining([
+          expect.objectContaining({ targetId: "A" }),
+        ]),
+      });
+      await expect(
+        connection.request("Future.echo", { afterPeerClose: true }),
+      ).resolves.toStrictEqual({
+        opaque: { afterPeerClose: true },
+      });
+    } finally {
+      release.resume();
+    }
   });
 
-  it("ends all clients on transport loss during a native close and preserves the window for a new proxy", async () => {
-    provider.addPage("C", 0);
-    const peer = await client(proxy.endpoint);
-    clients.push(peer);
-    const held = provider.holdClose("A", "transport");
-    try {
+  it.each(["connected", "connecting"])(
+    "ends a %s peer on transport loss during a native close and preserves the window for a new proxy",
+    async (state) => {
+      provider.addPage("C", 0);
+      await connection.request("Target.getTargets");
+      const admission =
+        state === "connecting"
+          ? provider.holdReply("Target.attachToBrowserTarget", "BROWSER")
+          : undefined;
+      const held = provider.holdClose("A", "transport");
+      try {
+        const peer = await client(proxy.endpoint);
+        clients.push(peer);
+        if (admission) await admission.observed;
+        else await peer.request("Target.getTargets");
+        await expect(
+          connection.request("Target.closeTarget", { targetId: "A" }),
+        ).rejects.toThrow("Fixture connection closed");
+        await held.observed;
+        await Promise.all([connection.closed, peer.closed, proxy.closed]);
+      } finally {
+        held.resume();
+        admission?.resume();
+      }
+      expect(provider.hasWindow(0)).toBe(true);
+      expect(provider.hasWindow(1)).toBe(true);
+      proxy = await startWindowProxy(
+        {
+          cdpUrl: provider.endpoint,
+          runtimeId: EXTENSION_RUNTIME,
+          windowId: 0,
+        },
+        new AbortController().signal,
+      );
+      server.use(
+        ws
+          .link(proxy.endpoint)
+          .addEventListener("connection", ({ server: remote }) => {
+            remote.connect();
+          }),
+      );
+      const recovered = await client(proxy.endpoint);
+      clients.push(recovered);
       await expect(
-        connection.request("Target.closeTarget", { targetId: "A" }),
-      ).rejects.toThrow("Fixture connection closed");
-      await held.observed;
-      await Promise.all([connection.closed, peer.closed, proxy.closed]);
-    } finally {
-      held.resume();
-    }
-    expect(provider.hasWindow(0)).toBe(true);
-    expect(provider.hasWindow(1)).toBe(true);
-    proxy = await startWindowProxy(
-      { cdpUrl: provider.endpoint, runtimeId: EXTENSION_RUNTIME, windowId: 0 },
-      new AbortController().signal,
-    );
-    server.use(
-      ws
-        .link(proxy.endpoint)
-        .addEventListener("connection", ({ server: remote }) => {
-          remote.connect();
-        }),
-    );
-    const recovered = await client(proxy.endpoint);
-    clients.push(recovered);
-    await expect(recovered.request("Target.getTargets")).resolves.toMatchObject(
-      {
+        recovered.request("Target.getTargets"),
+      ).resolves.toMatchObject({
         targetInfos: expect.arrayContaining([
           expect.objectContaining({ targetId: "C" }),
         ]),
-      },
-    );
-  });
+      });
+    },
+  );
 
   it("retires the transport when native peer cleanup fails without closing browser windows", async () => {
     const peer = await client(proxy.endpoint);
@@ -1654,6 +1674,7 @@ describe("chat-window CDP proxy protocol", () => {
     await connection.request("Target.getTargets");
     const peer = await client(proxy.endpoint);
     clients.push(peer);
+    await peer.request("Target.getTargets");
     const held = provider.holdClose("A", "session");
     try {
       await expect(
