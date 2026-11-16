@@ -2,6 +2,7 @@ import { command, computed } from "ccstate";
 
 import { syncAllActiveChatEvents$ } from "./chat-page/chat-event-signal-registry.ts";
 import { catchUpChatThreadEventSource$ } from "./chat-page/chat-thread-event-sourcing.ts";
+import { syncProjects$ } from "./projects/projects.ts";
 import { rootVersion$ } from "./root-signal.ts";
 import { installedSharedDatabaseBridge$ } from "./shared-database-bridge-state.ts";
 import { detach, Reason, throttleCommand } from "./utils.ts";
@@ -11,6 +12,7 @@ const synchronizeChats$ = command(
     const bridge = get(installedSharedDatabaseBridge$);
     const results = await Promise.allSettled([
       set(catchUpChatThreadEventSource$, signal),
+      set(syncProjects$, signal),
       bridge.getComputed("chat-thread-indicators", { refresh: true }, signal),
       set(syncAllActiveChatEvents$, signal),
     ]);
