@@ -44,6 +44,7 @@ export const readFeedSources$ = computed(async (get): Promise<FeedSources> => {
       suggestions: feedPreferences.suggestions,
       whatsNew: feedPreferences.whatsNew,
       offers: feedPreferences.offers,
+      systemUpdates: feedPreferences.systemUpdates,
     })
     .from(feedPreferences)
     .where(
@@ -53,7 +54,14 @@ export const readFeedSources$ = computed(async (get): Promise<FeedSources> => {
       ),
     )
     .limit(1);
-  return row ?? { suggestions: true, whatsNew: true, offers: true };
+  return (
+    row ?? {
+      suggestions: true,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: true,
+    }
+  );
 });
 
 export const updateFeedSources$ = command(
@@ -74,6 +82,7 @@ export const updateFeedSources$ = command(
         suggestions: feedPreferences.suggestions,
         whatsNew: feedPreferences.whatsNew,
         offers: feedPreferences.offers,
+        systemUpdates: feedPreferences.systemUpdates,
       });
     signal.throwIfAborted();
     if (!row) {
@@ -88,6 +97,9 @@ export const updateFeedSources$ = command(
 export const readFeedSummary$ = computed(async (get) => {
   const owner = get(organizationAuthContext$);
   const sources = await get(readFeedSources$);
+  if (!sources.suggestions && !sources.systemUpdates) {
+    return { hasUnread: false };
+  }
   // This is independent of the review's ten-card snapshot and counts no
   // expired, consumed, removed or already displayed card.
   const [row] = await get(db$)
@@ -98,7 +110,7 @@ export const readFeedSummary$ = computed(async (get) => {
         feedOwner(owner),
         or(
           sources.suggestions ? liveSuggestion(nowDate()) : undefined,
-          activePlatformEvent(),
+          sources.systemUpdates ? activePlatformEvent() : undefined,
         ),
         isNull(feedItems.readAt),
       ),

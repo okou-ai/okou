@@ -1691,7 +1691,6 @@
         "previous": "Suggerimento precedente",
         "remaining": "{{total}} rimanenti",
         "sources": {
-          "alwaysOn": "Sempre attivi",
           "description": "Scegli cosa ricevere in futuro. Le schede già ricevute restano finché non le gestisci. Gli avvisi di contenuti non letti includono solo le fonti attivate.",
           "offers": "Offerte",
           "suggestions": "Suggerimenti",
