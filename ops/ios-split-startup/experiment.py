@@ -18,6 +18,8 @@ import tarfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 
 def stamp(event, **fields):
@@ -89,6 +91,35 @@ def pack():
     stamp("packed", seconds=round(time.monotonic() - started, 3), **manifest)
 
 
+def read_jobs(repo, run, attempt):
+    request = Request(
+        f"https://api.github.com/repos/{repo}/actions/runs/{run}/attempts/{attempt}/jobs?per_page=100",
+        headers={
+            "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Cache-Control": "no-cache",
+        },
+    )
+    for retry in range(3):
+        try:
+            with urlopen(request, timeout=30) as response:
+                return json.load(response)["jobs"]
+        except (TimeoutError, URLError) as error:
+            transient = isinstance(error, TimeoutError)
+            if isinstance(error, HTTPError):
+                transient = error.code in (502, 503, 504)
+            elif isinstance(error, URLError):
+                transient = isinstance(
+                    error.reason, (TimeoutError, ConnectionResetError)
+                )
+            if not transient or retry == 2:
+                raise
+            # Only repeat a safe metadata GET, never native tests or a download.
+            stamp("metadata_read_retry", retry=retry + 1, error=type(error).__name__)
+            time.sleep(2**retry)
+
+
 def fetch():
     started = time.monotonic()
     repo = os.environ["GITHUB_REPOSITORY"]
@@ -98,17 +129,7 @@ def fetch():
     output.mkdir()
     # The 30-minute consumer job is the overall deadline; each read is also bounded.
     while True:
-        jobs = json.loads(
-            subprocess.check_output(
-                [
-                    "gh",
-                    "api",
-                    f"repos/{repo}/actions/runs/{run}/attempts/{attempt}/jobs?per_page=100",
-                ],
-                text=True,
-                timeout=30,
-            )
-        )["jobs"]
+        jobs = read_jobs(repo, run, attempt)
         producers = [job for job in jobs if job["name"] == "build-test-products"]
         if len(producers) > 1:
             raise ValueError("Ambiguous test-products producer")

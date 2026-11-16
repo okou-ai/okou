@@ -2,6 +2,7 @@
 """Verify transferred-product identity and real compiler/boot process ownership."""
 
 import importlib.util
+import io
 import json
 import os
 import signal
@@ -152,6 +153,48 @@ sys.exit(23)
             self.assertEqual(process.wait(timeout=5), 143)
         self.assertTrue((self.root / "simulator-stopped").exists())
         self.assertTrue((self.root / "products-stopped").exists())
+
+
+class MetadataTests(unittest.TestCase):
+    def test_a_temporary_metadata_timeout_recovers_the_safe_read(self):
+        body = io.BytesIO(
+            b'{"jobs": [{"name": "build-test-products", "status": "completed"}]}'
+        )
+        with (
+            patch.dict(os.environ, {"GH_TOKEN": "test-only"}),
+            patch.object(experiment, "urlopen", side_effect=[TimeoutError(), body]),
+        ):
+            jobs = experiment.read_jobs("example/repo", "123", "1")
+        self.assertEqual(jobs, [{"name": "build-test-products", "status": "completed"}])
+
+    def test_a_failed_producer_blocks_download_and_native_execution(self):
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            patch.dict(
+                os.environ,
+                {
+                    "RUNNER_TEMP": temporary,
+                    "GITHUB_REPOSITORY": "example/repo",
+                    "GITHUB_RUN_ID": "123",
+                    "GITHUB_RUN_ATTEMPT": "1",
+                },
+            ),
+            patch.object(
+                experiment,
+                "read_jobs",
+                return_value=[
+                    {
+                        "name": "build-test-products",
+                        "status": "completed",
+                        "conclusion": "failure",
+                    }
+                ],
+            ),
+            patch.object(experiment.subprocess, "run") as download,
+            self.assertRaisesRegex(ValueError, "producer did not succeed"),
+        ):
+            experiment.fetch()
+        download.assert_not_called()
 
 
 if __name__ == "__main__":
