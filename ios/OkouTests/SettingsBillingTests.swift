@@ -22,8 +22,10 @@ final class SettingsBillingTests: XCTestCase {
           return ChatHTTPResponse(status: 403, body: #"{"error":{"message":"Access denied"}}"#)
         }
         return ChatHTTPResponse(body: "{\"tier\":\"\(state.tier)\",\"credits\":1200}")
-      case "/api/feature-switches":
-        return ChatHTTPResponse(body: #"{"effectiveSwitches":{"iosSettingsCredits":false}}"#)
+      case "/api/org":
+        return ChatHTTPResponse(body: #"{"role":"admin"}"#)
+      case "/api/billing/usage-pack-credits":
+        return ChatHTTPResponse(body: #"{"totalCredits":350}"#)
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -35,7 +37,7 @@ final class SettingsBillingTests: XCTestCase {
     let initial = try await resources.store.get(resources.billingValue).value
     XCTAssertEqual(initial.tier, "limited-free-1")
     let credits = try await resources.store.get(resources.billingCreditsValue).value
-    XCTAssertNil(credits)
+    XCTAssertEqual(credits, 1550)
     XCTAssertEqual(workspace.billingURL, fixture.baseURL.appending(path: "settings/billing"))
 
     server.withLock { $0.fails = true }
@@ -72,8 +74,6 @@ final class SettingsBillingTests: XCTestCase {
           return ChatHTTPResponse(body: #"{"role":"admin"}"#)
         case "/api/billing/usage-pack-credits":
           return ChatHTTPResponse(body: #"{"totalCredits":350}"#)
-        case "/api/feature-switches":
-          return ChatHTTPResponse(body: #"{"effectiveSwitches":{"iosSettingsCredits":true}}"#)
         default: throw URLError(.unsupportedURL)
         }
       }
@@ -99,8 +99,6 @@ final class SettingsBillingTests: XCTestCase {
           return ChatHTTPResponse(body: "{\"role\":\"\(role)\"}")
         case "/api/billing/usage-pack-credits":
           return ChatHTTPResponse(body: "{\"totalCredits\":\(personalCredits)}")
-        case "/api/feature-switches":
-          return ChatHTTPResponse(body: #"{"effectiveSwitches":{"iosSettingsCredits":true}}"#)
         default: throw URLError(.unsupportedURL)
         }
       }
@@ -132,8 +130,6 @@ final class SettingsBillingTests: XCTestCase {
           return ChatHTTPResponse(status: 403, body: #"{"error":{"message":"Access denied"}}"#)
         }
         return ChatHTTPResponse(body: "{\"totalCredits\":\(state.personalCredits)}")
-      case "/api/feature-switches":
-        return ChatHTTPResponse(body: #"{"effectiveSwitches":{"iosSettingsCredits":true}}"#)
       default: throw URLError(.unsupportedURL)
       }
     }
