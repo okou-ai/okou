@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class ChatReadPhase {
     Idle,
@@ -69,6 +70,7 @@ class ChatListModel(
     private val onFailure: (Exception) -> Unit,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     realtime: RealtimeService? = null,
+    private val monotonicMillis: () -> Long = { System.nanoTime() / 1_000_000 },
 ) : ViewModel() {
     private val mutable = MutableStateFlow(ChatListUiState())
     val uiState = mutable.asStateFlow()
@@ -98,13 +100,21 @@ class ChatListModel(
     private val writes = Mutex()
     private val projectSync = ProjectSync(service, dispatcher)
     private val listInvalidations = Channel<Unit>(Channel.CONFLATED)
+    private val projectInvalidations = Channel<Unit>(Channel.CONFLATED)
     private val indicatorInvalidations = Channel<Unit>(Channel.CONFLATED)
+    private var immediateIndicators = false
+    private var indicatorsStartedAt: Long? = null
     val updates =
-        ChatUpdatesModel(realtime, viewModelScope, { current() }, onFailure) {
+        ChatUpdatesModel(realtime, viewModelScope, { current() }, onFailure) { changes ->
             if (current()) {
-                listInvalidations.trySend(Unit)
-                indicatorInvalidations.trySend(Unit)
-                history.invalidate()
+                if (changes.resync || changes.list) {
+                    listInvalidations.trySend(Unit)
+                    projectInvalidations.trySend(Unit)
+                }
+                if (changes.resync || changes.indicators || changes.readCursor)
+                    requestIndicators(immediate = changes.resync || changes.readCursor)
+                if (changes.resync) history.invalidate()
+                else changes.threads.forEach { history.invalidate(it) }
             }
         }
 
@@ -119,8 +129,28 @@ class ChatListModel(
             }
         }
         viewModelScope.launch {
+            for (ignored in projectInvalidations) {
+                projectsJob?.join()
+                if (current()) {
+                    refreshProjects()
+                    projectsJob?.join()
+                }
+            }
+        }
+        viewModelScope.launch {
             for (ignored in indicatorInvalidations) {
                 indicatorsJob?.join()
+                val remaining =
+                    indicatorsStartedAt?.let { (it + 1_000 - monotonicMillis()).coerceAtLeast(0) }
+                        ?: 0
+                if (!immediateIndicators && remaining > 0)
+                    withTimeoutOrNull(remaining) {
+                        // New status demand does not postpone the deadline. A read-cursor signal
+                        // wakes it immediately and cannot be downgraded by later status demand.
+                        while (!immediateIndicators) indicatorInvalidations.receive()
+                    }
+                while (indicatorInvalidations.tryReceive().isSuccess) {}
+                immediateIndicators = false
                 if (current()) {
                     refreshIndicators()
                     indicatorsJob?.join()
@@ -432,13 +462,17 @@ class ChatListModel(
     }
 
     private fun invalidateIndicators() {
-        indicatorsJob?.cancel()
-        indicatorsJob = null
-        refreshIndicators()
+        requestIndicators(immediate = true)
+    }
+
+    private fun requestIndicators(immediate: Boolean) {
+        immediateIndicators = immediateIndicators || immediate
+        indicatorInvalidations.trySend(Unit)
     }
 
     fun refreshIndicators() {
         if (!current() || indicatorsJob?.isActive == true) return
+        indicatorsStartedAt = monotonicMillis()
         mutable.value = mutable.value.copy(indicatorsPhase = ChatReadPhase.Loading)
         indicatorsJob =
             viewModelScope.launch {
@@ -468,6 +502,7 @@ class ChatListModel(
         retired = true
         updates.close()
         listInvalidations.close()
+        projectInvalidations.close()
         indicatorInvalidations.close()
         history.close()
         cache.close()

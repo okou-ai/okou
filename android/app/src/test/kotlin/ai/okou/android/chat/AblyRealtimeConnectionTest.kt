@@ -39,17 +39,23 @@ class AblyRealtimeConnectionTest {
                         assertEquals(RealtimePhase.Connecting, partial.phase)
                         remote.attach("user-org:user-a:org-a")
                         val ready = sdk.state.first { it.phase == RealtimePhase.Connected }
+                        assertEquals(ChatChanges(resync = true), sdk.takeObservation().changes)
                         remote.message(
                             "user-org:user-a:org-a",
                             "chatThreadMessageCreated:11111111-1111-4111-8111-111111111111",
                         )
                         val changed = sdk.state.first { it.revision > ready.revision }
                         assertEquals(RealtimePhase.Connected, changed.phase)
+                        assertEquals(
+                            ChatChanges(threads = setOf("11111111-1111-4111-8111-111111111111")),
+                            sdk.takeObservation().changes,
+                        )
                         remote.attach(
                             "user-org:user-a:org-a"
                         ) // ATTACHED without resumed means a continuity gap.
                         val gap = sdk.state.first { it.revision > changed.revision }
                         assertEquals(RealtimePhase.Connected, gap.phase)
+                        assertEquals(ChatChanges(resync = true), sdk.takeObservation().changes)
                         remote.renew()
                         assertEquals("sdk-token-2", remote.authorizations.receive())
                         assertEquals(2, remote.nonces.size)
@@ -58,6 +64,56 @@ class AblyRealtimeConnectionTest {
                         assertEquals(
                             RealtimePhase.Unavailable,
                             sdk.state.first { it.phase == RealtimePhase.Unavailable }.phase,
+                        )
+                    }
+                remote.closed.await()
+            }
+        }
+    }
+
+    @Test
+    fun mixedSdkTopicsSurviveAConflatedWakeupAndDrainWithoutLosingLaterDemand() = runTest {
+        AblyProtocolFixture().use { remote ->
+            withContext(Dispatchers.IO) {
+                AblyRealtimeConnection(
+                        "user-a",
+                        "org-a",
+                        coroutineContext,
+                        clientFactory = remote::client,
+                        token = remote::signedRequest,
+                    )
+                    .use { sdk ->
+                        repeat(2) { remote.attach(remote.attachments.receive()) }
+                        sdk.state.first { it.phase == RealtimePhase.Connected }
+                        val baseline = sdk.takeObservation().revision
+                        val first = "11111111-1111-4111-8111-111111111111"
+                        val second = "55555555-5555-4555-8555-555555555555"
+                        val topics =
+                            listOf(
+                                "threadListChanged",
+                                "chatIndicatorsChanged",
+                                "chatThreadReadCursorUpdated",
+                                "chatThreadMessageCreated:$first",
+                                "chatThreadDetailChanged:$second",
+                                "chatThreadMessageCreated:$first",
+                            )
+                        topics.forEach { remote.message("user-org:user-a:org-a", it) }
+                        sdk.state.first { it.revision >= baseline + topics.size }
+                        assertEquals(
+                            ChatChanges(
+                                list = true,
+                                indicators = true,
+                                readCursor = true,
+                                threads = setOf(first, second),
+                            ),
+                            sdk.takeObservation().changes,
+                        )
+                        assertEquals(ChatChanges(), sdk.takeObservation().changes)
+                        remote.message("user-org:user-a:org-a", "chatThreadMessageCreated:$second")
+                        sdk.state.first { it.revision > baseline + topics.size }
+                        assertEquals(
+                            ChatChanges(threads = setOf(second)),
+                            sdk.takeObservation().changes,
                         )
                     }
                 remote.closed.await()

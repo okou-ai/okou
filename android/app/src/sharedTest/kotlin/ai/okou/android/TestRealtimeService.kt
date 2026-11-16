@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.RealtimePhase
 import ai.okou.android.chat.RealtimeService
 import ai.okou.android.chat.RealtimeSnapshot
@@ -15,13 +16,19 @@ class TestRealtimeService : RealtimeService {
     override suspend fun observeRealtime(observe: suspend (RealtimeSnapshot) -> Unit): Nothing {
         opened.incrementAndGet()
         try {
-            snapshot.collect { observe(it) }
+            var revision = -1L
+            snapshot.collect {
+                val next = if (it.revision == revision) it.copy(changes = ChatChanges()) else it
+                revision = it.revision
+                observe(next)
+            }
         } finally {
             closed.incrementAndGet()
         }
     }
 
-    fun invalidate() {
-        snapshot.value = snapshot.value.copy(revision = snapshot.value.revision + 1)
+    fun invalidate(changes: ChatChanges = ChatChanges(resync = true)) {
+        snapshot.value =
+            snapshot.value.copy(revision = snapshot.value.revision + 1, changes = changes)
     }
 }

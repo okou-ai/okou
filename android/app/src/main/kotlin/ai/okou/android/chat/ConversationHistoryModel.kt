@@ -54,8 +54,8 @@ class ConversationHistoryModel(
     private var visit: ConversationReadSession? = null
     private var confirmed: CachedHistory? = null
     private val dirty = mutableMapOf<String, CachedHistory>()
-    private val invalidations = Channel<Unit>(Channel.CONFLATED)
-    private val invalidationJob = scope.launch { for (ignored in invalidations) catchUp() }
+    private val invalidations = Channel<Long>(Channel.CONFLATED)
+    private val invalidationJob = scope.launch { for (ticket in invalidations) catchUp(ticket) }
 
     private fun current(ticket: Long) = !retired && authorized() && ticket == generation
 
@@ -194,12 +194,14 @@ class ConversationHistoryModel(
         }
     }
 
-    fun invalidate() {
-        if (!retired && authorized()) invalidations.trySend(Unit)
+    fun invalidate(threadId: String? = null) {
+        val selected = mutable.value.thread ?: return
+        if (!retired && authorized() && (threadId == null || threadId == selected.id))
+            invalidations.trySend(generation)
     }
 
-    private suspend fun catchUp() {
-        val ticket = generation
+    private suspend fun catchUp(ticket: Long) {
+        if (!current(ticket)) return
         job?.join()
         if (current(ticket)) {
             refresh()
