@@ -4,7 +4,6 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
-  IntegrationModelRecovery = "integrationModelRecovery",
   ArtifactGenerationTiming = "_artifactGenerationTimingV1",
   PhoneUse = "_phoneUse",
   CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
@@ -12,15 +11,12 @@ export enum FeatureSwitchKey {
   HomeCapabilities = "homeCapabilities",
   PresentationOutputFormat = "presentationOutputFormat",
   PastedTextAttachments = "pastedTextAttachments",
-  ComposerMediaPreviews = "composerMediaPreviews",
   SingleAgent = "singleAgent",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
-  FriendReferrals = "friendReferrals",
   Projects = "projects",
   ConnectorChatAccountAccess = "connectorChatAccountAccess",
   FeatureGuides = "featureGuides",
   BatchConnectorPermissions = "batchConnectorPermissions",
-  SshChatApproval = "sshChatApproval",
   DesktopShell = "desktopShell",
   Dummy = "_dummy",
   TikTokOAuthConnector = "tiktokOAuthConnector",
@@ -50,11 +46,9 @@ export enum FeatureSwitchKey {
   SlashActions = "slashActions",
   ChatReplyNameLine = "chatReplyNameLine",
   ChatMessageVisualizationSummary = "_chatMessageVisualizationSummary",
-  ChatActionFollowups = "chatActionFollowups",
   CloudBrowserPanel = "cloudBrowserPanel",
   ShareAudienceDescriptions = "shareAudienceDescriptions",
   HostedSiteShareRows = "hostedSiteShareRows",
   FreePlanArtifactPaywall = "freePlanArtifactPaywall",
   BillingSurvey = "billingSurvey",
-  IosSettingsCredits = "iosSettingsCredits",
 }

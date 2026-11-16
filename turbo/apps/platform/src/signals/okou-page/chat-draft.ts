@@ -41,8 +41,6 @@ import {
 import { canonicalUserMessageFileUrl } from "../chat-page/user-message-files.ts";
 import { isAnnotationMeaningful } from "./image-annotation.ts";
 import { createObjectUrlResource } from "../object-url-resource.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 // ---------------------------------------------------------------------------
 // Attachment types
@@ -605,11 +603,10 @@ function createChatAttachment(file: File): ChatAttachment {
     set(annotation.cancelAnnotationUpload$);
   });
 
-  const upload$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
+  const upload$ = command(async ({ set }, parentSignal: AbortSignal) => {
     const signal = set(resetSignal$, parentSignal);
     const localResource =
-      get(featureSwitch$)[FeatureSwitchKey.ComposerMediaPreviews] &&
-      (contentType.startsWith("image/") || contentType.startsWith("video/"))
+      contentType.startsWith("image/") || contentType.startsWith("video/")
         ? createObjectUrlResource(file, signal)
         : null;
     set(

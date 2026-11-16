@@ -1667,7 +1667,6 @@
         "previous": "Previous suggestion",
         "remaining": "{{total}} to go",
         "sources": {
-          "alwaysOn": "Always on",
           "description": "Choose what arrives next. Cards already here stay until you handle them. Unread alerts only include sources you have turned on.",
           "offers": "Offers",
           "suggestions": "Suggestions",

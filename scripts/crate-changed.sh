@@ -43,8 +43,8 @@ echo "Crate '$CRATE_NAME' depends on: $AFFECTED_CRATES" >&2
 
 # Workspace-level Cargo and tool configuration affects all crates
 # Charge removed inputs too, including a pure rename into a different crate.
-CHANGED_FILES=$(git -C "$REPO_ROOT" diff --no-renames --name-only "$BASE_REF" HEAD -- crates/)
-if echo "$CHANGED_FILES" | grep -qE "^crates/(Cargo\.lock|[^/]+\.toml|\.cargo/.*)$"; then
+CHANGED_FILES=$(git -C "$REPO_ROOT" diff --no-renames --name-only "$BASE_REF" HEAD -- crates/ rust-toolchain.toml)
+if echo "$CHANGED_FILES" | grep -qE "^(rust-toolchain\.toml|crates/(Cargo\.lock|[^/]+\.toml|\.cargo/.*))$"; then
   echo "Workspace-level file changed, all crates affected" >&2
   exit 0
 fi

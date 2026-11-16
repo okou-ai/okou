@@ -1691,7 +1691,6 @@
         "previous": "Sugestão anterior",
         "remaining": "{{total}} restantes",
         "sources": {
-          "alwaysOn": "Sempre ativo",
           "description": "Escolha o que receber a seguir. Os cartões já recebidos ficam até você tratá-los. Os alertas de não lidos incluem apenas as fontes ativadas.",
           "offers": "Ofertas",
           "suggestions": "Sugestões",

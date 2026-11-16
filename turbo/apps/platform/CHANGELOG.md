@@ -13,6 +13,46 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1136.1](https://github.com/okou-ai/okou/compare/app-v0.1136.0...app-v0.1136.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **app:** add spacing between sidebar entry rows ([#47826](https://github.com/okou-ai/okou/issues/47826)) ([69ff7c2](https://github.com/okou-ai/okou/commit/69ff7c2df43b559b3b5a5a29d26b161d948b3cfb))
+* **app:** redirect unavailable workflows with a toast ([#47825](https://github.com/okou-ai/okou/issues/47825)) ([41d40d8](https://github.com/okou-ai/okou/commit/41d40d822060b0c2813c986616727f3da22136cc))
+* **platform:** close project deletion dialog before chat sync ([#47837](https://github.com/okou-ai/okou/issues/47837)) ([614ecba](https://github.com/okou-ai/okou/commit/614ecba0e56b94ac7c0af4e217eba69d28ebb4bb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/browser-extension-client bumped to 0.4.5
+    * @okouai/core bumped to 8.844.1
+    * @okouai/ui bumped to 1.21.31
+
+## [0.1136.0](https://github.com/okou-ai/okou/compare/app-v0.1135.0...app-v0.1136.0) (2026-11-16)
+
+
+### Features
+
+* add for you source preferences and unread indicators ([#47771](https://github.com/okou-ai/okou/issues/47771)) ([5d3bca3](https://github.com/okou-ai/okou/commit/5d3bca33002b020ebed8d8a0d379777fb1c542b8))
+* support automatic onboarding from opt-in entry links ([#47757](https://github.com/okou-ai/okou/issues/47757)) ([56e28d4](https://github.com/okou-ai/okou/commit/56e28d455427e09e5511cf59868bfbc5a07626a6))
+
+
+### Refactoring
+
+* prepare structured run failures and recovery ([#47749](https://github.com/okou-ai/okou/issues/47749)) ([fca7335](https://github.com/okou-ai/okou/commit/fca73354c6b5b0aa4f122e78947565b274323991))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.73.0
+    * @okouai/core bumped to 8.844.0
+    * @okouai/ui bumped to 1.21.30
+
 ## [0.1135.0](https://github.com/okou-ai/okou/compare/app-v0.1134.1...app-v0.1135.0) (2026-11-16)
 
 

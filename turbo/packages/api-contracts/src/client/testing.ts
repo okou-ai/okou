@@ -232,6 +232,7 @@ import {
 import { cronCleanupXResourceReadsContract as OriginalCronCleanupXResourceReadsContract } from "../contracts/cron-cleanup-x-resource-reads";
 import { cronCleanupXResourceReadsContract } from "./cron-cleanup-x-resource-reads";
 import {
+  cronAggregateRunPhaseTimingsContract as OriginalCronAggregateRunPhaseTimingsContract,
   cronBrowserReconcileContract as OriginalCronBrowserReconcileContract,
   cronCleanupSandboxesContract as OriginalCronCleanupSandboxesContract,
   cronCleanupSuggestionsContract as OriginalCronCleanupSuggestionsContract,
@@ -263,6 +264,7 @@ import {
   cronTelegramCleanupContract as OriginalCronTelegramCleanupContract,
 } from "../contracts/cron";
 import {
+  cronAggregateRunPhaseTimingsContract,
   cronBrowserReconcileContract,
   cronCleanupSandboxesContract,
   cronCleanupSuggestionsContract,
@@ -354,6 +356,10 @@ import { feishuOauthContract as OriginalFeishuOauthContract } from "../contracts
 import { feishuOauthContract } from "./feishu-oauth";
 import { friendReferralsContract as OriginalFriendReferralsContract } from "../contracts/friend-referrals";
 import { friendReferralsContract } from "./friend-referrals";
+import { getStartedHistoryContract as OriginalGetStartedHistoryContract } from "../contracts/get-started-history";
+import { getStartedHistoryContract } from "./get-started-history";
+import { getStartedReceiptContract as OriginalGetStartedReceiptContract } from "../contracts/get-started-receipt";
+import { getStartedReceiptContract } from "./get-started-receipt";
 import {
   cronGetStartedContract as OriginalCronGetStartedContract,
   getStartedContract as OriginalGetStartedContract,
@@ -944,6 +950,10 @@ export const clientDescriptorContracts: readonly (readonly [
     cronCleanupXResourceReadsContract,
     OriginalCronCleanupXResourceReadsContract,
   ],
+  [
+    cronAggregateRunPhaseTimingsContract,
+    OriginalCronAggregateRunPhaseTimingsContract,
+  ],
   [cronBrowserReconcileContract, OriginalCronBrowserReconcileContract],
   [cronCleanupSandboxesContract, OriginalCronCleanupSandboxesContract],
   [cronCleanupSuggestionsContract, OriginalCronCleanupSuggestionsContract],
@@ -1050,6 +1060,8 @@ export const clientDescriptorContracts: readonly (readonly [
   [feishuEventsContract, OriginalFeishuEventsContract],
   [feishuOauthContract, OriginalFeishuOauthContract],
   [friendReferralsContract, OriginalFriendReferralsContract],
+  [getStartedHistoryContract, OriginalGetStartedHistoryContract],
+  [getStartedReceiptContract, OriginalGetStartedReceiptContract],
   [cronGetStartedContract, OriginalCronGetStartedContract],
   [getStartedContract, OriginalGetStartedContract],
   [githubAppSetupCallbackContract, OriginalGithubAppSetupCallbackContract],

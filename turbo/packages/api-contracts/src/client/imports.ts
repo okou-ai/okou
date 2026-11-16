@@ -640,6 +640,7 @@ export const clientContractImportManifest = [
   {
     module: "cron",
     contracts: [
+      "cronAggregateRunPhaseTimingsContract",
       "cronBrowserReconcileContract",
       "cronCleanupSandboxesContract",
       "cronCleanupSuggestionsContract",
@@ -979,6 +980,16 @@ export const clientContractImportManifest = [
         imported: "GET_STARTED_REWARDS_CHANGED_EVENT",
       },
     ],
+  },
+  {
+    module: "get-started-history",
+    contracts: ["getStartedHistoryContract"],
+    bindings: [],
+  },
+  {
+    module: "get-started-receipt",
+    contracts: ["getStartedReceiptContract"],
+    bindings: [],
   },
   {
     module: "github-oauth",

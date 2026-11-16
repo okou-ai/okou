@@ -1,5 +1,5 @@
 {
-  "id": "8ddf4156-7a25-4862-a81a-b5ae8b5f8f8d",
+  "id": "fe28666f-5ee9-4528-98e0-c29077077964",
   "prevId": "5ed022fb-4cb5-4129-bab2-f3874da51295",
   "version": "7",
   "dialect": "postgresql",
@@ -15487,6 +15487,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
+        },
+        "system_updates": {
+          "name": "system_updates",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         }
       },
       "indexes": {},
@@ -20010,18 +20017,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
-        },
-        "widget_push_token": {
-          "name": "widget_push_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "widget_pushed_at": {
-          "name": "widget_pushed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",

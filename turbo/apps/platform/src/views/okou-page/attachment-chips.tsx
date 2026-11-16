@@ -2185,9 +2185,7 @@ function AttachmentChip({
   const openAttachmentPreview = useSet(previewHost.openAttachmentPreview$);
   const annotations = useGet(attachment.annotations$);
   const isImage = attachment.contentType.startsWith("image/");
-  const isVideo =
-    useGet(featureSwitch$)[FeatureSwitchKey.ComposerMediaPreviews] &&
-    attachment.contentType.startsWith("video/");
+  const isVideo = attachment.contentType.startsWith("video/");
   if (
     infoLoadable.state === "hasError" ||
     (infoLoadable.state === "hasData" && infoLoadable.data === null)

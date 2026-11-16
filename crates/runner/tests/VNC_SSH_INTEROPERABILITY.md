@@ -86,7 +86,7 @@ manual inspection. Choose a unique account name; the procedure refuses an
 existing one.
 From the repository root, save the block as a Bash script and run it with the
 exact build-output path exported, for example
-`export VNC_RUNNER_TEST_BINARY=crates/target/local/deps/runner_remote-<hash>`.
+`export VNC_RUNNER_TEST_BINARY=crates/target/local/build/runner-remote/<hash>/out/runner_remote-<hash>`.
 Do not paste the block into an existing interactive shell: its traps and
 fail-fast settings belong to the standalone script.
 
@@ -95,7 +95,7 @@ fail-fast settings belong to the standalone script.
 set -Eeuo pipefail
 : "${VNC_RUNNER_TEST_BINARY:?set this to the exact executable path printed by Cargo}"
 case "$VNC_RUNNER_TEST_BINARY" in
-  */deps/runner_remote-*) ;;
+  */build/runner-remote/*/out/runner_remote-*) ;;
   *) echo "unexpected Runner test binary path" >&2; exit 1 ;;
 esac
 test -x "$VNC_RUNNER_TEST_BINARY"

@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.45.2](https://github.com/okou-ai/okou/compare/ios-v0.45.1...ios-v0.45.2) (2026-11-16)
+
+
+### Bug Fixes
+
+* **ios:** check async data helper failures ([#47808](https://github.com/okou-ai/okou/issues/47808)) ([dbbac95](https://github.com/okou-ai/okou/commit/dbbac95f25f1fd1a240ef6da5ca9a9475dfd92aa))
+* **ios:** defer composer focus until native readiness ([#47819](https://github.com/okou-ai/okou/issues/47819)) ([bb9a424](https://github.com/okou-ai/okou/commit/bb9a424f2dad6444d80551dd580c1b0269bf9477))
+* **ios:** place chat toasts above visible bottom controls with swipe dismissal ([#47765](https://github.com/okou-ai/okou/issues/47765)) ([39d14d8](https://github.com/okou-ai/okou/commit/39d14d8d79d1ab75de271192e9ffb262ea98af40))
+* **ios:** preserve and display the source project when forking ([#47774](https://github.com/okou-ai/okou/issues/47774)) ([1a69af5](https://github.com/okou-ai/okou/commit/1a69af5d285106809745ab6dfdd4375ecdfea39d))
+* **ios:** reconcile unread watermarks after concurrent refreshes ([#47767](https://github.com/okou-ai/okou/issues/47767)) ([eda4480](https://github.com/okou-ai/okou/commit/eda4480becc181aab9211b1fe8909b8a636e9780))
+
+
+### Refactoring
+
+* remove ios settings credits feature switch ([#47822](https://github.com/okou-ai/okou/issues/47822)) ([051dbad](https://github.com/okou-ai/okou/commit/051dbad9a13dba24291a9adf76b7665e6208a18f))
+
+## [0.45.1](https://github.com/okou-ai/okou/compare/ios-v0.45.0...ios-v0.45.1) (2026-11-16)
+
+
+### Refactoring
+
+* prepare structured run failures and recovery ([#47749](https://github.com/okou-ai/okou/issues/47749)) ([fca7335](https://github.com/okou-ai/okou/commit/fca73354c6b5b0aa4f122e78947565b274323991))
+
 ## [0.45.0](https://github.com/okou-ai/okou/compare/ios-v0.44.0...ios-v0.45.0) (2026-11-16)
 
 

@@ -616,5 +616,41 @@ pub fn sanitize_env_key_for_diagnostic(key: &str) -> String {
     truncated
 }
 
+/// Validate shell-environment entries in stable lexical key order.
+///
+/// Each entry's shell-identifier key is checked before its NUL-free value.
+/// The caller retains source selection and supplies its fixed diagnostic label.
+/// Borrowing preserves the caller's string-pair representation and values;
+/// errors contain only the existing escaped, bounded key, never its value.
+///
+/// # Errors
+///
+/// Returns the first invalid entry in that order with the caller's label.
+pub fn validate_sorted_shell_environment<'a, S: AsRef<str> + ?Sized + 'a>(
+    entries: impl IntoIterator<Item = (&'a S, &'a S)>,
+    context: &'static str,
+) -> Result<(), String> {
+    let mut entries: Vec<_> = entries.into_iter().collect();
+    entries.sort_by(|(left, _), (right, _)| left.as_ref().cmp(right.as_ref()));
+
+    for (key, value) in entries {
+        let key = key.as_ref();
+        if !is_shell_identifier_env_key(key) {
+            return Err(format!(
+                "{context} contains invalid env key {:?}",
+                sanitize_env_key_for_diagnostic(key)
+            ));
+        }
+        if value.as_ref().contains('\0') {
+            return Err(format!(
+                "{context} contains NUL byte for env key {:?}",
+                sanitize_env_key_for_diagnostic(key)
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;

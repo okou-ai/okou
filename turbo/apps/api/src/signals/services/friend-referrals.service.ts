@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { FRIEND_REFERRAL_REWARD_CREDITS } from "@okouai/api-contracts/contracts/friend-referrals";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/validators/get-started";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import {
   friendReferralLinks,
   friendReferrals,
@@ -17,20 +15,7 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import type { StripeInvoice } from "../external/stripe-client";
 import { publishUserSignal } from "../external/realtime";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
-
-export const friendReferralsEnabled$ = command(
-  async ({ set }, orgId: string, userId: string, signal: AbortSignal) => {
-    const context = await set(
-      loadUserFeatureSwitchContext$,
-      orgId,
-      userId,
-      signal,
-    );
-    return isFeatureEnabled(FeatureSwitchKey.FriendReferrals, context);
-  },
-);
 
 /** Only credits fulfilled from this paid invoice qualify, never a plan-only upgrade. */
 export const grantPaidFriendReferralRewards$ = command(
@@ -110,16 +95,6 @@ export const grantPaidFriendReferralRewards$ = command(
     const candidates = await eligible;
     signal.throwIfAborted();
     for (const candidate of candidates) {
-      if (
-        !(await set(
-          friendReferralsEnabled$,
-          candidate.orgId,
-          candidate.userId,
-          signal,
-        ))
-      ) {
-        continue;
-      }
       const membership = await set(
         getMemberRoleAndUpdateCache$,
         candidate.orgId,

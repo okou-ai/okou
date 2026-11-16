@@ -40,11 +40,27 @@ interface AxiomRequestAttempt {
   readonly attempt: number;
 }
 
+function ownedAxiomFetchArgs(
+  args: Parameters<typeof fetch>,
+  parentSignal?: AbortSignal,
+): Parameters<typeof fetch> {
+  if (!parentSignal) {
+    return args;
+  }
+  const [input, init] = args;
+  const sdkSignal =
+    init?.signal ?? (input instanceof Request ? input.signal : undefined);
+  const signal = sdkSignal
+    ? AbortSignal.any([parentSignal, sdkSignal])
+    : parentSignal;
+  return [input, { ...init, signal }];
+}
+
 // The SDK creates one timeout signal per operation and reuses it across retries.
 // Keep timing with that signal so an immediately aborted final attempt cannot
 // hide the original wait. The client owns this adapter; keys are weak and values
 // retain neither signals nor request headers/payloads.
-export function createAxiomFetch(): typeof fetch {
+export function createAxiomFetch(parentSignal?: AbortSignal): typeof fetch {
   const requests = new WeakMap<AbortSignal, AxiomRequestAttempt>();
   return async (...args) => {
     const attemptStartedAt = performance.now();
@@ -60,7 +76,9 @@ export function createAxiomFetch(): typeof fetch {
       requests.set(signal, request);
     }
 
-    const [result] = await Promise.allSettled([fetch(...args)]);
+    const fetchArgs = ownedAxiomFetchArgs(args, parentSignal);
+    const requestSignal = fetchArgs[1]?.signal ?? signal;
+    const [result] = await Promise.allSettled([fetch(...fetchArgs)]);
     if (result.status === "fulfilled") {
       return result.value;
     }
@@ -74,7 +92,7 @@ export function createAxiomFetch(): typeof fetch {
       attemptElapsedMs: Math.max(0, finishedAt - attemptStartedAt),
       attempt: request.attempt,
       requestBytes: requestBodyBytes(init?.body),
-      aborted: signal?.aborted ?? false,
+      aborted: requestSignal?.aborted ?? false,
     });
   };
 }

@@ -8,6 +8,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from async_helper_failure_cases import ASYNC_HELPER_FAILURE_CASES
 from cancellation_cases import CANCELLATION_CASES
 from collection_publication_cases import COLLECTION_PUBLICATION_CASES
 from global_state_cases import GLOBAL_STATE_CASES
@@ -39,6 +40,7 @@ CASES = [
     *RESOURCE_CANCELLATION_BINDING_CASES,
     *RESOURCE_FAILURE_CASES,
     *RESOURCE_FAILURE_PATH_CASES,
+    *ASYNC_HELPER_FAILURE_CASES,
     *SUBSCRIPTION_CASES,
     *SUBSCRIPTION_REPLACEMENT_CASES,
     *TASK_LIFECYCLE_CASES,

@@ -63,6 +63,8 @@ Maintain a small, current set of worthwhile next actions. Follow this loop every
 
 Use [the source and publishing reference](references/suggestions.md) when command details are needed and before creating or refreshing cards. The injected Suggestions feedback context is the authority for feedback rules; do not duplicate or replace it with Memory. If it is missing or incomplete, skip curation.
 
+When reviewing third-party sources, first verify the current user's account identity on each source using authorized account or profile information and stable account identifiers. Distinguish the user from message authors, assignees and other participants; a matching display name, channel membership or topic relevance alone does not establish identity. Attribute statements, proposals, decisions and commitments to the verified actor. Use "you said", "you proposed" or "you agreed" only when the source establishes that the actor is the current user. If identity cannot be verified, preserve the source attribution or use neutral wording without inferring the user's authorship or commitment.
+
 ### 1. Inspect
 
 Read all active cards and recent receipts with \`okou feed list --type suggestion --all --json\`, following nextAfter through every page. Apply feedback before deciding what to retain or publish. A selected direction is not completion: read the subsequent conversation. Do not create cards after an incomplete inventory or unfinished maintenance pass.

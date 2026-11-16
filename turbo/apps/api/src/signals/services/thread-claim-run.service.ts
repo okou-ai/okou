@@ -4238,7 +4238,6 @@ interface PreparedAtomicLaunchRows {
 }
 
 interface PreparedAtomicLaunchPersistence {
-  readonly payload: RunnerLaunchInput;
   readonly rows: PreparedAtomicLaunchRows;
   readonly diagnosticRegistrationPayload: zInfer<
     typeof agentRunConnectorDiagnosticRegistrationPayloadSchema
@@ -4255,16 +4254,11 @@ export interface PreparedThreadLaunchCommit extends ThreadLaunchCommitInput {
 function prepareAtomicLaunchPersistence(
   commit: ThreadLaunchCommitInput,
 ): PreparedAtomicLaunchPersistence {
-  const payload: RunnerLaunchInput = {
-    ...commit.launch.runnerInput,
-    reuseKey: runnerReuseKey(commit.createArgs.chatThreadId),
-  };
   const rowsArgs = preparedLaunchRowsArgs({
     commit,
-    runnerGroup: payload.runnerGroup,
+    runnerGroup: commit.launch.runnerInput.runnerGroup,
   });
   return {
-    payload,
     rows: { rowsArgs, metadata: launchRunMetadataValues(rowsArgs) },
     diagnosticRegistrationPayload:
       agentRunConnectorDiagnosticRegistrationPayloadSchema.parse({
@@ -4414,7 +4408,6 @@ type AtomicLaunchCteContext = ReturnType<typeof buildAtomicLaunchCteContext>;
 
 interface AtomicLaunchRowsPlanArgs extends ValidatedPreparedLaunchAdmission {
   readonly commit: PreparedThreadLaunchCommit;
-  readonly payload: RunnerLaunchInput;
   readonly publication: PendingLaunchPublication;
 }
 interface AdmittedPreparedLaunch extends ValidatedPreparedLaunchAdmission {
@@ -4890,7 +4883,7 @@ function admittedRunLaunch(
   reusePreparation: RunnerReusePreparation,
 ): AdmittedRunLaunch {
   const { rowsArgs: rows, metadata } = args.persistence.rows;
-  const payload = args.persistence.payload;
+  const { runnerInput } = args.launch;
   return {
     run: {
       id: args.identity.runId,
@@ -4898,12 +4891,12 @@ function admittedRunLaunch(
       orgId: rows.orgId,
       agentId: rows.resolved.agentId,
       chatThreadId: rows.chatThreadId,
-      launchSnapshot: rows.launchSnapshot,
+      framework: rows.launchSnapshot.framework,
       officialWorkflowProvenance: rows.officialWorkflowProvenance ?? null,
       prompt: rows.content.prompt,
       appendSystemPrompt: rows.content.appendSystemPrompt,
       vars: rows.content.vars,
-      storageMounts: [...args.launch.runStorageMounts],
+      storageMounts: args.launch.runStorageMounts,
       modelProvider: metadata.modelProvider,
       modelProviderId: metadata.modelProviderId,
       modelProviderCredentialScope: metadata.modelProviderCredentialScope,
@@ -4917,17 +4910,16 @@ function admittedRunLaunch(
         metadata.modelLongContextMinTotalInputTokens,
       reasoningEffort: metadata.reasoningEffort,
       codexServiceTier: metadata.codexServiceTier,
-      isFirstRun: null,
     },
-    executionContext: payload.executionContext,
+    executionContext: runnerInput.executionContext,
     executionFacts: {
       ...args.launch.executionFacts,
       connectorRuntimeTargets:
         args.persistence.diagnosticRegistrationPayload.targets,
     },
-    runnerGroup: payload.runnerGroup,
-    profile: payload.profile,
-    reuseKey: payload.reuseKey,
+    runnerGroup: runnerInput.runnerGroup,
+    profile: runnerInput.profile,
+    reuseKey: runnerInput.reuseKey,
     createdAt,
     reusePreparation,
   };
@@ -5064,7 +5056,6 @@ function pendingLaunchRowsPlan(
 ) {
   const rows = {
     commit,
-    payload: commit.persistence.payload,
     ...admission,
     publication,
   };
@@ -5282,12 +5273,12 @@ const commitThreadLaunch$ = command(
       admissionTiming.recordLeafElapsed("persistence", leafStartedAt);
     });
     const thread = accepted.validatedThreadSession;
-    const payload = args.persistence.payload;
+    const { runnerInput } = args.launch;
     const preparation = set(prepareRunnerReusePreference$, {
       runId: args.identity.runId,
-      runnerGroup: payload.runnerGroup,
-      profile: payload.profile,
-      reuseKey: payload.reuseKey,
+      runnerGroup: runnerInput.runnerGroup,
+      profile: runnerInput.profile,
+      reuseKey: runnerInput.reuseKey,
       thread: {
         threadId: thread.chatThreadId,
         userId: args.createArgs.userId,

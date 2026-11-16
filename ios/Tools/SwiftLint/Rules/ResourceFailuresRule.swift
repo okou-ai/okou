@@ -6,21 +6,27 @@ struct ResourceFailuresRule: NativeRule {
   static let description = RuleDescription(
     identifier: "okou_resource_failures", name: "Preserve resource failures",
     description:
-      "Keep failures in CCState resource/action Tasks instead of converting them to successful empty data",
+      "Keep failures in graph callbacks and async throwing data helpers instead of publishing empty data",
     kind: .lint)
 
   func validate(file: SwiftLintFile) -> [StyleViolation] {
-    guard hasCCState(file) else { return [] }
-    let visitor = Visitor(viewMode: .sourceAccurate)
+    let visitor = Visitor(ccstate: hasCCState(file))
     visitor.walk(file.syntaxTree)
     return findings(visitor.positions, in: file)
   }
 
   private final class Visitor: SyntaxVisitor {
+    let ccstate: Bool
     var positions: [AbsolutePosition] = []
 
+    init(ccstate: Bool) {
+      self.ccstate = ccstate
+      super.init(viewMode: .sourceAccurate)
+    }
+
     private func inResource(_ node: some SyntaxProtocol) -> Bool {
-      ancestors(of: node).contains {
+      guard ccstate else { return false }
+      return ancestors(of: node).contains {
         guard let closure = $0.as(ClosureExprSyntax.self), let (call, _) = closureCall(closure)
         else { return false }
         return isGraphCall(call, names: graphCallbacks)
@@ -50,14 +56,15 @@ struct ResourceFailuresRule: NativeRule {
     }
 
     override func visit(_ node: CatchClauseSyntax) -> SyntaxVisitorContinueKind {
+      let helperRead = dataHelper(node) != nil
       let cancelledRead = isCancelledRead(node)
       let paths = cancellationPaths(node)
-      let dataRead = isDataRead(node) && inReadExecution(node)
+      let dataRead = helperRead || isDataRead(node) && inReadExecution(node)
       let cancelledPath = dataRead && paths.swallowsCancellation()
       guard
         caughtError(node) != nil || cancelledRead || cancelledPath
           || dataRead && paths.cancelledCatch,
-        inResource(node)
+        inResource(node) || helperRead
       else {
         return .visitChildren
       }
@@ -80,7 +87,89 @@ struct ResourceFailuresRule: NativeRule {
     private func isCancelledRead(_ node: CatchClauseSyntax) -> Bool {
       let catchesCancellation = node.catchItems.contains { cancellationName($0) != nil }
       guard catchesCancellation else { return false }
-      return isDataRead(node)
+      return isDataRead(node) || dataHelper(node) != nil
+    }
+
+    private func dataHelper(_ node: some SyntaxProtocol) -> FunctionDeclSyntax? {
+      for parent in ancestors(of: node) {
+        // A deferred callback or nested function owns its own result contract.
+        if parent.is(ClosureExprSyntax.self) || parent.is(AccessorBlockSyntax.self)
+          || parent.is(MemberBlockSyntax.self) || parent.is(DeferStmtSyntax.self)
+        {
+          return nil
+        }
+        guard let function = parent.as(FunctionDeclSyntax.self) else { continue }
+        guard function.signature.effectSpecifiers?.asyncSpecifier != nil,
+          function.signature.effectSpecifiers?.throwsClause?.throwsSpecifier.text == "throws",
+          let result = function.signature.returnClause?.type,
+          !hasSeparateResultContract(result)
+        else { return nil }
+        return function
+      }
+      return nil
+    }
+
+    private func hasSeparateResultContract(_ type: TypeSyntax, seen: Set<String> = []) -> Bool {
+      if let attributed = type.as(AttributedTypeSyntax.self) {
+        return hasSeparateResultContract(attributed.baseType, seen: seen)
+      }
+      if let optional = type.as(OptionalTypeSyntax.self) {
+        return hasSeparateResultContract(optional.wrappedType, seen: seen)
+      }
+      if let tuple = type.as(TupleTypeSyntax.self), tuple.elements.count == 1,
+        let element = tuple.elements.first, element.firstName == nil
+      {
+        return hasSeparateResultContract(element.type, seen: seen)
+      }
+      if let member = type.as(MemberTypeSyntax.self), let owner = nativeOwner(type),
+        !seen.contains(member.trimmedDescription)
+      {
+        let ownerName =
+          owner.parent?.as(ClassDeclSyntax.self)?.name.text
+          ?? owner.parent?.as(StructDeclSyntax.self)?.name.text
+          ?? owner.parent?.as(ActorDeclSyntax.self)?.name.text
+          ?? owner.parent?.as(EnumDeclSyntax.self)?.name.text
+          ?? owner.parent?.as(ProtocolDeclSyntax.self)?.name.text
+          ?? owner.parent?.as(ExtensionDeclSyntax.self)?.extendedType.trimmedDescription
+        if ["Self", ownerName].contains(member.baseType.trimmedDescription),
+          let alias = owner.members.compactMap({ $0.decl.as(TypeAliasDeclSyntax.self) })
+            .first(where: { $0.name.text == member.name.text })
+        {
+          return hasSeparateResultContract(
+            alias.initializer.value, seen: seen.union([member.trimmedDescription]))
+        }
+      }
+      if let identifier = type.as(IdentifierTypeSyntax.self),
+        !seen.contains(identifier.name.text)
+      {
+        for parent in ancestors(of: type) {
+          let aliases =
+            parent.as(CodeBlockItemListSyntax.self)?.compactMap {
+              $0.item.as(TypeAliasDeclSyntax.self)
+            }
+            ?? parent.as(MemberBlockSyntax.self)?.members.compactMap {
+              $0.decl.as(TypeAliasDeclSyntax.self)
+            }
+            ?? parent.as(SourceFileSyntax.self)?.statements.compactMap {
+              $0.item.as(TypeAliasDeclSyntax.self)
+            } ?? []
+          if let alias = aliases.first(where: { $0.name.text == identifier.name.text }) {
+            return hasSeparateResultContract(
+              alias.initializer.value, seen: seen.union([identifier.name.text]))
+          }
+        }
+      }
+      if ["Void", "Swift.Void", "()", "Never", "Swift.Never"].contains(type.trimmedDescription)
+        || type.is(FunctionTypeSyntax.self)
+      {
+        return true
+      }
+      return arguments(
+        type,
+        names: [
+          "Task", "Result", "Computed", "Signal", "Loadable", "AsyncStream", "AsyncThrowingStream",
+        ],
+        modules: ["Swift", "_Concurrency", "CCState", "CCStateSwiftUI"]) != nil
     }
 
     private func isDataRead(_ node: CatchClauseSyntax) -> Bool {
@@ -110,6 +199,16 @@ struct ResourceFailuresRule: NativeRule {
     }
 
     private func cancellationPaths(_ node: CatchClauseSyntax) -> ResourceCancellationPaths {
+      if let helper = dataHelper(node), let body = helper.body {
+        let parameters = helper.signature.parameterClause.parameters.filter {
+          ["EvaluationSignal", "CCState.EvaluationSignal"].contains($0.type.trimmedDescription)
+        }
+        return ResourceCancellationPaths(
+          handler: node,
+          signals: nativeSignalAliases(
+            body.statements,
+            signals: Set(parameters.map { ($0.secondName ?? $0.firstName).text })))
+      }
       let callback = ancestors(of: node).compactMap { $0.as(ClosureExprSyntax.self) }.first {
         closureCall($0).map { isGraphCall($0.0, names: graphCallbacks) } == true
       }

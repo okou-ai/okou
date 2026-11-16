@@ -175,6 +175,18 @@ commit_all "$repo" excluded-changes
 [ "$(digest_value "$repo" aarch64-unknown-linux-musl "$baseline_revision")" = "$baseline" ] \
   || fail "historical revisions must use their own tracked context"
 
+toolchain_parent_revision=$(git -C "$repo" rev-parse HEAD)
+cp "${REPO_ROOT}/rust-toolchain.toml" "${repo}/rust-toolchain.toml"
+commit_all "$repo" compiler-selection
+for target in aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
+  [ "$(digest_value "$repo" "$target")" != "$(digest_value "$repo" "$target" "$toolchain_parent_revision")" ] \
+    || fail "compiler selection must affect the ${target} input digest"
+done
+[ "$(digest_value "$repo" aarch64-unknown-linux-musl "$baseline_revision")" = "$baseline" ] \
+  || fail "historical inputs must remain independent of the current toolchain file"
+[ "$(digest_value "$repo" x86_64-unknown-linux-musl "$baseline_revision")" = "$x86_digest" ] \
+  || fail "historical x86 inputs must remain independent of the current toolchain file"
+
 assert_text_change_affects_digest \
   "$repo" "crates/guest-one/src/lib.rs" "guest-source-change"
 assert_text_change_affects_digest \
@@ -191,6 +203,8 @@ assert_text_change_affects_digest \
   "$repo" "crates/Cargo.lock" "lockfile-change"
 assert_text_change_affects_digest \
   "$repo" "crates/.cargo/config.toml" "cargo-config-change"
+assert_text_change_affects_digest \
+  "$repo" "rust-toolchain.toml" "compiler-selection-change"
 assert_text_change_affects_digest \
   "$repo" "crates/other-one/Cargo.toml" "other-package-manifest-change"
 assert_text_change_affects_digest \
@@ -307,6 +321,9 @@ jq -e \
 git -C "$repo" show "${valid_revision}:crates/Cargo.toml" \
   | cmp - "${context_root}/crates/Cargo.toml" \
   || fail "materialized compiler profiles must match the committed input key"
+git -C "$repo" show "${valid_revision}:rust-toolchain.toml" \
+  | cmp - "${context_root}/rust-toolchain.toml" \
+  || fail "materialized compiler selection must match the committed input key"
 [ -f "${context_root}/crates/runner/mitm-addon/src/runtime.py" ] \
   || fail "expected mitm source"
 [ -f "${context_root}/crates/other-one/Cargo.toml" ] \
@@ -360,6 +377,7 @@ fi
 actual_repo="${TMPDIR}/actual-repo"
 mkdir -p "${actual_repo}/.github/scripts/runner"
 git -C "$REPO_ROOT" archive HEAD crates | tar -xf - -C "$actual_repo"
+cp "${REPO_ROOT}/rust-toolchain.toml" "${actual_repo}/rust-toolchain.toml"
 cp -a \
   "${REPO_ROOT}/.github/scripts/runner/runner-binary-build" \
   "${actual_repo}/.github/scripts/runner/runner-binary-build"

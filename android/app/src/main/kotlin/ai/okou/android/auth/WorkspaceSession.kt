@@ -104,7 +104,8 @@ class CanonicalWorkspaceSession(
                     archiveJson.encodeToString(api.realtimeToken())
                 }
                 .use { connection ->
-                    connection.state.collect { next ->
+                    connection.state.collect {
+                        val next = connection.takeObservation()
                         next.failure?.let { throw it }
                         withContext(Dispatchers.Main.immediate) { observe(next) }
                     }

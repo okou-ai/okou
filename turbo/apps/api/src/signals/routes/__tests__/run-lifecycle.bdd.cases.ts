@@ -1019,16 +1019,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const execution = await api.executionInput(run.runId);
         const appendSystemPrompt = execution.appendSystemPrompt ?? "";
         expect(appendSystemPrompt).toContain(
-          "okou resource pull skill:presentation-reverse-template --dir ./generated/resources",
+          "Pull the guide first with `okou resource pull skill:presentation-reverse-template --dir ./generated/resources`",
         );
         expect(appendSystemPrompt).toContain(
-          "./generated/resources/reverse-template/SKILL.md",
+          "read `./generated/resources/reverse-template/SKILL.md`",
         );
         expect(appendSystemPrompt).toContain(
-          "https://github.com/okou-ai/Template-artifact/tree/<commit>/reverse-template",
-        );
-        expect(appendSystemPrompt).toContain(
-          "do not pull or compare the registry copy",
+          "including its page-rendering and publish steps",
         );
       });
 
@@ -9702,11 +9699,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(prompt).toContain(
           "okou vnc diagnose <connection-id> --attempt-id <attempt-id> --json",
         );
-        const sshGuidance = prompt.split("\n").filter((line) => {
-          return line.startsWith("- SSH");
-        });
-        expect(sshGuidance).toHaveLength(1);
-        expect(sshGuidance.join("\n").length).toBeLessThanOrEqual(400);
+        expect(prompt).toContain(
+          "okou ssh request-access <connection-id> --reason <purpose>",
+        );
+        expect(prompt).toContain(
+          "okou vnc request-access <connection-id> --reason <purpose>",
+        );
         await api.heartbeatRunner(runnerGroup);
         const execution = await api.executionInput(run.runId);
         const token = execution.platformEnvironment.OKOU_TOKEN;

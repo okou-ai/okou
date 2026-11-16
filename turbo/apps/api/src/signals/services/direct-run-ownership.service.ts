@@ -145,7 +145,7 @@ export const selectDirectRunOwner$ = command(
         id: changed.id,
         // An invariant failure rolls back the whole statement, not just its result.
         guard:
-          sql`(CASE WHEN ${slot.runId} IS NULL OR (${args.previous === null} AND ${changed.chatThreadId} IS NOT NULL AND ${thread.id} IS NULL) THEN '__DIRECT_RUN_OWNER__' ELSE '0' END)::integer`.mapWith(
+          sql`(CASE WHEN ${slot.runId} IS NULL OR (${args.previous === null} AND ${thread.id} IS NULL) THEN '__DIRECT_RUN_OWNER__' ELSE '0' END)::integer`.mapWith(
             pgIntegerDecoder,
           ),
       })

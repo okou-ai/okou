@@ -86,7 +86,7 @@ describe("VNC chat authorization", () => {
     const pending = await publicRuns.start(owner);
     await createAuthDeviceSupportApi(context).updateFeatureSwitches(
       pending.actor,
-      { sshChatApproval: true, connectorChatAccountAccess: memberMode },
+      { connectorChatAccountAccess: memberMode },
     );
     const run = await publicRuns.executionInput(pending, {
       authorization: `Bearer vm0_official_${"c".repeat(64)}`,
@@ -310,10 +310,6 @@ describe("VNC chat authorization", () => {
       userId: `user_other_${randomUUID()}`,
       email: "other-ssh-owner@example.test",
     };
-    await createAuthDeviceSupportApi(context).updateFeatureSwitches(
-      otherActor,
-      { sshChatApproval: true },
-    );
     authenticate({ ...s.owner, userId: otherActor.userId });
     await accept(api().get({ headers, params }), [404]);
     authenticate(s.owner);

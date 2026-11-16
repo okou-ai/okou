@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { array, object, string, unknown as zUnknown } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -10,7 +9,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   postTeamsActivityForTest,
   teamsMessageActivityForTest,
@@ -30,11 +28,6 @@ describe("integration model recovery in Teams", () => {
         withDefaultAgent: true,
         paidNative: true,
       });
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...fixture.actor, orgId: fixture.installation.orgId },
-        { [FeatureSwitchKey.IntegrationModelRecovery]: true },
-      );
       await fixtures.dispatch(fixture, "Recover this Teams model");
       const listed = await reads.requestListLogs(
         fixture.actor,

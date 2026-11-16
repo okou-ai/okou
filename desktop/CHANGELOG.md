@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.7](https://github.com/okou-ai/okou/compare/desktop-v0.56.6...desktop-v0.56.7) (2026-11-16)
+
+
+### Bug Fixes
+
+* **desktop:** repair launch-time sentry delivery ([#47834](https://github.com/okou-ai/okou/issues/47834)) ([2ed01c5](https://github.com/okou-ai/okou/commit/2ed01c5ebadc57049ee9b49aaac5d4dde9fca20c))
+
 ## [0.56.6](https://github.com/okou-ai/okou/compare/desktop-v0.56.5...desktop-v0.56.6) (2026-11-16)
 
 

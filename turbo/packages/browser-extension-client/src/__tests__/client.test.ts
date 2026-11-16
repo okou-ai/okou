@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import {
   BrowserBridgeError,
+  CdpConnectionError,
   OkouBrowserClient,
   type CdpEvent,
   type CdpTransport,
@@ -687,6 +688,69 @@ it("a response ahead of the event stream preserves its first invalidation reason
   });
   expect(client.signal.reason).toBe(failure);
   await client.close();
+});
+
+it("retains selected native close facts through request wrapping without provider details", async () => {
+  const peer = bridgePeer();
+  const observed = {
+    source: "native-close" as const,
+    phase: "open" as const,
+    ready_state: 3,
+    code: 1013,
+    was_clean: true,
+    reason: "private-provider-reason",
+    url: "wss://private-endpoint?token=private-token",
+  };
+  peer.failures.set("Runtime.enable", new CdpConnectionError(observed));
+  const error: unknown = await peer.connect().catch((failure: unknown) => {
+    return failure;
+  });
+  if (!(error instanceof BrowserBridgeError)) throw error;
+  expect(error.diagnostics).toStrictEqual({
+    stage: "enable-runtime",
+    reason: "cdp-connection-failed",
+    request: { method: "Runtime.enable" },
+    connection: {
+      source: "native-close",
+      phase: "open",
+      ready_state: 3,
+      code: 1013,
+      was_clean: true,
+    },
+  });
+  expect(error.message).toContain("closeCode=1013, wasClean=true");
+  expect(
+    JSON.stringify({ ...error, message: error.message, cause: error.cause }),
+  ).not.toContain("private-");
+  expect(peer.listeners.size).toBe(0);
+});
+
+it("keeps the safe transport cause when the connection owner aborts the native client", async () => {
+  const peer = bridgePeer();
+  const owner = new AbortController();
+  const client = await peer.connect(owner.signal);
+  owner.abort(
+    new CdpConnectionError({
+      source: "native-close",
+      phase: "open",
+      ready_state: 3,
+      code: 1013,
+      was_clean: true,
+    }),
+  );
+  await expect(client.call("listWindows", {})).rejects.toBe(
+    client.signal.reason,
+  );
+  expect(client.signal.reason).toMatchObject({
+    name: "BrowserBridgeError",
+    diagnostics: {
+      stage: "ready",
+      reason: "cdp-connection-failed",
+      connection: { code: 1013, was_clean: true },
+    },
+  });
+  await client.close();
+  expect(peer.listeners.size).toBe(0);
 });
 
 it("owner cancellation and deliberate close retain a cancellation lifetime", async () => {

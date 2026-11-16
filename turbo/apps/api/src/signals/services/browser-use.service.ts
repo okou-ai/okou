@@ -1,6 +1,5 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { createHash } from "node:crypto";
-import { once } from "node:events";
 import {
   browserDisplayContents,
   type BrowserDisplaySize,
@@ -13,6 +12,7 @@ import {
   type BrowserExtension,
 } from "@okouai/api-contracts/contracts/browser";
 import {
+  CdpConnectionError,
   OkouBrowserClient,
   type CdpEvent,
 } from "@okouai/browser-extension-client";
@@ -50,6 +50,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { mapConcurrent } from "../../lib/map-concurrent";
 import {
+  awaitWithSignal,
   bestEffort,
   readBoundedResponseText,
   safeJsonParse,
@@ -144,10 +145,12 @@ const browserUseCdpLayoutMetricsSchema = object({
 const browserUseCdpScreenshotSchema = object({
   data: string().min(1),
 });
-type BrowserUseCdpSocketEventName = "open" | "message" | "error" | "close";
-interface BrowserUseCdpSocketEvent {
-  readonly name: BrowserUseCdpSocketEventName;
-  readonly event: unknown;
+interface BrowserUseCdpSocket {
+  readonly socket: WebSocket;
+  readonly failure: CdpConnectionError | undefined;
+  readonly onFailure: (
+    listener: (error: CdpConnectionError) => void,
+  ) => () => void;
 }
 
 interface BrowserUseCdpCommand {
@@ -385,64 +388,49 @@ export async function resolveBrowserUseViewerConnection(
   return result.value;
 }
 
-async function waitForBrowserUseCdpSocketEvent(
-  socket: WebSocket,
-  name: BrowserUseCdpSocketEventName,
-  signal: AbortSignal,
-): Promise<BrowserUseCdpSocketEvent> {
-  const events: unknown[] = await once(socket, name, { signal });
-  signal.throwIfAborted();
-  return { name, event: events[0] };
-}
-
-async function nextBrowserUseCdpSocketEvent(
-  socket: WebSocket,
-  names: readonly BrowserUseCdpSocketEventName[],
-  signal: AbortSignal,
-): Promise<BrowserUseCdpSocketEvent> {
-  const controller = new AbortController();
-  const result = await settle(
-    Promise.race(
-      names.map(async (name) => {
-        return await waitForBrowserUseCdpSocketEvent(
-          socket,
-          name,
-          AbortSignal.any([signal, controller.signal]),
-        );
-      }),
-    ),
-  );
-  controller.abort();
-  signal.throwIfAborted();
-  if (!result.ok) {
-    throw result.error;
-  }
-  return result.value;
-}
-
 async function waitForBrowserUseCdpSocket(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   signal: AbortSignal,
 ): Promise<void> {
-  const received = await nextBrowserUseCdpSocketEvent(
-    socket,
-    ["open", "error", "close"],
-    signal,
-  );
-  if (received.name !== "open") {
-    throw new Error("Browser Use CDP connection failed");
+  const { promise, resolve, reject } = (
+    Promise as PromiseConstructor & {
+      withResolvers<T>(): {
+        promise: Promise<T>;
+        resolve: (value: T) => void;
+        reject: (reason?: unknown) => void;
+      };
+    }
+  ).withResolvers<void>();
+  const onOpen = () => {
+    resolve();
+  };
+  socket.socket.addEventListener("open", onOpen, { once: true });
+  const offFailure = socket.onFailure((error) => {
+    reject(error);
+  });
+  const result = await settleIncludingAbort(awaitWithSignal(promise, signal));
+  socket.socket.removeEventListener("open", onOpen);
+  offFailure();
+  signal.throwIfAborted();
+  if (socket.failure) {
+    throw socket.failure;
+  }
+  if (!result.ok) {
+    throw result.error;
   }
 }
 
 async function sendBrowserUseCdpCommand(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   command: BrowserUseCdpCommand,
   signal: AbortSignal,
 ): Promise<unknown> {
   const { id, method, params, sessionId, maxResponseBytes } = command;
   signal.throwIfAborted();
-  // Keep one listener for the entire command: a nonmatching CDP event and its
-  // reply can arrive back-to-back before an awaited one-shot listener re-arms.
+  if (socket.failure) {
+    throw socket.failure;
+  }
+  // Keep one listener for the entire command, including unrelated CDP events.
   const { promise, resolve, reject } = (
     Promise as PromiseConstructor & {
       withResolvers<T>(): {
@@ -453,20 +441,20 @@ async function sendBrowserUseCdpCommand(
     }
   ).withResolvers<unknown>();
   let settled = false;
+  let offFailure = () => {};
   function finish(complete: () => void): void {
     if (settled) {
       return;
     }
     settled = true;
-    socket.removeEventListener("message", onMessage);
-    socket.removeEventListener("error", onDisconnect);
-    socket.removeEventListener("close", onDisconnect);
+    socket.socket.removeEventListener("message", onMessage);
+    offFailure();
     signal.removeEventListener("abort", onAbort);
     complete();
   }
-  function onDisconnect(): void {
+  function onDisconnect(error: CdpConnectionError): void {
     finish(() => {
-      reject(new Error("Browser Use CDP connection closed"));
+      reject(error);
     });
   }
   function onAbort(): void {
@@ -500,15 +488,14 @@ async function sendBrowserUseCdpCommand(
       resolve(response.data.result);
     });
   }
-  socket.addEventListener("message", onMessage);
-  socket.addEventListener("error", onDisconnect);
-  socket.addEventListener("close", onDisconnect);
+  socket.socket.addEventListener("message", onMessage);
   signal.addEventListener("abort", onAbort, { once: true });
+  offFailure = socket.onFailure(onDisconnect);
   if (signal.aborted) {
     onAbort();
   } else if (!settled) {
     const sent = safeSync(() => {
-      socket.send(
+      socket.socket.send(
         JSON.stringify({
           id,
           method,
@@ -523,8 +510,8 @@ async function sendBrowserUseCdpCommand(
       });
     }
   }
-  // An abort can follow the matching message in the same event turn, before
-  // this command resumes. Preserve cancellation precedence after settlement.
+  // Caller cancellation still wins. A later close belongs to the connection
+  // owner and cannot erase this command's already accepted native reply.
   const result = await settleIncludingAbort(promise);
   signal.throwIfAborted();
   if (!result.ok) {
@@ -536,7 +523,7 @@ async function sendBrowserUseCdpCommand(
 async function withBrowserUseCdpSocket<T>(
   cdpUrl: string,
   signal: AbortSignal,
-  operation: (socket: WebSocket) => Promise<T>,
+  operation: (socket: BrowserUseCdpSocket, signal: AbortSignal) => Promise<T>,
   observeTimeout?: BrowserUseCdpTimeoutObserver,
 ): Promise<T> {
   const websocketUrl = await observeBrowserUseCdpPhase(
@@ -548,7 +535,62 @@ async function withBrowserUseCdpSocket<T>(
     },
   );
   const socket = new WebSocket(websocketUrl);
-  // Cancellation is rethrown only after the socket cleanup below has run.
+  const disconnected = new AbortController();
+  const listeners = new Set<(error: CdpConnectionError) => void>();
+  let failure: CdpConnectionError | undefined;
+  let phase: "opening" | "open" = "opening";
+  const fail = (error: CdpConnectionError) => {
+    if (failure) {
+      return;
+    }
+    failure = error;
+    disconnected.abort(error);
+    for (const listener of listeners) {
+      listener(error);
+    }
+  };
+  const onOpen = () => {
+    phase = "open";
+  };
+  const onClose = (event: CloseEvent) => {
+    fail(
+      new CdpConnectionError({
+        source: "native-close",
+        phase,
+        ready_state: socket.readyState,
+        code: event.code,
+        was_clean: event.wasClean,
+      }),
+    );
+  };
+  const onError = () => {
+    fail(
+      new CdpConnectionError({
+        source: "native-error",
+        phase,
+        ready_state: socket.readyState,
+      }),
+    );
+  };
+  socket.addEventListener("open", onOpen);
+  socket.addEventListener("close", onClose);
+  socket.addEventListener("error", onError);
+  const context: BrowserUseCdpSocket = {
+    socket,
+    get failure() {
+      return failure;
+    },
+    onFailure(listener) {
+      if (failure) {
+        listener(failure);
+        return () => {};
+      }
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
   const result = await settleIncludingAbort(
     (async () => {
       await observeBrowserUseCdpPhase(
@@ -556,12 +598,19 @@ async function withBrowserUseCdpSocket<T>(
         signal,
         observeTimeout,
         async () => {
-          return await waitForBrowserUseCdpSocket(socket, signal);
+          return await waitForBrowserUseCdpSocket(context, signal);
         },
       );
-      return await operation(socket);
+      return await operation(
+        context,
+        AbortSignal.any([signal, disconnected.signal]),
+      );
     })(),
   );
+  socket.removeEventListener("open", onOpen);
+  socket.removeEventListener("close", onClose);
+  socket.removeEventListener("error", onError);
+  listeners.clear();
   if (
     socket.readyState === WebSocket.CONNECTING ||
     socket.readyState === WebSocket.OPEN
@@ -616,18 +665,8 @@ async function withBrowserUseBridge<T>(
     return await withBrowserUseCdpSocket(
       connection.cdpUrl,
       deadline,
-      async (socket) => {
+      async (socket, connectionSignal) => {
         let nextId = 1;
-        const disconnected = new AbortController();
-        const connectionSignal = AbortSignal.any([
-          deadline,
-          disconnected.signal,
-        ]);
-        const onDisconnect = () => {
-          disconnected.abort(new Error("Browser Use CDP connection closed"));
-        };
-        socket.addEventListener("close", onDisconnect);
-        socket.addEventListener("error", onDisconnect);
         let client: OkouBrowserClient | undefined;
         const result = await settleIncludingAbort(async () => {
           client = await OkouBrowserClient.connect({
@@ -644,7 +683,7 @@ async function withBrowserUseBridge<T>(
                     sessionId,
                     maxResponseBytes: MAX_BROWSER_USE_RESPONSE_BYTES,
                   },
-                  connectionSignal,
+                  deadline,
                 );
               },
               onEvent: (listener: (event: CdpEvent) => void) => {
@@ -662,9 +701,9 @@ async function withBrowserUseBridge<T>(
                     listener(parsed.data);
                   }
                 };
-                socket.addEventListener("message", received);
+                socket.socket.addEventListener("message", received);
                 return () => {
-                  socket.removeEventListener("message", received);
+                  socket.socket.removeEventListener("message", received);
                 };
               },
             },
@@ -674,8 +713,6 @@ async function withBrowserUseBridge<T>(
         const released = await settleIncludingAbort(async () => {
           await client?.close();
         });
-        socket.removeEventListener("close", onDisconnect);
-        socket.removeEventListener("error", onDisconnect);
         if (!result.ok) {
           throw result.error;
         }
@@ -722,7 +759,7 @@ export interface BrowserUseWindowCandidate {
 }
 
 async function nativeWindowForTarget(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   targetId: string,
   sequence: { next: number },
   signal: AbortSignal,
@@ -757,7 +794,7 @@ async function nativeWindowForTarget(
 }
 
 async function browserWindowTargets(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   sequence: { next: number },
   signal: AbortSignal,
 ) {
@@ -776,7 +813,7 @@ async function browserWindowTargets(
 }
 
 async function browserUseInputWindowMatches(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   target: {
     readonly pageTargetId: string;
     readonly primaryWindowId: number;
@@ -1176,7 +1213,7 @@ export async function listBrowserUseTabUrls(
 }
 
 async function selectBrowserScreenshotPage(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   pageTargets: readonly { readonly targetId: string }[],
   firstCommandId: number,
   cdpSignal: AbortSignal,
@@ -1349,7 +1386,7 @@ interface AttachedBrowserUsePage {
 }
 
 async function attachBrowserUsePage(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   target: { readonly targetId: string; readonly url: string },
   commandId: number,
   signal: AbortSignal,
@@ -1811,7 +1848,7 @@ function safeControlInspections(
 }
 
 async function inspectBrowserUseControls(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   sessionId: string,
   objectIds: readonly string[],
   commandId: number,
@@ -1879,7 +1916,7 @@ const browserUseRadioOptionSchema = object({
 }).strict();
 
 async function readBrowserUseRadioMembers(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   args: {
     readonly sessionId: string;
     readonly arrayObjectId: string;
@@ -2022,7 +2059,7 @@ function browserUseRadioGroupOptions(
 }
 
 async function readBrowserUseRadioGroupHandles(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   sessionId: string,
   arrayObjectId: string,
   firstCommandId: number,
@@ -2125,7 +2162,7 @@ async function readBrowserUseRadioGroupHandles(
 
 /** Discover actual same-form/name radios without trusting their possibly duplicate values. */
 async function inspectBrowserUseRadioGroup(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   sessionId: string,
   anchorObjectId: string,
   firstCommandId: number,
@@ -2230,7 +2267,7 @@ async function inspectBrowserUseRadioGroup(
 }
 
 async function openBrowserUseValidationPage(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   pageTargetId: string,
   signal: AbortSignal,
 ): Promise<{
@@ -2258,7 +2295,7 @@ async function openBrowserUseValidationPage(
 }
 
 async function resolveBrowserUseValidationControl(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   args: {
     readonly sessionId: string;
     readonly backendNodeId: number;
@@ -2305,7 +2342,7 @@ async function resolveBrowserUseValidationControl(
 }
 
 async function inspectBrowserUseCreationRadioGroups(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   args: {
     readonly sessionId: string;
     readonly capturedControls: readonly {
@@ -2353,7 +2390,7 @@ async function inspectBrowserUseCreationRadioGroups(
 }
 
 async function validateBrowserUseUserActionOnSocket(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   target: {
     readonly pageTargetId: string;
     readonly primaryWindowId: number;
@@ -2593,7 +2630,7 @@ interface ResolvedBrowserUseUserActionField {
 }
 
 async function openBrowserUseApplyPage(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   target: BrowserUseUserActionExactTarget,
   signal: AbortSignal,
 ): Promise<(AttachedBrowserUsePage & { readonly frameId: string }) | null> {
@@ -2653,7 +2690,7 @@ function checkboxObservationMatches(
 }
 
 async function inspectBrowserUseApplyRadioGroups(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   args: {
     readonly sessionId: string;
     readonly fields: readonly BrowserUseUserActionApplyField[];
@@ -2783,7 +2820,7 @@ function resolveBrowserUseApplyField(
 }
 
 async function resolveBrowserUseApplyFields(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   sessionId: string,
   fields: readonly BrowserUseUserActionApplyField[],
   signal: AbortSignal,
@@ -2966,7 +3003,7 @@ function validSelectApplyFields(
 }
 
 async function validateBrowserUseApplyValues(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   args: {
     readonly sessionId: string;
     readonly fields: readonly ResolvedBrowserUseUserActionField[];
@@ -3195,7 +3232,7 @@ function browserUseControlWriterFunction(): string {
 }
 
 async function writeBrowserUseControlFields(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   args: {
     readonly sessionId: string;
     readonly fields: readonly ResolvedBrowserUseUserActionField[];
@@ -3323,7 +3360,7 @@ async function writeBrowserUseControlFields(
 }
 
 async function resolveBrowserUseFileControl(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   target: BrowserUseUserActionExactTarget,
   field: BrowserUseUserActionApplyField,
   signal: AbortSignal,
@@ -3453,7 +3490,7 @@ const browserUseFileWriter = `function (original, operation, files) {
   }`;
 
 async function applyBrowserUseFileActionOnSocket(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   target: BrowserUseUserActionExactTarget,
   mutation: { writeStarted: boolean },
   signal: AbortSignal,
@@ -3562,7 +3599,7 @@ async function applyBrowserUseFileActionOnSocket(
 }
 
 async function applyBrowserUseUserActionOnSocket(
-  socket: WebSocket,
+  socket: BrowserUseCdpSocket,
   target: BrowserUseUserActionExactTarget,
   mutation: { writeStarted: boolean },
   signal: AbortSignal,

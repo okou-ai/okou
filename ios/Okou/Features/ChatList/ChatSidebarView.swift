@@ -149,11 +149,10 @@ struct ChatSidebarView: View {
     // the glass buttons.
     .safeAreaBar(edge: .top, spacing: OkouSpace.md) {
       VStack(spacing: 0) {
-        // Sync problems float with the rest of the chat feedback, outside the sliding sidebar.
         header.padding(.horizontal, rowInset)
       }
     }
-    .safeAreaBar(edge: .bottom, spacing: 0) { footer }
+    .safeAreaBar(edge: .bottom, spacing: 0) { footer.chatFeedbackAnchor() }
     // VoiceOver's escape gesture returns to the chat.
     .accessibilityAction(.escape, close)
     .background { chatNumberShortcuts }

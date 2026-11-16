@@ -52,7 +52,8 @@ emit_inventory() {
   mapfile -d '' -t tree_entries < <(
     git -C "$repo_root" ls-tree --full-tree -r -z "$revision" -- \
       .github/scripts/runner/runner-binary-build \
-      crates
+      crates \
+      rust-toolchain.toml
   )
   for record in "${tree_entries[@]}"; do
     [[ "$record" == *$'\t'* ]] || fail "malformed Git tree entry"

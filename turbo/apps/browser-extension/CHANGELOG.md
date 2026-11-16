@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.7](https://github.com/okou-ai/okou/compare/browser-extension-v0.5.6...browser-extension-v0.5.7) (2026-11-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/browser-extension-client bumped to 0.4.5
+
 ## [0.5.6](https://github.com/okou-ai/okou/compare/browser-extension-v0.5.5...browser-extension-v0.5.6) (2026-11-11)
 
 

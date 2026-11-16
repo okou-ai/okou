@@ -513,12 +513,19 @@ final class WorkspaceStore {
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     await historyRefresh
     if awaitingSelectedThread, selectedThreadID == selectedBeforeRefresh {
-      await selectedConversation?.refresh()
+      await selectedConversation?.refresh(waitForCurrent: true)
     }
+    await indicatorsRefresh
+    guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
+    if full || batch.contains(.readCursor), selectedThreadID == selectedBeforeRefresh {
+      // Either independent read can finish first. Confirm read state with both
+      // published results, before waiting on unrelated workspace resources.
+      await selectedConversation?.reconcileReadState()
+    }
+    guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     await accessRefresh
     await modelRefresh
     await projectRefresh
-    await indicatorsRefresh
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     if modelStore.configuration != nil,
       full || selectedConversation?.modelSelection?.needsThreadReadback == true
@@ -628,9 +635,9 @@ final class WorkspaceStore {
       guard !Task.isCancelled, refreshGeneration == generation else { return }
       // Dormant conversations read their durable state when opened.
       if let conversation = conversations[id] {
-        await conversation.refresh()
+        await conversation.refresh(waitForCurrent: true)
       } else if selectedThreadID == id {
-        await conversation(for: id)?.refresh()
+        await conversation(for: id)?.refresh(waitForCurrent: true)
       }
     }
   }
@@ -937,7 +944,7 @@ final class WorkspaceStore {
       message.text.utf16.elementsEqual(selection.text.utf16), let runID = message.runID
     else { return }
     fork = ChatForkStore(
-      selection: selection, sourceRunID: runID,
+      selection: selection, sourceRunID: runID, projectID: conversation.thread.projectId,
       agentID: agentID, commands: commands, models: modelStore, workflowSource: composerWorkflows,
       lifecycleTasks: lifecycleTasks,
       didCreate: { [weak self] thread in self?.list.insertCreated(thread) },

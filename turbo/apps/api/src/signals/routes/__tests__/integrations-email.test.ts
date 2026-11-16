@@ -176,14 +176,6 @@ describe("email model recovery", () => {
   it("links a model failure to the original Web conversation", async () => {
     mockEnv("OKOU_WEB_URL", "https://app.okou.ai");
     const { actor, execution, runId } = await startEmailFileExecution();
-    if (!actor.orgId) {
-      throw new Error("Expected an owned workspace");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.IntegrationModelRecovery]: true },
-    );
     await webhooks.requestAgentComplete(
       {
         runId,
