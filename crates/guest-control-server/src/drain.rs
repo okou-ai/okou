@@ -113,7 +113,7 @@ pub(crate) fn drain_until_eof_or_cancelled(
     let raw_fd = pipe.as_raw_fd();
     // Keep the buffer off the stack so a short-lived drain does not fault in
     // every stack page before reading even a small amount of output.
-    let mut chunk = Box::<[u8; DEFAULT_DRAIN_READ_BYTES]>::new_uninit();
+    let mut chunk = Box::<[u8]>::new_uninit_slice(DEFAULT_DRAIN_READ_BYTES);
     loop {
         if cancel.is_cancelled() {
             break;
@@ -158,24 +158,20 @@ pub(crate) fn drain_until_eof_or_cancelled(
             continue;
         }
 
-        // SAFETY: raw_fd belongs to the owned pipe. read initializes up to
-        // DEFAULT_DRAIN_READ_BYTES bytes in this writable allocation; it never
-        // reads the buffer.
-        let n = unsafe { libc::read(raw_fd, chunk.as_mut_ptr().cast(), DEFAULT_DRAIN_READ_BYTES) };
-        if n == 0 {
+        let initialized = match rustix::io::read(&pipe, chunk.as_mut()) {
+            Ok((initialized, _)) => initialized,
+            Err(error) => {
+                let kind = io::Error::from(error).kind();
+                if matches!(kind, io::ErrorKind::Interrupted | io::ErrorKind::WouldBlock) {
+                    continue;
+                }
+                break;
+            }
+        };
+        if initialized.is_empty() {
             break; // EOF
         }
-        if n < 0 {
-            let kind = io::Error::last_os_error().kind();
-            if matches!(kind, io::ErrorKind::Interrupted | io::ErrorKind::WouldBlock) {
-                continue;
-            }
-            break;
-        }
 
-        // SAFETY: the successful read initialized exactly n bytes. Only that
-        // prefix is exposed, so short reads cannot reveal uninitialized data.
-        let initialized = unsafe { std::slice::from_raw_parts(chunk.as_ptr().cast(), n as usize) };
         on_chunk(initialized);
     }
 
