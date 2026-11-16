@@ -101,6 +101,10 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   `let _ = Task { ... }` cannot discard a Task with a visibly escaping `try` or
   `throw`. The same check covers direct `Task.init`, `Task.immediate`, and
   `Task.detached` construction, qualified spellings, and grouped expressions.
+  Extracting that construction into a same-file helper does not remove the
+  obligation: an explicit discard is also checked when every visible return
+  directly creates such a throwing Task. Returning a shared Task does not
+  transfer its existing owner's obligation to a borrower.
   A complete internal catch handles its `do` body; a filtered catch does not
   establish that all errors are handled. Errors thrown by any catch handler
   still need an owner unless a surrounding internal catch receives them.
@@ -279,11 +283,17 @@ cleanup, nested execution scopes, cross-file aliases, other qualified aliases,
 and generic substitutions keep their own review boundaries. Optional-try checks
 remain scoped to graph callbacks; helper error channels and arbitrary recovery
 effects are not inferred from a function's name.
-Discarded-Task checks inspect only direct native Task construction with an inline
-operation closure and an explicit discard. They separate nested closures, local
-functions and type/accessor bodies from the operation's error scope. Cross-file
-factories, aliases, helper implementations, and whether a retained/transferred
-Task is eventually observed still require review.
+Discarded-Task checks inspect explicit discards of direct native Task
+construction with an inline operation closure, including same-file functions
+whose explicit Task return type and every visible return prove that construction
+with escaping errors. Factory lookup follows lexical scope, argument labels,
+same-owner methods with fixed dispatch, and visible static type members; every
+matching overload must establish the same contract. Shared/retained Task returns,
+unknown receivers, default/variadic parameters, trailing-closure calls,
+cross-file factories, aliases, indirect wrappers, and mixed return contracts
+remain review boundaries. Nested closures, local functions and type/accessor
+bodies keep their own error scope. Whether a retained/transferred Task is
+eventually observed still requires review.
 Task lifecycle checks require an explicit class/actor lifetime boundary (or a
 business destructor) and directly visible Task construction and storage types.
 Inferred/cross-file factories, tuple-held handles, indirect dictionary updates,
