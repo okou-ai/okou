@@ -663,7 +663,7 @@ function appendRunEvents(
       : {
           storageOutputs: [],
         },
-    error: failed ? "Synthetic benchmark failure" : null,
+    failureReason: failed ? "unknown" : null,
     lastEventSequence: args.profile.sequenceMax,
     createdAt: baseCreatedAt,
     startedAt: addMs(baseCreatedAt, 1000),

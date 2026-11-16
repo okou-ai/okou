@@ -317,19 +317,6 @@ function assistantEventInsertInput(
   };
 }
 
-function terminalCallbackErrorMessage(
-  callbackError: string | null | undefined,
-  runError: string | null | undefined,
-): string {
-  if (callbackError !== null && callbackError !== undefined) {
-    return callbackError;
-  }
-  if (runError !== null && runError !== undefined) {
-    return runError;
-  }
-  return "Run failed";
-}
-
 interface CompletedChatOutputLoad extends CompletedRunOutput {
   readonly assistantItemsToInsert: readonly AssistantEventItem[];
 }
@@ -1877,8 +1864,8 @@ const handleFailedChatCallback$ = command(
     args: {
       readonly runId: string;
       readonly chatThread: ChatThreadForRunRow;
-      readonly errorMessage: string;
       readonly failureReason: RunFailureReasonToken | null;
+      readonly lifecycleEvent: "failed" | "cancelled";
       readonly hasCancellationRecoveryState: boolean;
       readonly slackDelivery?: SlackDeliveryTarget;
       readonly feishuDelivery?: FeishuDeliveryTarget;
@@ -1892,16 +1879,12 @@ const handleFailedChatCallback$ = command(
     },
     signal: AbortSignal,
   ): Promise<FailedChatCallbackResult> => {
-    const lifecycleEvent =
-      args.errorMessage.trim().toLowerCase() === "run cancelled"
-        ? "cancelled"
-        : "failed";
+    const lifecycleEvent = args.lifecycleEvent;
     const displayErrorMessage = await set(
       formatRunErrorForRunOwner$,
       {
         chatThreadId: args.chatThread.chatThreadId,
         runId: args.runId,
-        errorMessage: args.errorMessage,
         externalSurface: hasExternalNotificationDeliveryChannel(args),
       },
       signal,
@@ -2663,7 +2646,6 @@ const prepareFailedTerminalChatCallbackWork$ = command(
       readonly runId: string;
       readonly run: ChatRunInfo;
       readonly chatThread: ChatThreadForRunRow;
-      readonly errorMessage: string;
       readonly timing: ChatCallbackPreCreateTimingCollector;
       readonly slackDelivery?: SlackDeliveryTarget;
       readonly feishuDelivery?: FeishuDeliveryTarget;
@@ -2686,6 +2668,8 @@ const prepareFailedTerminalChatCallbackWork$ = command(
             handleFailedChatCallback$,
             {
               ...args,
+              lifecycleEvent:
+                args.run.status === "cancelled" ? "cancelled" : "failed",
               failureReason:
                 args.run.failureReason === "provider_insufficient_credits"
                   ? (publicProviderBalanceFailureReason(
@@ -2720,10 +2704,7 @@ const prepareFailedTerminalChatCallbackWork$ = command(
       return failed;
     }
 
-    const runStatus =
-      args.errorMessage.trim().toLowerCase() === "run cancelled"
-        ? "cancelled"
-        : "failed";
+    const runStatus = args.run.status === "cancelled" ? "cancelled" : "failed";
     const [terminalEvent] = await get(db$)
       .select({ failureReason: chatEvents.failureReason })
       .from(chatEvents)
@@ -3272,7 +3253,7 @@ const processTerminalChatCallback$ = command(
           ...terminalIntegrationDeliveries(args.payload),
           sourceCallbackId,
         };
-        const work = await (callbackStatus === "completed"
+        const work = await (run.status === "completed"
           ? set(prepareCompletedTerminalChatCallbackWork$, preparation, signal)
           : set(
               prepareFailedTerminalChatCallbackWork$,
@@ -3290,10 +3271,6 @@ const processTerminalChatCallback$ = command(
                 emailDelivery: preparation.emailDelivery,
                 agentphoneDelivery: preparation.agentphoneDelivery,
                 sourceCallbackId: preparation.sourceCallbackId,
-                errorMessage: terminalCallbackErrorMessage(
-                  args.callback.error,
-                  run.error,
-                ),
               },
               signal,
             ));

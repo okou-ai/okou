@@ -1,10 +1,13 @@
 import { agentRunColumns } from "../columns/agent-run";
 
-import { pgTable, index, check, boolean } from "drizzle-orm/pg-core";
+import { pgTable, index, check, boolean, text } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 const migrationColumns = {
   ...agentRunColumns(),
+  // Outgoing API artifacts still reference this storage until the verified drain.
+  // Runtime mappings deliberately omit it; physical contraction is #47705.
+  error: text("error"),
   // Retain physical storage until this runtime is independently deployed,
   // preceding API SQL drains and incompatible rollback targets are excluded.
   // Physical contraction is tracked by #40886.

@@ -3796,7 +3796,6 @@ export function createThreadClaimRunObjects(
                 runId: terminal.runId,
                 orgId: terminal.orgId,
                 status: "failed",
-                ...(terminal.error === null ? {} : { error: terminal.error }),
               }
             : {
                 kind: "cancellation-recovery",
@@ -4113,7 +4112,6 @@ function launchRunValues(
     launchSnapshot: args.launchSnapshot,
     officialWorkflowProvenance: args.officialWorkflowProvenance ?? null,
     completedAt: null,
-    error: null,
     ...metadata,
   };
 }

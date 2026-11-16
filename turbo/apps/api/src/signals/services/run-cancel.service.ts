@@ -144,8 +144,6 @@ export const dispatchCancelSideEffects$ = command(
           dispatchRunCallbacks$,
           {
             runId: result.runId,
-            status: "failed",
-            error: "Run cancelled",
             ...(redriveCallbackId !== undefined
               ? { redriveChatCallbackId: redriveCallbackId }
               : {}),

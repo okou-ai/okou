@@ -5,15 +5,12 @@ import {
 import { hasChatEventBodyContent } from "./chat-event-body-blocks.ts";
 import type { EnrichedChatEvent } from "./chat-event.ts";
 import type { ChatEvent, ChatInputEvent } from "./chat-event-types.ts";
-import { formatRunErrorForExternalSurface } from "@okouai/api-contracts/contracts/errors";
-import { normalizeRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import { formatRunFailureForExternalSurface } from "@okouai/api-contracts/contracts/errors";
 
 export function chatEventDisplayError(event: ChatEvent): string | undefined {
   if (event.eventType === "run.failed") {
-    return formatRunErrorForExternalSurface({
-      code: "RUN_FAILED",
-      message: "",
-      failureReason: normalizeRunFailureReason(event.failureReason),
+    return formatRunFailureForExternalSurface({
+      failureReason: event.failureReason,
     });
   }
   if (

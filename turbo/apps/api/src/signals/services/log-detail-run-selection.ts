@@ -5,7 +5,6 @@ export function logDetailRunSelection() {
     appendSystemPrompt: agentRuns.appendSystemPrompt,
     completedAt: agentRuns.completedAt,
     createdAt: agentRuns.createdAt,
-    error: agentRuns.error,
     failureReason: agentRuns.failureReason,
     id: agentRuns.id,
     frameworkSessionId: agentRuns.frameworkSessionId,

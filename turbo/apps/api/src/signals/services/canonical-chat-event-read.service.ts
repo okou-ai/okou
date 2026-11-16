@@ -1,6 +1,9 @@
 import { userMessageDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { chatInputModelSelectionSchema } from "@okouai/api-contracts/contracts/chat-input-model";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
+import { formatRunFailureForExternalSurface } from "@okouai/api-contracts/contracts/errors";
+import { knownRunFailureReasonSchema } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import { projectRunFailureRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { sql, type SQLWrapper } from "drizzle-orm";
 import { array, uuid } from "zod";
@@ -26,9 +29,7 @@ const requiredOfficialWorkflowIdsDecoder = zodDriverValueDecoder(
 export function canonicalChatEventContent(
   payload: SQLWrapper = chatEvents.payload,
 ) {
-  return sql`${payload}->>'content'`.mapWith(
-    nullableDriverValueDecoder(pgTextDecoder),
-  );
+  return canonicalChatEventText(sql`${payload}->>'content'`);
 }
 
 export function canonicalChatEventUserMessage(
@@ -51,7 +52,19 @@ export function parseCanonicalChatEventRequiredOfficialWorkflowIds(
 export function canonicalChatEventError(
   payload: SQLWrapper = chatEvents.payload,
 ) {
-  return sql`${payload}->>'error'`.mapWith(
+  return canonicalChatEventText(sql`${payload}->>'error'`);
+}
+
+function canonicalChatEventText(ordinaryText: SQLWrapper) {
+  const reasons = knownRunFailureReasonSchema.options.map((failureReason) => {
+    return sql`WHEN ${failureReason} THEN ${formatRunFailureForExternalSurface({ failureReason })}`;
+  });
+  return sql`CASE
+    WHEN ${chatEvents.eventType} = 'run.failed' THEN
+      CASE ${chatEvents.failureReason} ${sql.join(reasons, sql` `)}
+        ELSE ${formatRunFailureForExternalSurface({})} END
+    WHEN ${chatEvents.eventType} = 'run.cancelled' THEN 'Run cancelled'
+    ELSE ${ordinaryText} END`.mapWith(
     nullableDriverValueDecoder(pgTextDecoder),
   );
 }
@@ -60,7 +73,7 @@ export function canonicalChatEventError(
 export function canonicalArchivedChatEventContent(
   row: ChatEventRow,
 ): string | null {
-  return row.payload?.content ?? null;
+  return projectRunFailureRow(row).payload?.content ?? null;
 }
 
 export function canonicalArchivedChatEventUserMessage(row: ChatEventRow) {
@@ -73,7 +86,7 @@ export function canonicalArchivedChatEventUserMessage(row: ChatEventRow) {
 export function canonicalArchivedChatEventError(
   row: ChatEventRow,
 ): string | null {
-  return row.payload?.error ?? null;
+  return projectRunFailureRow(row).payload?.error ?? null;
 }
 
 /** Private immutable model decision; NULL identifies an older queued input. */

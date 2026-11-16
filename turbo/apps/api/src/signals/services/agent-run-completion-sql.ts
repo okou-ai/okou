@@ -1,4 +1,5 @@
 import { nativeContinuationSchema } from "@okouai/api-contracts/contracts/runners";
+import { normalizeRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
   runResultSchema,
   runStatusSchema,
@@ -37,7 +38,7 @@ const completionRunColumns = Object.freeze({
   userId: agentRuns.userId,
   chatThreadId: agentRuns.chatThreadId,
   status: agentRuns.status,
-  error: agentRuns.error,
+  failureReason: agentRuns.failureReason,
   cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
   triggerSource: agentRuns.triggerSource,
   launchSnapshot: agentRuns.launchSnapshot,
@@ -166,7 +167,6 @@ function outputDecision(input: CompletionPublicationInput) {
 function mutationPlan(
   input: CompletionPublicationInput,
   terminalStatus: "completed" | "failed",
-  terminalError: string | undefined,
 ) {
   const output = input.body.completion;
   const eligible = sql`d.decision = 'ready' AND d.status <> 'timeout'`;
@@ -184,8 +184,7 @@ function mutationPlan(
           : sql`GREATEST(COALESCE(${agentRuns.lastEventSequence},-1),${input.body.lastEventSequence})`,
       status: sql`CASE WHEN ${active} THEN ${terminalStatus} ELSE ${agentRuns.status} END`,
       completedAt: sql`CASE WHEN ${active} THEN ${sql.param(input.at, agentRuns.completedAt)}::timestamp ELSE ${agentRuns.completedAt} END`,
-      error: sql`CASE WHEN ${active} AND ${terminalError !== undefined} THEN ${terminalError ?? null} ELSE ${agentRuns.error} END`,
-      failureReason: sql`CASE WHEN ${active} THEN ${input.body.exitCode === 0 ? null : (input.body.failureReason ?? null)} ELSE ${agentRuns.failureReason} END`,
+      failureReason: sql`CASE WHEN ${active} THEN ${terminalStatus === "failed" ? normalizeRunFailureReason(input.body.exitCode !== 0 ? input.body.failureReason : undefined) : null} ELSE ${agentRuns.failureReason} END`,
       sandboxId:
         input.body.sandboxId === undefined
           ? sql`${agentRuns.sandboxId}`
@@ -284,16 +283,9 @@ export function completionPublicationPlan(input: CompletionPublicationInput) {
   const output = input.body.completion;
   const terminalStatus =
     input.body.exitCode === 0 && output !== undefined ? "completed" : "failed";
-  const terminalError =
-    input.body.exitCode !== 0
-      ? input.body.error?.trim() || "Run failed without error message"
-      : output === undefined
-        ? "Run completion outputs were not provided"
-        : undefined;
   const cleanup = terminalCleanup();
   return {
     terminalStatus,
-    terminalError,
     ctes: [
       locked,
       qb.$with("completion_output_facts", {}).as(outputFacts(input)),
@@ -307,7 +299,7 @@ export function completionPublicationPlan(input: CompletionPublicationInput) {
           AND ${output !== undefined} AND NOT COALESCE(d.exact_retry,false) FOR UPDATE OF owner`),
       qb
         .$with("completion_changed_run", {})
-        .as(mutationPlan(input, terminalStatus, terminalError)),
+        .as(mutationPlan(input, terminalStatus)),
       qb.$with("completion_native_thread", {}).as(nativeThreadPublication()),
       qb
         .$with("completion_terminal_runs", {})
@@ -333,7 +325,7 @@ export function completionPublicationPlan(input: CompletionPublicationInput) {
     fields: {
       run: {
         id: locked.id,
-        error: locked.error,
+        failureReason: locked.failureReason,
         orgId: locked.orgId,
         status: sql`${locked.status}`.mapWith(
           zodDriverValueDecoder(runStatusSchema),

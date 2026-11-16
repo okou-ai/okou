@@ -1,5 +1,13 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import { formatRunBalanceError } from "@okouai/api-contracts/contracts/run-balance-errors";
+import {
+  formatRunBalanceError,
+  publicProviderBalanceFailureReason,
+} from "@okouai/api-contracts/contracts/run-balance-errors";
+import {
+  normalizeRunFailureReason,
+  type KnownRunFailureReason,
+} from "@okouai/api-contracts/contracts/run-failure-reasons";
+import { runFailureMessage } from "../../lib/run-failure";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
@@ -59,9 +67,7 @@ type TerminalCallbackStatus = "completed" | "failed";
 
 interface DispatchRunCallbacksInput {
   readonly runId: string;
-  readonly status: TerminalCallbackStatus;
   readonly result?: Record<string, unknown>;
-  readonly error?: string;
   readonly redriveChatCallbackId?: string;
   readonly skipChatCallback?: boolean;
 }
@@ -72,6 +78,8 @@ interface DispatchSingleCallbackInput {
   readonly status: TerminalCallbackStatus;
   readonly result?: Record<string, unknown>;
   readonly error?: string;
+  readonly runStatus: string;
+  readonly failureReason: KnownRunFailureReason | null;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly balanceContext: Parameters<typeof formatRunBalanceError>[0];
 }
@@ -319,19 +327,13 @@ export const dispatchRunCallbacks$ = command(
     input: DispatchRunCallbacksInput,
     signal: AbortSignal,
   ): Promise<DispatchResult[]> => {
-    const {
-      runId,
-      status,
-      result,
-      error,
-      redriveChatCallbackId,
-      skipChatCallback,
-    } = input;
+    const { runId, result, redriveChatCallbackId, skipChatCallback } = input;
     const db = get(db$);
     const [run] = await db
       .select({
         orgId: agentRuns.orgId,
         userId: agentRuns.userId,
+        status: agentRuns.status,
         failureReason: agentRuns.failureReason,
         modelProvider: agentRuns.modelProvider,
       })
@@ -342,6 +344,16 @@ export const dispatchRunCallbacks$ = command(
     if (!run) {
       return [];
     }
+    const status = run.status === "completed" ? "completed" : "failed";
+    const failureReason =
+      run.status === "failed" || run.status === "timeout"
+        ? normalizeRunFailureReason(run.failureReason)
+        : null;
+    const error = runFailureMessage(
+      run.status,
+      failureReason,
+      run.modelProvider,
+    );
     const featureSwitchContext = await set(
       loadUserFeatureSwitchContext$,
       run.orgId,
@@ -407,8 +419,14 @@ export const dispatchRunCallbacks$ = command(
               result,
               error,
               featureSwitchContext,
+              runStatus: run.status,
+              failureReason:
+                failureReason === "provider_insufficient_credits"
+                  ? (publicProviderBalanceFailureReason(run.modelProvider) ??
+                    "unknown")
+                  : failureReason,
               balanceContext: {
-                failureReason: run.failureReason,
+                failureReason,
                 modelProvider: run.modelProvider,
               },
             },
@@ -480,6 +498,8 @@ const dispatchHttpCallback$ = command(
       callbackId: callback.id,
       runId,
       status,
+      runStatus: input.runStatus,
+      failureReason: input.failureReason,
       result,
       error:
         error === undefined

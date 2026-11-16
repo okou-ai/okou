@@ -2,7 +2,10 @@ import {
   chatEventRowSchema,
   type ChatEventRow,
 } from "@okouai/api-contracts/contracts/chat-event-rows";
-import { chatEventFromRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
+import {
+  chatEventFromRow,
+  projectRunFailureRow,
+} from "@okouai/api-contracts/contracts/chat-event-row-projection";
 import { chatEventResponse } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { safeJsonParse, safeSync } from "../utils";
@@ -42,7 +45,7 @@ export function decodeChatEventSnapshotBody(
     if (parsed === undefined) {
       throw new Error("Chat Event snapshot contains invalid JSON");
     }
-    return chatEventRowSchema.parse(parsed);
+    return projectRunFailureRow(chatEventRowSchema.parse(parsed));
   });
 }
 

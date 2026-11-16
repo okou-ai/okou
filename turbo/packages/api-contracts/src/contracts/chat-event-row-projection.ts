@@ -1,4 +1,6 @@
 import type { ChatEventRow } from "./chat-event-rows";
+import { formatRunFailureForExternalSurface } from "./errors";
+import { normalizeRunFailureReason } from "./run-failure-reasons";
 import type { ChatEventType } from "./chat-events";
 import type {
   ChatEvent,
@@ -19,14 +21,44 @@ function requiredRowField<T>(
 
 /**
  * Projects one decoded canonical row into the public ChatEvent response shape
- * without rewriting its text or re-validating its payload documents. The API
+ * preserving message text and generating Run failure copy from structured facts.
+ * The API
  * validates user-message and usage documents when it writes them, and snapshot
  * publication additionally checks projected rows with `chatEventResponse`.
  * Callers that need a validated public event apply that check themselves. A
  * control.interrupt target is emitted as interruptsRunId, never as run
  * ownership.
  */
-export function chatEventFromRow(row: ChatEventRow): ChatEvent {
+export function projectRunFailureRow(row: ChatEventRow): ChatEventRow {
+  if (row.eventType === "run.failed") {
+    const failureReason = normalizeRunFailureReason(row.failureReason);
+    const message = formatRunFailureForExternalSurface({ failureReason });
+    return {
+      ...row,
+      failureReason,
+      payload: {
+        ...row.payload,
+        content: message,
+        error: message,
+      },
+    };
+  }
+  if (row.eventType === "run.cancelled") {
+    return {
+      ...row,
+      failureReason: undefined,
+      payload: {
+        ...row.payload,
+        content: "Run cancelled",
+        error: "Run cancelled",
+      },
+    };
+  }
+  return row;
+}
+
+export function chatEventFromRow(source: ChatEventRow): ChatEvent {
+  const row = projectRunFailureRow(source);
   const payload = row.payload;
   const content = payload?.content ?? null;
   const base = {

@@ -2,6 +2,7 @@ import {
   chatEventRowSchema,
   type ChatEventRow,
 } from "@okouai/api-contracts/contracts/chat-event-rows";
+import { projectRunFailureRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
 import {
   CURRENT_CHAT_EVENT_SCHEMA_VERSION,
   type ChatEventCursor,
@@ -170,10 +171,10 @@ export function snapshotArchivePageReadPlan(args: {
   };
 }
 
-export const ARCHIVE_ROW_CONTRACT_REVISION = 1;
+export const ARCHIVE_ROW_CONTRACT_REVISION = 2;
 const ARCHIVE_OBJECT_KEY_PREFIX_PATTERN = "^chat-events/[0-9a-f-]{36}/[0-9]+";
 const ARCHIVE_OBJECT_KEY_SUFFIX_PATTERN = "-[0-9a-f]{64}[.]ndjson[.]gz$";
-export const LEGACY_ARCHIVE_OBJECT_KEY_PATTERN = `${ARCHIVE_OBJECT_KEY_PREFIX_PATTERN}${ARCHIVE_OBJECT_KEY_SUFFIX_PATTERN}`;
+export const LEGACY_ARCHIVE_OBJECT_KEY_PATTERN = `${ARCHIVE_OBJECT_KEY_PREFIX_PATTERN}(?:-r1)?${ARCHIVE_OBJECT_KEY_SUFFIX_PATTERN}`;
 const CURRENT_ARCHIVE_OBJECT_KEY_PATTERN = `${ARCHIVE_OBJECT_KEY_PREFIX_PATTERN}-r${ARCHIVE_ROW_CONTRACT_REVISION.toString()}${ARCHIVE_OBJECT_KEY_SUFFIX_PATTERN}`;
 export function isCurrentChatEventSnapshotObjectKey(
   objectKey: string,
@@ -188,21 +189,25 @@ export function isLegacyChatEventSnapshotObjectKey(objectKey: string): boolean {
 export function chatEventRowFromDbRow(
   row: Pick<typeof chatEvents.$inferSelect, keyof typeof chatEventRowSelection>,
 ): ChatEventRow {
-  return chatEventRowSchema.parse({
-    id: row.id,
-    chatThreadId: row.chatThreadId,
-    runId: row.runId,
-    revokesEventId: row.revokesEventId,
-    eventType: row.eventType,
-    payload: row.payload,
-    ...(row.failureReason === null ? {} : { failureReason: row.failureReason }),
-    contextType: row.contextType,
-    contextId: row.contextId,
-    runEventSequenceNumber: row.runEventSequenceNumber,
-    runEventId: row.runEventId,
-    seqId: row.seqId,
-    createdAt: row.createdAt.toISOString(),
-  });
+  return projectRunFailureRow(
+    chatEventRowSchema.parse({
+      id: row.id,
+      chatThreadId: row.chatThreadId,
+      runId: row.runId,
+      revokesEventId: row.revokesEventId,
+      eventType: row.eventType,
+      payload: row.payload,
+      ...(row.failureReason === null
+        ? {}
+        : { failureReason: row.failureReason }),
+      contextType: row.contextType,
+      contextId: row.contextId,
+      runEventSequenceNumber: row.runEventSequenceNumber,
+      runEventId: row.runEventId,
+      seqId: row.seqId,
+      createdAt: row.createdAt.toISOString(),
+    }),
+  );
 }
 
 type ChatEventRowsPage =

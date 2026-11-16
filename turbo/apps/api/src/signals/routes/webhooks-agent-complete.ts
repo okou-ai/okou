@@ -75,14 +75,7 @@ const completeAgentRunRoute$ = command(
 
     if (result.status === 200 && result.sideEffects?.kind === "terminal") {
       const requiredResult = await settle(
-        set(
-          bodyResult.requiredChatCallback.dispatch$,
-          {
-            status: result.sideEffects.status,
-            error: result.sideEffects.error,
-          },
-          signal,
-        ),
+        set(bodyResult.requiredChatCallback.dispatch$, signal),
       );
       signal.throwIfAborted();
       const required: RequiredTerminalChatCallbackResult = requiredResult.ok

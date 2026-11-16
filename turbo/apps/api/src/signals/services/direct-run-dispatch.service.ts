@@ -161,7 +161,7 @@ export function createDirectRunDispatcher(
       if (!prepared.ok) {
         const terminal = await set(
           failUnacceptedRun$,
-          failureInput(input, null, "Run execution preparation failed"),
+          failureInput(input, null),
           signal,
         );
         return {
@@ -185,17 +185,13 @@ function remainingDelivery(window: DeliveryWindow): number {
     window.monotonicDeadline - performance.now(),
   );
 }
-function failureInput(
-  input: AdmittedRunLaunch,
-  owner: DirectRunTarget | null,
-  error: string,
-) {
+function failureInput(input: AdmittedRunLaunch, owner: DirectRunTarget | null) {
   return {
     runId: input.run.id,
     userId: input.run.userId,
     orgId: input.run.orgId,
     owner,
-    error,
+    failureReason: "unknown" as const,
   };
 }
 
@@ -377,7 +373,7 @@ const dispatchPreparedRun$ = command(
         if (delivery === "stopped") {
           const terminal = await set(
             failUnacceptedRun$,
-            failureInput(input, owner, reason),
+            failureInput(input, owner),
             signal,
           );
           return { kind: "stopped" as const, terminal, failure: undefined };
@@ -385,7 +381,7 @@ const dispatchPreparedRun$ = command(
       }
       const terminal = await set(
         failUnacceptedRun$,
-        failureInput(input, owner, reason),
+        failureInput(input, owner),
         signal,
       );
       return { kind: "failed" as const, terminal, failure: undefined };
@@ -399,7 +395,7 @@ const dispatchPreparedRun$ = command(
     }
     const terminal = await set(
       failUnacceptedRun$,
-      failureInput(input, owner, "Run delivery failed"),
+      failureInput(input, owner),
       signal,
     );
     return {

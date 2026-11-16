@@ -1,4 +1,9 @@
-import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import {
+  normalizeRunFailureReason,
+  type RunFailureReasonToken,
+} from "@okouai/api-contracts/contracts/run-failure-reasons";
+import { runFailureMessage } from "../../lib/run-failure";
+import { formatRunFailureForExternalSurface } from "@okouai/api-contracts/contracts/errors";
 import {
   runStatusSchema,
   type RunResult,
@@ -52,7 +57,6 @@ export interface TerminalSideEffectsInput {
   readonly runId: string;
   readonly orgId: string;
   readonly status: TerminalStatus;
-  readonly error?: string;
   readonly deliveryNotification?: {
     readonly userId: string;
     readonly chatThreadId: string;
@@ -105,7 +109,7 @@ type CompletionResponse =
 interface RunRecord extends AgentRunFailureLogSnapshot {
   readonly id: string;
   readonly cancellationRecoveryCompleted: boolean | null;
-  readonly error: string | null;
+  readonly failureReason: RunFailureReasonToken | null;
   readonly orgId: string;
   readonly status: RunStatus;
   readonly userId: string;
@@ -174,7 +178,7 @@ function createInitialCompletionRun(runId: string, userId: string) {
     const [run] = await db
       .select({
         id: agentRuns.id,
-        error: agentRuns.error,
+        failureReason: agentRuns.failureReason,
         orgId: agentRuns.orgId,
         status: agentRuns.status,
         userId: agentRuns.userId,
@@ -206,15 +210,16 @@ function prepareCompletion(
     return {
       status: "failed",
       result,
-      error: input.body.error?.trim() || "Run failed without error message",
-      failureReason: input.body.failureReason,
+      error: runFailureMessage("failed", input.body.failureReason),
+      failureReason: normalizeRunFailureReason(input.body.failureReason),
       failureKind: "reported",
     };
   }
   if (!result) {
     return {
       status: "failed",
-      error: "Run completion outputs were not provided",
+      error: runFailureMessage("failed", "unknown"),
+      failureReason: "unknown",
       failureKind: "missing-outputs",
     };
   }
@@ -235,7 +240,9 @@ function persistedTerminalError(
     return {};
   }
   return {
-    transitionError: run.error?.trim() || "Run failed without error message",
+    transitionError: formatRunFailureForExternalSurface({
+      failureReason: run.failureReason,
+    }),
   };
 }
 
@@ -306,9 +313,6 @@ function completionResponse(
       runId,
       orgId: commit.run.orgId,
       status: commit.responseStatus,
-      ...(commit.transitionError !== undefined
-        ? { error: commit.transitionError }
-        : {}),
       ...(commit.run.chatThreadId !== null
         ? {
             deliveryNotification: {
@@ -380,15 +384,11 @@ const dispatchTerminalCompleteSideEffects$ = command(
       });
       signal.throwIfAborted();
     }
-    const callbackStatus =
-      input.status === "completed" ? "completed" : "failed";
     await tapError(
       set(
         dispatchRunCallbacks$,
         {
           runId: input.runId,
-          status: callbackStatus,
-          error: input.error,
           skipChatCallback: input.skipChatCallback,
         },
         signal,

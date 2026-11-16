@@ -4,7 +4,11 @@ import {
   CHAT_EVENT_TYPES,
   type ChatEventType,
 } from "../chat-events";
-import { chatEventFromRow } from "../chat-event-row-projection";
+import {
+  chatEventFromRow,
+  projectRunFailureRow,
+} from "../chat-event-row-projection";
+import { CHAT_RUN_TRANSIENT_ERROR_MESSAGE } from "../errors";
 import { chatEventRowSchema, type ChatEventRow } from "../chat-event-rows";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../chat-event-schema-version";
 import {
@@ -212,6 +216,36 @@ describe("Chat Event versioned read contract", () => {
 });
 
 describe("canonical row projection preserves the public ChatEvent contract", () => {
+  it("projects retained failure text without mutating archived rows or unrelated output", () => {
+    const diagnostic =
+      "Private provider response https://private.invalid/token";
+    const row = canonicalRow({
+      eventType: "run.failed",
+      runId: "00000000-0000-4000-8000-000000000013",
+      failureReason: "future_reason",
+      payload: { content: diagnostic, error: diagnostic },
+    });
+    const original = JSON.stringify(row);
+    const projected = projectRunFailureRow(row);
+    expect(projected).toMatchObject({
+      id: row.id,
+      runId: row.runId,
+      seqId: row.seqId,
+      createdAt: row.createdAt,
+      failureReason: "unknown",
+      payload: {
+        content: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+        error: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+      },
+    });
+    expect(JSON.stringify(row)).toBe(original);
+    const output = canonicalRow({
+      eventType: "output.error",
+      payload: { content: diagnostic, error: diagnostic },
+    });
+    expect(projectRunFailureRow(output)).toEqual(output);
+  });
+
   it("serializes and projects every event type from canonical fields", () => {
     expect(
       CHAT_EVENT_TYPES.map((eventType) => {
@@ -220,7 +254,13 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
         ) as unknown;
         const row = chatEventRowSchema.parse(wireRow);
         const projected = chatEventFromRow(row);
-        expect(projected.content).toBe(row.payload?.content ?? null);
+        expect(projected.content).toBe(
+          eventType === "run.failed"
+            ? CHAT_RUN_TRANSIENT_ERROR_MESSAGE
+            : eventType === "run.cancelled"
+              ? "Run cancelled"
+              : (row.payload?.content ?? null),
+        );
         return projected.eventType;
       }),
     ).toStrictEqual(CHAT_EVENT_TYPES);
@@ -336,13 +376,14 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     expect(failed).toMatchObject({
       eventType: "run.failed",
       runId,
-      content: "run failed",
-      error: "runner error",
+      content: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+      error: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+      failureReason: "unknown",
       runLifecycleEvent: "failed",
     });
   });
 
-  it("accepts an optional failure reason only on failed runs", () => {
+  it("normalizes optional historical failure reasons while preserving event identity", () => {
     const runId = "00000000-0000-4000-8000-000000000013";
     const withoutReason = chatEventFromRow(
       canonicalRow({
@@ -354,13 +395,14 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     expect(JSON.parse(JSON.stringify(withoutReason))).toStrictEqual({
       id: "00000000-0000-4000-8000-000000000003",
       threadId: "00000000-0000-4000-8000-000000000002",
-      content: null,
+      content: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
       runId,
       seqId: 2,
       sequenceNumber: null,
       createdAt: CREATED_AT,
       eventType: "run.failed",
-      error: "runner error",
+      error: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+      failureReason: "unknown",
       runLifecycleEvent: "failed",
     });
 
@@ -375,7 +417,7 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     expect(chatEventSchema.parse(withReason)).toMatchObject({
       eventType: "run.failed",
       runId,
-      failureReason: "future_reason",
+      failureReason: "unknown",
     });
 
     expect(

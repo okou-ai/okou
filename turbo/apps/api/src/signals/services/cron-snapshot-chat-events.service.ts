@@ -522,7 +522,10 @@ async function decodeSnapshotPrefix(
   });
   const terminal = decodedRows.at(-1);
   return {
-    body: decompressed,
+    // Upgrade by publishing a new immutable object; never change stored bytes.
+    body: isCurrentChatEventSnapshotObjectKey(args.source.objectKey)
+      ? decompressed
+      : Buffer.concat(decodedRows.map(encodeArchiveLine)),
     terminalSeqId: terminal?.seqId ?? 0,
     terminalEventId: terminal?.id ?? null,
   };

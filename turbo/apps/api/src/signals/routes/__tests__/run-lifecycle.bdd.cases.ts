@@ -14,6 +14,7 @@ import {
 } from "./helpers/public-runner-memory";
 
 import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
+import { formatRunFailureForExternalSurface } from "@okouai/api-contracts/contracts/errors";
 import { usageMembersRoutes } from "../usage-members";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { VERTEX_VOICE_URL, vertexVoiceResponse } from "./helpers/google-voice";
@@ -10662,6 +10663,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         async function completePublicFailure(args: {
           readonly failureReason: RunFailureReasonToken;
           readonly modelProvider?: "claude-code-oauth-token";
+          readonly expectedFailureReason?: KnownRunFailureReason;
+          readonly legacyError?: string;
         }) {
           const api = createRunsApi(context);
           const chat = createChatFilesBddApi(context);
@@ -10676,10 +10679,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           await api.heartbeatRunner(runnerGroup);
           const execution = await api.executionInput(run.runId);
+          const expectedFailureReason =
+            args.expectedFailureReason ?? args.failureReason;
           const error =
-            args.failureReason === "unknown"
+            args.legacyError ??
+            (args.failureReason === "unknown"
               ? undefined
-              : `provider failure for ${run.runId}`;
+              : `provider failure for ${run.runId}`);
           const completed = await webhooks.requestAgentComplete(
             {
               runId: run.runId,
@@ -10697,7 +10703,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await flushWaitUntilForTest();
           await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
             status: "failed",
-            ...(error === undefined ? {} : { error }),
+            error: formatRunFailureForExternalSurface({
+              failureReason: expectedFailureReason,
+              modelProviderType: modelProvider,
+            }),
             source: {
               providerType: modelProvider,
               model: selectedModel,
@@ -10712,7 +10721,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               return event.runId === run.runId;
             });
           expect(failures).toHaveLength(1);
-          expect(failures[0]?.failureReason).toBe(args.failureReason);
+          expect(failures[0]?.failureReason).toBe(expectedFailureReason);
           const raw = await chat.listThreadEventRows(actor, run.threadId);
           const rawFailures = raw.filter((event) => {
             return (
@@ -10720,7 +10729,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             );
           });
           expect(rawFailures).toHaveLength(1);
-          expect(rawFailures[0]?.failureReason).toBe(args.failureReason);
+          expect(rawFailures[0]?.failureReason).toBe(expectedFailureReason);
           return { failures };
         }
 
@@ -10733,6 +10742,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             expect(failures[0]?.failureReason).toBe(failureReason);
           },
         );
+
+        it("normalizes a future reason and ignores contradictory legacy cancellation diagnostics", async () => {
+          await completePublicFailure({
+            failureReason: "future_reason",
+            expectedFailureReason: "unknown",
+            legacyError:
+              "Run cancelled; You've hit your usage limit. https://private.invalid/token",
+          });
+        });
 
         it.each(["claude-code-oauth-token"] as const)(
           "preserves failed completion when sandbox root storage fills on %s",
