@@ -1,6 +1,7 @@
 // API response types (matching app API contracts)
 import type {
   LogStatus,
+  LogDetail as ApiLogDetail,
   TriggerSource,
 } from "@okouai/api-contracts/contracts/logs";
 import type {
@@ -122,7 +123,7 @@ export interface LogDetail {
   status: LogStatus;
   prompt: string;
   appendSystemPrompt: string | null;
-  error: string | null;
+  failureReason?: ApiLogDetail["failureReason"];
   createdAt: string; // ISO timestamp
   startedAt: string | null;
   completedAt: string | null;

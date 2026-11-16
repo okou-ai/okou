@@ -1225,7 +1225,6 @@ test.each([
           ? {
               ...event,
               runLifecycleEvent: "cancelled",
-              error: "Run cancelled",
             }
           : event;
       },

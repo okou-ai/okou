@@ -229,7 +229,6 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
     expect(chatEventFromRow(row)).toMatchObject({
       failureReason: "provider_insufficient_credits",
       content: "Your connected subscription account has insufficient balance.",
-      error: "Your connected subscription account has insufficient balance.",
     });
   });
 
@@ -252,10 +251,11 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
       failureReason: "unknown",
       payload: {
         content: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
-        error: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
       },
     });
     expect(JSON.stringify(row)).toBe(original);
+    expect(projected.payload).not.toHaveProperty("error");
+    expect(chatEventFromRow(row)).not.toHaveProperty("error");
     const output = canonicalRow({
       eventType: "output.error",
       payload: { content: diagnostic, error: diagnostic },
@@ -394,7 +394,6 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
       eventType: "run.failed",
       runId,
       content: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
-      error: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
       failureReason: "unknown",
       runLifecycleEvent: "failed",
     });
@@ -418,7 +417,6 @@ describe("canonical row projection preserves the public ChatEvent contract", () 
       sequenceNumber: null,
       createdAt: CREATED_AT,
       eventType: "run.failed",
-      error: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
       failureReason: "unknown",
       runLifecycleEvent: "failed",
     });

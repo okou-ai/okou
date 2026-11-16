@@ -43,7 +43,6 @@ function logDetail(
     status,
     prompt: "Inspect runner attribution",
     appendSystemPrompt: null,
-    error: null,
     createdAt: "2026-08-26T10:00:00Z",
     startedAt: status === "queued" ? null : "2026-08-26T10:00:01Z",
     completedAt: status === "completed" ? "2026-08-26T10:00:10Z" : null,

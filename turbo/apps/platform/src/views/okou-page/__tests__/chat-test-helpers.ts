@@ -956,7 +956,7 @@ export function mockChatLifecycle(
       status: runStatus,
       prompt: "Hello",
       appendSystemPrompt: null,
-      error: runError,
+      failureReason: runStatus === "failed" ? "unknown" : undefined,
       createdAt: "2026-03-10T00:00:00Z",
       startedAt: "2026-03-10T00:00:01Z",
       completedAt: null,

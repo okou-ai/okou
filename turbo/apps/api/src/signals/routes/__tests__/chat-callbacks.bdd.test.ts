@@ -1630,7 +1630,7 @@ describe("CHAT-02: completed chat callback", () => {
     expect(events.events).toContainEqual(
       expect.objectContaining({
         eventType: "run.failed",
-        error: "insufficient_credits",
+        failureReason: "insufficient_credits",
         content: "insufficient_credits",
       }),
     );
@@ -3188,16 +3188,14 @@ describe("CHAT-02: failed chat callbacks", () => {
       ).toMatchObject([
         {
           content: scenario.expected,
-          error: scenario.expected,
           ...(scenario.publicReason
             ? { failureReason: scenario.publicReason }
             : {}),
         },
       ]);
-      const detailError = scenario.expected;
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: "failed",
-        error: detailError,
+        failureReason: scenario.publicReason ?? "unknown",
       });
       const detail = await createRunReadsApi(context).requestReadLogById(
         actor,
@@ -3206,7 +3204,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       );
       expect(detail.body).toMatchObject({
         status: "failed",
-        error: detailError,
+        failureReason: scenario.publicReason ?? "unknown",
       });
       expect(
         userMessages(messages.events).filter((event) => {
@@ -3632,7 +3630,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       if (!failure || failure.eventType !== "run.failed") {
         throw new Error("Expected the subscription run failure");
       }
-      expect(failure.error).toBe(
+      expect(failure.content).toBe(
         structured
           ? CHAT_RUN_USAGE_LIMIT_MESSAGE
           : CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
@@ -3823,7 +3821,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       });
       return runIds.every((runId) => {
         return failed.some((message) => {
-          return message.runId === runId && message.error !== undefined;
+          return message.runId === runId && message.content !== undefined;
         });
       });
     });
@@ -3850,7 +3848,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       runIds.map((runId) => {
         return failed.find((message) => {
           return message.runId === runId;
-        })?.error;
+        })?.content;
       }),
     ).toStrictEqual(
       rounds.map((round) => {
@@ -3911,7 +3909,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       })?.payload,
     ).toStrictEqual({
       content: "Oops, something went wrong. Please try again later.",
-      error: "Oops, something went wrong. Please try again later.",
     });
 
     const codexAccessProgramRunId = runIds.at(-1);
@@ -3922,7 +3919,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       api.readRun(actor, codexAccessProgramRunId),
     ).resolves.toMatchObject({
       status: "failed",
-      error: CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
+      failureReason: "codex_access_program_unavailable",
     });
 
     expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(
@@ -3965,13 +3962,13 @@ describe("CHAT-02: failed chat callbacks", () => {
       (messages) => {
         return lifecycleMarkers(messages, run.runId, "failed").some(
           (message) => {
-            return message.error === "insufficient_credits";
+            return message.failureReason === "insufficient_credits";
           },
         );
       },
     );
     const marker = lifecycleMarkers(page.events, run.runId, "failed")[0];
-    expect(marker?.error).toBe("insufficient_credits");
+    expect(marker?.failureReason).toBe("insufficient_credits");
     expect(marker?.content).toBe("insufficient_credits");
   }, 90_000);
 
@@ -4005,11 +4002,12 @@ describe("CHAT-02: failed chat callbacks", () => {
       },
     );
     const marker = lifecycleMarkers(page.events, run.runId, "failed")[0];
-    expect(marker?.error).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
-    expect(marker?.content).toBe(marker?.error);
+    expect(marker?.content).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
+    expect(marker).not.toHaveProperty("error");
 
     const rawRun = await api.readRun(actor, run.runId);
-    expect(rawRun.error).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
+    expect(rawRun.failureReason).toBe("provider_overloaded");
+    expect(rawRun).not.toHaveProperty("error");
   }, 90_000);
 
   it.each([
@@ -4017,25 +4015,20 @@ describe("CHAT-02: failed chat callbacks", () => {
       name: "legacy diagnostic",
       reason: undefined,
       expectedReason: "unknown",
-      detail: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
     },
     {
       name: "invalid credentials",
       reason: "invalid_credentials",
       expectedReason: "invalid_credentials",
-      detail:
-        "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.",
     },
     {
       name: "reconnection required",
       reason: "reconnect_required",
       expectedReason: "reconnect_required",
-      detail:
-        "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.",
     },
   ] as const)(
     "preserves credential recovery state for $name without parsing diagnostic text",
-    async ({ reason, expectedReason, detail }) => {
+    async ({ reason, expectedReason }) => {
       const fixture = await entitledChatActor();
       await configureClaudeCodeSubscriptionProvider(fixture);
       const run = await startChatRun(fixture.actor, {
@@ -4058,14 +4051,13 @@ describe("CHAT-02: failed chat callbacks", () => {
         {
           failureReason: expectedReason,
           content: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
-          error: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
         },
       ]);
       await expect(
         api.readRun(fixture.actor, run.runId),
       ).resolves.toMatchObject({
         status: "failed",
-        error: detail,
+        failureReason: expectedReason,
         source: { providerType: "claude-code-oauth-token" },
       });
       if (reason === "reconnect_required") {

@@ -33,7 +33,7 @@ function makeLogDetail(
     status,
     prompt: "",
     appendSystemPrompt: null,
-    error: status === "failed" ? "Run failed" : null,
+    failureReason: status === "failed" ? "unknown" : undefined,
     createdAt: CREATED_AT,
     startedAt: CREATED_AT,
     completedAt: status === "running" ? null : "2026-06-26T02:31:30Z",

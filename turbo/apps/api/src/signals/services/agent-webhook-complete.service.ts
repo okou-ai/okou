@@ -2,8 +2,6 @@ import {
   normalizeRunFailureReason,
   type RunFailureReasonToken,
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import { runFailureMessage } from "../../lib/run-failure";
-import { formatRunFailureForExternalSurface } from "@okouai/api-contracts/contracts/errors";
 import {
   runStatusSchema,
   type RunResult,
@@ -121,7 +119,6 @@ interface RunRecord extends AgentRunFailureLogSnapshot {
 interface PreparedCompletion {
   readonly status: TerminalStatus;
   readonly result?: RunResult;
-  readonly error?: string;
   readonly failureReason?: RunFailureReasonToken;
   readonly failureKind?: "missing-outputs" | "reported";
 }
@@ -136,7 +133,6 @@ interface CompletionCommit {
   readonly run: RunRecord;
   readonly transitioned: boolean;
   readonly responseStatus: TerminalStatus;
-  readonly transitionError?: string;
   readonly transitionFailureKind?: PreparedCompletion["failureKind"];
   readonly transitionFailureReason?: RunFailureReasonToken;
   readonly finalization: ActiveInputFinalization;
@@ -159,14 +155,13 @@ function logAgentRunCompletionOutcome(
   if (commit.transitionFailureKind === "missing-outputs") {
     L.warn("Run failed because completion outputs were not provided", {
       runId: input.body.runId,
-      error: commit.transitionError,
+      failureReason: commit.transitionFailureReason,
     });
     return;
   }
   logAgentRunFailure({
     runId: input.body.runId,
     exitCode: input.body.exitCode,
-    error: commit.transitionError,
     failureReason: commit.transitionFailureReason,
     run: commit.run,
   });
@@ -210,7 +205,6 @@ function prepareCompletion(
     return {
       status: "failed",
       result,
-      error: runFailureMessage("failed", input.body.failureReason),
       failureReason: normalizeRunFailureReason(input.body.failureReason),
       failureKind: "reported",
     };
@@ -218,7 +212,6 @@ function prepareCompletion(
   if (!result) {
     return {
       status: "failed",
-      error: runFailureMessage("failed", "unknown"),
       failureReason: "unknown",
       failureKind: "missing-outputs",
     };
@@ -230,19 +223,6 @@ function noActiveInputFinalization(): ActiveInputFinalization {
   return {
     finalized: false,
     chatEventsAppended: false,
-  };
-}
-
-function persistedTerminalError(
-  run: RunRecord,
-): { readonly transitionError: string } | Record<string, never> {
-  if (run.status !== "failed") {
-    return {};
-  }
-  return {
-    transitionError: formatRunFailureForExternalSurface({
-      failureReason: run.failureReason,
-    }),
   };
 }
 
@@ -290,11 +270,10 @@ function completionPublicationCommit(
       prepared?.status ?? (run.status === "completed" ? "completed" : "failed"),
     ...(prepared
       ? {
-          transitionError: prepared.error,
           transitionFailureKind: prepared.failureKind,
           transitionFailureReason: prepared.failureReason,
         }
-      : persistedTerminalError(run)),
+      : { transitionFailureReason: run.failureReason ?? undefined }),
     finalization: noActiveInputFinalization(),
     releasedSlots,
   };

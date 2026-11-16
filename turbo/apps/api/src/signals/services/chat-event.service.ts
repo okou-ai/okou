@@ -753,7 +753,12 @@ function canonicalChatEventPayload(
 ): ChatEventPayload | null {
   const content = "content" in values ? values.content : undefined;
   const userMessage = "userMessage" in values ? values.userMessage : undefined;
-  const error = "error" in values ? values.error : undefined;
+  const error =
+    values.eventType !== "run.failed" &&
+    values.eventType !== "run.cancelled" &&
+    "error" in values
+      ? values.error
+      : undefined;
   const usagePayload =
     "usagePayload" in values ? values.usagePayload : undefined;
   const payload: ChatEventPayload = {
@@ -881,7 +886,6 @@ export function assistantErrorEventInsertSql(
       eventType: assistantErrorEventType(input.lifecycleEvent),
       content: displayErrorMessage,
       runId: input.runId,
-      error: displayErrorMessage,
       ...(input.lifecycleEvent === "failed"
         ? { failureReason: normalizeRunFailureReason(input.failureReason) }
         : {}),

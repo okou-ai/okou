@@ -310,7 +310,6 @@ const runFailedEventSchema = chatEventBaseSchema
   .extend({
     eventType: literal("run.failed"),
     runId: string(),
-    error: string().optional(),
     failureReason: runFailureReasonTokenSchema.optional(),
     runLifecycleEvent: literal("failed"),
   })
@@ -320,7 +319,6 @@ const runCancelledEventSchema = chatEventBaseSchema
   .extend({
     eventType: literal("run.cancelled"),
     runId: string(),
-    error: string().optional(),
     runLifecycleEvent: literal("cancelled"),
   })
   .strict();

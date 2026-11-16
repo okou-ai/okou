@@ -1,13 +1,6 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import {
-  formatRunBalanceError,
-  publicProviderBalanceFailureReason,
-} from "@okouai/api-contracts/contracts/run-balance-errors";
-import {
-  normalizeRunFailureReason,
-  type KnownRunFailureReason,
-} from "@okouai/api-contracts/contracts/run-failure-reasons";
-import { runFailureMessage } from "../../lib/run-failure";
+import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import { publicRunFailureReason } from "../../lib/run-failure";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
@@ -77,11 +70,9 @@ interface DispatchSingleCallbackInput {
   readonly runId: string;
   readonly status: TerminalCallbackStatus;
   readonly result?: Record<string, unknown>;
-  readonly error?: string;
   readonly runStatus: string;
   readonly failureReason: KnownRunFailureReason | null;
   readonly featureSwitchContext: FeatureSwitchContext;
-  readonly balanceContext: Parameters<typeof formatRunBalanceError>[0];
 }
 
 interface DispatchInternalRunCallbackInput {
@@ -89,7 +80,6 @@ interface DispatchInternalRunCallbackInput {
   readonly runId: string;
   readonly status: TerminalCallbackStatus;
   readonly result?: Record<string, unknown>;
-  readonly error?: string;
   readonly kind: InternalRunCallbackKind;
 }
 
@@ -346,14 +336,11 @@ export const dispatchRunCallbacks$ = command(
     }
     const status = run.status === "completed" ? "completed" : "failed";
     const failureReason =
-      run.status === "failed" || run.status === "timeout"
-        ? normalizeRunFailureReason(run.failureReason)
-        : null;
-    const error = runFailureMessage(
-      run.status,
-      failureReason,
-      run.modelProvider,
-    );
+      publicRunFailureReason(
+        run.status,
+        run.failureReason,
+        run.modelProvider,
+      ) ?? null;
     const featureSwitchContext = await set(
       loadUserFeatureSwitchContext$,
       run.orgId,
@@ -405,7 +392,6 @@ export const dispatchRunCallbacks$ = command(
               runId,
               status,
               result,
-              error,
               kind: internalKind,
             },
             signal,
@@ -417,18 +403,9 @@ export const dispatchRunCallbacks$ = command(
               runId,
               status,
               result,
-              error,
               featureSwitchContext,
               runStatus: run.status,
-              failureReason:
-                failureReason === "provider_insufficient_credits"
-                  ? (publicProviderBalanceFailureReason(run.modelProvider) ??
-                    "unknown")
-                  : failureReason,
-              balanceContext: {
-                failureReason,
-                modelProvider: run.modelProvider,
-              },
+              failureReason,
             },
             signal,
           );
@@ -442,23 +419,12 @@ export const dispatchRunCallbacks$ = command(
 function callbackEnvelope(
   input: DispatchInternalRunCallbackInput,
 ): InternalRunCallbackEnvelope {
-  const base = {
+  return {
     callbackId: input.callback.id,
     runId: input.runId,
     result: input.result,
     payload: input.callback.payload,
-  };
-  if (input.status === "failed") {
-    const error = input.error?.trim();
-    if (!error) {
-      throw new Error("Failed internal run callbacks require an error");
-    }
-    return { ...base, status: "failed", error };
-  }
-  return {
-    ...base,
     status: input.status,
-    error: input.error,
   };
 }
 
@@ -468,7 +434,7 @@ const dispatchHttpCallback$ = command(
     input: DispatchSingleCallbackInput,
     signal: AbortSignal,
   ): Promise<DispatchResult> => {
-    const { callback, runId, status, result, error } = input;
+    const { callback, runId, status, result } = input;
     if (!callback.url) {
       const errorMessage = "Callback URL is missing";
       await set(
@@ -501,10 +467,6 @@ const dispatchHttpCallback$ = command(
       runStatus: input.runStatus,
       failureReason: input.failureReason,
       result,
-      error:
-        error === undefined
-          ? undefined
-          : (formatRunBalanceError(input.balanceContext) ?? error),
       payload: callback.payload,
     });
     const timestamp = Math.floor(now() / 1000);

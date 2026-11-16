@@ -127,7 +127,6 @@ describe("cron snapshot chat events", () => {
           failureReason: "usage_limit",
           payload: {
             content: CHAT_RUN_USAGE_LIMIT_MESSAGE,
-            error: CHAT_RUN_USAGE_LIMIT_MESSAGE,
           },
         }),
       );

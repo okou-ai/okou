@@ -4,7 +4,6 @@ import { readonlyConnectorSkills } from "./helpers/readonly-connector-skills";
 import { createHash, randomUUID } from "node:crypto";
 
 import { CANONICAL_CLAUDE_MEMORY_MOUNT_PATH } from "@okouai/api-contracts/contracts/runners";
-import { CHAT_RUN_TRANSIENT_ERROR_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 
 import { describe, expect, it, onTestFinished } from "vitest";
 import { HttpResponse, http } from "msw";
@@ -2962,7 +2961,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       expect(failedDetail.body).toMatchObject({
         id: failedRun.runId,
         status: "failed",
-        error: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+        failureReason: "unknown",
       });
     });
   });

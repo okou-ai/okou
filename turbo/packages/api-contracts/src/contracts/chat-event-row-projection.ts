@@ -21,6 +21,15 @@ function requiredRowField<T>(
 
 /** Generate terminal presentation without mutating a retained archive row. */
 export function projectRunFailureRow(row: ChatEventRow): ChatEventRow {
+  if (row.eventType !== "run.failed" && row.eventType !== "run.cancelled") {
+    return row;
+  }
+  const userMessage = row.payload?.userMessage;
+  const usage = row.payload?.usage;
+  const retainedPayload = {
+    ...(userMessage === undefined ? {} : { userMessage }),
+    ...(usage === undefined ? {} : { usage }),
+  };
   if (row.eventType === "run.failed") {
     const failureReason = normalizeRunFailureReason(row.failureReason);
     const message = formatChatRunFailure(failureReason);
@@ -28,9 +37,8 @@ export function projectRunFailureRow(row: ChatEventRow): ChatEventRow {
       ...row,
       failureReason,
       payload: {
-        ...row.payload,
+        ...retainedPayload,
         content: message,
-        error: message,
       },
     };
   }
@@ -39,9 +47,8 @@ export function projectRunFailureRow(row: ChatEventRow): ChatEventRow {
       ...row,
       failureReason: undefined,
       payload: {
-        ...row.payload,
+        ...retainedPayload,
         content: "Run cancelled",
-        error: "Run cancelled",
       },
     };
   }
@@ -148,7 +155,6 @@ export function chatEventFromRow(source: ChatEventRow): ChatEvent {
         ...base,
         eventType: "run.failed",
         runId: requiredRowField(row.runId, row.eventType, "runId"),
-        error: payload?.error ?? undefined,
         ...(row.failureReason === undefined
           ? {}
           : { failureReason: row.failureReason }),
@@ -160,7 +166,6 @@ export function chatEventFromRow(source: ChatEventRow): ChatEvent {
         ...base,
         eventType: "run.cancelled",
         runId: requiredRowField(row.runId, row.eventType, "runId"),
-        error: payload?.error ?? undefined,
         runLifecycleEvent: "cancelled",
       };
     },

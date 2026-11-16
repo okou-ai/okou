@@ -4,7 +4,7 @@ import {
   modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
-import { runFailureMessage } from "../../lib/run-failure";
+import { publicRunFailureReason } from "../../lib/run-failure";
 import { isOrgTier, type OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import type {
   ConcurrencyMemberUsage,
@@ -303,7 +303,7 @@ export function agentRunById(args: {
         run.result === null
           ? undefined
           : (run.result as GetRunResponse["result"]),
-      error: runFailureMessage(
+      failureReason: publicRunFailureReason(
         run.status,
         run.failureReason,
         run.modelProvider,

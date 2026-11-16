@@ -17,6 +17,7 @@ import {
 } from "zod";
 
 import { timestampQueryNumberSchema } from "./base";
+import { knownRunFailureReasonSchema } from "./run-failure-reasons";
 import {
   modelProviderCredentialScopeSchema,
   modelProviderTypeSchema,
@@ -104,7 +105,7 @@ const getRunResponseSchema = object({
   })
     .passthrough()
     .optional(),
-  error: string().optional(),
+  failureReason: knownRunFailureReasonSchema.optional(),
   createdAt: string(),
   startedAt: string().optional(),
   completedAt: string().optional(),
@@ -156,7 +157,7 @@ const runResultSchema = object({
 const runStateSchema = object({
   status: runStatusSchema,
   result: runResultSchema.optional(),
-  error: string().optional(),
+  failureReason: knownRunFailureReasonSchema.optional(),
   lastEventSequence: eventSequenceNumberSchema.optional(),
 });
 

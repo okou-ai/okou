@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { CHAT_RUN_TRANSIENT_ERROR_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 import { http, HttpResponse } from "msw";
 import { expect, onTestFinished, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -92,7 +91,7 @@ test("fails a Run with no serving process and releases its concurrency slot", as
   });
   expect(run).toMatchObject({
     status: "failed",
-    error: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+    failureReason: "unknown",
   });
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
 });
@@ -134,7 +133,7 @@ test("persists preparation failure and releases admission before another Run", a
   }
   await expect(f.api.readRun(f.actor, admitted.runId)).resolves.toMatchObject({
     status: "failed",
-    error: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+    failureReason: "unknown",
   });
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
   f.api.acceptStorageDownloads();
@@ -261,7 +260,7 @@ test("recovers interrupted delivery through the ordinary Run heartbeat timeout",
   await flushWaitUntilForTest();
   await expect(f.api.readRun(f.actor, admitted.runId)).resolves.toMatchObject({
     status: "timeout",
-    error: "Run timed out",
+    failureReason: "unknown",
   });
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
   const next = await f.api.createThreadRun(f.actor, {
@@ -638,7 +637,7 @@ test("definite refusal releases a preselected Run even though startedAt is set",
   });
   expect(run).toMatchObject({
     status: "failed",
-    error: CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+    failureReason: "unknown",
   });
   expect((await f.api.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
 });

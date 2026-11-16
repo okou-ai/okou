@@ -1,30 +1,23 @@
-import { formatRunFailureForExternalSurface } from "@okouai/api-contracts/contracts/errors";
-import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import { modelProviderTypeSchema } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  normalizeRunFailureReason,
+  type KnownRunFailureReason,
+  type RunFailureReasonToken,
+} from "@okouai/api-contracts/contracts/run-failure-reasons";
+import { publicProviderBalanceFailureReason } from "@okouai/api-contracts/contracts/run-balance-errors";
 
-/** Generated compatibility copy; no persisted diagnostic participates. */
-export function runFailureMessage(
+/** Public terminal facts exclude platform-owned provider balance failures. */
+export function publicRunFailureReason(
   status: string,
   failureReason: RunFailureReasonToken | null | undefined,
   modelProviderType?: string | null,
-): string | undefined {
-  if (status === "cancelled") {
-    return "Run cancelled";
-  }
-  if (status === "timeout") {
-    return "Run timed out";
-  }
-  if (status !== "failed") {
+): KnownRunFailureReason | undefined {
+  if (status !== "failed" && status !== "timeout") {
     return undefined;
   }
-  const providerType =
-    modelProviderTypeSchema.safeParse(modelProviderType).data;
-  return formatRunFailureForExternalSurface({
-    failureReason,
-    modelProviderType: providerType,
-    claudeCodeCredentialRecovery: {
-      modelProviderType: providerType,
-      modelProvidersUrl: undefined,
-    },
-  });
+  const reason = normalizeRunFailureReason(failureReason);
+  return reason === "provider_insufficient_credits"
+    ? normalizeRunFailureReason(
+        publicProviderBalanceFailureReason(modelProviderType),
+      )
+    : reason;
 }

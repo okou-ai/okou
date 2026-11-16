@@ -48,7 +48,10 @@ export function parseCanonicalChatEventRequiredOfficialWorkflowIds(
 }
 
 export function canonicalChatEventError() {
-  return canonicalChatEventText(sql`${chatEvents.payload}->>'error'`);
+  return sql`CASE WHEN ${chatEvents.eventType} IN ('run.failed', 'run.cancelled')
+    THEN NULL ELSE ${chatEvents.payload}->>'error' END`.mapWith(
+    nullableDriverValueDecoder(pgTextDecoder),
+  );
 }
 
 function canonicalChatEventText(ordinaryText: SQLWrapper) {
@@ -90,7 +93,10 @@ export function canonicalArchivedChatEventUserMessage(row: ChatEventRow) {
 export function canonicalArchivedChatEventError(
   row: ChatEventRow,
 ): string | null {
-  return projectRunFailureRow(row).payload?.error ?? null;
+  if (row.eventType === "run.failed" || row.eventType === "run.cancelled") {
+    return null;
+  }
+  return row.payload?.error ?? null;
 }
 
 /** Private immutable model decision; NULL identifies an older queued input. */

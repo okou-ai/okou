@@ -446,7 +446,9 @@ export function createRunsApi(context: TestContext) {
       threadId: sent.body.threadId,
       status: run.body.status,
       createdAt: run.body.createdAt,
-      ...(run.body.error === undefined ? {} : { error: run.body.error }),
+      ...(run.body.failureReason === undefined
+        ? {}
+        : { failureReason: run.body.failureReason }),
     };
   }
 
