@@ -1,8 +1,7 @@
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Plug, RefreshCw, Smartphone } from "lucide-react";
 import {
-  Badge,
   Button,
   Dialog,
   DialogBody,
@@ -17,24 +16,64 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { PhoneDevice } from "@okouai/api-contracts/contracts/phone-use";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { ComposerConnectorSignals } from "../../signals/okou-page/connectors.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { onDomEventFn } from "../../signals/utils.ts";
+import { LoadingSwitch } from "../components/loading-switch.tsx";
 
-function PhoneRow({ device }: { readonly device: PhoneDevice }) {
+function PhoneRow({
+  device,
+  signals,
+}: {
+  readonly device: PhoneDevice;
+  readonly signals: ComposerConnectorSignals;
+}) {
   const { t } = useTranslation();
+  const selection = useLoadable(signals.phoneAccess.selection$);
+  const lastSelection = useLastResolved(signals.phoneAccess.selection$);
+  const saving = useLoadable(signals.phoneAccess.saving$);
+  const setDevice = useSet(signals.phoneAccess.setDevice$);
+  const signal = useGet(pageSignal$);
+  const selected =
+    selection.state === "hasData" ? selection.data : lastSelection;
+  const checked =
+    selected?.deviceId === device.id &&
+    selected.generation === device.generation;
   return (
-    <li className="flex items-center gap-2 px-2 py-1.5 text-sm">
-      <Smartphone size={16} className="shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate" title={device.displayName}>
-        {device.displayName}
-      </span>
-      <Badge className="shrink-0 text-xs text-muted-foreground">
-        {device.ready
-          ? t(($) => {
-              return $.chat.phoneUse.ready;
-            })
-          : t(($) => {
-              return $.chat.phoneUse.notReady;
-            })}
-      </Badge>
+    <li>
+      <label className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-state-hover">
+        <Smartphone size={16} className="shrink-0 text-muted-foreground" />
+        <span className="min-w-0 flex-1">
+          <span
+            className="block truncate text-sm text-foreground"
+            title={device.displayName}
+          >
+            {device.displayName}
+          </span>
+          <span className="block text-[11px] leading-3 text-muted-foreground">
+            {device.ready
+              ? t(($) => {
+                  return $.chat.phoneUse.ready;
+                })
+              : t(($) => {
+                  return $.chat.phoneUse.notReady;
+                })}
+          </span>
+        </span>
+        <LoadingSwitch
+          checked={checked}
+          disabled={selection.state !== "hasData"}
+          loading={saving.state === "loading"}
+          onCheckedChange={onDomEventFn(async (allow) => {
+            await setDevice(
+              { deviceId: device.id, generation: device.generation },
+              allow,
+              signal,
+            );
+          })}
+          size="sm"
+          ariaLabel={device.displayName}
+        />
+      </label>
     </li>
   );
 }
@@ -42,6 +81,10 @@ function PhoneRow({ device }: { readonly device: PhoneDevice }) {
 function PhoneUseDevices({ signals }: { signals: ComposerConnectorSignals }) {
   const { t } = useTranslation();
   const devices = useLoadable(signals.resources.phoneUseDevices$);
+  const lastDevices = useLastResolved(signals.resources.phoneUseDevices$);
+  const visibleDevices =
+    devices.state === "hasData" ? devices.data : (lastDevices ?? []);
+  const selection = useLoadable(signals.phoneAccess.selection$);
   const reload = useSet(signals.resources.reloadPhoneUseDevices$);
   const updateUi = useSet(signals.updateConnectorUiState$);
   return (
@@ -65,15 +108,17 @@ function PhoneUseDevices({ signals }: { signals: ComposerConnectorSignals }) {
           <RefreshCw size={14} />
         </Button>
       </div>
-      {devices.state === "hasData" && devices.data.length > 0 ? (
+      {visibleDevices.length > 0 ? (
         <ul
           className="flex max-h-[96px] flex-col overflow-y-auto"
           aria-label={t(($) => {
             return $.chat.phoneUse.yourPhone;
           })}
         >
-          {devices.data.map((device) => {
-            return <PhoneRow key={device.id} device={device} />;
+          {visibleDevices.map((device) => {
+            return (
+              <PhoneRow key={device.id} device={device} signals={signals} />
+            );
           })}
         </ul>
       ) : (
@@ -89,6 +134,14 @@ function PhoneUseDevices({ signals }: { signals: ComposerConnectorSignals }) {
               : t(($) => {
                   return $.chat.phoneUse.loading;
                 })}
+        </p>
+      )}
+      {(selection.state === "hasError" ||
+        (devices.state === "hasError" && visibleDevices.length > 0)) && (
+        <p className="px-2 py-1.5 text-xs text-destructive" role="alert">
+          {t(($) => {
+            return $.chat.phoneUse.loadError;
+          })}
         </p>
       )}
       <PopoverClose
@@ -122,10 +175,8 @@ export function PhoneUseConnectorMenuSection({
 
 export function PhoneUseSetupDialog({
   signals,
-  isNewChat,
 }: {
   signals: ComposerConnectorSignals;
-  isNewChat: boolean;
 }) {
   const { t } = useTranslation();
   const open = useGet(signals.phoneUseSetupOpen$);
@@ -177,13 +228,9 @@ export function PhoneUseSetupDialog({
                 })}
               </p>
               <p className="mt-1 text-muted-foreground">
-                {isNewChat
-                  ? t(($) => {
-                      return $.chat.phoneUse.createChatDescription;
-                    })
-                  : t(($) => {
-                      return $.chat.phoneUse.allowChatDescription;
-                    })}
+                {t(($) => {
+                  return $.chat.phoneUse.allowChatDescription;
+                })}
               </p>
             </li>
             <li>

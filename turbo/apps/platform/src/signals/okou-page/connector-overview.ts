@@ -23,6 +23,18 @@ function resourceRequests(signal?: AbortSignal) {
       );
       return result.body.devices;
     },
+    phoneGrant: async (createClient: ApiClientFactory, threadId: string) => {
+      const result = await accept(
+        createClient(phoneUseContract).chatGrant({
+          params: { threadId },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+        { showErrorToast: false },
+      );
+      return result.body.selection;
+    },
     connected: async (createClient: ApiClientFactory) => {
       const result = await accept(
         createClient(connectedConnectorsContract).list({
@@ -47,7 +59,7 @@ function resourceRequests(signal?: AbortSignal) {
 }
 
 /** Resource snapshots belong to their visible consumer, never to an Ably loop. */
-export function createConnectorResourceSignals() {
+export function createConnectorResourceSignals(threadId?: string) {
   const connectedVersion$ = state(0);
   const remotesVersion$ = state(0);
   const phonesVersion$ = state(0);
@@ -73,6 +85,13 @@ export function createConnectorResourceSignals() {
     set(phonesVersion$, (version) => {
       return version + 1;
     });
+  });
+  const phoneUseGrant$ = computed(async (get) => {
+    if (!threadId || !get(featureSwitch$)[FeatureSwitchKey.PhoneUse]) {
+      return null;
+    }
+    get(phonesVersion$);
+    return await get(requests$).phoneGrant(get(apiClient$), threadId);
   });
   const open$ = command(
     ({ get, set }, watchConnectors: boolean, signal: AbortSignal) => {
@@ -130,6 +149,7 @@ export function createConnectorResourceSignals() {
     connected$,
     remotes$,
     phoneUseDevices$,
+    phoneUseGrant$,
     reloadPhoneUseDevices$,
     open$,
     close$,

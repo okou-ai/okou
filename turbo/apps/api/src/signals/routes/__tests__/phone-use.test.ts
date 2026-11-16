@@ -215,6 +215,103 @@ describe("Phone Use native connection authority", () => {
   );
 });
 
+test("chat consent stays owner-scoped and can be revoked without native readiness", async () => {
+  const scenario = createPublicComputerUseScenario(context);
+  const orgId = `org_${randomUUID()}`;
+  const actor = scenario.user({ orgId });
+  const setup = await scenario.prepareActor(actor);
+  const chat = createChatFilesBddApi(context);
+  const thread = await scenario.run(() => {
+    return chat.createThread(actor, { agentId: setup.agentId });
+  });
+  const nativeSession = `sess_native_${randomUUID()}`;
+  const client = api();
+  const registered = await scenario.run(async () => {
+    authenticate(actor.userId, orgId, nativeSession);
+    await setPhoneUse(true);
+    return accept(client.register({ headers, body }), [200]);
+  });
+  const selection = {
+    deviceId: registered.body.id,
+    generation: registered.body.generation,
+  };
+  await scenario.run(async () => {
+    authenticate(actor.userId, orgId, `sess_web_${randomUUID()}`);
+    context.mocks.clerk.sessions.getSession.mockResolvedValue({
+      id: nativeSession,
+      userId: actor.userId,
+      status: "active",
+    });
+    await accept(
+      client.grant({
+        headers,
+        body: {
+          ...selection,
+          generation: selection.generation + 1,
+          threadId: thread.id,
+          allow: true,
+        },
+      }),
+      [404],
+    );
+    await accept(
+      client.grant({
+        headers,
+        body: { ...selection, threadId: thread.id, allow: true },
+      }),
+      [200],
+    );
+    const current = await accept(
+      client.chatGrant({ headers, params: { threadId: thread.id } }),
+      [200],
+    );
+    expect(current.body.selection).toStrictEqual(selection);
+  });
+  await scenario.run(async () => {
+    authenticate(undefined, orgId);
+    await setPhoneUse(true);
+    await accept(
+      client.chatGrant({ headers, params: { threadId: thread.id } }),
+      [404],
+    );
+    await accept(
+      client.grant({
+        headers,
+        body: { ...selection, threadId: thread.id, allow: true },
+      }),
+      [404],
+    );
+  });
+  await scenario.run(async () => {
+    authenticate(actor.userId, orgId, `sess_web_${randomUUID()}`);
+    context.mocks.clerk.sessions.getSession.mockResolvedValue({
+      id: nativeSession,
+      userId: actor.userId,
+      status: "revoked",
+    });
+    await accept(
+      client.grant({
+        headers,
+        body: { ...selection, threadId: thread.id, allow: true },
+      }),
+      [403],
+    );
+    await setPhoneUse(false);
+    await accept(
+      client.grant({
+        headers,
+        body: { ...selection, threadId: thread.id, allow: false },
+      }),
+      [200],
+    );
+    const revoked = await accept(
+      client.chatGrant({ headers, params: { threadId: thread.id } }),
+      [200],
+    );
+    expect(revoked.body.selection).toBeNull();
+  });
+});
+
 test(
   "binds real Run tokens to a replaceable chat grant and validates every native commit",
   { timeout: 30_000 },
@@ -240,7 +337,12 @@ test(
     const params = { deviceId: device.body.id };
     const generation = device.body.generation;
     await scenario.run(async () => {
-      authenticate(actor.userId, orgId, sessionId);
+      authenticate(actor.userId, orgId, `sess_web_${randomUUID()}`);
+      context.mocks.clerk.sessions.getSession.mockResolvedValue({
+        id: sessionId,
+        userId: actor.userId,
+        status: "active",
+      });
       await accept(
         client.grant({
           headers,
@@ -248,6 +350,24 @@ test(
         }),
         [200],
       );
+      const selection = await accept(
+        client.chatGrant({ headers, params: { threadId: thread.id } }),
+        [200],
+      );
+      expect(selection.body.selection).toStrictEqual({
+        deviceId: device.body.id,
+        generation,
+      });
+      // Browser consent must not become device lifecycle authority.
+      await accept(
+        client.heartbeat({
+          headers,
+          params,
+          body: { generation, ready: true },
+        }),
+        [409],
+      );
+      authenticate(actor.userId, orgId, sessionId);
       await accept(
         client.heartbeat({
           headers,
@@ -259,6 +379,24 @@ test(
     });
     const run = await scenario.launchRun(actor, undefined, thread.id);
     const agentHeaders = { authorization: `Bearer ${run.token}` };
+    await scenario.run(async () => {
+      // Retrying the same owner selection preserves the Run's captured grant.
+      authenticate(actor.userId, orgId, sessionId);
+      await accept(
+        client.grant({
+          headers,
+          body: { ...params, generation, threadId: thread.id, allow: true },
+        }),
+        [200],
+      );
+      await accept(
+        client.grant({
+          headers: agentHeaders,
+          body: { ...params, generation, threadId: thread.id, allow: true },
+        }),
+        [403],
+      );
+    });
     const id = randomUUID();
     const action = {
       kind: "tap" as const,
@@ -301,7 +439,7 @@ test(
         client.next({
           headers,
           params,
-          body: { generation, threadId: thread.id },
+          body: { generation },
         }),
         [200],
       );
@@ -440,6 +578,13 @@ test(
       await accept(
         client.grant({
           headers,
+          body: { ...params, generation, threadId: thread.id, allow: false },
+        }),
+        [200],
+      );
+      await accept(
+        client.grant({
+          headers,
           body: { ...params, generation, threadId: thread.id, allow: true },
         }),
         [200],
@@ -461,7 +606,6 @@ test(
           params,
           body: {
             generation,
-            threadId: thread.id,
             activeRunId: run.runId,
             activeGrantId: submitted.body.grantId,
           },

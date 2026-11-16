@@ -48,6 +48,7 @@ import { resetBuiltinManualGrantForm$ } from "./settings/connectors.ts";
 import { createChatConnectorAccessSignals } from "./chat-connector-access.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { createPhoneUseAccessSignals } from "./phone-use-access.ts";
 
 export interface ComposerConnectorAuthorizationState {
   readonly agentId: string;
@@ -102,6 +103,7 @@ export interface ComposerConnectorData {
 export interface ComposerConnectorSignals {
   readonly data$: Computed<Promise<ComposerConnectorData>>;
   readonly resources: ReturnType<typeof createConnectorResourceSignals>;
+  readonly phoneAccess: ReturnType<typeof createPhoneUseAccessSignals>;
   readonly connectorAuthorization$: Computed<
     Promise<ComposerConnectorAuthorizationState>
   >;
@@ -550,7 +552,8 @@ export function createComposerConnectorSignals(
   agentId: string,
   threadId?: string,
 ): ComposerConnectorSignals {
-  const resources = createConnectorResourceSignals();
+  const resources = createConnectorResourceSignals(threadId);
+  const phoneAccess = createPhoneUseAccessSignals(resources, threadId);
   const accounts = createComposerConnectorAccountSignals(threadId);
   const chatAccess = createChatConnectorAccessSignals(threadId);
   const ui = createConnectorUiSignals(resources, accounts, chatAccess);
@@ -655,6 +658,7 @@ export function createComposerConnectorSignals(
   return {
     data$,
     resources,
+    phoneAccess,
     connectorAuthorization$: authorization$,
     addDialogCatalog$,
     addDialogBrowseCatalog$,

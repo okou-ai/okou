@@ -5041,12 +5041,7 @@ function ConnectorsPopoverButton({
           onOpenChange={setDownloadDialogOpen}
         />
       )}
-      {phoneUseSetupOpen && (
-        <PhoneUseSetupDialog
-          signals={signals.connector}
-          isNewChat={signals.threadId === undefined}
-        />
-      )}
+      {phoneUseSetupOpen && <PhoneUseSetupDialog signals={signals.connector} />}
     </Popover>
   );
 }
