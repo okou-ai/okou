@@ -3276,7 +3276,6 @@ describe("Email multi-account connections", () => {
       );
       expect(deleted.body.emailSources).toStrictEqual({});
       await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
-      await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
     },
   );
 });

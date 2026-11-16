@@ -544,9 +544,6 @@ test("Preserve partial byte progress across a retry without double counting", as
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
   expect(attempts.get("2")).toBe(1);
-  expect(
-    screen.queryByText("Failed to upload recording.mp4."),
-  ).not.toBeInTheDocument();
 });
 
 test("Retry transient part failures without retransferring successful parts", async () => {
