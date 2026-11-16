@@ -46,11 +46,12 @@ def _single_member_body(encoding: str, wire_size: int, decoded_body: bytes) -> b
         # Mix them to reach the exact boundary without producing any output.
         six_byte_blocks = padding_size % 5
         five_byte_blocks = (padding_size - 6 * six_byte_blocks) // 5
-        padding = (
-            b"\x02\x00\x00\x00\xff\xff" * six_byte_blocks
-            + b"\x00\x00\x00\xff\xff" * five_byte_blocks
+        body = repeat_bytes(
+            compressed[:2] + b"\x02\x00\x00\x00\xff\xff" * six_byte_blocks,
+            b"\x00\x00\x00\xff\xff",
+            five_byte_blocks,
+            compressed[2:],
         )
-        body = compressed[:2] + padding + compressed[2:]
     assert len(body) == wire_size
     assert zlib.decompress(body, wbits=wbits) == decoded_body
     return body
