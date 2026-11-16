@@ -13,34 +13,129 @@ from tests.registry_builtin_helpers import (
 )
 from tests.registry_helpers import inline_sandbox, write_multi_sandbox_registry
 
+_CUSTOM_CONNECTOR_ID = "550e8400-e29b-41d4-a716-446655440000"
+_CLOUDFLARE_INTENT = {
+    "kind": "cloudflare_access",
+    "configId": "550e8400-e29b-41d4-a716-446655440002",
+    "generation": 1,
+}
+
 
 class TestRegistryInlineFirewalls:
-    @pytest.mark.parametrize("kind", ["direct", "cloudflare_access", "unknown"])
-    def test_custom_network_intent_is_validated_before_execution(self, tmp_path, mitm_ctx, kind):
+    @pytest.mark.parametrize(
+        "intent",
+        [
+            pytest.param({"kind": "direct"}, id="direct"),
+            pytest.param(_CLOUDFLARE_INTENT, id="cloudflare-min-generation"),
+            pytest.param(
+                _CLOUDFLARE_INTENT | {"generation": 2**31 - 1}, id="cloudflare-max-generation"
+            ),
+        ],
+    )
+    def test_valid_custom_network_intent_matches(self, tmp_path, mitm_ctx, intent):
         path = tmp_path / "registry.json"
         sandbox = inline_sandbox("run-custom-network")
-        custom_id = "550e8400-e29b-41d4-a716-446655440000"
         entry = sandbox["firewalls"][0]
-        entry["customConnectorId"] = custom_id
-        sandbox["connectorRuntimeTargets"] = [{"kind": "custom", "customConnectorId": custom_id}]
-        intent = {"kind": kind}
-        if kind == "cloudflare_access":
-            intent["configId"] = custom_id
-            intent["generation"] = 1
+        entry["customConnectorId"] = _CUSTOM_CONNECTOR_ID
+        sandbox["connectorRuntimeTargets"] = [
+            {"kind": "custom", "customConnectorId": _CUSTOM_CONNECTOR_ID}
+        ]
         entry["firewall"]["apis"][0]["networkIntent"] = intent
         write_multi_sandbox_registry(path, {"10.200.0.1": sandbox})
+
         with mitm_ctx():
             context = registry.get_sandbox_context("10.200.0.1", str(path))
-        if kind in ("direct", "cloudflare_access"):
-            assert context is not None
-            _, compiled, policies = context
-            result = matching.match_compiled_firewall_request(
-                "https://api.example.com/items", "GET", compiled, policies
-            )
-            assert isinstance(result, matching.FirewallAllow)
-            assert result.api_entry["networkIntent"] == intent
-        else:
-            assert context is None
+
+        assert context is not None
+        _, compiled, policies = context
+        assert compiled is not None
+        result = matching.match_compiled_firewall_request(
+            "https://api.example.com/items", "GET", compiled, policies
+        )
+        assert isinstance(result, matching.FirewallAllow)
+        assert result.api_entry["networkIntent"] == intent
+
+    @pytest.mark.parametrize(
+        "intent",
+        [
+            pytest.param([], id="list"),
+            pytest.param("direct", id="string"),
+            pytest.param(True, id="boolean"),
+            pytest.param({}, id="missing-kind"),
+            pytest.param({"kind": "unknown"}, id="unsupported-kind"),
+            pytest.param({"kind": "direct", "generation": 1}, id="direct-extra-field"),
+            pytest.param(
+                {"kind": "cloudflare_access", "generation": 1}, id="cloudflare-missing-config-id"
+            ),
+            pytest.param(_CLOUDFLARE_INTENT | {"configId": None}, id="cloudflare-null-config-id"),
+            pytest.param(
+                _CLOUDFLARE_INTENT | {"configId": "not-a-uuid"}, id="cloudflare-invalid-config-id"
+            ),
+            pytest.param(
+                _CLOUDFLARE_INTENT | {"configId": 1}, id="cloudflare-non-string-config-id"
+            ),
+            pytest.param(
+                {"kind": "cloudflare_access", "configId": _CLOUDFLARE_INTENT["configId"]},
+                id="cloudflare-missing-generation",
+            ),
+            pytest.param(
+                _CLOUDFLARE_INTENT | {"generation": None}, id="cloudflare-null-generation"
+            ),
+            pytest.param(
+                _CLOUDFLARE_INTENT | {"generation": True}, id="cloudflare-boolean-generation"
+            ),
+            pytest.param(
+                _CLOUDFLARE_INTENT | {"generation": "1"}, id="cloudflare-string-generation"
+            ),
+            pytest.param(
+                _CLOUDFLARE_INTENT | {"generation": 1.0}, id="cloudflare-integer-valued-float"
+            ),
+            pytest.param(
+                _CLOUDFLARE_INTENT | {"generation": 1.5}, id="cloudflare-fractional-generation"
+            ),
+            pytest.param(_CLOUDFLARE_INTENT | {"generation": 0}, id="cloudflare-zero-generation"),
+            pytest.param(
+                _CLOUDFLARE_INTENT | {"generation": -1}, id="cloudflare-negative-generation"
+            ),
+            pytest.param(
+                _CLOUDFLARE_INTENT | {"generation": 2**31}, id="cloudflare-generation-overflow"
+            ),
+            pytest.param(_CLOUDFLARE_INTENT | {"extra": True}, id="cloudflare-extra-field"),
+        ],
+    )
+    def test_invalid_custom_network_intent_rejects_only_affected_sandbox(
+        self, tmp_path, mitm_ctx, intent
+    ):
+        path = tmp_path / "registry.json"
+        sandbox = inline_sandbox("run-invalid-network")
+        entry = sandbox["firewalls"][0]
+        entry["customConnectorId"] = _CUSTOM_CONNECTOR_ID
+        sandbox["connectorRuntimeTargets"] = [
+            {"kind": "custom", "customConnectorId": _CUSTOM_CONNECTOR_ID}
+        ]
+        entry["firewall"]["apis"][0]["networkIntent"] = intent
+        write_multi_sandbox_registry(
+            path,
+            {"10.200.0.1": sandbox, "10.200.0.2": inline_sandbox("run-valid")},
+        )
+
+        with mitm_ctx():
+            state = registry.load_registry_state(str(path))
+            invalid_context = registry.get_sandbox_context("10.200.0.1", str(path))
+            valid_context = registry.get_sandbox_context("10.200.0.2", str(path))
+
+        assert not isinstance(state, registry.RegistryUnavailable)
+        assert set(state.sandboxes) == {"10.200.0.2"}
+        assert set(state.invalid_sandboxes) == {"10.200.0.1"}
+        assert state.invalid_sandboxes["10.200.0.1"].reason == "invalid_firewalls"
+        assert invalid_context is None
+        assert valid_context is not None
+        _, compiled, policies = valid_context
+        assert compiled is not None
+        result = matching.match_compiled_firewall_request(
+            "https://api.example.com/items", "GET", compiled, policies
+        )
+        assert isinstance(result, matching.FirewallAllow)
 
     def test_inline_firewalls_do_not_share_compiled_core(self, tmp_path):
         path = tmp_path / "registry.json"
