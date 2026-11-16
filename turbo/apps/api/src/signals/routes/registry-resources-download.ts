@@ -44,16 +44,7 @@ const downloadPresentationTemplateInner$ = computed(async (get) => {
     queryOf(registryResourceDownloadContract.downloadPresentationTemplate),
   );
   const entry = findPresentationRunbookResource(query.id);
-  if (!entry || !entry.source.archive) {
-    return notFound(`Presentation template "${query.id}" was not found`);
-  }
-
-  const anchor = resolvePrivateRegistryResourceArchive(
-    query.id,
-    entry.source.archive.sha256,
-    entry.source.archive.sha256,
-  );
-  if (!anchor) {
+  if (!entry) {
     return notFound(`Presentation template "${query.id}" was not found`);
   }
 

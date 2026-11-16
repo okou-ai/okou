@@ -728,6 +728,72 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelAndCompleteChatRun(actor, sent.runId);
   }, 90_000);
 
+  it.each([undefined, "html", "pptx"] as const)(
+    "routes an attached presentation to its %s format package and preserves the selection",
+    async (outputFormat) => {
+      const { actor, agentId } = await entitledChatActor();
+      const template: GenerationTemplateRequest = {
+        type: "presentation",
+        selection: {
+          templateId: "template:html-ppt-schoolhouse",
+          colorSystemId: "color-system:bauhaus-primary",
+          ...(outputFormat ? { outputFormat } : {}),
+        },
+      };
+      const userMessage: UserMessageInputDocument = {
+        version: 1,
+        parts: [
+          { type: "text", text: "Prepare a school community briefing using " },
+          { type: "template", titleSnapshot: "Schoolhouse", template },
+        ],
+      };
+      const sent = await sendChatRun(actor, {
+        agentId,
+        prompt: "Prepare a school community briefing",
+        userMessage,
+      });
+      const run = await api.readRun(actor, sent.runId);
+      const native = outputFormat === "pptx";
+      const resourceId = native
+        ? "template:pptx-schoolhouse-runbook"
+        : "template:html-ppt-schoolhouse-runbook";
+      expect(run.appendSystemPrompt).toContain(
+        `Pull the selected package once: okou resource pull ${resourceId}`,
+      );
+      expect(run.appendSystemPrompt).toContain(
+        `Output format: ${native ? "PPTX" : "HTML"}`,
+      );
+      expect(run.appendSystemPrompt).toContain(
+        native
+          ? "./generated/resources/pptx/schoolhouse-native/SKILL.md"
+          : "./generated/resources/schoolhouse/SKILL.md",
+      );
+      expect(run.appendSystemPrompt).toContain(
+        "The message wins over the selected format preference",
+      );
+      expect(run.appendSystemPrompt).toContain(
+        native
+          ? "Author an editable native PPTX directly with the selected package"
+          : "Keep all slides and visible content in index.html",
+      );
+      const messages = await chat.listThreadEvents(actor, sent.threadId);
+      const message = userMessages(messages.events).find(
+        (event): event is PromptMessage => {
+          return (
+            event.eventType === "input.prompt" && event.runId === sent.runId
+          );
+        },
+      );
+      expect(message?.userMessage?.parts).toContainEqual({
+        type: "template",
+        titleSnapshot: "Schoolhouse",
+        template,
+      });
+      await cancelAndCompleteChatRun(actor, sent.runId);
+    },
+    90_000,
+  );
+
   it("uses runbook names for presentation prompts while preserving picker titles in chat history", async () => {
     const { actor, agentId } = await entitledChatActor();
     const userMessage: UserMessageInputDocument = {

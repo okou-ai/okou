@@ -563,17 +563,22 @@ describe("chat thread generation template contract", () => {
     }
   });
 
-  it("accepts presentation template selections", () => {
-    const parsed = generationTemplateRequestSchema.safeParse({
-      type: "presentation",
-      selection: {
+  it.each([undefined, "html", "pptx"])(
+    "preserves presentation template selections with output format %s",
+    (outputFormat) => {
+      const selection = {
         templateId: "template:html-ppt-playful-launch",
         colorSystemId: "color-system:carnival",
-      },
-    });
-
-    expect(parsed.success).toBe(true);
-  });
+        ...(outputFormat ? { outputFormat } : {}),
+      };
+      expect(
+        generationTemplateRequestSchema.parse({
+          type: "presentation",
+          selection,
+        }),
+      ).toEqual({ type: "presentation", selection });
+    },
+  );
 
   it("rejects presentation selections with design-system ids", () => {
     const parsed = generationTemplateRequestSchema.safeParse({

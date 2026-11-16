@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { FeatureSwitchKey } from "../feature-switch-key";
 import {
   isFeatureEnabled,
+  isFeatureSwitchAvailable,
   getAllFeatureStates,
   filterFeatureSwitchOverrides,
   getFeatureSwitchDescriptions,
@@ -86,6 +87,48 @@ describe("isFeatureEnabled", () => {
     ] as const) {
       expect(isFeatureEnabled(key, context)).toBe(enabled);
       expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+  });
+
+  it("makes presentation format available only to Bingjie across workspaces", () => {
+    const key = FeatureSwitchKey.PresentationOutputFormat;
+    for (const orgId of [
+      undefined,
+      "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      "external-org",
+    ]) {
+      for (const identity of [
+        { userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV" },
+        { email: "BINGJIE@OKOU.AI" },
+      ]) {
+        const context = { ...identity, orgId };
+        expect(isFeatureSwitchAvailable(key, context)).toBe(true);
+        expect(isFeatureEnabled(key, context)).toBe(true);
+        expect(getAllFeatureStates(context)[key]).toBe(true);
+        const optedOut = { ...context, overrides: { [key]: false } };
+        expect(isFeatureEnabled(key, optedOut)).toBe(false);
+        expect(getAllFeatureStates(optedOut)[key]).toBe(false);
+      }
+    }
+  });
+
+  it("keeps presentation format unavailable to peers even with an opt-in override", () => {
+    const key = FeatureSwitchKey.PresentationOutputFormat;
+    for (const identity of [
+      {},
+      { userId: "external-user", orgId: "external-org" },
+      {
+        userId: "staff-colleague",
+        email: "ethan@okou.ai",
+        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      },
+    ]) {
+      expect(isFeatureSwitchAvailable(key, identity)).toBe(false);
+      for (const overrides of [{}, { [key]: true }]) {
+        const context = { ...identity, overrides };
+        expect(isFeatureEnabled(key, context)).toBe(false);
+        expect(getAllFeatureStates(context)[key]).toBe(false);
+      }
     }
   });
 

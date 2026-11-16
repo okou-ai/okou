@@ -2,10 +2,7 @@ import { command, computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
-
-export const PRESENTATION_OUTPUT_FORMATS = ["html", "pptx"] as const;
-export type PresentationOutputFormat =
-  (typeof PRESENTATION_OUTPUT_FORMATS)[number];
+import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
 
 const storage = localStorageSignals("presentation-output-format");
 

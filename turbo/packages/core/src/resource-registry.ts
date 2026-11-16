@@ -8,6 +8,7 @@ import {
   PRESENTATION_STATIC_HTML_INSTRUCTION,
   presentationDeliveryInstructions,
 } from "./presentation-generation-instructions";
+import type { PresentationOutputFormat } from "./presentation-output-format";
 import {
   PRESENTATION_REVERSE_TEMPLATE_ARCHIVE_SHA256,
   PRESENTATION_REVERSE_TEMPLATE_RESOURCE_ID,
@@ -3042,6 +3043,7 @@ export interface PresentationRunbookPackage {
   readonly templateId: string;
   /** Pull id for the runbook archive; distinct from `templateId`. */
   readonly resourceId: string;
+  readonly outputFormat: PresentationOutputFormat;
   /** Top-level directory inside the archive; also the runbook command prefix. */
   readonly slug: string;
   /** Default color-system token applied when the user selects no color system. */
@@ -3302,35 +3304,52 @@ const PRESENTATION_RUNBOOK_PACKAGE_DEFS: readonly {
   },
 ];
 
-function presentationRunbookPackages(): readonly PresentationRunbookPackage[] {
+function presentationRunbookPackages(
+  outputFormat: PresentationOutputFormat,
+): readonly PresentationRunbookPackage[] {
   return PRESENTATION_RUNBOOK_PACKAGE_DEFS.map((def) => {
+    const slug = outputFormat === "pptx" ? `${def.slug}-native` : def.slug;
     return {
-      templateId: def.templateId,
-      resourceId: `${def.templateId}-runbook`,
-      slug: def.slug,
-      defaultColorSystem: def.defaultColorSystem,
-      name: def.name,
-      description: def.description,
-      source: privateR2ArchiveSource(
-        def.slug,
-        presentationRunbookArchiveSha256(def.slug),
-      ),
+      ...def,
+      slug,
+      outputFormat,
+      resourceId:
+        outputFormat === "html"
+          ? `${def.templateId}-runbook`
+          : `template:pptx-${def.slug}-runbook`,
+      // Native packages use their own current-archive HEAD. They do not have
+      // historical digest anchors; an unpublished package remains unavailable.
+      source:
+        outputFormat === "html"
+          ? privateR2ArchiveSource(
+              def.slug,
+              presentationRunbookArchiveSha256(def.slug),
+            )
+          : { path: slug },
     };
   });
 }
 
-const PRESENTATION_RUNBOOK_PACKAGES: readonly PresentationRunbookPackage[] =
-  presentationRunbookPackages();
+const PRESENTATION_RUNBOOK_PACKAGES = {
+  html: presentationRunbookPackages("html"),
+  pptx: presentationRunbookPackages("pptx"),
+} satisfies Record<
+  PresentationOutputFormat,
+  readonly PresentationRunbookPackage[]
+>;
 
-export function listPresentationRunbookPackages(): readonly PresentationRunbookPackage[] {
-  return PRESENTATION_RUNBOOK_PACKAGES;
+export function listPresentationRunbookPackages(
+  outputFormat: PresentationOutputFormat = "html",
+): readonly PresentationRunbookPackage[] {
+  return PRESENTATION_RUNBOOK_PACKAGES[outputFormat];
 }
 
-/** Resolve the runbook package for a picker template id, if one exists. */
+/** Resolve a picker style to the package for the requested output format. */
 export function findPresentationRunbookPackage(
   templateId: string,
+  outputFormat: PresentationOutputFormat = "html",
 ): PresentationRunbookPackage | undefined {
-  return PRESENTATION_RUNBOOK_PACKAGES.find((pkg) => {
+  return listPresentationRunbookPackages(outputFormat).find((pkg) => {
     return pkg.templateId === templateId;
   });
 }
@@ -3343,9 +3362,11 @@ export function findPresentationRunbookPackage(
 export function findPresentationRunbookResource(
   resourceId: string,
 ): RegistryEntry | undefined {
-  const pkg = PRESENTATION_RUNBOOK_PACKAGES.find((entry) => {
-    return entry.resourceId === resourceId;
-  });
+  const pkg = Object.values(PRESENTATION_RUNBOOK_PACKAGES)
+    .flat()
+    .find((entry) => {
+      return entry.resourceId === resourceId;
+    });
   if (!pkg) {
     return undefined;
   }
@@ -3584,19 +3605,29 @@ export function buildPresentationRunbookInstructionLines(args: {
   readonly hostCommand?: string;
 }): readonly string[] {
   const { runbookPackage: pkg, colorSystemToken } = args;
-  const packageDir = `./generated/resources/${pkg.slug}`;
+  const resourceDir =
+    pkg.outputFormat === "pptx"
+      ? "./generated/resources/pptx"
+      : "./generated/resources";
+  const packageDir = `${resourceDir}/${pkg.slug}`;
   return [
     `Selected presentation template: ${pkg.name} (${pkg.templateId})`,
+    `Output format: ${pkg.outputFormat.toUpperCase()}`,
     `Color system token: ${colorSystemToken}`,
     "",
     "To produce the presentation:",
-    `- Pull the selected package once: okou resource pull ${pkg.resourceId} --dir ./generated/resources`,
+    `- If the user's message requests a different output format, resolve this style for that format with \`okou generate presentation --format <html|pptx> --template ${pkg.templateId} --prompt "<user request>"\` before pulling a package. The message wins over the selected format preference.`,
+    `- Pull the selected package once: okou resource pull ${pkg.resourceId} --dir ${resourceDir}`,
+    "- If the selected package is unavailable, stop and report it; do not substitute another format, an HTML conversion, or a different source.",
     `- Before preparing sources, planning slides, or authoring, read ${packageDir}/SKILL.md fully and follow its template, authoring, and verification instructions.`,
     "- Read any workflow SKILL.md it references before starting that workflow. Use the documented entry command and bundled parallel workflow when specified, reusing the local package and saved task state.",
     ...presentationImageInstructions(args.imageGenerationEnabled),
     "- Use the requested slide count; default to 8.",
-    PRESENTATION_STATIC_HTML_INSTRUCTION,
+    ...(pkg.outputFormat === "html"
+      ? [PRESENTATION_STATIC_HTML_INSTRUCTION]
+      : []),
     ...presentationDeliveryInstructions({
+      outputFormat: pkg.outputFormat,
       hostCommand: args.hostCommand,
     }),
   ];

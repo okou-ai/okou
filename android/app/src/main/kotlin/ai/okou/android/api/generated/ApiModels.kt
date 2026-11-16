@@ -346,8 +346,17 @@ enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1Type {
 }
 
 @Serializable
+enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1SelectionOutputFormat {
+    @SerialName("html") HTML,
+    @SerialName("pptx") PPTX,
+}
+
+@Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1Selection(
     val `templateId`: String,
+    val `outputFormat`:
+        SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1SelectionOutputFormat? =
+        null,
     val `colorSystemId`: String? = null,
     val `previewUrl`: String? = null,
 )
@@ -1120,8 +1129,17 @@ enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Templ
 }
 
 @Serializable
+enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1SelectionOutputFormat {
+    @SerialName("html") HTML,
+    @SerialName("pptx") PPTX,
+}
+
+@Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Selection(
     val `templateId`: String,
+    val `outputFormat`:
+        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1SelectionOutputFormat? =
+        null,
     val `colorSystemId`: String? = null,
     val `previewUrl`: String? = null,
 )
