@@ -41,13 +41,14 @@ from body_limits import STREAM_BUFFER_LIMIT
 from tests.firewall_auth_helpers import firewall_auth_response
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.mitmproxy_http_framing_helpers import start_http_layer
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.upstream_connection_helpers import mark_connected_tls_upstream
 
 type Phase = Literal["buffered", "headers"]
 _HOST = "api.github.com"
 _AUTHORITY = "API.GITHUB.COM.:443"
-_BODY = b'{"name":"synthetic"}' + b" " * STREAM_BUFFER_LIMIT
+_BODY = repeat_bytes(b'{"name":"synthetic"}', b" ", STREAM_BUFFER_LIMIT, b"")
 _TOKEN = "Bearer synthetic-secret"
 
 

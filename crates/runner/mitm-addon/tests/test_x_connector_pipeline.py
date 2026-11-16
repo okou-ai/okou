@@ -20,6 +20,7 @@ from body_limits import (
 from tests.body_decode_helpers import compress_one_shot_body
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.x_flow_helpers import (
     json_body_that_exceeds_integer_digit_limit,
     json_body_that_exceeds_nesting_limit,
@@ -657,7 +658,9 @@ class TestXConnectorResponsePipeline:
         flow.metadata[metadata_keys.CAPTURE_BODY] = True
 
         mitm_addon.responseheaders(flow)
-        response_stream(flow)(b'{"data":[{"id":"1","text":"' + b"x" * STREAM_BUFFER_LIMIT)
+        response_stream(flow)(
+            repeat_bytes(b'{"data":[{"id":"1","text":"', b"x", STREAM_BUFFER_LIMIT, b"")
+        )
         assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE]["truncated"] is True
         await mitm_addon.responseinspection(flow)
 

@@ -23,6 +23,7 @@ from tests.model_provider_sse_usage_helpers import (
     run_error,
     run_response,
 )
+from tests.repeated_bytes_helpers import repeat_bytes
 from usage import flush_usage_events, openai_responses
 
 
@@ -414,12 +415,15 @@ class TestOpenAIResponsesSseUsage:
         flow = _openai_responses_sse_flow(tmp_path, real_flow)
         assert flow.response is not None
         flow.response.headers["content-encoding"] = "gzip"
-        plaintext = (
+        plaintext = repeat_bytes(
             b"event: response.completed\n"
             b'data: {"type":"response.completed","response":{"model":"gpt-5.5",'
             b'"usage":{"input_tokens":11,"output_tokens":5}}}\n\n'
             b"event: response.output_text.delta\n"
-            b"data: " + b"x" * (5 * 1024 * 1024 + 1)
+            b"data: ",
+            b"x",
+            5 * 1024 * 1024 + 1,
+            b"",
         )
 
         mitm_addon.responseheaders(flow)

@@ -11,6 +11,7 @@ import mitm_addon
 import response_streaming
 from body_limits import LARGE_RESPONSE_DECOMPRESS_LIMIT, STREAM_BUFFER_LIMIT
 from tests.flow_helpers import response_stream
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.x_flow_helpers import (
     json_body_that_exceeds_x_json_work_limit,
     make_x_response_flow,
@@ -120,7 +121,7 @@ class TestNdjsonExtractor:
         parse = response_stream(flow)
         state = flow.metadata[metadata_keys.X_NDJSON_STATE]
 
-        parse(b'{"data":{"id":"1"}}\n' + b"x" * (200 * 1024))
+        parse(repeat_bytes(b'{"data":{"id":"1"}}\n', b"x", 200 * 1024, b""))
 
         assert len(flow.metadata[metadata_keys.STREAM_BUFFER]) == STREAM_BUFFER_LIMIT
         assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE]["truncated"] is True
@@ -237,8 +238,8 @@ class TestNdjsonExtractor:
         parse, state = self._cooperative_stream_parser(real_flow)
         prefix = b'{"data":{"id":"1"},"discarded":"'
         suffix = b'"}'
-        line = (
-            prefix + b"x" * (LARGE_RESPONSE_DECOMPRESS_LIMIT - len(prefix) - len(suffix)) + suffix
+        line = repeat_bytes(
+            prefix, b"x", LARGE_RESPONSE_DECOMPRESS_LIMIT - len(prefix) - len(suffix), suffix
         )
         body = line + b"\n"
 
@@ -506,7 +507,7 @@ class TestXJsonFinalize:
         chunk_size,
     ):
         discarded_property = b',"' + b"k" * 26 + b'":"q\\"s\\\\"'
-        body = b'{"data":[{"id":"1"}]' + discarded_property * 13_104 + b"}   "
+        body = repeat_bytes(b'{"data":[{"id":"1"}]', discarded_property, 13_104, b"}   ")
         assert len(body) == 497_976
         resolved_chunk_size = len(body) if chunk_size is None else chunk_size
         flow = self._billable_x_json_flow(real_flow)

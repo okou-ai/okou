@@ -2,6 +2,7 @@
 
 import pytest
 
+from tests.repeated_bytes_helpers import repeat_bytes
 from usage.sse import SseUsageScanner
 
 
@@ -349,12 +350,12 @@ def test_skips_large_ignored_event_and_recovers_in_same_chunk() -> None:
     scanner = SseUsageScanner(handler)
 
     scanner.feed(
-        b"event: ignored\n"
-        + b"data: "
-        + b"x" * 200_000
-        + b"\n\n"
-        + b"event: target\n"
-        + b"data: ok\n\n"
+        repeat_bytes(
+            b"event: ignored\n" + b"data: ",
+            b"x",
+            200_000,
+            b"\n\n" + b"event: target\n" + b"data: ok\n\n",
+        )
     )
 
     assert handler.events == [("target", b"ok")]

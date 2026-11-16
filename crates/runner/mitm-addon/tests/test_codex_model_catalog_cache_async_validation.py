@@ -22,6 +22,7 @@ from tests.codex_model_catalog_cache_helpers import (
     prepare_miss,
 )
 from tests.flow_helpers import response_stream
+from tests.repeated_bytes_helpers import repeat_bytes
 
 _P = ParamSpec("_P")
 _T = TypeVar("_T")
@@ -361,10 +362,8 @@ async def test_worker_start_failures_release_queued_snapshots_and_recover(
                 for index in range(catalog_cache.MAX_IN_FLIGHT_REQUESTS + 4):
                     version = f"start-failure-{index}"
                     prefix = b'{"models":[],"padding":"' + version.encode()
-                    body = (
-                        prefix
-                        + b"x" * (catalog_validation.MAX_ENTRY_BYTES - len(prefix) - 2)
-                        + b'"}'
+                    body = repeat_bytes(
+                        prefix, b"x", catalog_validation.MAX_ENTRY_BYTES - len(prefix) - 2, b'"}'
                     )
                     flow, continuation = await _start_catalog_response(
                         real_flow, version=version, body=body

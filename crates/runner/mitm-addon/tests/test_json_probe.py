@@ -4,6 +4,7 @@ from typing import SupportsIndex
 
 import pytest
 
+from tests.repeated_bytes_helpers import repeat_bytes
 from usage.json_probe import probe_top_level_string_field
 
 
@@ -24,7 +25,7 @@ class _SliceTrackingBytes(bytes):
 
 def test_probe_finds_top_level_string_field_without_scanning_rest():
     result = probe_top_level_string_field(
-        b'{"type":"response.completed","payload":' + b"x" * 100_000
+        repeat_bytes(b'{"type":"response.completed","payload":', b"x", 100_000, b"")
     )
 
     assert result.status == "found"

@@ -32,6 +32,7 @@ from aws_sigv4 import AwsSigV4Credentials
 from tests.auth_endpoint_helpers import FakeAuthEndpoint, firewall_auth_success_response
 from tests.auth_state_helpers import auth_cache_key, cached_headers, require_cached_headers
 from tests.firewall_auth_helpers import firewall_auth_request
+from tests.repeated_bytes_helpers import repeat_bytes
 
 _MALFORMED_SUCCESS_PREFIX = "Firewall auth endpoint returned malformed success response"
 _EMPTY_PROXY_ENVIRONMENT = {
@@ -2758,8 +2759,12 @@ class TestFirewallAuthAsyncTransport:
         ) -> None:
             proxy_requests.append(await _read_raw_http_request(reader))
             writer.write(
-                b"HTTP/1.1 100 Continue\r\nX-Fill: "
-                + b"x" * auth_client._MAX_FIREWALL_AUTH_RESPONSE_HEADER_BYTES
+                repeat_bytes(
+                    b"HTTP/1.1 100 Continue\r\nX-Fill: ",
+                    b"x",
+                    auth_client._MAX_FIREWALL_AUTH_RESPONSE_HEADER_BYTES,
+                    b"",
+                )
             )
             with suppress(ConnectionError):
                 await writer.drain()

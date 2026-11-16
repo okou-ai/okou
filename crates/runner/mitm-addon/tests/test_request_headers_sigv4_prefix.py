@@ -10,12 +10,13 @@ import aws_sigv4_flow
 import mitm_addon
 import registry
 import upstream_destination_binding
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import _write_github_firewall_registry
 from tests.requestheaders_helpers import _assert_no_request_stream
 from tests.upstream_connection_helpers import seed_server_binding
 
 _PREFIX_BYTES = 64
-_LARGE_BEARER = b"Bearer " + b"x" * 1_048_576
+_LARGE_BEARER = repeat_bytes(b"Bearer ", b"x", 1_048_576, b"")
 
 
 class _PrefixOnlyValue(bytes):

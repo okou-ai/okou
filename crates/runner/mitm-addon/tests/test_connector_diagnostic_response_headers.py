@@ -19,6 +19,7 @@ from mitmproxy.test import tutils
 import mitm_addon
 from tests.connector_diagnostic_helpers import write_connector_diagnostic_capture_registry
 from tests.flow_helpers import header_map, response_stream
+from tests.repeated_bytes_helpers import repeat_bytes
 
 
 class _DiscardedValue(bytes):
@@ -87,7 +88,7 @@ async def test_native_http1_large_discarded_encoding(
         path="/fal-ai/nano-banana-pro",
         method="POST",
     )
-    value = b"identity," + b" " * (value_size - 17) + b"identity"
+    value = repeat_bytes(b"identity,", b" ", value_size - 17, b"identity")
     wire = (
         f"HTTP/1.1 {upstream_status} Unauthorized\r\n".encode()
         + b"Content-Length: 2\r\nContent-Type: text/plain\r\n"
@@ -148,7 +149,7 @@ async def test_raw_discarded_fields_preserve_diagnostic_framing(
     # Keep duplicate/opaque upstream fields byte-for-byte, including their order.
     retained = (
         (b"X-Upstream", b"first\xff"),
-        (b"X-" + b"N" * (64 * 1024), b"large name"),
+        (repeat_bytes(b"X-", b"N", 64 * 1024, b""), b"large name"),
         (b"x-upstream", b"second"),
     )
     discarded = ()

@@ -33,6 +33,7 @@ from tests.firewall_auth_helpers import firewall_auth_response
 from tests.flow_helpers import header_map, response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.pending_helpers import assert_pending
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.requestheaders_helpers import await_requestheaders_result
 from tests.upstream_connection_helpers import mark_connected_tls_upstream
@@ -664,7 +665,7 @@ async def test_catalog_transfer_encoding_presence_precedes_conditions(real_flow,
 async def test_native_valid_catalog_transfer_encoding_bypasses_without_value_conversion(
     tmp_path, real_flow, mitm_ctx, fake_firewall_headers
 ):
-    large = b"gzip" + b" " * (1024 * 1024) + b",chunked"
+    large = repeat_bytes(b"gzip", b" ", 1024 * 1024, b",chunked")
     flow = real_flow(with_response=False, client_ip="10.200.0.5", host="chatgpt.com")
     flow.request = http1.read_request_head(
         [

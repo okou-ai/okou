@@ -30,6 +30,7 @@ from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.mitmproxy_http_framing_helpers import start_http2_request, start_http_layer
 from tests.pending_helpers import assert_pending
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.upstream_connection_helpers import mark_connected_tls_upstream
 
@@ -643,7 +644,7 @@ async def test_native_body_at_inclusive_limit_registers_router_response(
 ) -> None:
     registry_path = router_registry(tmp_path)
     payload = json.dumps({"method": "tools/call", "params": {"name": "web_search"}}).encode()
-    body = payload + b" " * (body_size - len(payload))
+    body = repeat_bytes(payload, b" ", body_size - len(payload), b"")
     registration = AsyncMock()
     with (
         patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),

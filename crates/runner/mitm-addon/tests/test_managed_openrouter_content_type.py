@@ -9,6 +9,7 @@ import flow_metadata_keys as metadata_keys
 import managed_upload
 import mitm_addon
 from tests.managed_openrouter_helpers import authorize_headers, request, sandbox
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import _write_registry
 from tests.upstream_connection_helpers import mark_connected_tls_upstream
 
@@ -154,7 +155,7 @@ async def test_oversized_http1_head_reaches_managed_rejection_without_value_conv
 ):
     registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
     flow = request(real_flow)
-    value = b"application/json;x=" + b"x" * (1_048_576 - len(b"application/json;x="))
+    value = repeat_bytes(b"application/json;x=", b"x", 1_048_576 - len(b"application/json;x="), b"")
     flow.request = http1.read_request_head(
         [
             b"POST https://openrouter.ai/api/v1/chat/completions HTTP/1.1",

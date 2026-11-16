@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 import state_file
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.thread_helpers import ThreadUnderTest
 
 
@@ -38,7 +39,7 @@ def opened_fds() -> Iterator[list[int]]:
     [
         pytest.param(b"state", id="single-read"),
         pytest.param(
-            b"prefix:" + b"x" * (1024 * 1024) + b":distinct-tail",
+            repeat_bytes(b"prefix:", b"x", 1024 * 1024, b":distinct-tail"),
             id="multiple-reads",
         ),
     ],

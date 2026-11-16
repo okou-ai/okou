@@ -16,6 +16,7 @@ import response_streaming
 import usage
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.x_flow_helpers import make_x_pipeline_flow
 
 
@@ -51,7 +52,7 @@ async def test_gzip_callback_bounds_real_rows_and_yields_before_reporting_all(
     flow = _flow(real_flow, tmp_path)
     # 300 KiB crosses several decoded feeds but fits below the existing grace.
     rows = 100_000
-    wire = gzip.compress(b"{}\n" * rows + b'{"data":{"id":"1"}}\n')
+    wire = gzip.compress(repeat_bytes(b"", b"{}\n", rows, b'{"data":{"id":"1"}}\n'))
     with usage_webhook_api() as webhook:
         mitm_addon.responseheaders(flow)
         state = flow.metadata[metadata_keys.X_NDJSON_STATE]

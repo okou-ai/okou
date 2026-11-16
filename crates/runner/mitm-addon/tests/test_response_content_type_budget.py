@@ -12,6 +12,7 @@ import http_response_classification
 import mitm_addon
 import response_streaming
 from tests.flow_helpers import response_stream
+from tests.repeated_bytes_helpers import repeat_bytes
 
 _FIELD_LIMIT = 8 * 1024
 _PREFIX_LIMIT = 8 * 1024
@@ -205,7 +206,10 @@ def test_classifier_never_copies_parameter_suffix_or_normalizes_oversized_names(
     response = http.Response.make(200)
     response.headers.fields = (
         (_NoNormalizeName(b"X" * (1024 * 1024)), b"ignored"),
-        (b"Content-Type", _GuardedParameterValue(_SSE_MEDIA_TYPE + b";" + b"x" * (1024 * 1024))),
+        (
+            b"Content-Type",
+            _GuardedParameterValue(repeat_bytes(_SSE_MEDIA_TYPE + b";", b"x", 1024 * 1024, b"")),
+        ),
     )
 
     assert http_response_classification.has_event_stream_media_type(response)

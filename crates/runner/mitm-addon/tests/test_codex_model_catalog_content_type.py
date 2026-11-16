@@ -15,6 +15,7 @@ from tests.codex_model_catalog_cache_helpers import (
     prepare_prefetch_miss,
 )
 from tests.flow_helpers import response_stream
+from tests.repeated_bytes_helpers import repeat_bytes
 
 _VALUE_LIMIT = 256
 _FIELD_LIMIT = 8 * 1024
@@ -36,7 +37,7 @@ class _UnconvertedHeaderName(bytes):
 
 
 def _parameter_value(size: int) -> bytes:
-    return _PARAMETER_PREFIX + b"x" * (size - len(_PARAMETER_PREFIX))
+    return repeat_bytes(_PARAMETER_PREFIX, b"x", size - len(_PARAMETER_PREFIX), b"")
 
 
 @pytest.mark.parametrize(

@@ -2,6 +2,8 @@
 
 import pytest
 
+from tests.repeated_bytes_helpers import repeat_bytes
+
 FIELD_LIMIT = 8 * 1024
 VALUE_LIMIT = 8 * 1024
 
@@ -48,7 +50,7 @@ def encoding_budget_fields(
         values = (coding,)
     elif budget == "single":
         padding = ()
-        values = (b" " * (size - len(coding)) + coding,)
+        values = (repeat_bytes(b"", b" ", size - len(coding), coding),)
     else:
         assert budget == "aggregate"
         padding = ()

@@ -32,6 +32,7 @@ import managed_upload
 import mitm_addon
 from tests.managed_openrouter_helpers import PRESET, request, sandbox
 from tests.managed_wire_helpers import WireSession
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import _write_registry
 from tests.upstream_connection_helpers import mark_connected_tls_upstream
 
@@ -138,7 +139,9 @@ async def test_native_h2_readiness_and_terminal_progress(
     tmp_path, real_flow, fake_firewall_headers, capacity, ending
 ):
     registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
-    body = b'{"model":"' + PRESET.encode() + b'","messages":[{"content":"' + b"x" * 70_000 + b'"}]}'
+    body = repeat_bytes(
+        b'{"model":"' + PRESET.encode() + b'","messages":[{"content":"', b"x", 70_000, b'"}]}'
+    )
     req = request(real_flow, body).request
     req.raw_content = None
     with (
