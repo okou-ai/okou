@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1135.0](https://github.com/okou-ai/okou/compare/app-v0.1134.1...app-v0.1135.0) (2026-11-16)
+
+
+### Features
+
+* replace the notification bell with platform feed events ([#47711](https://github.com/okou-ai/okou/issues/47711)) ([b5aac15](https://github.com/okou-ai/okou/commit/b5aac15af841802f580b268f27cfce7539cb9269))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.72.0
+    * @okouai/core bumped to 8.843.0
+    * @okouai/ui bumped to 1.21.29
+
 ## [0.1134.1](https://github.com/okou-ai/okou/compare/app-v0.1134.0...app-v0.1134.1) (2026-11-16)
 
 

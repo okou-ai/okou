@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.6](https://github.com/okou-ai/okou/compare/desktop-v0.56.5...desktop-v0.56.6) (2026-11-16)
+
+
+### Bug Fixes
+
+* **desktop:** verify reused sentry symbols after upload ([#47752](https://github.com/okou-ai/okou/issues/47752)) ([20e7285](https://github.com/okou-ai/okou/commit/20e7285737013cd90885254c05b0595e4ac3faec))
+
 ## [0.56.5](https://github.com/okou-ai/okou/compare/desktop-v0.56.4...desktop-v0.56.5) (2026-11-16)
 
 
