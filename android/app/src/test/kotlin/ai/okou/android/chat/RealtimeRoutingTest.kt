@@ -1,11 +1,13 @@
 package ai.okou.android.chat
 
+import ai.okou.android.CHAT_DATE
 import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.TestRealtimeService
+import ai.okou.android.api.generated.SessionOutputDelta
 import ai.okou.android.chatEventWire
 import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
@@ -17,6 +19,7 @@ import androidx.test.core.app.ApplicationProvider
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -123,6 +126,95 @@ class RealtimeRoutingTest {
         uiState.first {
             it.indicatorsPhase == ChatReadPhase.Ready &&
                 it.indicators?.unreadAt?.get(CHAT_PERSONAL) == stamp
+        }
+    }
+
+    @Test
+    fun streamedOutputStaysTransientAndPersistenceRefreshesOnlyItsHistory() = runTest {
+        withReadyModel { api, model, realtime ->
+            val runId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            val inputId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+            val eventId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+            val persisted = AtomicBoolean()
+            api.historyRows = { request ->
+                val since = request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0
+                val saved = persisted.get()
+                val rows =
+                    buildList {
+                            if (since < 41)
+                                add(
+                                    historyEventWire(
+                                        inputId,
+                                        41,
+                                        type = "input.prompt",
+                                        payload =
+                                            """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Start routed output"}]}}""",
+                                        run = runId,
+                                    )
+                                )
+                            if (saved && since < 42)
+                                add(
+                                    historyEventWire(
+                                        eventId,
+                                        42,
+                                        payload = """{"content":"Saved routed answer"}""",
+                                        run = runId,
+                                    )
+                                )
+                        }
+                        .joinToString(",")
+                val lastId = if (saved) eventId else inputId
+                val lastSeq = if (saved) 42 else 41
+                jsonResponse(
+                    """{"rows":[$rows],"cursor":{"lastEventId":"$lastId","lastSeqId":$lastSeq},"hasMore":false}"""
+                )
+            }
+            checkNotNull(
+                model.history.beginVisit(CHAT_PERSONAL, model.history.uiState.value.generation)
+            )
+            model.history.uiState.first { it.phase == HistoryPhase.Ready }
+            val target = checkNotNull(realtime.target.first { it?.runId == runId })
+            runCurrent()
+            val confirmation = model.history.uiState.value.confirmation
+            val paths = record(api)
+            fun chunk(index: Long, text: String) =
+                RunOutputSignal.Delta(
+                    SessionOutputDelta(
+                        target.threadId,
+                        target.runId,
+                        eventId,
+                        "routed-output",
+                        CHAT_DATE,
+                        index,
+                        text,
+                    )
+                )
+            realtime.output(chunk(0, "Live routed "))
+            realtime.output(chunk(2, "answer"))
+            model.history.output.state.first {
+                it.messages.singleOrNull()?.blocks?.singleOrNull()?.text == "Live routed answer"
+            }
+            runCurrent()
+            assertEquals(confirmation, model.history.uiState.value.confirmation)
+            assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
+            assertTrue(paths.isEmpty())
+
+            persisted.set(true)
+            realtime.invalidate(ChatChanges(threads = setOf(CHAT_PERSONAL)))
+            val saved =
+                model.history.uiState.first {
+                    it.phase == HistoryPhase.Ready &&
+                        it.transcript?.messages?.any { message -> message.id == eventId } == true
+                }
+            runCurrent()
+            val messages =
+                checkNotNull(saved.transcript)
+                    .withOutput(model.history.output.state.value, CHAT_PERSONAL)
+                    .filter { it.id == eventId }
+            assertEquals("Saved routed answer", messages.single().blocks.single().text)
+            assertTrue(model.history.output.state.value.messages.isEmpty())
+            assertEquals(1, paths.count { it.endsWith("/event-rows") })
+            assertTrue(paths.all { it.startsWith("/api/chat-threads/$CHAT_PERSONAL") })
         }
     }
 

@@ -105,7 +105,8 @@ class ChatListModel(
     private var immediateIndicators = false
     private var indicatorsStartedAt: Long? = null
     val updates =
-        ChatUpdatesModel(realtime, viewModelScope, { current() }, onFailure, history.output) { changes ->
+        ChatUpdatesModel(realtime, viewModelScope, { current() }, onFailure, history.output) {
+            changes ->
             if (current()) {
                 if (changes.resync || changes.list) {
                     listInvalidations.trySend(Unit)
