@@ -25,7 +25,6 @@ import * as instructionsSchema from "./schema/instructions";
 import * as agentSchema from "./schema/agent";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
-import * as agentRunPhaseTimingSchema from "./schema/agent-run-phase-timing";
 import * as storageSchema from "./schema/storage";
 import * as registryResourceArchiveSchema from "./schema/registry-resource-archive";
 import * as systemStoragePresignedUrlCacheSchema from "./runtime/system-storage-presigned-url-cache";
@@ -207,7 +206,6 @@ export const schema = {
   ...instructionsSchema,
   ...agentRunSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
-  ...agentRunPhaseTimingSchema,
   ...storageSchema,
   ...registryResourceArchiveSchema,
   ...systemStoragePresignedUrlCacheSchema,
