@@ -229,6 +229,9 @@ Its external SDK observations are controlled; this is not provider-live evidence
 
 Meaningful drafts and pending text operations live in `noBackupFilesDir/chat-input`,
 scoped by origin/user/workspace, separately from the rebuildable confirmed cache.
+Existing journal files require their stored format header. Unversioned or malformed
+files remain untouched and show a storage error with a retry action; a missing file initializes
+normally, and a valid empty journal stays usable.
 Native selection/composition stay with the text control. Accepted local writes
 outlive presentation controllers; dispatch requires a read-back durable copy of
 the same frozen operation and current authorization. Missing input observations
