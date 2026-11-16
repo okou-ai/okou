@@ -216,6 +216,12 @@ test("An open tray switches capabilities and types without going back to the car
   click(button("Presentation", capabilities()));
   await screen.findByRole("group", { name: "Presentation templates" });
   expect(capabilityTab("Create")).toHaveAttribute("aria-selected", "true");
+  expect(button("Remove Presentation")).toHaveTextContent("Presentation");
+  expect(
+    queryAllByRoleFast("button").find((item) => {
+      return item.textContent?.trim() === "Tools";
+    }),
+  ).toBeUndefined();
   const types = screen.getByRole("radiogroup", { name: "Create" });
   const image = queryAllByRoleFast("radio", types).find((item) => {
     return item.textContent?.trim() === "Image";
@@ -228,14 +234,64 @@ test("An open tray switches capabilities and types without going back to the car
   click(capabilityTab("Find people"));
   const people = await screen.findByRole("region", { name: "Find people" });
   expect(capabilityTab("Find people")).toHaveAttribute("aria-selected", "true");
+  expect(button("Remove Find people")).toHaveTextContent("Find people");
+  expect(
+    button("Remove Find people").compareDocumentPosition(button("Tools")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
   // The tray is the open tab's panel.
   expect(screen.getByRole("tabpanel")).toContainElement(people);
   expect(screen.queryByRole("group", { name: "Image styles" })).toBeNull();
-  // Create reopens on the type chosen last.
+  click(capabilityTab("Research"));
+  await screen.findByRole("region", { name: "Research" });
+  expect(button("Remove Research")).toHaveTextContent("Research");
+  expect(
+    button("Remove Research").compareDocumentPosition(button("Tools")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
+  // Create reopens on the type chosen last, with its own footer chip.
   click(capabilityTab("Create"));
   await screen.findByRole("group", { name: "Image styles" });
+  expect(button("Remove Image")).toHaveTextContent("Image");
   expect(editor).toHaveTextContent("Keep my launch brief");
+  click(capabilityTab("Workflow"));
+  await screen.findByRole("radiogroup", { name: "Workflow" });
+  expect(button("Remove Workflow")).toHaveTextContent("Workflow");
+  expect(
+    queryAllByRoleFast("button").find((item) => {
+      return item.textContent?.trim() === "Tools";
+    }),
+  ).toBeUndefined();
 });
+
+test.each([
+  {
+    task: "Presentation",
+    shelf: "Presentation templates",
+    capability: "Find people",
+  },
+  { task: "Image", shelf: "Image styles", capability: "Research" },
+])(
+  "Switching $task to $capability sends the manually written prompt as ordinary chat",
+  async ({ task, shelf, capability }) => {
+    const capture = mockTemplateChat();
+    const editor = await setupHome();
+    click(button(task, capabilities()));
+    await screen.findByRole("group", { name: shelf });
+    click(capabilityTab(capability));
+    await screen.findByRole("region", { name: capability });
+    expect(button(`Remove ${capability}`)).toHaveTextContent(capability);
+    const prompt = "Find the right sources for my launch research.";
+    await fill(editor, prompt);
+    click(button("Send"));
+    await waitFor(() => {
+      expect(capture.sentMessages[0]).toStrictEqual({
+        version: 1,
+        parts: [{ type: "text", text: prompt }],
+      });
+    });
+  },
+);
 
 test("Opening the tray from a card and closing it back each swap the home under one view transition", async () => {
   mockTemplateChat();
