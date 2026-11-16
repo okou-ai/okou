@@ -45,7 +45,7 @@ patchedDependencies:
     hash: 82080105f6adaf176f58b0ec2d5017702df2a069e46194cd9e1b0054f392a8bf
     path: patches/@testing-library__jest-dom@6.9.1.patch
   react-zoom-pan-pinch@4.0.3:
-    hash: b0a3fa6d3de1ffbbb5ee9c7e79d27276a132bbc0196c3aa96f47bb87481ee057
+    hash: 4966c0444b8c652ac4488870f1b1a9387d3261d084f7d9c37247158314bff8ac
     path: patches/react-zoom-pan-pinch@4.0.3.patch
 
 importers:
@@ -903,7 +903,7 @@ importers:
         version: 17.0.11(@typescript/typescript6@6.0.2)(i18next@26.6.0(@typescript/typescript6@6.0.2))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react-zoom-pan-pinch:
         specifier: 4.0.3
-        version: 4.0.3(patch_hash=b0a3fa6d3de1ffbbb5ee9c7e79d27276a132bbc0196c3aa96f47bb87481ee057)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 4.0.3(patch_hash=4966c0444b8c652ac4488870f1b1a9387d3261d084f7d9c37247158314bff8ac)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       rehype-attr:
         specifier: ^4.1.3
         version: 4.1.3
@@ -1501,7 +1501,7 @@ importers:
         version: 19.2.6(react@19.2.6)
       react-zoom-pan-pinch:
         specifier: 4.0.3
-        version: 4.0.3(patch_hash=b0a3fa6d3de1ffbbb5ee9c7e79d27276a132bbc0196c3aa96f47bb87481ee057)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 4.0.3(patch_hash=4966c0444b8c652ac4488870f1b1a9387d3261d084f7d9c37247158314bff8ac)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       sonner:
         specifier: ^2.0.7
         version: 2.0.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -17362,7 +17362,7 @@ snapshots:
 
   react-is@17.0.2: {}
 
-  react-zoom-pan-pinch@4.0.3(patch_hash=b0a3fa6d3de1ffbbb5ee9c7e79d27276a132bbc0196c3aa96f47bb87481ee057)(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
+  react-zoom-pan-pinch@4.0.3(patch_hash=4966c0444b8c652ac4488870f1b1a9387d3261d084f7d9c37247158314bff8ac)(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
     dependencies:
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
