@@ -82,7 +82,6 @@ function memberModelSourcePredicates(
 
 const sourceSecretSchema = object({
   name: string(),
-  encryptedValue: string(),
 }).nullable();
 
 /**
@@ -102,8 +101,7 @@ export function memberModelSourcesAggregate(
       'account', CASE WHEN ${modelProviderAccounts.id} IS NULL THEN NULL
         ELSE ${contextJsonProjection(accountColumns)} END,
       'secret', CASE WHEN ${modelProviderAccountSecrets.modelProviderAccountId} IS NULL THEN NULL
-        ELSE jsonb_build_object('name', ${modelProviderAccountSecrets.name},
-          'encryptedValue', ${modelProviderAccountSecrets.encryptedValue}) END)), '[]'::jsonb)`;
+        ELSE jsonb_build_object('name', ${modelProviderAccountSecrets.name}) END)), '[]'::jsonb)`;
   const rowSchema = object({
     provider: contextProjectionSchema(providerProjection().provider),
     account: contextProjectionSchema(accountColumns).nullable(),
@@ -129,7 +127,6 @@ export function memberModelSourcesFromRows(
     readonly account: typeof modelProviderAccounts.$inferSelect | null;
     readonly secret: {
       readonly name: string;
-      readonly encryptedValue: string;
     } | null;
   })[],
 ) {
@@ -172,7 +169,9 @@ export function memberAccountSourceFromSnapshot(
       authMethod: first.account.authMethod,
     },
     credentials: rows.flatMap((row) => {
-      return row.secret ? [{ kind: "encrypted" as const, ...row.secret }] : [];
+      return row.secret
+        ? [{ kind: "secret-reference" as const, name: row.secret.name }]
+        : [];
     }),
   };
 }
