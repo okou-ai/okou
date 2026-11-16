@@ -311,12 +311,7 @@ export const deliverFeishuChatAdmissionFailure$ = command(
     );
     const recovery = await set(
       integrationModelRecoveryForDelivery$,
-      {
-        ...args,
-        eventId: args.chatEventId,
-        runFailureId: null,
-        error: "admission_error",
-      },
+      { ...args, eventId: args.chatEventId, admissionFailure: true },
       signal,
     );
     const message = buildFeishuAgentResponseMessage({

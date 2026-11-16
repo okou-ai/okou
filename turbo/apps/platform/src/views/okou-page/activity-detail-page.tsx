@@ -95,12 +95,15 @@ function RunFailureBanner({
 }: {
   detail: Pick<LogDetail, "status" | "modelProvider" | "failureReason">;
 }) {
+  const { t } = useTranslation();
   const modelProviderType = modelProviderTypeSchema.safeParse(
     detail.modelProvider,
   ).data;
   const message =
     detail.status === "timeout"
-      ? "Run timed out"
+      ? t(($) => {
+          return $.activity.statuses.timeout;
+        })
       : formatRunFailureForExternalSurface({
           failureReason: detail.failureReason,
           modelProviderType,

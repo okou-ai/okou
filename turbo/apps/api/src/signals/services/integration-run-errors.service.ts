@@ -71,14 +71,15 @@ export const formatIntegrationChatMessage$ = command(
           signal,
         )
       : args.content;
-    const error = args.runFailureId ? content : args.error;
-    if (error !== "insufficient_credits") {
+    const insufficientCredits = args.runFailureId
+      ? content === "insufficient_credits"
+      : args.error === "insufficient_credits";
+    if (!insufficientCredits) {
       if (args.chatEventId) {
         const recovery = await set(
           integrationModelRecoveryForDelivery$,
           {
             ...args,
-            error,
             runFailureId: args.runFailureId ?? null,
             eventId: args.chatEventId,
           },

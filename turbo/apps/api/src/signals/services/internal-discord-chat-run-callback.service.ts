@@ -207,11 +207,26 @@ const readDiscordResponsePresentation$ = command(
       readonly orgId: string;
       readonly agentId: string;
       readonly runId: string | null;
-      readonly replyToMention?: string;
+      readonly channelId: string;
+      readonly discordUserId: string;
     },
     signal: AbortSignal,
   ) => {
     const db = get(db$);
+    const [mentionerCount] = await db
+      .select({ count: countDistinct(discordChatThreadRoutes.userId) })
+      .from(discordChatThreadRoutes)
+      .innerJoin(
+        discordOrgConnections,
+        eq(discordOrgConnections.id, discordChatThreadRoutes.connectionId),
+      )
+      .where(eq(discordChatThreadRoutes.destinationChannelId, args.channelId));
+    signal.throwIfAborted();
+    if (!mentionerCount) {
+      throw new Error("Discord reply mentioner count is unavailable");
+    }
+    const replyToMention =
+      mentionerCount.count > 1 ? `<@${args.discordUserId}>` : undefined;
     const agentLabel = await (async () => {
       const [org] = await db
         .select({ defaultAgentId: orgMetadata.defaultAgentId })
@@ -235,12 +250,12 @@ const readDiscordResponsePresentation$ = command(
     if (args.runId === null) {
       return integrationAdmissionFailurePresentation({
         agentLabel,
-        replyToMention: args.replyToMention,
+        replyToMention,
       });
     }
     return integrationAgentResponsePresentation({
       agentLabel,
-      replyToMention: args.replyToMention,
+      replyToMention,
     });
   },
 );
@@ -304,35 +319,14 @@ export const sendDiscordChatReply$ = command(
           return;
         }
         const binding = access.binding;
-        const [mentionerCount] = await db
-          .select({ count: countDistinct(discordChatThreadRoutes.userId) })
-          .from(discordChatThreadRoutes)
-          .innerJoin(
-            discordOrgConnections,
-            eq(discordOrgConnections.id, discordChatThreadRoutes.connectionId),
-          )
-          .where(
-            and(
-              eq(
-                discordChatThreadRoutes.destinationChannelId,
-                request.target.channelId,
-              ),
-            ),
-          );
-        signal.throwIfAborted();
-        if (!mentionerCount) {
-          throw new Error("Discord reply mentioner count is unavailable");
-        }
         const presentation = await set(
           readDiscordResponsePresentation$,
           {
             orgId: request.orgId,
             agentId: event.agentId,
             runId: event.runId,
-            replyToMention:
-              mentionerCount.count > 1
-                ? `<@${binding.discordUserId}>`
-                : undefined,
+            channelId: request.target.channelId,
+            discordUserId: binding.discordUserId,
           },
           signal,
         );
