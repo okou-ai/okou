@@ -70,10 +70,8 @@ import {
 } from "./agent-connector-scope.service";
 import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
 import {
-  pendingOkouTokenSecrets,
-  resolveRunBodyEnvironment,
+  buildAgentRunEnvironment,
   type RunBodyEnvironment,
-  selectedAgentRunVariables,
 } from "./run-body-environment";
 import {
   createAuthorizedConnectors,
@@ -1105,11 +1103,9 @@ export function createExecutionConnectorSources(
   const bodyEnvironment$ = computed(async (get) => {
     const { agentId } = await get(identity$);
     const snapshot = await get(environmentSnapshot$);
-    return resolveRunBodyEnvironment({
-      runVars: selectedAgentRunVariables(agentId),
-      runSecrets: pendingOkouTokenSecrets(undefined),
+    return buildAgentRunEnvironment({
+      agentId,
       persistedEnvironment: { variables: snapshot.variables },
-      canonicalOkouRuntime: true,
     });
   });
   const permissionPolicies$ = computed(async (get) => {

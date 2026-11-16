@@ -74,7 +74,6 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_discord_prompt_capability"
   | "api_dispatch_pre_create_agent_resolve_agent_id"
   | "api_dispatch_pre_create_agent_load_agent"
-  | "api_dispatch_pre_create_agent_resolve_firewall_metadata"
   | "api_dispatch_pre_create_agent_capture_subscription_account"
   | "api_dispatch_pre_create_agent_workflow_slash_prepare_normal_send"
   | "api_dispatch_pre_create_agent_workflow_slash_load_thread_mapping"
