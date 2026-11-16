@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.841.1](https://github.com/okou-ai/okou/compare/core-v8.841.0...core-v8.841.1) (2026-11-16)
+
+
+### Refactoring
+
+* **api:** remove retired run creation contracts ([#47651](https://github.com/okou-ai/okou/issues/47651)) ([80a55d8](https://github.com/okou-ai/okou/commit/80a55d8e2cece736c0b0dafbee86bd520e388222))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.70.1
+
 ## [8.841.0](https://github.com/okou-ai/okou/compare/core-v8.840.0...core-v8.841.0) (2026-11-16)
 
 
