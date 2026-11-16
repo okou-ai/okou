@@ -566,6 +566,8 @@ import {
   personalModelProvidersMainContract,
   personalSubscriptionsContract,
 } from "./personal-model-providers";
+import { phoneUseContract as OriginalPhoneUseContract } from "../contracts/phone-use";
+import { phoneUseContract } from "./phone-use";
 import { presentationTemplatesContract as OriginalPresentationTemplatesContract } from "../contracts/presentation-templates";
 import { presentationTemplatesContract } from "./presentation-templates";
 import { proactiveLearningContract as OriginalProactiveLearningContract } from "../contracts/proactive-nightly";
@@ -1246,6 +1248,7 @@ export const clientDescriptorContracts: readonly (readonly [
     OriginalPersonalModelProvidersMainContract,
   ],
   [personalSubscriptionsContract, OriginalPersonalSubscriptionsContract],
+  [phoneUseContract, OriginalPhoneUseContract],
   [presentationTemplatesContract, OriginalPresentationTemplatesContract],
   [proactiveLearningContract, OriginalProactiveLearningContract],
   [proactiveSuggestionsContract, OriginalProactiveSuggestionsContract],

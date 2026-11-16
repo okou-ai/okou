@@ -753,3 +753,26 @@ export async function publishActiveInputToRunnerGroup(
   await channel.publish("active-input", { runId });
   L.debug(`Published active input ${runId} to runner-group:${group}`);
 }
+
+export async function createPhoneUseToken(
+  channel: string,
+  userId: string,
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
+  const result = await ablyClient().auth.createTokenRequest({
+    capability: { [channel]: ["subscribe", "presence"] },
+    ttl: 300_000,
+    clientId: userId,
+  });
+  signal.throwIfAborted();
+  return result;
+}
+export async function publishPhoneUseHint(
+  channel: string,
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
+  await ablyClient().channels.get(channel).publish("commands.changed", {});
+  signal.throwIfAborted();
+}

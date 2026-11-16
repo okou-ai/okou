@@ -1,3 +1,4 @@
+import { isStaffOrg } from "@okouai/core/staff-org";
 import { singleAgentRuntimeContextSchema } from "@okouai/api-contracts/contracts/single-agent";
 import { createHmac, hkdfSync } from "node:crypto";
 
@@ -48,6 +49,8 @@ const SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_v2_";
 const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 
 const CONDITIONAL_CAPABILITIES = [
+  ["phone-use:read", FeatureSwitchKey.PhoneUse],
+  ["phone-use:write", FeatureSwitchKey.PhoneUse],
   ["instructions:read", FeatureSwitchKey.SingleAgent],
   ["instructions:write", FeatureSwitchKey.SingleAgent],
   ["connector-account:switch", FeatureSwitchKey.ConnectorChatAccountAccess],
@@ -71,6 +74,8 @@ const AGENT_EXCLUDED_CAPABILITIES = [
 
 interface OkouTokenOptions {
   readonly isDefaultAgent?: boolean;
+  readonly phoneUseDeviceId?: string;
+  readonly phoneUseGrantId?: string;
   readonly computerUseHostId?: string;
   readonly cloudBrowserEnabled?: boolean;
   readonly customConnectorSourceIds?: Readonly<Record<string, string>>;
@@ -111,6 +116,8 @@ const okouTokenPayloadSchema = jwtBaseSchema.extend({
   runId: string().min(1),
   orgId: string().min(1),
   capabilities: agentCapabilitiesSchema,
+  phoneUseDeviceId: uuid().optional(),
+  phoneUseGrantId: uuid().optional(),
   computerUseHostId: uuid().optional(),
   cloudBrowserEnabled: literal(true).optional(),
   customConnectorSourceIds: record(uuid(), uuid()).optional(),
@@ -198,7 +205,11 @@ function isAgentCapabilityEnabled(
 function isCapabilityAvailableToAgent(
   capability: Capability,
   options: OkouTokenOptions | undefined,
+  orgId: string,
 ): boolean {
+  if (capability.startsWith("phone-use:") && !isStaffOrg(orgId)) {
+    return false;
+  }
   if (
     capability === "instructions:read" ||
     capability === "instructions:write"
@@ -220,6 +231,9 @@ function isCapabilityAvailableToAgent(
     capability === "computer-use:shell:write"
   ) {
     return options?.computerUseHostId !== undefined;
+  }
+  if (capability === "phone-use:write") {
+    return Boolean(options?.phoneUseDeviceId && options.phoneUseGrantId);
   }
   if (capability === "browser:read" || capability === "browser:write") {
     return options?.cloudBrowserEnabled === true;
@@ -323,6 +337,12 @@ export function verifyOkouToken(token: string): AgentAuth | null {
     orgId: parsed.data.orgId,
     capabilities: parsed.data.capabilities,
     ...singleAgentRuntimeContextSchema.parse(parsed.data),
+    ...(parsed.data.phoneUseDeviceId && parsed.data.phoneUseGrantId
+      ? {
+          phoneUseDeviceId: parsed.data.phoneUseDeviceId,
+          phoneUseGrantId: parsed.data.phoneUseGrantId,
+        }
+      : {}),
     ...(parsed.data.computerUseHostId
       ? { computerUseHostId: parsed.data.computerUseHostId }
       : {}),
@@ -409,7 +429,7 @@ function buildOkouTokenClaims(
   const nowSeconds = Math.floor(now() / 1000);
   const capabilities: Capability[] = [];
   for (const capability of CAPABILITIES) {
-    if (!isCapabilityAvailableToAgent(capability, options)) {
+    if (!isCapabilityAvailableToAgent(capability, options, orgId)) {
       continue;
     }
     if (isAgentCapabilityEnabled(capability, featureEnabled)) {
@@ -425,6 +445,7 @@ function buildOkouTokenClaims(
     featureEnabled(FeatureSwitchKey.SingleAgent)
       ? { singleAgent: true as const }
       : {}),
+    ...phoneUseTokenClaims(capabilities, options),
     ...(capabilities.includes("computer-use:write") &&
     options?.computerUseHostId
       ? { computerUseHostId: options.computerUseHostId }
@@ -528,4 +549,21 @@ export function signSkillImportJwtForTests(
   payload: SkillImportTokenPayload,
 ): string {
   return SKILL_IMPORT_TOKEN_PREFIX + signJwt(payload);
+}
+
+function phoneUseTokenClaims(
+  capabilities: readonly Capability[],
+  options: OkouTokenOptions | undefined,
+): Pick<OkouTokenClaims, "phoneUseDeviceId" | "phoneUseGrantId"> {
+  if (
+    capabilities.includes("phone-use:write") &&
+    options?.phoneUseDeviceId &&
+    options.phoneUseGrantId
+  ) {
+    return {
+      phoneUseDeviceId: options.phoneUseDeviceId,
+      phoneUseGrantId: options.phoneUseGrantId,
+    };
+  }
+  return {};
 }
