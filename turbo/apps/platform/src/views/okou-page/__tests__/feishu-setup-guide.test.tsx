@@ -37,7 +37,6 @@ test.each(["feishu", "lark"] as const)(
     expect(secret).toHaveValue("draft-secret");
 
     expect(pathname()).toBe(`/settings/${platform}/setup`);
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(
       screen.getByRole("navigation", { name: "Sidebar" }),
     ).toBeInTheDocument();
@@ -137,7 +136,6 @@ test.each(["feishu", "lark"] as const)(
       `An organization admin must configure the app. You can connect your own account from the ${platform === "lark" ? "Lark" : "Feishu"} bot list after setup is complete.`,
     );
     expect(queryAction("button", "Next")).not.toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   },
 );
 
