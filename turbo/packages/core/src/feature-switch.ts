@@ -191,7 +191,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Chat visualization summaries",
     description:
-      "Show selected output formats and chart types on user messages.",
+      "Show selected output formats and chart types as compact chips in drafts and user messages.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,

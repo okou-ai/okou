@@ -29,6 +29,7 @@ import {
   type ComposerConnectorActions,
 } from "./composer-connector-actions.ts";
 import { ComposerTaskControls } from "./composer-create.tsx";
+import { ComposerVisualizationPreferences } from "./composer-visualization-preferences.tsx";
 import { useComposerCapabilities } from "./composer-capabilities.ts";
 import {
   ComposerProjectControl,
@@ -7092,6 +7093,7 @@ function ComposerCard({
             actions={actions}
             minimumHeightClassName={layoutHeightClassNames.input}
           />
+          <ComposerVisualizationPreferences signals={signals} />
           {/* Voice states share 8px/12px outer tray spacing and 12px/8px
               inner padding so their surfaces stay aligned through handoff. */}
           <ComposerFooter key={signals.voice.key} signals={signals}>

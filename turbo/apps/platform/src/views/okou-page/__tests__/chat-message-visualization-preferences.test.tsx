@@ -189,7 +189,7 @@ test("Sent visualization choices are grouped, concise, and only shown when selec
     "",
   );
   expect(selectedSummary).toHaveTextContent("Presentation");
-  expect(selectedSummary).toHaveTextContent("Charts");
+  expect(selectedSummary).toHaveTextContent("Presentation · Bar +2");
   expect(selectedMessage).not.toHaveTextContent("Preferred output format");
   expect(selectedMessage).not.toHaveTextContent("Preferred chart types");
   expect(selectedMessage).not.toHaveTextContent("User-selected output format");
@@ -206,7 +206,7 @@ test("Sent visualization choices are grouped, concise, and only shown when selec
     throw new Error("Visualization summary should preserve the selected order");
   }
   assertBefore(outputLabel, chartLabels);
-  expect(chartLabels).toHaveTextContent("Bar, Line, Pie");
+  expect(chartLabels).toHaveTextContent("Bar +2");
 
   const outputOnlyMessage = await findUserMessage("Make a slide deck.");
   expect(
@@ -237,11 +237,7 @@ test("Sent visualization choices are grouped, concise, and only shown when selec
     name: `Charts: ${fullChartNames}`,
   });
   expect(longListSummary).toBeInTheDocument();
-  expect(
-    longListSummary.querySelector(
-      "[data-structured-visualization-chart-labels]",
-    ),
-  ).toHaveAttribute("title", fullChartNames);
+  expect(longListSummary).toHaveTextContent("Bar +7");
 
   const defaultsMessage = await findUserMessage(
     "Use the presentation defaults.",

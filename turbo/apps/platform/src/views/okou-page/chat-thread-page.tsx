@@ -18,7 +18,7 @@ import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import { CapabilityHomeContent } from "./capability-home-page.tsx";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
-import { UserMessageVisualizationPreferences } from "./user-message-visualization-preferences.tsx";
+import { VisualizationPreferencesChip } from "./visualization-preferences-chip.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -7314,7 +7314,7 @@ function UserMessageView({
       {renderedParts}
       {showVisualizationPreferences && document.visualizationPreferences ? (
         <div className={renderedParts.length > 0 ? "mt-2" : undefined}>
-          <UserMessageVisualizationPreferences
+          <VisualizationPreferencesChip
             preferences={document.visualizationPreferences}
           />
         </div>
