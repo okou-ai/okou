@@ -30,6 +30,7 @@ export type WorkerBroadcastMessage = Extract<
     readonly type:
       | "chat-thread-read-cursor-updated"
       | "invalidate"
+      | "realtime-gap"
       | "reload-computed"
       | "status"
       | "worker-unavailable";

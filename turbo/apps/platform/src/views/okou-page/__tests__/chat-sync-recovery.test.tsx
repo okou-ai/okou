@@ -168,97 +168,114 @@ test("A realtime continuity gap catches up without another chat notification", a
   ).resolves.toBeInTheDocument();
 });
 
-test("A realtime continuity gap catches up Project changes without another notification", async () => {
-  installChat();
-  const renamedId = "30000000-0000-4000-8000-000000000071";
-  const deletedId = "30000000-0000-4000-8000-000000000072";
-  const createdId = "30000000-0000-4000-8000-000000000073";
-  const at = "2026-11-02T00:00:00.000Z";
-  const events: ProjectEvent[] = [];
-  context.mocks.api(projectsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      projects: [
-        {
-          id: renamedId,
-          name: "Earlier Project",
-          createdAt: at,
-          updatedAt: at,
-        },
-        {
-          id: deletedId,
-          name: "Retired Project",
-          createdAt: at,
-          updatedAt: at,
-        },
-      ],
-      latestEventId: "40000000-0000-4000-8000-000000000070",
-      latestSeqId: 2,
+test.each([
+  { path: RUN_PATH, gap: "connection" },
+  { path: RUN_PATH, gap: "credential" },
+  { path: `/agents/${AGENT_ID}/chat`, gap: "credential" },
+])(
+  "A $gap gap catches up Project changes without another notification at $path",
+  async ({ path, gap }) => {
+    installChat();
+    const renamedId = "30000000-0000-4000-8000-000000000071";
+    const deletedId = "30000000-0000-4000-8000-000000000072";
+    const createdId = "30000000-0000-4000-8000-000000000073";
+    const at = "2026-11-02T00:00:00.000Z";
+    const events: ProjectEvent[] = [];
+    context.mocks.api(projectsContract.snapshot, ({ respond }) => {
+      return respond(200, {
+        projects: [
+          {
+            id: renamedId,
+            name: "Earlier Project",
+            createdAt: at,
+            updatedAt: at,
+          },
+          {
+            id: deletedId,
+            name: "Retired Project",
+            createdAt: at,
+            updatedAt: at,
+          },
+        ],
+        latestEventId: "40000000-0000-4000-8000-000000000070",
+        latestSeqId: 2,
+      });
     });
-  });
-  context.mocks.api(projectsContract.events, ({ query, respond }) => {
-    return respond(200, {
-      events: events.filter((event) => {
-        return event.seqId > query.sinceSeqId;
-      }),
-      hasMore: false,
+    context.mocks.api(projectsContract.events, ({ query, respond }) => {
+      return respond(200, {
+        events: events.filter((event) => {
+          return event.seqId > query.sinceSeqId;
+        }),
+        hasMore: false,
+      });
     });
-  });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    sharedWorkerTestTransport: "message-port",
-    featureSwitches: { [FeatureSwitchKey.Projects]: true },
-  });
-  await expect(
-    screen.findByText("Earlier Project"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText("Retired Project")).toBeInTheDocument();
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscriptionOnChannel(
-        "user:test-user-123",
-        "userPreferenceChanged",
-      ),
-    ).toBeTruthy();
-  });
+    await setupPage({
+      context,
+      path,
+      sharedWorkerTestTransport: "message-port",
+      featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    });
+    await expect(
+      screen.findByText("Earlier Project"),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByText("Retired Project")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        context.mocks.ably.hasSubscriptionOnChannel(
+          "user:test-user-123",
+          "userPreferenceChanged",
+        ),
+      ).toBeTruthy();
+    });
 
-  act(() => {
-    context.mocks.ably.triggerSharedWorkerConnectionState("suspended");
-  });
-  events.push(
-    {
-      id: "40000000-0000-4000-8000-000000000071",
-      projectId: renamedId,
-      seqId: 3,
-      kind: "renamed",
-      name: "Renamed Project",
-      createdAt: at,
-    },
-    {
-      id: "40000000-0000-4000-8000-000000000072",
-      projectId: deletedId,
-      seqId: 4,
-      kind: "deleted",
-      name: null,
-      createdAt: at,
-    },
-    {
-      id: "40000000-0000-4000-8000-000000000073",
-      projectId: createdId,
-      seqId: 5,
-      kind: "created",
-      name: "New Project",
-      createdAt: at,
-    },
-  );
-  act(() => {
-    return context.mocks.ably.triggerSharedWorkerReconnect();
-  });
+    if (gap === "connection") {
+      act(() => {
+        context.mocks.ably.triggerSharedWorkerConnectionState("suspended");
+      });
+    }
+    events.push(
+      {
+        id: "40000000-0000-4000-8000-000000000071",
+        projectId: renamedId,
+        seqId: 3,
+        kind: "renamed",
+        name: "Renamed Project",
+        createdAt: at,
+      },
+      {
+        id: "40000000-0000-4000-8000-000000000072",
+        projectId: deletedId,
+        seqId: 4,
+        kind: "deleted",
+        name: null,
+        createdAt: at,
+      },
+      {
+        id: "40000000-0000-4000-8000-000000000073",
+        projectId: createdId,
+        seqId: 5,
+        kind: "created",
+        name: "New Project",
+        createdAt: at,
+      },
+    );
+    act(() => {
+      if (gap === "credential") {
+        context.mocks.ably.triggerSharedWorkerChannelGap(
+          "user-org:test-user-123:org_default",
+        );
+      } else {
+        context.mocks.ably.triggerSharedWorkerReconnect();
+      }
+    });
 
-  await expect(screen.findByText("New Project")).resolves.toBeInTheDocument();
-  expect(screen.getByText("Renamed Project")).toBeInTheDocument();
-  expect(screen.queryByText("Earlier Project")).not.toBeInTheDocument();
-  expect(screen.queryByText("Retired Project")).not.toBeInTheDocument();
-  expect(screen.getByText("Already loaded reply")).toBeInTheDocument();
-  expect(location.pathname).toBe(RUN_PATH);
-});
+    await expect(screen.findByText("New Project")).resolves.toBeInTheDocument();
+    expect(screen.getByText("Renamed Project")).toBeInTheDocument();
+    expect(screen.queryByText("Earlier Project")).not.toBeInTheDocument();
+    expect(screen.queryByText("Retired Project")).not.toBeInTheDocument();
+    expect(screen.queryAllByText("Already loaded reply")).toHaveLength(
+      path === RUN_PATH ? 1 : 0,
+    );
+    expect(location.pathname).toBe(path);
+  },
+);
