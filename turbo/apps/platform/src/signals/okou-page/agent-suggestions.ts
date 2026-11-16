@@ -22,7 +22,6 @@ import {
   linkAgentSuggestionThread$,
   restoreAgentSuggestion$,
   settleAgentSuggestion$,
-  advanceHomeSuggestion$,
 } from "./agent-suggestion-session.ts";
 import { createInPlaceAgentComposerSignals } from "./agent-composer-signals.ts";
 import { createRestoredAttachment } from "./chat-draft.ts";
@@ -155,9 +154,6 @@ const finishAgentSuggestionComposer$ = command(
       { type: "sent", threadId },
       pageSignal,
     );
-    if (!pageSignal.aborted) {
-      set(advanceHomeSuggestion$, session.entry);
-    }
   },
 );
 

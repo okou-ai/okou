@@ -18,7 +18,7 @@ interface TemplatePreviewSelection {
   readonly themeCss: string;
 }
 
-interface SelectTemplatePreview extends TemplatePreviewSelection {
+export interface SelectTemplatePreview extends TemplatePreviewSelection {
   readonly item: PresentationTemplateItem;
 }
 

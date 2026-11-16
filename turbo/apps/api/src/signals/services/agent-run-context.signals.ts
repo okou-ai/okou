@@ -69,10 +69,7 @@ import {
   type AgentConnectorScopeSnapshot,
 } from "./agent-connector-scope.service";
 import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
-import {
-  buildAgentRunEnvironment,
-  type RunBodyEnvironment,
-} from "./run-body-environment";
+import { buildAgentRunVariables } from "./agent-run-variables";
 import {
   createAuthorizedConnectors,
   type AuthorizedConnectors,
@@ -155,8 +152,7 @@ export interface AgentRunContextSignals {
   readonly connectorScope$: Computed<Promise<AgentConnectorScopeSnapshot>>;
   /** The Agent's permission grants, expanded into firewall policies. */
   readonly permissionPolicies$: Computed<Promise<FirewallPolicies | null>>;
-  /** The Run body's own variables and placeholder secrets for this Agent. */
-  readonly bodyEnvironment$: Computed<Promise<RunBodyEnvironment>>;
+  readonly runVariables$: Computed<Promise<Record<string, string>>>;
   readonly authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>;
   readonly permissionGrants$: Computed<
     Promise<readonly ConnectorPermissionGrant[]>
@@ -788,7 +784,6 @@ const bootstrapCredentialsDecoder = zodDriverValueDecoder(
     object({
       id: string(),
       name: string(),
-      encryptedValue: string(),
     }),
   ),
 );
@@ -832,8 +827,8 @@ function createAgentEnvironment(
     const connectorVariableSnapshot =
       bootstrapConnectorVariableSnapshot(variableRows);
     const credentialSnapshot = bootstrapCredentialSnapshot(userId, orgId);
-    // A single statement owns the account revision and its credential values.
-    // It also supplies Agent variables, including the empty-account case.
+    // Selection owns account revisions and credential references, not values.
+    // Agent variables still exist in the empty-account case.
     const statement = db
       .with(
         variableRows,
@@ -1013,7 +1008,7 @@ function bootstrapCredentialSnapshot(userId: string, orgId: string) {
       .select({
         connectorId: secrets.connectorId,
         values: sql`jsonb_agg(jsonb_build_object(
-          'id', ${secrets.id}, 'name', ${secrets.name}, 'encryptedValue', ${secrets.encryptedValue}
+          'id', ${secrets.id}, 'name', ${secrets.name}
         ))`
           .mapWith(nullableDriverValueDecoder(bootstrapCredentialsDecoder))
           .as("credential_values"),
@@ -1100,12 +1095,12 @@ export function createExecutionConnectorSources(
       observation: snapshot.observation,
     };
   });
-  const bodyEnvironment$ = computed(async (get) => {
+  const runVariables$ = computed(async (get) => {
     const { agentId } = await get(identity$);
     const snapshot = await get(environmentSnapshot$);
-    return buildAgentRunEnvironment({
+    return buildAgentRunVariables({
       agentId,
-      persistedEnvironment: { variables: snapshot.variables },
+      variables: snapshot.variables,
     });
   });
   const permissionPolicies$ = computed(async (get) => {
@@ -1145,7 +1140,7 @@ export function createExecutionConnectorSources(
       customConnectorDefinitions$,
       catalog$,
       connectors$,
-      bodyEnvironment$,
+      runVariables$,
       permissionPolicies$,
     },
   };

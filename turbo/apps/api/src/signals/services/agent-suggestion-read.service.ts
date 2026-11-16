@@ -4,12 +4,13 @@ import {
   suggestionRow,
 } from "./agent-suggestions-lifecycle";
 import { command } from "ccstate";
-import { and, asc, desc, eq, gt, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, ne, or, sql } from "drizzle-orm";
 import { feedItems } from "@okouai/db/schema/feed-item";
 import {
   SUGGESTION_RETENTION_MS,
   suggestionReceiptSchema,
   suggestionSchema,
+  platformEventSchema,
 } from "@okouai/api-contracts/contracts/feed";
 import { db$ } from "../external/db";
 import { nowDate } from "../../lib/time";
@@ -112,12 +113,30 @@ const recentSuggestionReceipts$ = command(
     });
   },
 );
-export const readSuggestions$ = command(
-  async ({ get, set }, owner: Owner, signal: AbortSignal) => {
+export const readFeedItems$ = command(
+  async (
+    { get, set },
+    owner: Owner,
+    type: "suggestion" | "event" | undefined,
+    signal: AbortSignal,
+  ) => {
     const rows = await get(db$)
       .select()
       .from(feedItems)
-      .where(and(suggestionOwner(owner), liveSuggestion(nowDate())))
+      .where(
+        and(
+          eq(feedItems.orgId, owner.orgId),
+          eq(feedItems.userId, owner.userId),
+          type ? eq(feedItems.type, type) : undefined,
+          or(
+            liveSuggestion(nowDate()),
+            and(
+              eq(feedItems.type, "event"),
+              sql`${feedItems.state}->>'status' = 'active'`,
+            ),
+          ),
+        ),
+      )
       .orderBy(
         sql`${desc(feedItems.priority)} NULLS LAST`,
         asc(feedItems.createdAt),
@@ -125,14 +144,25 @@ export const readSuggestions$ = command(
       )
       .limit(10);
     signal.throwIfAborted();
-    const suggestions = rows.map((row) => {
+    const items = rows.map((row) => {
+      if (row.type === "event") {
+        return platformEventSchema.parse({
+          ...row,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+          expiresAt: row.expiresAt?.toISOString() ?? null,
+        });
+      }
       return withSuggestionConsumeToken(
         owner,
         suggestionSchema.parse(suggestionRow(row)),
       );
     });
-    const receipts = await set(recentSuggestionReceipts$, owner, signal);
-    return { status: 200 as const, body: { items: suggestions, receipts } };
+    const receipts =
+      type === "event"
+        ? []
+        : await set(recentSuggestionReceipts$, owner, signal);
+    return { status: 200 as const, body: { items, receipts } };
   },
 );
 export const readSuggestionManagement$ = command(

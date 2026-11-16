@@ -63,8 +63,7 @@ import {
 } from "./connector-runtime-preparation.service";
 import {
   customConnectorAccountAuthMethodIsCompatible,
-  type CustomConnectorRuntimeStorageRow,
-  customConnectorRuntimeStorageSnapshot,
+  customConnectorCredentialAccesses,
 } from "./custom-connector-credential-access.service";
 import type { CustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
 import {
@@ -969,8 +968,8 @@ function createCustomConnectorStorageSignals(
       requestedCustomCount: scope.allowedCustomConnectorIds.length,
     };
   });
-  const customConnectorStorageRows$ = computed(
-    async (get): Promise<readonly CustomConnectorRuntimeStorageRow[]> => {
+  const customConnectorSelectionRows$ = computed(
+    async (get): Promise<readonly CustomConnectorSelectionRow[]> => {
       const { timing } = await get(connectorInput$);
       const startedAt = now();
       const result = await get(customConnectorSources$);
@@ -993,7 +992,7 @@ function createCustomConnectorStorageSignals(
       const projectionStartedAt = performance.now();
       const rows = result.sources.flatMap((source) => {
         return source.kind === "available"
-          ? customConnectorSourceStorageRows(source.snapshot)
+          ? customConnectorSourceSelectionRows(source.snapshot)
           : [];
       });
       safeSync(() => {
@@ -1008,7 +1007,7 @@ function createCustomConnectorStorageSignals(
       return rows;
     },
   );
-  return { customConnectorStorageRows$ };
+  return { customConnectorSelectionRows$ };
 }
 
 type CustomConnectorBundleSignals = ReturnType<
@@ -1024,13 +1023,13 @@ function createCustomConnectorBundleSignals(
   const { customConnectorDefinitions$ } = inputs;
   const { accountCandidates$ } = accounts;
   const { preparation$ } = prepared;
-  const { customConnectorStorageRows$ } = customStorage;
+  const { customConnectorSelectionRows$ } = customStorage;
   const customConnectorPermissionBundles$ = computed(async (get) => {
     const [preparation, connectors, storageRows, candidates] =
       await Promise.all([
         get(preparation$),
         get(customConnectorDefinitions$),
-        get(customConnectorStorageRows$),
+        get(customConnectorSelectionRows$),
         get(accountCandidates$),
       ]);
     if (isConnectedAccountsError(preparation) || !preparation.custom) {
@@ -1092,7 +1091,7 @@ function createCustomConnectorContextSignals(
   } = inputs;
   const { accountCandidates$ } = accounts;
   const { preparation$ } = prepared;
-  const { customConnectorStorageRows$ } = customStorage;
+  const { customConnectorSelectionRows$ } = customStorage;
   const { customConnectorPermissionBundles$ } = customBundles;
   const customConnectorContext$ = computed(
     async (
@@ -1108,7 +1107,7 @@ function createCustomConnectorContextSignals(
       ] = await Promise.all([
         get(preparation$),
         get(customConnectorDefinitions$),
-        get(customConnectorStorageRows$),
+        get(customConnectorSelectionRows$),
         get(accountCandidates$),
         get(featureSwitchContext$),
         get(customConnectorPermissionBundles$),
@@ -1182,7 +1181,7 @@ function createCustomConnectorContextSignals(
 }
 
 /** The Agent's stored connector scope as a Run connector scope. */
-export function runConnectorScope(
+function runConnectorScope(
   scope: AgentConnectorScope,
 ): EffectiveConnectorScope {
   return {
@@ -1194,7 +1193,7 @@ export function runConnectorScope(
 }
 
 /** The bootstrap connector catalog, explicit about an empty scope. */
-export function runConnectorCatalogSelection(
+function runConnectorCatalogSelection(
   scope: Pick<
     AgentConnectorScope,
     "allowedConnectorSlugs" | "allowedCustomConnectorIds"
@@ -1210,9 +1209,16 @@ export function runConnectorCatalogSelection(
   return { kind: "scoped", selection: catalog };
 }
 
-function customConnectorSourceStorageRows(
+interface CustomConnectorSelectionRow {
+  readonly connection: Parameters<
+    typeof customConnectorCredentialAccesses
+  >[1][number];
+  readonly values: CustomConnectorRuntimeDataRows[number]["values"];
+}
+
+function customConnectorSourceSelectionRows(
   snapshot: ConnectorSourceSnapshot,
-): readonly CustomConnectorRuntimeStorageRow[] {
+): readonly CustomConnectorSelectionRow[] {
   const { source, connection, customBinding: binding } = snapshot;
   if (source.kind !== "custom" || !binding) {
     return [];
@@ -1256,24 +1262,25 @@ function customConnectorSourceStorageRows(
           ? []
           : snapshot.credentials.map((credential) => {
               return {
+                connectorId: source.customConnectorId,
                 kind: "secret" as const,
                 key: credential.name,
-                storedValue: credential.encryptedValue,
               };
             })),
-        ...Object.entries(snapshot.variables).map(([key, storedValue]) => {
-          return { kind: "variable" as const, key, storedValue };
+        ...Object.entries(snapshot.variables).map(([key, value]) => {
+          return {
+            connectorId: source.customConnectorId,
+            kind: "variable" as const,
+            key,
+            value,
+          };
         }),
       ]
     : [];
-  return values.length === 0
-    ? [{ ...base, kind: null, key: null, storedValue: null }]
-    : values.map((value) => {
-        return { ...base, ...value };
-      });
+  return [{ connection: base, values }];
 }
 
-export type ConnectorScopeSource = "explicit" | "stored_agent" | "empty";
+type ConnectorScopeSource = "stored_agent" | "empty";
 
 export interface EffectiveConnectorScope {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
@@ -1295,7 +1302,7 @@ interface ThreadConnectorSelectionIds {
   >;
 }
 
-export function isEmptyRunConnectorScope(scope: {
+function isEmptyRunConnectorScope(scope: {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
 }): boolean {
@@ -2031,7 +2038,7 @@ function runConnectorAccountCandidatesFromRows(args: {
 function customConnectorCandidateRuntimeRows(args: {
   readonly connector: CustomConnectorRuntimeDataRows[number]["connector"];
   readonly candidateIds: readonly string[];
-  readonly storageRows: readonly CustomConnectorRuntimeStorageRow[];
+  readonly storageRows: readonly CustomConnectorSelectionRow[];
 }): CustomConnectorRuntimeDataRows {
   const { connector } = args;
   const declaredFields = new Set(
@@ -2041,21 +2048,33 @@ function customConnectorCandidateRuntimeRows(args: {
     ? args.candidateIds
     : [undefined];
   return ids.map((id) => {
-    const storage = customConnectorRuntimeStorageSnapshot(
+    const accesses = customConnectorCredentialAccesses(
       [connector],
-      args.storageRows,
+      args.storageRows.map((row) => {
+        return row.connection;
+      }),
       new Map(id ? [[connector.id, id]] : []),
     );
-    const credentialAccess = storage.accesses.get(connector.id);
+    const credentialAccess = accesses.get(connector.id);
     if (!credentialAccess) {
       throw new Error("Expected custom connector credential access");
     }
     return {
       connector,
       credentialAccess,
-      values: storage.values.filter((value) => {
-        return declaredFields.has(customConnectorValueMarkerKey(value));
-      }),
+      values:
+        credentialAccess.kind === "current"
+          ? args.storageRows.flatMap((row) => {
+              return row.connection.id === credentialAccess.memberConnectorId
+                ? row.values.filter((value) => {
+                    return (
+                      value.connectorId === connector.id &&
+                      declaredFields.has(customConnectorValueMarkerKey(value))
+                    );
+                  })
+                : [];
+            })
+          : [],
     };
   });
 }

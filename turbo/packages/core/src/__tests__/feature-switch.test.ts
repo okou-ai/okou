@@ -57,7 +57,6 @@ describe("isFeatureEnabled", () => {
     FeatureSwitchKey.SshChatApproval,
     FeatureSwitchKey.ArtifactSidebarPreview,
     FeatureSwitchKey.ArtifactPreviewToolbar,
-    FeatureSwitchKey.UserNotifications,
     FeatureSwitchKey.IosSettingsCredits,
   ])("defaults %s to staff and honors Lab overrides", (key) => {
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };

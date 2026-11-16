@@ -189,6 +189,12 @@ export const mobileBreadcrumb$ = computed(
     const nonChatSections: Partial<
       Record<string, { label: string; path: RoutePath }>
     > = {
+      forYou: {
+        label: i18n.t(($) => {
+          return $.chat.agentSuggestions.forYou.title;
+        }),
+        path: ROUTES.forYou,
+      },
       settings: {
         label: i18n.t(($) => {
           return $.appShell.sidebar.navigation.settings;

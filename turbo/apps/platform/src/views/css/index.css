@@ -270,19 +270,8 @@
   --animate-capability-tray-in: capability-tray-in 520ms
     cubic-bezier(0.32, 0.72, 0, 1) both;
 
-  /* Home suggestions rotate in the greeting row. The current suggestion's
-     progress segment fills over 8s, and its `animationend` shows the next
-     suggestion. The fill animates `--okou-suggestion-progress` rather than a
-     width or scale: the segment is 16px, so it moves 2px a second, and a width
-     or scale edge snaps to whole pixels and ticks every half second. A gradient
-     edge with a 1px ramp carries the sub-pixel position instead. Pausing is
-     `animation-play-state`. Consumers reach it through `motion-safe:`, so
-     reduced motion never advances on its own and the property resolves to its
-     registered initial value of 1, a full segment. A new title rises into
-     place once. Keyframes and the registration stay below. */
-  --animate-suggestion-progress: okou-suggestion-progress 8s linear both;
-  --animate-suggestion-title-in: okou-suggestion-title-in 240ms
-    cubic-bezier(0, 0, 0.2, 1);
+  --animate-card-fly-out: card-fly-out 520ms cubic-bezier(0.4, 0, 0.2, 1)
+    forwards;
 
   /* Illustration strokes. These are drawn artwork inside a scaled canvas, not
      product chrome, so they are a different decision from `--border-width-surface`
@@ -736,23 +725,18 @@ body {
   }
 }
 
-@keyframes okou-suggestion-progress {
+@keyframes card-fly-out {
   from {
-    --okou-suggestion-progress: 0;
-  }
-  to {
-    --okou-suggestion-progress: 1;
-  }
-}
-
-@keyframes okou-suggestion-title-in {
-  from {
-    opacity: 0;
-    transform: translateY(0.25rem);
-  }
-  to {
+    transform: translate(0, 0) rotate(0deg);
     opacity: 1;
-    transform: translateY(0);
+  }
+  72% {
+    opacity: 1;
+  }
+  to {
+    transform: translate(80%, -110px) rotate(16deg);
+    opacity: 0;
+    visibility: hidden;
   }
 }
 
@@ -1200,15 +1184,6 @@ body {
   syntax: "<length>";
   inherits: true;
   initial-value: 0px;
-}
-
-/* The home suggestion progress segment draws its edge at this fraction. It is
-   registered so the keyframes interpolate a number; the initial value of 1 is
-   what a segment shows when reduced motion drops the animation. */
-@property --okou-suggestion-progress {
-  syntax: "<number>";
-  inherits: false;
-  initial-value: 1;
 }
 
 /* How far a capability card's texture pool reaches from its objects. It is

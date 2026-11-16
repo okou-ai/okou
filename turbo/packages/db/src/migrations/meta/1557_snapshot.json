@@ -1,5 +1,5 @@
 {
-  "id": "8829048b-7beb-473c-a773-5f36bd992f2e",
+  "id": "7b63c140-37bd-4e49-8aae-fbe89769fdd4",
   "prevId": "ba6523f8-10cd-4f75-aea8-e721dd0e57c0",
   "version": "7",
   "dialect": "postgresql",
@@ -15176,6 +15176,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "source_type": {
+          "name": "source_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'agent'"
+        },
         "priority": {
           "name": "priority",
           "type": "integer",
@@ -15215,6 +15222,46 @@
         }
       },
       "indexes": {
+        "feed_items_active_events": {
+          "name": "feed_items_active_events",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "priority",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"feed_items\".\"type\" = 'event' AND \"feed_items\".\"state\"->>'status' = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "feed_items_active_order": {
           "name": "feed_items_active_order",
           "columns": [
@@ -15373,19 +15420,27 @@
       "checkConstraints": {
         "feed_items_type": {
           "name": "feed_items_type",
-          "value": "\"feed_items\".\"type\" = 'suggestion'"
+          "value": "\"feed_items\".\"type\" IN ('suggestion', 'event')"
+        },
+        "feed_items_source_type": {
+          "name": "feed_items_source_type",
+          "value": "(\"feed_items\".\"type\" = 'suggestion' AND \"feed_items\".\"source_type\" = 'agent') OR (\"feed_items\".\"type\" = 'event' AND \"feed_items\".\"source_type\" = 'platform-event')"
         },
         "feed_items_suggestion_state": {
           "name": "feed_items_suggestion_state",
-          "value": "(\n    jsonb_typeof(\"feed_items\".\"state\") = 'object'\n    AND \"feed_items\".\"state\"->>'status' IN ('active', 'consumed', 'removed')\n    AND \"feed_items\".\"state\" ? 'selectedOptionId'\n    AND (\"feed_items\".\"state\"->'selectedOptionId' = 'null'::jsonb OR jsonb_typeof(\"feed_items\".\"state\"->'selectedOptionId') = 'string')\n    AND jsonb_typeof(\"feed_items\".\"state\"->'feedbacks') = 'array'\n    AND jsonb_array_length(\"feed_items\".\"state\"->'feedbacks') <= 100\n  ) IS TRUE"
+          "value": "\"feed_items\".\"type\" <> 'suggestion' OR (\n    jsonb_typeof(\"feed_items\".\"state\") = 'object'\n    AND \"feed_items\".\"state\"->>'status' IN ('active', 'consumed', 'removed')\n    AND \"feed_items\".\"state\" ? 'selectedOptionId'\n    AND (\"feed_items\".\"state\"->'selectedOptionId' = 'null'::jsonb OR jsonb_typeof(\"feed_items\".\"state\"->'selectedOptionId') = 'string')\n    AND jsonb_typeof(\"feed_items\".\"state\"->'feedbacks') = 'array'\n    AND jsonb_array_length(\"feed_items\".\"state\"->'feedbacks') <= 100\n  ) IS TRUE"
         },
         "feed_items_suggestion_content": {
           "name": "feed_items_suggestion_content",
-          "value": "\"feed_items\".\"state\"->>'status' <> 'active' OR \"feed_items\".\"content\" IS NOT NULL"
+          "value": "\"feed_items\".\"type\" <> 'suggestion' OR \"feed_items\".\"state\"->>'status' <> 'active' OR \"feed_items\".\"content\" IS NOT NULL"
         },
         "feed_items_suggestion_expiry": {
           "name": "feed_items_suggestion_expiry",
-          "value": "\"feed_items\".\"expires_at\" IS NOT NULL"
+          "value": "\"feed_items\".\"type\" <> 'suggestion' OR \"feed_items\".\"expires_at\" IS NOT NULL"
+        },
+        "feed_items_event": {
+          "name": "feed_items_event",
+          "value": "\"feed_items\".\"type\" <> 'event' OR (\n          jsonb_typeof(\"feed_items\".\"state\") = 'object'\n          AND \"feed_items\".\"state\"->>'status' IN ('active', 'dismissed')\n          AND jsonb_typeof(\"feed_items\".\"content\") = 'object'\n          AND \"feed_items\".\"content\"->>'eventType' = 'automation-disabled'\n          AND jsonb_typeof(\"feed_items\".\"content\"->'automationId') = 'string'\n          AND jsonb_typeof(\"feed_items\".\"content\"->'workflowId') = 'string'\n          AND jsonb_typeof(\"feed_items\".\"content\"->'automationName') = 'string'\n          AND jsonb_typeof(\"feed_items\".\"content\"->'disabledAt') = 'string'\n          AND jsonb_typeof(\"feed_items\".\"content\"->'consecutiveFailures') = 'number'\n          AND jsonb_typeof(\"feed_items\".\"content\"->'recoveryScheduled') = 'boolean'\n        ) IS TRUE"
         }
       },
       "isRLSEnabled": false
@@ -19895,18 +19950,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
-        },
-        "widget_push_token": {
-          "name": "widget_push_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "widget_pushed_at": {
-          "name": "widget_pushed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",

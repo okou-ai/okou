@@ -210,6 +210,7 @@ export const showChatSidebar$ = command(({ set }) => {
 export function isChatRoute(key: RouteKey | null): boolean {
   return (
     key === "home" ||
+    key === "forYou" ||
     key === "agentChat" ||
     key === "agentIdeas" ||
     key === "chat" ||

@@ -4,6 +4,36 @@ import type { RunPromptAndSkills, SkillVolume } from "./run-prompt-and-skills";
 
 const MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT = 20;
 
+export function createConnectorSkillVolumes(
+  authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>,
+) {
+  return computed(async (get) => {
+    return connectorSkillVolumes(await get(authorizedConnectors$));
+  });
+}
+
+function connectorSkillVolumes(
+  connectors: AuthorizedConnectors,
+): readonly SkillVolume[] {
+  const customVolumes: SkillVolume[] = [];
+  const builtinVolumes: SkillVolume[] = [];
+  for (const connector of connectors) {
+    if (connector.skill === null) {
+      continue;
+    }
+    const volume = {
+      contentBundle: connector.skill.contentBundle,
+      skillName: connector.skill.skillName,
+    };
+    if (connector.kind === "custom") {
+      customVolumes.push({ ...volume, source: "custom_connector_skill" });
+    } else {
+      builtinVolumes.push({ ...volume, source: "connector_skill" });
+    }
+  }
+  return [...customVolumes, ...builtinVolumes];
+}
+
 export function createConnectorsContext(
   authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>,
   singleAgent$: Computed<Promise<boolean>>,
@@ -13,31 +43,12 @@ export function createConnectorsContext(
       get(authorizedConnectors$),
       get(singleAgent$),
     ]);
-    const customVolumes: SkillVolume[] = [];
-    const builtinVolumes: SkillVolume[] = [];
-    for (const connector of connectors) {
-      if (connector.skill === null) {
-        continue;
-      }
-      const volume = {
-        contentBundle: connector.skill.contentBundle,
-        skillName: connector.skill.skillName,
-      };
-      if (connector.kind === "custom") {
-        customVolumes.push({ ...volume, source: "custom_connector_skill" });
-      } else {
-        builtinVolumes.push({
-          ...volume,
-          source: "connector_skill",
-        });
-      }
-    }
     return {
       systemPromptVariables: {
         connectors: connectorPrompt(connectors, singleAgent),
       },
       userPromptVariables: {},
-      skillVolumes: [...customVolumes, ...builtinVolumes],
+      skillVolumes: connectorSkillVolumes(connectors),
     };
   });
 }

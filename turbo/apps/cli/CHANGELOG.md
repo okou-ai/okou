@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.28.1](https://github.com/okou-ai/okou/compare/cli-v10.28.0...cli-v10.28.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* require phone use opt-in and authorize access from chat ([#47650](https://github.com/okou-ai/okou/issues/47650)) ([d99b85b](https://github.com/okou-ai/okou/commit/d99b85b2a06c635ca25fa93b9f6a0fc66b55b276))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.71.1
+    * @okouai/core bumped to 8.842.1
+    * @okouai/pi-agent-runtime bumped to 1.51.134
+
 ## [10.28.0](https://github.com/okou-ai/okou/compare/cli-v10.27.2...cli-v10.28.0) (2026-11-16)
 
 

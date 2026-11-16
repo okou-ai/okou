@@ -236,6 +236,11 @@ const realtimeResyncMessageSchema = object({
   subscriptionId: requestIdSchema,
 }).strict();
 
+/** A Worker-owned database channel lost continuity, independent of tab subscriptions. */
+const realtimeGapMessageSchema = object({
+  type: literal("realtime-gap"),
+}).strict();
+
 const realtimeEventMessageSchema = object({
   type: literal("realtime-event"),
   subscriptionId: requestIdSchema,
@@ -258,6 +263,7 @@ export const sharedDatabaseWorkerMessageSchema = discriminatedUnion("type", [
   chatThreadReadCursorUpdatedMessageSchema,
   realtimeSubscribedMessageSchema,
   realtimeResyncMessageSchema,
+  realtimeGapMessageSchema,
   realtimeEventMessageSchema,
   realtimeSubscriptionErrorMessageSchema,
 ]);

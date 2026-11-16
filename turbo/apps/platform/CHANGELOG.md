@@ -13,6 +13,37 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1134.1](https://github.com/okou-ai/okou/compare/app-v0.1134.0...app-v0.1134.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **app:** show a skeleton only for credits progress ([#47706](https://github.com/okou-ai/okou/issues/47706)) ([769be8b](https://github.com/okou-ai/okou/commit/769be8b4f7533f76abcd2724cf6a8481d6df1e2e))
+* **platform:** forward worker credential continuity gaps to tabs ([#47697](https://github.com/okou-ai/okou/issues/47697)) ([c514dae](https://github.com/okou-ai/okou/commit/c514dae7e111b29e03b14af579f73c9096b4475f))
+
+## [0.1134.0](https://github.com/okou-ai/okou/compare/app-v0.1133.5...app-v0.1134.0) (2026-11-16)
+
+
+### Features
+
+* **platform:** capability art palette pass, desk bell, matte gears and live magnifier ([#47694](https://github.com/okou-ai/okou/issues/47694)) ([c272a2c](https://github.com/okou-ai/okou/commit/c272a2cc6aa5b6a23c374f9d0ea1d939cd0b6f4c))
+
+
+### Bug Fixes
+
+* cap connector rewards at ten per user ([#47699](https://github.com/okou-ai/okou/issues/47699)) ([8093612](https://github.com/okou-ai/okou/commit/8093612f536b8d3e8d5920fa9ed0a7583a29f80b))
+* redeem onboarding codes for existing free workspaces ([#47701](https://github.com/okou-ai/okou/issues/47701)) ([92e7bd7](https://github.com/okou-ai/okou/commit/92e7bd7fdafe3afa458b39b57c148faf66cdebec))
+* require phone use opt-in and authorize access from chat ([#47650](https://github.com/okou-ai/okou/issues/47650)) ([d99b85b](https://github.com/okou-ai/okou/commit/d99b85b2a06c635ca25fa93b9f6a0fc66b55b276))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.71.1
+    * @okouai/core bumped to 8.842.1
+    * @okouai/ui bumped to 1.21.28
+
 ## [0.1133.5](https://github.com/okou-ai/okou/compare/app-v0.1133.4...app-v0.1133.5) (2026-11-16)
 
 

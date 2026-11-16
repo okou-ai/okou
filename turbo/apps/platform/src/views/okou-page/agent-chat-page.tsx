@@ -1,10 +1,7 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { CapabilityHomePage } from "./capability-home-page.tsx";
-import {
-  defaultAgentChatPageActive$,
-  defaultAgentId$,
-} from "../../signals/agent.ts";
+import { defaultAgentId$ } from "../../signals/agent.ts";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -30,12 +27,6 @@ import {
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./composer.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
-import {
-  AgentSuggestions,
-  HomeSuggestionGreeting,
-  SuggestionSaveErrors,
-} from "./agent-suggestions.tsx";
-import { suggestionsEnabled$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { ChatHomeCompliance } from "./chat-home-compliance.tsx";
 import { SCROLL_FADE_Y_END_SM } from "./scroll-fade.ts";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
@@ -461,12 +452,6 @@ export function AgentComposerPage() {
   const finishGreetingEntrance = useSet(finishChatGreetingEntrance$);
   const greetingIdentity = `${currentChatAgentId ?? "none"}:${tagline}`;
 
-  // Suggestion options start chats in the default Agent, so only its own
-  // new-chat page lists them.
-  const suggestionsEnabled = useGet(suggestionsEnabled$);
-  const defaultAgentChatPage = useLastResolved(defaultAgentChatPageActive$);
-  const showSuggestions = suggestionsEnabled && defaultAgentChatPage === true;
-
   const switches = useGet(featureSwitch$);
   const capabilityHome = switches[FeatureSwitchKey.HomeCapabilities];
   const taglineHeading = (
@@ -488,8 +473,6 @@ export function AgentComposerPage() {
         key={greetingIdentity}
         data-slot="chat-greeting"
         data-testid="chat-greeting"
-        // On the capability home a waiting suggestion takes the line beside
-        // the avatar, so the greeting spans its row.
         className={cn(
           "flex max-w-full items-center gap-4",
           capabilityHome && "min-w-0 flex-1",
@@ -507,15 +490,7 @@ export function AgentComposerPage() {
         >
           <ChatAgentAvatar agentId={currentChatAgentId} />
         </span>
-        {capabilityHome && showSuggestions ? (
-          <HomeSuggestionGreeting
-            fallback={taglineHeading}
-            entrance={animateGreeting}
-            onEntranceEnd={finishGreetingEntrance}
-          />
-        ) : (
-          taglineHeading
-        )}
+        {taglineHeading}
       </div>
     );
   if (capabilityHome) {
@@ -633,8 +608,6 @@ export function AgentComposerPage() {
             {/* Keep the final row clear of the scrollport's bottom edge. */}
             <div className="order-2 sm:order-none sm:pb-10">
               <ComposerTaskChips signals={composerSignals} />
-              {showSuggestions && <AgentSuggestions className="mt-10" />}
-              <SuggestionSaveErrors />
             </div>
           </div>
         </div>

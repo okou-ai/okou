@@ -1,4 +1,3 @@
-import { UserNotificationsEntry } from "./user-notifications.tsx";
 import { ProjectCreateButton } from "../projects/project-row.tsx";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -28,6 +27,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
 import { PwaAgentSwitcher } from "./pwa-agent-switcher.tsx";
+import { ForYouChatListRow } from "./sidebar-okou-row.tsx";
 import { OverlayScrollArea } from "./sidebar-scroll.tsx";
 import { ChatThreadListRows, ChatThreadsListMenu } from "./sidebar-threads.tsx";
 
@@ -89,7 +89,6 @@ function PwaChatListHeader() {
         >
           <SquarePen aria-hidden="true" />
         </Button>
-        <UserNotificationsEntry />
         <ChatThreadsListMenu showMarkAllRead touch />
       </div>
     </header>
@@ -272,6 +271,9 @@ export function PwaChatListPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PwaChatListHeader />
+      <div className="px-3">
+        <ForYouChatListRow touch />
+      </div>
       <InstatusStatusNotice placement="list" />
       <PwaChatListContent />
     </div>

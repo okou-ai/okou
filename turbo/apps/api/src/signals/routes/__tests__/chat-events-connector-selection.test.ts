@@ -176,6 +176,16 @@ describe("thread connector selection", () => {
       },
     ]);
     await own(() => {
+      return connectors.connectManualGrant(
+        actor,
+        "runtime",
+        "api-token",
+        { apiKey: "thread-runtime-key-updated" },
+        agentId,
+        { intent: "reconnect", connectionId: runtimeConnection.id },
+      );
+    });
+    await own(() => {
       return cancelChatRun(actor, run.runId, execution.sandboxHeaders);
     });
     const promoted = await own(() => {
@@ -185,7 +195,7 @@ describe("thread connector selection", () => {
     const next = await runExecution(promoted.runId);
     expect(next.execution.environment).toMatchObject({
       OPENAI_TOKEN: "thread-openai-key",
-      RUNTIME_API_KEY: "thread-runtime-key",
+      RUNTIME_API_KEY: "thread-runtime-key-updated",
     });
     expect(
       next.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,

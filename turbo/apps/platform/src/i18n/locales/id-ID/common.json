@@ -1658,6 +1658,14 @@
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
       "feedLabel": "Feed",
+      "forYou": {
+        "loading": "Memuat saran",
+        "next": "Saran berikutnya",
+        "previous": "Saran sebelumnya",
+        "remaining": "{{total}} tersisa",
+        "subtitle": "Satu per satu",
+        "title": "Untuk Anda"
+      },
       "homeCard": {
         "completeTitle": "Semua beres",
         "feedback": "Tindakan saran",
@@ -4301,6 +4309,26 @@
     "previousFeature": "Fitur sebelumnya",
     "tryPrompt": "Coba tugas ini"
   },
+  "feedEvents": {
+    "automationDisabled": {
+      "backToWorkflows": "Kembali ke alur kerja",
+      "disabledAt": "Dinonaktifkan pada {{time}}",
+      "loadFailed": "Tidak dapat memuat otomatisasi ini",
+      "loadingAutomation": "Memuat otomatisasi",
+      "otherWorkspace": "Otomatisasi ini berada di {{workspace}}. Ganti ruang kerja untuk melihatnya.",
+      "reason_one": "{{count}} proses gagal. Tinjau otomatisasi sebelum mengaktifkannya kembali.",
+      "reason_other": "{{count}} proses berturut-turut gagal. Tinjau otomatisasi sebelum mengaktifkannya kembali.",
+      "switchFailed": "Tidak dapat mengganti ruang kerja. Coba lagi atau gunakan pemilih ruang kerja.",
+      "switchWorkspace": "Ganti ruang kerja",
+      "systemManaged": "Otomatisasi ini dikelola sistem. Status saat ini ditampilkan di bawah.",
+      "systemSource": "Peristiwa platform",
+      "title": "Otomatisasi dinonaktifkan",
+      "unavailable": "Otomatisasi tidak ditemukan atau Anda tidak memiliki akses",
+      "viewAutomation": "Lihat otomatisasi",
+      "workspaceFallback": "Ruang kerja asal"
+    },
+    "retry": "Coba lagi"
+  },
   "friendReferrals": {
     "copied": "Disalin",
     "copyFailed": "Gagal menyalin. Coba lagi.",
@@ -6580,48 +6608,6 @@
       "thread_one": "{{value}} utas",
       "thread_other": "{{value}} utas"
     }
-  },
-  "userNotifications": {
-    "automationDisabled": {
-      "backToWorkflows": "Kembali ke alur kerja",
-      "disabled": "Dinonaktifkan",
-      "disabledAt": "Dinonaktifkan pada {{time}}",
-      "loadFailed": "Tidak dapat memuat otomatisasi ini",
-      "loadingAutomation": "Memuat otomatisasi",
-      "notNow": "Tidak sekarang",
-      "otherWorkspace": "Otomatisasi ini berada di {{workspace}}. Ganti ruang kerja untuk melihatnya.",
-      "reason_one": "{{count}} proses gagal. Tinjau otomatisasi sebelum mengaktifkannya kembali.",
-      "reason_other": "{{count}} proses berturut-turut gagal. Tinjau otomatisasi sebelum mengaktifkannya kembali.",
-      "switchFailed": "Tidak dapat mengganti ruang kerja. Coba lagi atau gunakan pemilih ruang kerja.",
-      "switchWorkspace": "Ganti ruang kerja",
-      "systemManaged": "Otomatisasi ini dikelola sistem. Status saat ini ditampilkan di bawah.",
-      "systemSource": "Notifikasi sistem",
-      "title": "Otomatisasi dinonaktifkan",
-      "unavailable": "Otomatisasi tidak ditemukan atau Anda tidak memiliki akses",
-      "viewAutomation": "Lihat otomatisasi",
-      "workspace": "Ruang kerja",
-      "workspaceFallback": "Ruang kerja asal"
-    },
-    "close": "Tutup",
-    "countUnavailable": "Jumlah notifikasi belum dibaca tidak tersedia",
-    "detailFailed": "Tidak dapat memuat notifikasi ini",
-    "empty": "Belum ada notifikasi",
-    "emptyDescription": "Pembaruan dari Okou akan muncul di sini.",
-    "loadFailed": "Tidak dapat memuat notifikasi",
-    "loading": "Memuat notifikasi",
-    "loadMore": "Tampilkan yang lebih lama",
-    "nextPage": "Halaman berikutnya",
-    "pageNavigation": "Halaman dalam pesan ini",
-    "pageOf": "Halaman {{current}} dari {{total}}",
-    "previousPage": "Halaman sebelumnya",
-    "readAll": "Tandai semua sudah dibaca",
-    "readFailed": "Tidak dapat menandai sebagai dibaca",
-    "retry": "Coba lagi",
-    "sender": "Tim Okou",
-    "title": "Notifikasi",
-    "unread": "Belum dibaca",
-    "unreadCount_one": "{{count}} notifikasi belum dibaca",
-    "unreadCount_other": "{{count}} notifikasi belum dibaca"
   },
   "vnc": {
     "add": "Tambahkan host",

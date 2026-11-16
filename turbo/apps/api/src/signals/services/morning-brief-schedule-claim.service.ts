@@ -1,3 +1,4 @@
+import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
 import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
@@ -24,9 +25,9 @@ import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
-  prepareAutomationDisabledNotification$,
-  type PreparedAutomationDisabledNotification,
-} from "./automation-disabled-notification.service";
+  prepareAutomationDisabledFeedEvent$,
+  type PreparedAutomationDisabledFeedEvent,
+} from "./automation-disabled-feed-event.service";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 
 import {
@@ -289,7 +290,7 @@ interface PreparedMorningBriefScheduleSettlement {
   readonly claim: typeof morningBriefScheduleClaims.$inferSelect;
   readonly settledAt: Date;
   readonly plan: ReturnType<typeof officialMorningBriefSettlementPlan>;
-  readonly notification: PreparedAutomationDisabledNotification | null;
+  readonly feedEvent: PreparedAutomationDisabledFeedEvent | null;
 }
 
 const morningBriefSettlementPublicationRow = object({
@@ -353,9 +354,9 @@ const prepareMorningBriefSchedulePublication$ = command(
       args,
       settledAt,
     );
-    const notification = plan?.shouldDisable
+    const feedEvent = plan?.shouldDisable
       ? await set(
-          prepareAutomationDisabledNotification$,
+          prepareAutomationDisabledFeedEvent$,
           observed.automation,
           settledAt,
         )
@@ -365,7 +366,7 @@ const prepareMorningBriefSchedulePublication$ = command(
       claim,
       settledAt,
       plan,
-      notification,
+      feedEvent,
     };
   },
 );
@@ -388,7 +389,7 @@ const publishMorningBriefScheduleSettlement$ = command(
       settlement: args.settlement,
       settledAt: prepared.settledAt,
       advance: prepared.plan?.advance ?? null,
-      notification: prepared.notification,
+      feedEvent: prepared.feedEvent,
     });
     const executed = await settle(
       (async () => {
@@ -438,6 +439,9 @@ const publishMorningBriefScheduleSettlement$ = command(
           }
         : null;
     if (outcome) {
+      if (prepared.feedEvent) {
+        await publishAgentSuggestionsChangedSafely(prepared.feedEvent);
+      }
       // Publication already committed; report an actual pause before the caller observes cancellation.
       log.warn(
         "Morning Brief paused after consecutive failures; recovery is scheduled",

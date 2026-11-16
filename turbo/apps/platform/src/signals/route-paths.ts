@@ -6,6 +6,7 @@ import {
 
 export const ROUTES = {
   home: "/",
+  forYou: "/for-you",
   agents: "/agents",
   agentDetail: "/agents/:agentId",
   agentChat: "/agents/:agentId/chat",

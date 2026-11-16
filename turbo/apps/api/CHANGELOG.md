@@ -10,6 +10,33 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.73.2](https://github.com/okou-ai/okou/compare/api-v2.73.1...api-v2.73.2) (2026-11-16)
+
+
+### Refactoring
+
+* **api:** remove thread launch request scaffolding ([#47688](https://github.com/okou-ai/okou/issues/47688)) ([073f49e](https://github.com/okou-ai/okou/commit/073f49ed8937a60f9b840bbf30e71cf1e406a0cf))
+
+## [2.73.1](https://github.com/okou-ai/okou/compare/api-v2.73.0...api-v2.73.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* cap connector rewards at ten per user ([#47699](https://github.com/okou-ai/okou/issues/47699)) ([8093612](https://github.com/okou-ai/okou/commit/8093612f536b8d3e8d5920fa9ed0a7583a29f80b))
+* **integrations:** add native model recovery controls ([#47649](https://github.com/okou-ai/okou/issues/47649)) ([89c954e](https://github.com/okou-ai/okou/commit/89c954ec0e6a6408cac0f1ad960074b2d7fbdf24))
+* redeem onboarding codes for existing free workspaces ([#47701](https://github.com/okou-ai/okou/issues/47701)) ([92e7bd7](https://github.com/okou-ai/okou/commit/92e7bd7fdafe3afa458b39b57c148faf66cdebec))
+* require phone use opt-in and authorize access from chat ([#47650](https://github.com/okou-ai/okou/issues/47650)) ([d99b85b](https://github.com/okou-ai/okou/commit/d99b85b2a06c635ca25fa93b9f6a0fc66b55b276))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.71.1
+    * @okouai/core bumped to 8.842.1
+    * @okouai/db bumped to 2.37.1
+    * @okouai/pi-agent-runtime bumped to 1.51.134
+
 ## [2.73.0](https://github.com/okou-ai/okou/compare/api-v2.72.2...api-v2.73.0) (2026-11-16)
 
 

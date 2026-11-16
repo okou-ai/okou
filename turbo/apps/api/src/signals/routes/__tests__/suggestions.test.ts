@@ -351,7 +351,9 @@ describe("Agent suggestions", () => {
         return item.priority;
       }),
     ).toStrictEqual([104, 103, 102, 101, 100, 99, 98, 97, 96, 95]);
-    const [one, two] = homepage.body.items;
+    const [one, two] = homepage.body.items.filter((item) => {
+      return item.type === "suggestion";
+    });
     if (!one || !two) {
       throw new Error("Expected two cards");
     }
@@ -779,7 +781,7 @@ describe("Agent suggestions", () => {
         }),
     );
     const selected = pool.body.items[0];
-    if (!selected) {
+    if (!selected || selected.type !== "suggestion") {
       throw new Error("Expected a suggestion");
     }
     const retry = inputs.find((item) => {
@@ -1033,7 +1035,11 @@ describe("Agent suggestions", () => {
       [200],
     );
     expect(active.body.items).toHaveLength(1);
-    expect(active.body.items[0]?.state.selectedOptionId).toBeNull();
+    expect(
+      active.body.items.filter((item) => {
+        return item.type === "suggestion";
+      })[0]?.state.selectedOptionId,
+    ).toBeNull();
     const dismissed = await accept(
       client().consume({
         headers: humanHeaders,
@@ -1256,9 +1262,11 @@ describe("Agent suggestions", () => {
       client().list({ headers: humanHeaders }),
       [200],
     );
-    expect(unchanged.body.items[0]?.content.options).toStrictEqual(
-      own.content.options,
-    );
+    expect(
+      unchanged.body.items.filter((item) => {
+        return item.type === "suggestion";
+      })[0]?.content.options,
+    ).toStrictEqual(own.content.options);
     await createBddApi(context).readMe(owner.actor);
     const retained = await accept(
       client().list({ headers: humanHeaders }),

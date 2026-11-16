@@ -16,11 +16,11 @@ import {
   type MorningBriefScheduleClaimSettlement,
 } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { scheduleFailurePauseValues } from "./workflow-schedule-failure-policy";
-import type { PreparedAutomationDisabledNotification } from "./automation-disabled-notification.service";
+import type { PreparedAutomationDisabledFeedEvent } from "./automation-disabled-feed-event.service";
 import {
-  automationDisabledNotificationInsertSql,
+  automationDisabledFeedEventInsertSql,
   automationDisableTransitionColumns,
-} from "./automation-disabled-notification-sql";
+} from "./automation-disabled-feed-event-sql";
 
 type ScheduleInputs = Pick<
   typeof workflowAutomations.$inferSelect,
@@ -106,7 +106,7 @@ interface MorningBriefSettlementPublication extends MorningBriefSettlementClaimI
   >;
   readonly settledAt: Date;
   readonly advance: InFlightScheduleAdvance | null;
-  readonly notification: PreparedAutomationDisabledNotification | null;
+  readonly feedEvent: PreparedAutomationDisabledFeedEvent | null;
 }
 
 export function morningBriefScheduleSettlementClaimCondition(
@@ -199,8 +199,8 @@ export function morningBriefScheduleSettlementPublicationSql(
         .from(workflowAutomations)
         .where(sql`false`)
         .getSQL();
-  const notification = automationDisabledNotificationInsertSql(
-    args.notification,
+  const feedEvent = automationDisabledFeedEventInsertSql(
+    args.feedEvent,
     sql.identifier("morning_settlement_advanced"),
     sql`EXISTS (SELECT 1 FROM morning_settlement_claim)`,
   );
@@ -220,7 +220,7 @@ export function morningBriefScheduleSettlementPublicationSql(
         AND ${admitted}
       RETURNING id
     ),
-    morning_settlement_notification AS (${notification})
+    morning_settlement_feed_event AS (${feedEvent})
     SELECT EXISTS (SELECT 1 FROM morning_settlement_candidate) AS candidate_present,
       EXISTS (SELECT 1 FROM morning_settlement_current) AS automation_current,
       EXISTS (SELECT 1 FROM morning_settlement_advanced) AS advanced,
