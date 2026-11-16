@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
+import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   click,
   fill,
@@ -141,6 +142,73 @@ test("A format changed after choosing a template is frozen at send time", async 
   expect(capture.selectedTemplates[0]).toMatchObject({
     type: "presentation",
     selection: { templateId: template.templateId, outputFormat: "pptx" },
+  });
+});
+
+test("A restored feedback template freezes the changed format when sent", async () => {
+  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+  const feedback = {
+    type: "feedback" as const,
+    quote: "Revise the launch deck.",
+    note: [
+      { type: "text" as const, text: "Use " },
+      {
+        type: "template" as const,
+        titleSnapshot: template.title,
+        template: {
+          type: "presentation" as const,
+          selection: {
+            templateId: template.templateId,
+            outputFormat: "html" as const,
+          },
+        },
+      },
+      { type: "text" as const, text: " for this revision." },
+    ],
+  };
+  const capture = mockTemplateChat();
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: { version: 1, parts: [feedback] },
+      draftAttachments: null,
+    });
+  });
+  await setupPage({
+    context,
+    auth: ownerAuth,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: enabledFeatures,
+  });
+  const editor = await findComposerEditor();
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(template.title);
+    expect(editor).toHaveTextContent(feedback.quote);
+  });
+  const formats = await openPresentation();
+  expect(button("HTML", formats)).toHaveAttribute("aria-pressed", "true");
+  click(button("PPTX", formats));
+  expect(button("PPTX", formats)).toHaveAttribute("aria-pressed", "true");
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  const sentFeedback = capture.sentMessages[0]?.parts.find((part) => {
+    return part.type === "feedback";
+  });
+  expect(sentFeedback).toMatchObject({
+    quote: feedback.quote,
+    note: [
+      feedback.note[0],
+      {
+        type: "template",
+        titleSnapshot: template.title,
+        template: {
+          type: "presentation",
+          selection: { templateId: template.templateId, outputFormat: "pptx" },
+        },
+      },
+      feedback.note[2],
+    ],
   });
 });
 
