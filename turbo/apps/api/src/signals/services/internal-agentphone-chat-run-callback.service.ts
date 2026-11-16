@@ -57,6 +57,7 @@ const formatAgentPhoneMessageContent$ = command(
       readonly isGroup: boolean;
       readonly content: string;
       readonly error: string | null;
+      readonly chatEventId: string;
     },
     signal: AbortSignal,
   ): Promise<string> => {
@@ -458,6 +459,7 @@ const deliverClaimedAgentPhoneChatCallback$ = command(
         isGroup: payload.isGroup,
         content: messageContent,
         error: messageError,
+        chatEventId: payload.chatEventId,
       },
       signal,
     );
@@ -680,6 +682,7 @@ export const deliverAgentPhoneChatAdmissionFailure$ = command(
         isGroup: args.target.isGroup,
         content: event.content,
         error: event.error,
+        chatEventId: args.chatEventId,
       },
       signal,
     );

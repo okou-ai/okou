@@ -312,10 +312,27 @@ export type SendTelegramMessageResult =
     };
 
 export interface TelegramReplyMarkup {
-  readonly inline_keyboard: readonly (readonly {
-    readonly text: string;
-    readonly url: string;
-  }[])[];
+  readonly inline_keyboard: readonly (readonly (
+    | { readonly text: string; readonly url: string }
+    | { readonly text: string; readonly callback_data: string }
+  )[])[];
+}
+
+export async function answerTelegramCallbackQuery(
+  token: string,
+  callbackQueryId: string,
+  text: string | undefined,
+  signal: AbortSignal,
+): Promise<void> {
+  await callTelegramApi<boolean>(
+    token,
+    "answerCallbackQuery",
+    {
+      callback_query_id: callbackQueryId,
+      ...(text ? { text: text.slice(0, 200), show_alert: "true" } : {}),
+    },
+    signal,
+  );
 }
 
 interface TelegramSentMessage {

@@ -33,6 +33,7 @@ import { now, nowDate } from "../../lib/time";
 import { safeSync, tapError } from "../utils";
 import { processCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
 import { admitFeishuChatEvent$ } from "./feishu-chat-ingress.service";
+import { handleFeishuModelRecovery$ } from "./feishu-model-recovery.service";
 import {
   feishuInstallationConfigReadPlan,
   feishuInstallationConfigFromSecrets,
@@ -430,46 +431,57 @@ function validatedFeishuEventEnvelope(
   return { envelope: v2.data };
 }
 
+const loadFeishuWebhookConfig$ = command(
+  async ({ set }, installationId: string, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const plan = feishuInstallationConfigReadPlan(installationId);
+    const [installation] = await db
+      .select(plan.columns)
+      .from(feishuOrgInstallations)
+      .where(plan.condition)
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      !installation ||
+      !(await (async () => {
+        const availability =
+          feishuInstallationAvailabilityReadPlan(installation);
+        if (availability.kind === "resolved") {
+          return availability.enabled;
+        }
+        const rows = await db
+          .select(availability.columns)
+          .from(userFeatureSwitches)
+          .where(availability.condition);
+        signal.throwIfAborted();
+        return feishuInstallationEnabledFromRows(availability.scope, rows);
+      })())
+    ) {
+      return null;
+    }
+    const context = { orgId: installation.orgId };
+    const secrets = await Promise.all([
+      decryptPersistentSecretValue(installation.encryptedAppSecret, context),
+      decryptPersistentSecretValue(
+        installation.encryptedVerificationToken,
+        context,
+      ),
+      decryptPersistentSecretValue(installation.encryptedEncryptKey, context),
+    ]);
+    signal.throwIfAborted();
+    return feishuInstallationConfigFromSecrets(installation, secrets);
+  },
+);
+
 export const handleFeishuEvents$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const request = get(request$);
     const params = get(pathParamsOf(feishuEventsContract.post));
-    const db = set(writeDb$);
-    const config = await (async () => {
-      const plan = feishuInstallationConfigReadPlan(params.installationId);
-      const [installation] = await db
-        .select(plan.columns)
-        .from(feishuOrgInstallations)
-        .where(plan.condition)
-        .limit(1);
-      if (
-        !installation ||
-        !(await (async () => {
-          const availability =
-            feishuInstallationAvailabilityReadPlan(installation);
-          if (availability.kind === "resolved") {
-            return availability.enabled;
-          }
-          const rows = await db
-            .select(availability.columns)
-            .from(userFeatureSwitches)
-            .where(availability.condition);
-          return feishuInstallationEnabledFromRows(availability.scope, rows);
-        })())
-      ) {
-        return null;
-      }
-      const context = { orgId: installation.orgId };
-      const secrets = await Promise.all([
-        decryptPersistentSecretValue(installation.encryptedAppSecret, context),
-        decryptPersistentSecretValue(
-          installation.encryptedVerificationToken,
-          context,
-        ),
-        decryptPersistentSecretValue(installation.encryptedEncryptKey, context),
-      ]);
-      return feishuInstallationConfigFromSecrets(installation, secrets);
-    })();
+    const config = await set(
+      loadFeishuWebhookConfig$,
+      params.installationId,
+      signal,
+    );
     signal.throwIfAborted();
     if (!config) {
       return jsonResponse({ error: "Feishu installation not found" }, 404);
@@ -543,6 +555,14 @@ export const handleFeishuEvents$ = command(
       return validated.response;
     }
     await set(markCallbackVerified$, { config }, signal);
+    if (validated.envelope.header.event_type === "card.action.trigger") {
+      return set(
+        handleFeishuModelRecovery$,
+        validated.envelope.event,
+        config.id,
+        signal,
+      );
+    }
     const dispatchConfig = await set(
       ensureInboundBotIdentity$,
       {

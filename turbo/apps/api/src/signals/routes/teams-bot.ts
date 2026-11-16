@@ -35,6 +35,7 @@ import {
   teamsWelcomeText,
 } from "../services/teams-dispatch.service";
 import { ApiDispatchTimingCollector } from "../services/api-dispatch-timing.service";
+import { handleTeamsModelRecovery$ } from "../services/teams-model-recovery.service";
 import { safeJsonParse, tapError } from "../utils";
 
 const L = logger("TeamsBot");
@@ -307,6 +308,11 @@ const handleTeamsBot$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   if (!auth.ok) {
     return errorResponse(auth.status, auth.message, authErrorCode(auth.status));
+  }
+
+  const modelRecovery = await set(handleTeamsModelRecovery$, body, signal);
+  if (modelRecovery) {
+    return modelRecovery;
   }
 
   const activityResult = await set(

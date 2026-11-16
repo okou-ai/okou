@@ -1,4 +1,5 @@
 import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
+import { integrationModelRecoveryForDelivery$ } from "./integration-model-recovery.service";
 import { command } from "ccstate";
 import { and, countDistinct, eq, isNull, or } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
@@ -12,7 +13,10 @@ import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { splitDiscordMessage } from "../../lib/discord-message";
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
-import { discordClient } from "../external/discord-client";
+import {
+  discordClient,
+  type DiscordActionRow,
+} from "../external/discord-client";
 import { settle } from "../utils";
 import {
   canonicalChatEventContent,
@@ -140,20 +144,31 @@ const currentDestinationAccess$ = command(
  * logged. The reply remains readable in the Okou chat.
  */
 async function postParts(
-  botToken: string,
-  channelId: string,
-  content: string,
-  replyToMessageId: string | undefined,
+  args: {
+    readonly botToken: string;
+    readonly channelId: string;
+    readonly content: string;
+    readonly replyToMessageId?: string;
+    readonly components?: readonly DiscordActionRow[];
+  },
   signal: AbortSignal,
 ): Promise<void> {
-  let reference = replyToMessageId;
-  for (const part of splitDiscordMessage(content)) {
+  let reference = args.replyToMessageId;
+  let controls = args.components;
+  for (const part of splitDiscordMessage(args.content)) {
     const result = await discordClient.createDiscordMessage(
-      { botToken, channelId, content: part, replyToMessageId: reference },
+      {
+        botToken: args.botToken,
+        channelId: args.channelId,
+        content: part,
+        replyToMessageId: reference,
+        components: controls,
+      },
       signal,
     );
     signal.throwIfAborted();
     reference = undefined;
+    controls = undefined;
     if (result.kind !== "ok") {
       throw new Error(
         result.kind === "unavailable"
@@ -162,6 +177,26 @@ async function postParts(
       );
     }
   }
+}
+
+function discordModelRecoveryComponents(
+  eventId: string | undefined,
+): readonly DiscordActionRow[] | undefined {
+  return eventId
+    ? [
+        {
+          type: 1,
+          components: [
+            {
+              type: 2,
+              style: 2,
+              label: "Switch model",
+              custom_id: `mr:${eventId}`,
+            },
+          ],
+        },
+      ]
+    : undefined;
 }
 
 const readDiscordResponsePresentation$ = command(
@@ -313,11 +348,18 @@ export const sendDiscordChatReply$ = command(
         const content = presentation.footerText
           ? `${message}\n\n_${presentation.footerText}_`
           : message;
+        const recovery = await set(
+          integrationModelRecoveryForDelivery$,
+          { ...request, eventId: request.chatEventId, error: event.error },
+          signal,
+        );
         await postParts(
-          access.botToken,
-          request.target.channelId,
-          content,
-          undefined,
+          {
+            botToken: access.botToken,
+            channelId: request.target.channelId,
+            content,
+            components: discordModelRecoveryComponents(recovery?.eventId),
+          },
           signal,
         );
       })(),
@@ -389,10 +431,12 @@ export const sendDiscordIngressNotice$ = command(
           return;
         }
         await postParts(
-          access.botToken,
-          notice.channelId,
-          notice.content,
-          replyToMessageId,
+          {
+            botToken: access.botToken,
+            channelId: notice.channelId,
+            content: notice.content,
+            replyToMessageId,
+          },
           signal,
         );
       })(),

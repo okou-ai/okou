@@ -112,6 +112,7 @@ export const deliverEmailChatAdmissionFailure$ = command(
         userId: args.userId,
         content: source.content,
         error: source.error,
+        chatEventId: args.chatEventId,
       },
       signal,
     );

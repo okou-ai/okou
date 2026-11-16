@@ -1,4 +1,6 @@
 import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
+import { integrationModelRecoveryForDelivery$ } from "./integration-model-recovery.service";
+import { teamsModelRecoveryCard } from "./teams-model-recovery-card";
 import { teamsDeliveryAccess$ } from "./teams-delivery-access.service";
 import { teamsAccountOwnerCondition } from "./teams-workspace-identity.service";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
@@ -328,6 +330,11 @@ const deliverClaimedTeamsChatCallback$ = command(
       },
       signal,
     );
+    const recovery = await set(
+      integrationModelRecoveryForDelivery$,
+      { ...run, eventId: payload.chatEventId, error: messageError },
+      signal,
+    );
     const result = await sendTeamsMessageReply(
       {
         serviceUrl,
@@ -338,6 +345,15 @@ const deliverClaimedTeamsChatCallback$ = command(
           mainText: content,
           footerText: presentation.footerText,
         }),
+        ...(recovery
+          ? {
+              card: teamsModelRecoveryCard(
+                content,
+                recovery.eventId,
+                presentation.footerText,
+              ),
+            }
+          : {}),
       },
       signal,
     );
@@ -668,6 +684,11 @@ export const deliverTeamsChatAdmissionFailure$ = command(
     if (!serviceUrl) {
       throw new Error("Microsoft Teams serviceUrl is missing");
     }
+    const recovery = await set(
+      integrationModelRecoveryForDelivery$,
+      { ...args, eventId: args.chatEventId, error: "admission_error" },
+      signal,
+    );
     const result = await sendTeamsMessageReply(
       {
         serviceUrl,
@@ -678,6 +699,15 @@ export const deliverTeamsChatAdmissionFailure$ = command(
           mainText: context.messageContent,
           footerText: presentation.footerText,
         }),
+        ...(recovery
+          ? {
+              card: teamsModelRecoveryCard(
+                context.messageContent,
+                recovery.eventId,
+                presentation.footerText,
+              ),
+            }
+          : {}),
       },
       signal,
     );

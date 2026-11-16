@@ -1,5 +1,9 @@
 import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
 import {
+  integrationModelRecoveryForDelivery$,
+  MODEL_RECOVERY_ACTION,
+} from "./integration-model-recovery.service";
+import {
   featureSwitchContextFromRows,
   userFeatureSwitchRowCondition,
 } from "./feature-switch-scope";
@@ -293,6 +297,7 @@ const postSlackChatMessage$ = command(
       readonly content: string;
       readonly threadTs: string;
       readonly footerText: string | undefined;
+      readonly modelRecoveryEventId?: string;
     },
   ): Promise<"delivered"> => {
     const result = await createSlackClient(args.botToken).postMessage(
@@ -300,7 +305,27 @@ const postSlackChatMessage$ = command(
       args.content,
       {
         threadTs: args.threadTs,
-        blocks: buildAgentResponseMessage(args.content, args.footerText),
+        blocks: [
+          ...buildAgentResponseMessage(args.content, args.footerText),
+          ...(args.modelRecoveryEventId
+            ? [
+                {
+                  type: "actions" as const,
+                  elements: [
+                    {
+                      type: "button" as const,
+                      action_id: MODEL_RECOVERY_ACTION,
+                      text: {
+                        type: "plain_text" as const,
+                        text: "Switch model",
+                      },
+                      value: args.modelRecoveryEventId,
+                    },
+                  ],
+                },
+              ]
+            : []),
+        ],
       },
     );
     if (result.kind === "slack_error") {
@@ -382,12 +407,18 @@ const deliverClaimedSlackChatCallback$ = command(
       },
       signal,
     );
+    const recovery = await set(
+      integrationModelRecoveryForDelivery$,
+      { ...run, eventId: payload.chatEventId, error: messageError },
+      signal,
+    );
     return await set(postSlackChatMessage$, {
       botToken,
       channelId: payload.channelId,
       content,
       threadTs: payload.threadTs,
       footerText: presentation.footerText,
+      modelRecoveryEventId: recovery?.eventId,
     });
   },
 );
@@ -462,6 +493,25 @@ export const dispatchSlackChatDeliveryOnce$ = command(
     );
   },
 );
+
+function admissionFooter(
+  args: { readonly agentId: string },
+  org: { readonly defaultAgentId: string | null } | undefined,
+  agent:
+    { readonly displayName: string | null; readonly name: string } | undefined,
+  binding: { readonly slackUserId: string },
+  mentionerCount: number,
+): string | undefined {
+  const parts: string[] = [];
+  const agentLabel = agent?.displayName ?? agent?.name;
+  if (agentLabel && args.agentId !== org?.defaultAgentId) {
+    parts.push(`Sent via ${agentLabel}`);
+  }
+  if (mentionerCount > 1) {
+    parts.push(`Reply to <@${binding.slackUserId}>`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
 
 export const deliverSlackChatAdmissionFailure$ = command(
   async (
@@ -572,25 +622,23 @@ export const deliverSlackChatAdmissionFailure$ = command(
     const org = orgRows[0];
     const agent = agentRows[0];
 
-    const footerParts: string[] = [];
-    const agentLabel = agent?.displayName ?? agent?.name;
-    if (agentLabel && args.agentId !== org?.defaultAgentId) {
-      footerParts.push(`Sent via ${agentLabel}`);
-    }
-    if (mentionerCount > 1) {
-      footerParts.push(`Reply to <@${binding.slackUserId}>`);
-    }
     const botToken = await decryptPersistentSecretValue(
       binding.encryptedBotToken,
       binding.installationOrgId ? featureContext : {},
     );
     signal.throwIfAborted();
+    const recovery = await set(
+      integrationModelRecoveryForDelivery$,
+      { ...args, eventId: args.chatEventId, error: "admission_error" },
+      signal,
+    );
     await set(postSlackChatMessage$, {
       botToken,
       channelId: args.channelId,
       content: event.content,
       threadTs: args.threadTs,
-      footerText: footerParts.length > 0 ? footerParts.join(" · ") : undefined,
+      footerText: admissionFooter(args, org, agent, binding, mentionerCount),
+      modelRecoveryEventId: recovery?.eventId,
     });
   },
 );

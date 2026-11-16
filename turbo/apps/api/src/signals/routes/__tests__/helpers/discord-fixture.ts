@@ -140,9 +140,16 @@ const sendBodySchema = object({
       components: array(
         object({
           type: literal(2),
-          style: literal(5),
+          style: union([
+            literal(1),
+            literal(2),
+            literal(3),
+            literal(4),
+            literal(5),
+          ]),
           label: string(),
-          url: url(),
+          url: url().optional(),
+          custom_id: string().optional(),
         }),
       ),
     }),
