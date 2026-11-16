@@ -14,26 +14,10 @@ export function isArchivedBillingMetadata(
     metadata?.purpose === "usage_allowance" ||
     metadata?.type === "usage_allowance" ||
     metadata?.source === "atom_usage_allowance" ||
-    metadata?.purpose === "atom_grant" ||
-    metadata?.type === "atom_grant" ||
     metadata?.purpose === "custom_plan_subscription" ||
     metadata?.type === "custom_plan_subscription" ||
     metadata?.tier === "custom" ||
     metadata?.planId === "custom"
-  );
-}
-
-/** Retired grant issuers cannot deliver new plans or credits. Existing bound
- * subscriptions still use the normal update/deletion lifecycle. */
-export function isRetiredBillingIssuanceMetadata(
-  metadata: Readonly<Record<string, string>> | null | undefined,
-): boolean {
-  return (
-    isArchivedBillingMetadata(metadata) ||
-    metadata?.source === "atom_entitlement" ||
-    metadata?.source === "atom_redeem_code" ||
-    metadata?.source === "atom_custom_credits" ||
-    metadata?.source === "atom_usage_pack_credits"
   );
 }
 
@@ -106,9 +90,7 @@ export async function survivingStripeBillingInvoiceLines<
   stripe: StripeClient,
   signal: AbortSignal,
 ): Promise<T[]> {
-  const archivalHeader = metadataCandidates.some(
-    isRetiredBillingIssuanceMetadata,
-  );
+  const archivalHeader = metadataCandidates.some(isArchivedBillingMetadata);
   const allowancePrices = new Set(
     metadataCandidates.flatMap((metadata) => {
       return metadata?.allowancePriceId ? [metadata.allowancePriceId] : [];
@@ -118,7 +100,7 @@ export async function survivingStripeBillingInvoiceLines<
   for (const line of lines) {
     const price = billingInvoiceLinePrice(line);
     if (
-      isRetiredBillingIssuanceMetadata(line.metadata) ||
+      isArchivedBillingMetadata(line.metadata) ||
       (price && allowancePrices.has(price.id)) ||
       (archivalHeader && (!price || !isConcurrencyPriceId(price.id)))
     ) {
@@ -165,7 +147,7 @@ export async function isExcludedStripeBillingPrice(
   return (
     product === null ||
     "deleted" in product ||
-    isRetiredBillingIssuanceMetadata(product.metadata)
+    isArchivedBillingMetadata(product.metadata)
   );
 }
 

@@ -118,6 +118,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "atom-subscription-grants",
+    contracts: ["atomSubscriptionGrantsContract"],
+    bindings: [],
+  },
+  {
     module: "auth",
     contracts: ["authContract"],
     bindings: [],

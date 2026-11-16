@@ -155,12 +155,14 @@ export function memberSubscriptionModels(
  * member to Auto when no remaining subscription still offers the saved model.
  */
 export function resetDisconnectedMemberModelSelection(
-  identity$: Computed<MemberModelRouteIdentity>,
+  identity$: Computed<
+    MemberModelRouteIdentity | Promise<MemberModelRouteIdentity>
+  >,
 ) {
   const member$ = memberModelRouteContext(identity$);
   const remaining$ = memberSubscriptionModels(member$);
   const selectedModel$ = computed(async (get) => {
-    const { orgId, userId } = get(identity$);
+    const { orgId, userId } = await get(identity$);
     const [member] = await get(db$)
       .select({ selectedModel: orgMembersMetadata.selectedModel })
       .from(orgMembersMetadata)
@@ -176,7 +178,7 @@ export function resetDisconnectedMemberModelSelection(
 
   // Finish selection repair after disconnection before the caller's abort check.
   return command(async ({ get, set }): Promise<void> => {
-    const { orgId, userId } = get(identity$);
+    const { orgId, userId } = await get(identity$);
     const selectedModel = await get(selectedModel$);
     if (!selectedModel) {
       return;
