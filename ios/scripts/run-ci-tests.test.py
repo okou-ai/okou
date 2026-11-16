@@ -75,6 +75,11 @@ elif command == 'xcodebuild':
         sys.exit(0)
     if 'build-for-testing' in args:
         role = 'build'
+        if os.environ.get('IOS_CI_GENERIC_COMPILE_DESTINATION') == 'true':
+            if args[args.index('-destination') + 1] != 'generic/platform=iOS Simulator':
+                sys.exit('Generic compilation must not select the booting device')
+            if 'ARCHS=arm64' not in args or 'ONLY_ACTIVE_ARCH=YES' not in args:
+                sys.exit('Generic compilation must retain the named ARM64 architecture')
         if not (state / 'prepare-finished').exists():
             sys.exit('Compilation started before locked dependency resolution finished')
         if not parallel and (state / 'boot-started').exists():
@@ -96,6 +101,8 @@ elif command == 'xcodebuild':
             (products / 'Okou_iphonesimulator27.1-arm64.xctestrun').write_text('built tests')
         mark('build-finished')
     elif 'test-without-building' in args:
+        if args[args.index('-destination') + 1] != os.environ['IOS_TEST_DESTINATION']:
+            sys.exit('Native tests must retain the exact named simulator')
         if not (state / 'build-finished').exists():
             sys.exit('Tests require built products')
         if scenario != 'manual' and not (state / 'boot-finished').exists():
@@ -208,6 +215,13 @@ class CIProcessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.state / "build-finished").exists())
         self.assertTrue((self.state / "boot-finished").exists())
+        self.assertTrue((self.state / "tests-ran").exists())
+
+    def test_generic_parallel_build_retains_the_named_native_test_destination(self):
+        self.env["IOS_CI_GENERIC_COMPILE_DESTINATION"] = "true"
+        self.env["IOS_CI_PARALLEL_SIMULATOR"] = "true"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.state / "tests-ran").exists())
 
     def test_parallel_compiler_failure_retires_boot_and_blocks_tests(self):

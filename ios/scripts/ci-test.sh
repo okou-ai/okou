@@ -23,11 +23,16 @@ case "$ios_test_phase" in
   *) echo "usage: ci-test.sh [all|build|prepare|compile|run]" >&2; exit 2 ;;
 esac
 
+ios_build_destination="$IOS_TEST_DESTINATION"
+if [[ "$ios_test_phase" == compile && "${IOS_CI_GENERIC_COMPILE_DESTINATION:-false}" == true ]]; then
+  ios_build_destination="generic/platform=iOS Simulator"
+fi
+
 xcode_args=(
   -project ios/Okou.xcodeproj
   -scheme Okou
   -configuration Debug
-  -destination "$IOS_TEST_DESTINATION"
+  -destination "$ios_build_destination"
   -derivedDataPath "$build_root/DerivedData"
   -clonedSourcePackagesDirPath "$build_root/SourcePackages"
   -scmProvider system
@@ -45,6 +50,11 @@ xcode_args=(
   OKOU_WEB_BASE_URL=https://app.example.invalid
   CLERK_PUBLISHABLE_KEY=
 )
+
+if [[ "$ios_test_phase" == compile && "${IOS_CI_GENERIC_COMPILE_DESTINATION:-false}" == true ]]; then
+  # Build the same ARM64 architecture as the named simulator.
+  xcode_args+=(ARCHS=arm64 ONLY_ACTIVE_ARCH=YES)
+fi
 
 # Keep warm producers and simulator consumers on the same official cache settings.
 if [[ "${IOS_BUILD_CACHE_ENABLED:-false}" == true ]]; then
