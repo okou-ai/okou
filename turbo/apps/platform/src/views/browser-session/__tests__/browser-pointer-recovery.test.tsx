@@ -17,14 +17,6 @@ const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
 
 async function setupViewer() {
-  const original = HTMLElement.prototype.getBoundingClientRect;
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
-    function (this: HTMLElement) {
-      return this instanceof HTMLCanvasElement
-        ? new DOMRect(0, 0, 1440, 900)
-        : original.call(this);
-    },
-  );
   const session: BrowserSession = {
     threadId,
     name: "pointer recovery",
@@ -71,10 +63,14 @@ async function setupViewer() {
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
-  const surface = screen.getByRole("img", {
+  const canvas = screen.getByRole("img", {
     name: "Live browser view",
-  }).parentElement!;
-  return { browser, surface };
+  });
+  // Pointer hit geometry must not also schedule a startup window resize.
+  vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 1440, 900),
+  );
+  return { browser, surface: canvas.parentElement! };
 }
 
 function moveMouse(surface: HTMLElement, buttons = 0, shiftKey = false) {
@@ -169,6 +165,7 @@ test.each([false, true])(
     });
     const input = screen.getByLabelText("Remote browser input");
     await userEvent.click(input);
+    expect(input).toHaveFocus();
     fireEvent.input(input, {
       target: { value: "fresh input" },
       inputType: "insertText",
