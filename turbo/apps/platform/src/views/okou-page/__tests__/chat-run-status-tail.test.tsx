@@ -24,17 +24,20 @@ const RESULT = "The API is checking dependencies. No errors so far.";
 const OLD_ERROR = "The provider could not complete the previous request.";
 const NEW_ERROR = "The provider could not complete the next request.";
 const GENERIC_ERROR = "Oops, something went wrong.";
+const TIMEOUT_TITLE = "Time limit reached";
 
 function failedEvent(
   runId = RUN_A,
   error = OLD_ERROR,
   seqId = 4,
+  failureReason = "unknown",
 ): MockChatEventInput {
   return {
     id: `${runId}-failure`,
     eventType: "run.failed",
     content: null,
     error,
+    failureReason,
     runId,
     seqId,
     createdAt: "2026-08-01T10:00:04.000Z",
@@ -158,7 +161,7 @@ async function sendAfterPreviousFailure() {
     },
   });
   await openChat();
-  const error = await screen.findByText(OLD_ERROR);
+  const error = await screen.findByText(GENERIC_ERROR);
   const main = await expectRetainedResult();
   expect(error.closest("[data-chat-run-status-tail]")).toBeVisible();
   expect(main).not.toContainElement(error);
@@ -168,7 +171,7 @@ async function sendAfterPreviousFailure() {
   await expect(screen.findByText("Continue checking")).resolves.toBeVisible();
   await waitFor(() => {
     expect(document.querySelector("[data-thinking-indicator]")).toBeVisible();
-    expect(screen.queryByText(OLD_ERROR)).toBeNull();
+    expect(screen.queryByText(GENERIC_ERROR)).toBeNull();
   });
   await expectRetainedResult();
   return { chat, sendGate, runCreated };
@@ -176,18 +179,18 @@ async function sendAfterPreviousFailure() {
 
 test("Retire the previous error as soon as a new message is sent, before acknowledgement or output", async () => {
   await sendAfterPreviousFailure();
-  expect(screen.queryByText(OLD_ERROR)).toBeNull();
+  expect(screen.queryByText(GENERIC_ERROR)).toBeNull();
 });
 
 test("A subsequent failed response replaces the previous error while retaining its result", async () => {
   const { chat, sendGate, runCreated } = await sendAfterPreviousFailure();
   sendGate.resolve();
   await runCreated.promise;
-  chat.failRun(NEW_ERROR);
+  chat.failRun(NEW_ERROR, "execution_timeout");
 
-  const nextError = await screen.findByText(NEW_ERROR);
+  const nextError = await screen.findByText(TIMEOUT_TITLE);
   expect(nextError.closest("[data-chat-run-status-tail]")).toBeVisible();
-  expect(screen.queryByText(OLD_ERROR)).toBeNull();
+  expect(screen.queryByText(GENERIC_ERROR)).toBeNull();
   expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
   expect(screen.getAllByTestId("chat-event-actions")).toHaveLength(1);
   await expectRetainedResult();
@@ -209,7 +212,7 @@ test("Derive the latest response from recorded input in the same run when openin
   await openChat();
 
   expect(screen.getByText("Continue from the recorded input")).toBeVisible();
-  expect(screen.queryByText(OLD_ERROR)).toBeNull();
+  expect(screen.queryByText(GENERIC_ERROR)).toBeNull();
   await expectRetainedResult();
 });
 
@@ -229,16 +232,16 @@ test("Show only the latest failure when neither response produced output", async
         seqId: 3,
         text: "Second attempt",
       }),
-      failedEvent(RUN_B, NEW_ERROR),
+      failedEvent(RUN_B, NEW_ERROR, 4, "execution_timeout"),
     ],
   });
 
   await openChat();
 
   expect(
-    screen.getByText(NEW_ERROR).closest("[data-chat-run-status-tail]"),
+    screen.getByText(TIMEOUT_TITLE).closest("[data-chat-run-status-tail]"),
   ).toBeVisible();
-  expect(screen.queryByText(OLD_ERROR)).toBeNull();
+  expect(screen.queryByText(GENERIC_ERROR)).toBeNull();
   expect(screen.queryByTestId("chat-event-actions")).toBeNull();
 });
 

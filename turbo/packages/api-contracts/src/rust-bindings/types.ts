@@ -607,6 +607,7 @@ export const rustTypeBindings = [
         rustTypeName: "RequestFailureReason",
         rustDoc: ["Known failure reason emitted by current Rust producers."],
         variants: {
+          unknown: ["The run failed without a classified cause."],
           session_history_limit: ["Session history exceeded its size limit."],
           guest_root_filesystem_full: [
             "The sandbox root filesystem ran out of free blocks or inodes.",

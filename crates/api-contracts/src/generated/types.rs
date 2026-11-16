@@ -3473,6 +3473,9 @@ pub mod webhooks {
             /// Known failure reason emitted by current Rust producers.
             #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
             pub enum RequestFailureReason {
+                /// The run failed without a classified cause.
+                #[serde(rename = "unknown")]
+                Unknown,
                 /// Session history exceeded its size limit.
                 #[serde(rename = "session_history_limit")]
                 SessionHistoryLimit,

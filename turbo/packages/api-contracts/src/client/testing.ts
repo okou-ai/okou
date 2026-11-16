@@ -354,6 +354,8 @@ import { feishuOauthContract as OriginalFeishuOauthContract } from "../contracts
 import { feishuOauthContract } from "./feishu-oauth";
 import { friendReferralsContract as OriginalFriendReferralsContract } from "../contracts/friend-referrals";
 import { friendReferralsContract } from "./friend-referrals";
+import { getStartedHistoryContract as OriginalGetStartedHistoryContract } from "../contracts/get-started-history";
+import { getStartedHistoryContract } from "./get-started-history";
 import {
   cronGetStartedContract as OriginalCronGetStartedContract,
   getStartedContract as OriginalGetStartedContract,
@@ -698,8 +700,6 @@ import { userExportContract as OriginalUserExportContract } from "../contracts/u
 import { userExportContract } from "./user-export";
 import { userModelPreferenceContract as OriginalUserModelPreferenceContract } from "../contracts/user-model-preference";
 import { userModelPreferenceContract } from "./user-model-preference";
-import { userNotificationsContract as OriginalUserNotificationsContract } from "../contracts/user-notifications";
-import { userNotificationsContract } from "./user-notifications";
 import { userPermissionGrantsContract as OriginalUserPermissionGrantsContract } from "../contracts/user-permission-grants";
 import { userPermissionGrantsContract } from "./user-permission-grants";
 import { userPreferencesContract as OriginalUserPreferencesContract } from "../contracts/user-preferences";
@@ -1052,6 +1052,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [feishuEventsContract, OriginalFeishuEventsContract],
   [feishuOauthContract, OriginalFeishuOauthContract],
   [friendReferralsContract, OriginalFriendReferralsContract],
+  [getStartedHistoryContract, OriginalGetStartedHistoryContract],
   [cronGetStartedContract, OriginalCronGetStartedContract],
   [getStartedContract, OriginalGetStartedContract],
   [githubAppSetupCallbackContract, OriginalGithubAppSetupCallbackContract],
@@ -1319,7 +1320,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [userBuiltinConnectorsContract, OriginalUserBuiltinConnectorsContract],
   [userExportContract, OriginalUserExportContract],
   [userModelPreferenceContract, OriginalUserModelPreferenceContract],
-  [userNotificationsContract, OriginalUserNotificationsContract],
   [userPermissionGrantsContract, OriginalUserPermissionGrantsContract],
   [userPreferencesContract, OriginalUserPreferencesContract],
   [userTemplatesContract, OriginalUserTemplatesContract],

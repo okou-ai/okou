@@ -6,7 +6,6 @@ fn payload_uses_the_generated_failure_reason_contract() {
         run_id: "run-123",
         exit_code: 1,
         failure_reason: Some(FailureReason::InputTooLarge.into()),
-        error: Some("Codex input exceeded the app-server limit"),
         last_event_sequence: None,
         sandbox_id: None,
         completion: None,

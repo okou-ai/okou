@@ -87,7 +87,7 @@ test("Preview a website template and return to its picker", async () => {
   // gallery's tree would leave the two panels overlapping again.
   expect(picker).toHaveAttribute("data-nested-dialog-open");
   const finishCloseTransition = holdElementAnimations(previewDialog);
-  click(buttonNamed("Website", previewDialog));
+  click(buttonNamed("Close", previewDialog));
   expect(previewDialog).toBeVisible();
   finishCloseTransition();
   await waitFor(() => {

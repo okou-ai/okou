@@ -661,7 +661,7 @@ test("A Discord connection link requires sign-in and preserves its server", asyn
   await waitFor(() => {
     expect(window.location.pathname).toBe("/sign-in");
   });
-  const redirect = new URLSearchParams(window.location.hash.split("?")[1]).get(
+  const redirect = new URL(window.location.href).searchParams.get(
     "redirect_url",
   );
   expect(redirect).toContain(path);

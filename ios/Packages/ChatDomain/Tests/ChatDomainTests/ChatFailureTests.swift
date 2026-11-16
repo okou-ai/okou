@@ -71,61 +71,57 @@ final class ChatFailureTests: XCTestCase {
     }
     XCTAssertEqual(
       failure(nil, text: "Unclassified provider failure").recovery(personalFramework: .claude).kind,
-      .subscription)
+      .unknown)
     XCTAssertFalse(
       failure(nil, text: "Unclassified provider failure").recovery(personalFramework: nil).canRetry)
   }
 
-  func testLegacyUsageUsesExactFrameworkAndWindowDetails() {
-    let codex = failure(nil, text: "You've hit your usage limit for model X. Try again at 8:00 PM.")
-      .recovery(personalFramework: .claude)
-    XCTAssertEqual(codex.framework, .codex)
-    XCTAssertEqual(codex.window, .model)
-    XCTAssertTrue(codex.modelScoped)
-    XCTAssertEqual(codex.resetLabel, "8:00 PM")
-    for (text, window): (String, ChatFailure.Window) in [
-      ("You've hit your session limit. Resets 9pm.", .fiveHour),
-      ("You've hit your weekly limit", .weekly), ("You've hit your Opus limit", .model),
-      ("Claude Code usage limit reached", .unknown),
-    ] {
-      let recovery = failure(nil, text: text).recovery(personalFramework: .codex)
-      XCTAssertEqual(recovery.framework, .claude)
-      XCTAssertEqual(recovery.window, window)
+  func testRunRecoveryIgnoresProseAndUnverifiableResetHints() {
+    for reason in [nil, "unknown", "future_reason"] as [String?] {
+      let recovery = failure(reason, text: "You've hit your weekly limit. Resets 9pm.")
+        .recovery(personalFramework: .codex)
+      XCTAssertEqual(recovery.kind, .unknown)
+      XCTAssertNil(recovery.framework)
+      XCTAssertNil(recovery.resetLabel)
+      XCTAssertFalse(recovery.canRetry)
     }
+    let usage = failure("usage_limit", text: "You've hit your Opus limit. Resets 9pm.")
+      .recovery(personalFramework: .codex)
+    XCTAssertEqual(usage.kind, .usage)
+    XCTAssertEqual(usage.framework, .codex)
+    XCTAssertEqual(usage.window, .unknown)
+    XCTAssertFalse(usage.modelScoped)
+    XCTAssertNil(usage.resetLabel)
     XCTAssertEqual(
-      failure("usage_limit", text: "Provider allowance reached").recovery(personalFramework: .codex)
-        .framework, .codex)
+      failure("provider_overloaded", text: "insufficient_credits")
+        .recovery(personalFramework: nil).kind, .capacity)
   }
 
-  func testLegacyTimeoutAutonomyAndCodexDiagnosticHaveNarrowRecognition() {
-    for text in [
-      "This run reached its execution time limit.", "Agent execution timed out after 120 seconds",
-    ] {
-      XCTAssertEqual(failure(nil, text: text).recovery(personalFramework: nil).kind, .timeout)
+  func testRunFailureWithoutTextSurvivesProjectionAndOwnsRecovery() throws {
+    for error: String? in [nil, ""] {
+      let event = ChatEvent(
+        id: "failure", runId: "run", createdAt: .now, eventType: .runFailed,
+        failureReason: "execution_timeout", payload: .init(error: error))
+      let history = try ChatEventProjection.history(rows: [event], recovering: false)
+      XCTAssertEqual(history.executionState, .failed)
+      XCTAssertEqual(history.latestFailureID, "failure")
+      XCTAssertFalse(try XCTUnwrap(history.messages.first).text.isEmpty)
+      XCTAssertEqual(
+        history.messages.first?.failure?.recovery(personalFramework: nil).kind, .timeout)
     }
-    XCTAssertEqual(
-      failure(nil, text: "AUTONOMY_BUDGET_EXHAUSTED").recovery(personalFramework: nil).kind,
-      .autonomy)
-    let diagnostic =
-      #"prefix {"error":{"type":"invalid_request_error","message":"The 'example' model is not supported when using Codex with a ChatGPT account."}} suffix"#
-    XCTAssertEqual(
-      failure(nil, text: diagnostic).recovery(personalFramework: nil).kind, .unavailable)
-    XCTAssertEqual(
-      failure(
-        nil, text: "The 'example' model is not supported when using Codex with a ChatGPT account."
-      ).recovery(personalFramework: nil).kind, .unknown)
-    XCTAssertEqual(
-      failure(nil, text: "Request timeout").recovery(personalFramework: nil).kind, .unknown)
-    XCTAssertEqual(
-      failure(nil, text: "agent execution timed out after 120 seconds").recovery(
-        personalFramework: nil
-      ).kind, .unknown)
+  }
+
+  func testAutonomyOutputErrorStillRequiresContinuation() {
+    let output = ChatFailure(
+      id: "output", error: "AUTONOMY_BUDGET_EXHAUSTED", reason: nil, isRunFailure: false)
+    XCTAssertEqual(output.recovery(personalFramework: nil).kind, .autonomy)
+    XCTAssertTrue(output.recovery(personalFramework: nil).canRetry)
   }
 
   func testOnlyLatestRenderableFailureCanOwnActions() throws {
     let failed = ChatEvent(
       id: "failure", createdAt: .now, eventType: .runFailed,
-      payload: .init(error: "Time limit", failureReason: "execution_timeout"))
+      failureReason: "execution_timeout", payload: .init(error: "Time limit"))
     let partial = ChatEvent(
       id: "partial", createdAt: .now, eventType: .outputMessage,
       payload: .init(content: "Saved answer"))
@@ -159,6 +155,6 @@ final class ChatFailureTests: XCTestCase {
   private func failed(_ id: String, run: String) -> ChatEvent {
     ChatEvent(
       id: id, runId: run, createdAt: .now, eventType: .runFailed,
-      payload: .init(error: "Timeout", failureReason: "execution_timeout"))
+      failureReason: "execution_timeout", payload: .init(error: "Timeout"))
   }
 }

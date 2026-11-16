@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { runnersHeartbeatContract } from "@okouai/api-contracts/contracts/runners";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { runnersRoutes } from "../runners";
 
@@ -70,19 +70,6 @@ describe("Runner ingress service heartbeat contract", () => {
       }),
       [200],
     );
-  });
-
-  it("rejects nonboolean service activity at the HTTP boundary", async () => {
-    const request = setupRawAppRequest({ context, routes: runnersRoutes });
-    for (const ingressServiceActive of ["true", 1, null]) {
-      await expect(
-        request("/api/runners/heartbeat", {
-          method: "POST",
-          headers: { ...headers, "content-type": "application/json" },
-          body: JSON.stringify({ ...heartbeat(), ingressServiceActive }),
-        }),
-      ).resolves.toMatchObject({ status: 400 });
-    }
   });
 
   it("does not let execution service activity bypass heartbeat authentication", async () => {

@@ -323,6 +323,18 @@ describe("CHAT-02: run-level model overrides", () => {
         CHATGPT_ACCOUNT_ID: MODEL_PROVIDER_ENV_PLACEHOLDERS.CHATGPT_ACCOUNT_ID,
       });
       expect(execution.billableFirewalls).toStrictEqual([]);
+      expect(execution.firewalls).toContainEqual({
+        kind: "builtin",
+        name: "model-provider:codex-oauth-token",
+      });
+      expect(
+        execution.networkPolicies?.["model-provider:codex-oauth-token"],
+      ).toStrictEqual({
+        allow: ["codex:api"],
+        deny: [],
+        ask: [],
+        unknownPolicy: "deny",
+      });
       expect(
         execution.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN,
       ).toMatchObject({ sourceId: accountSourceId });

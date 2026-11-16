@@ -53,17 +53,11 @@ function WebsiteTemplatePreviewDialog({
       >
         <DialogHeader className="h-[68px] shrink-0 justify-center px-6 pr-14 text-left">
           <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
-            <button
-              type="button"
-              className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => {
-                onOpenChange(false);
-              }}
-            >
+            <span className="shrink-0 text-muted-foreground">
               {t(($) => {
                 return $.artifacts.templates.website;
               })}
-            </button>
+            </span>
             <span className="shrink-0 text-muted-foreground">/</span>
             <span className="block min-w-0 truncate leading-none">
               {item.title}
@@ -103,8 +97,10 @@ function WebsiteTemplatePreviewDialog({
 
 export function WebsiteTemplatePreviewDialogSlot({
   signals,
+  onClose,
 }: {
   signals: ComposerSignals;
+  readonly onClose?: () => void;
 }) {
   const previewId = useGet(signals.template.websiteTemplatePreviewId$);
   const open = useGet(signals.template.websiteTemplatePreviewOpen$);
@@ -127,6 +123,7 @@ export function WebsiteTemplatePreviewDialogSlot({
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
           closePreview();
+          onClose?.();
         }
       }}
       onOpenChangeComplete={(nextOpen) => {

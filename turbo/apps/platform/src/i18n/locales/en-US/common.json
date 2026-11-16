@@ -1666,6 +1666,15 @@
         "next": "Next suggestion",
         "previous": "Previous suggestion",
         "remaining": "{{total}} to go",
+        "sources": {
+          "alwaysOn": "Always on",
+          "description": "Choose what arrives next. Cards already here stay until you handle them. Unread alerts only include sources you have turned on.",
+          "offers": "Offers",
+          "suggestions": "Suggestions",
+          "systemUpdates": "System updates",
+          "title": "For you sources",
+          "whatsNew": "What’s new"
+        },
         "subtitle": "One thing at a time",
         "title": "For you"
       },
@@ -4322,6 +4331,26 @@
     "previousFeature": "Previous feature",
     "tryPrompt": "Try this task"
   },
+  "feedEvents": {
+    "automationDisabled": {
+      "backToWorkflows": "Back to workflows",
+      "disabledAt": "Disabled at {{time}}",
+      "loadFailed": "Couldn’t load this automation",
+      "loadingAutomation": "Loading automation",
+      "otherWorkspace": "This automation is in {{workspace}}. Switch workspace to view it.",
+      "reason_one": "{{count}} run failed. Review the automation before re-enabling it.",
+      "reason_other": "{{count}} consecutive runs failed. Review the automation before re-enabling it.",
+      "switchFailed": "Couldn’t switch workspace. Try again or use the workspace switcher.",
+      "switchWorkspace": "Switch workspace",
+      "systemManaged": "This automation is managed by the system. Its current status is shown below.",
+      "systemSource": "Platform event",
+      "title": "Automation disabled",
+      "unavailable": "Automation not found or you do not have access",
+      "viewAutomation": "View automation",
+      "workspaceFallback": "Original workspace"
+    },
+    "retry": "Try again"
+  },
   "friendReferrals": {
     "copied": "Copied",
     "copyFailed": "Copy failed. Try again.",
@@ -4461,6 +4490,10 @@
     "unsaved": "Unsaved changes"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "Continue with onboarding",
+      "title": "Getting your workspace ready"
+    },
     "common": {
       "next": "Next",
       "skip": "Skip",
@@ -6607,48 +6640,6 @@
       "thread_one": "{{value}} thread",
       "thread_other": "{{value}} threads"
     }
-  },
-  "userNotifications": {
-    "automationDisabled": {
-      "backToWorkflows": "Back to workflows",
-      "disabled": "Disabled",
-      "disabledAt": "Disabled at {{time}}",
-      "loadFailed": "Couldn’t load this automation",
-      "loadingAutomation": "Loading automation",
-      "notNow": "Not now",
-      "otherWorkspace": "This automation is in {{workspace}}. Switch workspace to view it.",
-      "reason_one": "{{count}} run failed. Review the automation before re-enabling it.",
-      "reason_other": "{{count}} consecutive runs failed. Review the automation before re-enabling it.",
-      "switchFailed": "Couldn’t switch workspace. Try again or use the workspace switcher.",
-      "switchWorkspace": "Switch workspace",
-      "systemManaged": "This automation is managed by the system. Its current status is shown below.",
-      "systemSource": "System notification",
-      "title": "Automation disabled",
-      "unavailable": "Automation not found or you do not have access",
-      "viewAutomation": "View automation",
-      "workspace": "Workspace",
-      "workspaceFallback": "Original workspace"
-    },
-    "close": "Close",
-    "countUnavailable": "Unread count unavailable",
-    "detailFailed": "Couldn’t load this notification",
-    "empty": "No notifications yet",
-    "emptyDescription": "Updates from Okou will appear here.",
-    "loadFailed": "Couldn’t load notifications",
-    "loading": "Loading notifications",
-    "loadMore": "Show older",
-    "nextPage": "Next page",
-    "pageNavigation": "Pages in this message",
-    "pageOf": "Page {{current}} of {{total}}",
-    "previousPage": "Previous page",
-    "readAll": "Mark all as read",
-    "readFailed": "Couldn’t mark as read",
-    "retry": "Try again",
-    "sender": "Okou team",
-    "title": "Notifications",
-    "unread": "Unread",
-    "unreadCount_one": "{{count}} unread notification",
-    "unreadCount_other": "{{count}} unread notifications"
   },
   "vnc": {
     "add": "Add host",

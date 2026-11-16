@@ -10,7 +10,7 @@ import {
 import { and, count, eq } from "drizzle-orm";
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
-import { notFound, resourceUnavailable } from "../../lib/error";
+import { notFound } from "../../lib/error";
 import { authContext$, organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
@@ -18,7 +18,6 @@ import { setResHeader$ } from "../context/hono";
 import { clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { friendReferralsEnabled$ } from "../services/friend-referrals.service";
 import {
   friendReferralVisitToken,
   readFriendReferralVisit,
@@ -26,9 +25,6 @@ import {
 
 const link$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { orgId, userId } = get(organizationAuthContext$);
-  if (!(await set(friendReferralsEnabled$, orgId, userId, signal))) {
-    return resourceUnavailable("Friend referrals are not available");
-  }
   const db = set(writeDb$);
   // Candidate rows share one owner: its unique key allows only one insert,
   // while a short-code collision skips to another candidate in the same SQL.
@@ -98,10 +94,7 @@ const visit$ = command(async ({ get, set }, signal: AbortSignal) => {
     .from(friendReferralLinks)
     .where(eq(friendReferralLinks.code, body.data.code));
   signal.throwIfAborted();
-  if (
-    !link ||
-    !(await set(friendReferralsEnabled$, link.orgId, link.userId, signal))
-  ) {
+  if (!link) {
     return notFound("Referral link is unavailable");
   }
   set(setResHeader$, "Cache-Control", "no-store");
@@ -132,11 +125,7 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
     .from(friendReferralLinks)
     .where(eq(friendReferralLinks.id, visit.linkId));
   signal.throwIfAborted();
-  if (
-    !link ||
-    link.userId === userId ||
-    !(await set(friendReferralsEnabled$, link.orgId, link.userId, signal))
-  ) {
+  if (!link || link.userId === userId) {
     return ineligible;
   }
   const user = await get(clerk$).users.getUser(userId, undefined, signal);

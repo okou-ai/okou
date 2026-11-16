@@ -27,6 +27,7 @@ public struct ChatEvent: Sendable {
   public let revokesEventId: String?
   public let createdAt: Date
   public let eventType: ChatEventType
+  public let failureReason: String?
   public let payload: Payload?
 
   public init(
@@ -35,6 +36,7 @@ public struct ChatEvent: Sendable {
     revokesEventId: String? = nil,
     createdAt: Date,
     eventType: ChatEventType,
+    failureReason: String? = nil,
     payload: Payload? = nil
   ) {
     self.id = id
@@ -42,24 +44,22 @@ public struct ChatEvent: Sendable {
     self.revokesEventId = revokesEventId
     self.createdAt = createdAt
     self.eventType = eventType
+    self.failureReason = failureReason
     self.payload = payload
   }
 
   public struct Payload: Decodable, Sendable {
     public let content: String?
     public let error: String?
-    public let failureReason: String?
     public let userMessage: UserMessage?
 
     public init(
       content: String? = nil,
       error: String? = nil,
-      failureReason: String? = nil,
       userMessage: UserMessage? = nil
     ) {
       self.content = content
       self.error = error
-      self.failureReason = failureReason
       self.userMessage = userMessage
     }
   }

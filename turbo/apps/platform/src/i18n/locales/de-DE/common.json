@@ -1666,6 +1666,15 @@
         "next": "Nächster Vorschlag",
         "previous": "Vorheriger Vorschlag",
         "remaining": "Noch {{total}}",
+        "sources": {
+          "alwaysOn": "Immer aktiv",
+          "description": "Wähle aus, was du künftig erhältst. Bereits erhaltene Karten bleiben, bis du sie bearbeitest. Hinweise auf ungelesene Inhalte berücksichtigen nur aktivierte Quellen.",
+          "offers": "Angebote",
+          "suggestions": "Vorschläge",
+          "systemUpdates": "Systemupdates",
+          "title": "Quellen für dich",
+          "whatsNew": "Neuigkeiten"
+        },
         "subtitle": "Eins nach dem anderen",
         "title": "Für dich"
       },
@@ -4324,6 +4333,26 @@
     "previousFeature": "Vorherige Funktion",
     "tryPrompt": "Diese Aufgabe ausprobieren"
   },
+  "feedEvents": {
+    "automationDisabled": {
+      "backToWorkflows": "Zurück zu Workflows",
+      "disabledAt": "Deaktiviert am {{time}}",
+      "loadFailed": "Diese Automatisierung konnte nicht geladen werden",
+      "loadingAutomation": "Automatisierung wird geladen",
+      "otherWorkspace": "Diese Automatisierung befindet sich in {{workspace}}. Wechsle den Arbeitsbereich, um sie anzuzeigen.",
+      "reason_one": "{{count}} Ausführung ist fehlgeschlagen. Prüfe die Automatisierung, bevor du sie wieder aktivierst.",
+      "reason_other": "{{count}} Ausführungen in Folge sind fehlgeschlagen. Prüfe die Automatisierung, bevor du sie wieder aktivierst.",
+      "switchFailed": "Der Arbeitsbereich konnte nicht gewechselt werden. Versuche es erneut oder nutze die Arbeitsbereichsauswahl.",
+      "switchWorkspace": "Arbeitsbereich wechseln",
+      "systemManaged": "Diese Automatisierung wird vom System verwaltet. Ihr aktueller Status wird unten angezeigt.",
+      "systemSource": "Plattformereignis",
+      "title": "Automatisierung deaktiviert",
+      "unavailable": "Automatisierung nicht gefunden oder kein Zugriff",
+      "viewAutomation": "Automatisierung anzeigen",
+      "workspaceFallback": "Ursprünglicher Arbeitsbereich"
+    },
+    "retry": "Erneut versuchen"
+  },
   "friendReferrals": {
     "copied": "Kopiert",
     "copyFailed": "Kopieren fehlgeschlagen. Bitte erneut versuchen.",
@@ -4463,6 +4492,10 @@
     "unsaved": "Ungespeicherte Änderungen"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "Mit der Einrichtung fortfahren",
+      "title": "Dein Arbeitsbereich wird vorbereitet"
+    },
     "common": {
       "next": "Nächste",
       "skip": "Überspringen",
@@ -6609,48 +6642,6 @@
       "thread_one": "{{value}} Thread",
       "thread_other": "{{value}} Threads"
     }
-  },
-  "userNotifications": {
-    "automationDisabled": {
-      "backToWorkflows": "Zurück zu Workflows",
-      "disabled": "Deaktiviert",
-      "disabledAt": "Deaktiviert am {{time}}",
-      "loadFailed": "Diese Automatisierung konnte nicht geladen werden",
-      "loadingAutomation": "Automatisierung wird geladen",
-      "notNow": "Nicht jetzt",
-      "otherWorkspace": "Diese Automatisierung befindet sich in {{workspace}}. Wechsle den Arbeitsbereich, um sie anzuzeigen.",
-      "reason_one": "{{count}} Ausführung ist fehlgeschlagen. Prüfe die Automatisierung, bevor du sie wieder aktivierst.",
-      "reason_other": "{{count}} Ausführungen in Folge sind fehlgeschlagen. Prüfe die Automatisierung, bevor du sie wieder aktivierst.",
-      "switchFailed": "Der Arbeitsbereich konnte nicht gewechselt werden. Versuche es erneut oder nutze die Arbeitsbereichsauswahl.",
-      "switchWorkspace": "Arbeitsbereich wechseln",
-      "systemManaged": "Diese Automatisierung wird vom System verwaltet. Ihr aktueller Status wird unten angezeigt.",
-      "systemSource": "Systembenachrichtigung",
-      "title": "Automatisierung deaktiviert",
-      "unavailable": "Automatisierung nicht gefunden oder kein Zugriff",
-      "viewAutomation": "Automatisierung anzeigen",
-      "workspace": "Arbeitsbereich",
-      "workspaceFallback": "Ursprünglicher Arbeitsbereich"
-    },
-    "close": "Schließen",
-    "countUnavailable": "Anzahl ungelesener Benachrichtigungen nicht verfügbar",
-    "detailFailed": "Diese Benachrichtigung konnte nicht geladen werden",
-    "empty": "Noch keine Benachrichtigungen",
-    "emptyDescription": "Neuigkeiten von Okou erscheinen hier.",
-    "loadFailed": "Benachrichtigungen konnten nicht geladen werden",
-    "loading": "Benachrichtigungen werden geladen",
-    "loadMore": "Ältere anzeigen",
-    "nextPage": "Nächste Seite",
-    "pageNavigation": "Seiten dieser Nachricht",
-    "pageOf": "Seite {{current}} von {{total}}",
-    "previousPage": "Vorherige Seite",
-    "readAll": "Alle als gelesen markieren",
-    "readFailed": "Konnte nicht als gelesen markiert werden",
-    "retry": "Erneut versuchen",
-    "sender": "Okou-Team",
-    "title": "Benachrichtigungen",
-    "unread": "Ungelesen",
-    "unreadCount_one": "{{count}} ungelesene Benachrichtigung",
-    "unreadCount_other": "{{count}} ungelesene Benachrichtigungen"
   },
   "vnc": {
     "add": "Host hinzufügen",

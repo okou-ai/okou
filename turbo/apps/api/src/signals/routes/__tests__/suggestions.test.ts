@@ -302,6 +302,176 @@ async function feedbackContext(
   return parsed;
 }
 describe("Agent suggestions", () => {
+  it("persists read receipts without consuming cards and finds unread cards beyond the displayed snapshot", async () => {
+    const fixture = await primaryRun();
+    await updateFeatureSwitchesForUser(context, fixture.actor, {
+      [FeatureSwitchKey.ForYouSources]: true,
+    });
+    createRouteMocks(context).clerk.session(
+      fixture.actor.userId,
+      fixture.actor.orgId,
+    );
+    const api = client();
+    const cards = Array.from({ length: 11 }, (_, priority) => {
+      return input(priority);
+    });
+    for (const body of cards) {
+      await accept(api.create({ headers: fixture.headers, body }), [200]);
+    }
+    expect(
+      (await accept(api.summary({ headers: humanHeaders }), [200])).body
+        .hasUnread,
+    ).toBeTruthy();
+    const displayed = await accept(api.list({ headers: humanHeaders }), [200]);
+    for (const card of displayed.body.items) {
+      await accept(
+        api.markRead({ headers: humanHeaders, params: { id: card.id } }),
+        [200],
+      );
+    }
+    expect(
+      (await accept(api.summary({ headers: humanHeaders }), [200])).body
+        .hasUnread,
+    ).toBeTruthy();
+    const last = cards[0];
+    if (!last) {
+      throw new Error("Expected the overflow card");
+    }
+    const receipt = await accept(
+      api.markRead({ headers: humanHeaders, params: { id: last.id } }),
+      [200],
+    );
+    const repeated = await accept(
+      client().markRead({ headers: humanHeaders, params: { id: last.id } }),
+      [200],
+    );
+    expect(repeated.body.readAt).toBe(receipt.body.readAt);
+    expect(
+      (await accept(client().summary({ headers: humanHeaders }), [200])).body
+        .hasUnread,
+    ).toBeFalsy();
+    expect(
+      (await accept(api.list({ headers: humanHeaders }), [200])).body,
+    ).toStrictEqual(displayed.body);
+    await accept(
+      api.create({ headers: fixture.headers, body: input(12) }),
+      [200],
+    );
+    expect(
+      (await accept(api.summary({ headers: humanHeaders }), [200])).body
+        .hasUnread,
+    ).toBeTruthy();
+  });
+
+  it("keeps delivered cards when a source is disabled, persists partial source choices and resumes alerts when enabled", async () => {
+    const fixture = await primaryRun();
+    await updateFeatureSwitchesForUser(context, fixture.actor, {
+      [FeatureSwitchKey.ForYouSources]: true,
+    });
+    createRouteMocks(context).clerk.session(
+      fixture.actor.userId,
+      fixture.actor.orgId,
+    );
+    const api = client();
+    const original = await accept(
+      api.create({ headers: fixture.headers, body: input() }),
+      [200],
+    );
+    const changed = await accept(
+      api.updateSources({
+        headers: humanHeaders,
+        body: { suggestions: false, offers: false },
+      }),
+      [200],
+    );
+    expect(changed.body).toStrictEqual({
+      suggestions: false,
+      whatsNew: true,
+      offers: false,
+    });
+    await accept(
+      api.updateSources({ headers: humanHeaders, body: { whatsNew: false } }),
+      [200],
+    );
+    expect(
+      (await accept(client().sources({ headers: humanHeaders }), [200])).body,
+    ).toStrictEqual({ suggestions: false, whatsNew: false, offers: false });
+    expect(
+      (await accept(api.summary({ headers: humanHeaders }), [200])).body
+        .hasUnread,
+    ).toBeFalsy();
+    await accept(
+      api.create({ headers: fixture.headers, body: input() }),
+      [403],
+    );
+    expect(
+      (await accept(api.list({ headers: humanHeaders }), [200])).body.items,
+    ).toStrictEqual([original.body]);
+    await accept(
+      api.updateSources({ headers: humanHeaders, body: { suggestions: true } }),
+      [200],
+    );
+    expect(
+      (await accept(api.summary({ headers: humanHeaders }), [200])).body
+        .hasUnread,
+    ).toBeTruthy();
+    const resumed = await accept(
+      api.create({ headers: fixture.headers, body: input() }),
+      [200],
+    );
+    expect(
+      (await accept(api.list({ headers: humanHeaders }), [200])).body.items,
+    ).toHaveLength(2);
+    expect(resumed.body.state.status).toBe("active");
+  });
+
+  it("protects For you preferences and read receipts with session, rollout and owner boundaries", async () => {
+    const fixture = await primaryRun();
+    const card = await accept(
+      client().create({ headers: fixture.headers, body: input() }),
+      [200],
+    );
+    createRouteMocks(context).clerk.session(
+      fixture.actor.userId,
+      fixture.actor.orgId,
+    );
+    await accept(client().summary({ headers: humanHeaders }), [403]);
+    await updateFeatureSwitchesForUser(context, fixture.actor, {
+      [FeatureSwitchKey.ForYouSources]: true,
+    });
+    await accept(client().summary({ headers: {} }), [401]);
+    await accept(
+      client().updateSources({
+        headers: fixture.headers,
+        body: { offers: false },
+      }),
+      [403],
+    );
+    const other = {
+      userId: `user_${randomUUID()}`,
+      orgId: fixture.actor.orgId,
+    };
+    createRouteMocks(context).clerk.session(other.userId, other.orgId);
+    await updateFeatureSwitchesForUser(context, other, {
+      [FeatureSwitchKey.AgentSuggestion]: true,
+      [FeatureSwitchKey.ForYouSources]: true,
+    });
+    await accept(
+      client().markRead({
+        headers: humanHeaders,
+        params: { id: card.body.id },
+      }),
+      [404],
+    );
+    expect(
+      (await accept(client().sources({ headers: humanHeaders }), [200])).body,
+    ).toStrictEqual({ suggestions: true, whatsNew: true, offers: true });
+    expect(
+      (await accept(client().summary({ headers: humanHeaders }), [200])).body
+        .hasUnread,
+    ).toBeFalsy();
+  });
+
   it("pages management without hiding overflow cards or coupling their feedback", async () => {
     await setupApp({
       context,
@@ -351,7 +521,9 @@ describe("Agent suggestions", () => {
         return item.priority;
       }),
     ).toStrictEqual([104, 103, 102, 101, 100, 99, 98, 97, 96, 95]);
-    const [one, two] = homepage.body.items;
+    const [one, two] = homepage.body.items.filter((item) => {
+      return item.type === "suggestion";
+    });
     if (!one || !two) {
       throw new Error("Expected two cards");
     }
@@ -779,7 +951,7 @@ describe("Agent suggestions", () => {
         }),
     );
     const selected = pool.body.items[0];
-    if (!selected) {
+    if (!selected || selected.type !== "suggestion") {
       throw new Error("Expected a suggestion");
     }
     const retry = inputs.find((item) => {
@@ -1033,7 +1205,11 @@ describe("Agent suggestions", () => {
       [200],
     );
     expect(active.body.items).toHaveLength(1);
-    expect(active.body.items[0]?.state.selectedOptionId).toBeNull();
+    expect(
+      active.body.items.filter((item) => {
+        return item.type === "suggestion";
+      })[0]?.state.selectedOptionId,
+    ).toBeNull();
     const dismissed = await accept(
       client().consume({
         headers: humanHeaders,
@@ -1256,9 +1432,11 @@ describe("Agent suggestions", () => {
       client().list({ headers: humanHeaders }),
       [200],
     );
-    expect(unchanged.body.items[0]?.content.options).toStrictEqual(
-      own.content.options,
-    );
+    expect(
+      unchanged.body.items.filter((item) => {
+        return item.type === "suggestion";
+      })[0]?.content.options,
+    ).toStrictEqual(own.content.options);
     await createBddApi(context).readMe(owner.actor);
     const retained = await accept(
       client().list({ headers: humanHeaders }),

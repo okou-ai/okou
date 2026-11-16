@@ -56,7 +56,6 @@ function isJsonSyntaxPromptFragment(prompt: string): boolean {
 
 export function normalizeRecommendedFollowups(
   value: unknown,
-  actionFollowupsEnabled: boolean,
 ): ChatRecommendedFollowup[] {
   if (!Array.isArray(value)) {
     return [];
@@ -78,7 +77,7 @@ export function normalizeRecommendedFollowups(
       continue;
     }
     const isAction = item.kind === "workflow" || item.kind === "email";
-    if (isAction && (!actionFollowupsEnabled || actionKinds.has(item.kind))) {
+    if (isAction && actionKinds.has(item.kind)) {
       continue;
     }
 

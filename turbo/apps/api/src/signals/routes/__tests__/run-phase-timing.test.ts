@@ -241,7 +241,6 @@ describe("current Run phase timing", () => {
     for (const body of [
       { phase: "generation-start" },
       { phase: "generation-start", skipResearch: true },
-      { phase: "generation-start", kind: "unknown" },
       { phase: "research-start", runId: f.run.runId },
       { phase: "research-start", recordedAt: "2026-01-01T00:00:00Z" },
     ]) {

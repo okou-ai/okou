@@ -689,12 +689,9 @@ function runnerReusePreferenceResult(args: {
 
 /** Resolve the captured direct placement read against the admission clock. */
 export function preparedRunnerReusePreference(
-  preparation: RunnerReusePreparation | undefined,
+  preparation: RunnerReusePreparation,
   admittedAt: Date,
 ): RunnerPreference {
-  if (preparation === undefined) {
-    return { kind: "noPreference", reason: "noReuseKey" };
-  }
   if (!preparation.selection.ok) {
     throw preparation.selection.error;
   }

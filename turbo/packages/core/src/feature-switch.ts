@@ -46,14 +46,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.IntegrationModelRecovery]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Integration model recovery",
-    description:
-      "Switch the current conversation's model from an integration error.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ArtifactGenerationTiming]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Artifact generation phase timing",
@@ -67,27 +59,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Internal cloud-controlled iOS device automation.",
     enabled: false,
   },
-  [FeatureSwitchKey.SshChatApproval]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Remote host chat approval",
-    description:
-      "Review SSH and VNC host access in chat and continue after approval.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.CustomConnectorCloudflareAccess]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Custom connector Cloudflare Access",
     description:
       "Use organization Cloudflare Access for custom HTTP API and MCP connectors.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ComposerMediaPreviews]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Composer media previews",
-    description:
-      "Show image and video thumbnails during upload, then enable preview.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -142,15 +118,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Draw Okou's avatar with the animated design-system avatar everywhere the default artwork appears.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.FriendReferrals]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Friend referrals",
-    description:
-      "Earn credits when a referred friend buys a usage pack on Pro or above.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.TikTokOAuthConnector]: {
     maintainer: "yuma@okou.ai",
@@ -213,15 +180,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
     enabled: false,
   },
-  [FeatureSwitchKey.ChatActionFollowups]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Workflow and email follow-ups",
-    description:
-      "Recommend reusable workflows and email reply reminders with dedicated chat icons.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
-  },
   [FeatureSwitchKey.ChatReplyNameLine]: {
     maintainer: "tongx@okou.ai",
     displayName: "Agent name on replies",
@@ -275,14 +233,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.IosSettingsCredits]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "iOS settings credit balance",
-    description:
-      "Show the current account's available credits in iOS Settings using the Web account menu balance.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:
@@ -294,6 +244,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     displayName: "Suggestions",
     description: "Discover and curate useful next-step suggestions.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ForYouSources]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "For you sources and unread",
+    description: "Choose For you sources and show unread cards with a dot.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -425,21 +382,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
-  [FeatureSwitchKey.AutomationDisableNotifications]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Automation disable notifications",
-    description:
-      "Notify automation owners in the home bell when consecutive failures automatically disable a recurring schedule.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.UserNotifications]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "In-app notifications",
-    description: "Receive personal announcements from the Okou team.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
 };
 

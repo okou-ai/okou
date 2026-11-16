@@ -981,6 +981,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "get-started-history",
+    contracts: ["getStartedHistoryContract"],
+    bindings: [],
+  },
+  {
     module: "github-oauth",
     contracts: ["githubOauthContract"],
     bindings: [],
@@ -1928,11 +1933,6 @@ export const clientContractImportManifest = [
   {
     module: "user-model-preference",
     contracts: ["userModelPreferenceContract"],
-    bindings: [],
-  },
-  {
-    module: "user-notifications",
-    contracts: ["userNotificationsContract"],
     bindings: [],
   },
   {

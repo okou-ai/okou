@@ -2,7 +2,7 @@ import { command, computed } from "ccstate";
 import { delay } from "signal-timers";
 import { workflowAutomationsContract } from "@okouai/api-contracts/client/workflows";
 import { accept } from "../../lib/accept.ts";
-import { automationNotificationDestination } from "../../lib/automation-notification-location.ts";
+import { automationEventDestination } from "../../lib/automation-event-location.ts";
 import { apiClient$ } from "../api-client.ts";
 import { clerk$, currentOrgInfo$ } from "../auth.ts";
 import { pathname$, searchParams$ } from "../route.ts";
@@ -11,7 +11,7 @@ import { onRef } from "../utils.ts";
 import { workflowReloadVersion$ } from "./workflow-reload.ts";
 import { currentWorkflowDetail$ } from "./workflows-signals.ts";
 
-export const revealAutomationNotificationLoadingRef$ = onRef(
+export const revealAutomationEventLoadingRef$ = onRef(
   command(async (_context, element: HTMLElement, signal: AbortSignal) => {
     element.hidden = true;
     await delay(200, { signal });
@@ -20,17 +20,17 @@ export const revealAutomationNotificationLoadingRef$ = onRef(
   }),
 );
 
-export const automationNotificationTarget$ = computed((get) => {
-  return automationNotificationDestination(
+export const automationEventTarget$ = computed((get) => {
+  return automationEventDestination(
     get(pathname$),
     get(searchParams$).toString(),
   );
 });
 
-export const workflowAutomationNotificationAccess$ = computed(async (get) => {
+export const workflowAutomationEventAccess$ = computed(async (get) => {
   get(workflowReloadVersion$);
   get(pageVersion$);
-  const target = get(automationNotificationTarget$);
+  const target = get(automationEventTarget$);
   if (!target) {
     return { status: "unavailable" } as const;
   }
@@ -41,7 +41,7 @@ export const workflowAutomationNotificationAccess$ = computed(async (get) => {
     if (!user) {
       return { status: "unavailable" } as const;
     }
-    // Recheck live membership rather than treating the notification snapshot as
+    // Recheck live membership rather than treating the event snapshot as
     // an access grant. Membership pagination is finite, not timed polling.
     let page = 1;
     let seen = 0;
@@ -66,7 +66,7 @@ export const workflowAutomationNotificationAccess$ = computed(async (get) => {
     }
     return { status: "unavailable" } as const;
   }
-  // The personal notification is a historical snapshot, not proof the target
+  // The personal event is a historical snapshot, not proof the target
   // still exists or belongs to this user/workspace.
   const response = await accept(
     get(apiClient$)(workflowAutomationsContract).get({
@@ -91,11 +91,11 @@ export const workflowAutomationNotificationAccess$ = computed(async (get) => {
   return { status: "ready" } as const;
 });
 
-export const switchAutomationNotificationWorkspace$ = command(
+export const switchAutomationEventWorkspace$ = command(
   async ({ get }, signal: AbortSignal) => {
-    const access = await get(workflowAutomationNotificationAccess$);
+    const access = await get(workflowAutomationEventAccess$);
     signal.throwIfAborted();
-    const target = get(automationNotificationTarget$);
+    const target = get(automationEventTarget$);
     if (access.status !== "switchWorkspace" || !target) {
       return;
     }

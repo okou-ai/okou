@@ -1,14 +1,12 @@
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { array, number, object, string } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   discordInteractionsContract,
   type DiscordComponentInteraction,
 } from "@okouai/api-contracts/contracts/discord-interactions";
 import { mockEnv } from "../../../lib/env";
 import { discordInteractionsRoutes } from "../discord-interactions";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -60,7 +58,6 @@ async function startDiscordRun(
     readonly configureProvider?: (
       provider: ReturnType<typeof mockDiscordProvider>,
     ) => void;
-    readonly beforeMessage?: (actor: ConnectedDiscordActor) => Promise<void>;
   } = {},
 ) {
   const fixture = await trackDiscordFixture(
@@ -72,7 +69,6 @@ async function startDiscordRun(
   runs.acceptTelemetryIngest();
   const provider = mockDiscordProvider(actor);
   options.configureProvider?.(provider);
-  await options.beforeMessage?.(actor);
   const channelId =
     options.channelType === "channel"
       ? provider.guildChannelId
@@ -531,11 +527,6 @@ describe("canonical Discord terminal replies", () => {
   it("recovers a model failure through a private native selector", async () => {
     const started = await startDiscordRun({
       channelType: "dm",
-      beforeMessage: async (actor) => {
-        await updateFeatureSwitchesForUser(context, actor, {
-          [FeatureSwitchKey.IntegrationModelRecovery]: true,
-        });
-      },
     });
     const execution = await readRunExecution(started.actor, started.runId);
     await completeRun({
@@ -866,7 +857,8 @@ describe("canonical Discord terminal replies", () => {
     await completeRun({
       runId: started.runId,
       sandboxToken: receivedExecution.sandboxToken,
-      error: "insufficient_credits",
+      error: "Upstream execution stopped",
+      failureReason: "insufficient_credits",
     });
     expect(started.provider.sentMessages).toHaveLength(1);
     expect(started.provider.sentMessages[0]?.content).toContain(

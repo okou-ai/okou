@@ -97,7 +97,7 @@ pub(super) async fn report_prepared_finalization(
         runtime,
         exit_code,
         None,
-        None,
+        false,
         None,
         finalization,
     )

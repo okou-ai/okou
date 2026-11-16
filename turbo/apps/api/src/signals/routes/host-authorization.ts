@@ -10,14 +10,11 @@ import {
   decideHostAuthorization$,
   markHostAuthorizationContinued$,
 } from "../services/host-authorization.service";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import { publishUserSignal } from "../external/realtime";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { notifyRemoteAccessChange$ } from "../services/chat-remote-access.service";
 import { sendNormalEvent$ } from "../services/chat-events.command";
 import type { RouteEntry } from "../route-entry";
@@ -39,23 +36,10 @@ function unavailable(protocol: Protocol) {
     `${protocol.toUpperCase()} access request not found`,
   );
 }
-const enabled$ = command(async ({ get, set }, signal: AbortSignal) => {
-  set(setResHeader$, "Cache-Control", "no-store");
-  const auth = get(organizationAuthContext$);
-  const features = await set(
-    loadUserFeatureSwitchContext$,
-    auth.orgId,
-    auth.userId,
-    signal,
-  );
-  return isFeatureEnabled(FeatureSwitchKey.SshChatApproval, features);
-});
 function createAuthorizationHandler(protocol: Protocol, contract: Contract) {
   const body$ = bodyResultOf(contract.create);
   return command(async ({ get, set }, signal: AbortSignal) => {
-    if (!(await set(enabled$, signal))) {
-      return unavailable(protocol);
-    }
+    set(setResHeader$, "Cache-Control", "no-store");
     const auth = get(organizationAuthContext$);
     const body = await get(body$);
     signal.throwIfAborted();
@@ -98,9 +82,7 @@ function createAuthorizationHandler(protocol: Protocol, contract: Contract) {
 function readAuthorizationHandler(protocol: Protocol, contract: Contract) {
   const params$ = pathParamsOf(contract.get);
   return command(async ({ get, set }, signal: AbortSignal) => {
-    if (!(await set(enabled$, signal))) {
-      return unavailable(protocol);
-    }
+    set(setResHeader$, "Cache-Control", "no-store");
     const result = await set(
       readHostAuthorization$,
       protocol,
@@ -209,9 +191,7 @@ function actionHandler(
   const params$ = pathParamsOf(contract.get);
   const body$ = bodyResultOf(contract[action]);
   return command(async ({ get, set }, signal: AbortSignal) => {
-    if (!(await set(enabled$, signal))) {
-      return unavailable(protocol);
-    }
+    set(setResHeader$, "Cache-Control", "no-store");
     const auth = get(organizationAuthContext$);
     if (auth.tokenType !== "session") {
       return unavailable(protocol);

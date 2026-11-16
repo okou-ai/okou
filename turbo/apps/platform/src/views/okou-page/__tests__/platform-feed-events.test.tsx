@@ -3,9 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
-  userNotificationsContract,
-  type UserNotification,
-} from "@okouai/api-contracts/contracts/user-notifications";
+  feedContract,
+  type PlatformEvent,
+} from "@okouai/api-contracts/contracts/feed";
 import {
   workflowAutomationsContract,
   workflowsDetailContract,
@@ -25,19 +25,16 @@ import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 const WORKSPACE_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
-const OTHER_WORKSPACE_ID = "org_other_notification_workspace";
+const OTHER_WORKSPACE_ID = "org_other_event_workspace";
 const WORKFLOW_ID = "d0000000-0000-4000-a000-000000000201";
 const AUTOMATION_ID = "e0000000-0000-4000-a000-000000000201";
 const OTHER_AUTOMATION_ID = "e0000000-0000-4000-a000-000000000202";
-const HOME = "/agents/c0000000-0000-4000-a000-000000000001/chat";
 const DISABLED_AT = "2026-11-05T03:00:00.000Z";
 const CREATED_AT = "2026-11-06T03:00:00.000Z";
-const READ_AT = "2026-11-06T04:00:00.000Z";
-const TITLE = "Scheduled automation automatically disabled";
 
 function auth(workspaceId = WORKSPACE_ID): SetupPageAuth {
   return {
-    user: { id: "test-user-123", fullName: "Notification tester" },
+    user: { id: "test-user-123", fullName: "Feed tester" },
     organization: {
       activeOrg: { id: workspaceId, name: "Research workspace" },
       memberships: [
@@ -54,31 +51,25 @@ function auth(workspaceId = WORKSPACE_ID): SetupPageAuth {
   };
 }
 
-function notification({
-  recoveryScheduled = false,
-  workspaceId = WORKSPACE_ID,
-}: {
-  readonly recoveryScheduled?: boolean;
-  readonly workspaceId?: string;
-} = {}): UserNotification {
+function platformEvent(): PlatformEvent {
   return {
     id: "11111111-1111-4111-8111-111111111111",
-    title: TITLE,
-    summary: "Daily work summary stopped after consecutive execution failures.",
+    type: "event",
+    sourceType: "platform-event",
+    priority: 0,
     createdAt: CREATED_AT,
-    readAt: null,
-    payload: {
-      type: "rich_text",
-      markdown: "Daily work summary was automatically disabled.",
-      automationDisabled: {
-        automationId: AUTOMATION_ID,
-        workflowId: WORKFLOW_ID,
-        workspaceId,
-        automationName: "Daily work summary",
-        disabledAt: DISABLED_AT,
-        consecutiveFailures: 3,
-        recoveryScheduled,
-      },
+    updatedAt: CREATED_AT,
+    expiresAt: null,
+    state: { status: "active" },
+    content: {
+      eventType: "automation-disabled",
+      automationId: AUTOMATION_ID,
+      workflowId: WORKFLOW_ID,
+      workspaceId: WORKSPACE_ID,
+      automationName: "Daily work summary",
+      disabledAt: DISABLED_AT,
+      consecutiveFailures: 3,
+      recoveryScheduled: false,
     },
   };
 }
@@ -130,36 +121,6 @@ function workflow(): WorkflowDetailResponse {
   };
 }
 
-function summary(item: UserNotification) {
-  const { payload, ...entry } = item;
-  return { ...entry, type: payload.type };
-}
-
-function mockInbox(item = notification(), detailUnavailable?: () => boolean) {
-  let readAt: string | null = null;
-  context.mocks.api(userNotificationsContract.list, ({ respond }) => {
-    return respond(200, {
-      items: [{ ...summary(item), readAt }],
-      nextCursor: null,
-    });
-  });
-  context.mocks.api(userNotificationsContract.get, ({ respond }) => {
-    if (detailUnavailable?.()) {
-      return respond(500, {
-        error: { code: "INTERNAL_ERROR", message: "Unavailable" },
-      });
-    }
-    return respond(200, { ...item, readAt });
-  });
-  context.mocks.api(userNotificationsContract.summary, ({ respond }) => {
-    return respond(200, { unreadCount: readAt ? 0 : 1 });
-  });
-  context.mocks.api(userNotificationsContract.markRead, ({ respond }) => {
-    readAt = READ_AT;
-    return respond(200, { readAt });
-  });
-}
-
 function mockAutomationDestination(detail = workflow()) {
   context.mocks.api(workflowAutomationsContract.get, ({ respond }) => {
     return respond(200, detail.automations[0]!);
@@ -168,7 +129,7 @@ function mockAutomationDestination(detail = workflow()) {
     return respond(200, detail);
   });
   context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
-    return respond(200, { displayName: "Notification tester", imageUrl: null });
+    return respond(200, { displayName: "Feed tester", imageUrl: null });
   });
 }
 
@@ -189,153 +150,26 @@ function control(
   return result;
 }
 
-async function openDetails(item = notification()) {
-  mockInbox(item);
+async function openDetails(item = platformEvent()) {
+  context.mocks.api(feedContract.list, ({ respond }) => {
+    return respond(200, { items: [item] });
+  });
   context.mocks.data.userPreferences({ timezone: "Asia/Shanghai" });
   await setupPage({
     context,
-    path: HOME,
+    path: "/for-you",
     auth: auth(),
-    featureSwitches: {
-      [FeatureSwitchKey.UserNotifications]: true,
-      // Disabling new writes must not hide a persisted historical message.
-      [FeatureSwitchKey.AutomationDisableNotifications]: false,
-    },
+    featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
   });
-  await waitFor(() => {
-    expect(control("button", "Notifications")).toBeInTheDocument();
-  });
-  click(control("button", "Notifications"));
-  const title = await screen.findByText(TITLE);
-  const row = title.closest("button");
-  if (!row) {
-    throw new Error("Notification row was not rendered");
-  }
-  expect(within(row).getByText("Unread")).toBeInTheDocument();
-  click(row);
-  const dialog = await screen.findByRole("dialog", {
-    name: "Automation disabled",
-  });
-  await within(dialog).findByText("System notification");
-  return dialog;
+  await screen.findByRole("heading", { name: "Automation disabled" });
+  return screen.getByRole("main");
 }
 
 function destination(workspaceId = WORKSPACE_ID) {
   return `/workflows/${WORKFLOW_ID}/automations?automationId=${AUTOMATION_ID}&workspaceId=${workspaceId}`;
 }
 
-test("A visible home bell discovers a later personal notification while the new writer switch is off", async () => {
-  let delivered = false;
-  const item = notification({ workspaceId: OTHER_WORKSPACE_ID });
-  context.mocks.browser.visibilityState("visible");
-  context.mocks.api(userNotificationsContract.summary, ({ respond }) => {
-    return respond(200, { unreadCount: delivered ? 1 : 0 });
-  });
-  context.mocks.api(userNotificationsContract.list, ({ respond }) => {
-    return respond(200, {
-      items: delivered ? [summary(item)] : [],
-      nextCursor: null,
-    });
-  });
-  await setupPage({
-    context,
-    path: HOME,
-    auth: auth(),
-    featureSwitches: {
-      [FeatureSwitchKey.UserNotifications]: true,
-      [FeatureSwitchKey.AutomationDisableNotifications]: false,
-    },
-  });
-  await screen.findByText("0 unread notifications");
-  delivered = true;
-  // No focus/visibility event or inbox action: the owned foreground loop
-  // discovers this new personal inbox message in another workspace.
-  await screen.findByText("1 unread notification");
-  click(control("button", "Notifications"));
-  const title = await screen.findByText(TITLE);
-  expect(
-    within(title.closest("button")!).getByText("Unread"),
-  ).toBeInTheDocument();
-});
-
-test("A failed detail load leaves its notification unread until content is successfully mounted", async () => {
-  let fail = true;
-  mockInbox(notification(), () => {
-    return fail;
-  });
-  await setupPage({
-    context,
-    path: HOME,
-    auth: auth(),
-    featureSwitches: { [FeatureSwitchKey.UserNotifications]: true },
-  });
-  await screen.findByText("1 unread notification");
-  click(control("button", "Notifications"));
-  const title = await screen.findByText(TITLE);
-  click(title.closest("button")!);
-  const dialog = await screen.findByRole("dialog");
-  await within(dialog).findByText("Couldn’t load this notification");
-  expect(screen.getByText("1 unread notification")).toBeInTheDocument();
-  fail = false;
-  click(control("button", "Try again", dialog));
-  await within(dialog).findByText("System notification");
-  await screen.findByText("0 unread notifications");
-});
-
-test("A historical disablement uses system attribution, membership name, actual event time and a mounted read receipt", async () => {
-  const dialog = await openDetails();
-  expect(within(dialog).getByText("Daily work summary")).toBeInTheDocument();
-  expect(within(dialog).getByText("Research workspace")).toBeInTheDocument();
-  expect(within(dialog).getByText("Disabled")).toBeInTheDocument();
-  expect(
-    within(dialog).getByText(
-      "3 consecutive runs failed. Review the automation before re-enabling it.",
-    ),
-  ).toBeInTheDocument();
-  const timestamp = dialog.querySelector("time");
-  expect(timestamp).toHaveAttribute("datetime", DISABLED_AT);
-  expect(timestamp).toHaveTextContent("2026");
-  expect(timestamp).toHaveTextContent("11:00 AM");
-  expect(control("link", "View automation", dialog)).toHaveAttribute(
-    "href",
-    destination(),
-  );
-  await screen.findByText("0 unread notifications");
-});
-
-test("A recovery pause stays readable without a workspace name and never displays a structural workspace ID", async () => {
-  const dialog = await openDetails(
-    notification({
-      recoveryScheduled: true,
-      workspaceId: "org_no_longer_accessible",
-    }),
-  );
-  expect(within(dialog).getByText("Original workspace")).toBeInTheDocument();
-  expect(dialog).not.toHaveTextContent("org_no_longer_accessible");
-  await screen.findByText("0 unread notifications");
-});
-
-test("Not now dismisses a disablement and restores focus to its notification", async () => {
-  const dialog = await openDetails();
-  click(control("button", "Not now", dialog));
-  const title = await screen.findByText(TITLE);
-  const row = title.closest("button");
-  await waitFor(() => {
-    expect(row).toHaveFocus();
-  });
-  await userEvent.keyboard("{Enter}");
-  const reopened = await screen.findByRole("dialog", {
-    name: "Automation disabled",
-  });
-  expect(within(reopened).getByText("Disabled")).toBeInTheDocument();
-  await userEvent.keyboard("{Escape}");
-  await screen.findByText(TITLE);
-  await waitFor(() => {
-    expect(screen.getByText(TITLE).closest("button")).toHaveFocus();
-  });
-});
-
-test("A fast notification destination replaces its initially hidden loading status", async () => {
+test("A fast event destination replaces its initially hidden loading status", async () => {
   mockAutomationDestination();
   const response = createDeferredPromise<void>(context.signal);
   context.mocks.api(workflowAutomationsContract.get, async ({ respond }) => {
@@ -353,7 +187,7 @@ test("A fast notification destination replaces its initially hidden loading stat
   expect(loading).not.toBeInTheDocument();
 });
 
-test("A pending notification destination shows a lightweight status until access resolves", async () => {
+test("A pending event destination shows a lightweight status until access resolves", async () => {
   mockAutomationDestination();
   const response = createDeferredPromise<void>(context.signal);
   context.mocks.api(workflowAutomationsContract.get, async ({ respond }) => {
@@ -422,7 +256,7 @@ test.each([
   { tab: "Instructions", route: "instructions" },
   { tab: "Settings", route: "info" },
 ])(
-  "A valid notification destination hands $tab over to the normal workflow page",
+  "A valid event destination hands $tab over to the normal workflow page",
   async ({ tab, route }) => {
     mockAutomationDestination();
     await setupPage({ context, path: destination(), auth: auth() });
@@ -475,7 +309,7 @@ test.each([403, 404] as const)(
   },
 );
 
-test("A cross-workspace notification uses the normal explicit workspace switch and preserves the exact destination", async () => {
+test("A cross-workspace event uses the normal explicit workspace switch and preserves the exact destination", async () => {
   mockAutomationDestination();
   const clerk = context.mocks.clerk();
   mockedClerk.setActive.mockImplementation(() => {
@@ -504,7 +338,7 @@ test("A cross-workspace notification uses the normal explicit workspace switch a
   });
 });
 
-test("A removed workspace membership does not grant access from a notification's structural IDs", async () => {
+test("A removed workspace membership does not grant access from a event's structural IDs", async () => {
   await setupPage({
     context,
     path: destination("org_removed_membership"),
@@ -541,4 +375,40 @@ test("A recovered Official Workflow automation opens read-only with its current 
     "true",
   );
   expect(pathname()).toBe(`/workflows/${WORKFLOW_ID}/automations`);
+});
+
+test("A failed dismissal stays visible and can be retried without changing its automation", async () => {
+  let fail = true;
+  context.mocks.api(feedContract.dismiss, ({ respond }) => {
+    return fail
+      ? respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "Unable to dismiss" },
+        })
+      : respond(204);
+  });
+  await openDetails();
+  expect(screen.getByText("Platform event")).toBeInTheDocument();
+  click(control("button", "Dismiss"));
+  await screen.findByRole("alert");
+  expect(
+    screen.getByRole("heading", { name: "Automation disabled" }),
+  ).toBeInTheDocument();
+  fail = false;
+  click(control("button", "Dismiss"));
+  await screen.findByText("All caught up");
+});
+
+test("An event preserves its actual disable time in the member's timezone and exact automation link", async () => {
+  const card = await openDetails();
+  expect(within(card).getByText("Daily work summary")).toBeInTheDocument();
+  expect(within(card).getByText("Platform event")).toBeInTheDocument();
+  const timestamp = within(card).getByText(/^Disabled at /u);
+  expect(timestamp).toHaveAttribute("datetime", DISABLED_AT);
+  expect(timestamp).toHaveTextContent("2026");
+  expect(timestamp).toHaveTextContent("11:00 AM");
+  expect(control("link", "View automation", card)).toHaveAttribute(
+    "href",
+    destination(),
+  );
+  expect(card).not.toHaveTextContent(WORKSPACE_ID);
 });

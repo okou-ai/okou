@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.2](https://github.com/okou-ai/okou/compare/android-v0.14.1...android-v0.14.2) (2026-11-16)
+
+
+### Bug Fixes
+
+* **android:** defer git version code until metadata is needed ([#47763](https://github.com/okou-ai/okou/issues/47763)) ([e27dfaa](https://github.com/okou-ai/okou/commit/e27dfaabb5f3ecfd4e3a54f5c207522433b19b2e))
+
 ## [0.14.1](https://github.com/okou-ai/okou/compare/android-v0.14.0...android-v0.14.1) (2026-11-16)
 
 

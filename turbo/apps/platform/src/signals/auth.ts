@@ -22,9 +22,9 @@ import {
 } from "./utils.ts";
 import { ROUTES } from "./route-paths.ts";
 import {
-  automationNotificationDestination,
-  automationNotificationLocation,
-} from "../lib/automation-notification-location.ts";
+  automationEventDestination,
+  automationEventLocation,
+} from "../lib/automation-event-location.ts";
 
 const reload$ = state(0);
 const clerkVersion$ = state(0);
@@ -565,7 +565,7 @@ export const watchOrgSwitch$ = command(
       }
 
       if (!signal.aborted) {
-        const automation = automationNotificationDestination(
+        const automation = automationEventDestination(
           location.pathname,
           location.search,
         );
@@ -574,7 +574,7 @@ export const watchOrgSwitch$ = command(
         location.href = needsOnboarding
           ? ONBOARDING_PATH
           : automation?.workspaceId === newOrgId
-            ? automationNotificationLocation(automation)
+            ? automationEventLocation(automation)
             : "/";
       }
     });

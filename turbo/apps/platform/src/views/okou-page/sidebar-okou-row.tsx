@@ -15,6 +15,14 @@ import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { OkouLogomark } from "../components/okou-logomark.tsx";
 import { Link } from "../router/link.tsx";
+import {
+  forYouHasUnread$,
+  forYouSourcesEnabled$,
+} from "../../signals/okou-page/for-you-sources.ts";
+import {
+  ChatThreadStateIndicator,
+  ChatThreadStateText,
+} from "./sidebar-shared.tsx";
 
 const ENTRY_ROW =
   "flex h-8 w-full min-w-0 items-center rounded-lg pr-2 text-left text-sm text-nav-copy motion-safe:transition-colors motion-safe:duration-[180ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
@@ -91,7 +99,8 @@ export function ForYouChatListRow({
   const { t } = useTranslation();
   const enabled = useGet(suggestionsEnabled$);
   const active = useGet(activeRoute$) === "forYou";
-  const count = useLastResolved(waitingSuggestionCount$);
+  const sourcesEnabled = useGet(forYouSourcesEnabled$);
+  const unread = useLastResolved(forYouHasUnread$) === true;
   const followCount = useSet(followWaitingSuggestionCountOnRef$);
   if (!enabled) {
     return null;
@@ -104,6 +113,7 @@ export function ForYouChatListRow({
       className={cn(
         ENTRY_ROW,
         active ? "bg-state-selected font-medium" : "hover:bg-state-hover",
+        sourcesEnabled && unread && "font-medium",
         touch && "min-h-11 px-3",
       )}
     >
@@ -115,21 +125,46 @@ export function ForYouChatListRow({
           return $.chat.agentSuggestions.forYou.title;
         })}
       </span>
-      <Badge
-        className="min-w-6 justify-center text-xs tabular-nums text-nav-copy-muted"
-        aria-label={
-          count !== undefined
-            ? t(
-                ($) => {
-                  return $.appShell.sidebar.suggestionsWaiting;
-                },
-                { count },
-              )
-            : undefined
-        }
-      >
-        {count === undefined ? "–" : count > 9 ? "9+" : count}
-      </Badge>
+      {sourcesEnabled ? (
+        <ForYouUnreadIndicator unread={unread} />
+      ) : (
+        <ForYouWaitingCount />
+      )}
     </Link>
+  );
+}
+
+function ForYouUnreadIndicator({ unread }: { readonly unread: boolean }) {
+  return (
+    <span className="flex size-4 shrink-0 items-center justify-center">
+      {unread && (
+        <>
+          <ChatThreadStateIndicator state="unread" rowIndex={0} />
+          <ChatThreadStateText state="unread" />
+        </>
+      )}
+    </span>
+  );
+}
+
+function ForYouWaitingCount() {
+  const { t } = useTranslation();
+  const count = useLastResolved(waitingSuggestionCount$);
+  return (
+    <Badge
+      className="min-w-6 justify-center text-xs tabular-nums text-nav-copy-muted"
+      aria-label={
+        count !== undefined
+          ? t(
+              ($) => {
+                return $.appShell.sidebar.suggestionsWaiting;
+              },
+              { count },
+            )
+          : undefined
+      }
+    >
+      {count === undefined ? "–" : count > 9 ? "9+" : count}
+    </Badge>
   );
 }

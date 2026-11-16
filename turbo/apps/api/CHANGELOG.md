@@ -10,6 +10,80 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.75.0](https://github.com/okou-ai/okou/compare/api-v2.74.0...api-v2.75.0) (2026-11-16)
+
+
+### Features
+
+* add for you source preferences and unread indicators ([#47771](https://github.com/okou-ai/okou/issues/47771)) ([5d3bca3](https://github.com/okou-ai/okou/commit/5d3bca33002b020ebed8d8a0d379777fb1c542b8))
+* **api:** add read-only reward history export ([#47764](https://github.com/okou-ai/okou/issues/47764)) ([3a0c748](https://github.com/okou-ai/okou/commit/3a0c748549d997794f364d03486610476f60881e))
+
+
+### Bug Fixes
+
+* **suggestions:** verify user identity in third-party sources ([#47812](https://github.com/okou-ai/okou/issues/47812)) ([3dcd0c8](https://github.com/okou-ai/okou/commit/3dcd0c8e27b7ae1dbce309bf71c943d613b3f89f))
+* use registry guide for presentation templates ([#47810](https://github.com/okou-ai/okou/issues/47810)) ([c38e98e](https://github.com/okou-ai/okou/commit/c38e98ea3b0f4527f492d42a6c342399e803ba4e))
+
+
+### Refactoring
+
+* prepare structured run failures and recovery ([#47749](https://github.com/okou-ai/okou/issues/47749)) ([fca7335](https://github.com/okou-ai/okou/commit/fca73354c6b5b0aa4f122e78947565b274323991))
+* remove integration model recovery feature switch ([#47814](https://github.com/okou-ai/okou/issues/47814)) ([42f602a](https://github.com/okou-ai/okou/commit/42f602a3099b330cd59ef01fc389c43d3f067840))
+
+
+### Performance Improvements
+
+* **api:** remove unused runtime preparation work ([#47775](https://github.com/okou-ai/okou/issues/47775)) ([61305ba](https://github.com/okou-ai/okou/commit/61305bacbf5293ab0e579eb104a5df183c7eef8d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.73.0
+    * @okouai/core bumped to 8.844.0
+    * @okouai/db bumped to 2.39.0
+    * @okouai/pi-agent-runtime bumped to 1.51.136
+
+## [2.74.0](https://github.com/okou-ai/okou/compare/api-v2.73.2...api-v2.74.0) (2026-11-16)
+
+
+### Features
+
+* replace the notification bell with platform feed events ([#47711](https://github.com/okou-ai/okou/issues/47711)) ([b5aac15](https://github.com/okou-ai/okou/commit/b5aac15af841802f580b268f27cfce7539cb9269))
+
+
+### Bug Fixes
+
+* **api:** read android release manifest directly from r2 ([#47755](https://github.com/okou-ai/okou/issues/47755)) ([5baac71](https://github.com/okou-ai/okou/commit/5baac71439dde57bde5d4608c30ed716d05beaa4))
+
+
+### Refactoring
+
+* **api:** require captured thread continuation for launch ([#47754](https://github.com/okou-ai/okou/issues/47754)) ([ad8cca4](https://github.com/okou-ai/okou/commit/ad8cca4bb9a3d3db47bd8852201b8d6c3cfd17e7))
+
+
+### Performance Improvements
+
+* **api:** separate connector selection from execution hydration ([#47700](https://github.com/okou-ai/okou/issues/47700)) ([32083e3](https://github.com/okou-ai/okou/commit/32083e3260413e2c831e88840900a98d5c05ead2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.72.0
+    * @okouai/core bumped to 8.843.0
+    * @okouai/db bumped to 2.38.0
+    * @okouai/pi-agent-runtime bumped to 1.51.135
+
+## [2.73.2](https://github.com/okou-ai/okou/compare/api-v2.73.1...api-v2.73.2) (2026-11-16)
+
+
+### Refactoring
+
+* **api:** remove thread launch request scaffolding ([#47688](https://github.com/okou-ai/okou/issues/47688)) ([073f49e](https://github.com/okou-ai/okou/commit/073f49ed8937a60f9b840bbf30e71cf1e406a0cf))
+
 ## [2.73.1](https://github.com/okou-ai/okou/compare/api-v2.73.0...api-v2.73.1) (2026-11-16)
 
 

@@ -1,5 +1,6 @@
 import {
   array,
+  boolean,
   iso,
   literal,
   number,
@@ -155,16 +156,18 @@ export const suggestionStateSchema = object({
   feedbacks: array(suggestionFeedbackSchema).max(100),
 }).strict();
 export type SuggestionState = zInfer<typeof suggestionStateSchema>;
-export const feedItemTypeSchema = literal("suggestion");
+export const feedItemTypeSchema = zEnum(["suggestion", "event"]);
 const feedItemBaseSchema = object({
   id: suggestionIdSchema,
   type: feedItemTypeSchema,
+  sourceType: literal("agent").optional(),
   priority: number().int().min(-2147483648).max(2147483647),
   createdAt: iso.datetime(),
   updatedAt: iso.datetime(),
   expiresAt: iso.datetime().nullable(),
 });
 export const suggestionSchema = feedItemBaseSchema.extend({
+  type: literal("suggestion"),
   content: suggestionContentSchema,
   state: suggestionStateSchema,
   expiresAt: iso.datetime(),
@@ -173,6 +176,7 @@ export const suggestionSchema = feedItemBaseSchema.extend({
     .optional(),
 });
 export const suggestionReceiptSchema = feedItemBaseSchema.extend({
+  type: literal("suggestion"),
   content: literal(null),
   state: suggestionStateSchema.extend({
     status: zEnum(["consumed", "removed"]),
@@ -181,10 +185,32 @@ export const suggestionReceiptSchema = feedItemBaseSchema.extend({
 });
 export type SuggestionReceipt = zInfer<typeof suggestionReceiptSchema>;
 export type Suggestion = zInfer<typeof suggestionSchema>;
-export type FeedItem = Suggestion | SuggestionReceipt;
+export const platformEventSchema = feedItemBaseSchema.extend({
+  type: literal("event"),
+  sourceType: literal("platform-event"),
+  content: object({
+    eventType: literal("automation-disabled"),
+    automationId: uuid(),
+    workflowId: uuid(),
+    workspaceId: string().min(1),
+    automationName: string().min(1).max(200),
+    disabledAt: iso.datetime(),
+    consecutiveFailures: number().int().positive(),
+    recoveryScheduled: boolean(),
+  }),
+  state: object({ status: zEnum(["active", "dismissed"]) }).strict(),
+});
+export type PlatformEvent = zInfer<typeof platformEventSchema>;
+export type FeedItem = Suggestion | SuggestionReceipt | PlatformEvent;
+export const feedSourcesSchema = object({
+  suggestions: boolean(),
+  whatsNew: boolean(),
+  offers: boolean(),
+});
+export type FeedSources = zInfer<typeof feedSourcesSchema>;
 export const suggestionCreateSchema = object({
   id: suggestionIdSchema,
-  type: feedItemTypeSchema,
+  type: literal("suggestion"),
   priority: feedItemBaseSchema.shape.priority.default(0),
   content: suggestionContentSchema,
   expiresAt: iso.datetime().optional(),
@@ -225,13 +251,48 @@ const errors = {
 };
 const params = object({ id: suggestionIdSchema });
 export const feedContract = c.router({
+  sources: {
+    method: "GET",
+    path: "/api/feed/sources",
+    headers: authHeadersSchema,
+    responses: { 200: feedSourcesSchema, ...errors },
+    summary: "Read your For you source preferences",
+  },
+  updateSources: {
+    method: "PATCH",
+    path: "/api/feed/sources",
+    headers: authHeadersSchema,
+    body: feedSourcesSchema
+      .partial()
+      .strict()
+      .refine((body) => {
+        return Object.keys(body).length > 0;
+      }, "Provide at least one source preference"),
+    responses: { 200: feedSourcesSchema, ...errors },
+    summary: "Choose future For you deliveries; keep already delivered cards",
+  },
+  summary: {
+    method: "GET",
+    path: "/api/feed/summary",
+    headers: authHeadersSchema,
+    responses: { 200: object({ hasUnread: boolean() }), ...errors },
+    summary: "Read whether an enabled For you source has unread cards",
+  },
+  markRead: {
+    method: "POST",
+    path: "/api/feed/items/:id/read",
+    headers: authHeadersSchema,
+    pathParams: params,
+    responses: { 200: object({ readAt: iso.datetime() }), ...errors },
+    summary: "Mark a displayed card as read without consuming it",
+  },
   manage: {
     method: "GET",
     path: "/api/feed/items/active",
     headers: authHeadersSchema,
     query: object({
       after: suggestionIdSchema.optional(),
-      type: feedItemTypeSchema.optional(),
+      type: literal("suggestion").optional(),
     }),
     responses: {
       200: object({
@@ -250,12 +311,22 @@ export const feedContract = c.router({
     query: object({ type: feedItemTypeSchema.optional() }),
     responses: {
       200: object({
-        items: array(suggestionSchema).max(SUGGESTION_LIMIT),
+        items: array(suggestionSchema.or(platformEventSchema)).max(
+          SUGGESTION_LIMIT,
+        ),
         receipts: array(suggestionReceiptSchema).optional(),
       }),
       ...errors,
     },
-    summary: "Read your actionable suggestions",
+    summary: "Read your actionable feed items",
+  },
+  dismiss: {
+    method: "POST",
+    path: "/api/feed/items/:id/dismiss",
+    headers: authHeadersSchema,
+    pathParams: params,
+    responses: { 204: c.noBody(), ...errors },
+    summary: "Dismiss a platform event",
   },
   create: {
     method: "POST",

@@ -59,7 +59,6 @@ import {
   cancelRenameCustomTemplate$,
   customTemplateActiveExample$,
   customTemplateCatalog$,
-  deleteCustomTemplate$,
   openCustomTemplate$,
   openCustomTemplateKind$,
   pendingCustomTemplateDeletion$,
@@ -542,8 +541,10 @@ function CustomTemplateCard({
  * only on success.
  */
 function CustomTemplateDeleteConfirmSlot({
+  signals,
   returnFocus,
 }: {
+  readonly signals: ComposerSignals;
   readonly returnFocus: (interactionType: string) => HTMLElement | null;
 }) {
   const pending = useGet(pendingCustomTemplateDeletion$);
@@ -553,15 +554,18 @@ function CustomTemplateDeleteConfirmSlot({
       templateId={pending.id}
       title={pending.title}
       returnFocus={returnFocus}
+      signals={signals}
     />
   ) : null;
 }
 
 function CustomTemplateDeleteConfirm({
+  signals,
   templateId,
   title,
   returnFocus,
 }: {
+  readonly signals: ComposerSignals;
   readonly templateId: string;
   readonly title: string;
   readonly returnFocus: (interactionType: string) => HTMLElement | null;
@@ -570,7 +574,7 @@ function CustomTemplateDeleteConfirm({
   const pageSignal = useGet(pageSignal$);
   const cancel = useSet(cancelDeleteCustomTemplate$);
   const [deleteLoadable, deleteTemplate] = useLoadableSet(
-    deleteCustomTemplate$,
+    signals.template.deleteCustomTemplate$,
   );
   const deleting = deleteLoadable.state === "loading";
   const previewKind = useGet(openCustomTemplateKind$);
@@ -777,16 +781,19 @@ export function CustomTemplatePickerSection({
   query,
   importCard,
   onSelect,
+  onPreviewClose,
 }: {
   readonly signals: ComposerSignals;
   readonly kind: UserTemplateKind;
   readonly query: string;
   readonly importCard: ReactNode;
   readonly onSelect: (template: UserTemplateCatalogEntry) => void;
+  readonly onPreviewClose?: () => void;
 }) {
   const { t } = useTranslation();
   const catalog = useLastLoadable(customTemplateCatalog$);
   const projectPicker = useGet(projectCustomTemplatePicker$);
+  const previewOpen = useGet(openCustomTemplateKind$) !== null;
   // A menu item disappears when it opens a dialog. Restore the current type
   // instead of letting the focus fallback activate the first category.
   const returnFocus = useSet(signals.template.templatePickerInitialFocus$);
@@ -794,6 +801,12 @@ export function CustomTemplatePickerSection({
     catalog.state === "hasData"
       ? projectPicker(catalog.data, kind, query)
       : null;
+  const deleteConfirmation = (
+    <CustomTemplateDeleteConfirmSlot
+      signals={signals}
+      returnFocus={returnFocus}
+    />
+  );
   return (
     <>
       <TemplateSourceSection source="custom">
@@ -839,8 +852,11 @@ export function CustomTemplatePickerSection({
       <CustomTemplatePreviewDialog
         onSelect={onSelect}
         returnFocus={returnFocus}
-      />
-      <CustomTemplateDeleteConfirmSlot returnFocus={returnFocus} />
+        onClose={onPreviewClose}
+      >
+        {previewOpen ? deleteConfirmation : null}
+      </CustomTemplatePreviewDialog>
+      {previewOpen ? null : deleteConfirmation}
       <CustomTemplateRenameSlot returnFocus={returnFocus} />
     </>
   );

@@ -75,13 +75,13 @@ interface HeldAction {
   respond?: (fail?: boolean) => void;
 }
 interface HeldClose extends HeldAction {
-  readonly disconnect: boolean;
+  readonly disconnect: "session" | "transport" | null;
 }
 interface HeldReply {
   readonly method: string;
   readonly targetId: string;
   requested(): void;
-  respond?: () => void;
+  respond?: (error?: { code: number; message: string }) => void;
 }
 
 /** External Chrome/extension protocol fixture, with real loopback WebSockets. */
@@ -178,6 +178,7 @@ export async function browserCdpProvider() {
   let sequence = 0;
   let nextSession = 0;
   let nextTarget = 0;
+  let connectionLimit = Infinity;
   let rejectRelated = false;
   let rejectDetach = false;
   let heldWindowLookup: HeldWindowLookup | undefined;
@@ -195,6 +196,9 @@ export async function browserCdpProvider() {
       url: target.url,
       title: "private-title",
       browserContextId: "default",
+      attached: [...connections].some((connection) => {
+        return [...connection.sessions.values()].includes(target.id);
+      }),
       ...(target.parent ? { parentId: target.parent } : {}),
     };
   };
@@ -383,6 +387,10 @@ export async function browserCdpProvider() {
     return { resume };
   }
   server.on("connection", (socket) => {
+    if (connections.size >= connectionLimit) {
+      socket.close(1013);
+      return;
+    }
     const connection: Connection = {
       socket,
       sessions: new Map(),
@@ -401,9 +409,18 @@ export async function browserCdpProvider() {
       commands.push({ method, params, sessionId });
       const respond = (response: Record<string, unknown>) => {
         const held = heldReply;
-        if (held && held.method === method && held.targetId === selected) {
-          held.respond = () => {
-            send(connection, { id, sessionId, ...response });
+        if (
+          held &&
+          held.method === method &&
+          held.targetId === selected &&
+          !held.respond
+        ) {
+          held.respond = (error) => {
+            send(connection, {
+              id,
+              sessionId,
+              ...(error ? { error } : response),
+            });
           };
           held.requested();
           return;
@@ -425,6 +442,14 @@ export async function browserCdpProvider() {
       const selected = sessionId
         ? connection.sessions.get(sessionId)
         : "BROWSER";
+      const disconnect = (mode: HeldClose["disconnect"]) => {
+        if (mode === "session" && sessionId) {
+          let root = sessionId;
+          while (connection.parents.get(root))
+            root = connection.parents.get(root)!;
+          detach(connection, root);
+        } else connection.socket.close();
+      };
       if (sessionId && !selected) {
         fail(-32001, "Native session not found");
         return;
@@ -629,7 +654,7 @@ export async function browserCdpProvider() {
             held.requested();
           } else destroyTarget(String(params.targetId));
           if (held?.disconnect) {
-            connection.socket.close();
+            disconnect(held.disconnect);
             return;
           }
           reply({ success: true });
@@ -653,7 +678,7 @@ export async function browserCdpProvider() {
             held.requested();
           } else destroyTarget(page.id);
           if (held?.disconnect) {
-            connection.socket.close();
+            disconnect(held.disconnect);
             return;
           }
           reply({});
@@ -769,6 +794,9 @@ export async function browserCdpProvider() {
     endpoint: `ws://127.0.0.1:${address.port}`,
     commands,
     attachments,
+    limitConnections(maximum: number) {
+      connectionLimit = maximum;
+    },
     move,
     destroyTarget,
     addFrame(parent: string, id: string) {
@@ -829,15 +857,15 @@ export async function browserCdpProvider() {
       heldReply = held;
       return {
         observed,
-        resume() {
+        resume(error?: { code: number; message: string }) {
           heldReply = undefined;
           const respond = held.respond;
           held.respond = undefined;
-          respond?.();
+          respond?.(error);
         },
       };
     },
-    holdClose(targetId: string, disconnect = false) {
+    holdClose(targetId: string, disconnect: HeldClose["disconnect"] = null) {
       if (heldCloses.has(targetId))
         throw new Error("A native close is already held");
       let requested!: () => void;

@@ -97,6 +97,7 @@ function serviceEnvSchema() {
     GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL:
       email().optional(),
     CRON_SECRET: string().min(1),
+    MARKETING_REWARDS_EXPORT_SECRET: string().min(32).optional(),
     // Enable only after Stage 1 API writers have drained and cannot be rolled back.
     WORKFLOW_ATTACHMENT_CLEANUP_ENABLED: zEnum(["true", "false"]).default(
       "false",
@@ -105,6 +106,9 @@ function serviceEnvSchema() {
     R2_ACCOUNT_ID: string().min(1),
     R2_SECRET_ACCESS_KEY: string().min(1),
     R2_USER_STORAGES_BUCKET_NAME: string().min(1),
+    R2_STATIC_BUCKET_NAME: string().min(1).optional(),
+    R2_STATIC_ACCESS_KEY_ID: string().min(1).optional(),
+    R2_STATIC_SECRET_ACCESS_KEY: string().min(1).optional(),
     R2_MARKETING_HANDOFF_BUCKET_NAME: string().min(1).optional(),
     R2_MARKETING_HANDOFF_ACCESS_KEY_ID: string().min(1).optional(),
     R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY: string().min(1).optional(),

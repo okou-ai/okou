@@ -74,6 +74,7 @@ final class ChatFollowupTests: XCTestCase {
       ],
       [event(5, .outputError, content: "Failed")],
       [event(5, .runFailed, content: "Failed")],
+      [event(5, .runFailed)],
       [event(5, .runCancelled)],
     ] {
       XCTAssertNil(try project(rows + tail).recommendedFollowups)

@@ -124,8 +124,8 @@ import { feishuConnectRoutes } from "./routes/feishu-connect";
 import { feishuEventsRoutes } from "./routes/feishu-events";
 import { feishuOauthRoutes } from "./routes/feishu-oauth";
 import { getStartedRoutes } from "./routes/get-started";
+import { getStartedHistoryRoutes } from "./routes/get-started-history";
 import { friendReferralRoutes } from "./routes/friend-referrals";
-import { userNotificationRoutes } from "./routes/user-notifications";
 import { githubOauthRoutes } from "./routes/github-oauth";
 import { healthRoutes } from "./routes/health";
 import { hostRoutes } from "./routes/host";
@@ -264,8 +264,8 @@ import { workflowsRoutes } from "./routes/workflows";
 export const ROUTES: readonly RouteEntry[] = [
   ...runnersStartupRoutes,
   ...getStartedRoutes,
+  ...getStartedHistoryRoutes,
   ...friendReferralRoutes,
-  ...userNotificationRoutes,
   ...healthRoutes,
   ...buildInfoRoutes,
   ...authMeRoutes,

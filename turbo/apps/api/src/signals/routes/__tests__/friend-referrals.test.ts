@@ -15,7 +15,7 @@ import { purchaseUsagePacks } from "./helpers/public-usage-pack-checkout";
 const context = testContext();
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+const REFERRER_ORG_ID = `org_${randomUUID()}`;
 const VISIT_AT = "2026-01-31T10:00:00.000Z";
 const REGISTERED_AT = "2026-01-31T10:00:01.000Z";
 const client = () => {
@@ -28,7 +28,7 @@ beforeEach(() => {
   mockNow(new Date(VISIT_AT));
 });
 
-async function referralLink(userId: string, orgId = STAFF_ORG_ID) {
+async function referralLink(userId: string, orgId = REFERRER_ORG_ID) {
   mocks.clerk.session(userId, orgId);
   return (await accept(client().link({ headers }), [200])).body;
 }
@@ -127,7 +127,7 @@ test.each(["pro", "team"] as const)(
           role: "org:admin",
           createdAt: Date.parse(VISIT_AT),
           organization: {
-            id: STAFF_ORG_ID,
+            id: REFERRER_ORG_ID,
             name: "Referral workspace",
             slug: null,
             imageUrl: "",
@@ -223,7 +223,7 @@ test.each(["pro", "team"] as const)(
       [200],
     );
     expect(purchased.body.purchasedCredits).toBe(40_000);
-    mocks.clerk.session(referrer, STAFF_ORG_ID);
+    mocks.clerk.session(referrer, REFERRER_ORG_ID);
     const balance = (
       await accept(
         setupApp({ context, routes: billingUsagePackCreditsRoutes })(
@@ -282,8 +282,3 @@ test.each([
     });
   },
 );
-
-test("the referral rollout denies non-staff link creation", async () => {
-  mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-  expect((await client().link({ headers })).status).toBe(403);
-});

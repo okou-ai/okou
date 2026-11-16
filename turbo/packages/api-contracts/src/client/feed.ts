@@ -5,6 +5,54 @@ import type { feedContract as OriginalFeedContract } from "../contracts/feed";
 import type { ClientDescriptor } from "./types";
 
 export const feedContract: ClientDescriptor<typeof OriginalFeedContract> = {
+  sources: {
+    method: "GET",
+    path: "/api/feed/sources",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+    },
+  },
+  updateSources: {
+    method: "PATCH",
+    path: "/api/feed/sources",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+    },
+  },
+  summary: {
+    method: "GET",
+    path: "/api/feed/summary",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+    },
+  },
+  markRead: {
+    method: "POST",
+    path: "/api/feed/items/:id/read",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+    },
+  },
   manage: {
     method: "GET",
     path: "/api/feed/items/active",
@@ -22,6 +70,18 @@ export const feedContract: ClientDescriptor<typeof OriginalFeedContract> = {
     path: "/api/feed/items",
     statuses: {
       200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+    },
+  },
+  dismiss: {
+    method: "POST",
+    path: "/api/feed/items/:id/dismiss",
+    statuses: {
+      204: true,
       400: true,
       401: true,
       403: true,

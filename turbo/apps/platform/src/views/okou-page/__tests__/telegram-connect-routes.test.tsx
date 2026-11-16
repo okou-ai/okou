@@ -67,7 +67,7 @@ test.each(TELEGRAM_PATHS)(
     await waitFor(() => {
       expect(window.location.pathname).toBe("/sign-in");
     });
-    const authParams = new URLSearchParams(window.location.hash.split("?")[1]);
+    const authParams = new URL(window.location.href).searchParams;
     expect(authParams.get("redirect_url")).toBe(`https://app.okou.ai${entry}`);
   },
 );

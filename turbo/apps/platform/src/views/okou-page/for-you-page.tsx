@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   useGet,
   useLastLoadable,
@@ -33,6 +34,9 @@ import {
 } from "./agent-suggestions.tsx";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
+import { forYouSourcesEnabled$ } from "../../signals/okou-page/for-you-sources.ts";
+import { ForYouSources } from "./for-you-sources.tsx";
+import { PlatformFeedEvent } from "./platform-feed-event.tsx";
 
 const STACK_LAYERS = [
   "relative z-4",
@@ -95,51 +99,80 @@ function ForYouStack({
   return (
     <div className="mx-auto my-auto w-full max-w-160 py-6">
       <div className="relative isolate grid pb-6">
-        {[...cards.slice(0, STACK_LAYERS.length), ...settled].map(
-          ({ entry, outcome }) => {
-            const layer = cards.findIndex((card) => {
-              return card.entry === entry;
-            });
-            const active = layer === 0 && outcome === null;
-            return (
-              <Card
-                key={entry.item.id}
-                data-slot="suggestion-stack-card"
-                inert={!active}
-                aria-hidden={!active || undefined}
-                className={cn(
-                  "@container/suggestion col-start-1 row-start-1 flex min-h-125 origin-[50%_85%] flex-col rounded-3xl p-5 shadow-none transition-transform duration-500 ease-out sm:p-7 motion-reduce:transition-none",
-                  outcome
-                    ? cn(
-                        "pointer-events-none inset-0 z-5 motion-safe:animate-card-fly-out motion-reduce:invisible",
-                        // The last card keeps its layout footprint while it
-                        // flies away, so completion does not move its origin.
-                        complete && entry === settled.at(-1)?.entry
-                          ? "relative"
-                          : "absolute",
-                      )
-                    : STACK_LAYERS[layer],
-                )}
+        {[...cards.slice(0, STACK_LAYERS.length), ...settled].map((card) => {
+          const { entry, outcome } = card;
+          const layer = cards.findIndex((card) => {
+            return card.entry === entry;
+          });
+          const active = layer === 0 && outcome === null;
+          return (
+            <Card
+              key={entry.item.id}
+              data-slot="suggestion-stack-card"
+              inert={!active}
+              aria-hidden={!active || undefined}
+              className={cn(
+                "@container/suggestion col-start-1 row-start-1 flex min-h-125 origin-[50%_85%] flex-col rounded-3xl p-5 shadow-none transition-transform duration-500 ease-out sm:p-7 motion-reduce:transition-none",
+                outcome
+                  ? cn(
+                      "pointer-events-none inset-0 z-5 motion-safe:animate-card-fly-out motion-reduce:invisible",
+                      // The last card keeps its layout footprint while it
+                      // flies away, so completion does not move its origin.
+                      complete && entry === settled.at(-1)?.entry
+                        ? "relative"
+                        : "absolute",
+                    )
+                  : STACK_LAYERS[layer],
+              )}
+            >
+              <ForYouCardContents
+                entry={entry}
+                active={active}
+                settled={outcome !== null}
               >
-                <div
-                  className={cn(
-                    "flex flex-1 flex-col transition-opacity duration-300 motion-reduce:transition-none",
-                    !active && !outcome && "opacity-0",
-                  )}
-                >
-                  <SuggestionSource />
-                  <AgentSuggestionCard
-                    active={active}
-                    item={entry.item}
-                    onCustomDirection={onCustomDirection}
-                  />
-                </div>
-              </Card>
-            );
-          },
-        )}
+                {card.kind === "event" ? (
+                  <PlatformFeedEvent entry={card.entry} active={active} />
+                ) : (
+                  <>
+                    <SuggestionSource />
+                    <AgentSuggestionCard
+                      active={active}
+                      item={card.entry.item}
+                      onCustomDirection={onCustomDirection}
+                    />
+                  </>
+                )}
+              </ForYouCardContents>
+            </Card>
+          );
+        })}
       </div>
       <ForYouNavigation />
+    </div>
+  );
+}
+
+function ForYouCardContents({
+  entry,
+  active,
+  settled,
+  children,
+}: {
+  readonly entry: Pick<AgentSuggestionEntry, "readOnRef$">;
+  readonly active: boolean;
+  readonly settled: boolean;
+  readonly children: ReactNode;
+}) {
+  const read = useSet(entry.readOnRef$);
+  return (
+    <div
+      ref={active ? read : undefined}
+      className={cn(
+        "flex flex-1 flex-col transition-opacity duration-300 motion-reduce:transition-none",
+        !active && !settled && "opacity-0",
+      )}
+    >
+      {children}
     </div>
   );
 }
@@ -210,6 +243,7 @@ function ForYouNavigation() {
 
 function ForYouHeader({ count }: { readonly count: number | undefined }) {
   const { t } = useTranslation();
+  const sourcesEnabled = useGet(forYouSourcesEnabled$);
   return (
     <header className="flex min-h-20 shrink-0 items-center justify-between gap-4 px-5 py-4 sm:px-8">
       <div>
@@ -224,19 +258,22 @@ function ForYouHeader({ count }: { readonly count: number | undefined }) {
           })}
         </p>
       </div>
-      <span
-        role="status"
-        className="min-w-12 text-right text-xs tabular-nums text-muted-foreground"
-      >
-        {count !== undefined
-          ? t(
-              ($) => {
-                return $.chat.agentSuggestions.forYou.remaining;
-              },
-              { total: count },
-            )
-          : null}
-      </span>
+      <div className="flex shrink-0 items-center gap-3">
+        <span
+          role="status"
+          className="min-w-12 text-right text-xs tabular-nums text-muted-foreground"
+        >
+          {count !== undefined
+            ? t(
+                ($) => {
+                  return $.chat.agentSuggestions.forYou.remaining;
+                },
+                { total: count },
+              )
+            : null}
+        </span>
+        {sourcesEnabled && <ForYouSources />}
+      </div>
     </header>
   );
 }
@@ -305,12 +342,13 @@ export function ForYouPage() {
         )}
         <div className="relative mx-auto w-full max-w-160 shrink-0 space-y-3">
           <SuggestionSaveErrors />
-          {settled.map(({ entry, outcome }) => {
-            return outcome?.type === "sent" ? (
+          {settled.map((card) => {
+            return card.kind === "suggestion" &&
+              card.outcome?.type === "sent" ? (
               <SuggestionSendStatus
-                key={entry.item.id}
-                entry={entry}
-                threadId={outcome.threadId}
+                key={card.entry.item.id}
+                entry={card.entry}
+                threadId={card.outcome.threadId}
               />
             ) : null;
           })}

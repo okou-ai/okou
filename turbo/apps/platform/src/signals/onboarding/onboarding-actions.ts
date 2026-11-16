@@ -12,7 +12,7 @@ import { onboardingCompleteContract } from "@okouai/api-contracts/client/onboard
 import { orgContract } from "@okouai/api-contracts/client/org-routes";
 import { runModelsMainContract } from "@okouai/api-contracts/client/run-models";
 import { userModelPreferenceContract } from "@okouai/api-contracts/client/user-model-preference";
-import { command, computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { resolvePlatformEnvironment } from "../../lib/platform-host.ts";
@@ -21,7 +21,10 @@ import { discardApiBootstrapResponse } from "../api-client-base.ts";
 import { apiClient$ } from "../api-client.ts";
 import { invalidateAvailableRunModels$ } from "../external/run-models.ts";
 import { reloadUserModelPreference$ } from "../external/user-model-preference.ts";
-import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
+import {
+  onboardingStatus$,
+  reloadOnboardingStatus$,
+} from "../okou-page/onboarding.ts";
 import { refreshOrg$ } from "../org.ts";
 import { ROUTES } from "../route-paths.ts";
 import {
@@ -54,6 +57,7 @@ const ONBOARDING_TRANSIENT_PARAMS = [
   "onboarding_note",
   "onboarding_template",
   "redeemCode",
+  "skipOnboarding",
 ] as const;
 
 /**
@@ -87,6 +91,12 @@ const redeemOnboardingCode$ = command(
       [200],
     );
     signal.throwIfAborted();
+    // Persist redemption before a later completion request can fail or be retried.
+    const pending = new URLSearchParams(get(searchParams$));
+    if (pending.get("redeemCode")?.trim() === code) {
+      pending.delete("redeemCode");
+      set(replaceSearchParams$, pending);
+    }
     if (result.body.redeemed) {
       discardApiBootstrapResponse(orgContract.get.method, orgContract.get.path);
       discardApiBootstrapResponse(
@@ -162,6 +172,53 @@ export const forwardOnboardedVisitor$ = command(
         : new URLSearchParams(),
       replace: true,
     });
+  },
+);
+
+const internalAutomaticOnboarding$ = state<Promise<void>>(Promise.resolve());
+export const automaticOnboarding$ = computed((get) => {
+  return get(internalAutomaticOnboarding$);
+});
+
+const completeAutomaticOnboarding$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    const status = await get(onboardingStatus$);
+    signal.throwIfAborted();
+    if (!status.needsOnboarding) {
+      await set(forwardOnboardedVisitor$, status.isAdmin, signal);
+      return;
+    }
+    const params = get(searchParams$);
+    await set(
+      completeOnboarding$,
+      status.isAdmin ? params.get("redeemCode") : null,
+      signal,
+    );
+    set(clearSourcesFirstDraft$);
+    const hasTask = params.get("handoff") || params.get("prompt")?.trim();
+    set(detachedNavigateTo$, hasTask ? ROUTES.prompt : ROUTES.home, {
+      searchParams: hasTask
+        ? promptHandoffParams(params)
+        : new URLSearchParams(),
+      replace: true,
+    });
+  },
+);
+
+export const startAutomaticOnboarding$ = command(
+  async ({ set }, signal: AbortSignal): Promise<void> => {
+    signal.throwIfAborted();
+    const operation = set(completeAutomaticOnboarding$, signal);
+    set(internalAutomaticOnboarding$, operation);
+    await operation;
+  },
+);
+
+export const retryAutomaticOnboarding$ = command(
+  async ({ set }, signal: AbortSignal): Promise<void> => {
+    signal.throwIfAborted();
+    set(reloadOnboardingStatus$);
+    await set(startAutomaticOnboarding$, signal);
   },
 );
 

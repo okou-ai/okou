@@ -714,6 +714,16 @@ export function triggerSharedWorkerAblyReconnect(): void {
   requireSharedWorkerRealtime().reconnect();
 }
 
+/** Lose continuity on one Worker channel while other channels stay attached. */
+export function triggerSharedWorkerAblyChannelGap(channelName: string): void {
+  const channel = requireSharedWorkerRealtime().getExistingChannel(channelName);
+  if (!channel || channel.state !== "attached") {
+    throw new Error("SharedWorker channel gap requires an attached channel");
+  }
+  channel.suspend({});
+  channel.reconnect();
+}
+
 /** Transition only the Realtime client that owns SharedWorker database events. */
 export function triggerSharedWorkerAblyConnectionState(
   state: "connected" | "disconnected" | "suspended",

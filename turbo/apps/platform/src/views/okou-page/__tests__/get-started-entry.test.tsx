@@ -70,7 +70,6 @@ test("The gift opens invitations independently of credit quests and copies the i
     context,
     path: questChatPath(),
     featureSwitches: {
-      [FeatureSwitchKey.FriendReferrals]: true,
       [FeatureSwitchKey.SingleAgent]: false,
     },
     auth: {
@@ -161,7 +160,7 @@ test("Referral link failures can be retried in the same dialog", async () => {
       ? respond(403, {
           error: {
             code: "FORBIDDEN",
-            message: "Friend referrals are not available",
+            message: "Organization access denied",
           },
         })
       : respond(200, {
@@ -175,7 +174,6 @@ test("Referral link failures can be retried in the same dialog", async () => {
     context,
     path: questChatPath(),
     featureSwitches: {
-      [FeatureSwitchKey.FriendReferrals]: true,
       [FeatureSwitchKey.SingleAgent]: false,
     },
     auth: {
@@ -204,29 +202,12 @@ test("Referral link failures can be retried in the same dialog", async () => {
   });
 });
 
-test("The invitation gift is hidden when friend referrals are disabled", async () => {
-  configureQuestPage(context, "admin");
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.FriendReferrals]: false },
-  });
-  await screen.findByTestId("get-started-entry");
-  expect(
-    queryAllByRoleFast("button").find((button) => {
-      return button.getAttribute("aria-label") === "Invite your friends";
-    }),
-  ).toBeUndefined();
-});
-
 test("The corner's icon buttons lead into the labelled Get started entry", async () => {
   configureQuestPage(context, "admin");
   await setupPage({
     context,
     path: questChatPath(),
     featureSwitches: {
-      [FeatureSwitchKey.FriendReferrals]: true,
-      [FeatureSwitchKey.UserNotifications]: true,
       [FeatureSwitchKey.SingleAgent]: false,
     },
     auth: {
@@ -244,16 +225,10 @@ test("The corner's icon buttons lead into the labelled Get started entry", async
   const gift = await waitFor(() => {
     return buttonNamed("Invite your friends", document.body);
   });
-  const bell = await waitFor(() => {
-    return buttonNamed("Notifications", document.body);
-  });
-
-  // Reading order, and with it keyboard order, runs gift, bell, then the
-  // labelled entry, which closes the row in the page's corner.
+  // Reading and keyboard order run from the gift to the labelled entry.
   const buttons = queryAllByRoleFast("button");
   expect(buttons).toContain(entry);
-  expect(buttons.indexOf(gift)).toBeLessThan(buttons.indexOf(bell));
-  expect(buttons.indexOf(bell)).toBeLessThan(buttons.indexOf(entry));
+  expect(buttons.indexOf(gift)).toBeLessThan(buttons.indexOf(entry));
 });
 
 function normalizedText(element: Element): string {

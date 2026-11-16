@@ -356,6 +356,10 @@ export const clientDescriptorManifest = [
     contracts: ["friendReferralsContract"],
   },
   {
+    module: "get-started-history",
+    contracts: ["getStartedHistoryContract"],
+  },
+  {
     module: "get-started",
     contracts: ["cronGetStartedContract", "getStartedContract"],
   },
@@ -773,10 +777,6 @@ export const clientDescriptorManifest = [
   {
     module: "user-model-preference",
     contracts: ["userModelPreferenceContract"],
-  },
-  {
-    module: "user-notifications",
-    contracts: ["userNotificationsContract"],
   },
   {
     module: "user-permission-grants",

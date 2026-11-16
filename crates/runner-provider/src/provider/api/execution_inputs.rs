@@ -11,16 +11,7 @@ use runner_types::{
 use serde::Deserialize;
 use std::{collections::HashSet, path::Path};
 
-#[derive(Deserialize)]
-struct ExecutionInputs {
-    #[serde(rename = "contentBundles")]
-    packages: ContentBundles,
-}
-
-impl super::ApiDecodePath for ExecutionInputs {
-    const DECODE_PATH_SCHEMA: &'static api_contracts::DecodePathSchema =
-        &api_contracts::generated::decode_paths::runners::execution_publication::CONTEXT;
-}
+mod publication;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -150,14 +141,22 @@ fn instruction_reference<'de, D: serde::Deserializer<'de>>(
 /// Normalize a complete execution publication for the local executor.
 /// Decode errors intentionally contain no supplied values or secret field paths.
 pub fn decode_execution_publication(body: &[u8]) -> Result<ExecutionContext, String> {
-    let context = super::decode_api_json_bytes(body).map_err(|_| "Invalid execution context")?;
-    let inputs = super::decode_api_json_bytes(body).map_err(|_| "Invalid content bundles")?;
-    normalize(context, inputs)
+    let publication =
+        serde_json::from_slice::<publication::ExecutionPublication>(body).map_err(|_| {
+            // Revisit only rejected bytes to retain context-before-bundle errors,
+            // independent of member order. No parser details leave this boundary.
+            if super::decode_api_json_bytes::<ExecutionContext>(body).is_err() {
+                "Invalid execution context"
+            } else {
+                "Invalid content bundles"
+            }
+        })?;
+    normalize(publication.context, publication.packages)
 }
 
 fn normalize(
     mut context: ExecutionContext,
-    inputs: ExecutionInputs,
+    packages: ContentBundles,
 ) -> Result<ExecutionContext, String> {
     let mut paths: HashSet<String> = context
         .storage_manifest
@@ -170,8 +169,8 @@ fn normalize(
                 .chain(manifest.artifacts.iter().map(|a| a.mount_path.clone()))
         })
         .collect();
-    let mut entries = Vec::with_capacity(inputs.packages.skills.len() + 1);
-    for skill in inputs.packages.skills {
+    let mut entries = Vec::with_capacity(packages.skills.len() + 1);
+    for skill in packages.skills {
         validate_workflow_mount(&skill.mount_path)?;
         if !paths.insert(skill.mount_path.clone()) {
             return Err("Conflicting content bundle mount".into());
@@ -185,7 +184,7 @@ fn normalize(
             .storage(WORKFLOW_STORAGE_NAME, skill.mount_path)?,
         );
     }
-    let instruction_file = if let Some(reference) = inputs.packages.instructions {
+    let instruction_file = if let Some(reference) = packages.instructions {
         let framework = guest_contracts::env::CliAgentTypeSelection::parse(&context.cli_agent_type);
         let mount = instruction_paths(
             Path::new("/home/user"),
@@ -212,7 +211,7 @@ fn normalize(
             artifacts: Vec::new(),
         });
     manifest.storages.extend(entries);
-    for template in inputs.packages.templates {
+    for template in packages.templates {
         let mount_path = template.mount_path()?;
         // Ancestor/descendant overlays are valid; a second destination is not.
         if paths

@@ -890,7 +890,7 @@ async fn complete_execution(
                     runtime,
                     0,
                     None,
-                    None,
+                    false,
                     state.last_event_sequence,
                     finalization,
                 )
@@ -967,7 +967,7 @@ async fn complete_execution(
                                 .failure_diagnostic
                                 .as_ref()
                                 .and_then(|diagnostic| diagnostic.failure_reason),
-                            failure_message.as_deref(),
+                            user_cancelled,
                             state.last_event_sequence,
                             finalization,
                         )

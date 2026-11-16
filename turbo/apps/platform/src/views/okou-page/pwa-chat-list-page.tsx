@@ -1,4 +1,3 @@
-import { UserNotificationsEntry } from "./user-notifications.tsx";
 import { ProjectCreateButton } from "../projects/project-row.tsx";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -90,7 +89,6 @@ function PwaChatListHeader() {
         >
           <SquarePen aria-hidden="true" />
         </Button>
-        <UserNotificationsEntry />
         <ChatThreadsListMenu showMarkAllRead touch />
       </div>
     </header>

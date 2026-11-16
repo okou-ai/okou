@@ -148,7 +148,7 @@ interface MockLifecycleControl {
   setThreadList: (list: ThreadListItem[]) => void;
   setCodexServiceTier: (tier: CodexServiceTier | null) => void;
   completeRun: (content?: string) => void;
-  failRun: (error: string) => void;
+  failRun: (error: string, failureReason?: string) => void;
   cancelRun: () => void;
 }
 
@@ -414,6 +414,7 @@ export function mockChatLifecycle(
 
   let runStatus: RunStatus = "running";
   let runError: string | null = null;
+  let runFailureReason: string | undefined;
   let resultContent = "";
   let threadListOverride: ThreadListItem[] | null = null;
   let runPrompt: string | null = null;
@@ -543,6 +544,9 @@ export function mockChatLifecycle(
         content: resultContent || null,
         runId: currentRunId,
         error: runError ?? undefined,
+        ...(runFailureReason === undefined
+          ? {}
+          : { failureReason: runFailureReason }),
         runLifecycleEvent:
           runStatus === "failed" || runStatus === "cancelled"
             ? runStatus
@@ -722,6 +726,7 @@ export function mockChatLifecycle(
     options?.onRunCreate?.({ ...body, modelSelection });
     runStatus = "running";
     runError = null;
+    runFailureReason = undefined;
     resultContent = "";
     if (modelSelection !== undefined) {
       selectedModel = modelSelection?.selectedModel ?? null;
@@ -1059,9 +1064,10 @@ export function mockChatLifecycle(
       createChatEvent(threadId);
       changeChatIndicators();
     },
-    failRun: (error: string) => {
+    failRun: (error: string, failureReason?: string) => {
       runStatus = "failed";
       runError = error;
+      runFailureReason = failureReason;
       assistantSeqId = allocateDynamicSeqId();
       createChatEvent(threadId);
       changeChatIndicators();

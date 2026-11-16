@@ -34,11 +34,14 @@
   int instructions_section;
   int instructions_unsaved;
   int language_en_us;
+  int language_zh_hant;
+  int palette_blue_horizon;
   int palette_default;
   int realtime_connecting;
   int realtime_unavailable;
   int settings;
   int updates_available;
+  int updates_check;
   int updates_required;
 }
 -keep,allowobfuscation class ai.okou.android.R {
