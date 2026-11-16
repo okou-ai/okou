@@ -129,6 +129,7 @@ import {
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import {
   knownRunFailureReasonSchema,
+  normalizeRunFailureReason,
   type KnownRunFailureReason,
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import type {
@@ -5113,6 +5114,9 @@ function filesystemFullTitle(): string {
 }
 
 const STRUCTURED_FAILURE_TITLES = Object.freeze({
+  unknown: () => {
+    return i18n.t(($) => $.chat.errors.genericTitle);
+  },
   session_history_limit: () => {
     return i18n.t(($) => {
       return $.chat.errors.recovery.sessionHistoryTitle;
@@ -5314,6 +5318,7 @@ const FAILURE_DESCRIPTIONS = Object.freeze({
 });
 
 const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
+  unknown: (t: TFunction<"common">) => t(($) => $.runErrors.transient),
   session_history_limit: FAILURE_DESCRIPTIONS.newChat,
   guest_root_filesystem_full: FAILURE_DESCRIPTIONS.filesystemFull,
   guest_home_filesystem_full: FAILURE_DESCRIPTIONS.filesystemFull,
@@ -5384,6 +5389,7 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
     return Hand;
   }
   if (
+    reason === "unknown" ||
     reason === "invalid_api_key" ||
     reason === "invalid_credentials" ||
     reason === "reconnect_required" ||
@@ -5402,6 +5408,7 @@ function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
 
 function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
   return (
+    reason !== "unknown" &&
     reason !== "insufficient_credits" &&
     reason !== "account_verification_required" &&
     reason !== "input_too_large" &&
@@ -5424,7 +5431,11 @@ function assistantRecoveryTitle(
       return $.chat.errors.recovery.autonomyLimitTitle;
     });
   }
-  if (recovery.kind === "usage-limit" && recovery.framework !== null) {
+  if (
+    recovery.kind === "usage-limit" &&
+    recovery.failureReason === null &&
+    recovery.framework !== null
+  ) {
     const framework =
       recovery.framework === "codex"
         ? t(($) => {
@@ -5691,7 +5702,7 @@ function assistantErrorFallbackContent(
 ): AssistantErrorCardContent | null {
   const knownReason = knownRunFailureReasonSchema.safeParse(failureReason);
   if (
-    isBillingRecoveryError(error) ||
+    (failureReason === undefined && isBillingRecoveryError(error)) ||
     (knownReason.success && knownReason.data === "insufficient_credits")
   ) {
     return null;
@@ -8025,7 +8036,9 @@ function PagedAssistantEventItem({
           error={error}
           eventId={event.id}
           failureReason={
-            event.eventType === "run.failed" ? event.failureReason : undefined
+            event.eventType === "run.failed"
+              ? normalizeRunFailureReason(event.failureReason)
+              : undefined
           }
           thread={thread}
         />

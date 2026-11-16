@@ -17,6 +17,7 @@
 use std::panic::AssertUnwindSafe;
 use std::time::Instant;
 
+use crate::job_lifecycle::completion_failure_reason;
 use futures_util::FutureExt;
 use tokio::task::JoinSet;
 use tracing::info;
@@ -539,7 +540,7 @@ async fn complete_without_sandbox(
             CompleteRequest {
                 run_id: context.run_id,
                 exit_code: failure.exit_code,
-                failure_reason: None,
+                failure_reason: completion_failure_reason(failure.exit_code, false, Some(&failure)),
                 error: Some(failure.error),
                 sandbox_id: None,
             },

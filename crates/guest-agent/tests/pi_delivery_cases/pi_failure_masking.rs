@@ -1,5 +1,5 @@
-//! Terminal Pi diagnostics must be masked in both the guest error file and
-//! the completion request produced by recovery finalization.
+//! Terminal Pi diagnostics remain masked in the guest error file and are
+//! omitted from the completion request produced by recovery finalization.
 
 use crate::common;
 
@@ -83,11 +83,13 @@ async fn pi_extension_failure_masks_error_file_and_recovery_completion()
     let complete = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
+            .body_excludes(SECRET)
+            .body_excludes(MASKED_ERROR)
             .json_body_includes(
                 json!({
                     "runId": RUN_ID,
                     "exitCode": 1,
-                    "error": MASKED_ERROR,
+                    "failureReason": "unknown",
                     "completion": {
                         "cliAgentType": "pi",
                         "cliAgentSessionId": SESSION_ID,

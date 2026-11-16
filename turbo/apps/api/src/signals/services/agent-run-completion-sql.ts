@@ -1,4 +1,5 @@
 import { nativeContinuationSchema } from "@okouai/api-contracts/contracts/runners";
+import { normalizeRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
   runResultSchema,
   runStatusSchema,
@@ -171,6 +172,12 @@ function mutationPlan(
   const output = input.body.completion;
   const eligible = sql`d.decision = 'ready' AND d.status <> 'timeout'`;
   const active = sql`d.status IN ('pending','running')`;
+  const failureReason =
+    terminalStatus === "completed"
+      ? null
+      : input.body.exitCode === 0
+        ? "unknown"
+        : normalizeRunFailureReason(input.body.failureReason);
   const newOutput = sql`${output !== undefined} AND NOT COALESCE(d.exact_retry,false)`;
   return new PgDialect().buildUpdateQuery({
     table: agentRuns,
@@ -185,7 +192,7 @@ function mutationPlan(
       status: sql`CASE WHEN ${active} THEN ${terminalStatus} ELSE ${agentRuns.status} END`,
       completedAt: sql`CASE WHEN ${active} THEN ${sql.param(input.at, agentRuns.completedAt)}::timestamp ELSE ${agentRuns.completedAt} END`,
       error: sql`CASE WHEN ${active} AND ${terminalError !== undefined} THEN ${terminalError ?? null} ELSE ${agentRuns.error} END`,
-      failureReason: sql`CASE WHEN ${active} THEN ${input.body.exitCode === 0 ? null : (input.body.failureReason ?? null)} ELSE ${agentRuns.failureReason} END`,
+      failureReason: sql`CASE WHEN ${active} THEN ${failureReason} ELSE ${agentRuns.failureReason} END`,
       sandboxId:
         input.body.sandboxId === undefined
           ? sql`${agentRuns.sandboxId}`

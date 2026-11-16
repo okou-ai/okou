@@ -60,7 +60,7 @@ final class FailureRecoveryFixture: Sendable {
     draft: ComposerDraft = ComposerDraft()
   ) {
     let payload = try! JSONSerialization.data(withJSONObject: [
-      "error": error, "failureReason": reason.map { $0 as Any } ?? NSNull(),
+      "error": error,
     ])
     let rows = [
       Self.row(
@@ -68,7 +68,9 @@ final class FailureRecoveryFixture: Sendable {
         payload:
           #"{"userMessage":{"version":1,"parts":[{"type":"text","text":"Original question"}]}}"#),
       Self.row(2, type: "output.message", payload: #"{"content":"Already generated content."}"#),
-      Self.row(3, type: "run.failed", payload: String(decoding: payload, as: UTF8.self)),
+      Self.row(
+        3, type: "run.failed", payload: String(decoding: payload, as: UTF8.self),
+        failureReason: reason),
     ]
     var initial = State(rows: rows)
     initial.draft = draft
@@ -209,7 +211,7 @@ final class FailureRecoveryFixture: Sendable {
               value.rows.append(
                 Self.row(
                   seq, type: "run.failed",
-                  payload: #"{"error":"Unavailable","failureReason":"provider_server_error"}"#))
+                  payload: #"{"error":"Unavailable"}"#, failureReason: "provider_server_error"))
               value.lastID = Self.id(seq)
             }
           }
@@ -313,8 +315,11 @@ final class FailureRecoveryFixture: Sendable {
     "{\"id\":\"\(id(1000 + seq))\",\"seqId\":\(seq),\"kind\":\"\(kind)\",\"chatThreadId\":\"\(ModelHTTPFixtures.threadID)\",\"agentId\":\"\(ModelHTTPFixtures.agentID)\",\"createdAt\":\"2026-10-20T00:00:01Z\",\(fields)}"
   }
 
-  static func row(_ seq: Int, type: String, payload: String, id: String? = nil) -> String {
-    "{\"id\":\"\(id ?? Self.id(seq))\",\"chatThreadId\":\"\(ModelHTTPFixtures.threadID)\",\"runId\":\"\(runID)\",\"seqId\":\(seq),\"createdAt\":\"2026-10-20T00:00:00Z\",\"eventType\":\"\(type)\",\"payload\":\(payload)}"
+  static func row(
+    _ seq: Int, type: String, payload: String, id: String? = nil, failureReason: String? = nil
+  ) -> String {
+    let reason = failureReason.map { ",\"failureReason\":\"\($0)\"" } ?? ""
+    return "{\"id\":\"\(id ?? Self.id(seq))\",\"chatThreadId\":\"\(ModelHTTPFixtures.threadID)\",\"runId\":\"\(runID)\",\"seqId\":\(seq),\"createdAt\":\"2026-10-20T00:00:00Z\",\"eventType\":\"\(type)\",\"payload\":\(payload)\(reason)}"
   }
 }
 

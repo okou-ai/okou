@@ -8,6 +8,36 @@ import XCTest
 
 @MainActor
 final class ChatSyncTests: XCTestCase {
+  func testCanonicalFailureReasonSurvivesHTTPAndOfflineCacheWithoutErrorText() async throws {
+    let directory = CacheTestDirectory(owner: self)
+    let offline = Mutex(false)
+    let row = """
+      {"id":"\(syncEventID(1))","chatThreadId":"\(syncThreadID)","runId":"\(syncRunID)","seqId":1,"createdAt":"2026-10-20T00:00:00Z","eventType":"run.failed","failureReason":"execution_timeout","payload":null}
+      """
+    let fixture = ChatHTTPFixture { request in
+      if offline.withLock({ $0 }) { throw URLError(.notConnectedToInternet) }
+      switch request.url?.path {
+      case syncPath + "/event-snapshot": return syncMissingSnapshot()
+      case syncPath + "/event-rows":
+        return syncSequence(request) == 0
+          ? syncPage([row], cursor: 1) : syncPage([], cursor: 1)
+      case syncPath: return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let scope = syncScope(fixture)
+    let service = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
+    let history = try await service.history(threadID: syncThreadID)
+    XCTAssertEqual(history.latestFailureID, syncEventID(1))
+    XCTAssertEqual(history.messages.first?.failure?.reason, "execution_timeout")
+    XCTAssertEqual(history.messages.first?.failure?.recovery(personalFramework: nil).kind, .timeout)
+    offline.withLock { $0 = true }
+    let reopened = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
+    let cached = await reopened.cachedHistory(threadID: syncThreadID)
+    XCTAssertEqual(cached?.latestFailureID, history.latestFailureID)
+    XCTAssertEqual(cached?.messages.first?.failure?.reason, "execution_timeout")
+  }
+
   func testExtensionTailBecomesVisibleToAResidentReaderBeforeAnyForegroundRequest() async throws {
     let directory = CacheTestDirectory(owner: self)
     let later = Mutex(false)

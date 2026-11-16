@@ -163,12 +163,13 @@ struct ChatEventRow: Decodable, Sendable {
   let seqId: Int
   let createdAt: Date
   let eventType: ChatEventType
+  let failureReason: String?
   let payload: ChatEvent.Payload?
 
   var event: ChatEvent {
     ChatEvent(
       id: id, runId: runId, revokesEventId: revokesEventId,
-      createdAt: createdAt, eventType: eventType, payload: payload)
+      createdAt: createdAt, eventType: eventType, failureReason: failureReason, payload: payload)
   }
 }
 

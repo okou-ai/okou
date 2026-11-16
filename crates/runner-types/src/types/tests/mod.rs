@@ -410,7 +410,8 @@ fn complete_request_with_pre_sandbox_error_omits_sandbox_fields() {
         sandbox_id: None,
     };
     let json = serde_json::to_value(&req).unwrap();
-    assert_eq!(json["error"], "timeout");
+    assert!(json.get("error").is_none());
+    assert_eq!(req.error.as_deref(), Some("timeout"));
     assert_eq!(json["failureReason"], "provider_rate_limited");
     assert!(json.get("sandboxId").is_none());
 }

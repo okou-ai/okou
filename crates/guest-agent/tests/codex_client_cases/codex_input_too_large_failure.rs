@@ -52,8 +52,11 @@ async fn oversized_codex_input_writes_actionable_structured_failure()
     let complete = server.mock(|when, then| {
         when.method(POST)
             .path("/api/webhooks/agent/complete")
+            .body_excludes(PROMPT_SENTINEL)
+            .body_excludes(UPSTREAM_ERROR_SENTINEL)
+            .body_excludes("execution: Codex input is too large")
             .json_body_includes(
-                r#"{"runId":"codex-input-too-large","exitCode":1,"failureReason":"input_too_large","error":"execution: Codex input is too large: 101 characters provided, maximum is 100 characters. Reduce the input and try again.","completion":{"cliAgentSessionHistoryDisposition":"native_only"}}"#,
+                r#"{"runId":"codex-input-too-large","exitCode":1,"failureReason":"input_too_large","completion":{"cliAgentSessionHistoryDisposition":"native_only"}}"#,
             );
         then.status(200)
             .header("Content-Type", "application/json")

@@ -504,6 +504,7 @@ describe("agent completion failure reasons", () => {
 
   it("accepts known reasons, future tokens, and omission", () => {
     expect(knownRunFailureReasonSchema.options).toStrictEqual([
+      "unknown",
       "session_history_limit",
       "guest_root_filesystem_full",
       "guest_home_filesystem_full",

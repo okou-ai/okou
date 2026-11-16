@@ -10641,6 +10641,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
     describe("RUN-03: sandbox completion reports against missing completion outputs and settled runs", () => {
       describe("completion failure reasons", () => {
         const terminalFailureReasons = [
+          "unknown",
           "provider_image_too_large",
           "insufficient_credits",
           "invalid_api_key",
@@ -10661,7 +10662,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ] as const satisfies readonly KnownRunFailureReason[];
 
         async function completePublicFailure(args: {
-          readonly failureReason: RunFailureReasonToken;
+          readonly failureReason?: RunFailureReasonToken;
+          readonly expectedReason?: KnownRunFailureReason;
           readonly modelProvider?: "claude-code-oauth-token";
         }) {
           const api = createRunsApi(context);
@@ -10710,7 +10712,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               return event.runId === run.runId;
             });
           expect(failures).toHaveLength(1);
-          expect(failures[0]?.failureReason).toBe(args.failureReason);
+          const expectedReason =
+            args.expectedReason ?? args.failureReason ?? "unknown";
+          expect(failures[0]?.failureReason).toBe(expectedReason);
           const raw = await chat.listThreadEventRows(actor, run.threadId);
           const rawFailures = raw.filter((event) => {
             return (
@@ -10718,7 +10722,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             );
           });
           expect(rawFailures).toHaveLength(1);
-          expect(rawFailures[0]?.failureReason).toBe(args.failureReason);
+          expect(rawFailures[0]?.failureReason).toBe(expectedReason);
           return { failures };
         }
 
@@ -10729,6 +10733,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               failureReason,
             });
             expect(failures[0]?.failureReason).toBe(failureReason);
+          },
+        );
+
+        it.each([undefined, "future_reason"])(
+          "publishes unknown for a legacy completion reason %s",
+          async (failureReason) => {
+            const { failures } = await completePublicFailure({
+              failureReason,
+              expectedReason: "unknown",
+            });
+            expect(failures[0]?.failureReason).toBe("unknown");
           },
         );
 
