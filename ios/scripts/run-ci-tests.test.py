@@ -16,6 +16,7 @@ import json, os, pathlib, signal, sys, time
 state = pathlib.Path(os.environ['CI_PROCESS_STATE'])
 scenario = os.environ['CI_PROCESS_SCENARIO']
 parallel = os.environ.get('IOS_CI_PARALLEL_SIMULATOR') == 'true'
+boot_first = os.environ.get('IOS_CI_BOOT_BEFORE_COMPILE') == 'true'
 role = ''
 def mark(name):
     (state / name).write_text(str(os.getpid()))
@@ -36,13 +37,13 @@ if command == 'xcrun':
         print(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-26-2':
             [{'name': 'iPhone 17 Pro', 'udid': 'configured', 'state': 'Shutdown'}]}}))
     elif args == ['simctl', 'boot', 'configured']:
-        if not parallel and not (state / 'build-finished').exists():
+        if not parallel and not boot_first and not (state / 'build-finished').exists():
             sys.exit('Simulator boot requested before compilation finished')
     elif args == ['simctl', 'bootstatus', 'configured']:
         role = 'boot'
         if not (state / 'prepare-finished').exists():
             sys.exit('Simulator started before locked dependency resolution finished')
-        if not parallel and not (state / 'build-finished').exists():
+        if not parallel and not boot_first and not (state / 'build-finished').exists():
             sys.exit('Simulator started before compilation finished')
         mark('boot-started')
         if parallel:
@@ -77,7 +78,9 @@ elif command == 'xcodebuild':
         role = 'build'
         if not (state / 'prepare-finished').exists():
             sys.exit('Compilation started before locked dependency resolution finished')
-        if not parallel and (state / 'boot-started').exists():
+        if boot_first and not (state / 'boot-finished').exists():
+            sys.exit('Compilation started before simulator readiness')
+        if not parallel and not boot_first and (state / 'boot-started').exists():
             sys.exit('Compilation overlapped simulator startup')
         for required in ['-onlyUsePackageVersionsFromResolvedFile',
                          '-disableAutomaticPackageResolution', '-skipPackageUpdates']:
@@ -209,6 +212,64 @@ class CIProcessTests(unittest.TestCase):
         self.assertTrue((self.state / "build-finished").exists())
         self.assertTrue((self.state / "boot-finished").exists())
         self.assertTrue((self.state / "tests-ran").exists())
+
+    def test_boot_first_waits_for_readiness_before_compilation_and_tests(self):
+        self.env["IOS_CI_BOOT_BEFORE_COMPILE"] = "true"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.state / "tests-ran").exists())
+
+    def test_boot_first_failure_prevents_compilation_and_tests(self):
+        self.env["IOS_CI_BOOT_BEFORE_COMPILE"] = "true"
+        self.env["CI_PROCESS_SCENARIO"] = "boot-failure"
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.state / "build-started").exists())
+        self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_boot_first_compilation_failure_still_blocks_tests(self):
+        self.env["IOS_CI_BOOT_BEFORE_COMPILE"] = "true"
+        self.env["CI_PROCESS_SCENARIO"] = "build-failure"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 23, result.stderr)
+        self.assertTrue((self.state / "boot-finished").exists())
+        self.assertFalse((self.state / "tests-ran").exists())
+
+    def test_boot_first_cancellation_retires_boot_before_compilation(self):
+        self.env["IOS_CI_BOOT_BEFORE_COMPILE"] = "true"
+        self.env["CI_PROCESS_SCENARIO"] = "cancel-boot"
+        with subprocess.Popen(
+            self.command(),
+            cwd=self.repo,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ) as process:
+            self.await_marker("boot-started")
+            process.send_signal(signal.SIGTERM)
+            _, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 143, stderr)
+        self.await_marker("boot-stopped")
+        self.assertFalse((self.state / "build-started").exists())
+
+    def test_boot_first_cancellation_retires_compilation_before_tests(self):
+        self.env["IOS_CI_BOOT_BEFORE_COMPILE"] = "true"
+        self.env["CI_PROCESS_SCENARIO"] = "cancel-build"
+        with subprocess.Popen(
+            self.command(),
+            cwd=self.repo,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ) as process:
+            self.await_marker("build-started")
+            process.send_signal(signal.SIGTERM)
+            _, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 143, stderr)
+        self.await_marker("build-stopped")
+        self.assertFalse((self.state / "tests-ran").exists())
 
     def test_parallel_compiler_failure_retires_boot_and_blocks_tests(self):
         self.env["IOS_CI_PARALLEL_SIMULATOR"] = "true"
