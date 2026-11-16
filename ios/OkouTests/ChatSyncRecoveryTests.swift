@@ -413,7 +413,8 @@ private final class SyncRecoveryFixture: Sendable {
     let state = state
     fixture = ChatHTTPFixture { request in
       let path = request.url?.path ?? ""
-      let writing = path == "/api/chat/events/catch-up"
+      let writing =
+        path == "/api/chat/events/catch-up"
         || path == "/api/chat-threads/\(Self.threadID)/rename"
       guard request.httpMethod == (writing ? "POST" : "GET") else {
         throw URLError(.unsupportedURL)

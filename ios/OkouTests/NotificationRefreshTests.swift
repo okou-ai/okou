@@ -39,7 +39,8 @@ final class NotificationRefreshTests: XCTestCase {
         let removed = state.remove ? #""read-state""# : ""
         return ChatHTTPResponse(
           body:
-            "{\"unreadCount\":\(state.badge),\"badgeCount\":\(state.badge),\"removeIdentifiers\":[\(removed)]}")
+            "{\"unreadCount\":\(state.badge),\"badgeCount\":\(state.badge),\"removeIdentifiers\":[\(removed)]}"
+        )
       default: throw URLError(.unsupportedURL)
       }
     }
@@ -52,7 +53,9 @@ final class NotificationRefreshTests: XCTestCase {
           "notificationId": "read-state",
         ]
       ]))
-    system.delivered = [DeliveredChatNotification(identifier: "read-state", destination: destination)]
+    system.delivered = [
+      DeliveredChatNotification(identifier: "read-state", destination: destination)
+    ]
     let suite = "notification-refresh-" + UUID().uuidString
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
