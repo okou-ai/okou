@@ -7389,6 +7389,43 @@
         }
       }
     },
+    "Credit balance": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Credit-Guthaben" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Saldo de créditos" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Solde de crédits" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "क्रेडिट बैलेंस" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Saldo kredit" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Saldo crediti" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "クレジット残高" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "크레딧 잔액" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Saldo de créditos" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "Credits 余额" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "Credits 餘額" }
+        }
+      }
+    },
     "Credits expire %@": {
       "extractionState": "manual",
       "localizations": {
@@ -11844,6 +11881,43 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "正在載入權限…" }
+        }
+      }
+    },
+    "Loading credits": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Credits werden geladen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Cargando créditos" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Chargement des crédits" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "क्रेडिट लोड हो रहे हैं" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Memuat kredit" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Caricamento dei crediti" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "クレジットを読み込み中" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "크레딧 로딩 중" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Carregando créditos" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "正在加载 Credits" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "正在載入 Credits" }
         }
       }
     },
