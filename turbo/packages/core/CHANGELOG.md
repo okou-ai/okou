@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.842.1](https://github.com/okou-ai/okou/compare/core-v8.842.0...core-v8.842.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **integrations:** add native model recovery controls ([#47649](https://github.com/okou-ai/okou/issues/47649)) ([89c954e](https://github.com/okou-ai/okou/commit/89c954ec0e6a6408cac0f1ad960074b2d7fbdf24))
+* require phone use opt-in and authorize access from chat ([#47650](https://github.com/okou-ai/okou/issues/47650)) ([d99b85b](https://github.com/okou-ai/okou/commit/d99b85b2a06c635ca25fa93b9f6a0fc66b55b276))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.71.1
+
 ## [8.842.0](https://github.com/okou-ai/okou/compare/core-v8.841.1...core-v8.842.0) (2026-11-16)
 
 
