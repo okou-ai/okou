@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.17](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.16...runner-rs-v0.249.17) (2026-11-16)
+
+
+### Bug Fixes
+
+* **python:** reconcile usage with registry publications ([#47625](https://github.com/okou-ai/okou/issues/47625)) ([a53877e](https://github.com/okou-ai/okou/commit/a53877e8e6e80f1cdbccb534907d27920de3d17d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.16](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.15...runner-rs-v0.249.16) (2026-11-16)
 
 ### Release Dependencies
