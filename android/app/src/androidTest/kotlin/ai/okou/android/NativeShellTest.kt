@@ -3,7 +3,6 @@ package ai.okou.android
 import android.app.LocaleManager
 import android.app.UiModeManager
 import android.content.res.Configuration
-import android.util.Log
 import android.view.KeyEvent
 import androidx.core.view.WindowCompat
 import androidx.datastore.preferences.core.emptyPreferences
@@ -23,7 +22,6 @@ import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
-import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
@@ -88,10 +86,13 @@ class NativeShellTest {
     @Test
     fun paletteAndLanguageChangesRecreateTheListAndReloadMemberPreferences() =
         onIsolatedDevice("member-preferences") {
-            val probe = AtomicInteger()
-            fun select(value: String) {
-                val target = By.pkg(app.packageName).text(value)
-                if (device.findObject(target) == null) {
+            fun findCurrent(target: BySelector): UiObject2? {
+                // API 35 can retain offscreen Compose descendants after a scroll without events.
+                check(automation.clearCache()) { "Native accessibility cache could not be cleared" }
+                return device.findObject(target)
+            }
+            fun reveal(target: BySelector, value: String): UiObject2 {
+                if (findCurrent(target) == null) {
                     val container =
                         requireNotNull(
                             device.wait(
@@ -101,60 +102,73 @@ class NativeShellTest {
                         )
                     val visible =
                         object : Condition<UiObject2, Boolean> {
-                            // Resolve virtual descendants from the current window after scrolls.
-                            override fun apply(container: UiObject2): Boolean {
-                                val cached = device.hasObject(target)
-                                if (value != "Default") return cached
-                                val cleared = automation.clearCache()
-                                val fresh = device.hasObject(target)
-                                val step = probe.getAndIncrement()
-                                Log.i(
-                                    "PreferenceProbe",
-                                    "step=$step cached=$cached cleared=$cleared fresh=$fresh",
-                                )
-                                TestStorage().openOutputFile("preference-probe-$step.xml").use {
-                                    device.dumpWindowHierarchy(it)
-                                }
-                                return fresh
-                            }
+                            override fun apply(container: UiObject2) = findCurrent(target) != null
                         }
                     // Settings and restored pickers can retain a position below the target.
                     if (!container.scrollUntil(Direction.UP, visible)) {
                         container.scrollUntil(Direction.DOWN, visible)
                     }
                 }
-                requireNotNull(device.wait(Until.findObject(target), WAIT)) {
-                        "Native preference choice not reachable: $value"
-                    }
-                    .click()
+                return requireNotNull(
+                    device.wait(
+                        object : Condition<UiDevice, UiObject2?> {
+                            override fun apply(device: UiDevice) = findCurrent(target)
+                        },
+                        WAIT,
+                    )
+                ) {
+                    "Native preference control not reachable: $value"
+                }
             }
-            fun dismissRestoredPicker(firstChoice: Int) {
-                // The restored selection may be offscreen; the first choice identifies the picker.
-                fun option() =
-                    By.pkg(app.packageName).checkable(true).hasDescendant(label(firstChoice))
-                await("Restored preference picker is open") { device.hasObject(option()) }
+            fun button(id: Int) =
+                reveal(
+                    By.pkg(app.packageName)
+                        .clickable(true)
+                        .checkable(false)
+                        .enabled(true)
+                        .hasDescendant(label(id)),
+                    app.getString(id),
+                )
+            fun option(id: Int) = reveal(appearanceOption(id).enabled(true), app.getString(id))
+            fun dismissPicker(firstChoice: Int, selected: Int) {
+                // The selected option may be offscreen; first identify the actual picker.
+                await("Preference picker is open") {
+                    findCurrent(appearanceOption(firstChoice)) != null
+                }
+                assertTrue(
+                    "Confirmed preference selection: ${app.getString(selected)}",
+                    option(selected).isChecked,
+                )
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-                await("Preference picker is dismissed") { !device.hasObject(option()) }
+                await("Preference picker is dismissed") {
+                    findCurrent(appearanceOption(selected)) == null
+                }
             }
             launch()
             click(R.string.settings)
             awaitSelectable(R.string.appearance_system)
-            select("Default")
-            select("Blue horizon")
-            select("English")
-            select("繁體中文")
+            // Start below the palette, as in the original failed Settings hierarchy.
+            button(R.string.updates_check)
+            button(R.string.palette_default).click()
+            option(R.string.palette_blue_horizon).click()
+            button(R.string.palette_blue_horizon).click()
+            dismissPicker(R.string.palette_default, R.string.palette_blue_horizon)
+            button(R.string.language_en_us).click()
+            option(R.string.language_zh_hant).click()
             awaitActivity("Traditional Chinese is applied by Android") {
                 it.resources.configuration.locales[0].toLanguageTag() == "zh-Hant"
             }
+            button(R.string.language_zh_hant).click()
+            dismissPicker(R.string.language_en_us, R.string.language_zh_hant)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             text(R.string.chat_list_title)
             closeActivity()
             launch()
             click(R.string.settings)
-            select("藍色地平線")
-            dismissRestoredPicker(R.string.palette_default)
-            select("繁體中文")
-            dismissRestoredPicker(R.string.language_en_us)
+            button(R.string.palette_blue_horizon).click()
+            dismissPicker(R.string.palette_default, R.string.palette_blue_horizon)
+            button(R.string.language_zh_hant).click()
+            dismissPicker(R.string.language_en_us, R.string.language_zh_hant)
         }
 
     private fun launch() {
