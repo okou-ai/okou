@@ -28,15 +28,26 @@ class ReleaseDiagnosticsTest(unittest.TestCase):
             library, caller = root / "Library.java", root / "Caller.java"
             library.write_text('package fixture; public class Library { public static void touch() {} }')
             caller.write_text('package fixture; public class Caller { public static void run() { Library.touch(); } }')
-            subprocess.run(["javac", "-d", str(root / "classes"), str(library), str(caller)], check=True)
+            provider = root / "Provider.java"
+            provider.write_text('package fixture; public interface Provider { Object token(Object continuation); }')
+            callback = root / "Callback.java"
+            callback.write_text('package fixture; public class Callback implements Provider { public Object token(Object continuation) { return continuation; } }')
+            sam = root / "Sam.java"
+            sam.write_text('package fixture; public interface Sam { String value(String input); }')
+            factory = root / "Factory.java"
+            factory.write_text('package fixture; public class Factory { public static Sam create() { return value -> value; } }')
+            subprocess.run(["javac", "-d", str(root / "classes"),
+                            *map(str, (library, caller, provider, callback, sam, factory))], check=True)
 
-            def jar(name, klass):
+            def jar(name, *classes):
                 path = root / name
                 with zipfile.ZipFile(path, "w") as output:
-                    output.write(root / "classes/fixture" / klass, "fixture/" + klass)
+                    for klass in classes:
+                        output.write(root / "classes/fixture" / klass, "fixture/" + klass)
                 return str(path)
 
-            source, target = jar("source.jar", "Caller.class"), jar("target.jar", "Library.class")
+            source = jar("source.jar", "Caller.class", "Callback.class", "Factory.class")
+            target = jar("target.jar", "Library.class", "Provider.class", "Sam.class")
             jdk = Path(os.environ.get("JAVA_HOME") or Path(shutil.which("javac")).resolve().parents[1])
             command = ["java", "-cp", r8, str(SCRIPTS / "TraceNativeTestReferences.java"),
                        "--keep-rules", "--allowobfuscation", "--source", source, "--target", target,
@@ -44,9 +55,11 @@ class ReleaseDiagnosticsTest(unittest.TestCase):
             result = subprocess.run(command, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("touch()", (root / "rules").read_text())
+            self.assertIn("java.lang.Object token(java.lang.Object);", (root / "rules").read_text())
+            self.assertIn("java.lang.String value(java.lang.String);", (root / "rules").read_text())
             library.write_text('package fixture; public class Library {}')
             subprocess.run(["javac", "-d", str(root / "classes"), str(library)], check=True)
-            jar("target.jar", "Library.class")
+            jar("target.jar", "Library.class", "Provider.class", "Sam.class")
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
 
     def test_native_gate_rejects_incomplete_failed_and_skipped_results(self):

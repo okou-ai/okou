@@ -188,6 +188,18 @@ abstract class TraceNativeTestReferences : DefaultTask() {
     }
 }
 
+// Compile API jars duplicate runtime target classes and hide their virtual methods
+// from TraceReferences. Only compile-only annotations belong on its library path.
+val nativeTestTraceCompileOnly =
+    configurations.create("nativeTestTraceCompileOnly") {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+        extendsFrom(
+            configurations.getByName("compileOnly"),
+            configurations.getByName("androidTestCompileOnly"),
+        )
+    }
+
 val generateBrandFonts =
     tasks.register<PrepareBrandFiles>("generateBrandFonts") {
         sourceFiles.from("../../ios/Okou/Resources/Fonts/Geist.ttf")
@@ -249,7 +261,7 @@ androidComponents.onVariants { variant ->
             tasks.register<TraceNativeTestReferences>("generateNativeTestKeepRules") {
                 appLibraries.from(classes("releaseRuntimeClasspath"))
                 testLibraries.from(classes("releaseAndroidTestRuntimeClasspath"))
-                compileLibraries.from(classes("releaseAndroidTestCompileClasspath"))
+                compileLibraries.from(nativeTestTraceCompileOnly)
                 androidJar.set(
                     androidComponents.sdkComponents.sdkDirectory.map {
                         it.file("platforms/android-36/android.jar")

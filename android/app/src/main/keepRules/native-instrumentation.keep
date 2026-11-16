@@ -2,11 +2,14 @@
 }
 -keep,allowobfuscation class ai.okou.android.OkouApplication {
   public <init>();
+  public ai.okou.android.auth.Authentication createAuthentication();
+  public ai.okou.android.auth.WorkspaceSession createWorkspaceSession(ai.okou.android.auth.WorkspaceIdentity, ai.okou.android.api.WorkspaceTokenProvider);
   public androidx.datastore.core.DataStore getAppearancePreferences();
   public ai.okou.android.auth.Authentication getAuthentication();
   public ai.okou.android.chat.ChatCacheStore getChatCache();
   public ai.okou.android.chat.ComposerJournalStore getComposerJournal();
   public ai.okou.android.instructions.PersonalInstructionsDraftStore getInstructionsDrafts();
+  public ai.okou.android.updates.AppUpdates getUpdates();
 }
 -keep,allowobfuscation class ai.okou.android.R$string {
   int appearance;
@@ -44,6 +47,7 @@
   public <init>(java.lang.String);
 }
 -keep,allowobfuscation interface ai.okou.android.api.WorkspaceTokenProvider {
+  public java.lang.Object token(kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.api.generated.AcceptedInput {
 }
@@ -145,6 +149,13 @@
 -keep enum ai.okou.android.api.generated.UserPreferencesTheme {
 }
 -keep,allowobfuscation interface ai.okou.android.auth.Authentication {
+  public kotlinx.coroutines.flow.StateFlow getState();
+  public void initialize();
+  public java.lang.Object memberships(ai.okou.android.auth.NativeSession, kotlin.coroutines.Continuation);
+  public java.lang.Object refresh(ai.okou.android.auth.NativeSession, kotlin.coroutines.Continuation);
+  public java.lang.Object selectWorkspace(ai.okou.android.auth.NativeSession, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object signOut(kotlin.coroutines.Continuation);
+  public java.lang.Object token(ai.okou.android.auth.NativeSession, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.auth.AuthenticationState {
   public <init>(boolean, ai.okou.android.auth.NativeSession, boolean, boolean, java.util.List, int, kotlin.jvm.internal.DefaultConstructorMarker);
@@ -185,11 +196,31 @@
   public <init>(java.lang.String, java.lang.String, java.lang.String);
 }
 -keep,allowobfuscation interface ai.okou.android.auth.WorkspaceSession {
+  public java.lang.Object agents(kotlin.coroutines.Continuation);
+  public java.lang.Object bootstrap(kotlin.coroutines.Continuation);
+  public java.lang.Object chatArchive(java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object chatEvents(java.lang.Long, kotlin.coroutines.Continuation);
+  public java.lang.Object chatSnapshot(kotlin.coroutines.Continuation);
+  public java.lang.Object createThread(ai.okou.android.api.generated.CreateThreadRequest, kotlin.coroutines.Continuation);
+  public java.lang.Object featureSwitches(kotlin.coroutines.Continuation);
   public java.lang.Object historyArchive(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object historyRows(java.lang.String, ai.okou.android.chat.HistoryCursor, kotlin.coroutines.Continuation);
   public java.lang.Object historySnapshot(java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object indicators(kotlin.coroutines.Continuation);
   public java.lang.Object markRead(java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object newChatAgent(kotlin.coroutines.Continuation);
+  public java.lang.Object observeInput(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object observeRealtime(kotlin.jvm.functions.Function2, kotlin.coroutines.Continuation);
+  public java.lang.Object personalInstructions(kotlin.coroutines.Continuation);
+  public java.lang.Object personalInstructionsEnabled(kotlin.coroutines.Continuation);
+  public java.lang.Object preferences(kotlin.coroutines.Continuation);
+  public java.lang.Object projectArchive(java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object projectEvents(long, kotlin.coroutines.Continuation);
+  public java.lang.Object projectSnapshot(kotlin.coroutines.Continuation);
+  public java.lang.Object sendInput(ai.okou.android.api.generated.SendRequestVariant1, kotlin.coroutines.Continuation);
   public java.lang.Object threadDetail(java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object updatePersonalInstructions(java.lang.String, java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object updatePreferences(ai.okou.android.api.generated.UpdatePreferencesRequest, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.chat.ChatCacheStore {
   public java.lang.Object close(kotlin.coroutines.Continuation);
@@ -212,10 +243,15 @@
   public java.lang.Object chatEvents(java.lang.Long, kotlin.coroutines.Continuation);
   public java.lang.Object chatSnapshot(kotlin.coroutines.Continuation);
   public java.lang.Object featureSwitches(kotlin.coroutines.Continuation);
+  public java.lang.Object historyArchive(java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object historyRows(java.lang.String, ai.okou.android.chat.HistoryCursor, kotlin.coroutines.Continuation);
+  public java.lang.Object historySnapshot(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object indicators(kotlin.coroutines.Continuation);
+  public java.lang.Object markRead(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object projectArchive(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object projectEvents(long, kotlin.coroutines.Continuation);
   public java.lang.Object projectSnapshot(kotlin.coroutines.Continuation);
+  public java.lang.Object threadDetail(java.lang.String, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.chat.ChatListUiState {
   public java.util.List getThreads();
@@ -291,6 +327,8 @@
   public java.lang.Object recover(ai.okou.android.api.generated.AndroidUpdatesRelease, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation interface ai.okou.android.updates.UpdateStore {
+  public java.lang.Object load(kotlin.coroutines.Continuation);
+  public java.lang.Object save(ai.okou.android.updates.UpdateRecord, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.updates.UpdateUiState {
   public boolean getRequired();
@@ -990,6 +1028,11 @@
   public okhttp3.internal.concurrent.TaskQueue newQueue();
 }
 -keep,allowobfuscation interface okhttp3.internal.connection.BufferedSocket {
+  public void cancel();
+  public okio.BufferedSink getSink();
+  public okio.Sink getSink();
+  public okio.BufferedSource getSource();
+  public okio.Source getSource();
 }
 -keep,allowobfuscation class okhttp3.internal.http.HttpMethod {
   public static boolean permitsRequestBody(java.lang.String);
@@ -1018,6 +1061,7 @@
 }
 -keep,allowobfuscation class okhttp3.internal.http2.Http2Connection$Listener {
   public <init>();
+  public void onStream(okhttp3.internal.http2.Http2Stream);
 }
 -keep,allowobfuscation class okhttp3.internal.http2.Http2Connection {
   public okhttp3.internal.http2.Http2Stream pushStream(int, java.util.List, boolean);
