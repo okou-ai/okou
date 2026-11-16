@@ -971,16 +971,20 @@ impl Sandbox for MockSandbox {
             runtime_dir: request.runtime_dir.to_string(),
             timeout: request.timeout,
         };
-        self.storage_manifest_calls
-            .lock_ignoring_poison()
-            .push(call.clone());
         if let Some(overrides) = &self.overrides {
+            self.storage_manifest_calls
+                .lock_ignoring_poison()
+                .push(call.clone());
             overrides
                 .exec
                 .storage_manifest_calls
                 .lock_ignoring_poison()
                 .push(call);
             wait_lifecycle_gate(&overrides.exec.storage_manifest_gate).await;
+        } else {
+            self.storage_manifest_calls
+                .lock_ignoring_poison()
+                .push(call);
         }
         let result = self
             .exec_results
