@@ -66,6 +66,7 @@ const comparisonPanelSchema = object({
 export const featureGuideMediaSchema = discriminatedUnion("type", [
   object({
     type: literal("comparison"),
+    layout: literal(["overview", "instructions", "workflows"]),
     label: string().min(1).max(120),
     before: comparisonPanelSchema,
     after: comparisonPanelSchema,

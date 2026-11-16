@@ -51,6 +51,50 @@ const edition = Object.freeze<FeatureGuideEdition>({
   },
 });
 
+const comparisonEdition = Object.freeze<FeatureGuideEdition>({
+  ...edition,
+  id: "single-agent-2026-11-16",
+  content: {
+    ...edition.content,
+    items: [
+      {
+        featureId: "my-okou",
+        title: "One Okou. All your work.",
+        description: "Your Instructions and Workflows, with one Okou",
+        media: {
+          type: "comparison",
+          layout: "overview",
+          label: "From separate Agents to one personal Okou",
+          before: {
+            label: "Before",
+            title: "Pick an Agent for each task",
+            items: [
+              { title: "Writing agent", description: "Its own Instructions" },
+              { title: "Reports agent", description: "Its own Workflows" },
+            ],
+          },
+          after: {
+            label: "Now",
+            title: "Your personal Okou",
+            items: [
+              {
+                title: "Personal Instructions",
+                description: "Settings → Personal → My Okou",
+              },
+              {
+                title: "Reusable Workflows",
+                description: "Private or shared in your workspace",
+              },
+            ],
+          },
+          note: "Each person uses their own accounts and permissions.",
+          caption: "Illustrated example",
+        },
+      },
+    ],
+  },
+});
+
 function button(name: string, container: ParentNode = document.body) {
   const found = queryAllByRoleFast("button", container).find((b) => {
     return (
@@ -526,48 +570,6 @@ test("replays a preview from the home link without acknowledging a real impressi
 
 test("renders a single before-and-after guide and dismisses its selected preview without recording a view", async () => {
   let seen = false;
-  const comparisonEdition: FeatureGuideEdition = {
-    ...edition,
-    id: "single-agent-2026-11-16",
-    content: {
-      ...edition.content,
-      items: [
-        {
-          featureId: "my-okou",
-          title: "One Okou. All your work.",
-          description: "Your Instructions and Workflows, with one Okou",
-          media: {
-            type: "comparison",
-            label: "From separate Agents to one personal Okou",
-            before: {
-              label: "Before",
-              title: "Pick an Agent for each task",
-              items: [
-                { title: "Writing agent", description: "Its own Instructions" },
-                { title: "Reports agent", description: "Its own Workflows" },
-              ],
-            },
-            after: {
-              label: "Now",
-              title: "Your personal Okou",
-              items: [
-                {
-                  title: "Personal Instructions",
-                  description: "Settings → Personal → My Okou",
-                },
-                {
-                  title: "Reusable Workflows",
-                  description: "Private or shared in your workspace",
-                },
-              ],
-            },
-            note: "Each person uses their own accounts and permissions.",
-            caption: "Illustrated example",
-          },
-        },
-      ],
-    },
-  };
   context.mocks.api(featureGuidesContract.current, ({ query, respond }) => {
     expect(query).toStrictEqual({
       preview: "1",
@@ -615,6 +617,129 @@ test("renders a single before-and-after guide and dismisses its selected preview
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+  expect(seen).toBeFalsy();
+});
+
+test("cycles the My Okou before-and-after pages with arrows, dots and swipes without acknowledging the preview", async () => {
+  let seen = false;
+  const first = comparisonEdition.content.items[0];
+  if (!first?.media || first.media.type !== "comparison") {
+    throw new Error("Expected the comparison fixture");
+  }
+  const carouselEdition: FeatureGuideEdition = {
+    ...comparisonEdition,
+    content: {
+      ...comparisonEdition.content,
+      items: [
+        first,
+        {
+          featureId: "personal-instructions",
+          title: "Personal preferences",
+          description: "Keep your preferences separate from task steps",
+          media: {
+            ...first.media,
+            layout: "instructions",
+            label: "Instructions before and now",
+            before: {
+              label: "Before",
+              title: "Reports agent → Instructions",
+              items: [
+                {
+                  title: "Task steps",
+                  description: "Prepare the weekly report",
+                },
+              ],
+            },
+            after: {
+              label: "Now",
+              title: "Settings → Personal → My Okou",
+              items: [
+                {
+                  title: "Your preferences",
+                  description: "Keep answers concise",
+                },
+              ],
+            },
+          },
+        },
+        {
+          featureId: "workspace-workflows",
+          title: "Reusable task setups",
+          description: "Reuse a process in your workspace",
+          media: {
+            ...first.media,
+            layout: "workflows",
+            label: "Workflow scope before and now",
+            before: {
+              label: "Before",
+              title: "Agent-scoped Workflows",
+              items: [{ title: "Reports agent", description: "Weekly report" }],
+            },
+            after: {
+              label: "Now",
+              title: "Workspace Workflows",
+              items: [
+                {
+                  title: "Private or shared",
+                  description: "Use your own access",
+                },
+              ],
+            },
+          },
+        },
+      ],
+    },
+  };
+  context.mocks.api(featureGuidesContract.current, ({ respond }) => {
+    return respond(200, { edition: carouselEdition, preview: true });
+  });
+  context.mocks.api(featureGuidesContract.seen, ({ respond }) => {
+    seen = true;
+    return respond(200, { seen: true });
+  });
+  await setupPage({
+    context,
+    path: `/?featureGuidePreview=1&featureGuideEdition=${carouselEdition.id}`,
+    featureSwitches: {
+      [FeatureSwitchKey.FeatureGuides]: true,
+      [FeatureSwitchKey.SingleAgent]: true,
+    },
+  });
+  const dialog = await screen.findByRole("dialog", {
+    name: "One Okou. All your work.",
+  });
+  const navigation = within(dialog).getByRole("group", {
+    name: "Features in this update",
+  });
+  click(button("Next feature", navigation));
+  await expect(
+    within(dialog).findByText("Reports agent → Instructions"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(dialog).getByText("Settings → Personal → My Okou"),
+  ).toBeInTheDocument();
+  click(button("Reusable task setups", navigation));
+  const workflowComparison = await within(dialog).findByRole("figure", {
+    name: "Workflow scope before and now",
+  });
+  expect(
+    within(workflowComparison).getByText("Agent-scoped Workflows"),
+  ).toBeInTheDocument();
+  expect(
+    within(workflowComparison).getByText("Workspace Workflows"),
+  ).toBeInTheDocument();
+  swipe(workflowComparison, { x: 240, y: 150 }, { x: 100, y: 155 });
+  await expect(
+    within(dialog).findByRole("heading", { name: "One Okou. All your work." }),
+  ).resolves.toBeInTheDocument();
+  click(button("Previous feature", navigation));
+  await expect(
+    within(dialog).findByRole("heading", { name: "Reusable task setups" }),
+  ).resolves.toBeInTheDocument();
+  expect(button("Reusable task setups", navigation)).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
   expect(seen).toBeFalsy();
 });
 

@@ -6,6 +6,7 @@ import { cn } from "@okouai/ui/lib/utils";
 import {
   Dialog,
   DialogContent,
+  DialogBody,
   DialogDescription,
   DialogHeader,
   DialogTitle,
@@ -262,7 +263,7 @@ function GuideContents({
   const prompt = activeItem.prompt;
   return (
     <>
-      <div className="flex items-center gap-2 text-xs font-medium text-brand-text">
+      <div className="flex shrink-0 items-center gap-2 text-xs font-medium text-brand-text">
         <Sparkles size={14} aria-hidden="true" />
         {t(($) => {
           return $.featureGuide.label;
@@ -275,46 +276,51 @@ function GuideContents({
           </span>
         )}
       </div>
-      <GuideSlide snapshot={snapshot} item={activeItem} />
-      {activeItem.action ? (
-        <Link
-          pathname={FEATURE_GUIDE_ACTION_ROUTES[activeItem.action.type]}
-          options={
-            snapshot.preview
-              ? {
-                  searchParams: new URLSearchParams({
-                    featureGuidePreview: "1",
-                    ...(snapshot.previewEdition
-                      ? { featureGuideEdition: snapshot.previewEdition }
-                      : {}),
-                  }),
-                }
-              : undefined
-          }
-          className="inline-flex min-h-8 w-fit items-center gap-1 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
-          onClick={(event) => {
-            if (shouldHandleLinkClick(event)) {
-              onClose();
+      <DialogBody
+        key={`${edition.id}:${activeItem.featureId}`}
+        className="flex flex-col gap-4"
+      >
+        <GuideSlide snapshot={snapshot} item={activeItem} />
+        {activeItem.action ? (
+          <Link
+            pathname={FEATURE_GUIDE_ACTION_ROUTES[activeItem.action.type]}
+            options={
+              snapshot.preview
+                ? {
+                    searchParams: new URLSearchParams({
+                      featureGuidePreview: "1",
+                      ...(snapshot.previewEdition
+                        ? { featureGuideEdition: snapshot.previewEdition }
+                        : {}),
+                    }),
+                  }
+                : undefined
             }
-          }}
-        >
-          {activeItem.action.label}
-          <ArrowUpRight size={14} aria-hidden="true" />
-        </Link>
-      ) : prompt ? (
-        <Button
-          variant="link"
-          className="h-auto w-fit px-0 py-1 text-muted-foreground hover:text-foreground"
-          onClick={() => {
-            return onTry(prompt);
-          }}
-        >
-          {t(($) => {
-            return $.featureGuide.tryPrompt;
-          })}
-          <ArrowUpRight aria-hidden="true" />
-        </Button>
-      ) : null}
+            className="inline-flex min-h-8 w-fit items-center gap-1 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+            onClick={(event) => {
+              if (shouldHandleLinkClick(event)) {
+                onClose();
+              }
+            }}
+          >
+            {activeItem.action.label}
+            <ArrowUpRight size={14} aria-hidden="true" />
+          </Link>
+        ) : prompt ? (
+          <Button
+            variant="link"
+            className="h-auto w-fit px-0 py-1 text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              return onTry(prompt);
+            }}
+          >
+            {t(($) => {
+              return $.featureGuide.tryPrompt;
+            })}
+            <ArrowUpRight aria-hidden="true" />
+          </Button>
+        ) : null}
+      </DialogBody>
       <FeatureGuideNavigation snapshot={snapshot} />
     </>
   );
@@ -372,7 +378,13 @@ export function FeatureGuideDialog() {
     >
       <DialogContent
         maxWidth="2xl"
-        contentClassName="auto-rows-max grid-cols-1"
+        height={
+          snapshot && snapshot.edition.content.items.length > 1
+            ? 760
+            : "content"
+        }
+        scrollable={false}
+        contentClassName="flex flex-col"
         closeLabel={t(($) => {
           return $.featureGuide.close;
         })}

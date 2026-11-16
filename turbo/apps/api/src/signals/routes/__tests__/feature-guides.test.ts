@@ -429,8 +429,27 @@ test("previews the My Okou comparison without publishing or acknowledging an edi
             title: "One Okou. All your work.",
             media: {
               type: "comparison",
+              layout: "overview",
               before: { label: "Before" },
               after: { label: "Now" },
+            },
+          },
+          {
+            title: "Your preferences, in My Okou",
+            media: {
+              type: "comparison",
+              layout: "instructions",
+              before: { title: "Reports agent → Instructions" },
+              after: { title: "Settings → Personal → My Okou" },
+            },
+          },
+          {
+            title: "Workflows, ready to reuse",
+            media: {
+              type: "comparison",
+              layout: "workflows",
+              before: { title: "Workflows → Reports agent" },
+              after: { title: "Workflows" },
             },
           },
         ],

@@ -1,6 +1,6 @@
 {
   "id": "single-agent-2026-11-16",
-  "revisionId": "065921c1-16c9-4cb4-9aa3-c164b1f742df",
+  "revisionId": "bb8b2f80-2dcc-4ce5-9d49-438b431dc101",
   "content": {
     "schemaVersion": 1,
     "title": "Meet My Okou",
@@ -9,7 +9,7 @@
       {
         "featureId": "my-okou",
         "title": "One Okou. All your work.",
-        "description": "Start a chat with Okou for any task. Set your preferences once in personal Instructions, and turn repeatable tasks into Workflows.",
+        "description": "Start any task in New chat. Keep one personal Okou, with your Instructions and reusable Workflows.",
         "media": {
           "type": "comparison",
           "label": "From separate Agents to one personal Okou",
@@ -45,7 +45,80 @@
               }
             ]
           },
-          "note": "Share the Workflow, keep your own access. Each person runs it with their own connected accounts and permissions.",
+          "note": "Your preferences and task instructions now have separate homes. Swipe to see what changes.",
+          "caption": "Illustrated example",
+          "layout": "overview"
+        }
+      },
+      {
+        "featureId": "personal-instructions",
+        "title": "Your preferences, in My Okou",
+        "description": "Set personal preferences in Settings → Personal → My Okou. Save task steps as Workflows.",
+        "media": {
+          "type": "comparison",
+          "layout": "instructions",
+          "label": "Agent Instructions before, personal Instructions now",
+          "before": {
+            "label": "Before",
+            "title": "Reports agent → Instructions",
+            "items": [
+              {
+                "title": "Personal preferences",
+                "description": "Keep answers concise. End with next steps."
+              },
+              {
+                "title": "Task instructions",
+                "description": "Collect updates and draft the weekly report."
+              }
+            ]
+          },
+          "after": {
+            "label": "Now",
+            "title": "Settings → Personal → My Okou",
+            "items": [
+              {
+                "title": "Personal Instructions",
+                "description": "Keep answers concise. End with next steps."
+              }
+            ]
+          },
+          "note": "Your new tasks in this workspace use these preferences. Teammates keep their own Instructions.",
+          "caption": "Illustrated example"
+        }
+      },
+      {
+        "featureId": "workspace-workflows",
+        "title": "Workflows, ready to reuse",
+        "description": "Reuse task instructions with your personal Okou. Keep Workflows private or share them in your workspace.",
+        "media": {
+          "type": "comparison",
+          "layout": "workflows",
+          "label": "Agent-scoped setup before, workspace Workflows now",
+          "before": {
+            "label": "Before",
+            "title": "Workflows → Reports agent",
+            "items": [
+              {
+                "title": "Weekly report",
+                "description": "Collect updates → draft report"
+              }
+            ]
+          },
+          "after": {
+            "label": "Now",
+            "title": "Workflows",
+            "items": [
+              {
+                "title": "Weekly report",
+                "description": "Collect updates → draft report"
+              },
+              {
+                "title": "Private or shared",
+                "description": "Reuse the process with your personal Okou."
+              }
+            ]
+          },
+          "note": "Each person runs shared Workflows with their own connected accounts and permissions. Sharing the process does not share account access.",
           "caption": "Illustrated example"
         }
       }
