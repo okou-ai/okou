@@ -1,3 +1,4 @@
+import { cleanupPhoneUseOperations$ } from "../services/phone-use-retention.service";
 import { cronComputerUseScreenshotCleanupContract } from "@okouai/api-contracts/contracts/cron";
 import { command } from "ccstate";
 
@@ -12,6 +13,8 @@ const computerUseScreenshotCleanup$ = command(
     }
 
     const cleaned = await set(cleanupComputerUseCommands$, signal);
+    signal.throwIfAborted();
+    await set(cleanupPhoneUseOperations$, signal);
     signal.throwIfAborted();
     return {
       status: 200 as const,

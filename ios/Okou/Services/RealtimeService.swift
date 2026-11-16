@@ -34,6 +34,12 @@ final class RealtimeService {
   private var transportRecoveryPending = false
   private var initialSubscriptionsReported = false
 
+  var hasContinuousSubscription: Bool {
+    guard let realtime, initialSubscriptionsReported, !catchUpPending else { return false }
+    return realtime.connection.state == .connected
+      && channelNames.allSatisfy { realtime.channels.get($0).state == .attached }
+  }
+
   private enum Availability {
     case connecting, connected, unavailable, disconnected
   }

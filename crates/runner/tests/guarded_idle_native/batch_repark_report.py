@@ -91,7 +91,7 @@ def validate(directory):
               "provider_awaits_outside_pool_status":True}, "physical rollback changed its restored original")
     return {**result,"format":"native-batch-repark-report-v1","native_batch_repark_complete":True,
             "batch_aba_scope":"physical speculative rollback then logical insertion race and new guarded recovery",
-            "actual_api_claim_loss_proven":False}
+            }
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ import { sshConnectionsRoutes } from "../ssh-connections";
 import { runnerSshRoutes } from "../runner-ssh";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { createRouteMocks } from "./helpers/route-test";
-import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
+import { createSshExecutionApi } from "./helpers/ssh-execution";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { createDeferredPromise, joinAll } from "../../utils";
 
@@ -65,7 +65,7 @@ const hosts = () => {
 const runner = () => {
   return setupApp({ context, routes: runnerSshRoutes })(runnerSshContract);
 };
-const ordinary = createClaimedSshRuntimeApi(context, {
+const ordinary = createSshExecutionApi(context, {
   runnerHeaders,
   authenticate,
 });

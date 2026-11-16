@@ -77,11 +77,16 @@ def decrement_in_flight_flows() -> None:
     _decrement_counter(_in_flight_flows)
 
 
-class _CounterLease:
-    """Thread-safe one-shot ownership token for one pending counter unit."""
+class PendingReportLease:
+    """Own the runner-visible count for one admitted webhook report.
 
-    def __init__(self, counter: _PendingCounter) -> None:
-        self._counter = counter
+    Release exactly once after delivery finishes or admission is rolled back.
+    Concurrent or repeated release preserves other reports' counts and emits
+    the process-wide ``reports`` underflow diagnostic.
+    """
+
+    def __init__(self) -> None:
+        self._counter = _pending_reports
         self._released = False
         self._lock = threading.Lock()
 
@@ -100,18 +105,6 @@ class _CounterLease:
             _decrement_counter(self._counter)
         if should_log and _mark_counter_underflow(self._counter):
             _log_counter_underflow(self._counter.name)
-
-
-class PendingReportLease(_CounterLease):
-    """Own the runner-visible count for one admitted webhook report.
-
-    Release exactly once after delivery finishes or admission is rolled back.
-    Concurrent or repeated release preserves other reports' counts and emits
-    the process-wide ``reports`` underflow diagnostic.
-    """
-
-    def __init__(self) -> None:
-        super().__init__(_pending_reports)
 
 
 def admit_pending_report() -> PendingReportLease:

@@ -89,20 +89,22 @@ class NativeShellTest {
             fun select(value: String) {
                 val target = By.pkg(app.packageName).text(value)
                 if (device.findObject(target) == null) {
-                    requireNotNull(
+                    val container =
+                        requireNotNull(
                             device.wait(
                                 Until.findObject(By.pkg(app.packageName).scrollable(true)),
                                 WAIT,
                             )
                         )
-                        .scrollUntil(
-                            Direction.DOWN,
-                            object : Condition<UiObject2, Boolean> {
-                                // Resolve virtual descendants from the current window after
-                                // scrolls.
-                                override fun apply(container: UiObject2) = device.hasObject(target)
-                            },
-                        )
+                    val visible =
+                        object : Condition<UiObject2, Boolean> {
+                            // Resolve virtual descendants from the current window after scrolls.
+                            override fun apply(container: UiObject2) = device.hasObject(target)
+                        }
+                    // Settings and restored pickers can retain a position below the target.
+                    if (!container.scrollUntil(Direction.UP, visible)) {
+                        container.scrollUntil(Direction.DOWN, visible)
+                    }
                 }
                 requireNotNull(device.wait(Until.findObject(target), WAIT)) {
                         "Native preference choice not reachable: $value"

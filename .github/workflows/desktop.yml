@@ -148,9 +148,9 @@ jobs:
         id: preview
         if: github.event_name == 'pull_request'
         env:
-          CF_WORKERS_SUBDOMAIN: ${{ vars.CF_WORKERS_SUBDOMAIN }}
+          APP_PREVIEW_DOMAIN: ${{ vars.CF_PAGES_PREVIEW_DOMAIN }}
         run: |
-          url="$(bash .github/scripts/resolve-app-preview-url.sh "pr-${{ github.event.pull_request.number }}" "$CF_WORKERS_SUBDOMAIN")"
+          url="$(bash .github/scripts/resolve-app-preview-url.sh "pr-${{ github.event.pull_request.number }}" "$APP_PREVIEW_DOMAIN")"
           echo "url=$url" >> "$GITHUB_OUTPUT"
 
       - name: Build isolated preview app

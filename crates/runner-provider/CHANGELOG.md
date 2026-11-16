@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.20.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.8...runner-provider-v0.20.9) (2026-11-15)
+
+
+### Refactoring
+
+* **runner:** finish native execution model cleanup ([#47328](https://github.com/okou-ai/okou/issues/47328)) ([d4f131f](https://github.com/okou-ai/okou/commit/d4f131fab3253a843b49afaf4589afa043c8ce13))
+* **runner:** model direct execution without claim scaffolding ([#47235](https://github.com/okou-ai/okou/issues/47235)) ([8bf20fb](https://github.com/okou-ai/okou/commit/8bf20fb75b2788038d699332435a84e551660c49))
+
+## [0.20.8](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.7...runner-provider-v0.20.8) (2026-11-14)
+
 ## [0.20.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.6...runner-provider-v0.20.7) (2026-11-14)
 
 

@@ -13,8 +13,6 @@ consumers = (
     ("crates", "check-docs", "cargo doc"),
     ("crates", "coverage", "cargo llvm-cov nextest"),
     ("crates", "runner-rootfs-process-test", "cargo test --no-run --profile local"),
-    ("crates", "host-cpu-fairness-build", "runner-native-test-artifact.sh build"),
-    ("crates", "guest-rpc-firecracker-build", "runner-native-test-artifact.sh build"),
     ("crates", "native-kerberos-runtime", "check-native-kerberos.sh"),
     ("crates", "native-gssapi-independent-peer", "check-native-gssapi-peer.sh"),
     ("runner-architecture", "compile", "runner-binary-build/build.sh build"),
@@ -67,7 +65,7 @@ def kerberos_writer(step):
 main_miss = "github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'"
 expected_writers = {
     ("crates", "check"): ("cargo clippy", main_miss),
-    ("crates", "guest-rpc-firecracker-build"): ("runner-native-test-artifact.sh publish", main_miss),
+    ("crates", "runner-rootfs-process-test"): ("cargo test --no-run --profile local", main_miss),
     ("crates", "native-kerberos-runtime"): (
         "check-native-kerberos.sh",
         "github.ref == 'refs/heads/main' && runner.arch == 'ARM64' && steps.kerberos-cache.outputs.cache-hit != 'true'",
@@ -89,6 +87,14 @@ for workflow, name, save in writers:
     assert save["with"]["key"] == "${{ steps.kerberos-cache.outputs.cache-primary-key }}"
     assert save["if"] == condition
     assert steps.index(save) > next(i for i, s in enumerate(steps) if completed in s.get("run", ""))
+    if name == "runner-rootfs-process-test":
+        # Native products are ready after compilation; SSH/metal failures must
+        # not prevent their publication for later cross-target builds.
+        assert steps.index(save) < next(
+            i
+            for i, s in enumerate(steps)
+            if s.get("uses") == "./.github/actions/setup-ssh-tunnel"
+        )
     assert "secrets." not in str(save)
 
 # Host writers are architecture-disjoint. Cross-target native and Runner keys

@@ -379,14 +379,17 @@ test("publishes an owned ZIP while isolating peers and preserving replay", async
   expect(limited.body.error.code).toBe("RATE_LIMITED");
 });
 
-test("publishes the exact owned memory bytes committed by a genuine Runner claim", async () => {
+test("publishes the exact owned memory bytes committed by a genuine Runner execution", async () => {
   const owner = actor();
   const app = await setupApp({ context, routes, isolatePg: true });
   const fixture = initialize(app, [owner]);
   const carrier = createPublicRunnerMemory(context, owner);
   await carrier.run(async () => {
     const agentId = await carrier.initializeNative();
-    const claimed = await carrier.claim(agentId, "Write my exported memory");
+    const receivedExecution = await carrier.startExecution(
+      agentId,
+      "Write my exported memory",
+    );
     const content = "Memory from an authenticated Runner";
     const files = [
       {
@@ -398,11 +401,11 @@ test("publishes the exact owned memory bytes committed by a genuine Runner claim
     carrier.installObjects();
     const prepared = await carrier.webhooks.requestAgentStoragePrepare(
       {
-        runId: claimed.run.runId,
-        storageId: claimed.memory.storageId,
+        runId: receivedExecution.run.runId,
+        storageId: receivedExecution.memory.storageId,
         files,
       },
-      claimed.headers,
+      receivedExecution.headers,
       [200],
     );
     if (prepared.status !== 200 || !prepared.body.uploads) {
@@ -420,12 +423,12 @@ test("publishes the exact owned memory bytes committed by a genuine Runner claim
     carrier.objects.set(prepared.body.uploads.manifest.key, manifest);
     await carrier.webhooks.requestAgentStorageCommit(
       {
-        runId: claimed.run.runId,
-        storageId: claimed.memory.storageId,
+        runId: receivedExecution.run.runId,
+        storageId: receivedExecution.memory.storageId,
         versionId: prepared.body.versionId,
         files,
       },
-      claimed.headers,
+      receivedExecution.headers,
       [200],
     );
     // The existing helper owns the genuine Run's normal cancellation teardown.
@@ -445,7 +448,7 @@ test("publishes the exact owned memory bytes committed by a genuine Runner claim
     const zip = archive(exporting, ready.job?.downloadUrl);
     expect(
       zip.readFile(
-        `memory/${owner.orgId}/${claimed.memory.storageId}/archive.tar.gz`,
+        `memory/${owner.orgId}/${receivedExecution.memory.storageId}/archive.tar.gz`,
       ),
     ).toStrictEqual(bytes);
   });
@@ -477,7 +480,7 @@ test.each([
     const carrier = createPublicRunnerMemory(context, owner);
     await carrier.run(async () => {
       const agentId = await carrier.initializeNative();
-      const claimed = await carrier.claim(
+      const receivedExecution = await carrier.startExecution(
         agentId,
         "Export my completed conversation: 你好",
       );
@@ -492,7 +495,7 @@ test.each([
       // Each real request remains below the hosted API's 4.5 MB body ceiling.
       for (let offset = 0; offset < contents.length; offset += 3) {
         const eventBody = {
-          runId: claimed.run.runId,
+          runId: receivedExecution.run.runId,
           events: contents.slice(offset, offset + 3).map((text, index) => {
             return {
               type: "assistant",
@@ -509,27 +512,27 @@ test.each([
         );
         await carrier.webhooks.requestAgentEvents(
           eventBody,
-          claimed.headers,
+          receivedExecution.headers,
           [200],
         );
       }
       await carrier.webhooks.requestAgentComplete(
         {
-          runId: claimed.run.runId,
+          runId: receivedExecution.run.runId,
           exitCode: 0,
           lastEventSequence: count - 1,
           completion: {
             cliAgentType: "claude-code",
-            cliAgentSessionId: `export-${claimed.run.runId}`,
+            cliAgentSessionId: `export-${receivedExecution.run.runId}`,
             cliAgentSessionHistoryDisposition: "native_only",
           },
         },
-        claimed.headers,
+        receivedExecution.headers,
         [200],
       );
       await flushWaitUntilForTest();
       await expect(
-        carrier.api.readRun(carrier.actor, claimed.run.runId),
+        carrier.api.readRun(carrier.actor, receivedExecution.run.runId),
       ).resolves.toMatchObject({ status: "completed" });
 
       authenticate(owner);
@@ -542,7 +545,7 @@ test.each([
         const page = await accept(
           reader.rows({
             headers,
-            params: { threadId: claimed.run.threadId },
+            params: { threadId: receivedExecution.run.threadId },
             query: cursor
               ? { sinceSeqId: cursor.seqId, sinceEventId: cursor.id, limit: 50 }
               : { sinceSeqId: 0, limit: 50 },
@@ -589,7 +592,7 @@ test.each([
         .getEntries()
         .filter((entry) => {
           return entry.entryName.startsWith(
-            `chat-messages/${claimed.run.threadId}/tail/`,
+            `chat-messages/${receivedExecution.run.threadId}/tail/`,
           );
         })
         .sort((left, right) => {

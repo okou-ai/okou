@@ -2,6 +2,7 @@
 
 import pytest
 
+from tests.repeated_bytes_helpers import repeat_bytes
 from usage.json_selective import JsonSelectiveExtractor, ScalarField
 
 
@@ -16,7 +17,7 @@ from usage.json_selective import JsonSelectiveExtractor, ScalarField
         (b'"' + b"x" * (64 * 1024 - 1) + b"\xc3\xa9" + b'"', 4),
         (b'"' + b"x" * (64 * 1024 - 1) + b"\xe2\x98\x83" + b'"', 4),
         (b'"' + b"x" * (64 * 1024 - 1) + b"\xf0\x9f\x98\x80" + b'"', 4),
-        (b'"' + b"x" * (64 * 1024 + 1) + b'"', 4),
+        (repeat_bytes(b'"', b"x", 64 * 1024 + 1, b'"'), 4),
     ],
     ids=[
         "dense-array",

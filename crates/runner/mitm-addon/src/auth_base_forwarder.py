@@ -492,10 +492,13 @@ def _set_forward_request_future_exception(
         future.set_exception(exc)
 
 
-def _set_forward_request_terminal_exception(
+def _finish_forward_request_attempt(
     future: Future[tuple[int, bytes, http.Headers]],
-    terminal_state: _ForwardRequestTerminalState,
+    abort_handle: _ForwardRequestAbortHandle,
+    deadline: float,
 ) -> bool:
+    """Freeze the terminal state and return whether its error overrides transport."""
+    terminal_state = abort_handle.finish(deadline)
     if terminal_state is _ForwardRequestTerminalState.DEADLINE_EXPIRED:
         _set_forward_request_future_exception(
             future,
@@ -544,22 +547,22 @@ def _run_forward_request_worker(
                 deadline,
             )
         except Exception as exc:
-            terminal_state = abort_handle.finish(deadline)
-            if not _set_forward_request_terminal_exception(future, terminal_state):
+            if not _finish_forward_request_attempt(future, abort_handle, deadline):
                 _set_forward_request_future_exception(future, exc)
         else:
-            terminal_state = abort_handle.finish(deadline)
-            if not _set_forward_request_terminal_exception(future, terminal_state):
+            if not _finish_forward_request_attempt(future, abort_handle, deadline):
                 with suppress(InvalidStateError):
                     future.set_result(result)
     finally:
-        if sys.exc_info()[1] is not None and future.running():
-            terminal_state = abort_handle.finish(deadline)
-            if not _set_forward_request_terminal_exception(future, terminal_state):
-                _set_forward_request_future_exception(
-                    future,
-                    RuntimeError("auth.base forwarding worker exited without completing future"),
-                )
+        if (
+            sys.exc_info()[1] is not None
+            and future.running()
+            and not _finish_forward_request_attempt(future, abort_handle, deadline)
+        ):
+            _set_forward_request_future_exception(
+                future,
+                RuntimeError("auth.base forwarding worker exited without completing future"),
+            )
         with _forward_request_workers_lock:
             _forward_request_workers.discard(threading.current_thread())
 

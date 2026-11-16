@@ -21,9 +21,9 @@ use crate::resource_budget::BudgetLease;
 use runner_types::ids::RunId;
 
 use super::entry::IdleSandboxMetadata;
-use super::inventory_retirement::CapturedBacking;
 use super::retirement::{Allowance, IdleRetirementEnvelope};
 use super::{ReservedIdleSandbox, ReusableIdleSandbox};
+use crate::captured_backing::CapturedBacking;
 
 mod speculative;
 pub use speculative::{GuardedSpeculativeIdleOwner, SpeculativeActivationState};
@@ -47,8 +47,7 @@ pub enum IdleActivationState {
 struct Coverage {
     live: Allowance,
     tail: Allowance,
-    backing: Arc<dyn SandboxBackingProcess>,
-    identity: BackingProcessIdentity,
+    backing: CapturedBacking,
 }
 
 /// An activation wait borrows this owner. Cancellation, returned error and
@@ -163,10 +162,7 @@ impl IdleActivationOwner {
                 let process = sandbox
                     .backing_process()
                     .ok_or(MemoryOperationError::MissingBacking)?;
-                self.original_backing = Some(CapturedBacking {
-                    identity: process.identity(),
-                    process,
-                });
+                self.original_backing = Some(CapturedBacking::capture(process));
             }
             self.validate_original_backing()
         }))
@@ -289,8 +285,8 @@ impl IdleActivationOwner {
             if self.coverage.is_none() {
                 // Coverage must share the original captured generation. A
                 // provider change after validation cannot replace that fence.
-                let (backing, identity) = if let Some(backing) = &self.original_backing {
-                    (backing.process.clone(), backing.identity)
+                let backing = if let Some(backing) = &self.original_backing {
+                    backing.clone()
                 } else {
                     let backing = self
                         .sandbox
@@ -298,12 +294,11 @@ impl IdleActivationOwner {
                         .ok_or(MemoryOperationError::Consumed)?
                         .backing_process()
                         .ok_or(MemoryOperationError::MissingBacking)?;
-                    let identity = backing.identity();
-                    (backing, identity)
+                    CapturedBacking::capture(backing)
                 };
                 let live = operations.request(MemoryOperationPlan::Retire {
                     growth_bytes: envelope.live_growth_bytes,
-                    backing: backing.clone(),
+                    backing: backing.process.clone(),
                 })?;
                 let tail = operations.request(MemoryOperationPlan::CleanupIo {
                     growth_bytes: envelope.tail_growth_bytes,
@@ -312,7 +307,6 @@ impl IdleActivationOwner {
                     live: Allowance::Queued(live),
                     tail: Allowance::Queued(tail),
                     backing,
-                    identity,
                 });
                 self.admission = Some((operations.clone(), envelope));
             }
@@ -343,8 +337,8 @@ impl IdleActivationOwner {
             .ok_or(MemoryOperationError::Consumed)?;
         validate_backing(
             self.sandbox.as_deref(),
-            &coverage.backing,
-            coverage.identity,
+            &coverage.backing.process,
+            coverage.backing.identity,
         )
     }
 
@@ -369,7 +363,6 @@ impl IdleActivationOwner {
             live,
             tail,
             backing,
-            identity,
         } = coverage;
         let (live, tail) = match (live, tail) {
             (Allowance::Granted(live), Allowance::Granted(tail)) => (live, tail),
@@ -378,12 +371,15 @@ impl IdleActivationOwner {
                     live,
                     tail,
                     backing,
-                    identity,
                 });
                 *owner = Some(current);
                 return Err(MemoryOperationError::Consumed);
             }
         };
+        let CapturedBacking {
+            process: backing,
+            identity,
+        } = backing;
         current.accepted = true;
         let retained = RetainedActivationCleanup::new();
         let payload = (
@@ -401,8 +397,10 @@ impl IdleActivationOwner {
                 current.coverage = Some(Coverage {
                     live: Allowance::Granted(failure.live),
                     tail: Allowance::Granted(failure.tail),
-                    backing,
-                    identity,
+                    backing: CapturedBacking {
+                        process: backing,
+                        identity,
+                    },
                 });
                 *owner = Some(*current);
                 Err(failure.error)

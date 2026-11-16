@@ -71,7 +71,7 @@ function currentInputs(rows: readonly ChatEvent[]) {
   );
 }
 
-async function claimMessage(
+async function dispatchMessage(
   actor: ConnectedDiscordActor,
   message: ReturnType<typeof discordMessageForTest>,
 ) {
@@ -88,7 +88,7 @@ async function claimMessage(
   await runsApi.heartbeatRunner(actor.runnerGroup);
   return {
     runId: input.runId,
-    claim: await runsApi.executionInput(input.runId),
+    executionInput: await runsApi.executionInput(input.runId),
   };
 }
 
@@ -300,18 +300,27 @@ describe("Discord context parity through public OAuth bindings", () => {
         guild_id: actor.guildId,
       },
     };
-    const { claim } = await claimMessage(actor, message);
-    expect(claim.appendSystemPrompt).toContain("Original thread starter");
-    expect(claim.appendSystemPrompt).toContain("Parent discussion 1");
-    expect(claim.appendSystemPrompt).toContain(
+    const { executionInput: receivedExecution } = await dispatchMessage(
+      actor,
+      message,
+    );
+    expect(receivedExecution.appendSystemPrompt).toContain(
+      "Original thread starter",
+    );
+    expect(receivedExecution.appendSystemPrompt).toContain(
+      "Parent discussion 1",
+    );
+    expect(receivedExecution.appendSystemPrompt).toContain(
       "Explicitly quoted older decision",
     );
-    expect(claim.appendSystemPrompt).toContain("decision.pdf");
-    expect(claim.appendSystemPrompt).not.toContain("never-share-this");
-    if (!claim.appendSystemPrompt) {
+    expect(receivedExecution.appendSystemPrompt).toContain("decision.pdf");
+    expect(receivedExecution.appendSystemPrompt).not.toContain(
+      "never-share-this",
+    );
+    if (!receivedExecution.appendSystemPrompt) {
       throw new Error("Expected conversation context in the Runner prompt");
     }
-    const [channelContext, threadContext] = claim.appendSystemPrompt
+    const [channelContext, threadContext] = receivedExecution.appendSystemPrompt
       .split("# Recent Channel Messages")[1]!
       .split("# Discord Thread Context");
     expect(channelContext?.match(/- RELATIVE_INDEX: /gu)).toHaveLength(10);
@@ -344,7 +353,7 @@ describe("Discord context parity through public OAuth bindings", () => {
     );
     expect(threadContext).toContain(`[Channel ID] ${threadId}`);
     expect(threadContext).toContain(`[Message ID] ${attachmentOnly.id}`);
-    expect(claim.appendSystemPrompt).not.toContain(message.content);
+    expect(receivedExecution.appendSystemPrompt).not.toContain(message.content);
   });
 
   it("includes exactly ten recent channel messages with sender identities, resolved mentions and real newlines", async () => {
@@ -376,8 +385,11 @@ describe("Discord context parity through public OAuth bindings", () => {
       content: "Future channel message",
     });
     provider.messages.set(future.id, future);
-    const { claim } = await claimMessage(actor, message);
-    const history = claim.appendSystemPrompt?.split(
+    const { executionInput: receivedExecution } = await dispatchMessage(
+      actor,
+      message,
+    );
+    const history = receivedExecution.appendSystemPrompt?.split(
       "# Recent Channel Messages",
     )[1];
     expect(history?.match(/- RELATIVE_INDEX: /gu)).toHaveLength(10);
@@ -391,7 +403,9 @@ describe("Discord context parity through public OAuth bindings", () => {
     expect(history).not.toContain("Future channel message");
     expect(history).not.toContain("summarize the channel");
     expect(history).not.toContain(String.raw`\n`);
-    expect(claim.appendSystemPrompt).not.toContain("# Discord Thread Context");
+    expect(receivedExecution.appendSystemPrompt).not.toContain(
+      "# Discord Thread Context",
+    );
   });
 
   it("includes a referenced thread starter once in thread context, separate from parent history", async () => {
@@ -442,8 +456,11 @@ describe("Discord context parity through public OAuth bindings", () => {
         guild_id: actor.guildId,
       },
     };
-    const { claim } = await claimMessage(actor, message);
-    const [channelContext, threadContext] = claim
+    const { executionInput: receivedExecution } = await dispatchMessage(
+      actor,
+      message,
+    );
+    const [channelContext, threadContext] = receivedExecution
       .appendSystemPrompt!.split("# Recent Channel Messages")[1]!
       .split("# Discord Thread Context");
     expect(channelContext?.match(/- RELATIVE_INDEX: /gu)).toHaveLength(1);
@@ -455,7 +472,7 @@ describe("Discord context parity through public OAuth bindings", () => {
     );
     expect(threadContext).toContain(reply.content);
     expect(
-      claim.appendSystemPrompt?.match(/Quoted thread starter/gu),
+      receivedExecution.appendSystemPrompt?.match(/Quoted thread starter/gu),
     ).toHaveLength(1);
   });
 
@@ -515,10 +532,15 @@ describe("Discord context parity through public OAuth bindings", () => {
         guild_id: actor.guildId,
       },
     };
-    const { claim } = await claimMessage(actor, message);
-    expect(claim.appendSystemPrompt).toContain(history.content);
-    expect(claim.appendSystemPrompt).not.toContain(parent.content);
-    expect(claim.appendSystemPrompt).not.toContain(elsewhere.content);
+    const { executionInput: receivedExecution } = await dispatchMessage(
+      actor,
+      message,
+    );
+    expect(receivedExecution.appendSystemPrompt).toContain(history.content);
+    expect(receivedExecution.appendSystemPrompt).not.toContain(parent.content);
+    expect(receivedExecution.appendSystemPrompt).not.toContain(
+      elsewhere.content,
+    );
   });
 
   it("keeps an explicit DM reference out of the Agent's context", async () => {
@@ -543,27 +565,30 @@ describe("Discord context parity through public OAuth bindings", () => {
       { ...message, id: "123456789012345679" },
       "Another organization's private DM content",
     );
-    const { claim } = await claimMessage(actor, message);
-    expect(claim.appendSystemPrompt).not.toContain(
+    const { executionInput: receivedExecution } = await dispatchMessage(
+      actor,
+      message,
+    );
+    expect(receivedExecution.appendSystemPrompt).not.toContain(
       "Another organization's private DM content",
     );
-    expect(claim.prompt).toContain("Continue my task");
+    expect(receivedExecution.prompt).toContain("Continue my task");
   });
 
   it("adds run attribution once to a split native send", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
-    const { claim } = await claimMessage(
+    const { executionInput: receivedExecution } = await dispatchMessage(
       actor,
       discordMessageForTest(actor, {
         channelId: provider.guildChannelId,
         content: `<@${actor.botUserId}> start a task`,
       }),
     );
-    const token = claim.platformEnvironment.OKOU_TOKEN;
+    const token = receivedExecution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error(
-        "Expected the actual Runner claim's native integration token",
+        "Expected the actual Runner execution's native integration token",
       );
     }
     const headers = { authorization: `Bearer ${token}` };

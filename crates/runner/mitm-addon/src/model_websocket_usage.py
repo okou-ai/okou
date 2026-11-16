@@ -12,17 +12,23 @@ import run_usage
 import usage
 from logging_utils import log_proxy_entry
 
-_MODEL_WEBSOCKET_USAGE_ENABLED = "model_websocket_usage_enabled"
 _MODEL_WEBSOCKET_PREWARM_STATE = "_model_websocket_prewarm_state"
 _MAX_IGNORED_RESPONSE_IDS = 100
 _MODEL_WEBSOCKET_PARSE_ERROR_DIAGNOSTIC_LIMIT = 4
 
 
+@dataclass(frozen=True, slots=True)
+class _ActiveResponse:
+    """Intent and identity bound together at one created response boundary."""
+
+    intent: Literal["normal", "prewarm"]
+    response_id: str | None
+
+
 @dataclass(slots=True)
 class _OpenAIResponsesPrewarmState:
     pending_intent: Literal["normal", "prewarm"] | None = None
-    active_intent: Literal["normal", "prewarm"] | None = None
-    active_response_id: str | None = None
+    active_response: _ActiveResponse | None = None
     ignored_response_diagnostics: dict[str, bool] = field(default_factory=dict)
     ambiguous: bool = False
     ambiguity_diagnostic_emitted: bool = False
@@ -44,7 +50,6 @@ def activate(flow: http.HTTPFlow) -> None:
     flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE] = {}
     flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE_SOURCES] = {}
     flow.metadata[_MODEL_WEBSOCKET_PREWARM_STATE] = _OpenAIResponsesPrewarmState()
-    flow.metadata[_MODEL_WEBSOCKET_USAGE_ENABLED] = True
 
 
 def is_enabled(flow: http.HTTPFlow) -> bool:
@@ -53,12 +58,13 @@ def is_enabled(flow: http.HTTPFlow) -> bool:
     True means an HTTP 101 response is not terminal for tracked usage and
     reporting must wait for ``websocket_end()``.
     """
-    return bool(flow.metadata.get(_MODEL_WEBSOCKET_USAGE_ENABLED, False))
+    return isinstance(
+        flow.metadata.get(_MODEL_WEBSOCKET_PREWARM_STATE), _OpenAIResponsesPrewarmState
+    )
 
 
 def release_state(flow: http.HTTPFlow) -> None:
     """Disable usage extraction after a terminal WebSocket or error hook."""
-    flow.metadata.pop(_MODEL_WEBSOCKET_USAGE_ENABLED, None)
     flow.metadata.pop(_MODEL_WEBSOCKET_PREWARM_STATE, None)
 
 
@@ -75,8 +81,7 @@ def interrupt_inspection(flow: http.HTTPFlow) -> None:
 
 def _clear_correlation_candidate(state: _OpenAIResponsesPrewarmState) -> None:
     state.pending_intent = None
-    state.active_intent = None
-    state.active_response_id = None
+    state.active_response = None
 
 
 def _lifecycle_ambiguity_reason(
@@ -159,7 +164,7 @@ def observe_client_event(
         return
     if state.ambiguous:
         return
-    if state.pending_intent is not None or state.active_intent is not None:
+    if state.pending_intent is not None or state.active_response is not None:
         _mark_correlation_ambiguous(flow, state, "overlapping_request")
         return
     state.pending_intent = "prewarm" if event.is_prewarm else "normal"
@@ -190,17 +195,19 @@ def _observe_server_lifecycle(
         if (
             lifecycle.response_id in state.ignored_response_diagnostics
             or state.pending_intent is None
-            or state.active_intent is not None
+            or state.active_response is not None
         ):
             _mark_correlation_ambiguous(flow, state, "invalid_lifecycle")
             return
-        state.active_intent = state.pending_intent
-        state.active_response_id = lifecycle.response_id
+        state.active_response = _ActiveResponse(
+            intent=state.pending_intent,
+            response_id=lifecycle.response_id,
+        )
         state.pending_intent = None
         return
     if lifecycle.is_terminal:
         if not lifecycle.is_valid:
-            if state.pending_intent is not None or state.active_intent is not None:
+            if state.pending_intent is not None or state.active_response is not None:
                 _mark_correlation_ambiguous(
                     flow,
                     state,
@@ -216,16 +223,17 @@ def _observe_server_lifecycle(
                 _mark_correlation_ambiguous(flow, state, "invalid_lifecycle")
             return
         if (
-            state.active_intent is None
+            state.active_response is None
             and state.pending_intent is not None
             and lifecycle.response_id not in state.ignored_response_diagnostics
         ) or (
-            state.active_intent is not None and lifecycle.response_id != state.active_response_id
+            state.active_response is not None
+            and lifecycle.response_id != state.active_response.response_id
         ):
             _mark_correlation_ambiguous(flow, state, "invalid_lifecycle")
         return
     if not lifecycle.is_valid and (
-        state.pending_intent is not None or state.active_intent is not None
+        state.pending_intent is not None or state.active_response is not None
     ):
         _mark_correlation_ambiguous(
             flow,
@@ -252,7 +260,7 @@ def should_inspect_server_lifecycle(
         and not prewarm_state.ambiguous
         and (
             prewarm_state.pending_intent is not None
-            or prewarm_state.active_intent is not None
+            or prewarm_state.active_response is not None
             or bool(prewarm_state.ignored_response_diagnostics)
             or event.event_type is None
             or event.event_type in openai_responses_events.SERVER_LIFECYCLE_EVENTS
@@ -278,7 +286,14 @@ def feed_usage(
     lifecycle = inspection.lifecycle
     if lifecycle is not None and isinstance(prewarm_state, _OpenAIResponsesPrewarmState):
         _observe_server_lifecycle(flow, prewarm_state, lifecycle)
-        if lifecycle.is_created and lifecycle.is_valid and prewarm_state.active_intent != "prewarm":
+        if (
+            lifecycle.is_created
+            and lifecycle.is_valid
+            and (
+                prewarm_state.active_response is None
+                or prewarm_state.active_response.intent != "prewarm"
+            )
+        ):
             run_usage.websocket_pending(flow, pending=True)
 
     usage_result = inspection.usage
@@ -321,8 +336,9 @@ def feed_usage(
             terminal_id = lifecycle.response_id
             if (
                 not prewarm_state.ambiguous
-                and prewarm_state.active_intent == "prewarm"
-                and prewarm_state.active_response_id == terminal_id
+                and prewarm_state.active_response is not None
+                and prewarm_state.active_response.intent == "prewarm"
+                and prewarm_state.active_response.response_id == terminal_id
             ):
                 suppressed = _retain_ignored_response_id(flow, prewarm_state, terminal_id)
             elif (
@@ -349,13 +365,14 @@ def feed_usage(
             not suppressed
             and usage_result is not None
             and (
-                prewarm_state.pending_intent is not None or prewarm_state.active_intent is not None
+                prewarm_state.pending_intent is not None
+                or prewarm_state.active_response is not None
             )
             and (
                 (
                     has_message_id
-                    and prewarm_state.active_intent is not None
-                    and prewarm_state.active_response_id != message_id
+                    and prewarm_state.active_response is not None
+                    and prewarm_state.active_response.response_id != message_id
                 )
                 or lifecycle is None
                 or not lifecycle.is_terminal
@@ -408,7 +425,8 @@ def feed_usage(
 
     if not isinstance(prewarm_state, _OpenAIResponsesPrewarmState):
         return
-    active_response_id = prewarm_state.active_response_id
+    active_response = prewarm_state.active_response
+    active_response_id = active_response.response_id if active_response is not None else None
     if (
         lifecycle is not None
         and lifecycle.is_terminal
@@ -417,7 +435,9 @@ def feed_usage(
         and active_response_id is not None
         and active_response_id == lifecycle.response_id
     ):
-        if prewarm_state.active_intent == "prewarm":
+        if (
+            prewarm_state.active_response is not None
+            and prewarm_state.active_response.intent == "prewarm"
+        ):
             _retain_ignored_response_id(flow, prewarm_state, active_response_id)
-        prewarm_state.active_intent = None
-        prewarm_state.active_response_id = None
+        prewarm_state.active_response = None

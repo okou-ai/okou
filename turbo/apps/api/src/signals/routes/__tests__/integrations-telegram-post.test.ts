@@ -476,13 +476,13 @@ async function configureCanonicalTelegramRunner(): Promise<string> {
   return runnerGroup;
 }
 
-async function claimTelegramRun(
+async function readTelegramExecution(
   runId: string,
   runnerGroup: string,
   fixture: TelegramPostFixture,
 ) {
   await runsApi.heartbeatRunner(runnerGroup);
-  return await fixture.runs.claim(runId);
+  return await fixture.runs.executionInput(runId);
 }
 
 async function completeCanonicalChatRun(args: {
@@ -921,7 +921,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     }
     const threadId = await threadIdForRun(fixture, runId);
     const reuseKey = `thread:${threadId}`;
-    const firstInput = await fixture.runs.claim(runId);
+    const firstInput = await fixture.runs.executionInput(runId);
     await webhooksApi.requestAgentComplete(
       { runId, exitCode: 1, error: "CLI session did not start" },
       { authorization: `Bearer ${firstInput.sandboxToken}` },
@@ -973,8 +973,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         reuseKey,
       },
     });
-    const claim = await fixture.runs.claim(followUp.id);
-    expect(claim.reuseKey).toBe(reuseKey);
+    const execution = await fixture.runs.executionInput(followUp.id);
+    expect(execution.reuseKey).toBe(reuseKey);
     await runsApi.requestCancelRun(
       actorForFixture(fixture),
       followUp.id,
@@ -1038,10 +1038,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     if (!firstRunId) {
       throw new Error("Expected the first Telegram run");
     }
-    const firstClaim = await claimTelegramRun(firstRunId, runnerGroup, fixture);
+    const firstExecution = await readTelegramExecution(
+      firstRunId,
+      runnerGroup,
+      fixture,
+    );
     const threadId = await threadIdForRun(fixture, firstRunId);
 
-    const queuedPrompt = "claim Telegram queue transport params";
+    const queuedPrompt = "execute with Telegram queue transport params";
     expect(
       (
         await postWebhook({
@@ -1077,7 +1081,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(queuedInput?.runId).toBeUndefined();
     await completeCanonicalChatRun({
       runId: firstRunId,
-      sandboxToken: firstClaim.sandboxToken,
+      sandboxToken: firstExecution.sandboxToken,
     });
     await flushWaitUntilForTest();
     const queuedPage = await runReadsApi.requestListLogs(
@@ -1092,16 +1096,16 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     if (!queuedRunId) {
       throw new Error("Expected the queued Telegram run");
     }
-    const queuedClaim = await claimTelegramRun(
+    const queuedExecution = await readTelegramExecution(
       queuedRunId,
       runnerGroup,
       fixture,
     );
-    expect(queuedClaim.prompt).toBe(queuedPrompt);
+    expect(queuedExecution.prompt).toBe(queuedPrompt);
     // The queued launch keeps the conversation it was admitted with.
     expect(
       renderedThreadContextAfter(
-        queuedClaim.appendSystemPrompt,
+        queuedExecution.appendSystemPrompt,
         [
           "# Current Integration",
           "You are currently running inside: Telegram",
@@ -1116,7 +1120,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     ).toContain(firstPrompt);
     await completeCanonicalChatRun({
       runId: queuedRunId,
-      sandboxToken: queuedClaim.sandboxToken,
+      sandboxToken: queuedExecution.sandboxToken,
     });
   });
 
@@ -1191,9 +1195,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       context: foreground,
       run,
       finish,
-      claim(runId: string) {
+      executionInput(runId: string) {
         return run(() => {
-          return owner.claim(runId);
+          return owner.executionInput(runId);
         });
       },
       retainWebhook(restore: () => void) {
@@ -1390,13 +1394,13 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
             throw new Error("Expected a Telegram DM run");
           }
           await runs.heartbeatRunner(runnerGroup);
-          const claim = await ownedRuns.claim(run.id);
+          const execution = await ownedRuns.executionInput(run.id);
           if (
-            claim.cliAgentType !== "claude-code" &&
-            claim.cliAgentType !== "codex"
+            execution.cliAgentType !== "claude-code" &&
+            execution.cliAgentType !== "codex"
           ) {
             throw new Error(
-              `Expected a native Telegram DM claim, got ${claim.cliAgentType}`,
+              `Expected a native Telegram DM execution, got ${execution.cliAgentType}`,
             );
           }
           const replyCount = telegram.sentMessageIds.length;
@@ -1415,14 +1419,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
                   },
                 ],
               },
-              { authorization: `Bearer ${claim.sandboxToken}` },
+              { authorization: `Bearer ${execution.sandboxToken}` },
               [200],
             );
           }
           const sessionId = await completeCanonicalChatRun({
             runId: run.id,
-            sandboxToken: claim.sandboxToken,
-            cliAgentType: claim.cliAgentType,
+            sandboxToken: execution.sandboxToken,
+            cliAgentType: execution.cliAgentType,
             signal: foreground.signal,
           });
           expect(telegram.sentMessages.at(-1)?.reply_parameters).toStrictEqual({
@@ -1457,7 +1461,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
             );
           }
           return {
-            claim,
+            execution,
             sessionId,
             botReplyId,
             chatThread,
@@ -1513,7 +1517,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           3504,
           branch.botReplyId,
         );
-        expect(branchFollowUp.claim.nativeContinuation?.sessionId).toBe(
+        expect(branchFollowUp.execution.nativeContinuation?.sessionId).toBe(
           branch.sessionId,
         );
         replyChain = { branch, followUp: branchFollowUp };
@@ -1571,7 +1575,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
                 3505,
                 3503,
               );
-              expect(earlierReply.claim.nativeContinuation?.sessionId).toBe(
+              expect(earlierReply.execution.nativeContinuation?.sessionId).toBe(
                 branchFollowUp.sessionId,
               );
               return;
@@ -1586,21 +1590,21 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
               branch.botReplyId,
             );
             // Existing conversations keep their model when the member default changes.
-            expect(pinnedReply.claim.modelUsageProvider).toBe(
+            expect(pinnedReply.execution.modelUsageProvider).toBe(
               "claude-fable-5-1",
             );
             expect(pinnedReply.chatThread.id).toBe(branch.chatThread.id);
             expect(pinnedReply.chatThread.selectedModel).toBe(
               "claude-fable-5-1",
             );
-            expect(pinnedReply.claim.nativeContinuation?.sessionId).toBe(
+            expect(pinnedReply.execution.nativeContinuation?.sessionId).toBe(
               branchFollowUp.sessionId,
             );
             return;
           }
 
           const followUp = await completeDm("continue the main DM", 3502);
-          expect(followUp.claim.nativeContinuation?.sessionId).toBe(
+          expect(followUp.execution.nativeContinuation?.sessionId).toBe(
             main.sessionId,
           );
           expect(followUp.chatThread.id).toBe(main.chatThread.id);
@@ -1678,14 +1682,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         `Message thread ID: ${messageThreadId}`,
       ].join("\n"),
     );
-    const firstClaim = await claimTelegramRun(
+    const firstExecution = await readTelegramExecution(
       firstRun.id,
       runnerGroup,
       fixture,
     );
     const cliAgentSessionId = await completeCanonicalChatRun({
       runId: firstRun.id,
-      sandboxToken: firstClaim.sandboxToken,
+      sandboxToken: firstExecution.sandboxToken,
     });
 
     expect(telegramMocks.sentMessages).toHaveLength(1);
@@ -1700,7 +1704,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         exitCode: 1,
         error: "late duplicate completion",
       },
-      { authorization: `Bearer ${firstClaim.sandboxToken}` },
+      { authorization: `Bearer ${firstExecution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
@@ -1777,15 +1781,17 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     await expect(threadIdForRun(fixture, followUpRun.id)).resolves.toBe(
       firstThreadId,
     );
-    const followUpClaim = await claimTelegramRun(
+    const followUpExecution = await readTelegramExecution(
       followUpRun.id,
       runnerGroup,
       fixture,
     );
-    expect(followUpClaim.nativeContinuation?.sessionId).toBe(cliAgentSessionId);
+    expect(followUpExecution.nativeContinuation?.sessionId).toBe(
+      cliAgentSessionId,
+    );
     await completeCanonicalChatRun({
       runId: followUpRun.id,
-      sandboxToken: followUpClaim.sandboxToken,
+      sandboxToken: followUpExecution.sandboxToken,
     });
     expect(telegramMocks.sentMessages).toHaveLength(2);
     const runsBeforeDuplicate = await runCountFor(fixture);
@@ -1907,7 +1913,11 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     if (!run) {
       throw new Error("Expected the pending Telegram unlink run");
     }
-    const claim = await claimTelegramRun(run.id, runnerGroup, fixture);
+    const receivedExecution = await readTelegramExecution(
+      run.id,
+      runnerGroup,
+      fixture,
+    );
     const actor = actorForFixture(fixture);
     await accept(
       telegramClient().unlink({
@@ -1927,7 +1937,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     ).toMatchObject({ id: fixture.telegramBotId, isConnected: false });
     await completeCanonicalChatRun({
       runId: run.id,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
     });
     await expect(runForPrompt(fixture, prompt)).resolves.toMatchObject({
       id: run.id,
@@ -1997,10 +2007,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       if (!run) {
         throw new Error("Expected the Telegram provider-failure run");
       }
-      const claim = await claimTelegramRun(run.id, runnerGroup, fixture);
+      const receivedExecution = await readTelegramExecution(
+        run.id,
+        runnerGroup,
+        fixture,
+      );
       await completeCanonicalChatRun({
         runId: run.id,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
       });
       expect(attemptedMessages).toHaveLength(expectedAttempts);
       expect(attemptedMessages[0]).toMatchObject({
@@ -2016,7 +2030,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       });
       await webhooksApi.requestAgentComplete(
         { runId: run.id, exitCode: 1, error: "late duplicate completion" },
-        { authorization: `Bearer ${claim.sandboxToken}` },
+        { authorization: `Bearer ${receivedExecution.sandboxToken}` },
         [200],
       );
       await flushWaitUntilForTest();
@@ -2133,14 +2147,15 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       if (!acceptedRun) {
         throw new Error("Expected the Telegram topic run");
       }
-      const claim = await claimTelegramRun(
+      const receivedExecution = await readTelegramExecution(
         acceptedRun.id,
         runnerGroup,
         fixture,
       );
-      expect(claim.prompt).toContain(firstPrompt);
-      expect(claim.prompt).toContain("topic-note.txt");
-      const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
+      expect(receivedExecution.prompt).toContain(firstPrompt);
+      expect(receivedExecution.prompt).toContain("topic-note.txt");
+      const fileId =
+        receivedExecution.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
       if (!fileId) {
         throw new Error("Expected the original canonical Telegram topic file");
       }
@@ -2150,10 +2165,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         bytes,
         contentType: "text/plain",
         uploads,
-        okouToken: claim.platformEnvironment.OKOU_TOKEN,
+        okouToken: receivedExecution.platformEnvironment.OKOU_TOKEN,
       });
       expectExactSystemPromptFragment(
-        claim.appendSystemPrompt,
+        receivedExecution.appendSystemPrompt,
         [
           `Chat ID: ${chatId}`,
           "Chat type: supergroup",
@@ -2163,7 +2178,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       );
       await completeCanonicalChatRun({
         runId: acceptedRun.id,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
       });
       expect(telegramMocks.sentMessages).toHaveLength(1);
       expect(telegramMocks.sentMessages[0]).toMatchObject({
@@ -2208,10 +2223,14 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     if (!run) {
       throw new Error("Expected the Telegram run");
     }
-    const claim = await claimTelegramRun(run.id, runnerGroup, fixture);
+    const receivedExecution = await readTelegramExecution(
+      run.id,
+      runnerGroup,
+      fixture,
+    );
     await completeCanonicalChatRun({
       runId: run.id,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
     });
     expect(telegramMocks.sentMessages).toHaveLength(1);
     expect(telegramMocks.sentMessages[0]).toMatchObject({
@@ -2655,9 +2674,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         throw new Error("Expected imported Telegram run");
       }
       await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await fixture.runs.claim(run.id);
-      expect(claim.prompt).toContain("inspect imported telegram file");
-      const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
+      const execution = await fixture.runs.executionInput(run.id);
+      expect(execution.prompt).toContain("inspect imported telegram file");
+      const fileId = execution.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
       if (!fileId) {
         throw new Error("Expected canonical Telegram file id");
       }
@@ -2667,7 +2686,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         bytes,
         contentType,
         uploads,
-        okouToken: claim.platformEnvironment.OKOU_TOKEN,
+        okouToken: execution.platformEnvironment.OKOU_TOKEN,
       });
       await postWebhook({
         telegramBotId: fixture.telegramBotId,
@@ -2704,7 +2723,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       });
       await flushWaitUntilForTest();
       const { input: delivery } = await runsApi.nextSteerableInput(
-        claim.sandboxToken,
+        execution.sandboxToken,
         run.id,
       );
       if (!delivery) {
@@ -2725,7 +2744,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         bytes,
         contentType,
         uploads,
-        okouToken: claim.platformEnvironment.OKOU_TOKEN,
+        okouToken: execution.platformEnvironment.OKOU_TOKEN,
       });
     },
   );
@@ -2824,8 +2843,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         throw new Error("Expected Telegram retry run");
       }
       await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await fixture.runs.claim(run.id);
-      expect(claim.prompt).not.toContain("[Web file]");
+      const execution = await fixture.runs.executionInput(run.id);
+      expect(execution.prompt).not.toContain("[Web file]");
       await postFile(5802);
       await expect(
         listIntegrationInputFileParts(context, actor),
@@ -2834,7 +2853,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         expect.objectContaining({ fileId }),
       ]);
       const { input: delivery } = await runsApi.nextSteerableInput(
-        claim.sandboxToken,
+        execution.sandboxToken,
         run.id,
       );
       if (!delivery) {
@@ -2850,7 +2869,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           bytes,
           contentType: "application/pdf",
           uploads,
-          okouToken: claim.platformEnvironment.OKOU_TOKEN,
+          okouToken: execution.platformEnvironment.OKOU_TOKEN,
         });
       } else {
         expect(delivery.prompt).not.toContain("[Web file]");
@@ -2918,10 +2937,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         throw new Error("Expected Telegram fallback run");
       }
       await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await fixture.runs.claim(run.id);
-      expect(claim.prompt).toContain("[Telegram file]");
-      expect(claim.prompt).toContain("[FILE_ID] oversized-file");
-      expect(claim.prompt).not.toContain("[Web file]");
+      const execution = await fixture.runs.executionInput(run.id);
+      expect(execution.prompt).toContain("[Telegram file]");
+      expect(execution.prompt).toContain("[FILE_ID] oversized-file");
+      expect(execution.prompt).not.toContain("[Web file]");
       expect(uploads).toHaveLength(0);
       await expect(
         listIntegrationInputFileParts(context, actor),

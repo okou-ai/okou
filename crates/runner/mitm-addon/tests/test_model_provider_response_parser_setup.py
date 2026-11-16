@@ -8,6 +8,7 @@ from mitmproxy.test import tutils
 
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import model_websocket_usage
 import response_streaming
 import usage
 from tests.flow_helpers import header_map, response_stream
@@ -130,7 +131,7 @@ class TestBodyBearingConnectModelResponseParserAdmission:
 
             assert "model_json_usage_finish" in flow.metadata
             assert "model_sse_usage_finish" not in flow.metadata
-            assert "model_websocket_usage_enabled" not in flow.metadata
+            assert not model_websocket_usage.is_enabled(flow)
             assert metadata_keys.MODEL_PROVIDER_USAGE not in flow.metadata
             assert response_stream(flow)(wire_body) == wire_body
 
@@ -198,7 +199,7 @@ class TestBodylessModelResponseParserAdmission:
 
             assert "model_json_usage_finish" not in flow.metadata
             assert "model_sse_usage_finish" not in flow.metadata
-            assert "model_websocket_usage_enabled" not in flow.metadata
+            assert not model_websocket_usage.is_enabled(flow)
             assert metadata_keys.MODEL_PROVIDER_USAGE not in flow.metadata
 
             unexpected_wire_bytes = b"bodyless-response-wire-bytes"

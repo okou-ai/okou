@@ -10,10 +10,10 @@ async fn claim_attaches_active_input_source_when_requested() {
     write_job_with_active_input(dir.path(), job_id, "hello with active input");
 
     let candidate = provider.discover().await.unwrap();
-    let claimed = provider.claim(candidate).await.unwrap();
+    let job = provider.claim(candidate).await.unwrap();
 
     assert!(matches!(
-        claimed.active_input_source(),
+        job.active_input_source(),
         Some(crate::active_input::ActiveInputSource::LocalQueue(source))
             if source.run_id == job_id && source.queue.group_dir() == dir.path()
     ));
@@ -40,8 +40,8 @@ async fn claim_maps_secret_environment_into_context_and_masking() {
     );
 
     let candidate = provider.discover().await.unwrap();
-    let claimed = provider.claim(candidate).await.unwrap();
-    let ctx = claimed.context();
+    let job = provider.claim(candidate).await.unwrap();
+    let ctx = job.context();
     let environment = ctx.environment.as_ref().unwrap();
     let secret_values = ctx.secret_values.as_ref().unwrap();
     let local_secret_env_keys = ctx.local_secret_env_keys.as_ref().unwrap();
@@ -85,7 +85,7 @@ async fn claim_releases_claim_when_result_already_exists() {
 
     let job_id = RunId::new_v4();
     write_job(dir.path(), job_id, "already done");
-    let candidate = JobCandidate::local(
+    let candidate = JobCandidate::new(
         job_id,
         crate::profile::DEFAULT_PROFILE.to_owned(),
         local_queue::job_path(dir.path(), crate::profile::DEFAULT_PROFILE, job_id).unwrap(),
@@ -111,8 +111,7 @@ async fn claim_cleans_up_on_missing_job_file() {
     let claim_path = local_queue::claim_path(dir.path(), run_id);
     let job_path =
         local_queue::job_path(dir.path(), crate::profile::DEFAULT_PROFILE, run_id).unwrap();
-    let candidate =
-        JobCandidate::local(run_id, crate::profile::DEFAULT_PROFILE.to_owned(), job_path);
+    let candidate = JobCandidate::new(run_id, crate::profile::DEFAULT_PROFILE.to_owned(), job_path);
 
     // No .job file — claim() should fail at the read step.
     assert!(provider.claim(candidate).await.is_none());
@@ -133,7 +132,7 @@ async fn claim_marks_unreadable_job_path_failed() {
         local_queue::job_path(dir.path(), crate::profile::DEFAULT_PROFILE, run_id).unwrap();
     let result_path = local_queue::result_path(dir.path(), run_id);
     std::fs::create_dir_all(&job_path).unwrap();
-    let candidate = JobCandidate::local(
+    let candidate = JobCandidate::new(
         run_id,
         crate::profile::DEFAULT_PROFILE.to_owned(),
         job_path.clone(),
@@ -177,7 +176,7 @@ async fn claim_handles_poison_job_json() {
     let result_path = local_queue::result_path(dir.path(), run_id);
     std::fs::create_dir_all(job_path.parent().unwrap()).unwrap();
     std::fs::write(&job_path, b"not json").unwrap();
-    let candidate = JobCandidate::local(
+    let candidate = JobCandidate::new(
         run_id,
         crate::profile::DEFAULT_PROFILE.to_owned(),
         job_path.clone(),
@@ -237,7 +236,7 @@ async fn poison_job_publication_failure_backs_off_without_blocking_other_jobs() 
         "failed publication must release ownership"
     );
 
-    // Serial discovery/claim/settlement models a single available admission slot:
+    // Serial discovery/claim/settlement models a single available acceptance slot:
     // no discovery scan can happen to see the poison claim while it is in flight.
     let candidate = provider.discover().await.unwrap();
     assert_eq!(candidate.run_id(), valid_id);

@@ -19,6 +19,7 @@ from tests.model_provider_sse_usage_helpers import (
     run_error,
     run_response,
 )
+from tests.repeated_bytes_helpers import repeat_bytes
 
 
 def _claude_code_sse_flow(
@@ -73,12 +74,15 @@ class TestAnthropicMessagesSseUsage:
         flow = _claude_code_sse_flow(tmp_path, real_flow)
         assert flow.response is not None
         flow.response.headers["content-encoding"] = "gzip"
-        plaintext = (
+        plaintext = repeat_bytes(
             b"event: message_start\n"
             b'data: {"type":"message_start","message":{"model":"claude-sonnet-4-6",'
             b'"usage":{"input_tokens":50}}}\n\n'
             b"event: content_block_delta\n"
-            b"data: " + b"x" * (5 * 1024 * 1024 + 1)
+            b"data: ",
+            b"x",
+            5 * 1024 * 1024 + 1,
+            b"",
         )
 
         mitm_addon.responseheaders(flow)

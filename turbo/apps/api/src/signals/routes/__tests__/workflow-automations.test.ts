@@ -585,7 +585,7 @@ describe("okou workflow automations", () => {
     tier: "pro" | "team" = "pro",
     options: { readonly maxAutonomyBudget?: number } = {},
   ): Promise<AutomationScenario> {
-    // Fable keeps automation runs on the claimable native Runner route.
+    // Fable keeps automation runs on the native Runner execution route.
     const { actor, customerId, subscriptionId } = await wf.setupWorkflowOrg({
       tier,
       model: "claude-fable-5-1",
@@ -1379,11 +1379,8 @@ describe("okou workflow automations", () => {
         prompt: "read configured webhook credentials",
       });
 
-      const { claim } = await owned.claimChatRun(
-        owned.runnerGroup,
-        sourceRun.runId,
-      );
-      const token = claim.platformEnvironment.OKOU_TOKEN;
+      const { execution } = await owned.runExecution(sourceRun.runId);
+      const token = execution.platformEnvironment.OKOU_TOKEN;
       if (!token) {
         throw new Error("Expected an authenticated agent token");
       }
@@ -4469,12 +4466,12 @@ describe("okou workflow automations", () => {
       throw new Error("Expected an idle manual automation run to start");
     }
 
-    const claim = await runs.executionInput(run.runId);
+    const execution = await runs.executionInput(run.runId);
     const requestedAtIso = new Date(requestedAt).toISOString();
-    expect(claim.prompt).toContain(
+    expect(execution.prompt).toContain(
       `/${WORKFLOW_NAME}\n\nAutomation event\nType: manual\nSummary: manual run requested at ${requestedAtIso}.`,
     );
-    expect(claim.prompt).toContain(
+    expect(execution.prompt).toContain(
       JSON.stringify(
         {
           automationId: created.body.id,
@@ -4485,7 +4482,7 @@ describe("okou workflow automations", () => {
         2,
       ),
     );
-    expect(claim.appendSystemPrompt).toContain("# Agent Identity");
+    expect(execution.appendSystemPrompt).toContain("# Agent Identity");
 
     const automation = await wf.readAutomation(created.body.id);
     expect(automation.chatThreadId).toBe(threadId);
@@ -4584,9 +4581,9 @@ describe("okou workflow automations", () => {
         throw new Error("Expected the ordinary Run now request to start a Run");
       }
       await runs.heartbeatRunner(owned.runnerGroup);
-      const claim = await owned.claimRunnerRun(active.runId);
-      expect(claim.prompt).toContain(`/${WORKFLOW_NAME}`);
-      expect(claim.appendSystemPrompt).toContain("# Agent Identity");
+      const execution = await owned.executionInput(active.runId);
+      expect(execution.prompt).toContain(`/${WORKFLOW_NAME}`);
+      expect(execution.appendSystemPrompt).toContain("# Agent Identity");
     });
   });
 
@@ -4616,11 +4613,11 @@ describe("okou workflow automations", () => {
         throw new Error("Expected an admitted manual Run");
       }
       await runs.heartbeatRunner(owned.runnerGroup);
-      const claim = await owned.claimRunnerRun(first.runId);
+      const execution = await owned.executionInput(first.runId);
       await runs.requestCancelRun(owned.actor, first.runId, [200]);
       await webhookCallbacks.requestAgentComplete(
         { runId: first.runId, exitCode: 1, error: "Run cancelled" },
-        { authorization: `Bearer ${claim.sandboxToken}` },
+        { authorization: `Bearer ${execution.sandboxToken}` },
         [200],
       );
       await flushWaitUntilForTest();
@@ -4774,17 +4771,17 @@ describe("okou workflow automations", () => {
       maxAutonomyBudget: 2,
     });
 
-    async function claimRun(runId: string | null) {
+    async function readRunExecution(runId: string | null) {
       if (!runId) {
         throw new Error("Expected the Automation run to start");
       }
       await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.executionInput(runId);
-      const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+      const execution = await runs.executionInput(runId);
+      const okouToken = execution.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
-        throw new Error("Expected the claimed run to receive OKOU_TOKEN");
+        throw new Error("Expected the dispatched Run to receive OKOU_TOKEN");
       }
-      return { runId, okouToken, sandboxToken: claim.sandboxToken };
+      return { runId, okouToken, sandboxToken: execution.sandboxToken };
     }
 
     // The user cancels and the Runner reports its exit, which releases the
@@ -4812,7 +4809,7 @@ describe("okou workflow automations", () => {
     }
 
     const root = await accept(createAs("Bearer clerk-session", 3600), [201]);
-    const rootRun = await claimRun(
+    const rootRun = await readRunExecution(
       (await runAutomationNow(root.body.id)).runId,
     );
     const first = await accept(
@@ -4821,7 +4818,7 @@ describe("okou workflow automations", () => {
     );
     await cancel(rootRun);
 
-    const firstRun = await claimRun(
+    const firstRun = await readRunExecution(
       (await runAutomationNow(first.body.id)).runId,
     );
     const second = await accept(
@@ -4830,7 +4827,7 @@ describe("okou workflow automations", () => {
     );
     await cancel(firstRun);
 
-    const secondRun = await claimRun(
+    const secondRun = await readRunExecution(
       (await runAutomationNow(second.body.id)).runId,
     );
     const exhausted = `Bearer ${secondRun.okouToken}`;

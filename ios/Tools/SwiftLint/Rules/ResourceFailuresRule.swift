@@ -34,11 +34,7 @@ struct ResourceFailuresRule: NativeRule {
         guard let handler = $0.as(CatchClauseSyntax.self),
           let statement = handler.body.statements.last?.item.as(ThrowStmtSyntax.self)
         else { return false }
-        if let original = caughtError(handler) ?? cancellationBinding(handler),
-          statement.expression.trimmedDescription == original
-        {
-          return true
-        }
+        if cancellationPaths(handler).isOriginalError(statement.expression) { return true }
         guard
           isCancelledRead(handler)
             || isDataRead(handler) && cancellationPaths(handler).cancelledCatch,
@@ -111,14 +107,6 @@ struct ResourceFailuresRule: NativeRule {
         if !nativeTaskCall(call) { return false }
       }
       return false
-    }
-
-    private func cancellationBinding(_ node: CatchClauseSyntax) -> String? {
-      guard isDataRead(node), node.catchItems.count == 1,
-        let item = node.catchItems.first
-      else { return nil }
-      let paths = cancellationPaths(node)
-      return cancellationName(item) ?? (paths.cancelledCatch ? paths.binding : nil)
     }
 
     private func cancellationPaths(_ node: CatchClauseSyntax) -> ResourceCancellationPaths {

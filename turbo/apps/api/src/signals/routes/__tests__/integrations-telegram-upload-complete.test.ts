@@ -18,12 +18,12 @@ import { integrationsTelegramUploadCompleteRoutes } from "../integrations-telegr
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { createPublicTelegramActor } from "./helpers/public-telegram-actor";
 
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const bdd = createBddApi(context);
 const chatApi = createChatFilesBddApi(context);
 const runsApi = createRunsApi(context);
@@ -98,15 +98,15 @@ async function seedSendableContext() {
   await fixture.run(() => {
     return runsApi.heartbeatRunner(runnerGroup);
   });
-  const claim = await fixture.run(async () => {
+  const execution = await fixture.run(async () => {
     const accepted = await runsApi.executionInput(sent.runId);
-    fixture.rememberClaim(sent.runId, accepted.sandboxToken);
+    fixture.rememberExecution(sent.runId, accepted.sandboxToken);
     return accepted;
   });
   return {
     ...fixture,
     ...sent,
-    token: okouTokenFromClaim(claim),
+    token: okouTokenFromExecution(execution),
     telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
     telegramUserId,
   };

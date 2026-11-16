@@ -1,4 +1,4 @@
-//! Claimed job terminal outcome logging.
+//! Execution terminal outcome logging.
 //!
 //! This module owns the terminal tracing event, diagnostic field projection,
 //! and failure severity policy. The job spawn module owns when the event is
@@ -22,7 +22,7 @@ pub(super) fn log_terminal_job_outcome(
     failure: Option<&executor::ExecutionFailure>,
     error_tail_max_bytes: usize,
 ) {
-    // Single sink for any claimed job's terminal state. Cancellation gets
+    // Single sink for any accepted job's terminal state. Cancellation gets
     // its own info marker; every other failure is represented by a single
     // object carrying the exit code, error, and optional guest-authored diagnostic.
     match (cancelled, failure) {

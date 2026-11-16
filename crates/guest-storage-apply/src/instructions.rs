@@ -22,7 +22,7 @@ pub fn apply_agent_instructions(home: &Path, framework: &str, source: &Path) -> 
     ) {
         return false;
     }
-    if !existing_instruction_dir_is_safe(home) {
+    if !instruction_dir_is_safe(lstat_instruction_path_state(home)) {
         return false;
     }
     let mut target = home.to_path_buf();
@@ -156,9 +156,8 @@ fn remove_instruction_file_if_safe(path: &Path) -> bool {
 
 fn ensure_final_instruction_dir(path: &Path) -> bool {
     match lstat_instruction_path_state(path) {
-        InstructionPathState::Directory => true,
         InstructionPathState::Missing => match fs::create_dir_all(path) {
-            Ok(()) => existing_instruction_dir_is_safe(path),
+            Ok(()) => instruction_dir_is_safe(lstat_instruction_path_state(path)),
             Err(e) => {
                 log_warn!(
                     LOG_TAG,
@@ -168,24 +167,12 @@ fn ensure_final_instruction_dir(path: &Path) -> bool {
                 false
             }
         },
-        InstructionPathState::RegularFile
-        | InstructionPathState::Symlink
-        | InstructionPathState::OtherNonRegular => {
-            log_warn!(
-                LOG_TAG,
-                "Skipping instructions operation because framework home is not a directory"
-            );
-            false
-        }
-        InstructionPathState::MetadataError(e) => {
-            log_warn!(LOG_TAG, "Failed to inspect instructions directory: {}", e);
-            false
-        }
+        state => instruction_dir_is_safe(state),
     }
 }
 
-fn existing_instruction_dir_is_safe(path: &Path) -> bool {
-    match lstat_instruction_path_state(path) {
+fn instruction_dir_is_safe(state: InstructionPathState) -> bool {
+    match state {
         InstructionPathState::Directory => true,
         InstructionPathState::Missing => false,
         InstructionPathState::RegularFile

@@ -100,7 +100,7 @@ describe("Computer Use screenshot download URLs", () => {
             fixture.commandId,
           ),
         ).resolves.toStrictEqual(metadata);
-        const agent = await scenario.claim(actor, fixture.host.hostId);
+        const agent = await scenario.launchRun(actor, fixture.host.hostId);
         await expect(
           computerUse.resolveComputerUseScreenshot(
             { bearer: agent.token },
@@ -111,7 +111,10 @@ describe("Computer Use screenshot download URLs", () => {
         const wrongHost = await computerUse.startComputerUseHost(actor, {
           hostName: "Wrong Host",
         });
-        const wrongHostAgent = await scenario.claim(actor, wrongHost.hostId);
+        const wrongHostAgent = await scenario.launchRun(
+          actor,
+          wrongHost.hostId,
+        );
         const deniedActors = [
           { bearer: wrongHostAgent.token },
           sameOrgPeer,
@@ -130,7 +133,7 @@ describe("Computer Use screenshot download URLs", () => {
             },
           });
         }
-        const unboundAgent = await scenario.claim(actor, undefined);
+        const unboundAgent = await scenario.launchRun(actor, undefined);
         const unbound = await computerUse.requestComputerUseScreenshot(
           { bearer: unboundAgent.token },
           fixture.commandId,

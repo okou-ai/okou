@@ -9,7 +9,7 @@ import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import {
   createBrowserFixtures,
@@ -36,7 +36,9 @@ async function request(chat: Chat, entry: "run" | "chat" = "run") {
         body: {},
       })
     : await client().use({
-        headers: { authorization: `Bearer ${okouTokenFromClaim(chat.claim)}` },
+        headers: {
+          authorization: `Bearer ${okouTokenFromExecution(chat.execution)}`,
+        },
         body: {},
       });
 }
@@ -407,7 +409,7 @@ test.each(["provider", "native"] as const)(
           rethrowErrors: true,
         })(browserContract).use({
           headers: {
-            authorization: `Bearer ${okouTokenFromClaim(a.claim)}`,
+            authorization: `Bearer ${okouTokenFromExecution(a.execution)}`,
           },
           body: {},
         }),

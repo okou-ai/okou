@@ -23,8 +23,8 @@ use crate::storage_fingerprints::StorageFingerprints;
 use runner_types::ids::RunId;
 use uuid::Uuid;
 
-use super::inventory_retirement::CapturedBacking;
 use super::park_transition::IdleParkCandidate;
+use crate::captured_backing::CapturedBacking;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IdleSandboxKind {
@@ -187,10 +187,7 @@ impl ParkedIdleCandidate {
                 .sandbox
                 .backing_process()
                 .ok_or(MemoryOperationError::MissingBacking)?;
-            Ok(CapturedBacking {
-                identity: process.identity(),
-                process,
-            })
+            Ok(CapturedBacking::capture(process))
         }))
         .unwrap_or(Err(MemoryOperationError::ProducerLost))?;
         self.retirement_backing = Some(captured);

@@ -9,7 +9,7 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createChatEventsFixture,
-  okouTokenFromClaim,
+  okouTokenFromExecution,
 } from "./helpers/chat-events-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -18,7 +18,7 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const fixture = createChatEventsFixture(context);
 
-async function claimedUpload(options: { readonly stage?: boolean } = {}) {
+async function executionUpload(options: { readonly stage?: boolean } = {}) {
   const actor = bdd.user();
   createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
   const owner = await fixture.entitledNativeChatActor(actor);
@@ -26,11 +26,8 @@ async function claimedUpload(options: { readonly stage?: boolean } = {}) {
     agentId: owner.agentId,
     prompt: "Publish an uploaded report",
   });
-  const { claim, sandboxHeaders } = await fixture.claimChatRun(
-    owner.runnerGroup,
-    run.runId,
-  );
-  const bearer = `Bearer ${okouTokenFromClaim(claim)}`;
+  const { execution, sandboxHeaders } = await fixture.runExecution(run.runId);
+  const bearer = `Bearer ${okouTokenFromExecution(execution)}`;
   // Public organization-less uploads may later be attached to a run.
   createRouteMocks(context).clerk.session(actor.userId, null);
   const prepared = await accept(
@@ -83,7 +80,7 @@ async function claimedUpload(options: { readonly stage?: boolean } = {}) {
 }
 
 test("keeps one file identity and captured owner across concurrent replay and metadata updates", async () => {
-  const upload = await claimedUpload();
+  const upload = await executionUpload();
   const complete = (contentType = "text/plain") => {
     return chat.completeUploadWithBearer(
       upload.bearer,
@@ -178,7 +175,7 @@ test("keeps one file identity and captured owner across concurrent replay and me
 });
 
 test("records a late completion through a surviving issued token after the owner deletes its agent", async () => {
-  const upload = await claimedUpload();
+  const upload = await executionUpload();
   await fixture.completeChatRunOk(upload.run.runId, upload.sandboxHeaders);
   await flushWaitUntilForTest();
   await bdd.deleteAgent(upload.actor, upload.owner.agentId);
@@ -193,7 +190,7 @@ test("records a late completion through a surviving issued token after the owner
 });
 
 test("leaves an unavailable upload absent and permits completion after the object arrives", async () => {
-  const upload = await claimedUpload({ stage: false });
+  const upload = await executionUpload({ stage: false });
   await chat.completeUploadWithBearer(
     upload.bearer,
     { id: upload.prepared.id },

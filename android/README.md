@@ -19,12 +19,42 @@ Web color palettes and the languages allowed by canonical `supportedLocales`.
 Palette/language preferences synchronize through the member/workspace API;
 Light/Dark/Follow system remains device-local and independent.
 
+My Okou in Settings reads and edits the signed-in user's personal Instructions
+for the selected workspace. It uses the existing `singleAgent` availability and
+canonical Instructions API without blocking chat or Appearance while loading.
+Saves always carry the displayed base version; a concurrent Web edit preserves
+the local draft and requires explicitly loading the latest version. Clearing the
+field and saving clears Instructions. A lost save response reads the server back;
+an unresolved attempt stays frozen until that read or an explicit retry with the
+same version resolves it.
+
+Activities for the same API origin/user/workspace share one editing transaction
+while retaining their own native selection and session authorization. Request
+progress, read failures and persisted intent are separate facts. Preparation
+must acknowledge that exact frozen intent before HTTP; a superseded queued write
+is not a durability receipt. Cancelling or failing preparation restores the
+editable intent, while cancellation after dispatch preserves the unknown attempt.
+Settlement only replaces its captured local revision. Retiring a controller
+cancels its own network work; the shared editor is released after the last
+controller detaches, and accepted local IO remains application-owned.
+
+Unsaved text and unresolved save attempts live in a separate application-owned,
+versioned AtomicFile store under `noBackupFilesDir/personal-instructions`.
+Format 1 contains content, the base response and attempt state, scoped by normalized
+API origin/user/workspace. It contains no credentials and survives editor retirement
+and process restart independently of the rebuildable chat cache. Disk errors retain
+accepted edits in memory and expose retry; malformed files are never silently reset.
+Activity saved state carries only the native selection, keeping large text out of
+the size-limited Binder bundle.
+Feature-local 403/404 does not sign out the workspace. Visible/foreground/manual
+refresh checks other clients; automatic live Instructions updates remain later work.
+
 The workspace presentation owner retains chat-list state across navigation and
 configuration changes. Switching account/workspace or signing out retires that owner.
 Authentication and canonical preferences/member-memory bootstrap use production
 by default; see [native authentication](AUTHENTICATION.md)
-for public staging overrides, provider setup and verification boundaries. Chat
-Send, push registration and store publication remain later delivery. Debug uses
+for public staging overrides, provider setup and verification boundaries.
+Push registration and store publication remain later delivery. Debug uses
 `ai.okou.android.debug`; the application namespace is `ai.okou.android`.
 
 Confirmed chat and Project navigation follows Web's snapshot/event-log model using an
@@ -55,7 +85,8 @@ unsupported local schemas may be recreated, never migrated together with drafts
 or credentials. Room exports its schema under `app/schemas` through its Gradle/KSP
 integration. A saved list and the last status refresh do not establish current
 network freshness. Signed archive URLs, credentials and transient indicators are
-not persisted. Durable drafts are not introduced.
+not persisted in the chat cache. Personal Instructions drafts use the separate
+intent store described above.
 
 Conversation history shares this cache and its workspace authorization lease.
 Room schema v2 adds `history_scopes` (thread, authorization, canonical event format,
@@ -154,12 +185,80 @@ runs list → history → Back, Settings and recreation on the existing API 35 m
 device. History tests cover real gzip transport, malformed archives, paired
 cursors, disk reopen, dirty retry, retired results and visible read confirmation.
 
+Instructions suites exercise conditional HTTP saves, owner validation, durable
+draft reopening/isolation, local IO failures and uncertain-write reconciliation.
+They also cover shared controllers, superseded preparation receipts and retirement
+before dispatch without incorrectly freezing an editable draft.
+`PersonalInstructionsSettingsTest` holds the actual HTTP read while Settings stays
+usable and checks native selection through conflicts. `NativeInstructionsTest`
+uses the API 35 device for multiline input, IME/system Back, Activity recreation,
+save and external-version conflict. These tests use isolated fake server content;
+they do not modify production Instructions or establish OEM keyboard coverage.
+
 The plain Kotlin state-holder tests do not themselves use Android APIs. An
 independent Kotlin/JVM test entry could compile those same sources without an
 SDK, without splitting production modules. The command above uses the app's
 standard Android build configuration; the project maintains one test entry.
 
-Other focused commands, from `android/`:
+Text composer suites exercise the real private journal, shared controllers, frozen
+submission identity, duplicate taps, newer edits, disconnected acceptance and
+explicit original-ID recovery. `ChatComposerApiTest` uses the installed generated
+201 methods and bounded input-status read; `ChatComposerRootTest` holds default
+availability and write responses through the actual native route.
+`NativeTextSendTest` covers new/existing sends, IME/Back and Activity recreation
+on API 35. Its synthetic HTTP content and private temporary journal do not use
+production credentials or establish physical/OEM keyboard coverage.
+
+`RealtimeApiTest` verifies the installed token POST and actual SDK token bridge;
+`AblyRealtimeConnectionTest` starts/closes the real Android SDK with held or
+failed authentication. `RealtimeCatchUpTest` keeps canonical history held while
+list changes and status failures remain independent. `NativeRealtimeTest` covers
+the real native route's connecting first display, cross-client confirmed changes,
+disconnect/reconnect and foreground restoration while retaining a typed draft.
+Its external SDK observations are controlled; this is not provider-live evidence.
+
+Meaningful drafts and pending text operations live in `noBackupFilesDir/chat-input`,
+scoped by origin/user/workspace, separately from the rebuildable confirmed cache.
+Native selection/composition stay with the text control. Accepted local writes
+outlive presentation controllers; dispatch requires a read-back durable copy of
+the same frozen operation and current authorization. Missing input observations
+do not prove rollback. Recovery reuses the original IDs and payload only after
+an explicit action. Draft durability is device-local, without cross-client sync.
+Unacknowledged new-chat creation results remain with their original draft target
+until native navigation opens the authoritative thread. Parallel targets cannot
+replace each other's handoff; late text before that handoff follows its created
+thread instead of becoming an unrelated new-chat draft.
+
+### Saved-state policy
+
+`state/SavedUiState.kt` owns first-party Bundle metadata and both journal-backed
+editor adapters. Text stays in its existing private journal; native selection is
+restored only after that body is available. Raw saveable APIs and provider writes
+outside this boundary fail `scripts/check-saved-state.py`, including handle
+creation factories, aliases and qualified references. This source-policy check
+does not infer arbitrary Kotlin data flow or inspect dependencies' internal providers.
+
+`MainActivity` checks the entire app-owned saved Bundle after its superclass
+collects Jetpack providers on every Debug save. The shared budget is **less than
+50,000 bytes**, following Android's below-50-KB guidance, with room below the
+process-shared Binder buffer. This is not a platform success guarantee or a
+document-size limit. Release performs no additional serialization; excess Debug
+state reports byte counts and never discards data.
+
+Presentation restoration retains the **32 most recently opened conversations'**
+native scroll states and the **64 most recently collapsed Projects**. Reopening
+a retained target refreshes its recency. Older scroll/expansion choices return
+to their native defaults; draft text, pending sends and confirmed history are
+independent and are not evicted by this policy.
+
+`SavedStateBudgetTest` covers provider collection/restoration on host APIs 24 and 35. `SavedUiStateTest` covers delayed journal hydration, recent/evicted scroll
+restoration and thousands of Project presentation choices. Existing long-text
+Activity recreation cases run the same Debug budget check; there is no separate
+64-KiB assertion per feature.
+
+### Other focused commands
+
+From `android/`:
 
 ```bash
 ./gradlew spotlessApply
@@ -292,9 +391,13 @@ releases or configure FCM credentials.
 
 Release Please manages the independent `android` component through
 `version.txt` and `.release-please-manifest.json`. Gradle reads `version.txt` for
-`versionName` and derives a monotonic `versionCode` as
-`major * 1,000,000 + minor * 1,000 + patch`; minor and patch must be below 1,000
-and the result must fit a positive Android integer.
+`versionName`. The APK's internal `versionCode` is the number of commits reachable
+from its source (`git rev-list --count HEAD`), generated by
+`scripts/version-code.sh`. Builds require complete Git history (`git fetch
+--unshallow` for a shallow clone). Release sources advance along `main` without
+rewriting history so subsequent APK codes increase; rebuilding the same commit
+keeps the same code. Upgrade policy compares numeric components of `version`,
+independently of this Android installation identifier.
 
 When the normal release PR is merged, `release-please.yml` creates the
 `android-vX.Y.Z` release. Its single `publish-android` job checks out the exact
@@ -353,6 +456,44 @@ the first APK signed by the durable key.
 
 ### Signing And Upgrade Verification
 
+The direct-APK updater reads the public `GET /api/android/updates` contract,
+independently of authentication and the retained business-API 426 state. The
+API combines the source-owned compatibility floor with the published Android
+release; only its exact GET recovery path bypasses installed-client exclusion.
+The release and `minimumSupportedVersion` use stable `x.y.z` versions, comparing
+each numeric component. APK `versionCode` is internal build/installation metadata
+and is absent from both the public response and the R2 manifest.
+Optional announcements follow available versions and the user's per-release
+deferral. Manual and required-update recovery remain available. Automatic checks
+run on foreground without holding the first native frame, at most once per day
+after success.
+
+Startup revalidates a saved package before offering download or installation
+actions. The last successful discovery and its timestamp are restored together.
+Each transfer and installer action stays bound to its presented package; a click
+during preparation is not queued against a later version or recovery result.
+
+Users initiate credential-free APK downloads inside Okou. The app streams into
+private files, validates byte count, SHA-256, package/version and signer, then
+offers installation through a narrowly scoped FileProvider and Android's
+installer. Android 8+ may require installation-source authorization. Activity
+recreation retains work; OS process termination can interrupt it. A later launch
+discards partial files and offers explicit retry, or revalidates a completed APK.
+No resident service, DownloadManager, silent installation or range resumption is
+implied. Installation handoff does not establish package replacement.
+
+After validating the release tag against the checked-out source,
+`publish-android-update.py` publishes the verified APK bytes and a conditional,
+monotonic manifest through the existing production static R2 configuration.
+R2 publication precedes the GitHub APK copy, allowing a rerun to repair discovery
+when that copy already exists. The manifest is at
+`https://static.okou.io/android-updates/manifest.json`. APK writes are immutable;
+same-version conflicts fail, and an older publication cannot replace a newer
+manifest. Until the first successful publication, discovery reports unavailable.
+Previously installed clients without this updater still need an initial manual
+APK update. This feature does not raise the API floor or establish real
+production-key/device upgrade acceptance.
+
 Run the fixture suite with JDK 21 and the pinned SDK installed:
 
 ```bash
@@ -361,13 +502,14 @@ python3 android/scripts/release-signing.test.py
 ```
 
 The normal Android checks include this suite. It uses an ephemeral test-only
-PKCS12 and real signing tools to verify increasing versions retain one signer,
+PKCS12 and real signing tools to verify different versions retain one signer,
 invalid configuration/signature rejection, cleanup and refusal to overwrite.
 Its manifest-only APK fixtures do not prove installation or production-key access.
 
 For protected acceptance, use the configured durable key to sign two builds
-of the real application with increasing `versionCode`, without publishing test
-versions. Install the first, open Settings and save an appearance preference:
+of the real application from successive `main` commits with increasing
+`versionCode`, without publishing test versions. Install the first, open Settings
+and save an appearance preference:
 
 ```bash
 adb install first.apk
@@ -383,6 +525,35 @@ certificate with the previously distributed durable-signed APK when available.
 The first durable release bootstraps that identity. Report fixture tests, real
 production signing, device upgrade/data retention and Release publication as
 separate evidence; a configured Secret name proves only its presence.
+
+## Foreground Chat Updates
+
+The authorized workspace owns an Ably device connection while the Activity is
+STARTED, including navigation to Settings. STOP and workspace retirement cancel
+token renewal and close subscriptions; foreground restoration connects again and
+catches up through the existing canonical HTTP list, indicators and selected
+history owners. Those reads remain independent of token/attachment readiness and
+of one another. Notifications contain no authoritative rows: recognized chat
+topics, initial attachment, reconnect and continuity loss invalidate HTTP reads.
+Each confirmed resource coalesces its own notifications and retains a trailing
+read, so held history cannot delay subsequent list or indicator updates.
+Drafts and pending sends retain their existing durable journal ownership.
+
+The native connection notice reports connecting or unavailable with explicit
+retry; transport attachment is not a claim of confirmed-data freshness. Ordinary
+manual refresh/navigation remains available. The generated empty-object
+`POST /api/realtime/token` consumer uses the existing authenticated API transport
+and required-update handling. SDK callbacks obtain fresh single-use signed token
+requests for renewal; no API credentials are sent to Ably.
+A failed canonical token request closes that observation and offers explicit
+retry; a later transport callback cannot erase its authentication/update failure.
+
+The pinned `io.ably.pubsub:device:2.0.0` supports the API24/JDK17 baseline. Its
+unused Firebase Messaging dependency is excluded: this slice registers no push
+receiver/provider and does not activate push. Manifest auditing still applies to
+the packaged dependency graph. Build/controlled-SDK emulator evidence is separate
+from actual provider delivery. Transient active-run output and run controls are
+subsequent work, and continuous background delivery is not promised.
 
 ## Canonical API Bindings And Transport
 
@@ -496,8 +667,10 @@ service; direct arbitrary HTTP in features is outside the transport contract.
 `ApiClient` binds an HTTPS origin, installed `BuildConfig.VERSION_NAME`, session
 identity and a suspending `WorkspaceTokenProvider` resolved for each request.
 The provider may reuse an unexpired token and refresh it when needed. Its ordinary methods
-cover workspace/member preferences, native chat-list and history reads, and visible
-read confirmation. The authentication
+cover workspace/member preferences, native chat-list/history reads, visible read
+confirmation, text creation/sending and original-input status observations.
+Body-bearing success codes are checked against the consumed canonical contract
+(201 for create/send, 200 for reads). The authentication
 owner captures the right origin/user/workspace, cancels retired consumers and
 closes their client; token renewal itself does not replace durable identity.
 Construction starts no token resolution or network work. The authenticated root
@@ -528,15 +701,15 @@ update destination. No self-clear/retry is provided for an installed
 version that needs an update. The backend Android floor starts unset; see
 [Android compatibility](../docs/deployment-compatibility.md#android-contract-gate).
 
-GitHub Release is the Android distribution source for the compatibility gate.
-Publish the packaged APK as a nonempty `.apk` asset on a non-draft, non-prerelease
-`android-vX.Y.Z` release, with the tag matching the APK's `versionName`. CI reads
-release metadata and uses the highest qualifying version among the 20 highest
-stable Android tags; it does not require an app-store availability check. The
-publisher owns APK signing, the packaged version and installability. A local
-build or an Actions artifact alone is not publication. The [release pipeline](#github-releases)
-owns packaging and upload; a floor raise still requires a reviewed policy change
-after the compatible build is available.
+R2 is the release-information authority for the compatibility gate. CI reads
+`release.version` through the same public `/api/android/updates` endpoint used
+by the installed updater; the API validates the published R2 manifest before
+returning it. A GitHub APK copy, a local build or an Actions artifact alone does
+not establish that availability. The publisher owns APK signing, the packaged
+version and installability. The [release pipeline](#github-releases) owns packaging,
+R2 publication and the GitHub copy; a floor raise remains a reviewed source-policy
+change after the compatible build is available through discovery. Ordinary
+business API requests compare the source floor without querying release storage.
 
 API requests do not follow redirects or automatically retry connection/status
 failures, including `503 Retry-After: 0`. A lost response is not remote rollback;

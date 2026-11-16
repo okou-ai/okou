@@ -300,9 +300,8 @@ fn run_mount(input: RunMountInput<'_>) -> CapturedHelperOutput {
     if !matches!(outcome, WaitOutcome::Exited(_)) || cancellation_observed {
         drain_cancel.cancel();
     }
-    let (stdout, stderr) = collect_bounded_output(
-        stdout_drain,
-        stderr_drain,
+    let [stdout, stderr] = collect_bounded_output(
+        [stdout_drain, stderr_drain],
         &drain_done_rx,
         &drain_cancel,
         drain_deadline,

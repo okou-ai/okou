@@ -43,9 +43,9 @@ async function setupAnalyticsFirewall(publicFixture: PublicFirewallFixture) {
   });
   publicFixture.registerRun(run.runId);
   await runs.heartbeatRunner(runnerGroup);
-  const claim = await runs.executionInput(run.runId);
-  publicFixture.registerClaim(run.runId, claim.sandboxToken);
-  const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+  const execution = await runs.executionInput(run.runId);
+  publicFixture.registerExecution(run.runId, execution.sandboxToken);
+  const headers = { authorization: `Bearer ${execution.sandboxToken}` };
   mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
   mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "google-client-id");
   mockOptionalEnv("GOOGLE_OAUTH_CLIENT_SECRET", "google-client-secret");

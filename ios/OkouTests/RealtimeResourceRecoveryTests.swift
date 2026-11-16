@@ -15,7 +15,7 @@ final class RealtimeResourceRecoveryTests: XCTestCase {
     let deadline = ModelResponseGate()
     addTeardownBlock { deadline.open() }
     let waiting = expectation(description: "Model consumers are waiting for initial subscriptions")
-    let bootstrap = WorkspaceModelBootstrap {
+    let bootstrap = WorkspaceReadBootstrap {
       waiting.fulfill()
       await deadline.wait()
     }
@@ -45,7 +45,7 @@ final class RealtimeResourceRecoveryTests: XCTestCase {
     let deadline = ModelResponseGate()
     addTeardownBlock { deadline.open() }
     let waiting = expectation(description: "The bounded subscription wait has started")
-    let bootstrap = WorkspaceModelBootstrap {
+    let bootstrap = WorkspaceReadBootstrap {
       waiting.fulfill()
       await deadline.wait()
     }
@@ -167,7 +167,7 @@ final class RealtimeResourceRecoveryTests: XCTestCase {
   }
 
   private func makeFixture(
-    modelBootstrap: WorkspaceModelBootstrap? = nil
+    modelBootstrap: WorkspaceReadBootstrap? = nil
   ) async throws -> RealtimeResourceHarness {
     let fixture = try RealtimeResourceHarness(owner: self, modelBootstrap: modelBootstrap)
     addTeardownBlock { @MainActor in
@@ -198,7 +198,7 @@ private final class RealtimeResourceHarness {
   let http: ChatHTTPFixture
   let metadata: RealtimeMetadataFixture
   private let resources: WorkspaceResources
-  private let modelBootstrap: WorkspaceModelBootstrap?
+  private let modelBootstrap: WorkspaceReadBootstrap?
   let userID: String
   let workspaceID: String
   var workspaceChannel: String { "user-org:\(userID):\(workspaceID)" }
@@ -263,7 +263,7 @@ private final class RealtimeResourceHarness {
       return realtime
     })
 
-  init(owner: XCTestCase, modelBootstrap: WorkspaceModelBootstrap?) throws {
+  init(owner: XCTestCase, modelBootstrap: WorkspaceReadBootstrap?) throws {
     self.modelBootstrap = modelBootstrap
     let userID = "realtime-user-\(UUID().uuidString)"
     self.userID = userID
@@ -273,6 +273,7 @@ private final class RealtimeResourceHarness {
     http = ChatHTTPFixture(
       onUnhandledRequest: { XCTFail($0) },
       handler: { request in
+        guard request.httpMethod == "GET" else { throw URLError(.unsupportedURL) }
         let path = request.url!.path
         metadata.requests.withLock { $0[path, default: 0] += 1 }
         guard var result = ModelHTTPFixtures.response(path) else { throw URLError(.unsupportedURL) }
@@ -350,7 +351,7 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
     let recoveryDeadline = ModelResponseGate()
     let recovering = Mutex(false)
     let waiting = expectation(description: "Recovery model reads await subscriptions")
-    let bootstrap = WorkspaceModelBootstrap {
+    let bootstrap = WorkspaceReadBootstrap {
       if recovering.withLock({ $0 }) {
         waiting.fulfill()
         await recoveryDeadline.wait()
@@ -390,7 +391,7 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
     let recoveryDeadline = ModelResponseGate()
     let recovering = Mutex(false)
     let waiting = expectation(description: "Recovery's bounded wait has started")
-    let bootstrap = WorkspaceModelBootstrap {
+    let bootstrap = WorkspaceReadBootstrap {
       if recovering.withLock({ $0 }) {
         waiting.fulfill()
         await recoveryDeadline.wait()
@@ -430,7 +431,7 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
   }
 
   func testForegroundWithHealthySubscriptionsRevalidatesOnce() async throws {
-    let fixture = try ModelRecoveryFixture(bootstrap: WorkspaceModelBootstrap())
+    let fixture = try ModelRecoveryFixture(bootstrap: WorkspaceReadBootstrap())
     addTeardownBlock { await fixture.close() }
     try await fixture.start()
     await fixture.workspace.resumePendingRefresh()?.value
@@ -454,7 +455,7 @@ final class WorkspaceModelRecoveryTests: XCTestCase {
   }
 
   func testResumedChannelPreservesTheBaselineAndStillAppliesPreferenceNotifications() async throws {
-    let fixture = try ModelRecoveryFixture(bootstrap: WorkspaceModelBootstrap())
+    let fixture = try ModelRecoveryFixture(bootstrap: WorkspaceReadBootstrap())
     addTeardownBlock { await fixture.close() }
     try await fixture.start()
     fixture.http.setRemoteModel("claude-model")
@@ -478,7 +479,7 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
   {
     let remote = Mutex("active")
     let fixture = try ModelRecoveryFixture(
-      bootstrap: WorkspaceModelBootstrap(),
+      bootstrap: WorkspaceReadBootstrap(),
       indicators: { _ in
         let state = remote.withLock { $0 }
         let thread = ConversationHistoryFixture.threadID
@@ -527,34 +528,23 @@ final class WorkspaceIndicatorRecoveryTests: XCTestCase {
 
 @MainActor
 private final class ModelRecoveryFixture {
-  let server: RealtimeHTTPFixture
+  private let realtime: LoopbackRealtimeFixture
+  var server: RealtimeHTTPFixture { realtime.server }
   let http: WorkspaceStartupFixture
-  private let bootstrap: WorkspaceModelBootstrap
+  private let bootstrap: WorkspaceReadBootstrap
   private let userID = "recovery-user-\(UUID().uuidString)"
   private let workspaceID = "recovery-workspace-\(UUID().uuidString)"
-  private var port: UInt16 = 0
-  var sdk: ARTRealtime?
+  var sdk: ARTRealtime? { realtime.sdk }
   var channel: String { "user-org:\(userID):\(workspaceID)" }
 
-  lazy var workspace = http.workspace(modelBootstrap: bootstrap) { [unowned self] options in
-    options.realtimeHost = "127.0.0.1"
-    options.restHost = "127.0.0.1"
-    options.port = Int(port)
-    options.tls = false
-    options.useBinaryProtocol = false
-    options.fallbackHosts = []
-    options.disconnectedRetryTimeout = 60
-    let realtime = ARTRealtime(options: options)
-    sdk = realtime
-    return realtime
-  }
+  lazy var workspace = http.workspace(modelBootstrap: bootstrap, createRealtime: realtime.factory)
 
   init(
-    bootstrap: WorkspaceModelBootstrap,
+    bootstrap: WorkspaceReadBootstrap,
     indicators: ChatHTTPFixture.Handler? = nil
   ) throws {
     self.bootstrap = bootstrap
-    server = try RealtimeHTTPFixture(clientID: userID, onProtocol: { _, _ in })
+    realtime = try LoopbackRealtimeFixture(clientID: userID)
     let token = try JSONSerialization.data(withJSONObject: [
       "keyName": "fixture.key", "timestamp": Int64(Date().timeIntervalSince1970 * 1000),
       "ttl": 3_600_000, "nonce": "fixture-nonce", "mac": "ZmFrZQ==",
@@ -565,7 +555,7 @@ private final class ModelRecoveryFixture {
   }
 
   func start() async throws {
-    port = try await server.start()
+    try await realtime.start()
     server.attachAutomatically()
     workspace.setPhase(.active)
     async let models: Void = workspace.newModelSelection.open()
@@ -577,6 +567,59 @@ private final class ModelRecoveryFixture {
 
   func close() async {
     await workspace.close().value
+    realtime.stop()
+  }
+}
+
+/// Owns SDK configuration and lifetime for workspace tests using the real loopback provider.
+@MainActor
+final class LoopbackRealtimeFixture {
+  let server: RealtimeHTTPFixture
+  private var port: UInt16 = 0
+  private(set) var sdk: ARTRealtime?
+
+  var factory: RealtimeService.ClientFactory {
+    { [unowned self] options in
+      options.realtimeHost = "127.0.0.1"
+      options.restHost = "127.0.0.1"
+      options.port = Int(port)
+      options.tls = false
+      options.useBinaryProtocol = false
+      options.fallbackHosts = []
+      options.disconnectedRetryTimeout = 60
+      let realtime = ARTRealtime(options: options)
+      sdk = realtime
+      return realtime
+    }
+  }
+
+  init(
+    clientID: String, onProtocol: @escaping @Sendable (Int, String) -> Void = { _, _ in }
+  ) throws {
+    server = try RealtimeHTTPFixture(clientID: clientID, onProtocol: onProtocol)
+  }
+
+  func start() async throws { port = try await server.start() }
+
+  func disconnectTransport(observed: XCTestExpectation) throws {
+    let sdk = try XCTUnwrap(sdk)
+    sdk.connection.once(.disconnected) { _ in observed.fulfill() }
+    try server.disconnect()
+  }
+
+  func reconnectTransport() throws {
+    try XCTUnwrap(sdk).connect()
+  }
+
+  func detach(_ channel: String) throws {
+    try XCTUnwrap(sdk).channels.get(channel).detach()
+  }
+
+  func attach(_ channel: String) throws {
+    try XCTUnwrap(sdk).channels.get(channel).attach()
+  }
+
+  func stop() {
     server.stop()
     sdk = nil
     XCTAssertEqual(server.errors, [])

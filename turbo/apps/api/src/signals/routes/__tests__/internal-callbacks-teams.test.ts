@@ -409,7 +409,7 @@ async function setupConnectedTeamsActor(
     runsApi.ensurePersonalSubscriptionModel(actor),
     authOrgApi.readAgent(actor, defaultAgentId),
   ]);
-  // Queued Teams callbacks inspect and complete the Runner claim. Fable keeps
+  // Queued Teams callbacks inspect and complete the Runner execution. Fable keeps
   // this native fixture claimable while eligible Pi routes remain enabled.
   await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
@@ -533,7 +533,7 @@ async function dispatchTeamsPersonalRun(args: {
   return await runIdForPrompt(actor, args.text);
 }
 
-async function claimTeamsRun(args: {
+async function readTeamsExecution(args: {
   readonly runnerGroup: string;
   readonly runId: string;
 }) {
@@ -581,7 +581,7 @@ async function completeSandboxRun(args: {
   return undefined;
 }
 
-async function claimFollowUpInThread(args: {
+async function startThreadFollowUpExecution(args: {
   readonly fixture: TeamsConnectFixture;
   readonly runnerGroup: string;
   readonly threadId: string;
@@ -635,7 +635,7 @@ afterEach(async () => {
 });
 
 describe("Teams chat callbacks", () => {
-  it("steers queued Teams personal input into the claimed Run", async () => {
+  it("steers queued Teams personal input into the dispatched Run", async () => {
     const { teams, owner, runnerGroup } = await setupOwnedTeamsSteering();
     await owner.run(async () => {
       const fixture = teams.installation;
@@ -650,9 +650,9 @@ describe("Teams chat callbacks", () => {
         text: "hold the Teams Run for steering",
       });
       await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await owner.claim(firstRunId);
+      const execution = await owner.executionInput(firstRunId);
       await expect(
-        runsApi.nextSteerableInput(claim.sandboxToken, firstRunId),
+        runsApi.nextSteerableInput(execution.sandboxToken, firstRunId),
       ).resolves.toStrictEqual({ input: null });
 
       const queuedPrompt = `steer Teams input ${fixture.teamsTenantId}`;
@@ -669,7 +669,7 @@ describe("Teams chat callbacks", () => {
         throw new Error("Expected the queued Teams steering event");
       }
       const next = await runsApi.nextSteerableInput(
-        claim.sandboxToken,
+        execution.sandboxToken,
         firstRunId,
       );
       if (!next.input) {
@@ -693,17 +693,17 @@ describe("Teams chat callbacks", () => {
       expect(next.input.prompt).not.toContain("Channel ID:");
       await expect(
         runsApi.declareSteeredInput(
-          claim.sandboxToken,
+          execution.sandboxToken,
           firstRunId,
           queuedInput.id,
         ),
       ).resolves.toStrictEqual({ outcome: "steered" });
       await expect(
-        runsApi.nextSteerableInput(claim.sandboxToken, firstRunId),
+        runsApi.nextSteerableInput(execution.sandboxToken, firstRunId),
       ).resolves.toStrictEqual({ input: null });
       await completeSandboxRun({
         runId: firstRunId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: execution.sandboxToken,
         exitCode: 0,
       });
       const completed = await runsApi.readRun(teams.actor, firstRunId);
@@ -711,7 +711,7 @@ describe("Teams chat callbacks", () => {
     });
   });
 
-  it.each(["accepted dispatch", "claimed Run"] as const)(
+  it.each(["accepted dispatch", "dispatched Run"] as const)(
     "terminalizes owned Teams %s after a test-body failure",
     async (phase) => {
       const { fixtures, teams, owner, runnerGroup } =
@@ -726,10 +726,10 @@ describe("Teams chat callbacks", () => {
             activityId: teamsFixtureExternalId(fixture, "cleanup-failure"),
             text: prompt,
           });
-          if (phase === "claimed Run") {
+          if (phase === "dispatched Run") {
             const runId = await runIdForPrompt(teams.actor, prompt);
             await runsApi.heartbeatRunner(runnerGroup);
-            await owner.claim(runId);
+            await owner.executionInput(runId);
           }
           throw failure;
         }),
@@ -765,7 +765,7 @@ describe("Teams chat callbacks", () => {
     },
   );
 
-  it.each(["stored context", "claimed launch material"] as const)(
+  it.each(["stored context", "published launch material"] as const)(
     "preserves queued Teams %s",
     async (phase) => {
       const teams = await setupConnectedTeamsActor();
@@ -783,12 +783,12 @@ describe("Teams chat callbacks", () => {
         activityId: firstActivityId,
         text: "hold the Teams queue",
       });
-      const firstClaim = await claimTeamsRun({
+      const firstExecution = await readTeamsExecution({
         runnerGroup: teams.runnerGroup,
         runId: firstRunId,
       });
 
-      const queuedPrompt = `claim Teams launch context ${teams.fixture.teamsTenantId}`;
+      const queuedPrompt = `execute with Teams launch context ${teams.fixture.teamsTenantId}`;
       await postTeamsPersonalMessage({
         fixture: teams.fixture,
         activityId: queuedActivityId,
@@ -804,40 +804,40 @@ describe("Teams chat callbacks", () => {
 
       await completeSandboxRun({
         runId: firstRunId,
-        sandboxToken: firstClaim.sandboxToken,
+        sandboxToken: firstExecution.sandboxToken,
         exitCode: 0,
       });
       const queuedRunId = await runIdForPrompt(teams.actor, queuedPrompt);
 
-      if (phase === "claimed launch material") {
-        const queuedClaim = await claimTeamsRun({
+      if (phase === "published launch material") {
+        const queuedExecution = await readTeamsExecution({
           runnerGroup: teams.runnerGroup,
           runId: queuedRunId,
         });
         const queuedRun = await runsApi.readRun(teams.actor, queuedRunId);
-        expect(queuedClaim.prompt).toBe(queuedRun.prompt);
-        expect(queuedClaim.appendSystemPrompt).toBe(
+        expect(queuedExecution.prompt).toBe(queuedRun.prompt);
+        expect(queuedExecution.appendSystemPrompt).toBe(
           queuedRun.appendSystemPrompt,
         );
-        expect(queuedClaim.appendSystemPrompt).toContain(
+        expect(queuedExecution.appendSystemPrompt).toContain(
           "You are currently running inside: Microsoft Teams",
         );
-        expect(queuedClaim.appendSystemPrompt).toContain(
+        expect(queuedExecution.appendSystemPrompt).toContain(
           `Thread ID: ${queuedActivityId}`,
         );
 
         await completeSandboxRun({
           runId: queuedRunId,
-          sandboxToken: queuedClaim.sandboxToken,
+          sandboxToken: queuedExecution.sandboxToken,
           exitCode: 0,
         });
       } else {
         // The admitted Teams context reaches the queued launch.
-        const queuedClaim = await claimTeamsRun({
+        const queuedExecution = await readTeamsExecution({
           runnerGroup: teams.runnerGroup,
           runId: queuedRunId,
         });
-        expect(queuedClaim.prompt).toBe(queuedPrompt);
+        expect(queuedExecution.prompt).toBe(queuedPrompt);
         for (const line of [
           `Tenant ID: ${teams.fixture.teamsTenantId}`,
           `Tenant name: ${teams.fixture.teamsTenantName}`,
@@ -849,11 +849,11 @@ describe("Teams chat callbacks", () => {
           `Teams user principal name: ${teams.fixture.teamsUserPrincipalName}`,
           `Teams user ID: ${teams.fixture.teamsUserId}`,
         ]) {
-          expect(queuedClaim.appendSystemPrompt).toContain(line);
+          expect(queuedExecution.appendSystemPrompt).toContain(line);
         }
         // A personal chat has no team or channel.
-        expect(queuedClaim.appendSystemPrompt).not.toContain("Team ID:");
-        expect(queuedClaim.appendSystemPrompt).not.toContain("Channel ID:");
+        expect(queuedExecution.appendSystemPrompt).not.toContain("Team ID:");
+        expect(queuedExecution.appendSystemPrompt).not.toContain("Channel ID:");
         await runsApi.requestCancelRun(teams.actor, queuedRunId, [200]);
       }
     },
@@ -871,7 +871,7 @@ describe("Teams chat callbacks", () => {
       activityId: firstActivityId,
       text: "hold the Teams admission queue",
     });
-    const firstClaim = await claimTeamsRun({
+    const firstExecution = await readTeamsExecution({
       runnerGroup: teams.runnerGroup,
       runId: firstRunId,
     });
@@ -899,7 +899,7 @@ describe("Teams chat callbacks", () => {
       teams.subscription,
     ).update("canceled");
     clearTeamsApiCalls(teamsApi);
-    const headers = { authorization: `Bearer ${firstClaim.sandboxToken}` };
+    const headers = { authorization: `Bearer ${firstExecution.sandboxToken}` };
     const completionRequest = {
       headers,
       body: {
@@ -999,12 +999,12 @@ describe("Teams chat callbacks", () => {
       activityId: firstActivityId,
       text: "hold the Teams bot fallback queue",
     });
-    const firstClaim = await claimTeamsRun({
+    const firstExecution = await readTeamsExecution({
       runnerGroup: teams.runnerGroup,
       runId: firstRunId,
     });
 
-    const queuedPrompt = `claim without an activity recipient ${teams.fixture.teamsTenantId}`;
+    const queuedPrompt = `execute without an activity recipient ${teams.fixture.teamsTenantId}`;
     await postTeamsPersonalMessage({
       fixture: teams.fixture,
       activityId: queuedActivityId,
@@ -1020,19 +1020,19 @@ describe("Teams chat callbacks", () => {
     }
     await completeSandboxRun({
       runId: firstRunId,
-      sandboxToken: firstClaim.sandboxToken,
+      sandboxToken: firstExecution.sandboxToken,
       exitCode: 0,
     });
     const queuedRunId = await runIdForPrompt(teams.actor, queuedPrompt);
-    const queuedClaim = await claimTeamsRun({
+    const queuedExecution = await readTeamsExecution({
       runnerGroup: teams.runnerGroup,
       runId: queuedRunId,
     });
-    expect(queuedClaim.prompt).toBe(queuedPrompt);
-    expect(queuedClaim.appendSystemPrompt).toContain(
+    expect(queuedExecution.prompt).toBe(queuedPrompt);
+    expect(queuedExecution.appendSystemPrompt).toContain(
       `Bot ID: ${teams.fixture.teamsBotId}`,
     );
-    expect(queuedClaim.appendSystemPrompt).toContain("Bot name: Nova");
+    expect(queuedExecution.appendSystemPrompt).toContain("Bot name: Nova");
     await runsApi.requestCancelRun(teams.actor, queuedRunId, [200]);
   });
 
@@ -1050,7 +1050,7 @@ describe("Teams chat callbacks", () => {
         activityId: rootActivityId,
         text: "remember the main Teams DM context",
       });
-      const mainClaim = await claimTeamsRun({
+      const mainExecution = await readTeamsExecution({
         runnerGroup: teams.runnerGroup,
         runId: mainRunId,
       });
@@ -1058,7 +1058,7 @@ describe("Teams chat callbacks", () => {
       clearTeamsApiCalls(teamsApi);
       const mainSessionId = await completeSandboxRun({
         runId: mainRunId,
-        sandboxToken: mainClaim.sandboxToken,
+        sandboxToken: mainExecution.sandboxToken,
         exitCode: 0,
       });
 
@@ -1071,7 +1071,7 @@ describe("Teams chat callbacks", () => {
         threadId: rootActivityId,
         text: "open a personal message thread",
       });
-      const threadClaim = await claimTeamsRun({
+      const threadExecution = await readTeamsExecution({
         runnerGroup: teams.runnerGroup,
         runId: threadRunId,
       });
@@ -1079,7 +1079,7 @@ describe("Teams chat callbacks", () => {
       clearTeamsApiCalls(teamsApi);
       const threadSessionId = await completeSandboxRun({
         runId: threadRunId,
-        sandboxToken: threadClaim.sandboxToken,
+        sandboxToken: threadExecution.sandboxToken,
         exitCode: 0,
       });
 
@@ -1093,17 +1093,17 @@ describe("Teams chat callbacks", () => {
           threadId: rootActivityId,
           text: "continue the personal message thread",
         });
-        const threadFollowUpClaim = await claimTeamsRun({
+        const threadFollowUpExecution = await readTeamsExecution({
           runnerGroup: teams.runnerGroup,
           runId: threadFollowUpRunId,
         });
-        expect(threadFollowUpClaim.nativeContinuation?.sessionId).toBe(
+        expect(threadFollowUpExecution.nativeContinuation?.sessionId).toBe(
           threadSessionId,
         );
         clearTeamsApiCalls(teamsApi);
         await completeSandboxRun({
           runId: threadFollowUpRunId,
-          sandboxToken: threadFollowUpClaim.sandboxToken,
+          sandboxToken: threadFollowUpExecution.sandboxToken,
           exitCode: 0,
         });
         return;
@@ -1117,11 +1117,11 @@ describe("Teams chat callbacks", () => {
         ),
         text: "return to the main DM",
       });
-      const returnToMainClaim = await claimTeamsRun({
+      const returnToMainExecution = await readTeamsExecution({
         runnerGroup: teams.runnerGroup,
         runId: returnToMainRunId,
       });
-      expect(returnToMainClaim.nativeContinuation?.sessionId).toBe(
+      expect(returnToMainExecution.nativeContinuation?.sessionId).toBe(
         mainSessionId,
       );
     },
@@ -1198,7 +1198,7 @@ describe("Teams chat callbacks", () => {
       if (phase === "canonical input") {
         await runsApi.requestCancelRun(teams.actor, runId, [200]);
       } else {
-        const claim = await claimTeamsRun({
+        const receivedExecution = await readTeamsExecution({
           runnerGroup: teams.runnerGroup,
           runId,
         });
@@ -1206,7 +1206,7 @@ describe("Teams chat callbacks", () => {
 
         await webhooksApi.requestAgentHeartbeat(
           { runId },
-          { authorization: `Bearer ${claim.sandboxToken}` },
+          { authorization: `Bearer ${receivedExecution.sandboxToken}` },
           [200],
         );
         await flushWaitUntilForTest();
@@ -1217,7 +1217,7 @@ describe("Teams chat callbacks", () => {
 
         await completeSandboxRun({
           runId,
-          sandboxToken: claim.sandboxToken,
+          sandboxToken: receivedExecution.sandboxToken,
           exitCode: 0,
         });
 
@@ -1287,14 +1287,14 @@ describe("Teams chat callbacks", () => {
         threadId,
         text: "finish the task",
       });
-      const claim = await claimTeamsRun({
+      const receivedExecution = await readTeamsExecution({
         runnerGroup: teams.runnerGroup,
         runId,
       });
       clearTeamsApiCalls(teamsApi);
       const cliAgentSessionId = await completeSandboxRun({
         runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         exitCode: 0,
       });
       if (!cliAgentSessionId) {
@@ -1357,7 +1357,7 @@ describe("Teams chat callbacks", () => {
       prepared = await setupParticipantScenario();
     });
 
-    async function claimParticipantRun() {
+    async function startParticipantExecution() {
       const { teams, secondFixture, threadId } = prepared;
       const runId = await dispatchTeamsRun({
         fixture: secondFixture,
@@ -1370,21 +1370,21 @@ describe("Teams chat callbacks", () => {
         senderName: "Grace Hopper",
         senderPrincipalName: secondFixture.teamsUserPrincipalName,
       });
-      const claim = await claimTeamsRun({
+      const receivedExecution = await readTeamsExecution({
         runnerGroup: teams.runnerGroup,
         runId,
       });
-      return { runId, claim };
+      return { runId, receivedExecution };
     }
 
     it("delivers a reply naming the new participant with a fresh summary", async () => {
       const { teamsApi, summaryRequests } = prepared;
-      const { runId, claim } = await claimParticipantRun();
+      const { runId, receivedExecution } = await startParticipantExecution();
       const summaryRequestCountBeforeCompletion = summaryRequests.length;
       dropLastTeamsIndicatorRequest(teamsApi);
       await completeSandboxRun({
         runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         exitCode: 0,
       });
       expect(teamsApi.postedActivities).toHaveLength(2);
@@ -1410,8 +1410,8 @@ describe("Teams chat callbacks", () => {
     });
 
     it("starts a fresh native context for the new participant", async () => {
-      const { claim } = await claimParticipantRun();
-      expect(claim.nativeContinuation).toMatchObject({
+      const { receivedExecution } = await startParticipantExecution();
+      expect(receivedExecution.nativeContinuation).toMatchObject({
         sessionId: null,
         generationRunId: null,
       });
@@ -1419,13 +1419,13 @@ describe("Teams chat callbacks", () => {
 
     it("resumes the original session after another participant completes", async () => {
       const { teams, threadId, cliAgentSessionId } = prepared;
-      const { runId, claim } = await claimParticipantRun();
+      const { runId, receivedExecution } = await startParticipantExecution();
       await completeSandboxRun({
         runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         exitCode: 0,
       });
-      const followUpClaim = await claimFollowUpInThread({
+      const followUpExecution = await startThreadFollowUpExecution({
         fixture: teams.fixture,
         runnerGroup: teams.runnerGroup,
         threadId,
@@ -1434,7 +1434,7 @@ describe("Teams chat callbacks", () => {
           "activity-completed-follow-up",
         ),
       });
-      expect(followUpClaim.nativeContinuation?.sessionId).toBe(
+      expect(followUpExecution.nativeContinuation?.sessionId).toBe(
         cliAgentSessionId,
       );
     });
@@ -1462,7 +1462,7 @@ describe("Teams chat callbacks", () => {
         threadId,
         text: "fail this task",
       });
-      const claim = await claimTeamsRun({
+      const receivedExecution = await readTeamsExecution({
         runnerGroup: teams.runnerGroup,
         runId,
       });
@@ -1470,7 +1470,7 @@ describe("Teams chat callbacks", () => {
 
       await completeSandboxRun({
         runId,
-        sandboxToken: claim.sandboxToken,
+        sandboxToken: receivedExecution.sandboxToken,
         exitCode: 1,
         error,
       });
@@ -1486,7 +1486,7 @@ describe("Teams chat callbacks", () => {
         },
       ]);
 
-      await claimFollowUpInThread({
+      await startThreadFollowUpExecution({
         fixture: teams.fixture,
         runnerGroup: teams.runnerGroup,
         threadId,
@@ -1515,7 +1515,7 @@ describe("Teams chat callbacks", () => {
       threadId,
       text: "complete after uninstall",
     });
-    const claim = await claimTeamsRun({
+    const receivedExecution = await readTeamsExecution({
       runnerGroup: teams.runnerGroup,
       runId,
     });
@@ -1524,7 +1524,7 @@ describe("Teams chat callbacks", () => {
 
     await completeSandboxRun({
       runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       exitCode: 0,
     });
 
@@ -1537,7 +1537,7 @@ describe("Teams chat callbacks", () => {
     await flushWaitUntilForTest();
     clearTeamsApiCalls(teamsApi);
 
-    await claimFollowUpInThread({
+    await startThreadFollowUpExecution({
       fixture: teams.fixture,
       runnerGroup: teams.runnerGroup,
       threadId,
@@ -1569,7 +1569,7 @@ describe("Teams chat callbacks", () => {
       threadId,
       text: "complete while Teams is down",
     });
-    const claim = await claimTeamsRun({
+    const receivedExecution = await readTeamsExecution({
       runnerGroup: teams.runnerGroup,
       runId,
     });
@@ -1577,13 +1577,13 @@ describe("Teams chat callbacks", () => {
 
     const cliAgentSessionId = await completeSandboxRun({
       runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       exitCode: 0,
     });
 
     await completeSandboxRun({
       runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: receivedExecution.sandboxToken,
       exitCode: 0,
     });
 
@@ -1600,7 +1600,7 @@ describe("Teams chat callbacks", () => {
       },
     ]);
 
-    const followUpClaim = await claimFollowUpInThread({
+    const followUpExecution = await startThreadFollowUpExecution({
       fixture: teams.fixture,
       runnerGroup: teams.runnerGroup,
       threadId,
@@ -1609,6 +1609,8 @@ describe("Teams chat callbacks", () => {
         "activity-teams-api-error-follow-up",
       ),
     });
-    expect(followUpClaim.nativeContinuation?.sessionId).toBe(cliAgentSessionId);
+    expect(followUpExecution.nativeContinuation?.sessionId).toBe(
+      cliAgentSessionId,
+    );
   });
 });

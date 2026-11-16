@@ -8,15 +8,39 @@ import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.auth.initialLocale
 import ai.okou.android.chat.ChatCacheStore
+import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.instructions.PersonalInstructionsDraftStore
+import ai.okou.android.updates.AndroidUpdateClient
+import ai.okou.android.updates.AppUpdates
+import ai.okou.android.updates.FileUpdateStore
 import android.app.Application
+import android.os.Build
 import androidx.core.app.LocaleManagerCompat
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
+import java.io.File
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 open class OkouApplication : Application() {
+    open val updates by lazy {
+        val directory = File(filesDir, "updates")
+        AppUpdates(
+            AndroidUpdateClient(
+                this,
+                BuildConfig.API_ORIGIN.toHttpUrl(),
+                BuildConfig.VERSION_NAME,
+                directory,
+            ),
+            FileUpdateStore(directory),
+            BuildConfig.VERSION_NAME,
+            Build.VERSION.SDK_INT,
+        )
+    }
     val chatCache by lazy { ChatCacheStore(this) }
+    open val instructionsDrafts by lazy { PersonalInstructionsDraftStore(this) }
+    open val composerJournal by lazy { ComposerJournalStore(this) }
     val authentication by lazy { createAuthentication() }
 
     open fun createAuthentication(): Authentication = ClerkAuthentication(this)
@@ -31,6 +55,7 @@ open class OkouApplication : Application() {
             // Locale.getDefault() may be the previous member's app language, not the device
             // language.
             locale = initialLocale(checkNotNull(LocaleManagerCompat.getSystemLocales(this)[0])),
+            onUpdateRequired = updates::requireUpdate,
         )
 
     override fun onCreate() {

@@ -5,6 +5,7 @@ import pytest
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 from tests.flow_helpers import header_map, response_stream
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.x_flow_helpers import make_x_response_flow
 
 
@@ -90,7 +91,7 @@ class TestXStreamPathRouting:
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
         assert "connector_response_finish" not in flow.metadata
         callback = response_stream(flow)
-        callback(b'{"title":"Unauthorized","detail":"' + b"x" * (200 * 1024) + b'"}')
+        callback(repeat_bytes(b'{"title":"Unauthorized","detail":"', b"x", 200 * 1024, b'"}'))
         assert metadata_keys.STREAM_BUFFER not in flow.metadata
         assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
 

@@ -94,7 +94,7 @@ interface AgentComposerOptions {
    * page, leaving the Agent's saved composer untouched.
    */
   readonly inPlace?: boolean;
-  /** A Project page starts its chats in that Project. */
+  /** The initial Project for a page's new chat or an in-place fork. */
   readonly projectId?: string;
   readonly onOptimisticSend?: (threadId: string) => void;
 }
@@ -197,8 +197,8 @@ function createAgentComposerSignalsWithDraft(
     options,
   );
 
-  // A dialog composer sends from its own draft without leaving the page, so
-  // only the page's own composer can move its chat into a Project.
+  // The Project picker navigates, so an in-place composer only uses its
+  // initial Project for creation without exposing that picker.
   const project = options.inPlace
     ? undefined
     : createComposerProjectSignals(agentId, options.projectId ?? null);
@@ -237,11 +237,12 @@ export function createForwardAgentComposerSignals(
   agentId: string,
   forward: ChatForwardContext,
   onOptimisticSend: () => void,
+  projectId?: string,
 ) {
   return createAgentComposerSignalsWithDraft(
     agentId,
     createAgentDraftSignals(agentId),
-    { forward, inPlace: true, onOptimisticSend },
+    { forward, inPlace: true, onOptimisticSend, projectId },
   );
 }
 

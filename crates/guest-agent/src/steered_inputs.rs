@@ -6,11 +6,10 @@
 //! prompt stays queued for a later pick; a run-targeted budget expires when its
 //! run ends. Both carry the same source event identity through this worker.
 
-use std::sync::Mutex;
 use std::time::Duration;
 
 use guest_telemetry::{log_info, log_warn};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{Mutex, mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::constants;
@@ -73,12 +72,8 @@ impl SteeredInputDeclarations {
     /// Send the declarations queued before finalization, then stop the worker.
     pub(crate) async fn finalize(&self) {
         let _ = self.finalize_tx.send(true);
-        let worker = self
-            .worker
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .take();
-        let Some(mut worker) = worker else {
+        let mut worker_slot = self.worker.lock().await;
+        let Some(worker) = worker_slot.as_mut() else {
             return;
         };
         let timeout = Duration::from_secs(
@@ -86,9 +81,14 @@ impl SteeredInputDeclarations {
                 + constants::ACTIVE_INPUT_STEERED_FINALIZE_TIMEOUT_SECS
                 + 1,
         );
-        if tokio::time::timeout(timeout, &mut worker).await.is_err() {
+        let timed_out = tokio::time::timeout(timeout, &mut *worker).await.is_err();
+        if timed_out {
             worker.abort();
             let _ = worker.await;
+        }
+        *worker_slot = None;
+        drop(worker_slot);
+        if timed_out {
             log_warn!(
                 LOG_TAG,
                 "Steered declaration worker exceeded its finalization budget"

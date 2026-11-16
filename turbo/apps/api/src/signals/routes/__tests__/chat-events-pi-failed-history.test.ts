@@ -17,10 +17,9 @@ describe("Pi failed native continuation", () => {
       const {
         actor,
         agentId,
-        runnerGroup,
         run: own,
         sendChatRun,
-        claimChatRun,
+        runExecution,
       } = await publicChatActor(context);
       const model = "gpt-6-luna";
       await own(() => {
@@ -31,7 +30,7 @@ describe("Pi failed native continuation", () => {
         prompt: "complete the first turn",
         model,
       });
-      const firstClaim = await claimChatRun(runnerGroup, first.runId);
+      const firstExecution = await runExecution(first.runId);
       await own(() => {
         return webhooks.requestAgentComplete(
           {
@@ -43,7 +42,7 @@ describe("Pi failed native continuation", () => {
               cliAgentSessionHistoryDisposition: "native_only",
             },
           },
-          firstClaim.sandboxHeaders,
+          firstExecution.sandboxHeaders,
           [200],
         );
       });
@@ -54,7 +53,7 @@ describe("Pi failed native continuation", () => {
         prompt: "continue the task",
         model,
       });
-      const failedClaim = await claimChatRun(runnerGroup, failed.runId);
+      const failedExecution = await runExecution(failed.runId);
       const events = [
         {
           type: "system" as const,
@@ -77,7 +76,7 @@ describe("Pi failed native continuation", () => {
       await own(() => {
         return webhooks.requestAgentEvents(
           { runId: failed.runId, events },
-          failedClaim.sandboxHeaders,
+          failedExecution.sandboxHeaders,
           [200],
         );
       });
@@ -95,7 +94,7 @@ describe("Pi failed native continuation", () => {
       const response = await own(() => {
         return webhooks.requestAgentComplete(
           completion,
-          failedClaim.sandboxHeaders,
+          failedExecution.sandboxHeaders,
           [200],
         );
       });
@@ -112,7 +111,7 @@ describe("Pi failed native continuation", () => {
       await own(() => {
         return webhooks.requestAgentComplete(
           completion,
-          failedClaim.sandboxHeaders,
+          failedExecution.sandboxHeaders,
           [200],
         );
       });
@@ -129,14 +128,14 @@ describe("Pi failed native continuation", () => {
         prompt: "continue with the retained native context",
         model,
       });
-      const nextClaim = await claimChatRun(runnerGroup, next.runId);
+      const nextExecution = await runExecution(next.runId);
 
-      expect(nextClaim.claim.nativeContinuation).toMatchObject({
+      expect(nextExecution.execution.nativeContinuation).toMatchObject({
         sessionId: first.threadId,
         generationRunId: failed.runId,
       });
       await own(() => {
-        return cancelChatRun(actor, next.runId, nextClaim.sandboxHeaders);
+        return cancelChatRun(actor, next.runId, nextExecution.sandboxHeaders);
       });
     },
   );

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.18.3](https://github.com/okou-ai/okou/compare/runner-types-v0.18.2...runner-types-v0.18.3) (2026-11-15)
+
+
+### Refactoring
+
+* **runner:** finish native execution model cleanup ([#47328](https://github.com/okou-ai/okou/issues/47328)) ([d4f131f](https://github.com/okou-ai/okou/commit/d4f131fab3253a843b49afaf4589afa043c8ce13))
+
+## [0.18.2](https://github.com/okou-ai/okou/compare/runner-types-v0.18.1...runner-types-v0.18.2) (2026-11-14)
+
 ## [0.18.1](https://github.com/okou-ai/okou/compare/runner-types-v0.18.0...runner-types-v0.18.1) (2026-11-14)
 
 

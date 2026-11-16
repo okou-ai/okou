@@ -11,7 +11,7 @@ import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import {
   createChatEventsFixture,
   GPT_PI_BDD_MODELS,
-  claimEnvironment,
+  executionEnvironment,
   eventBackedContents,
   assistantEvent,
 } from "./helpers/chat-events-fixture";
@@ -28,7 +28,7 @@ const {
   configureSubscriptionPiModel,
   sendChatRun,
   expectThreadCreatedModelEvent,
-  claimChatRun,
+  runExecution,
   waitForThreadMessages,
   waitForRunStatus,
   completeChatRunOk,
@@ -68,7 +68,7 @@ describe("CHAT-02: run-level model overrides", () => {
   }, 60_000);
 
   it("persists a send model selection on the thread while preserving same-family sessions", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId } = await entitledChatActor();
     // Claude subscription credentials stay on the native Claude Code harness
     // for every Claude model, so a same-family override keeps the CLI session.
     await misc.upsertPersonalModelProvider(
@@ -89,12 +89,12 @@ describe("CHAT-02: run-level model overrides", () => {
       prompt: firstPrompt,
       model: "claude-opus-5-5",
     });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    expect(claimEnvironment(firstClaim.claim).ANTHROPIC_MODEL).toBe(
+    const firstExecution = await runExecution(first.runId);
+    expect(executionEnvironment(firstExecution.execution).ANTHROPIC_MODEL).toBe(
       "claude-opus-5-5",
     );
     chatCallbacks.mockChatOutputEvents([assistantEvent(0, "opus answer")]);
-    await completeChatRunOk(first.runId, firstClaim.sandboxHeaders, {
+    await completeChatRunOk(first.runId, firstExecution.sandboxHeaders, {
       lastEventSequence: 0,
     });
     await flushWaitUntilForTest();
@@ -127,13 +127,13 @@ describe("CHAT-02: run-level model overrides", () => {
     expect(appended).toContain("# This Chat Thread");
     expect(appended).toContain(`- CHAT_THREAD_ID: ${first.threadId}`);
     expect(appended).toContain("`okou chat messages`");
-    const secondClaim = await claimChatRun(runnerGroup, second.runId);
-    expect(secondClaim.claim.nativeContinuation?.sessionId).toBe(
+    const secondExecution = await runExecution(second.runId);
+    expect(secondExecution.execution.nativeContinuation?.sessionId).toBe(
       `bdd-cli-${first.runId}`,
     );
-    expect(claimEnvironment(secondClaim.claim).ANTHROPIC_MODEL).toBe(
-      "claude-sonnet-5-5",
-    );
+    expect(
+      executionEnvironment(secondExecution.execution).ANTHROPIC_MODEL,
+    ).toBe("claude-sonnet-5-5");
     // The send persists its model selection on the thread.
     await expect(
       chat.requestThreadEvents(actor, {}, [200]),
@@ -152,7 +152,7 @@ describe("CHAT-02: run-level model overrides", () => {
       chat.readThreadMetadata(actor, first.threadId),
     ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5-5" });
     chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
+    await completeChatRunOk(second.runId, secondExecution.sandboxHeaders);
     await flushWaitUntilForTest();
 
     // Follow-ups without a model selection run on the thread's stored model,
@@ -162,11 +162,11 @@ describe("CHAT-02: run-level model overrides", () => {
       threadId: first.threadId,
       prompt: "continue on the thread model",
     });
-    const thirdClaim = await claimChatRun(runnerGroup, third.runId);
-    expect(thirdClaim.claim.nativeContinuation?.sessionId).toBe(
+    const thirdExecution = await runExecution(third.runId);
+    expect(thirdExecution.execution.nativeContinuation?.sessionId).toBe(
       `bdd-cli-${second.runId}`,
     );
-    expect(claimEnvironment(thirdClaim.claim).ANTHROPIC_MODEL).toBe(
+    expect(executionEnvironment(thirdExecution.execution).ANTHROPIC_MODEL).toBe(
       "claude-sonnet-5-5",
     );
     await cancelChatRun(actor, third.runId);
@@ -287,11 +287,11 @@ describe("CHAT-02: run-level model overrides", () => {
       await expectThreadModelCredits(context, actor, run.threadId, 0);
 
       await api.heartbeatRunner(runnerGroup);
-      const claim = await api.executionInput(run.runId);
+      const execution = await api.executionInput(run.runId);
       const sandboxHeaders = {
-        authorization: `Bearer ${claim.sandboxToken}`,
+        authorization: `Bearer ${execution.sandboxToken}`,
       };
-      expect(claim).toMatchObject({
+      expect(execution).toMatchObject({
         cliAgentType: "pi",
         piSessionId: run.threadId,
         piModelConfig: {
@@ -317,25 +317,25 @@ describe("CHAT-02: run-level model overrides", () => {
           ],
         },
       });
-      expect(claimEnvironment(claim)).toMatchObject({
+      expect(executionEnvironment(execution)).toMatchObject({
         CHATGPT_ACCESS_TOKEN:
           MODEL_PROVIDER_ENV_PLACEHOLDERS.CHATGPT_ACCESS_TOKEN,
         CHATGPT_ACCOUNT_ID: MODEL_PROVIDER_ENV_PLACEHOLDERS.CHATGPT_ACCOUNT_ID,
       });
-      expect(claim.billableFirewalls).toStrictEqual([]);
+      expect(execution.billableFirewalls).toStrictEqual([]);
       expect(
-        claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN,
+        execution.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN,
       ).toMatchObject({ sourceId: accountSourceId });
       expect(
-        claim.secretConnectorMetadataMap?.CHATGPT_ACCOUNT_ID,
+        execution.secretConnectorMetadataMap?.CHATGPT_ACCOUNT_ID,
       ).toMatchObject({
         sourceId: accountSourceId,
       });
 
-      expect(JSON.stringify(claim)).not.toContain(externalAccountId);
-      expect(JSON.stringify(claim)).not.toContain(refreshToken);
+      expect(JSON.stringify(execution)).not.toContain(externalAccountId);
+      expect(JSON.stringify(execution)).not.toContain(refreshToken);
 
-      const encryptedSecrets = string().parse(claim.encryptedSecrets);
+      const encryptedSecrets = string().parse(execution.encryptedSecrets);
       const sandboxCredential = await firewall.requestFirewallAuth(
         sandboxHeaders,
         {
@@ -344,9 +344,9 @@ describe("CHAT-02: run-level model overrides", () => {
             Authorization: `Bearer \${{ secrets.CHATGPT_ACCESS_TOKEN }}`,
             "ChatGPT-Account-ID": `\${{ secrets.CHATGPT_ACCOUNT_ID }}`,
           },
-          secretConnectorMap: claim.secretConnectorMap ?? undefined,
+          secretConnectorMap: execution.secretConnectorMap ?? undefined,
           secretConnectorMetadataMap:
-            claim.secretConnectorMetadataMap ?? undefined,
+            execution.secretConnectorMetadataMap ?? undefined,
         },
         [200],
       );
@@ -410,8 +410,8 @@ describe("CHAT-02: run-level model overrides", () => {
         runOptions: { codexServiceTier: tier },
       });
       await flushWaitUntilForTest();
-      const continuedClaim = await claimChatRun(runnerGroup, continued.runId);
-      expect(continuedClaim.claim).toMatchObject({
+      const continuedExecution = await runExecution(continued.runId);
+      expect(continuedExecution.execution).toMatchObject({
         piSessionId: run.threadId,
         nativeContinuation: {
           sessionId: run.threadId,
@@ -426,7 +426,7 @@ describe("CHAT-02: run-level model overrides", () => {
       await cancelChatRun(
         actor,
         continued.runId,
-        continuedClaim.sandboxHeaders,
+        continuedExecution.sandboxHeaders,
       );
     },
     90_000,

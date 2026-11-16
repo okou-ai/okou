@@ -40,7 +40,7 @@ import { holdCurrentSecretKms } from "./helpers/hold-secret-kms";
  * pinning, concurrency caps, and the production capture gate).
  *
  * Direct runs are constructed through createAgentRun$; route boundaries cover
- * runner claims and sandbox webhooks (events/outputs/complete). Axiom reads
+ * Runner executions and sandbox webhooks (events/outputs/complete). Axiom reads
  * use an APL-dispatching mock, with HTTP coverage for context freshness.
  */
 
@@ -180,7 +180,7 @@ function hasManifestPresign(keys: readonly (string | undefined)[]): boolean {
 }
 
 /**
- * Marks a claimed run completed through the sandbox webhooks. Successful
+ * Marks a dispatched Run completed through the sandbox webhooks. Successful
  * completion includes the required native session identity and history references
  * atomically.
  */
@@ -422,9 +422,9 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       }),
     ).not.toContain(runA.runId);
 
-    const claimA = await api.executionInput(runA.runId);
-    const claimB = await api.executionInput(runB.runId);
-    await completeRun(runB.runId, claimB.sandboxToken);
+    const executionA = await api.executionInput(runA.runId);
+    const executionB = await api.executionInput(runB.runId);
+    await completeRun(runB.runId, executionB.sandboxToken);
 
     const runningOnly = await reads.requestListLogs(
       actor,
@@ -497,7 +497,7 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     expect(hiddenFromActor.body.error.message).toBe("Agent run not found");
     const memberDetail = await api.requestReadRun(member, runM.runId, [200]);
     expect(memberDetail.body).toMatchObject({ runId: runM.runId });
-    const claimM = await api.executionInput(runM.runId);
+    const executionM = await api.executionInput(runM.runId);
 
     // auth-me refreshes the caller's user-cache email, which the queue
     // surfaces for owner entries.
@@ -544,8 +544,8 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     await expect(readChatInputOutcome(actor, overLimit)).resolves.toStrictEqual(
       { kind: "queued" },
     );
-    await finishCancelledRun(runA.runId, claimA.sandboxToken);
-    await finishCancelledRun(runM.runId, claimM.sandboxToken);
+    await finishCancelledRun(runA.runId, executionA.sandboxToken);
+    await finishCancelledRun(runM.runId, executionM.sandboxToken);
 
     // Released slots pick the queued input.
     const picked = await readChatInputOutcome(actor, overLimit);
@@ -553,9 +553,9 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
       throw new Error("Expected released capacity to launch the queued input");
     }
     expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(1);
-    const pickedClaim = await api.executionInput(picked.runId);
+    const pickedExecution = await api.executionInput(picked.runId);
     await api.requestCancelRun(actor, picked.runId, [200]);
-    await finishCancelledRun(picked.runId, pickedClaim.sandboxToken);
+    await finishCancelledRun(picked.runId, pickedExecution.sandboxToken);
     const drained = await api.readRunQueue(actor);
     expect(drained.body.concurrency.active).toBe(0);
   });
@@ -596,8 +596,8 @@ describe("RUN-03: cancel through the run cancel route", () => {
       agentId: compose.agentId,
       prompt: "complete then cancel",
     });
-    const claim = await api.executionInput(run.runId);
-    await completeRun(run.runId, claim.sandboxToken);
+    const execution = await api.executionInput(run.runId);
+    await completeRun(run.runId, execution.sandboxToken);
     const notCancellable = await api.requestCancelRun(actor, run.runId, [400]);
     expectApiError(notCancellable.body);
     expect(notCancellable.body.error.code).toBe("RUN_NOT_CANCELLABLE");
@@ -616,8 +616,8 @@ describe("RUN-03: cancel through the run cancel route", () => {
       agentId: compose.agentId,
       prompt: "cross-organization cancel",
     });
-    const claim = await api.executionInput(run.runId);
-    await completeRun(run.runId, claim.sandboxToken);
+    const execution = await api.executionInput(run.runId);
+    await completeRun(run.runId, execution.sandboxToken);
     const outsider = bdd.user();
     const crossOrg = await api.requestCancelRun(
       outsider,
@@ -700,9 +700,9 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         prompt: "pin the Connector Skill bundle",
       });
       fixture.registerRun(r1.runId);
-      const claim1 = await api.executionInput(r1.runId);
-      fixture.registerClaim(r1.runId, claim1.sandboxToken);
-      const workflowMount = claim1.contentBundles.skills.find((mount) => {
+      const execution1 = await api.executionInput(r1.runId);
+      fixture.registerExecution(r1.runId, execution1.sandboxToken);
+      const workflowMount = execution1.contentBundles.skills.find((mount) => {
         return mount.mountPath === readonlySkill.mountPath;
       });
       expect(workflowMount).toMatchObject({
@@ -710,7 +710,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         archiveBytes: readonlySkill.archiveBytes,
       });
       const memory1 = expectCanonicalStorageManifest(
-        claim1.storageManifest,
+        execution1.storageManifest,
       )?.storageMounts.find((mount) => {
         return mount.name === "memory";
       });
@@ -722,7 +722,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         missingRootPolicy: "preserveParentVersion",
       });
       if (!memory1) {
-        throw new Error("Expected the claim manifest to mount memory");
+        throw new Error("Expected the execution manifest to mount memory");
       }
       expect(memory1.archiveUrl).toBeUndefined();
       expect(
@@ -734,7 +734,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         "data/cache.txt",
         "bdd volume payload",
       );
-      const memoryHeaders = sandboxHeaders(claim1.sandboxToken);
+      const memoryHeaders = sandboxHeaders(execution1.sandboxToken);
       context.mocks.s3.send.mockResolvedValue({
         ContentLength: volumeArchiveSize,
       });
@@ -810,7 +810,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       context.mocks.s3.send.mockImplementation(historyTransport);
 
       const cliAgentSessionId = `bdd-cli-${r1.runId}`;
-      const headers1 = sandboxHeaders(claim1.sandboxToken);
+      const headers1 = sandboxHeaders(execution1.sandboxToken);
       await webhooks.requestAgentComplete(
         {
           runId: r1.runId,
@@ -842,10 +842,13 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         prompt: "continue the persisted session",
       });
       fixture.registerRun(continued.runId);
-      const continuedClaim = await api.executionInput(continued.runId);
-      fixture.registerClaim(continued.runId, continuedClaim.sandboxToken);
-      expect(continuedClaim.vars).toStrictEqual(claim1.vars);
-      expect(continuedClaim.contentBundles.skills).toContainEqual(
+      const continuedExecution = await api.executionInput(continued.runId);
+      fixture.registerExecution(
+        continued.runId,
+        continuedExecution.sandboxToken,
+      );
+      expect(continuedExecution.vars).toStrictEqual(execution1.vars);
+      expect(continuedExecution.contentBundles.skills).toContainEqual(
         expect.objectContaining({
           mountPath: readonlySkill.mountPath,
           sha256: readonlySkill.sha256,
@@ -853,12 +856,12 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         }),
       );
 
-      expect(continuedClaim.nativeContinuation).toMatchObject({
+      expect(continuedExecution.nativeContinuation).toMatchObject({
         sessionId: `bdd-cli-${r1.runId}`,
         generationRunId: r1.runId,
       });
       const continuedMemory = expectCanonicalStorageManifest(
-        continuedClaim.storageManifest,
+        continuedExecution.storageManifest,
       )?.storageMounts.find((mount) => {
         return mount.name === "memory";
       });
@@ -867,7 +870,10 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         missingRootPolicy: "preserveParentVersion",
       });
       await api.requestCancelRun(actor, continued.runId, [200]);
-      await finishCancelledRun(continued.runId, continuedClaim.sandboxToken);
+      await finishCancelledRun(
+        continued.runId,
+        continuedExecution.sandboxToken,
+      );
     });
   });
 });
@@ -1022,8 +1028,8 @@ describe("RUN-01: run admission boundaries", () => {
       prompt: "capture from a staff organization",
       captureNetworkBodies: true,
     });
-    const captureClaim = await api.executionInput(allowed.runId);
-    expect(captureClaim.captureNetworkBodies).toBeTruthy();
+    const captureExecution = await api.executionInput(allowed.runId);
+    expect(captureExecution.captureNetworkBodies).toBeTruthy();
     await api.requestCancelRun(staff, allowed.runId, [200]);
   });
 });
@@ -1319,8 +1325,8 @@ describe("RUN-04: agent run telemetry families", () => {
       agentId: compose.agentId,
       prompt: "inspect activity events",
     });
-    const claim = await api.executionInput(run.runId);
-    await completeRun(run.runId, claim.sandboxToken, {
+    const execution = await api.executionInput(run.runId);
+    await completeRun(run.runId, execution.sandboxToken, {
       lastEventSequence: 1,
     });
 
@@ -2111,8 +2117,8 @@ describe("RUN-04: agent run telemetry families", () => {
       agentId: agent.agentId,
       prompt: "agent run detail",
     });
-    const claim = await api.executionInput(agentRun.runId);
-    const headers = sandboxHeaders(claim.sandboxToken);
+    const execution = await api.executionInput(agentRun.runId);
+    const headers = sandboxHeaders(execution.sandboxToken);
     await webhooks.requestAgentComplete(
       {
         runId: agentRun.runId,
@@ -2929,11 +2935,11 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       if (!pendingRunId) {
         throw new Error("Expected the prepared Run");
       }
-      const pendingClaim = await owned.claimRunnerRun(pendingRunId);
+      const pendingExecution = await owned.executionInput(pendingRunId);
       await api.requestCancelRun(actor, pendingRunId, [200]);
       await webhooks.requestAgentComplete(
         { runId: pendingRunId, exitCode: 1, error: "Run cancelled" },
-        sandboxHeaders(pendingClaim.sandboxToken),
+        sandboxHeaders(pendingExecution.sandboxToken),
         [200],
       );
 
@@ -2941,13 +2947,10 @@ describe("RUN-04/OPS-01: agent run logs", () => {
         agentId,
         prompt: "failed detail run",
       });
-      const { claim } = await owned.claimChatRun(
-        owned.runnerGroup,
-        failedRun.runId,
-      );
+      const { execution } = await owned.runExecution(failedRun.runId);
       await webhooks.requestAgentComplete(
         { runId: failedRun.runId, exitCode: 1, error: "bdd failure" },
-        sandboxHeaders(claim.sandboxToken),
+        sandboxHeaders(execution.sandboxToken),
         [200],
       );
       const failedDetail = await reads.requestReadLogById(
@@ -2996,16 +2999,16 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     });
   });
 
-  it("reads run-log list and detail with a claimed run token", async () => {
+  it("reads run-log list and detail with a dispatched Run token", async () => {
     const { actor, agentOne, webRun } = await setupRunLogFixture();
     const tokenRun = await api.createThreadRun(actor, {
       agentId: agentOne.agentId,
       prompt: "Okou run token log access",
     });
-    const tokenClaim = await api.executionInput(tokenRun.runId);
-    const okouToken = tokenClaim.platformEnvironment.OKOU_TOKEN;
+    const tokenExecution = await api.executionInput(tokenRun.runId);
+    const okouToken = tokenExecution.platformEnvironment.OKOU_TOKEN;
     if (!okouToken) {
-      throw new Error("Expected the claimed run to expose an OKOU_TOKEN");
+      throw new Error("Expected the dispatched Run to expose an OKOU_TOKEN");
     }
     const tokenList = await reads.requestListLogsAs(
       `Bearer ${okouToken}`,

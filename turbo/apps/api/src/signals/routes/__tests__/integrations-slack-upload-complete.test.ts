@@ -146,7 +146,6 @@ interface RunScopedContext {
   readonly slackWorkspaceId: string;
   readonly runId: string;
   readonly threadId: string;
-  readonly runnerGroup: string;
   readonly agentId: string;
 }
 
@@ -205,11 +204,11 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
   }
 
   function createUploadFixture() {
-    const claimed = new Map<
+    const receivedExecutions = new Map<
       string,
       {
         actor: ApiTestUser;
-        claim: Awaited<ReturnType<typeof runsApi.executionInput>>;
+        receivedExecution: Awaited<ReturnType<typeof runsApi.executionInput>>;
       }
     >();
     const scenario = createPublicComputerUseScenario(context, {
@@ -345,10 +344,10 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       mockSharedSlackConversations(undefined, connection.slackUserId);
       return { ...base, slackWorkspaceId: installed.slackWorkspaceId };
     }
-    async function rememberClaim(actor: ApiTestUser, runId: string) {
-      const claim = await scenario.claimExisting(actor, runId);
-      claimed.set(runId, { actor, claim });
-      return claim;
+    async function rememberExecution(actor: ApiTestUser, runId: string) {
+      const receivedExecution = await scenario.executionInput(actor, runId);
+      receivedExecutions.set(runId, { actor, receivedExecution });
+      return receivedExecution;
     }
     async function seedRunScoped(install = true): Promise<RunScopedContext> {
       const base = install
@@ -366,11 +365,10 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           model: "claude-fable-5-1",
         });
       });
-      await rememberClaim(actor, sent.runId);
+      await rememberExecution(actor, sent.runId);
       return {
         ...base,
         agentId,
-        runnerGroup,
         runId: sent.runId,
         threadId: sent.threadId,
       };
@@ -380,33 +378,33 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       readonly orgId: string;
       readonly runId: string;
     }) {
-      const issued = claimed.get(args.runId);
+      const issued = receivedExecutions.get(args.runId);
       if (
         !issued ||
         issued.actor.userId !== args.userId ||
         issued.actor.orgId !== args.orgId
       ) {
-        throw new Error("Expected this owner's actual Runner claim");
+        throw new Error("Expected this owner's actual Runner execution");
       }
-      const token = issued.claim.platformEnvironment.OKOU_TOKEN;
+      const token = issued.receivedExecution.platformEnvironment.OKOU_TOKEN;
       if (!token) {
         throw new Error("Expected the actual Okou credential");
       }
       return token;
     }
     function sandboxToken(runId: string) {
-      const issued = claimed.get(runId);
+      const issued = receivedExecutions.get(runId);
       if (!issued) {
         throw new Error("Expected the actual sandbox credential");
       }
-      return issued.claim.sandboxToken;
+      return issued.receivedExecution.sandboxToken;
     }
-    function claimRun(_runnerGroup: string, runId: string) {
-      const issued = claimed.get(runId);
+    function readRunExecution(runId: string) {
+      const issued = receivedExecutions.get(runId);
       if (!issued) {
-        throw new Error("Expected the already returned Runner claim");
+        throw new Error("Expected the already returned Runner execution");
       }
-      return Promise.resolve(issued.claim);
+      return Promise.resolve(issued.receivedExecution);
     }
     return {
       ...scenario,
@@ -417,8 +415,8 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       restoreMembership,
       okouToken,
       sandboxToken,
-      claimRun,
-      rememberClaim,
+      readRunExecution,
+      rememberExecution,
     };
   }
 
@@ -1063,7 +1061,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         Awaited<ReturnType<typeof slackOrgs.installOrg>> | undefined;
     }[],
   ) {
-    const claimedRunIds: string[] = [];
+    const receivedRunIds: string[] = [];
     const initClient = setupApp({
       context,
       routes: integrationsSlackUploadInitRoutes,
@@ -1079,8 +1077,8 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     let previous:
       { assetId: string; operationId: string; fileId: string } | undefined;
     for (const [index, request] of requests.entries()) {
-      const claim = await fixture.claim(request.actor);
-      claimedRunIds.push(claim.runId);
+      const execution = await fixture.launchRun(request.actor);
+      receivedRunIds.push(execution.runId);
       await flushWaitUntilForTest();
       context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
         {
@@ -1093,7 +1091,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           ],
         },
       );
-      const headers = { authorization: `Bearer ${claim.token}` };
+      const headers = { authorization: `Bearer ${execution.token}` };
       const clients = context.mocks.slack.createClient.mock.calls.length;
       const uploads =
         context.mocks.slack.files.getUploadURLExternal.mock.calls.length;
@@ -1262,7 +1260,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       ).toStrictEqual([[{ file: fileId }]]);
       const files = await chatApi.listThreadArtifacts(
         request.actor,
-        claim.threadId,
+        execution.threadId,
       );
       expect(
         files.runs.flatMap((run) => {
@@ -1273,7 +1271,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       );
       previous = { assetId, operationId, fileId };
     }
-    return claimedRunIds;
+    return receivedRunIds;
   }
 
   it.each([
@@ -1324,12 +1322,12 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           nextInstallation = b;
         }
         await flushWaitUntilForTest();
-        const claimedRunIds = await assertRequestInstallations(fixture, [
+        const receivedRunIds = await assertRequestInstallations(fixture, [
           { actor: first, installation: a },
           { actor: next, installation: nextInstallation },
           { actor: first, installation: a },
         ]);
-        expect(new Set(claimedRunIds).size).toBe(3);
+        expect(new Set(receivedRunIds).size).toBe(3);
       });
     },
   );
@@ -1843,12 +1841,14 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     "keeps one private canonical output across Slack and Drive (artifactUpload=%s)",
     async (artifactUpload) => {
       const fixture = createUploadFixture();
-      const { seedRunScoped, okouToken, sandboxToken, claimRun } = fixture;
+      const { seedRunScoped, okouToken, sandboxToken, readRunExecution } =
+        fixture;
       await fixture.run(async () => {
-        const { orgId, userId, runId, threadId, runnerGroup, agentId } =
-          await fixture.run(() => {
+        const { orgId, userId, runId, threadId, agentId } = await fixture.run(
+          () => {
             return seedRunScoped();
-          });
+          },
+        );
         const objectStore = chatCallbacks.acceptChatObjectStorage();
         const operationId = randomUUID();
         const token = okouToken({
@@ -2248,13 +2248,13 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         ).toBeTruthy();
 
         if (!artifactUpload) {
-          const claim = await fixture.run(() => {
-            return claimRun(runnerGroup, runId);
+          const receivedExecution = await fixture.run(() => {
+            return readRunExecution(runId);
           });
           await fixture.run(() => {
             return completeRun({
               runId,
-              sandboxToken: claim.sandboxToken,
+              sandboxToken: receivedExecution.sandboxToken,
               events: [assistantEvent(0, "The canonical report is ready.")],
               lastEventSequence: 0,
             });
@@ -2325,7 +2325,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         });
         expect(destination.threadId).not.toBe(threadId);
         await fixture.run(() => {
-          return fixture.rememberClaim(actor, destination.runId);
+          return fixture.rememberExecution(actor, destination.runId);
         });
         const uploaded = await fixture.run(() => {
           return accept(
@@ -2575,7 +2575,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           },
         });
 
-        // Hosted -> file: another output on this same claimed Run is also a
+        // Hosted -> file: another output on this same dispatched Run is also a
         // catalog entry while the hosted publication keeps its identity.
         const laterFile = await fixture.run(() => {
           return chatApi.prepareUpload(actor, {
@@ -2722,13 +2722,11 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
 
   it("keeps an attachment-only output out of the event stream", async () => {
     const fixture = createUploadFixture();
-    const { seedRunScoped, okouToken, claimRun } = fixture;
+    const { seedRunScoped, okouToken, readRunExecution } = fixture;
     await fixture.run(async () => {
-      const { orgId, userId, runId, threadId, runnerGroup } = await fixture.run(
-        () => {
-          return seedRunScoped();
-        },
-      );
+      const { orgId, userId, runId, threadId } = await fixture.run(() => {
+        return seedRunScoped();
+      });
       chatCallbacks.acceptChatObjectStorage();
       const operationId = randomUUID();
       const token = okouToken({ userId, orgId, runId });
@@ -2757,13 +2755,13 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       if (!("kind" in initialized.body)) {
         throw new Error("Expected canonical Slack upload initialization");
       }
-      const claim = await fixture.run(() => {
-        return claimRun(runnerGroup, runId);
+      const receivedExecution = await fixture.run(() => {
+        return readRunExecution(runId);
       });
       await fixture.run(() => {
         return completeRun({
           runId,
-          sandboxToken: claim.sandboxToken,
+          sandboxToken: receivedExecution.sandboxToken,
           events: [],
         });
       });

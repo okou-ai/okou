@@ -244,10 +244,6 @@ async function configureFastCodexPreference(
   );
 }
 
-/**
- * Slack Runner fixtures default to Fable and offer Astra as the Codex choice;
- * both stay on their vendor harnesses, so runs remain claimable native jobs.
- */
 function slackPostMessageCallsJson(): string {
   return JSON.stringify(context.mocks.slack.chat.postMessage.mock.calls);
 }
@@ -257,7 +253,7 @@ async function flushWaitUntilAndAssert(assertion: () => void): Promise<void> {
   assertion();
 }
 
-async function pollRunnerRun(
+async function observeDispatchedRun(
   runnerGroup: string,
   message: string,
 ): Promise<string> {
@@ -336,59 +332,61 @@ async function ownedThreadWhere(
   return thread;
 }
 
-async function pollSlackRun(runnerGroup: string): Promise<string> {
-  return await pollRunnerRun(
+async function observeSlackRun(runnerGroup: string): Promise<string> {
+  return await observeDispatchedRun(
     runnerGroup,
-    "Expected a Slack-triggered run in the runner queue",
+    "Expected a Slack-triggered execution to be delivered",
   );
 }
 
-async function pollQueuedWebAndSlackRuns(args: {
+async function observeQueuedWebAndSlackRuns(args: {
   readonly actor: ApiTestUser;
   readonly runnerGroup: string;
   readonly expectedSlackSessionId: string;
 }): Promise<{
   readonly webRunId: string;
   readonly run2Id?: string;
-  readonly claim2?: Awaited<ReturnType<typeof runs.executionInput>>;
+  readonly execution2?: Awaited<ReturnType<typeof runs.executionInput>>;
 }> {
-  const firstQueuedRunId = await pollRunnerRun(
+  const firstDispatchedRunId = await observeDispatchedRun(
     args.runnerGroup,
     "Expected the queued Web run in the shared thread queue",
   );
-  const firstQueuedRunIsSlack =
-    (await readRunLog(args.actor, firstQueuedRunId)).triggerSource === "slack";
-  if (!firstQueuedRunIsSlack) {
-    return { webRunId: firstQueuedRunId };
+  const firstDispatchedRunIsSlack =
+    (await readRunLog(args.actor, firstDispatchedRunId)).triggerSource ===
+    "slack";
+  if (!firstDispatchedRunIsSlack) {
+    return { webRunId: firstDispatchedRunId };
   }
 
-  const claim2 = await runs.executionInput(firstQueuedRunId);
-  expect(claim2.nativeContinuation?.sessionId).toBe(
+  const execution2 = await runs.executionInput(firstDispatchedRunId);
+  expect(execution2.nativeContinuation?.sessionId).toBe(
     args.expectedSlackSessionId,
   );
   return {
-    webRunId: await pollRunnerRun(
+    webRunId: await observeDispatchedRun(
       args.runnerGroup,
       "Expected the queued Web run in the shared thread queue",
     ),
-    run2Id: firstQueuedRunId,
-    claim2,
+    run2Id: firstDispatchedRunId,
+    execution2,
   };
 }
 
-async function ensureSlackRunClaimed(args: {
+async function ensureSlackExecution(args: {
   readonly runnerGroup: string;
   readonly run2Id: string | undefined;
-  readonly claim2: Awaited<ReturnType<typeof runs.executionInput>> | undefined;
+  readonly execution2:
+    Awaited<ReturnType<typeof runs.executionInput>> | undefined;
 }): Promise<{
   readonly run2Id: string;
-  readonly claim2: Awaited<ReturnType<typeof runs.executionInput>>;
+  readonly execution2: Awaited<ReturnType<typeof runs.executionInput>>;
 }> {
-  if (args.run2Id !== undefined && args.claim2 !== undefined) {
-    return { run2Id: args.run2Id, claim2: args.claim2 };
+  if (args.run2Id !== undefined && args.execution2 !== undefined) {
+    return { run2Id: args.run2Id, execution2: args.execution2 };
   }
-  const run2Id = await pollSlackRun(args.runnerGroup);
-  return { run2Id, claim2: await runs.executionInput(run2Id) };
+  const run2Id = await observeSlackRun(args.runnerGroup);
+  return { run2Id, execution2: await runs.executionInput(run2Id) };
 }
 
 async function completeSlackTriggeredRun(args: {
@@ -647,14 +645,14 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
     status: "running",
     triggerSource: "slack",
   });
-  const historicalRunId = await pollSlackRun(args.runnerGroup);
+  const historicalRunId = await observeSlackRun(args.runnerGroup);
   expect(historicalRunId).toBe(historicalRun.id);
-  const historicalClaim = await runs.executionInput(historicalRunId);
-  expect(historicalClaim.cliAgentType).toBe("claude-code");
+  const historicalExecution = await runs.executionInput(historicalRunId);
+  expect(historicalExecution.cliAgentType).toBe("claude-code");
   await completeSlackTriggeredRun({
     runId: historicalRunId,
-    sandboxToken: historicalClaim.sandboxToken,
-    cliAgentType: historicalClaim.cliAgentType,
+    sandboxToken: historicalExecution.sandboxToken,
+    cliAgentType: historicalExecution.cliAgentType,
     assistantText: "Historical Claude answer",
   });
   await flushWaitUntilForTest();
@@ -691,17 +689,19 @@ type CanonicalSlackPiScenario = Awaited<
   ReturnType<typeof establishCanonicalSlackHistory>
 >;
 
-type SlackPiClaim = Awaited<ReturnType<typeof runs.executionInput>>;
+type SlackPiExecution = Awaited<ReturnType<typeof runs.executionInput>>;
 
-/** Complete a claimed Slack Pi turn the way the Sandbox does. */
+/** Complete a dispatched Slack Pi turn the way the Sandbox does. */
 async function completeSlackPiTurnInSandbox(args: {
   readonly scenario: CanonicalSlackPiScenario;
   readonly runId: string;
-  readonly claim: SlackPiClaim;
+  readonly execution: SlackPiExecution;
   readonly prompt: string;
   readonly answer: string;
 }): Promise<void> {
-  const sandboxHeaders = { authorization: `Bearer ${args.claim.sandboxToken}` };
+  const sandboxHeaders = {
+    authorization: `Bearer ${args.execution.sandboxToken}`,
+  };
   await webhooks.requestAgentEvents(
     {
       runId: args.runId,
@@ -757,20 +757,20 @@ async function runFirstCanonicalSlackPiTurn(
   });
   // Webhook acknowledgement precedes the tracked ingress that creates the run.
   await flushWaitUntilForTest();
-  const runId = await pollSlackRun(scenario.runnerGroup);
+  const runId = await observeSlackRun(scenario.runnerGroup);
   expect((await readRunLog(scenario.actor, runId)).prompt).toContain(prompt);
-  const claim = await runs.executionInput(runId);
-  return { prompt, runId, claim };
+  const execution = await runs.executionInput(runId);
+  return { prompt, runId, execution };
 }
 
 async function expectFirstSlackPiExecution(args: {
   readonly scenario: CanonicalSlackPiScenario;
   readonly turn: Awaited<ReturnType<typeof runFirstCanonicalSlackPiTurn>>;
 }): Promise<string> {
-  const { claim } = args.turn;
-  expect(claim.cliAgentType).toBe("pi");
-  expect(claim.piSessionId).toBe(args.scenario.chatThreadId);
-  expect(claim.piModelConfig).toMatchObject({
+  const { execution: receivedExecution } = args.turn;
+  expect(receivedExecution.cliAgentType).toBe("pi");
+  expect(receivedExecution.piSessionId).toBe(args.scenario.chatThreadId);
+  expect(receivedExecution.piModelConfig).toMatchObject({
     provider: "openai-codex",
     model: args.scenario.selectedModel,
     thinkingLevel:
@@ -782,16 +782,16 @@ async function expectFirstSlackPiExecution(args: {
   });
   // The fresh Pi session still carries the canonical Slack history to the
   // Sandbox that executes the first turn.
-  const launchInput = JSON.stringify(claim);
-  expect(claim.nativeContinuation?.sessionId).toBeNull();
-  expect(claim.nativeContinuation?.recoveryPrompt).toContain(
+  const launchInput = JSON.stringify(receivedExecution);
+  expect(receivedExecution.nativeContinuation?.sessionId).toBeNull();
+  expect(receivedExecution.nativeContinuation?.recoveryPrompt).toContain(
     "okou chat messages --output-dir /tmp/okou-chat-history",
   );
   expect(launchInput).toContain(args.turn.prompt);
   await completeSlackPiTurnInSandbox({
     scenario: args.scenario,
     runId: args.turn.runId,
-    claim,
+    execution: receivedExecution,
     prompt: args.turn.prompt,
     answer: "Canonical Slack Pi answer",
   });
@@ -843,7 +843,7 @@ async function expectSlackPiOwnership(args: {
   ).toHaveLength(1);
 }
 
-async function claimContinuedSlackPiTurn(args: {
+async function continueSlackPiExecution(args: {
   readonly scenario: CanonicalSlackPiScenario;
   readonly firstRunId: string;
 }) {
@@ -858,13 +858,13 @@ async function claimContinuedSlackPiTurn(args: {
     channel: args.scenario.channelId,
     channel_type: "channel",
   });
-  const runId = await pollSlackRun(args.scenario.runnerGroup);
-  const claim = await runs.executionInput(runId);
-  expect(claim.cliAgentType).toBe("pi");
-  expect(claim.piLaunchConfig).toBeDefined();
-  expect(claim.piSessionId).toBe(args.scenario.chatThreadId);
+  const runId = await observeSlackRun(args.scenario.runnerGroup);
+  const execution = await runs.executionInput(runId);
+  expect(execution.cliAgentType).toBe("pi");
+  expect(execution.piLaunchConfig).toBeDefined();
+  expect(execution.piSessionId).toBe(args.scenario.chatThreadId);
 
-  expect(claim.nativeContinuation).toMatchObject({
+  expect(execution.nativeContinuation).toMatchObject({
     sessionId: args.scenario.chatThreadId,
     generationRunId: args.firstRunId,
     recoveryPrompt: expect.stringContaining(
@@ -877,12 +877,12 @@ async function claimContinuedSlackPiTurn(args: {
     args.scenario.chatThreadId,
     0,
   );
-  return { claim, runId, prompt };
+  return { execution, runId, prompt };
 }
 
 async function cancelContinuedSlackPiTurn(args: {
   readonly scenario: CanonicalSlackPiScenario;
-  readonly turn: Awaited<ReturnType<typeof claimContinuedSlackPiTurn>>;
+  readonly turn: Awaited<ReturnType<typeof continueSlackPiExecution>>;
 }): Promise<void> {
   await runs.requestCancelRun(args.scenario.actor, args.turn.runId, [200]);
   await flushWaitUntilForTest();
@@ -893,7 +893,7 @@ async function cancelContinuedSlackPiTurn(args: {
   ).resolves.toBe("cancelled");
   await webhooks.requestAgentComplete(
     { runId: args.turn.runId, exitCode: 1, error: "Run cancelled" },
-    { authorization: `Bearer ${args.turn.claim.sandboxToken}` },
+    { authorization: `Bearer ${args.turn.execution.sandboxToken}` },
     [200],
   );
   await flushWaitUntilForTest();
@@ -934,11 +934,11 @@ async function runSuccessfulRecoveredSlackPiTurn(args: {
     channel_type: "channel",
   });
   await flushWaitUntilForTest();
-  const completedRunId = await pollSlackRun(args.scenario.runnerGroup);
-  const claim = await runs.executionInput(completedRunId);
+  const completedRunId = await observeSlackRun(args.scenario.runnerGroup);
+  const execution = await runs.executionInput(completedRunId);
 
-  expect(claim.piSessionId).toBe(args.scenario.chatThreadId);
-  expect(claim.nativeContinuation).toMatchObject({
+  expect(execution.piSessionId).toBe(args.scenario.chatThreadId);
+  expect(execution.nativeContinuation).toMatchObject({
     sessionId: null,
     generationRunId: null,
     recoveryPrompt: expect.stringContaining(
@@ -954,7 +954,7 @@ async function runSuccessfulRecoveredSlackPiTurn(args: {
   await completeSlackPiTurnInSandbox({
     scenario: args.scenario,
     runId: completedRunId,
-    claim,
+    execution,
     prompt,
     answer: "Continued Slack Pi answer",
   });
@@ -1655,7 +1655,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     return { actor, entry, home, slackUserId, runnerGroup };
   }
 
-  async function claimedExternalSlackRun(keepHomeBot = true) {
+  async function externalSlackExecution(keepHomeBot = true) {
     const scenario = await externalSlackIdentityScenario(keepHomeBot);
     const channel = "CEXTERNAL";
     const threadTs = "6500.000100";
@@ -1666,9 +1666,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       channel,
       ts: threadTs,
     });
-    const runId = await pollSlackRun(scenario.runnerGroup);
-    const claim = await runs.executionInput(runId);
-    const token = claim.platformEnvironment.OKOU_TOKEN;
+    const runId = await observeSlackRun(scenario.runnerGroup);
+    const execution = await runs.executionInput(runId);
+    const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the actual Slack-triggered Run token");
     }
@@ -1687,11 +1687,18 @@ describe("INT-01: Slack app deep webhook flows", () => {
       scenario.actor,
       scenario.actor.orgRole ?? "org:admin",
     );
-    return { ...scenario, channel, threadTs, runId, claim, token };
+    return {
+      ...scenario,
+      channel,
+      threadTs,
+      runId,
+      execution,
+      token,
+    };
   }
 
   function allowExternalSlackChannels(
-    scenario: Awaited<ReturnType<typeof claimedExternalSlackRun>>,
+    scenario: Awaited<ReturnType<typeof externalSlackExecution>>,
   ) {
     mockSharedSlackConversations([scenario.channel, "CORGAMESSAGES"]);
     server.use(
@@ -1729,7 +1736,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
   }
 
   it("reads Org A with its organization bot and sends into the external input channel with Org B's bot", async () => {
-    const scenario = await claimedExternalSlackRun();
+    const scenario = await externalSlackExecution();
     allowExternalSlackChannels(scenario);
     server.use(
       http.get("https://slack.com/api/conversations.history", ({ request }) => {
@@ -1791,7 +1798,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
   });
 
   it("limits a Run without its organization bot to the exact external input channel", async () => {
-    const scenario = await claimedExternalSlackRun(false);
+    const scenario = await externalSlackExecution(false);
     allowExternalSlackChannels(scenario);
     context.mocks.slack.chat.postMessage.mockResolvedValue({
       ok: true,
@@ -1839,7 +1846,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
   });
 
   it("does not inherit a historical or pending Slack input in a Web-triggered Run", async () => {
-    const scenario = await claimedExternalSlackRun(false);
+    const scenario = await externalSlackExecution(false);
     allowExternalSlackChannels(scenario);
     const thread = await ownedThreadWhere(
       scenario.actor,
@@ -1847,7 +1854,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     await completeSlackTriggeredRun({
       runId: scenario.runId,
-      sandboxToken: scenario.claim.sandboxToken,
+      sandboxToken: scenario.execution.sandboxToken,
       cliAgentType: "claude-code",
       assistantText: "finished initial mention",
     });
@@ -1857,8 +1864,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       prompt: "continue from Web",
     });
     await runs.heartbeatRunner(scenario.runnerGroup);
-    const claim = await runs.executionInput(web.runId);
-    const token = claim.platformEnvironment.OKOU_TOKEN;
+    const execution = await runs.executionInput(web.runId);
+    const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the Web Run's actual token");
     }
@@ -1904,7 +1911,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
   it.each(["left channel", "posting restricted", "deleted identity"])(
     "revokes external input-channel writes when %s",
     async (reason) => {
-      const scenario = await claimedExternalSlackRun();
+      const scenario = await externalSlackExecution();
       allowExternalSlackChannels(scenario);
       if (reason === "left channel") {
         server.use(
@@ -1948,7 +1955,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
   );
 
   it("keeps canonical external uploads bound to their Run, entry bot and persisted channel", async () => {
-    const scenario = await claimedExternalSlackRun(false);
+    const scenario = await externalSlackExecution(false);
     allowExternalSlackChannels(scenario);
     const headers = { authorization: `Bearer ${scenario.token}` };
     const clients = setupApp({
@@ -2116,11 +2123,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
       channel: channelId,
       ts: threadTs,
     });
-    const runId = await pollSlackRun(runnerGroup);
-    const claim = await runs.executionInput(runId);
+    const runId = await observeSlackRun(runnerGroup);
+    const execution = await runs.executionInput(runId);
     await completeSlackTriggeredRun({
       runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: execution.sandboxToken,
       cliAgentType: "claude-code",
       assistantText: "Pinned thread established",
     });
@@ -2187,7 +2194,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: threadTs,
       channel: channelId,
     });
-    const runId = await pollSlackRun(runnerGroup);
+    const runId = await observeSlackRun(runnerGroup);
     expect((await runs.readRun(actor, runId)).status).toBe("running");
     expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
       "agents.sessions.setStatus",
@@ -2223,10 +2230,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: threadTs,
       channel: channelId,
     });
-    const runId = await pollSlackRun(runnerGroup);
-    const claim = await runs.executionInput(runId);
+    const runId = await observeSlackRun(runnerGroup);
+    const execution = await runs.executionInput(runId);
     expect((await runs.readRun(actor, runId)).status).toBe("running");
-    expect(claim.prompt).toBe("use my connected Okou");
+    expect(execution.prompt).toBe("use my connected Okou");
     await flushWaitUntilAndAssert(() => {
       expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
         "agents.sessions.setStatus",
@@ -2239,7 +2246,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     await completeSlackTriggeredRun({
       runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: execution.sandboxToken,
       cliAgentType: "claude-code",
       assistantText: "External identity reply",
     });
@@ -2261,7 +2268,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       thread_ts: threadTs,
       channel: channelId,
     });
-    const nextRunId = await pollSlackRun(runnerGroup);
+    const nextRunId = await observeSlackRun(runnerGroup);
     await runs.executionInput(nextRunId);
     await integrations.postSlackEvent(entry.teamId, {
       type: "agent_session_stopped",
@@ -2592,12 +2599,14 @@ describe("INT-01: Slack app deep webhook flows", () => {
       thread_ts: threadTs,
       ts: messageTs,
     });
-    const runId = await pollSlackRun(runnerGroup);
-    const claim = await runs.executionInput(runId);
-    expect(claim.prompt).toBe(`@Slack User (${botUserId})`);
-    expect(claim.appendSystemPrompt).toContain("https://example.com/article");
-    expect(claim.appendSystemPrompt).toContain("[ID] F_ARTICLE_SCREENSHOT");
-    expect(claim.appendSystemPrompt).toContain(
+    const runId = await observeSlackRun(runnerGroup);
+    const execution = await runs.executionInput(runId);
+    expect(execution.prompt).toBe(`@Slack User (${botUserId})`);
+    expect(execution.appendSystemPrompt).toContain(
+      "https://example.com/article",
+    );
+    expect(execution.appendSystemPrompt).toContain("[ID] F_ARTICLE_SCREENSHOT");
+    expect(execution.appendSystemPrompt).toContain(
       "# Slack Thread Context\n\n" +
         "The messages below are from a Slack conversation. When responding:\n" +
         "- Messages closer to RELATIVE_INDEX 0 are more recent — prioritize them.\n\n" +
@@ -2608,8 +2617,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     await completeSlackTriggeredRun({
       runId,
-      sandboxToken: claim.sandboxToken,
-      cliAgentType: claim.cliAgentType,
+      sandboxToken: execution.sandboxToken,
+      cliAgentType: execution.cliAgentType,
       assistantText: "Investigating the article and screenshot",
     });
   });
@@ -2717,8 +2726,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
         status: "processing",
       },
     );
-    const run1Id = await pollSlackRun(runnerGroup);
-    const claim1 = await runs.executionInput(run1Id);
+    const run1Id = await observeSlackRun(runnerGroup);
+    const execution1 = await runs.executionInput(run1Id);
 
     const visibleThreadEvents = await chat.requestThreadEvents(
       actor,
@@ -2757,7 +2766,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       contentType: "text/plain",
       bytes: Buffer.from(fileBody),
       uploads,
-      okouToken: claim1.platformEnvironment.OKOU_TOKEN,
+      okouToken: execution1.platformEnvironment.OKOU_TOKEN,
     });
     const canonicalInputMessage = slackInputMessageByText(
       visibleMessages,
@@ -2833,8 +2842,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     await completeSlackTriggeredRun({
       runId: run1Id,
-      sandboxToken: claim1.sandboxToken,
-      cliAgentType: claim1.cliAgentType,
+      sandboxToken: execution1.sandboxToken,
+      cliAgentType: execution1.cliAgentType,
       assistantText: "Canonical Slack retry answer",
     });
     await flushWaitUntilForTest();
@@ -2896,12 +2905,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     await flushWaitUntilForTest();
 
-    const run1Id = await pollSlackRun(runnerGroup);
+    const run1Id = await observeSlackRun(runnerGroup);
     // The Slack route's thread and the agent it launched with are public
     // through the caller's thread lifecycle.
     const { chatThreadId: canonicalChatThreadId, agentId: defaultAgentId } =
       await ownedThreadWhere(actor, launchedBy(run1Id));
-    const claim1 = await runs.executionInput(run1Id);
+    const execution1 = await runs.executionInput(run1Id);
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
     const queuedWebMessage = await chat.requestSendEvent(
@@ -2973,12 +2982,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
     // reply with the launch context admitted for it.
     await completeSlackTriggeredRun({
       runId: run1Id,
-      sandboxToken: claim1.sandboxToken,
-      cliAgentType: claim1.cliAgentType,
+      sandboxToken: execution1.sandboxToken,
+      cliAgentType: execution1.cliAgentType,
       assistantText: "Canonical Slack answer one",
     });
     await flushWaitUntilForTest();
-    const queuedRuns = await pollQueuedWebAndSlackRuns({
+    const queuedRuns = await observeQueuedWebAndSlackRuns({
       actor,
       runnerGroup,
       expectedSlackSessionId: `bdd-slack-cli-${run1Id}`,
@@ -2988,38 +2997,38 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await expect(readRunLog(actor, webRunId)).resolves.toMatchObject({
       triggerSource: "web",
     });
-    const webClaim = await runs.executionInput(webRunId);
+    const webExecution = await runs.executionInput(webRunId);
     await completeSlackTriggeredRun({
       runId: webRunId,
-      sandboxToken: webClaim.sandboxToken,
-      cliAgentType: webClaim.cliAgentType,
+      sandboxToken: webExecution.sandboxToken,
+      cliAgentType: webExecution.cliAgentType,
       assistantText: "Web answer stays off Slack",
     });
     await flushWaitUntilForTest();
     expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(1);
-    const { run2Id, claim2 } = await ensureSlackRunClaimed({
+    const { run2Id, execution2 } = await ensureSlackExecution({
       runnerGroup,
       run2Id: queuedRuns.run2Id,
-      claim2: queuedRuns.claim2,
+      execution2: queuedRuns.execution2,
     });
     await expect(readRunLog(actor, run2Id)).resolves.toMatchObject({
       triggerSource: "slack",
     });
-    expect(claim2.prompt).toContain("stay canonical on the same route");
-    expect(claim2.prompt).toContain("session-notes.txt");
-    expect(claim2.appendSystemPrompt).toContain(
+    expect(execution2.prompt).toContain("stay canonical on the same route");
+    expect(execution2.prompt).toContain("session-notes.txt");
+    expect(execution2.appendSystemPrompt).toContain(
       `# Current Integration\nYou are currently running inside: Slack\nYour bot user ID: ${botUserId}\nChannel ID: ${channelId}\nChannel type: Channel\nThread ID: ${threadTs}\n`,
     );
-    expect(claim2.appendSystemPrompt).toContain(
+    expect(execution2.appendSystemPrompt).toContain(
       "Slack display name: Slack User",
     );
-    expect(claim2.appendSystemPrompt).toContain(
+    expect(execution2.appendSystemPrompt).toContain(
       `Slack user ID: ${slackUserId}`,
     );
     await completeSlackTriggeredRun({
       runId: run2Id,
-      sandboxToken: claim2.sandboxToken,
-      cliAgentType: claim2.cliAgentType,
+      sandboxToken: execution2.sandboxToken,
+      cliAgentType: execution2.cliAgentType,
       assistantText: "Canonical Slack answer two",
     });
     await flushWaitUntilForTest();
@@ -3071,12 +3080,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
       );
       await flushWaitUntilForTest();
 
-      const run1Id = await pollSlackRun(runnerGroup);
+      const run1Id = await observeSlackRun(runnerGroup);
       // The Slack route's thread and the agent it launched with are public
       // through the caller's thread lifecycle.
       const { chatThreadId: canonicalChatThreadId, agentId: defaultAgentId } =
         await ownedThreadWhere(actor, launchedBy(run1Id));
-      const claim1 = await runs.executionInput(run1Id);
+      const execution1 = await runs.executionInput(run1Id);
       return {
         actor,
         orgId,
@@ -3087,7 +3096,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         event,
         canonicalChatThreadId,
         run1Id,
-        claim1,
+        execution1,
         defaultAgentId,
       };
     }
@@ -3107,7 +3116,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         event,
         canonicalChatThreadId,
         run1Id,
-        claim1,
+        execution1,
         defaultAgentId,
       } = prepared;
       const queuedWebMessage = await chat.requestSendEvent(
@@ -3145,8 +3154,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       context.mocks.slack.chat.postMessage.mockClear();
       await completeSlackTriggeredRun({
         runId: run1Id,
-        sandboxToken: claim1.sandboxToken,
-        cliAgentType: claim1.cliAgentType,
+        sandboxToken: execution1.sandboxToken,
+        cliAgentType: execution1.cliAgentType,
         assistantText: "Executing command...",
         resultText: "Canonical Slack answer one",
       });
@@ -3169,24 +3178,24 @@ describe("INT-01: Slack app deep webhook flows", () => {
         );
       }
 
-      const queuedRuns = await pollQueuedWebAndSlackRuns({
+      const queuedRuns = await observeQueuedWebAndSlackRuns({
         actor,
         runnerGroup,
         expectedSlackSessionId: `bdd-slack-cli-${run1Id}`,
       });
       const webRunId = queuedRuns.webRunId;
-      let claim2 = queuedRuns.claim2;
+      let execution2 = queuedRuns.execution2;
       let run2Id = queuedRuns.run2Id;
 
-      const webClaim = await runs.executionInput(webRunId);
-      expect(webClaim.nativeContinuation?.sessionId).toBe(
+      const webExecution = await runs.executionInput(webRunId);
+      expect(webExecution.nativeContinuation?.sessionId).toBe(
         `bdd-slack-cli-${run1Id}`,
       );
       context.mocks.slack.chat.postMessage.mockClear();
       await completeSlackTriggeredRun({
         runId: webRunId,
-        sandboxToken: webClaim.sandboxToken,
-        cliAgentType: webClaim.cliAgentType,
+        sandboxToken: webExecution.sandboxToken,
+        cliAgentType: webExecution.cliAgentType,
         assistantText: "Web answer stays off Slack",
       });
       await flushWaitUntilForTest();
@@ -3198,12 +3207,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
       }
       expect(webSessionId).toBe(`bdd-slack-cli-${webRunId}`);
 
-      ({ run2Id, claim2 } = await ensureSlackRunClaimed({
+      ({ run2Id, execution2 } = await ensureSlackExecution({
         runnerGroup,
         run2Id,
-        claim2,
+        execution2,
       }));
-      expect(claim2.nativeContinuation?.sessionId).toBe(
+      expect(execution2.nativeContinuation?.sessionId).toBe(
         `bdd-slack-cli-${webRunId}`,
       );
       await expect(readRunLog(actor, webRunId)).resolves.toMatchObject({
@@ -3214,8 +3223,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       expect(slackRunLog.prompt).toContain("stay canonical on the same route");
       await completeSlackTriggeredRun({
         runId: run2Id,
-        sandboxToken: claim2.sandboxToken,
-        cliAgentType: claim2.cliAgentType,
+        sandboxToken: execution2.sandboxToken,
+        cliAgentType: execution2.cliAgentType,
         assistantText: "Canonical Slack answer two",
       });
       await flushWaitUntilAndAssert(() => {
@@ -3259,7 +3268,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         runId: firstTurn.runId,
         assistantText: "Canonical Slack Pi answer",
       });
-      const continuedTurn = await claimContinuedSlackPiTurn({
+      const continuedTurn = await continueSlackPiExecution({
         scenario,
         firstRunId: firstTurn.runId,
       });
@@ -3330,13 +3339,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
         ts: firstMessageTs,
         channel: channelId,
       });
-      const firstRunId = await pollSlackRun(runnerGroup);
-      const firstClaim = await runs.executionInput(firstRunId);
-      expect(firstClaim.nativeContinuation?.sessionId).toBeNull();
+      const firstRunId = await observeSlackRun(runnerGroup);
+      const firstExecution = await runs.executionInput(firstRunId);
+      expect(firstExecution.nativeContinuation?.sessionId).toBeNull();
       await completeSlackTriggeredRun({
         runId: firstRunId,
-        sandboxToken: firstClaim.sandboxToken,
-        cliAgentType: firstClaim.cliAgentType,
+        sandboxToken: firstExecution.sandboxToken,
+        cliAgentType: firstExecution.cliAgentType,
       });
 
       const returnMessageTs = "2950.000300";
@@ -3348,16 +3357,16 @@ describe("INT-01: Slack app deep webhook flows", () => {
         ts: returnMessageTs,
         channel: channelId,
       });
-      const returnToDefaultRunId = await pollSlackRun(runnerGroup);
-      const returnToDefaultClaim =
+      const returnToDefaultRunId = await observeSlackRun(runnerGroup);
+      const returnToDefaultExecution =
         await runs.executionInput(returnToDefaultRunId);
-      expect(returnToDefaultClaim.nativeContinuation?.sessionId).toBe(
+      expect(returnToDefaultExecution.nativeContinuation?.sessionId).toBe(
         `bdd-slack-cli-${firstRunId}`,
       );
       await completeSlackTriggeredRun({
         runId: returnToDefaultRunId,
-        sandboxToken: returnToDefaultClaim.sandboxToken,
-        cliAgentType: returnToDefaultClaim.cliAgentType,
+        sandboxToken: returnToDefaultExecution.sandboxToken,
+        cliAgentType: returnToDefaultExecution.cliAgentType,
         assistantText: "Returned main Slack DM answer",
       });
       await flushWaitUntilForTest();
@@ -3387,12 +3396,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
         ts: firstMessageTs,
         channel: channelId,
       });
-      const firstRunId = await pollSlackRun(runnerGroup);
-      const firstClaim = await runs.executionInput(firstRunId);
+      const firstRunId = await observeSlackRun(runnerGroup);
+      const firstExecution = await runs.executionInput(firstRunId);
       await completeSlackTriggeredRun({
         runId: firstRunId,
-        sandboxToken: firstClaim.sandboxToken,
-        cliAgentType: firstClaim.cliAgentType,
+        sandboxToken: firstExecution.sandboxToken,
+        cliAgentType: firstExecution.cliAgentType,
       });
       await flushWaitUntilForTest();
       const firstThread = await ownedThreadWhere(actor, launchedBy(firstRunId));
@@ -3407,12 +3416,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
         ts: latestMessageTs,
         channel: latestChannelId,
       });
-      const continuedRunId = await pollSlackRun(runnerGroup);
-      const continuedClaim = await runs.executionInput(continuedRunId);
-      expect(continuedClaim.nativeContinuation?.sessionId).toBe(
+      const continuedRunId = await observeSlackRun(runnerGroup);
+      const continuedExecution = await runs.executionInput(continuedRunId);
+      expect(continuedExecution.nativeContinuation?.sessionId).toBe(
         `bdd-slack-cli-${firstRunId}`,
       );
-      expect(continuedClaim.appendSystemPrompt).toContain(
+      expect(continuedExecution.appendSystemPrompt).toContain(
         `Channel ID: ${latestChannelId}`,
       );
       await expect(
@@ -3420,8 +3429,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ).resolves.toStrictEqual(firstThread);
       await completeSlackTriggeredRun({
         runId: continuedRunId,
-        sandboxToken: continuedClaim.sandboxToken,
-        cliAgentType: continuedClaim.cliAgentType,
+        sandboxToken: continuedExecution.sandboxToken,
+        cliAgentType: continuedExecution.cliAgentType,
         assistantText: "Main Slack DM answer in the new destination",
       });
       await flushWaitUntilForTest();
@@ -3462,13 +3471,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: mainMessageTs,
       channel: channelId,
     });
-    const mainRunId = await pollSlackRun(runnerGroup);
-    const mainClaim = await runs.executionInput(mainRunId);
-    expect(mainClaim.nativeContinuation?.sessionId).toBeNull();
+    const mainRunId = await observeSlackRun(runnerGroup);
+    const mainExecution = await runs.executionInput(mainRunId);
+    expect(mainExecution.nativeContinuation?.sessionId).toBeNull();
     await completeSlackTriggeredRun({
       runId: mainRunId,
-      sandboxToken: mainClaim.sandboxToken,
-      cliAgentType: mainClaim.cliAgentType,
+      sandboxToken: mainExecution.sandboxToken,
+      cliAgentType: mainExecution.cliAgentType,
     });
     // The completion response precedes its waitUntil callback and queue drain.
     // Own that work before the next ingress can enter the same scheduler.
@@ -3483,13 +3492,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
       thread_ts: mainMessageTs,
       channel: channelId,
     });
-    const threadRunId = await pollSlackRun(runnerGroup);
-    const threadClaim = await runs.executionInput(threadRunId);
-    expect(threadClaim.nativeContinuation?.sessionId).toBeNull();
+    const threadRunId = await observeSlackRun(runnerGroup);
+    const threadExecution = await runs.executionInput(threadRunId);
+    expect(threadExecution.nativeContinuation?.sessionId).toBeNull();
     await completeSlackTriggeredRun({
       runId: threadRunId,
-      sandboxToken: threadClaim.sandboxToken,
-      cliAgentType: threadClaim.cliAgentType,
+      sandboxToken: threadExecution.sandboxToken,
+      cliAgentType: threadExecution.cliAgentType,
     });
     await flushWaitUntilForTest();
 
@@ -3502,15 +3511,16 @@ describe("INT-01: Slack app deep webhook flows", () => {
       thread_ts: mainMessageTs,
       channel: channelId,
     });
-    const threadFollowUpRunId = await pollSlackRun(runnerGroup);
-    const threadFollowUpClaim = await runs.executionInput(threadFollowUpRunId);
-    expect(threadFollowUpClaim.nativeContinuation?.sessionId).toBe(
+    const threadFollowUpRunId = await observeSlackRun(runnerGroup);
+    const threadFollowUpExecution =
+      await runs.executionInput(threadFollowUpRunId);
+    expect(threadFollowUpExecution.nativeContinuation?.sessionId).toBe(
       `bdd-slack-cli-${threadRunId}`,
     );
     await completeSlackTriggeredRun({
       runId: threadFollowUpRunId,
-      sandboxToken: threadFollowUpClaim.sandboxToken,
-      cliAgentType: threadFollowUpClaim.cliAgentType,
+      sandboxToken: threadFollowUpExecution.sandboxToken,
+      cliAgentType: threadFollowUpExecution.cliAgentType,
     });
     await flushWaitUntilForTest();
 
@@ -3522,9 +3532,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: "2960.000400",
       channel: channelId,
     });
-    const returnToMainRunId = await pollSlackRun(runnerGroup);
-    const returnToMainClaim = await runs.executionInput(returnToMainRunId);
-    expect(returnToMainClaim.nativeContinuation?.sessionId).toBe(
+    const returnToMainRunId = await observeSlackRun(runnerGroup);
+    const returnToMainExecution = await runs.executionInput(returnToMainRunId);
+    expect(returnToMainExecution.nativeContinuation?.sessionId).toBe(
       `bdd-slack-cli-${mainRunId}`,
     );
   });
@@ -3553,7 +3563,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       text: "stop this task",
       ts: threadTs,
     });
-    const stoppedRunId = await pollSlackRun(runnerGroup);
+    const stoppedRunId = await observeSlackRun(runnerGroup);
     const stoppedInput = await runs.executionInput(stoppedRunId);
     const { chatThreadId } = await ownedThreadWhere(
       actor,
@@ -3678,7 +3688,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: "4200.000500",
       thread_ts: threadTs,
     });
-    const freshRunId = await pollSlackRun(runnerGroup);
+    const freshRunId = await observeSlackRun(runnerGroup);
     await integrations.requestSlackEvent(
       retryBody,
       {
@@ -3725,8 +3735,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       text: "only the sender can stop this",
       ts: threadTs,
     });
-    const runId = await pollSlackRun(runnerGroup);
-    const claim = await runs.executionInput(runId);
+    const runId = await observeSlackRun(runnerGroup);
+    const execution = await runs.executionInput(runId);
     const stopEvent = {
       type: "agent_session_stopped",
       channel: channelId,
@@ -3767,7 +3777,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await flushWaitUntilForTest();
     expect((await runs.readRun(actor, runId)).status).toBe("cancelled");
     await expect(
-      runs.readRunnerCancellation(claim.sandboxToken, runId, runnerGroup),
+      runs.readRunnerCancellation(execution.sandboxToken, runId, runnerGroup),
     ).resolves.toMatchObject({ state: "present", mode: "cooperative" });
     expect(
       context.mocks.slack.chat.postMessage,
@@ -3893,7 +3903,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       text: "stop the first DM task",
       ts: firstThreadTs,
     });
-    const runId = await pollSlackRun(runnerGroup);
+    const runId = await observeSlackRun(runnerGroup);
     await runs.executionInput(runId);
     const { chatThreadId } = await ownedThreadWhere(actor, launchedBy(runId));
     await integrations.postSlackEvent(teamId, {
@@ -3988,7 +3998,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       text: "stop only my part of the thread",
       ts: threadTs,
     });
-    const runId = await pollSlackRun(runnerGroup);
+    const runId = await observeSlackRun(runnerGroup);
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
       user: memberSlackUserId,
@@ -4130,7 +4140,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       text: "stop while Slack is updating its status",
       ts: threadTs,
     });
-    const runId = await pollSlackRun(runnerGroup);
+    const runId = await observeSlackRun(runnerGroup);
     await runs.executionInput(runId);
     await flushWaitUntilForTest();
     const statusStarted = createDeferredPromise<void>(context.signal);
@@ -4277,7 +4287,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       channel: "C_BDD_ORG_FULL_ACTIVE",
       channel_type: "channel",
     });
-    const activeRunId = await pollSlackRun(runnerGroup);
+    const activeRunId = await observeSlackRun(runnerGroup);
 
     const channelId = "C_BDD_ORG_FULL_WAITING";
     const threadTs = "2910.000200";
@@ -4350,8 +4360,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       channel: channelId,
       channel_type: "channel",
     });
-    const runId = await pollSlackRun(runnerGroup);
-    const claim = await runs.executionInput(runId);
+    const runId = await observeSlackRun(runnerGroup);
+    const execution = await runs.executionInput(runId);
     await flushWaitUntilForTest();
 
     const { chatThreadId } = await ownedThreadWhere(actor, launchedBy(runId));
@@ -4375,8 +4385,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
     await completeSlackTriggeredRun({
       runId,
-      sandboxToken: claim.sandboxToken,
-      cliAgentType: claim.cliAgentType,
+      sandboxToken: execution.sandboxToken,
+      cliAgentType: execution.cliAgentType,
       assistantText: "Canonical Slack titled answer",
     });
     await flushWaitUntilForTest();
@@ -4422,18 +4432,20 @@ describe("INT-01: Slack app deep webhook flows", () => {
         }),
       );
     });
-    const run1Id = await pollSlackRun(runnerGroup);
-    const claim1 = await runs.executionInput(run1Id);
-    expect(claim1.prompt).toBe("summarize this thread");
-    expect(claim1.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe("slack");
-    expect(claim1.appendSystemPrompt ?? "").toContain(
+    const run1Id = await observeSlackRun(runnerGroup);
+    const execution1 = await runs.executionInput(run1Id);
+    expect(execution1.prompt).toBe("summarize this thread");
+    expect(execution1.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe(
+      "slack",
+    );
+    expect(execution1.appendSystemPrompt ?? "").toContain(
       "You are currently running inside: Slack",
     );
-    expect(claim1.appendSystemPrompt ?? "").toContain(
+    expect(execution1.appendSystemPrompt ?? "").toContain(
       "Slack display name: Slack User",
     );
-    expect(claim1.cliAgentType).toBe("claude-code");
-    expect(claim1.environment).toMatchObject({
+    expect(execution1.cliAgentType).toBe("claude-code");
+    expect(execution1.environment).toMatchObject({
       CLAUDE_CODE_OAUTH_TOKEN: expect.stringMatching(/.+/),
     });
     const running = await runs.readRun(actor, run1Id);
@@ -4444,7 +4456,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
     await completeSlackTriggeredRun({
       runId: run1Id,
-      sandboxToken: claim1.sandboxToken,
+      sandboxToken: execution1.sandboxToken,
       cliAgentType: "claude-code",
       assistantText: "BDD canonical Slack response",
     });
@@ -4468,14 +4480,14 @@ describe("INT-01: Slack app deep webhook flows", () => {
       thread_ts: threadTs,
       channel: channelId,
     });
-    const run2Id = await pollSlackRun(runnerGroup);
-    const claim2 = await runs.executionInput(run2Id);
-    expect(claim2.nativeContinuation?.sessionId).toBe(
+    const run2Id = await observeSlackRun(runnerGroup);
+    const execution2 = await runs.executionInput(run2Id);
+    expect(execution2.nativeContinuation?.sessionId).toBe(
       `bdd-slack-cli-${run1Id}`,
     );
     await completeSlackTriggeredRun({
       runId: run2Id,
-      sandboxToken: claim2.sandboxToken,
+      sandboxToken: execution2.sandboxToken,
       cliAgentType: "claude-code",
     });
     const run2 = await runs.readRun(actor, run2Id);
@@ -4506,16 +4518,16 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: gptThreadTs,
       channel: channelId,
     });
-    const gptRunId = await pollSlackRun(runnerGroup);
-    const gptClaim = await runs.executionInput(gptRunId);
-    expect(gptClaim.cliAgentType).toBe("codex");
-    expect(gptClaim.environment).toMatchObject({
+    const gptRunId = await observeSlackRun(runnerGroup);
+    const gptExecution = await runs.executionInput(gptRunId);
+    expect(gptExecution.cliAgentType).toBe("codex");
+    expect(gptExecution.environment).toMatchObject({
       CHATGPT_ACCESS_TOKEN: expect.stringMatching(/.+/),
       OPENAI_MODEL: "gpt-6-astra",
     });
     await completeSlackTriggeredRun({
       runId: gptRunId,
-      sandboxToken: gptClaim.sandboxToken,
+      sandboxToken: gptExecution.sandboxToken,
       cliAgentType: "codex",
     });
     const gptRun = await runs.readRun(actor, gptRunId);
@@ -4533,18 +4545,18 @@ describe("INT-01: Slack app deep webhook flows", () => {
       thread_ts: gptThreadTs,
       channel: channelId,
     });
-    const continuationRunId = await pollSlackRun(runnerGroup);
-    const continuationClaim = await runs.executionInput(continuationRunId);
-    expect(continuationClaim.cliAgentType).toBe("codex");
-    expect(continuationClaim.environment).toMatchObject({
+    const continuationRunId = await observeSlackRun(runnerGroup);
+    const continuationExecution = await runs.executionInput(continuationRunId);
+    expect(continuationExecution.cliAgentType).toBe("codex");
+    expect(continuationExecution.environment).toMatchObject({
       OPENAI_MODEL: "gpt-6-astra",
     });
-    expect(continuationClaim.nativeContinuation?.sessionId).toBe(
+    expect(continuationExecution.nativeContinuation?.sessionId).toBe(
       `bdd-slack-cli-${gptRunId}`,
     );
     await completeSlackTriggeredRun({
       runId: continuationRunId,
-      sandboxToken: continuationClaim.sandboxToken,
+      sandboxToken: continuationExecution.sandboxToken,
       cliAgentType: "codex",
     });
     const continuationRun = await runs.readRun(actor, continuationRunId);
@@ -4576,17 +4588,17 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: threadTs,
       channel: channelId,
     });
-    const firstRunId = await pollSlackRun(runnerGroup);
-    const firstClaim = await runs.executionInput(firstRunId);
-    expect(firstClaim.cliAgentType).toBe("claude-code");
-    expect(firstClaim.environment).toMatchObject({
+    const firstRunId = await observeSlackRun(runnerGroup);
+    const firstExecution = await runs.executionInput(firstRunId);
+    expect(firstExecution.cliAgentType).toBe("claude-code");
+    expect(firstExecution.environment).toMatchObject({
       CLAUDE_CODE_OAUTH_TOKEN: expect.stringMatching(/.+/),
       ANTHROPIC_MODEL: "claude-fable-5-1",
     });
     await completeSlackTriggeredRun({
       runId: firstRunId,
-      sandboxToken: firstClaim.sandboxToken,
-      cliAgentType: firstClaim.cliAgentType,
+      sandboxToken: firstExecution.sandboxToken,
+      cliAgentType: firstExecution.cliAgentType,
     });
     await flushWaitUntilForTest();
 
@@ -5296,11 +5308,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: threadTs,
       channel: channelId,
     });
-    const standardRunId = await pollSlackRun(runnerGroup);
-    const standardClaim = await runs.executionInput(standardRunId);
+    const standardRunId = await observeSlackRun(runnerGroup);
+    const standardExecution = await runs.executionInput(standardRunId);
     await completeSlackTriggeredRun({
       runId: standardRunId,
-      sandboxToken: standardClaim.sandboxToken,
+      sandboxToken: standardExecution.sandboxToken,
       cliAgentType: "codex",
       codexAgentMessageText: "standard answer",
     });
@@ -5333,11 +5345,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
       thread_ts: threadTs,
       channel: channelId,
     });
-    const fastRunId = await pollSlackRun(runnerGroup);
-    const fastClaim = await runs.executionInput(fastRunId);
-    expect(fastClaim.cliAgentType).toBe("codex");
-    expect(fastClaim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe("fast");
-    const fastOkouToken = fastClaim.platformEnvironment.OKOU_TOKEN;
+    const fastRunId = await observeSlackRun(runnerGroup);
+    const fastExecution = await runs.executionInput(fastRunId);
+    expect(fastExecution.cliAgentType).toBe("codex");
+    expect(fastExecution.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe(
+      "fast",
+    );
+    const fastOkouToken = fastExecution.platformEnvironment.OKOU_TOKEN;
     if (!fastOkouToken) {
       throw new Error("Expected the Slack Fast run to expose OKOU_TOKEN");
     }
@@ -5361,7 +5375,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     context.mocks.slack.chat.postMessage.mockClear();
     await completeSlackTriggeredRun({
       runId: fastRunId,
-      sandboxToken: fastClaim.sandboxToken,
+      sandboxToken: fastExecution.sandboxToken,
       cliAgentType: "codex",
       codexAgentMessageText: "fast answer",
     });
@@ -5413,12 +5427,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: threadT1,
       channel: channelId,
     });
-    const run1Id = await pollSlackRun(runnerGroup);
-    const claim1 = await runs.executionInput(run1Id);
+    const run1Id = await observeSlackRun(runnerGroup);
+    const execution1 = await runs.executionInput(run1Id);
     context.mocks.slack.apiCall.mockClear();
     await webhooks.requestAgentHeartbeat(
       { runId: run1Id },
-      { authorization: `Bearer ${claim1.sandboxToken}` },
+      { authorization: `Bearer ${execution1.sandboxToken}` },
       [200],
     );
     await flushWaitUntilAndAssert(() => {
@@ -5450,7 +5464,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     await completeSlackTriggeredRun({
       runId: run1Id,
-      sandboxToken: claim1.sandboxToken,
+      sandboxToken: execution1.sandboxToken,
       cliAgentType: "claude-code",
       resultText: "SLACK_BDD_OUTPUT",
     });
@@ -5491,11 +5505,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: "4000.000200",
       channel: channelId,
     });
-    const run2Id = await pollSlackRun(runnerGroup);
-    const claim2 = await runs.executionInput(run2Id);
+    const run2Id = await observeSlackRun(runnerGroup);
+    const execution2 = await runs.executionInput(run2Id);
     await completeSlackTriggeredRun({
       runId: run2Id,
-      sandboxToken: claim2.sandboxToken,
+      sandboxToken: execution2.sandboxToken,
       cliAgentType: "claude-code",
       codexAgentMessageText: "final codex answer",
     });
@@ -5530,12 +5544,12 @@ describe("INT-01: Slack app deep webhook flows", () => {
       thread_ts: threadT1,
       channel: channelId,
     });
-    const run3Id = await pollSlackRun(runnerGroup);
-    const claim3 = await runs.executionInput(run3Id);
+    const run3Id = await observeSlackRun(runnerGroup);
+    const execution3 = await runs.executionInput(run3Id);
     context.mocks.slack.chat.postMessage.mockClear();
     await completeSlackTriggeredRun({
       runId: run3Id,
-      sandboxToken: claim3.sandboxToken,
+      sandboxToken: execution3.sandboxToken,
       cliAgentType: "claude-code",
       resultText: "SECOND_OPINION_OUTPUT",
     });
@@ -5555,15 +5569,15 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: threadT3,
       channel: channelId,
     });
-    const run4Id = await pollSlackRun(runnerGroup);
-    const claim4 = await runs.executionInput(run4Id);
+    const run4Id = await observeSlackRun(runnerGroup);
+    const execution4 = await runs.executionInput(run4Id);
     await webhooks.requestAgentComplete(
       {
         runId: run4Id,
         exitCode: 1,
         error: "Cannot continue session from history",
       },
-      { authorization: `Bearer ${claim4.sandboxToken}` },
+      { authorization: `Bearer ${execution4.sandboxToken}` },
       [200],
     );
     await flushWaitUntilAndAssert(() => {
@@ -5586,11 +5600,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
       thread_ts: threadT3,
       channel: channelId,
     });
-    const run5Id = await pollSlackRun(runnerGroup);
-    const claim5 = await runs.executionInput(run5Id);
+    const run5Id = await observeSlackRun(runnerGroup);
+    const execution5 = await runs.executionInput(run5Id);
     await webhooks.requestAgentComplete(
       { runId: run5Id, exitCode: 1 },
-      { authorization: `Bearer ${claim5.sandboxToken}` },
+      { authorization: `Bearer ${execution5.sandboxToken}` },
       [200],
     );
     await flushWaitUntilAndAssert(() => {
@@ -5610,8 +5624,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: "4000.000400",
       channel: channelId,
     });
-    const run6Id = await pollSlackRun(runnerGroup);
-    const claim6 = await runs.executionInput(run6Id);
+    const run6Id = await observeSlackRun(runnerGroup);
+    const execution6 = await runs.executionInput(run6Id);
     context.mocks.slack.chat.postMessage.mockRejectedValueOnce(
       Object.assign(new Error("channel_not_found"), {
         data: { ok: false, error: "channel_not_found" },
@@ -5619,7 +5633,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     await completeSlackTriggeredRun({
       runId: run6Id,
-      sandboxToken: claim6.sandboxToken,
+      sandboxToken: execution6.sandboxToken,
       cliAgentType: "claude-code",
       resultText: "UNDELIVERED_OUTPUT",
     });
@@ -5664,10 +5678,10 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: threadU1,
       channel: channelId,
     });
-    const run1Id = await pollSlackRun(runnerGroup);
-    const claim1 = await runs.executionInput(run1Id);
-    expect(claim1.cliAgentType).toBe("claude-code");
-    expect(claim1.environment).toMatchObject({
+    const run1Id = await observeSlackRun(runnerGroup);
+    const execution1 = await runs.executionInput(run1Id);
+    expect(execution1.cliAgentType).toBe("claude-code");
+    expect(execution1.environment).toMatchObject({
       CLAUDE_CODE_OAUTH_TOKEN: expect.stringMatching(/.+/),
       ANTHROPIC_MODEL: "claude-fable-5-1",
     });
@@ -5675,7 +5689,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     context.mocks.slack.apiCall.mockRejectedValueOnce(new Error("status_boom"));
     await webhooks.requestAgentHeartbeat(
       { runId: run1Id },
-      { authorization: `Bearer ${claim1.sandboxToken}` },
+      { authorization: `Bearer ${execution1.sandboxToken}` },
       [200],
     );
     await flushWaitUntilAndAssert(() => {
@@ -5691,7 +5705,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
     await completeSlackTriggeredRun({
       runId: run1Id,
-      sandboxToken: claim1.sandboxToken,
+      sandboxToken: execution1.sandboxToken,
       cliAgentType: "claude-code",
       resultText: "CALLBACK_RESILIENCE_OUTPUT",
     });
@@ -5714,13 +5728,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
       ts: "5100.000200",
       channel: channelId,
     });
-    const run2Id = await pollSlackRun(runnerGroup);
-    const claim2 = await runs.executionInput(run2Id);
+    const run2Id = await observeSlackRun(runnerGroup);
+    const execution2 = await runs.executionInput(run2Id);
     await integrations.postSlackEvent(teamId, { type: "app_uninstalled" });
     context.mocks.slack.apiCall.mockClear();
     await webhooks.requestAgentHeartbeat(
       { runId: run2Id },
-      { authorization: `Bearer ${claim2.sandboxToken}` },
+      { authorization: `Bearer ${execution2.sandboxToken}` },
       [200],
     );
     expect(context.mocks.slack.apiCall).not.toHaveBeenCalled();
@@ -5728,7 +5742,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     context.mocks.slack.chat.postMessage.mockClear();
     await completeSlackTriggeredRun({
       runId: run2Id,
-      sandboxToken: claim2.sandboxToken,
+      sandboxToken: execution2.sandboxToken,
       cliAgentType: "claude-code",
     });
     expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
@@ -5857,8 +5871,11 @@ describe("INT-02: Telegram integration", () => {
       { "x-telegram-bot-api-secret-token": TELEGRAM_OFFICIAL_WEBHOOK_SECRET },
       [200],
     );
-    const runId = await pollRunnerRun(runnerGroup, "Expected a Telegram run");
-    const claim = await runs.executionInput(runId);
+    const runId = await observeDispatchedRun(
+      runnerGroup,
+      "Expected a Telegram run",
+    );
+    const execution = await runs.executionInput(runId);
     await webhooks.requestAgentComplete(
       {
         runId,
@@ -5866,7 +5883,7 @@ describe("INT-02: Telegram integration", () => {
         error: "insufficient_credits",
         failureReason: "insufficient_credits",
       },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
@@ -5949,14 +5966,14 @@ describe("INT-02: Telegram integration", () => {
     );
     expect(inbound.body).toBe("OK");
 
-    const runId = await pollRunnerRun(
+    const runId = await observeDispatchedRun(
       runnerGroup,
       "Expected the Fast Telegram DM to dispatch a run",
     );
-    const claim = await runs.executionInput(runId);
-    expect(claim.cliAgentType).toBe("codex");
-    expect(claim.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe("fast");
-    const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+    const execution = await runs.executionInput(runId);
+    expect(execution.cliAgentType).toBe("codex");
+    expect(execution.platformEnvironment.OKOU_CODEX_SERVICE_TIER).toBe("fast");
+    const okouToken = execution.platformEnvironment.OKOU_TOKEN;
     if (!okouToken) {
       throw new Error("Expected the Telegram Fast run to expose OKOU_TOKEN");
     }
@@ -5979,7 +5996,7 @@ describe("INT-02: Telegram integration", () => {
     await integrations.updateUserModelPreference(actor, "gpt-6-astra", null);
     await completeSlackTriggeredRun({
       runId,
-      sandboxToken: claim.sandboxToken,
+      sandboxToken: execution.sandboxToken,
       cliAgentType: "codex",
       codexAgentMessageText: "telegram fast reply",
     });
@@ -6081,18 +6098,18 @@ describe("INT-02: Telegram integration", () => {
       );
       expect(dm.body).toBe("OK");
 
-      // Observe dispatch before a real Runner claims its callback credentials.
-      const runId = await pollRunnerRun(
+      // Observe dispatch before a real Runner executions its callback credentials.
+      const runId = await observeDispatchedRun(
         runnerGroup,
         "Expected the Telegram DM to dispatch a run",
       );
-      const { claim } = await owned.claimChatRun(runnerGroup, runId);
+      const { execution } = await owned.runExecution(runId);
       const typingBody = {
         runId,
         events: [{ type: "assistant", sequenceNumber: 1 }],
       };
       const sandboxHeaders = {
-        authorization: `Bearer ${claim.sandboxToken}`,
+        authorization: `Bearer ${execution.sandboxToken}`,
       };
       const actionsBeforeTyping = chatActions.length;
       const typing = await webhooks.requestAgentEvents(

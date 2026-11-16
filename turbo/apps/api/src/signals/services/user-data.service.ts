@@ -92,15 +92,13 @@ function parseUserLocale(value: unknown): UserLocale | null {
 
 /**
  * The chat artifacts panel no longer opens on its own, so this preference is
- * retired: reads always answer `false` and writes are ignored.
+ * retired: reads always answer `false`. Writes are no longer accepted.
  *
- * Rollout fallback. Surface: old web App -> API, where cached pages still read
- * and write the field. Window: from this API's promotion until a later release
- * raises the web client floor above the last App build that uses the field;
- * an open old page keeps sending it until that floor reaches it. Gate: the
- * replacement App is live and the floor excludes older builds; then remove
- * this constant, the contract field and its BDD case together, which also
- * needs proof for the iOS-registered `GET /api/user-preferences` response.
+ * Rollout fallback. Surface: installed native readers of
+ * `GET /api/user-preferences`. The web client floor already excludes the App
+ * builds that read it, but iOS and Android register this response. Gate: a
+ * native compatibility proof for each registered client; then remove this
+ * constant and the contract field together.
  */
 const RETIRED_CHAT_RESOURCES_PREFERENCE = false;
 

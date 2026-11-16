@@ -28,8 +28,7 @@ describe("CHAT-02: model-first routing", () => {
       run: own,
       actor,
       agentId,
-      runnerGroup,
-      claimChatRun,
+      runExecution,
       sendChatRun,
     } = await publicChatActor(context);
     await own(async () => {
@@ -44,16 +43,16 @@ describe("CHAT-02: model-first routing", () => {
       model: "gpt-6-luna",
       prompt: firstPrompt,
     });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    const firstExecution = await runExecution(first.runId);
     // The first turn has no stored history, so the Sandbox starts fresh.
 
-    expect(firstClaim.claim.piSessionId).toBe(first.threadId);
+    expect(firstExecution.execution.piSessionId).toBe(first.threadId);
     await own(async () => {
       return await completeSandboxFirstPiRun({
         actor,
         answer,
         historyObjects: objects,
-        claim: firstClaim,
+        execution: firstExecution,
         prompt: firstPrompt,
         run: first,
       });
@@ -65,15 +64,19 @@ describe("CHAT-02: model-first routing", () => {
       threadId: first.threadId,
       prompt: "continue the preserved canonical session with tools",
     });
-    const claimed = await claimChatRun(runnerGroup, resumed.runId);
+    const execution = await runExecution(resumed.runId);
 
-    expect(claimed.claim.nativeContinuation).toMatchObject({
+    expect(execution.execution.nativeContinuation).toMatchObject({
       sessionId: first.threadId,
       generationRunId: first.runId,
     });
-    expect(claimed.claim.appendSystemPrompt).not.toContain(answer);
+    expect(execution.execution.appendSystemPrompt).not.toContain(answer);
     await own(async () => {
-      return await cancelChatRun(actor, resumed.runId, claimed.sandboxHeaders);
+      return await cancelChatRun(
+        actor,
+        resumed.runId,
+        execution.sandboxHeaders,
+      );
     });
     expect(blobEntriesOf(objects)).toStrictEqual([]);
   }, 90_000);
@@ -83,8 +86,7 @@ describe("CHAT-02: model-first routing", () => {
       run: own,
       actor,
       agentId,
-      runnerGroup,
-      claimChatRun,
+      runExecution,
       sendChatRun,
       requestSendEvent,
     } = await publicChatActor(context);
@@ -100,13 +102,13 @@ describe("CHAT-02: model-first routing", () => {
       model: "gpt-6-luna",
       prompt: firstPrompt,
     });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    const firstExecution = await runExecution(first.runId);
     await own(async () => {
       return await completeSandboxFirstPiRun({
         actor,
         answer: "previous settled subscription answer",
         historyObjects,
-        claim: firstClaim,
+        execution: firstExecution,
         prompt: firstPrompt,
         responsesModel: { provider: "openai-codex", model: "gpt-6-luna" },
         run: first,
@@ -119,7 +121,7 @@ describe("CHAT-02: model-first routing", () => {
       model: "gpt-6-luna",
       prompt,
     });
-    const { claim } = await claimChatRun(runnerGroup, run.runId);
+    const { execution } = await runExecution(run.runId);
     const activeInputEventId = randomUUID();
     await requestSendEvent(
       actor,
@@ -132,7 +134,7 @@ describe("CHAT-02: model-first routing", () => {
       [201],
     );
     const steerable = await api.nextSteerableInput(
-      claim.sandboxToken,
+      execution.sandboxToken,
       run.runId,
     );
     expect(steerable).toStrictEqual({
@@ -141,22 +143,22 @@ describe("CHAT-02: model-first routing", () => {
         prompt: "preserve this in-flight active input",
       },
     });
-    expect(claim.prompt).toBe(prompt);
+    expect(execution.prompt).toBe(prompt);
 
-    expect(claim.nativeContinuation).toMatchObject({
+    expect(execution.nativeContinuation).toMatchObject({
       sessionId: first.threadId,
       generationRunId: first.runId,
     });
-    expect(claim.appendSystemPrompt).not.toContain(
+    expect(execution.appendSystemPrompt).not.toContain(
       "previous settled subscription answer",
     );
     expect(blobEntriesOf(historyObjects)).toStrictEqual([]);
     await expect(
-      api.nextSteerableInput(claim.sandboxToken, run.runId),
+      api.nextSteerableInput(execution.sandboxToken, run.runId),
     ).resolves.toStrictEqual(steerable);
     await expect(
       api.declareSteeredInput(
-        claim.sandboxToken,
+        execution.sandboxToken,
         run.runId,
         activeInputEventId,
       ),
@@ -178,7 +180,7 @@ describe("CHAT-02: model-first routing", () => {
     await expectThreadModelCredits(context, actor, run.threadId, 0);
     await own(async () => {
       return await cancelChatRun(actor, run.runId, {
-        authorization: `Bearer ${claim.sandboxToken}`,
+        authorization: `Bearer ${execution.sandboxToken}`,
       });
     });
   }, 90_000);

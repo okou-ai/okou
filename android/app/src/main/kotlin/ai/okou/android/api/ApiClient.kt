@@ -9,18 +9,24 @@ import ai.okou.android.api.generated.CanonicalApi
 import ai.okou.android.api.generated.CanonicalZero
 import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
+import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.HistoryRowsQueryVariant1
 import ai.okou.android.api.generated.HistoryRowsQueryVariant2
 import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.Organization
+import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
+import ai.okou.android.api.generated.RealtimeTokenRequest
+import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.historyRows
 import ai.okou.android.chat.HistoryCursor
+import ai.okou.android.updates.isAndroidVersion
 import java.io.Closeable
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -80,6 +86,7 @@ class ApiClient(
     version: String = BuildConfig.VERSION_NAME,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
+    private val onUpdateRequired: (RequiredUpdate) -> Unit = {},
 ) : Closeable {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -136,6 +143,17 @@ class ApiClient(
 
     suspend fun organization(): Organization = execute { api.organization(it) }
 
+    suspend fun realtimeToken() = execute { api.realtimeToken(it, RealtimeTokenRequest) }
+
+    suspend fun personalInstructions(): PersonalInstructions = execute {
+        api.personalInstructions(it)
+    }
+
+    suspend fun updatePersonalInstructions(body: UpdateInstructionsRequest): PersonalInstructions =
+        execute {
+            api.updatePersonalInstructions(it, body)
+        }
+
     suspend fun chatSnapshot(): ChatSnapshot = execute { api.chatSnapshot(it) }
 
     suspend fun chatEvents(since: Long?): ChatEvents = execute { api.chatEvents(it, since) }
@@ -143,6 +161,17 @@ class ApiClient(
     suspend fun indicators(): Indicators = execute { api.indicators(it) }
 
     suspend fun agents(): Agents = execute { api.agents(it) }
+
+    suspend fun createThread(body: CreateThreadRequest) =
+        execute(201) { api.createThread(it, body) }
+
+    suspend fun sendInput(body: SendRequestVariant1) = execute(201) { api.sendInput(it, body) }
+
+    suspend fun inputStatus(threadId: String, eventId: String) = execute {
+        api.inputStatus(it, threadId, eventId)
+    }
+
+    suspend fun onboardingStatus() = execute { api.onboardingStatus(it) }
 
     suspend fun projectSnapshot(): ProjectSnapshot = execute { api.projectSnapshot(it) }
 
@@ -180,7 +209,10 @@ class ApiClient(
         required.value?.let { throw ApiFailure.UpdateRequired(it) }
     }
 
-    private suspend fun <T> execute(request: suspend (String) -> Response<T>): T =
+    private suspend fun <T> execute(
+        success: Int = 200,
+        request: suspend (String) -> Response<T>,
+    ): T =
         withContext(dispatcher) {
             checkAccess()
             val token =
@@ -191,6 +223,7 @@ class ApiClient(
                 val response = request("Bearer $token")
                 currentCoroutineContext().ensureActive()
                 checkAccess()
+                if (response.code() != success) throw ApiFailure.IncompatibleResponse()
                 response.body() ?: throw ApiFailure.IncompatibleResponse()
             } catch (_: SerializationException) {
                 // Serializer diagnostics can contain response values or input snippets.
@@ -205,11 +238,10 @@ class ApiClient(
     private fun reject(error: HttpRejection): Nothing {
         if (error.status == 426) {
             val envelope = errorEnvelope<AndroidUpgradeRequired>(error.envelope)
-            val minimum =
-                envelope?.minimumSupportedVersion?.takeIf {
-                    Regex("\\d+\\.\\d+\\.\\d+").matches(it)
-                }
+            val minimum = envelope?.minimumSupportedVersion?.takeIf(::isAndroidVersion)
             required.compareAndSet(null, RequiredUpdate(minimum))
+            // In-flight responses can report a stronger floor during an API rollout.
+            onUpdateRequired(RequiredUpdate(minimum))
             throw ApiFailure.UpdateRequired(checkNotNull(required.value))
         }
         val envelope = errorEnvelope<ApiError>(error.envelope)

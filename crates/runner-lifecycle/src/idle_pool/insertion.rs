@@ -7,11 +7,11 @@ use uuid::Uuid;
 
 use crate::host_memory_operations::{HostMemoryOperations, MemoryOperationError};
 
-use super::inventory_retirement::CapturedBacking;
 use super::{
     AcceptedActivationCleanup, IdleEntry, IdlePool, IdlePoolRetirement, IdleRetirementCandidate,
     IdleRetirementEnvelope, ParkedIdleCandidate, ReservedIdleSandbox,
 };
+use crate::captured_backing::CapturedBacking;
 
 /// Keep this capsule outside the admission future. Cancelling a borrowed grant
 /// or insertion future cannot drop the incoming sandbox, home data or lease.
@@ -56,10 +56,7 @@ impl IdlePoolIncoming {
                 .sandbox
                 .backing_process()
                 .ok_or(MemoryOperationError::MissingBacking)?;
-            Ok(CapturedBacking {
-                identity: process.identity(),
-                process,
-            })
+            Ok(CapturedBacking::capture(process))
         }))
         .unwrap_or(Err(MemoryOperationError::ProducerLost))?;
         entry.retirement_backing = Some(backing);

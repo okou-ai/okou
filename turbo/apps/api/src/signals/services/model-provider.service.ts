@@ -30,7 +30,6 @@ import {
   type ModelCredentialValues,
 } from "./execution-model-runtime";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
-import type { ModelCatalog } from "./model-catalog.service";
 export const deleteUserModelProvider$ = command(
   async (
     { get, set },
@@ -238,25 +237,23 @@ export function prepareSubscriptionModelEnvironment(
 }
 
 /** The run facts a Built-in model environment is prepared from. */
-interface ManagedModelEnvironmentRequest {
-  readonly catalog: ModelCatalog;
+interface ManagedModelEnvironmentInput {
   readonly framework: SupportedFramework;
-  readonly selectedModelOverride?: string;
-  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
+  readonly selectedModel: string;
+  readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute;
 }
 
 /** Exact managed-key source → explicit key resolution → managed runtime. */
 export async function prepareManagedModelEnvironment(
   source: ModelSourceSnapshot,
-  args: ManagedModelEnvironmentRequest,
+  args: ManagedModelEnvironmentInput,
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (source.identity.kind !== "built-in") {
     throw new Error("Managed preparation requires a managed source");
   }
   const route = args.builtInModelRuntimeRoute;
   if (
-    !route ||
-    route.selectedModel !== args.selectedModelOverride ||
+    route.selectedModel !== args.selectedModel ||
     !isBuiltInModelRuntimeRoutePermitted(route) ||
     getFrameworkForType(route.providerType) !== args.framework ||
     route.modelKeyId !== source.identity.modelKeyId

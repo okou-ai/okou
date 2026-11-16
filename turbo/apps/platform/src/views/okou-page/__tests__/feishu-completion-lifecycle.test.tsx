@@ -4,12 +4,13 @@ import {
   type FeishuConnectStatus,
   type FeishuInstallationStatus,
 } from "@okouai/api-contracts/contracts/feishu-connect";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getAction,
+  findAction,
   mockFeishu,
   setupFeishuSettingsPage,
 } from "./connector-integrations-test-helpers.ts";
@@ -51,32 +52,32 @@ test.each(["feishu", "lark"] as const)(
       return respond(200, { ...installation, setupCompleted: true });
     });
     await setupFeishuSettingsPage(context, platform);
-    const settingsUrl = window.location.href;
+    const setupUrl = `/settings/${platform}/setup/${installation.id}`;
     await screen.findByText("First bot");
     click(getAction("button", "More options for First bot"));
-    click(getAction("button", "Manage"));
+    click(getAction("link", "Manage"));
     await screen.findByText("Configure the OAuth redirect URL");
-    click(getAction("button", "Next"));
-    click(getAction("button", "Next"));
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
+    click(await findAction("button", "Next"));
+    click(await findAction("button", "Next"));
     await screen.findByText("Publish the app");
     click(getAction("button", "Done"));
     await started.promise;
-    click(getAction("button", "Close", screen.getByRole("dialog")));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    click(getAction("link", `${platform === "lark" ? "Lark" : "Feishu"} bots`));
+    await screen.findByRole("heading", {
+      name: `${platform === "lark" ? "Lark" : "Feishu"} bots`,
     });
     click(getAction("button", "More options for First bot"));
-    click(getAction("button", "Manage"));
-    click(getAction("button", "Back"));
-    click(getAction("button", "Back"));
+    click(getAction("link", "Manage"));
+    click(await findAction("button", "Back"));
+    click(await findAction("button", "Back"));
     await fill(screen.getByLabelText("App Secret"), "new-test-secret");
-    response.resolve();
-    await screen.findByText(
-      `${platform === "lark" ? "Lark" : "Feishu"} bot installed successfully`,
-    );
-    expect(window.location.href).toBe(settingsUrl);
-    await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
+    await act(async () => {
+      response.resolve();
+      await response.promise;
+    });
+    expect(new URL(window.location.href).pathname).toBe(setupUrl);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByLabelText("App Secret")).toHaveValue("new-test-secret");
   },
 );

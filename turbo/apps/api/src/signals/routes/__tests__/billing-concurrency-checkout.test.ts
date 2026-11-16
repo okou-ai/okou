@@ -31,7 +31,7 @@ const {
   TEST_PRICE_CONCURRENCY,
   setTierPrices,
   currentSecond,
-  claimAgentToken,
+  issueAgentToken,
   readBillingStatus,
   createSubscriptionOrg,
   createOwnedBillingOrg,
@@ -4022,7 +4022,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
     ]);
   });
 
-  it("adds concurrency to the Plan subscription with a real claim-issued agent token", async () => {
+  it("adds concurrency to the Plan subscription with a real execution-issued agent token", async () => {
     context.mocks.stripe.subscriptions.list.mockResolvedValueOnce({
       data: [],
       has_more: false,
@@ -4076,7 +4076,7 @@ describe("POST /api/billing/concurrency-checkout", () => {
         ],
       },
     });
-    const token = await claimAgentToken(fixture);
+    const token = await issueAgentToken(fixture);
 
     const client = setupApp({
       context,

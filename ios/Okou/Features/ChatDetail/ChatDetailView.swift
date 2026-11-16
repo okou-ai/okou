@@ -9,6 +9,7 @@ struct ChatDetailView: View {
   let topContentInset: CGFloat
   let mentionSource: ComposerMentionSource?
   let onFirstMessagePresented: (@MainActor (String) -> Void)?
+  let fork: ((ChatFeedbackSelection) -> Void)?
   private var thread: ChatThread { conversation.thread }
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -26,7 +27,8 @@ struct ChatDetailView: View {
     didSend: (@MainActor () async -> Void)? = nil,
     topContentInset: CGFloat = 0,
     mentionSource: ComposerMentionSource? = nil,
-    onFirstMessagePresented: (@MainActor (String) -> Void)? = nil
+    onFirstMessagePresented: (@MainActor (String) -> Void)? = nil,
+    fork: ((ChatFeedbackSelection) -> Void)? = nil
   ) {
     self.conversation = conversation
     self.agents = agents
@@ -34,6 +36,7 @@ struct ChatDetailView: View {
     self.topContentInset = topContentInset
     self.mentionSource = mentionSource
     self.onFirstMessagePresented = onFirstMessagePresented
+    self.fork = fork
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
   }
 
@@ -49,7 +52,8 @@ struct ChatDetailView: View {
       var rows: [ConversationCollectionRow] = conversation.hasEarlierMessages ? [.earlier] : []
       rows += sharing.groups.filter { !$0.eventIDs.allSatisfy { !visibleIDs.contains($0) } }
         .enumerated().map { index, group in
-          .share(group, topSpacing: index == 0 ? 20 : 24)
+          // The preceding row already reserves the selection background's bottom inset.
+          .share(group, topSpacing: index == 0 ? OkouSpace.xl : OkouSpace.xxl - OkouSpace.sm)
         }
       return rows
     }
@@ -208,6 +212,7 @@ struct ChatDetailView: View {
       },
       earlierMessages: conversation.earlierWindowMessages,
       quote: conversation.quote,
+      fork: fork,
       refresh: {
         await conversation.refresh()
         await conversation.connectorActions.refreshKnown()
@@ -528,7 +533,9 @@ struct ChatDetailView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
       if message.role == .assistant && showsAvatar {
-        assistantAvatar.opacity(conversation.sharing.isSelecting ? 0 : 1)
+        assistantAvatar
+          .padding(
+            .leading, conversation.sharing.isSelecting ? OkouAvatarSize.message + OkouSpace.sm : 0)
       }
       if message.role == .system {
         Label(message.text, okouSymbol: message.isError ? "circle-alert" : "circle-stop")

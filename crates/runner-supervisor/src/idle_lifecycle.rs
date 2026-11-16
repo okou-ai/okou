@@ -28,16 +28,16 @@ use tokio::sync::{Notify, oneshot};
 use tokio_util::task::TaskTracker;
 use tracing::{info, warn};
 
-use crate::blank_pool::BlankPoolDiagnostics;
-use runner_executor::executor::{BlankPoolSelection, BlankPoolSelectionReason};
+use crate::blank_pool::{BlankPoolDiagnostics, reserve_blank_with_diagnostics};
+use runner_executor::executor::BlankPoolSelection;
 use runner_host::idle_prune_control::{PruneIdleReport, PruneIdleResponse};
 use runner_host::paths::short_digest;
 use runner_lifecycle::host_memory_operations::{HostMemoryOperations, MemoryOperationError};
 use runner_lifecycle::idle_pool::{
-    BlankIdleReservationMiss, DestroyOutcome, ExactIdleReservationMiss, IdleDestroyJob,
-    IdleDestroyPayload, IdleDestroyResult, IdlePool, IdlePoolRetirement, IdlePoolSnapshot,
-    IdleRetirementCandidate, IdleRetirementEnvelope, ReservedIdleSandbox,
-    RestoreReservedIdleResult, RetainedActivationCleanup, RetainedIdleDestroyResult,
+    DestroyOutcome, ExactIdleReservationMiss, IdleDestroyJob, IdleDestroyPayload,
+    IdleDestroyResult, IdlePool, IdlePoolRetirement, IdlePoolSnapshot, IdleRetirementCandidate,
+    IdleRetirementEnvelope, ReservedIdleSandbox, RestoreReservedIdleResult,
+    RetainedActivationCleanup, RetainedIdleDestroyResult,
 };
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::{StatusResult, StatusTracker};
@@ -79,7 +79,7 @@ pub struct IdleDestroyTracker {
     reuse_state_notify: Arc<Notify>,
     activation_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
     finalizing_owners:
-        Arc<std::sync::Mutex<Vec<crate::finalizing_admission::GuardedFinalizingRecovery>>>,
+        Arc<std::sync::Mutex<Vec<crate::finalizing_handoff::GuardedFinalizingRecovery>>>,
     pressure_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
     #[cfg(any(test, feature = "test-support"))]
     pressure_pool_waits: tokio::sync::watch::Sender<u64>,
@@ -253,10 +253,9 @@ impl IdleDestroyTracker {
 
     pub(crate) fn retain_finalizing_recovery(
         &self,
-        recovery: crate::finalizing_admission::GuardedFinalizingRecovery,
+        recovery: crate::finalizing_handoff::GuardedFinalizingRecovery,
     ) {
-        if recovery.claimed.is_some() || recovery.resource.is_some() || recovery.delivery_uncertain
-        {
+        if recovery.job.is_some() || recovery.resource.is_some() || recovery.delivery_uncertain {
             // Preserve actual custody on an advisory poisoned lock. Recovery
             // still reports that error; this never fabricates a valid receipt.
             let mut owners = match self.finalizing_owners.lock() {
@@ -267,11 +266,11 @@ impl IdleDestroyTracker {
         }
     }
 
-    /// Recover original claim/resource owners only after joined shutdown.
+    /// Recover original job/resource owners only after joined shutdown.
     /// Taking custody supplies neither physical credit nor completion proof.
     pub fn take_retained_finalizing_owners(
         &self,
-    ) -> Result<Vec<crate::finalizing_admission::GuardedFinalizingRecovery>, MemoryOperationError>
+    ) -> Result<Vec<crate::finalizing_handoff::GuardedFinalizingRecovery>, MemoryOperationError>
     {
         if !self.tasks.is_closed() || !self.tasks.is_empty() {
             return Err(MemoryOperationError::OwnershipInvariant);
@@ -403,7 +402,7 @@ pub struct IdlePressureOutcome {
 /// A reuse reservation paired with the idle snapshot captured by the pool
 /// mutation or direct handoff. Its reservation retains the parked/running
 /// distinction so cancellation cannot restore a running sandbox to the pool.
-/// Claimed activation can publish ownership without reacquiring the pool.
+/// Job activation can publish ownership without reacquiring the pool.
 pub struct ReservedIdleActivation {
     reservation: Box<ReservedIdleSandbox>,
     idle_snapshot: IdlePoolSnapshot,
@@ -463,7 +462,7 @@ pub async fn reserve_source_idle_for_spawn(
 }
 
 /// Reserve exactly the predecessor's generation, retaining a typed miss reason
-/// from the same locked observation when no matching entry can be claimed.
+/// from the same locked observation when no matching entry can be reserved.
 pub async fn reserve_exact_idle_for_spawn(
     idle_pool: &SharedIdlePool,
     reuse_key: &str,
@@ -485,7 +484,7 @@ pub async fn reserve_exact_idle_for_spawn(
     Ok(ReservedIdleActivation::new(reservation, snapshot))
 }
 
-/// Restore an unconsumed claim reservation, publish the post-restore snapshot,
+/// Restore an unconsumed idle reservation, publish the post-restore snapshot,
 /// and finish any rejected or replaced sandbox destruction before notifying.
 pub async fn rollback_reserved_idle_for_spawn(
     reservation: ReservedIdleActivation,
@@ -502,7 +501,7 @@ pub async fn rollback_reserved_idle_for_spawn(
         let destroy_task = match restore_result {
             RestoreReservedIdleResult::Restored => None,
             RestoreReservedIdleResult::Replaced(job) | RestoreReservedIdleResult::Rejected(job) => {
-                Some(tracker.spawn_job(*job, "finalizing_claim_reserved_idle_rollback"))
+                Some(tracker.spawn_job(*job, "finalizing_activation_reserved_idle_rollback"))
             }
         };
         (destroy_task, snapshot)
@@ -545,7 +544,7 @@ impl RetiringIdleEntry {
 /// consumed. Resource-budget substitution takes only its short synchronous
 /// mutex inside that pool lock and never carries a guard across an await. Every
 /// evicted payload obtains tracked cleanup ownership before the final pool
-/// snapshot is captured. The caller owns publication so pre-claim admission
+/// snapshot is captured. The caller owns publication so job acceptance
 /// can register it independently without waiting for status state or IO.
 pub async fn select_idle_entries_for_pressure(
     idle_pool: &SharedIdlePool,
@@ -594,7 +593,7 @@ pub async fn select_idle_entries_for_pressure(
                         profile = %retiring.profile_name(),
                         vcpu = retiring.budget_vcpu(),
                         memory_mb = retiring.budget_memory_mb(),
-                        "evicting idle sandbox for admission pressure"
+                        "evicting idle sandbox for execution capacity pressure"
                     );
                     retiring_leases.push(retiring.into_budget_lease());
                     fresh_lease = try_substitute_retiring_leases(
@@ -638,33 +637,14 @@ fn reserve_pressure_reuse(
     if !request.allow_compatible_blank {
         return (None, None);
     }
-    match pool.reserve_blank(request.profile_name, request.device_rate_limits) {
-        Ok(reservation) => (Some(reservation), Some(BlankPoolSelection::Hit)),
-        Err(BlankIdleReservationMiss::Empty) => (
-            None,
-            Some(request.blank_pool_diagnostics.map_or(
-                BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown),
-                |diagnostics| {
-                    diagnostics.classify_empty(
-                        request.profile_name,
-                        request.device_rate_limits,
-                        pool.revision(),
-                        budget,
-                    )
-                },
-            )),
-        ),
-        Err(BlankIdleReservationMiss::Incompatible) => (
-            None,
-            Some(BlankPoolSelection::Miss(
-                BlankPoolSelectionReason::IncompatibleShape,
-            )),
-        ),
-        Err(BlankIdleReservationMiss::Unknown) => (
-            None,
-            Some(BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown)),
-        ),
-    }
+    let (reservation, selection) = reserve_blank_with_diagnostics(
+        pool,
+        request.profile_name,
+        request.device_rate_limits,
+        request.blank_pool_diagnostics,
+        budget,
+    );
+    (reservation, Some(selection))
 }
 
 fn try_substitute_retiring_leases(

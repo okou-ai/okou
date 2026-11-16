@@ -121,6 +121,16 @@ def _post_webhook(url: str, bearer_credential: str, data: bytes) -> None:
             raise
 
 
+def _publish_delivery_outcome(
+    outcome: WebhookDeliveryOutcome,
+    delivery_outcome_callback: _DeliveryOutcomeCallback | None,
+) -> None:
+    """Record the outcome before notifying its delivery owner."""
+    record_delivery_outcome(outcome)
+    if delivery_outcome_callback is not None:
+        delivery_outcome_callback(outcome)
+
+
 def _post_webhook_with_retry(
     url: str,
     bearer_credential: str,
@@ -143,15 +153,11 @@ def _post_webhook_with_retry(
             url, bearer_credential, payload, proxy_log_path, log_type, max_retries
         )
     except Exception:
-        record_delivery_outcome(_PERMANENT_FAILURE)
-        if delivery_outcome_callback is not None:
-            delivery_outcome_callback(_PERMANENT_FAILURE)
-        else:
+        _publish_delivery_outcome(_PERMANENT_FAILURE, delivery_outcome_callback)
+        if delivery_outcome_callback is None:
             raise
     else:
-        record_delivery_outcome(outcome)
-        if delivery_outcome_callback is not None:
-            delivery_outcome_callback(outcome)
+        _publish_delivery_outcome(outcome, delivery_outcome_callback)
 
 
 def _handle_retryable_webhook_failure(

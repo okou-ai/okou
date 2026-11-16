@@ -11,7 +11,7 @@ import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserUserActionRoutes } from "../browser-user-actions";
 import { cronBrowserReconcileRoutes } from "../cron-browser-reconcile";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 
 import {
@@ -165,7 +165,9 @@ async function scenario(f: Awaited<ReturnType<typeof fixture>>) {
   const ownedPageTargetId = aPage.targetId;
   async function create(chat = a, pageTargetId = ownedPageTargetId) {
     return await client().create({
-      headers: { authorization: `Bearer ${okouTokenFromClaim(chat.claim)}` },
+      headers: {
+        authorization: `Bearer ${okouTokenFromExecution(chat.execution)}`,
+      },
       body: {
         kind: "input",
         title: "Complete the website form",

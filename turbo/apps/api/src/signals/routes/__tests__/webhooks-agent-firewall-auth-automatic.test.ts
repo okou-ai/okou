@@ -160,18 +160,18 @@ describe("builtin Automatic firewall credential destinations", () => {
       prompt: "Use the refreshed MCP identity",
     });
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.executionInput(run.runId);
-    const builtin = claim.firewalls?.find((entry) => {
+    const execution = await runs.executionInput(run.runId);
+    const builtin = execution.firewalls?.find((entry) => {
       return entry.kind === "builtin" && entry.name === catalog.slug;
     });
     if (builtin?.kind !== "builtin") {
       throw new Error("Expected the builtin Automatic firewall");
     }
     const refreshed = await firewall.requestFirewallAuth(
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       {
         encryptedSecrets:
-          claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
+          execution.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
         authHeaders: catalog.firewallAuthHeaders,
         forceRefresh: true,
         matchedFirewall: {
@@ -342,8 +342,8 @@ describe("builtin Automatic firewall credential destinations", () => {
       prompt: "Use a live DCR registration",
     });
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.executionInput(run.runId);
-    const builtin = claim.firewalls?.find((entry) => {
+    const execution = await runs.executionInput(run.runId);
+    const builtin = execution.firewalls?.find((entry) => {
       return entry.kind === "builtin" && entry.name === catalog.slug;
     });
     if (builtin?.kind !== "builtin") {
@@ -369,10 +369,10 @@ describe("builtin Automatic firewall credential destinations", () => {
     );
     const refresh = settleIncludingAbort(
       firewall.requestFirewallAuth(
-        { authorization: `Bearer ${claim.sandboxToken}` },
+        { authorization: `Bearer ${execution.sandboxToken}` },
         {
           encryptedSecrets:
-            claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
+            execution.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
           authHeaders: catalog.firewallAuthHeaders,
           forceRefresh: true,
           matchedFirewall: {
@@ -564,17 +564,17 @@ describe("builtin Automatic firewall credential destinations", () => {
         prompt: "Use persisted Automatic refresh tokens",
       });
       await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.executionInput(run.runId);
-      const builtin = claim.firewalls?.find((entry) => {
+      const execution = await runs.executionInput(run.runId);
+      const builtin = execution.firewalls?.find((entry) => {
         return entry.kind === "builtin" && entry.name === catalog.slug;
       });
       if (builtin?.kind !== "builtin") {
         throw new Error("Expected the builtin Automatic firewall");
       }
-      const authHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
+      const authHeaders = { authorization: `Bearer ${execution.sandboxToken}` };
       const authBody = {
         encryptedSecrets:
-          claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
+          execution.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
         authHeaders: catalog.firewallAuthHeaders,
         matchedFirewall: {
           name: catalog.slug,
@@ -869,8 +869,8 @@ describe("builtin Automatic firewall credential destinations", () => {
     const outcome = await settleIncludingAbort(
       (async () => {
         await runs.heartbeatRunner(runnerGroup);
-        const claim = await runs.executionInput(run.runId);
-        const builtin = claim.firewalls?.find((entry) => {
+        const execution = await runs.executionInput(run.runId);
+        const builtin = execution.firewalls?.find((entry) => {
           return entry.kind === "builtin" && entry.name === catalog.slug;
         });
         if (builtin?.kind !== "builtin") {
@@ -883,10 +883,12 @@ describe("builtin Automatic firewall credential destinations", () => {
               ...rediscoveredAuthority,
             })
           : null;
-        const authHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
+        const authHeaders = {
+          authorization: `Bearer ${execution.sandboxToken}`,
+        };
         const body = {
           encryptedSecrets:
-            claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
+            execution.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
           authHeaders: catalog.firewallAuthHeaders,
           forceRefresh: true,
           matchedFirewall: {

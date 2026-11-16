@@ -85,8 +85,8 @@ describe("Discord chat-write rollout compatibility", () => {
             throw new Error("Expected a Discord Run");
           }
           await runs.heartbeatRunner(actor.runnerGroup);
-          const claim = await runs.executionInput(input.runId);
-          const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+          const execution = await runs.executionInput(input.runId);
+          const headers = { authorization: `Bearer ${execution.sandboxToken}` };
           const completion = {
             runId: input.runId,
             exitCode: 1,

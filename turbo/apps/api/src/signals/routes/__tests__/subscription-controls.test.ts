@@ -20,11 +20,11 @@ import {
   mockClaudeCodeTokenEndpoint,
   mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const mocks = createRouteMocks(context);
 const routes = Object.freeze([
   ...meThirdPartySubscriptionsListRoutes,
@@ -262,7 +262,7 @@ test("cLI account activation reuses the existing switch behavior", async () => {
   ).toStrictEqual([accountIds[1], accountIds[0]]);
 });
 
-test("a claimed agent cannot execute a subscription reset", async () => {
+test("an executing agent cannot execute a subscription reset", async () => {
   const { actor, accountIds } = await fixture();
   let consumed = false;
   server.use(

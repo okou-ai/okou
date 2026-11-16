@@ -15,7 +15,7 @@ describe("CHAT-02: model-first routing", () => {
       actor,
       agentId,
       runnerGroup,
-      claimChatRun,
+      runExecution,
       sendChatRun,
       sendWaitingChatInput,
     } = await publicChatActor(context);
@@ -31,7 +31,7 @@ describe("CHAT-02: model-first routing", () => {
       prompt: "hold admission capacity",
       model: "claude-fable-5-1",
     });
-    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
+    const anchorExecution = await runExecution(anchor.runId);
     await own(async () => {
       return await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
     });
@@ -46,17 +46,19 @@ describe("CHAT-02: model-first routing", () => {
       return await cancelChatRun(
         actor,
         anchor.runId,
-        anchorClaim.sandboxHeaders,
+        anchorExecution.sandboxHeaders,
       );
     });
     const run = await waiting.launchedRun();
-    const claimed = await claimChatRun(runnerGroup, run.runId);
-    expect(claimed.claim.prompt).toBe(prompt);
+    const execution = await runExecution(run.runId);
+    expect(execution.execution.prompt).toBe(prompt);
 
-    expect(claimed.claim.piSessionId).toBe(run.threadId);
-    expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
+    expect(execution.execution.piSessionId).toBe(run.threadId);
+    expect(execution.execution.piLaunchConfig).toMatchObject({
+      schemaVersion: 2,
+    });
     await own(async () => {
-      return await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+      return await cancelChatRun(actor, run.runId, execution.sandboxHeaders);
     });
   }, 30_000);
 });

@@ -24,6 +24,19 @@ const context = testContext();
 const TARGET_THREAD_ID = "b0000000-0000-4000-a000-000000000062";
 const PASSAGE = "Review this remote workspace before forwarding.";
 
+function findRemoteAccessEntry() {
+  return waitFor(
+    () => {
+      const entry = screen.queryByText("Remote access");
+      if (!entry) {
+        throw new Error("Remote access entry not found");
+      }
+      return entry;
+    },
+    { container: document.body },
+  );
+}
+
 function installForwardRemoteAccess() {
   const { installRunChat } = createChatRunFixtures(context);
   const lifecycle = installRunChat({
@@ -106,7 +119,7 @@ test("A forward to an existing chat keeps its own remote permissions and pending
     forward,
   );
   click(connectorTrigger);
-  click(await screen.findByText("Remote access"));
+  click(await findRemoteAccessEntry());
 
   const remote = await screen.findByRole("dialog", { name: "Remote access" });
   const choice = await within(remote).findByRole("combobox", {
@@ -147,7 +160,7 @@ test("A forward to an existing chat keeps its own remote permissions and pending
     expect(restoredForward).not.toBeInTheDocument();
   });
   click(await findFastControl("button", "Connectors"));
-  click(await screen.findByText("Remote access"));
+  click(await findRemoteAccessEntry());
   const source = await screen.findByRole("dialog", { name: "Remote access" });
   expect(
     within(source).getByRole("combobox", { name: "SSH Forward workstation" }),

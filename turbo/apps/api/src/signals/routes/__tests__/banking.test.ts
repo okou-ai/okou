@@ -95,16 +95,18 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
           prompt: "banking precondition",
         });
   await api.heartbeatRunner(runnerGroup);
-  const claim = await api.executionInput(run.runId);
-  const token = claim.platformEnvironment.OKOU_TOKEN;
+  const execution = await api.executionInput(run.runId);
+  const token = execution.platformEnvironment.OKOU_TOKEN;
   if (!token) {
-    throw new Error("Expected the Banking Runner claim to include OKOU_TOKEN");
+    throw new Error(
+      "Expected the Banking Runner execution to include OKOU_TOKEN",
+    );
   }
   onTestFinished(async () => {
     await api.requestCancelRun(actor, run.runId, [200]);
     await createWebhookCallbackApi(context).requestAgentComplete(
       { runId: run.runId, exitCode: 1, error: "Banking carrier cancelled" },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();

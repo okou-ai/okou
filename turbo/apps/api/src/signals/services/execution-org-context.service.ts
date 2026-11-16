@@ -33,9 +33,8 @@ const planSchema = object({
 });
 /**
  * Transport only: business decoding belongs to independent derived consumers.
- * `attached` is an optional scalar subquery that is already awaited before
- * enqueue alongside these rows, so it can share this statement without moving
- * any failure across the enqueue boundary.
+ * `attached` is an optional scalar subquery whose facts are consumed alongside
+ * these organization settings from the same statement snapshot.
  */
 export function executionOrgQuery(orgId: string, at: Date, attached?: SQL) {
   const expired = executionCreditQueries({ orgId, userId: "" }, at).expired;

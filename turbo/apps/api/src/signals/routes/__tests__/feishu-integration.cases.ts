@@ -3,7 +3,7 @@ import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 import {
@@ -610,7 +610,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
 
   const actors = new Map<string, ApiTestUser>();
   const deletedUsers = new Set<string>();
-  const claims = new Map<string, string>();
+  const executionTokens = new Map<string, string>();
   let operations: ReturnType<typeof createFixtureOperationOwner>;
   let accepted: () => void;
   let retainedHistory: (() => void) | undefined;
@@ -669,11 +669,11 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       return auth.requestCodexComplete(actor, started.body.sessionToken, [200]);
     });
   }
-  async function claimRun(runId: string) {
+  async function readRunExecution(runId: string) {
     return await own(async () => {
-      const claim = await runsApi.executionInput(runId);
-      claims.set(runId, claim.sandboxToken);
-      return claim;
+      const execution = await runsApi.executionInput(runId);
+      executionTokens.set(runId, execution.sandboxToken);
+      return execution;
     });
   }
   async function grantEntitlement(actor: ApiTestUser) {
@@ -696,7 +696,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       await own(() => {
         return runsApi.requestCancelRun(actor, runId, [200]);
       });
-      const token = claims.get(runId);
+      const token = executionTokens.get(runId);
       if (token) {
         await own(() => {
           return webhooksApi.requestAgentComplete(
@@ -794,7 +794,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
               return runsApi.requestCancelRun(actor, run.id, [200]);
             });
           }
-          const token = claims.get(run.id);
+          const token = executionTokens.get(run.id);
           if (
             token &&
             !["completed", "failed", "timeout"].includes(run.status)
@@ -869,7 +869,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
   function reset(): void {
     actors.clear();
     deletedUsers.clear();
-    claims.clear();
+    executionTokens.clear();
     retainedHistory = undefined;
     retainedWebhook = undefined;
     let previous: (() => void) | undefined;
@@ -1284,7 +1284,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     };
   }
 
-  async function claimConnectedFeishuSource(
+  async function executeWithConnectedFeishuSource(
     fixture: FeishuRunFixture,
     customConnectorId: string,
     options: {
@@ -1314,19 +1314,19 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     await own(() => {
       return runsApi.heartbeatRunner(fixture.runnerGroup);
     });
-    const claim = await claimRun(run.id);
+    const receivedExecution = await readRunExecution(run.id);
     const source = requireValue(
-      claim.connectorRuntimeTargets?.find((target) => {
+      receivedExecution.connectorRuntimeTargets?.find((target) => {
         return (
           target.kind === "custom" &&
           target.customConnectorId === customConnectorId
         );
       }),
-      "Expected the connected identity in the actual Runner claim",
+      "Expected the connected identity in the actual Runner execution",
     );
     const sourceId = requireValue(
       source.sourceId,
-      "Expected the claimed connector source",
+      "Expected the selected execution connector source",
     );
     await cancel();
     return sourceId;
@@ -1689,12 +1689,12 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     await own(() => {
       return runsApi.heartbeatRunner(runnerGroup);
     });
-    const initialClaim = await claimRun(initialRun.id);
+    const initialExecution = await readRunExecution(initialRun.id);
 
     const mainSessionId = randomUUID();
     await completeRunSession({
       runId: initialRun.id,
-      sandboxToken: initialClaim.sandboxToken,
+      sandboxToken: initialExecution.sandboxToken,
       sessionId: mainSessionId,
       history: `bdd initial feishu history ${initialRun.id}`,
       assistantText: "Initial Feishu DM answer",
@@ -1706,7 +1706,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     own,
     configureNativeModels,
     createActor,
-    claimRun,
+    readRunExecution,
     ownFeishuRun,
     grantEntitlement,
     cancelPlan,
@@ -1718,7 +1718,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     configureTestInstallation,
     setupFeishuInstallationFixture,
     setupFeishuRunFixture,
-    claimConnectedFeishuSource,
+    executeWithConnectedFeishuSource,
     feishuAuthorizationUrlFromResponse,
     completeFeishuAuthorization,
     requestFeishuConnectUrl,
@@ -1750,7 +1750,7 @@ export function registerFeishuIntegrationTests(
       own,
       configureNativeModels,
       createActor,
-      claimRun,
+      readRunExecution,
       ownFeishuRun,
       deletedUsers,
       provider,
@@ -1760,7 +1760,7 @@ export function registerFeishuIntegrationTests(
       configureTestInstallation,
       setupFeishuInstallationFixture,
       setupFeishuRunFixture,
-      claimConnectedFeishuSource,
+      executeWithConnectedFeishuSource,
       feishuAuthorizationUrlFromResponse,
       completeFeishuAuthorization,
       requestFeishuConnectUrl,
@@ -4181,12 +4181,14 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(fixture.runnerGroup);
         });
-        const claim = await claimRun(run.id);
-        expect(claim.appendSystemPrompt).toContain("Your name is Okou.");
+        const receivedExecution = await readRunExecution(run.id);
+        expect(receivedExecution.appendSystemPrompt).toContain(
+          "Your name is Okou.",
+        );
         fixtureState.outboundMessages = [];
         await completeRunSession({
           runId: run.id,
-          sandboxToken: claim.sandboxToken,
+          sandboxToken: receivedExecution.sandboxToken,
           sessionId: `bdd-feishu-host-brand-${run.id}`,
           history: `bdd Feishu host brand history ${run.id}`,
           assistantText: "Host-branded Feishu response",
@@ -4234,7 +4236,7 @@ export function registerFeishuIntegrationTests(
             "Expected the managed Feishu connector",
           );
 
-          const sourceBefore = await claimConnectedFeishuSource(
+          const sourceBefore = await executeWithConnectedFeishuSource(
             fixture,
             connectorBefore.id,
           );
@@ -4282,7 +4284,7 @@ export function registerFeishuIntegrationTests(
                 }),
               }),
             ]);
-            const sourceAfter = await claimConnectedFeishuSource(
+            const sourceAfter = await executeWithConnectedFeishuSource(
               fixture,
               connectorBefore.id,
               { verificationToken: rotatedVerificationToken },
@@ -4899,7 +4901,7 @@ export function registerFeishuIntegrationTests(
           customConnectors.body.connectors[0],
           "Expected the managed Feishu connector",
         );
-        const memberConnectorId = await claimConnectedFeishuSource(
+        const memberConnectorId = await executeWithConnectedFeishuSource(
           fixture,
           customConnector.id,
         );
@@ -4982,7 +4984,7 @@ export function registerFeishuIntegrationTests(
           replacementAuthorizationUrl,
           replacementOpenId,
         );
-        const replacementSourceId = await claimConnectedFeishuSource(
+        const replacementSourceId = await executeWithConnectedFeishuSource(
           fixture,
           customConnector.id,
           { openId: replacementOpenId },
@@ -5192,12 +5194,12 @@ export function registerFeishuIntegrationTests(
           await own(() => {
             return runsApi.heartbeatRunner(runnerGroup);
           });
-          const claim = await claimRun(run.id);
+          const receivedExecution = await readRunExecution(run.id);
           const fileId = requireValue(
-            claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1],
+            receivedExecution.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1],
             "Expected canonical file id",
           );
-          expect(claim.prompt).not.toContain(fileKey);
+          expect(receivedExecution.prompt).not.toContain(fileKey);
           await own(() => {
             return expectIntegrationInputPreview(context, {
               actor,
@@ -5205,7 +5207,7 @@ export function registerFeishuIntegrationTests(
               bytes,
               contentType,
               uploads,
-              okouToken: claim.platformEnvironment.OKOU_TOKEN,
+              okouToken: receivedExecution.platformEnvironment.OKOU_TOKEN,
             });
           });
           await own(() => {
@@ -5305,8 +5307,8 @@ export function registerFeishuIntegrationTests(
           await own(() => {
             return runsApi.heartbeatRunner(runnerGroup);
           });
-          const claim = await claimRun(run.id);
-          expect(claim.prompt).not.toContain("[Web file]");
+          const receivedExecution = await readRunExecution(run.id);
+          expect(receivedExecution.prompt).not.toContain("[Web file]");
           upstreamFailed = false;
           await postFile();
           await expect(
@@ -5318,7 +5320,10 @@ export function registerFeishuIntegrationTests(
             expect.objectContaining({ fileId }),
           ]);
           const { input: delivery } = await own(() => {
-            return runsApi.nextSteerableInput(claim.sandboxToken, run.id);
+            return runsApi.nextSteerableInput(
+              receivedExecution.sandboxToken,
+              run.id,
+            );
           });
           if (!delivery) {
             throw new Error("Expected the next Feishu file message");
@@ -5335,7 +5340,7 @@ export function registerFeishuIntegrationTests(
                 bytes,
                 contentType: "application/pdf",
                 uploads,
-                okouToken: claim.platformEnvironment.OKOU_TOKEN,
+                okouToken: receivedExecution.platformEnvironment.OKOU_TOKEN,
               });
             });
           } else {
@@ -5416,8 +5421,8 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const claim = await claimRun(run.id);
-        expect(claim.prompt).toBe(run.prompt);
+        const receivedExecution = await readRunExecution(run.id);
+        expect(receivedExecution.prompt).toBe(run.prompt);
         expect(fixtureState.oauthTokenGrantTypes).toStrictEqual([
           "authorization_code",
         ]);
@@ -5427,7 +5432,7 @@ export function registerFeishuIntegrationTests(
           "",
         )}`;
         expect(
-          claim.firewalls?.find((entry) => {
+          receivedExecution.firewalls?.find((entry) => {
             return entry.kind === "inline"
               ? entry.firewall.name === internalName
               : entry.name === internalName;
@@ -5503,18 +5508,20 @@ export function registerFeishuIntegrationTests(
             ],
           },
         });
-        expect(claim.networkPolicies?.[internalName]).toStrictEqual({
-          allow: [
-            "standard:use",
-            "sharing:manage",
-            "comments:write",
-            "calendar:write",
-            "tasks:write",
-          ],
-          deny: ["messages:send-as-user", "resources:delete", "chats:manage"],
-          ask: [],
-          unknownPolicy: "deny",
-        });
+        expect(receivedExecution.networkPolicies?.[internalName]).toStrictEqual(
+          {
+            allow: [
+              "standard:use",
+              "sharing:manage",
+              "comments:write",
+              "calendar:write",
+              "tasks:write",
+            ],
+            deny: ["messages:send-as-user", "resources:delete", "chats:manage"],
+            ask: [],
+            unknownPolicy: "deny",
+          },
+        );
         const permissionGrant = await own(() => {
           return accept(
             setupApp({ context, routes: agentsRoutes })(
@@ -5541,23 +5548,29 @@ export function registerFeishuIntegrationTests(
             permissionNames: ["messages:send-as-user"],
           },
         ]);
-        const managedSkillMount = claim.contentBundles.skills.find((bundle) => {
-          return bundle.mountPath.endsWith(
-            `-${managedConnector.id.replaceAll("-", "").slice(0, 8)}`,
-          );
-        });
+        const managedSkillMount = receivedExecution.contentBundles.skills.find(
+          (bundle) => {
+            return bundle.mountPath.endsWith(
+              `-${managedConnector.id.replaceAll("-", "").slice(0, 8)}`,
+            );
+          },
+        );
         expect(managedSkillMount?.sha256).toBe(managedSkillDigest);
-        expect(claim.prompt).toContain(feishuFilePrompt);
-        expect(claim.prompt).toContain("   [MESSAGE_ID] om_file_message");
-        expect(claim.prompt).toContain("   [TYPE] file");
-        const fileId = claim.prompt.match(/ {3}\[FILE_KEY\] ([^\n]+)/u)?.[1];
+        expect(receivedExecution.prompt).toContain(feishuFilePrompt);
+        expect(receivedExecution.prompt).toContain(
+          "   [MESSAGE_ID] om_file_message",
+        );
+        expect(receivedExecution.prompt).toContain("   [TYPE] file");
+        const fileId = receivedExecution.prompt.match(
+          / {3}\[FILE_KEY\] ([^\n]+)/u,
+        )?.[1];
         expect(fileId).toMatch(/^feishu_file_[A-Za-z0-9_-]{22}$/u);
-        expect(claim.prompt).not.toContain(fileKey);
-        expect(claim.prompt).toContain(`   [FILE_KEY] ${fileId}`);
-        expect(claim.appendSystemPrompt).toContain(
+        expect(receivedExecution.prompt).not.toContain(fileKey);
+        expect(receivedExecution.prompt).toContain(`   [FILE_KEY] ${fileId}`);
+        expect(receivedExecution.appendSystemPrompt).toContain(
           `okou ${platform} download-file -h`,
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(receivedExecution.appendSystemPrompt).toContain(
           `okou ${platform} upload-file -h`,
         );
 
@@ -5649,7 +5662,7 @@ export function registerFeishuIntegrationTests(
             }).toString()}`,
             {
               headers: {
-                authorization: `Bearer ${okouTokenFromClaim(claim)}`,
+                authorization: `Bearer ${okouTokenFromExecution(receivedExecution)}`,
               },
             },
           );
@@ -5674,7 +5687,7 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const otherClaim = await claimRun(otherRun.id);
+        const otherExecution = await readRunExecution(otherRun.id);
         const wrongRunResponse = await own(() => {
           return app.request(
             `/api/integrations/${platform}/download-file?${new URLSearchParams({
@@ -5684,7 +5697,7 @@ export function registerFeishuIntegrationTests(
             }).toString()}`,
             {
               headers: {
-                authorization: `Bearer ${okouTokenFromClaim(otherClaim)}`,
+                authorization: `Bearer ${okouTokenFromExecution(otherExecution)}`,
               },
             },
           );
@@ -5806,16 +5819,16 @@ export function registerFeishuIntegrationTests(
           await own(() => {
             return runsApi.heartbeatRunner(runnerGroup);
           });
-          const claim = await claimRun(run.id);
-          expect(claim.prompt).toContain("Image comparison\n");
-          expect(claim.prompt).toContain(
+          const receivedExecution = await readRunExecution(run.id);
+          expect(receivedExecution.prompt).toContain("Image comparison\n");
+          expect(receivedExecution.prompt).toContain(
             "Compare these images with [the brief](https://example.com/brief)",
           );
           if (chatType === "group") {
-            expect(claim.prompt).toContain("@Nova");
+            expect(receivedExecution.prompt).toContain("@Nova");
           }
           const importedFileId = requireValue(
-            claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1],
+            receivedExecution.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1],
             "Expected the imported rich post image",
           );
           expect(uploads).toHaveLength(1);
@@ -5826,15 +5839,15 @@ export function registerFeishuIntegrationTests(
               bytes: imageBytes,
               contentType: "image/png",
               uploads,
-              okouToken: claim.platformEnvironment.OKOU_TOKEN,
+              okouToken: receivedExecution.platformEnvironment.OKOU_TOKEN,
             });
           });
           await expectFeishuResourceDownloads({
             actor,
             chatId: message.chat_id,
             chatMode: chatType,
-            okouToken: okouTokenFromClaim(claim),
-            prompt: claim.prompt,
+            okouToken: okouTokenFromExecution(receivedExecution),
+            prompt: receivedExecution.prompt,
             resources: [
               { messageId, fileKey: "img_post_second", type: "image" },
             ],
@@ -5892,7 +5905,7 @@ export function registerFeishuIntegrationTests(
           );
           await completeRunSession({
             runId: run.id,
-            sandboxToken: claim.sandboxToken,
+            sandboxToken: receivedExecution.sandboxToken,
             sessionId: `rich-post-${run.id}`,
             history: `rich post history ${run.id}`,
             assistantText: "Here is the image comparison.",
@@ -6098,9 +6111,9 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const claim = await claimRun(run.id);
+        const receivedExecution = await readRunExecution(run.id);
         const history = requireValue(
-          claim.appendSystemPrompt,
+          receivedExecution.appendSystemPrompt,
           "Expected conversation history",
         );
         expect(history).toContain(`- SENDER: {id: ${BOT_OPEN_ID}, name: Okou}`);
@@ -6124,7 +6137,7 @@ export function registerFeishuIntegrationTests(
           actor,
           chatId: "oc_feishu_dm",
           chatMode: "p2p",
-          okouToken: okouTokenFromClaim(claim),
+          okouToken: okouTokenFromExecution(receivedExecution),
           prompt: history,
           resources: [
             {
@@ -6214,9 +6227,9 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const claim = await claimRun(run.id);
+        const receivedExecution = await readRunExecution(run.id);
         const history = requireValue(
-          claim.appendSystemPrompt,
+          receivedExecution.appendSystemPrompt,
           "Expected conversation history",
         );
         for (const message of messages) {
@@ -6257,13 +6270,15 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const claim = await claimRun(run.id);
-        expect(claim.prompt).toBe(prompt);
-        expect(claim.appendSystemPrompt).toContain("Scope: Direct message");
-        expect(claim.appendSystemPrompt).not.toContain(
+        const receivedExecution = await readRunExecution(run.id);
+        expect(receivedExecution.prompt).toBe(prompt);
+        expect(receivedExecution.appendSystemPrompt).toContain(
+          "Scope: Direct message",
+        );
+        expect(receivedExecution.appendSystemPrompt).not.toContain(
           "# Recent Channel Messages",
         );
-        expect(claim.appendSystemPrompt).not.toContain(
+        expect(receivedExecution.appendSystemPrompt).not.toContain(
           `# ${provider.name} Thread Context`,
         );
         await own(() => {
@@ -6305,15 +6320,15 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const claim = await claimRun(run.id);
+        const receivedExecution = await readRunExecution(run.id);
         const connectorId = requireValue(
-          claim.connectorRuntimeTargets?.find((target) => {
+          receivedExecution.connectorRuntimeTargets?.find((target) => {
             return (
               target.kind === "custom" &&
               target.customConnectorId === customConnector.id
             );
           })?.sourceId,
-          "Expected the connected Feishu account in the actual Runner claim",
+          "Expected the connected Feishu account in the actual Runner execution",
         );
         mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
         await own(() => {
@@ -6359,7 +6374,7 @@ export function registerFeishuIntegrationTests(
           );
         });
 
-        expect(claim.connectorRuntimeTargets).toContainEqual({
+        expect(receivedExecution.connectorRuntimeTargets).toContainEqual({
           kind: "custom",
           customConnectorId: customConnector.id,
           baseUrlVars: {},
@@ -6463,7 +6478,7 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const claim = await claimRun(run.id);
+        const receivedExecution = await readRunExecution(run.id);
         fixtureState.outboundMessages = [];
         await own(() => {
           return webhooksApi.requestAgentComplete(
@@ -6473,7 +6488,7 @@ export function registerFeishuIntegrationTests(
               error: "insufficient_credits",
               failureReason: "insufficient_credits",
             },
-            { authorization: `Bearer ${claim.sandboxToken}` },
+            { authorization: `Bearer ${receivedExecution.sandboxToken}` },
             [200],
           );
         });
@@ -6539,7 +6554,7 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const claim = await claimRun(run.id);
+        const receivedExecution = await readRunExecution(run.id);
 
         const events = await own(() => {
           return readProjectedChatEvents(context, {
@@ -6558,7 +6573,7 @@ export function registerFeishuIntegrationTests(
             }),
           }),
         );
-        expect(claim.nativeContinuation?.recoveryPrompt).toContain(
+        expect(receivedExecution.nativeContinuation?.recoveryPrompt).toContain(
           "okou chat messages --output-dir /tmp/okou-chat-history",
         );
         await own(() => {
@@ -6699,73 +6714,87 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const claim = await claimRun(run.id);
-        expect(claim.prompt).toBe("do the Feishu task");
-        expect(claim.platformEnvironment.OKOU_AGENT_ID).toBe(defaultAgentId);
-        expect(claim.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe(
-          platform,
+        const receivedExecution = await readRunExecution(run.id);
+        expect(receivedExecution.prompt).toBe("do the Feishu task");
+        expect(receivedExecution.platformEnvironment.OKOU_AGENT_ID).toBe(
+          defaultAgentId,
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(
+          receivedExecution.platformEnvironment.OKOU_CURRENT_INTEGRATION,
+        ).toBe(platform);
+        expect(receivedExecution.appendSystemPrompt).toContain(
           `You are currently running inside: ${provider.name}`,
         );
-        expect(claim.appendSystemPrompt).toContain("# Current User Info");
-        expect(claim.appendSystemPrompt).toContain(
+        expect(receivedExecution.appendSystemPrompt).toContain(
+          "# Current User Info",
+        );
+        expect(receivedExecution.appendSystemPrompt).toContain(
           `${provider.name} messaging and files: use \`okou ${platform} --help\``,
         );
-        expect(claim.appendSystemPrompt).not.toContain(
+        expect(receivedExecution.appendSystemPrompt).not.toContain(
           `${platform === "lark" ? "Feishu" : "Lark"} messaging and files:`,
         );
-        expect(claim.appendSystemPrompt).not.toContain(
+        expect(receivedExecution.appendSystemPrompt).not.toContain(
           `${platform === "lark" ? "Feishu" : "Lark"} open ID:`,
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(receivedExecution.appendSystemPrompt).toContain(
           `${provider.name} display name: Feishu User`,
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(receivedExecution.appendSystemPrompt).toContain(
           `${provider.name} open ID: ou_feishu_user`,
         );
-        expect(claim.appendSystemPrompt).toContain("Scope: Direct message");
-        expect(claim.appendSystemPrompt).toContain(`Tenant key: ${TENANT_KEY}`);
-        expect(claim.appendSystemPrompt).toContain("Chat ID: oc_feishu_dm");
-        expect(claim.appendSystemPrompt).not.toContain("Group ID:");
-        expect(claim.appendSystemPrompt).toContain(
+        expect(receivedExecution.appendSystemPrompt).toContain(
+          "Scope: Direct message",
+        );
+        expect(receivedExecution.appendSystemPrompt).toContain(
+          `Tenant key: ${TENANT_KEY}`,
+        );
+        expect(receivedExecution.appendSystemPrompt).toContain(
+          "Chat ID: oc_feishu_dm",
+        );
+        expect(receivedExecution.appendSystemPrompt).not.toContain("Group ID:");
+        expect(receivedExecution.appendSystemPrompt).toContain(
           `Installation ID: ${fixture.installationId}`,
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(receivedExecution.appendSystemPrompt).toContain(
           "Earlier Feishu conversation context",
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(receivedExecution.appendSystemPrompt).toContain(
           `[${provider.name} file] history-report.pdf`,
         );
-        const historyFileId = (claim.appendSystemPrompt ?? "").match(
-          / {3}\[FILE_KEY\] (feishu_file_[A-Za-z0-9_-]{22})/u,
-        )?.[1];
+        const historyFileId = (
+          receivedExecution.appendSystemPrompt ?? ""
+        ).match(/ {3}\[FILE_KEY\] (feishu_file_[A-Za-z0-9_-]{22})/u)?.[1];
         expect(historyFileId).toBeTruthy();
-        expect(claim.appendSystemPrompt).not.toContain(historyFileKey);
-        expect(claim.appendSystemPrompt).toContain(
+        expect(receivedExecution.appendSystemPrompt).not.toContain(
+          historyFileKey,
+        );
+        expect(receivedExecution.appendSystemPrompt).toContain(
           `# ${provider.name} Thread Context`,
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(receivedExecution.appendSystemPrompt).toContain(
           `The messages below are from a ${provider.name} conversation`,
         );
-        expect(claim.appendSystemPrompt).toContain("- RELATIVE_INDEX: -1");
-        expect(claim.appendSystemPrompt).toContain(
+        expect(receivedExecution.appendSystemPrompt).toContain(
+          "- RELATIVE_INDEX: -1",
+        );
+        expect(receivedExecution.appendSystemPrompt).toContain(
           "- SENDER: {id: ou_previous_user, name: Previous User}",
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(receivedExecution.appendSystemPrompt).toContain(
           `okou ${platform} message send --help`,
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(receivedExecution.appendSystemPrompt).toContain(
           `okou ${platform} download-file -h`,
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(receivedExecution.appendSystemPrompt).toContain(
           `okou ${platform} upload-file -h`,
         );
 
         const cliAgentSessionId = `bdd-feishu-cli-${run.id}`;
         await completeRunSession({
           runId: run.id,
-          sandboxToken: claim.sandboxToken,
+          sandboxToken: receivedExecution.sandboxToken,
           sessionId: cliAgentSessionId,
           history: `bdd feishu history ${run.id}`,
           assistantText: "Canonical Feishu answer",
@@ -6988,11 +7017,11 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const firstClaim = await claimRun(firstRun.id);
+        const firstExecution = await readRunExecution(firstRun.id);
         const firstCliSessionId = `bdd-feishu-canonical-group-${firstRun.id}`;
         await completeRunSession({
           runId: firstRun.id,
-          sandboxToken: firstClaim.sandboxToken,
+          sandboxToken: firstExecution.sandboxToken,
           sessionId: firstCliSessionId,
           history: `bdd feishu canonical group history ${firstRun.id}`,
           assistantText: "First canonical group answer",
@@ -7002,12 +7031,12 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const secondClaim = await claimRun(secondRun.id);
-        expect(secondClaim.prompt).toBe(`@Nova ${secondPrompt}`);
-        expect(secondClaim.appendSystemPrompt).toContain(
+        const secondExecution = await readRunExecution(secondRun.id);
+        expect(secondExecution.prompt).toBe(`@Nova ${secondPrompt}`);
+        expect(secondExecution.appendSystemPrompt).toContain(
           "Scope: Group mention",
         );
-        expect(secondClaim.nativeContinuation?.sessionId).toBe(
+        expect(secondExecution.nativeContinuation?.sessionId).toBe(
           firstCliSessionId,
         );
       });
@@ -7178,39 +7207,43 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const groupClaim = await claimRun(groupRun.id);
+        const groupExecution = await readRunExecution(groupRun.id);
         const history = requireValue(
-          groupClaim.appendSystemPrompt,
+          groupExecution.appendSystemPrompt,
           "Expected group and thread history",
         );
-        expect(groupClaim.prompt).toBe("@Nova");
-        expect(groupClaim.appendSystemPrompt).toContain("Scope: Group mention");
-        expect(groupClaim.appendSystemPrompt).toContain(
+        expect(groupExecution.prompt).toBe("@Nova");
+        expect(groupExecution.appendSystemPrompt).toContain(
+          "Scope: Group mention",
+        );
+        expect(groupExecution.appendSystemPrompt).toContain(
           `Tenant key: ${TENANT_KEY}`,
         );
-        expect(groupClaim.appendSystemPrompt).toContain(
+        expect(groupExecution.appendSystemPrompt).toContain(
           "Chat ID: oc_feishu_group",
         );
-        expect(groupClaim.appendSystemPrompt).toContain(
+        expect(groupExecution.appendSystemPrompt).toContain(
           `Group ID: oc_feishu_group (same as Chat ID; use it directly as the \`--to\` value for \`okou ${platform} message send\`)`,
         );
-        expect(groupClaim.appendSystemPrompt).toContain(
+        expect(groupExecution.appendSystemPrompt).toContain(
           "# Recent Channel Messages",
         );
-        expect(groupClaim.appendSystemPrompt).toContain(
+        expect(groupExecution.appendSystemPrompt).toContain(
           `# ${provider.name} Thread Context`,
         );
-        expect(groupClaim.appendSystemPrompt).toContain(
+        expect(groupExecution.appendSystemPrompt).toContain(
           "- SENDER: {id: ou_recent_user, name: Recent User}",
         );
-        expect(groupClaim.appendSystemPrompt).toContain(
+        expect(groupExecution.appendSystemPrompt).toContain(
           "- SENDER: {id: ou_thread_user, name: Thread User}",
         );
-        expect(groupClaim.appendSystemPrompt).toContain("Recent group context");
-        expect(groupClaim.appendSystemPrompt).toContain(
+        expect(groupExecution.appendSystemPrompt).toContain(
+          "Recent group context",
+        );
+        expect(groupExecution.appendSystemPrompt).toContain(
           "https://example.com/broken-article",
         );
-        expect(groupClaim.appendSystemPrompt).toContain(
+        expect(groupExecution.appendSystemPrompt).toContain(
           `Thread ID: ${groupThreadId}`,
         );
         expect(history.match(/Thread root question/gu)).toHaveLength(1);
@@ -7233,7 +7266,7 @@ export function registerFeishuIntegrationTests(
           actor,
           chatId: "oc_feishu_group",
           chatMode: "group",
-          okouToken: okouTokenFromClaim(groupClaim),
+          okouToken: okouTokenFromExecution(groupExecution),
           prompt: history,
           resources: [
             {
@@ -7246,7 +7279,7 @@ export function registerFeishuIntegrationTests(
         const groupCliSessionId = `bdd-feishu-group-cli-${groupRun.id}`;
         await completeRunSession({
           runId: groupRun.id,
-          sandboxToken: groupClaim.sandboxToken,
+          sandboxToken: groupExecution.sandboxToken,
           sessionId: groupCliSessionId,
           history: `bdd feishu group history ${groupRun.id}`,
           assistantText: "Canonical Feishu group answer",
@@ -7339,8 +7372,8 @@ export function registerFeishuIntegrationTests(
           await own(() => {
             return runsApi.heartbeatRunner(runnerGroup);
           });
-          const claim = await claimRun(run.id);
-          expect(claim.appendSystemPrompt).toContain(
+          const receivedExecution = await readRunExecution(run.id);
+          expect(receivedExecution.appendSystemPrompt).toContain(
             failedContainer === "chat"
               ? "Thread history survived"
               : "Recent chat survived",
@@ -7376,7 +7409,7 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        await claimRun(initialGroupRun.id);
+        await readRunExecution(initialGroupRun.id);
         await own(() => {
           return runsApi.requestCancelRun(actor, initialGroupRun.id, [200]);
         });
@@ -7425,10 +7458,10 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const secondGroupClaim = await claimRun(secondGroupRun.id);
+        const secondGroupExecution = await readRunExecution(secondGroupRun.id);
         await completeRunSession({
           runId: secondGroupRun.id,
-          sandboxToken: secondGroupClaim.sandboxToken,
+          sandboxToken: secondGroupExecution.sandboxToken,
           sessionId: `bdd-feishu-second-group-cli-${secondGroupRun.id}`,
           history: `bdd feishu second group history ${secondGroupRun.id}`,
           assistantText: "Canonical Feishu second group answer",
@@ -7458,7 +7491,7 @@ export function registerSharedFeishuConversationTests(): void {
     const platform = "feishu";
     const {
       own,
-      claimRun,
+      readRunExecution,
       ownFeishuRun,
       cancelPlan,
       connectContract,
@@ -7495,11 +7528,13 @@ export function registerSharedFeishuConversationTests(): void {
       await own(() => {
         return runsApi.heartbeatRunner(runnerGroup);
       });
-      const followUpClaim = await claimRun(followUpRun.id);
-      expect(followUpClaim.nativeContinuation?.sessionId).toBe(mainSessionId);
+      const followUpExecution = await readRunExecution(followUpRun.id);
+      expect(followUpExecution.nativeContinuation?.sessionId).toBe(
+        mainSessionId,
+      );
       await completeRunSession({
         runId: followUpRun.id,
-        sandboxToken: followUpClaim.sandboxToken,
+        sandboxToken: followUpExecution.sandboxToken,
         sessionId: mainSessionId,
         history: `bdd continued feishu history ${followUpRun.id}`,
         assistantText: "Continued Feishu DM answer",
@@ -7635,13 +7670,13 @@ export function registerSharedFeishuConversationTests(): void {
       await own(() => {
         return runsApi.heartbeatRunner(runnerGroup);
       });
-      const quotedReplyClaim = await claimRun(quotedReplyRun.id);
-      expect(quotedReplyClaim.nativeContinuation?.sessionId).toBe(
+      const quotedReplyExecution = await readRunExecution(quotedReplyRun.id);
+      expect(quotedReplyExecution.nativeContinuation?.sessionId).toBe(
         mainSessionId,
       );
       await completeRunSession({
         runId: quotedReplyRun.id,
-        sandboxToken: quotedReplyClaim.sandboxToken,
+        sandboxToken: quotedReplyExecution.sandboxToken,
         sessionId: mainSessionId,
         history: `bdd quoted feishu history ${quotedReplyRun.id}`,
         assistantText: "Feishu quoted reply answer",
@@ -7700,12 +7735,12 @@ export function registerSharedFeishuConversationTests(): void {
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const initialClaim = await claimRun(initialRun.id);
+        const initialExecution = await readRunExecution(initialRun.id);
 
         const mainSessionId = randomUUID();
         await completeRunSession({
           runId: initialRun.id,
-          sandboxToken: initialClaim.sandboxToken,
+          sandboxToken: initialExecution.sandboxToken,
           sessionId: mainSessionId,
           history: `bdd main feishu history ${initialRun.id}`,
         });
@@ -7728,12 +7763,12 @@ export function registerSharedFeishuConversationTests(): void {
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const threadClaim = await claimRun(threadRun.id);
+        const threadExecution = await readRunExecution(threadRun.id);
 
         const threadSessionId = randomUUID();
         await completeRunSession({
           runId: threadRun.id,
-          sandboxToken: threadClaim.sandboxToken,
+          sandboxToken: threadExecution.sandboxToken,
           sessionId: threadSessionId,
           history: `bdd feishu thread history ${threadRun.id}`,
         });
@@ -7750,8 +7785,10 @@ export function registerSharedFeishuConversationTests(): void {
         await own(() => {
           return runsApi.heartbeatRunner(runnerGroup);
         });
-        const mainDmClaim = await claimRun(mainDmRun.id);
-        expect(mainDmClaim.nativeContinuation?.sessionId).toBe(mainSessionId);
+        const mainDmExecution = await readRunExecution(mainDmRun.id);
+        expect(mainDmExecution.nativeContinuation?.sessionId).toBe(
+          mainSessionId,
+        );
         await own(() => {
           return runsApi.requestCancelRun(actor, mainDmRun.id, [200]);
         });
@@ -7800,12 +7837,12 @@ export function registerSharedFeishuConversationTests(): void {
       await own(() => {
         return runsApi.heartbeatRunner(runnerGroup);
       });
-      const threadClaim = await claimRun(threadRun.id);
+      const threadExecution = await readRunExecution(threadRun.id);
 
       const threadSessionId = randomUUID();
       await completeRunSession({
         runId: threadRun.id,
-        sandboxToken: threadClaim.sandboxToken,
+        sandboxToken: threadExecution.sandboxToken,
         sessionId: threadSessionId,
         history: `bdd resumed feishu thread history ${threadRun.id}`,
         assistantText: "Initial resumed Feishu thread answer",
@@ -7869,8 +7906,10 @@ export function registerSharedFeishuConversationTests(): void {
       await own(() => {
         return runsApi.heartbeatRunner(runnerGroup);
       });
-      const threadFollowUpClaim = await claimRun(threadFollowUpRun.id);
-      expect(threadFollowUpClaim.nativeContinuation?.sessionId).toBe(
+      const threadFollowUpExecution = await readRunExecution(
+        threadFollowUpRun.id,
+      );
+      expect(threadFollowUpExecution.nativeContinuation?.sessionId).toBe(
         threadSessionId,
       );
       await own(() => {
@@ -7936,13 +7975,13 @@ export function registerSharedFeishuConversationTests(): void {
       );
 
       // Freeing a slot picks the waiting thread and launches its message.
-      await claimRun(firstRun.id);
+      await readRunExecution(firstRun.id);
       await ownFeishuRun(actor, firstRun.id)();
       const pickedRun = await findRun(actor, prompts[2]);
       expect(pickedRun.status).toBe("running");
-      await claimRun(pickedRun.id);
+      await readRunExecution(pickedRun.id);
       await ownFeishuRun(actor, pickedRun.id)();
-      await claimRun(secondRun.id);
+      await readRunExecution(secondRun.id);
       await ownFeishuRun(actor, secondRun.id)();
       const client = setupApp({ context, routes: feishuConnectRoutes })(
         connectContract,
@@ -7994,7 +8033,7 @@ export function registerSharedFeishuConversationTests(): void {
       await own(() => {
         return runsApi.heartbeatRunner(runnerGroup);
       });
-      const firstClaim = await claimRun(firstRun.id);
+      const firstExecution = await readRunExecution(firstRun.id);
 
       const queuedPrompt = `reject this queued Feishu message after credit loss ${randomUUID()}`;
       const queuedMessageId = `om_${randomUUID()}`;
@@ -8040,7 +8079,7 @@ export function registerSharedFeishuConversationTests(): void {
       );
       await completeRunSession({
         runId: firstRun.id,
-        sandboxToken: firstClaim.sandboxToken,
+        sandboxToken: firstExecution.sandboxToken,
         sessionId: `bdd-feishu-admission-${firstRun.id}`,
         history: `bdd Feishu admission history ${firstRun.id}`,
         assistantText: "First Feishu task completed",
@@ -8206,7 +8245,9 @@ export function registerSharedFeishuConversationTests(): void {
       await own(() => {
         return runsApi.heartbeatRunner(runnerGroup);
       });
-      const failedDeliveryAnchorClaim = await claimRun(failedDeliveryAnchor.id);
+      const failedDeliveryAnchorExecution = await readRunExecution(
+        failedDeliveryAnchor.id,
+      );
 
       const failedDeliveryPrompt = `persist this queued Feishu failure before delivery fails ${randomUUID()}`;
       const failedDeliveryMessageId = `om_${randomUUID()}`;
@@ -8234,7 +8275,7 @@ export function registerSharedFeishuConversationTests(): void {
       fixtureState.failedSendContentFragments.push("Add credits");
       await completeRunSession({
         runId: failedDeliveryAnchor.id,
-        sandboxToken: failedDeliveryAnchorClaim.sandboxToken,
+        sandboxToken: failedDeliveryAnchorExecution.sandboxToken,
         sessionId: `bdd-feishu-delivery-failure-${failedDeliveryAnchor.id}`,
         history: `bdd Feishu delivery failure history ${failedDeliveryAnchor.id}`,
         assistantText: "Second Feishu task completed",
@@ -8322,11 +8363,11 @@ export function registerSharedFeishuConversationTests(): void {
       await own(() => {
         return runsApi.heartbeatRunner(runnerGroup);
       });
-      const groupClaim = await claimRun(groupRun.id);
+      const groupExecution = await readRunExecution(groupRun.id);
       const groupCliSessionId = `bdd-feishu-group-cli-${groupRun.id}`;
       await completeRunSession({
         runId: groupRun.id,
-        sandboxToken: groupClaim.sandboxToken,
+        sandboxToken: groupExecution.sandboxToken,
         sessionId: groupCliSessionId,
         history: `bdd feishu group history ${groupRun.id}`,
       });
@@ -8348,8 +8389,8 @@ export function registerSharedFeishuConversationTests(): void {
       await own(() => {
         return runsApi.heartbeatRunner(runnerGroup);
       });
-      const groupFollowUpClaim = await claimRun(groupFollowUp.id);
-      expect(groupFollowUpClaim.nativeContinuation?.sessionId).toBe(
+      const groupFollowUpExecution = await readRunExecution(groupFollowUp.id);
+      expect(groupFollowUpExecution.nativeContinuation?.sessionId).toBe(
         groupCliSessionId,
       );
       await own(() => {

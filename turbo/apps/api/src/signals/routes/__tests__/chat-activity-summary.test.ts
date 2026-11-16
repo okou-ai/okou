@@ -85,7 +85,7 @@ async function fixture(prompt = "Prepare a launch checklist") {
       visibility: "private",
     }),
   ]);
-  // The activity suite needs a live Runner claim, not a Pi API-first turn.
+  // The activity suite needs a live Runner execution, not a Pi API-first turn.
   await runs.updateUserModelPreference(actor, "claude-fable-5-1");
   const sent = await chat.sendAndLaunch(actor, {
     agentId: agent.agentId,
@@ -96,14 +96,14 @@ async function fixture(prompt = "Prepare a launch checklist") {
   const run = { runId: sent.runId, threadId: sent.threadId };
   await flushWaitUntilForTest();
   await runs.heartbeatRunner(group);
-  const claimed = await runs.executionInput(run.runId);
+  const execution = await runs.executionInput(run.runId);
   await flushWaitUntilForTest();
   return {
     actor,
     run,
     agentId: agent.agentId,
-    sandboxToken: claimed.sandboxToken,
-    headers: { authorization: `Bearer ${claimed.sandboxToken}` },
+    sandboxToken: execution.sandboxToken,
+    headers: { authorization: `Bearer ${execution.sandboxToken}` },
   };
 }
 function provider(

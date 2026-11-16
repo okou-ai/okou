@@ -462,14 +462,15 @@ and their actual runtime route; a proof for another client never covers Android.
 Request/error/route changes cannot be proven by a success transform. Lowered or
 removed floors and unreachable transforms fail as for Desktop/iOS.
 
-The Android publication oracle reads GitHub Releases with the job's read-only
-contents permission. A non-draft, non-prerelease `android-vX.Y.Z` release with
-at least one nonempty `.apk` asset in the `uploaded` state establishes publication;
-the tag identifies the packaged Android version. CI checks the 20 highest stable
-Android tags in numeric version order and selects the highest qualifying release.
-A tag alone, an unfinished asset upload, or a CI build artifact does not establish
-publication. No app-store processing or TestFlight-style availability step is required.
-APK version, signing and installability remain the publisher's responsibility.
+The Android publication oracle reads `release.version` from the same public
+`GET https://api.okou.ai/api/android/updates` discovery used by the installed
+client. The API validates the R2 manifest and release identity before returning
+success; its publisher verifies APK bytes before advancing that manifest. An APK
+uploaded to GitHub ahead of R2 publication does not establish this availability.
+Missing discovery, an unavailable release, an invalid response or a network
+failure leaves publication unproven. No credentials or app-store processing are
+required. APK version, signing and installability remain the publisher's
+responsibility.
 
 The Android floor starts `null`. Once an APK has been published, a reviewed floor
 raise cannot exceed the published version; review must confirm that build supports

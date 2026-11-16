@@ -1,5 +1,8 @@
-const PREVIEW_HOST =
-  /^pr-[1-9][0-9]*-app-okou-app-preview\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.workers\.dev$/u;
+import {
+  isBoundPublicPreview,
+  isPreviewAlias,
+  previewRequest,
+} from "./preview-origin.js";
 const BUILD_META = "okou-app-git-commit-sha";
 
 // This recognizes the generated head declaration, not arbitrary HTML recovery.
@@ -85,12 +88,12 @@ export function previewBuildSha(indexHtml) {
   return undefined;
 }
 
-function eligiblePreviewResponse(request, response) {
+function eligiblePreviewResponse(request, response, env) {
   const url = new URL(request.url);
   return (
     request.method === "GET" &&
     url.protocol === "https:" &&
-    PREVIEW_HOST.test(url.hostname) &&
+    (isPreviewAlias(url) || isBoundPublicPreview(url, env)) &&
     !url.username &&
     !url.password &&
     !url.port &&
@@ -110,8 +113,14 @@ export function withPreviewBuildIdentity(worker, indexHtml) {
   const sha = previewBuildSha(indexHtml);
   return {
     async fetch(request, env, context) {
-      const response = await worker.fetch.call(worker, request, env, context);
-      if (sha && eligiblePreviewResponse(request, response)) {
+      const normalizedRequest = previewRequest(request, env);
+      const response = await worker.fetch.call(
+        worker,
+        normalizedRequest,
+        env,
+        context,
+      );
+      if (sha && eligiblePreviewResponse(normalizedRequest, response, env)) {
         response.headers.set("x-okou-preview-build-sha", sha);
       }
       return response;

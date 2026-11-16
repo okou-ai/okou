@@ -426,7 +426,7 @@ describe("POST /api/webhooks/notion", () => {
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped workflow actor");
     }
-    // Fable keeps Notion workflow runs on the claimable native Runner route.
+    // Fable keeps Notion workflow runs on the native Runner execution route.
     await runsApi.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
@@ -1340,7 +1340,7 @@ describe("POST /api/webhooks/notion", () => {
       prompt: "Switch this automation Chat's Notion account",
     });
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.executionInput(run.runId);
+    const execution = await runsApi.executionInput(run.runId);
     onTestFinished(async () => {
       await createWebhookCallbackApi(context).requestAgentComplete(
         {
@@ -1352,13 +1352,13 @@ describe("POST /api/webhooks/notion", () => {
             cliAgentSessionHistoryDisposition: "native_only",
           },
         },
-        { authorization: `Bearer ${claim.sandboxToken}` },
+        { authorization: `Bearer ${execution.sandboxToken}` },
         [200],
       );
     });
-    const token = claim.platformEnvironment.OKOU_TOKEN;
+    const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
-      throw new Error("Expected an Okou token from the Runner claim");
+      throw new Error("Expected an Okou token from the Runner execution");
     }
     await accept(
       runAccounts.select({

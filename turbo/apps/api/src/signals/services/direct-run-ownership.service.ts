@@ -7,19 +7,19 @@ import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import type { UnacceptedRunOwner } from "./agent-run-terminal-transition.service";
-import { agentInstructionsSelectionSql } from "./agent-instructions-claim.service";
+import { agentInstructionsSelectionSql } from "./execution-instructions-selection";
 import {
-  workflowClaimSelectionSql,
+  executionWorkflowSelectionSql,
   workflowReferencesAuthorizedCondition,
-  type WorkflowClaimInput,
-} from "./workflow-claim.service";
+  type ExecutionWorkflowInput,
+} from "./execution-workflow-selection";
 
 export interface DirectRunTarget extends UnacceptedRunOwner {
   readonly hostname: string;
 }
 
 export interface DirectRunSourceAuthorization {
-  readonly workflows: WorkflowClaimInput;
+  readonly workflows: ExecutionWorkflowInput;
   readonly workflowIds: readonly string[];
   readonly singleAgent: boolean;
 }
@@ -44,12 +44,12 @@ export const selectDirectRunOwner$ = command(
     // Preparation may await external I/O. Recheck source authority in the
     // same statement that binds the process, after any concurrent revocation.
     const authorizedSources = sql`EXISTS (
-      WITH locked_run AS MATERIALIZED (
+      WITH admitted_run AS MATERIALIZED (
         SELECT ${agentRuns.id} AS "id",${agentRuns.chatThreadId} AS "chatThreadId",${agentRuns.agentId} AS "agentId",
           ${agentRuns.userId} AS "userId",${agentRuns.orgId} AS "orgId",${agentRuns.triggerSource} AS "triggerSource",${agentRuns.workflowAutomationId} AS "workflowAutomationId"
         FROM ${agentRuns} WHERE ${and(eq(agentRuns.id, args.runId), eq(agentRuns.userId, args.userId), eq(agentRuns.orgId, args.orgId))}
       ), ${agentInstructionsSelectionSql(sql`${args.sourceAuthorization.singleAgent}`)},
-        ${workflowClaimSelectionSql(args.sourceAuthorization.workflows)}
+        ${executionWorkflowSelectionSql(args.sourceAuthorization.workflows)}
       SELECT 1 FROM workflow_admission
       WHERE ${workflowReferencesAuthorizedCondition(args.sourceAuthorization.workflows, args.sourceAuthorization.workflowIds)}
     )`;

@@ -980,7 +980,7 @@ describe("ORG-01/AGENT-02: agent listing", () => {
 });
 
 describe("AUTH-02/ORG-01: run-scoped agent tokens on org routes", () => {
-  it("serves the org read to a claimed run's agent token and rejects member reads and org writes [ORG-TOKEN-G]", async () => {
+  it("serves the org read to a dispatched Run's agent token and rejects member reads and org writes [ORG-TOKEN-G]", async () => {
     const runs = createRunsApi(context);
     const admin = api.user();
     api.acceptAgentStorageWrites();
@@ -999,11 +999,11 @@ describe("AUTH-02/ORG-01: run-scoped agent tokens on org routes", () => {
       prompt: "exercise org reads with the run Okou token",
     });
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.executionInput(created.runId);
-    const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+    const execution = await runs.executionInput(created.runId);
+    const okouToken = execution.platformEnvironment.OKOU_TOKEN;
     if (!okouToken) {
       throw new Error(
-        "Expected claim.platformEnvironment.OKOU_TOKEN to carry the run-scoped Okou token",
+        "Expected execution.platformEnvironment.OKOU_TOKEN to carry the run-scoped Okou token",
       );
     }
     expect(okouToken).toMatch(/^vm0_sandbox_/);

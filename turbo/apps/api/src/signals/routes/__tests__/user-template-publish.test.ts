@@ -1040,7 +1040,7 @@ describe("POST /api/user-templates", () => {
   it("replaces the stored package rather than adding to it", async () => {
     const actor = bdd.user();
     runs.acceptTelemetryIngest();
-    const runnerGroup = await runs.configureRunnerGroup();
+    await runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
@@ -1109,10 +1109,10 @@ describe("POST /api/user-templates", () => {
         },
       });
       activeRuns.add(runId);
-      const { claim } = await chatEvents.claimChatRun(runnerGroup, runId);
-      expect(claim.appendSystemPrompt).toContain("okou host screenshot");
-      expect(claim.appendSystemPrompt).toContain("previewImageUrl");
-      const bundle = claim.contentBundles.templates?.[0];
+      const { execution } = await chatEvents.runExecution(runId);
+      expect(execution.appendSystemPrompt).toContain("okou host screenshot");
+      expect(execution.appendSystemPrompt).toContain("previewImageUrl");
+      const bundle = execution.contentBundles.templates?.[0];
       if (!bundle) {
         throw new Error("Expected the selected template's immutable bundle");
       }

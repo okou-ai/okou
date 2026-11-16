@@ -6,7 +6,7 @@ import { eventDrivenChatThreads$ } from "../chat-page/chat-thread-event-sourcing
 import { projectRowKey } from "../chat-page/chat-thread-list-rows.ts";
 import { scrollToChatListRow$ } from "../chat-page/sidebar-chat-thread-scroll.ts";
 import { shouldHandleShortcutPress } from "../okou-page/nav.ts";
-import { collapseProject$, expandProject$ } from "./project-expansion.ts";
+import { setProjectExpandedWithMotion$ } from "./project-fold.ts";
 import { selectedProjectId$ } from "./project-navigation.ts";
 import { projects$ } from "./projects.ts";
 
@@ -99,7 +99,7 @@ export const setupProjectFoldShortcuts$ = command(
             if (!projectId) {
               return;
             }
-            set(collapseProject$, projectId);
+            await set(setProjectExpandedWithMotion$, projectId, false, signal);
             // The Project's row replaces a hidden chat as the list's place.
             await set(
               scrollToChatListRow$,
@@ -111,10 +111,10 @@ export const setupProjectFoldShortcuts$ = command(
         [GLOBAL_KEYBOARD_SHORTCUTS.expandProject.binding]: {
           allowInEditableTarget: true,
           shouldHandle,
-          run: (event) => {
+          run: async (event) => {
             const projectId = listedProjectId(event);
             if (projectId) {
-              set(expandProject$, projectId);
+              await set(setProjectExpandedWithMotion$, projectId, true, signal);
             }
           },
         },

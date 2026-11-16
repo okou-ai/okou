@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use runner_provider::{
-    ActiveInputSource, ClaimedJob, CompletionAuth, CompletionReportTiming, JobCandidate,
+    ActiveInputSource, CompletionAuth, CompletionReportTiming, ExecutionJob, JobCandidate,
     JobProvider, ProviderError, ProviderResult,
 };
 use runner_types::ids::RunId;
@@ -44,15 +44,12 @@ struct MockClaim {
 /// `drop(discover_fut)` before `shutdown()` causes a real deadlock.
 pub struct MockJobProvider {
     startup_readiness: Arc<MockStartupReadiness>,
-    /// Held by `discover()` for its entire lifetime and acquired by
-    /// `shutdown()`. Reproduces the historical API-provider shutdown deadlock
-    /// shape used by main-loop regression tests.
+    /// Shared with shutdown; the retained local discovery future must be
+    /// dropped before shutdown acquires this mutex.
     discovery: Mutex<mpsc::UnboundedReceiver<JobCandidate>>,
-    /// Optional delay before checking the channel, simulating the API provider's
-    /// internal poll timer. If the future is cancelled and recreated (not
-    /// pinned), this delay restarts from scratch — jobs pushed during the
-    /// delay won't be discovered until it completes.
-    poll_delay: Option<Duration>,
+    /// Optional delay before the local discovery channel read. Cancelling and
+    /// recreating the future restarts it, so routine ticks must retain the future.
+    discovery_delay: Option<Duration>,
     claim_results: StdMutex<HashMap<RunId, Option<MockClaim>>>,
     claim_controls: Arc<StdMutex<HashMap<RunId, Arc<MockOperationControl>>>>,
     claim_max_in_flight: Arc<AtomicUsize>,
@@ -62,7 +59,7 @@ pub struct MockJobProvider {
     heartbeats: Arc<StdMutex<Vec<HeartbeatState>>>,
     cancel: CancellationToken,
     /// Fired each time `discover()` has reached its inner `select!` await
-    /// point (lock + optional `poll_delay` complete, about to park on
+    /// point (lock + optional `discovery_delay` complete, about to park on
     /// `rx.recv()`). Tests that need to order actions against that state —
     /// e.g. a silent `send_if_modified` that must land *after* the main loop
     /// has entered its `discover_fut` select — call
@@ -76,10 +73,10 @@ pub struct MockJobProvider {
     /// Event-driven waiting eliminates the polling loop whose wall-clock
     /// deadline was racing coverage-CI slowdown (see #10146).
     completion_notify: Arc<Notify>,
-    /// Fired after `discover()` has been polled and its optional poll delay is
+    /// Fired after `discover()` has been polled and its optional discovery delay is
     /// about to start. Paused-time tests use this to avoid advancing virtual
     /// time before the discover timer exists.
-    discover_poll_started: Arc<Notify>,
+    discovery_delay_started: Arc<Notify>,
     discover_started_count: Arc<AtomicUsize>,
     /// Fired by `heartbeat()` after a state is appended to `heartbeats`.
     /// `wait_heartbeat_past` uses the same subscribe-then-check pattern as
@@ -108,8 +105,8 @@ pub struct MockProviderHandle {
     discover_entered: Arc<Notify>,
     /// See [`MockJobProvider::completion_notify`].
     completion_notify: Arc<Notify>,
-    /// See [`MockJobProvider::discover_poll_started`].
-    discover_poll_started: Arc<Notify>,
+    /// See [`MockJobProvider::discovery_delay_started`].
+    discovery_delay_started: Arc<Notify>,
     discover_started_count: Arc<AtomicUsize>,
     /// See [`MockJobProvider::heartbeat_notify`].
     heartbeat_notify: Arc<Notify>,
@@ -283,18 +280,17 @@ impl MockJobProvider {
     /// The `cancel` token should be shared with the `RunConfig` — when
     /// cancelled, `discover()` returns `None` to break the main loop.
     pub fn new(cancel: CancellationToken) -> (Arc<Self>, MockProviderHandle) {
-        Self::with_poll_delay(cancel, None)
+        Self::with_discovery_delay(cancel, None)
     }
 
-    /// Create a mock provider with an explicit poll delay.
+    /// Create a mock provider with an explicit discovery delay.
     ///
     /// When set, `discover()` sleeps for this duration before checking the
-    /// channel. This simulates the API provider's HTTP poll timer — if the main
-    /// loop cancels and recreates `discover()` (e.g. not pinned), the sleep
-    /// restarts from scratch and jobs are never discovered.
-    pub fn with_poll_delay(
+    /// channel. If the main loop cancels and recreates local discovery, the
+    /// delay restarts; retained discovery must finish despite maintenance ticks.
+    pub fn with_discovery_delay(
         cancel: CancellationToken,
-        poll_delay: Option<Duration>,
+        discovery_delay: Option<Duration>,
     ) -> (Arc<Self>, MockProviderHandle) {
         let (tx, rx) = mpsc::unbounded_channel();
         let claim_candidates = Arc::new(StdMutex::new(Vec::new()));
@@ -303,7 +299,7 @@ impl MockJobProvider {
         let startup_readiness = Arc::new(MockStartupReadiness::default());
         let discover_entered = Arc::new(Notify::new());
         let completion_notify = Arc::new(Notify::new());
-        let discover_poll_started = Arc::new(Notify::new());
+        let discovery_delay_started = Arc::new(Notify::new());
         let discover_started_count = Arc::new(AtomicUsize::new(0));
         let heartbeat_notify = Arc::new(Notify::new());
         let heartbeat_control = Arc::new(MockOperationControl::default());
@@ -319,7 +315,7 @@ impl MockJobProvider {
         let provider = Arc::new(Self {
             startup_readiness: Arc::clone(&startup_readiness),
             discovery: Mutex::new(rx),
-            poll_delay,
+            discovery_delay,
             claim_results: StdMutex::new(HashMap::new()),
             claim_controls: Arc::clone(&claim_controls),
             claim_max_in_flight: Arc::clone(&claim_max_in_flight),
@@ -330,7 +326,7 @@ impl MockJobProvider {
             cancel,
             discover_entered: Arc::clone(&discover_entered),
             completion_notify: Arc::clone(&completion_notify),
-            discover_poll_started: Arc::clone(&discover_poll_started),
+            discovery_delay_started: Arc::clone(&discovery_delay_started),
             discover_started_count: Arc::clone(&discover_started_count),
             heartbeat_notify: Arc::clone(&heartbeat_notify),
             heartbeat_control: Arc::clone(&heartbeat_control),
@@ -352,7 +348,7 @@ impl MockJobProvider {
             heartbeats,
             discover_entered,
             completion_notify,
-            discover_poll_started,
+            discovery_delay_started,
             discover_started_count,
             heartbeat_notify,
             heartbeat_control,
@@ -381,7 +377,7 @@ impl MockJobProvider {
             );
     }
 
-    /// Attach an active-input source at the same claimed-job boundary as a real provider.
+    /// Attach an active-input source when binding execution input, as a real provider does.
     pub fn set_claim_with_active_input(
         &self,
         run_id: RunId,
@@ -501,9 +497,9 @@ impl MockProviderHandle {
     }
 
     /// Wait until `discover()` has been polled at least once and its optional
-    /// poll-delay timer has been created.
-    pub async fn wait_discover_poll_started(&self, timeout: Duration) -> bool {
-        tokio::time::timeout(timeout, self.discover_poll_started.notified())
+    /// discovery delay timer has been created.
+    pub async fn wait_discovery_delay_started(&self, timeout: Duration) -> bool {
+        tokio::time::timeout(timeout, self.discovery_delay_started.notified())
             .await
             .is_ok()
     }
@@ -639,8 +635,8 @@ impl JobProvider for MockJobProvider {
         self.startup_readiness.prepare(&self.cancel).await
     }
 
-    async fn bind_supplied(&self, context: ExecutionContext) -> ProviderResult<ClaimedJob> {
-        Ok(ClaimedJob::supplied(context, None))
+    async fn bind_supplied(&self, context: ExecutionContext) -> ProviderResult<ExecutionJob> {
+        Ok(ExecutionJob::supplied(context, None))
     }
 
     fn completion_report_timing(&self) -> CompletionReportTiming {
@@ -716,19 +712,17 @@ impl JobProvider for MockJobProvider {
 impl runner_provider::LocalJobSource for MockJobProvider {
     /// Block until a job is pushed or the token is cancelled.
     ///
-    /// Holds `self.discovery` Mutex for the entire call. This keeps the
-    /// historical API-provider deadlock shape available for regression tests:
+    /// Holds `self.discovery` Mutex through the delay and channel wait.
     ///
-    /// - If `poll_delay` is set, the delay must complete before checking
-    ///   the channel. Without pinning (#8783), heartbeat ticks cancel and
-    ///   recreate this future, restarting the delay from scratch.
-    /// - If the caller fails to drop this future before `shutdown()` (#8898),
-    ///   the Mutex deadlocks — exactly reproducing the production bug.
+    /// - Delayed local discovery must survive heartbeat ticks without having
+    ///   its delay restarted.
+    /// - The caller must drop this future before shutdown acquires the same
+    ///   mutex, allowing discovery resources to finish before provider teardown.
     async fn discover(&self) -> Option<JobCandidate> {
         self.discover_started_count.fetch_add(1, Ordering::SeqCst);
         let mut rx = self.discovery.lock().await;
-        self.discover_poll_started.notify_one();
-        if let Some(delay) = self.poll_delay {
+        self.discovery_delay_started.notify_one();
+        if let Some(delay) = self.discovery_delay {
             tokio::time::sleep(delay).await;
         }
         // Signal tests that the future has reached its await point — the
@@ -741,7 +735,7 @@ impl runner_provider::LocalJobSource for MockJobProvider {
             () = self.cancel.cancelled() => None,
         }
     }
-    async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob> {
+    async fn claim(&self, candidate: JobCandidate) -> Option<ExecutionJob> {
         let run_id = candidate.run_id();
         self.claim_candidates
             .lock()
@@ -771,13 +765,13 @@ impl runner_provider::LocalJobSource for MockJobProvider {
             .unwrap_or_else(|e| e.into_inner())
             .remove(&run_id)
             .flatten()?;
-        match ClaimedJob::local_with_active_input_source(run_id, context, active_input_source) {
-            Ok(claimed) => Some(claimed),
+        match ExecutionJob::local_with_active_input_source(run_id, context, active_input_source) {
+            Ok(job) => Some(job),
             Err(err) => {
                 warn!(
                     run_id = %err.expected_run_id,
                     context_run_id = %err.context_run_id,
-                    "mock: claimed job run_id mismatch"
+                    "mock: accepted job run_id mismatch"
                 );
                 None
             }

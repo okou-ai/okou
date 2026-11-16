@@ -1,15 +1,20 @@
 package ai.okou.android.auth
 
 import ai.okou.android.TestAuthentication
+import ai.okou.android.TestChatComposerService
 import ai.okou.android.TestChatService
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.chat.ChatCacheStore
+import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
+import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testBootstrap
 import androidx.lifecycle.ViewModelProvider
@@ -44,7 +49,10 @@ class SessionModelTest {
     @get:Rule val temporary = TemporaryFolder()
 
     private class Resource(val identity: WorkspaceIdentity, val tokens: WorkspaceTokenProvider) :
-        WorkspaceSession, ChatListService by TestChatService() {
+        WorkspaceSession,
+        ai.okou.android.chat.RealtimeService by ai.okou.android.TestRealtimeService(),
+        ChatListService by TestChatService(),
+        ChatComposerService by TestChatComposerService() {
         var closed = false
         var load: suspend () -> WorkspaceBootstrap = { testBootstrap(identity.workspaceId) }
         var update: suspend () -> Unit = {}
@@ -52,6 +60,16 @@ class SessionModelTest {
         override suspend fun bootstrap() = load()
 
         override suspend fun preferences() = testBootstrap(identity.workspaceId).preferences
+
+        override suspend fun personalInstructionsEnabled() = false
+
+        override suspend fun personalInstructions(): PersonalInstructions =
+            error("Instructions are not enabled in this fixture")
+
+        override suspend fun updatePersonalInstructions(
+            content: String,
+            ifVersion: String,
+        ): PersonalInstructions = error("Instructions are not enabled in this fixture")
 
         override suspend fun updatePreferences(update: UpdatePreferencesRequest) =
             preferences().also { this.update() }
@@ -70,8 +88,20 @@ class SessionModelTest {
         Dispatchers.setMain(dispatcher)
         val store = ViewModelStore()
         val resources = mutableListOf<Resource>()
+        val drafts =
+            PersonalInstructionsDraftStore(
+                ApplicationProvider.getApplicationContext(),
+                temporary.newFolder(),
+                dispatcher,
+            )
         val cache =
             ChatCacheStore(
+                ApplicationProvider.getApplicationContext(),
+                temporary.newFolder(),
+                dispatcher,
+            )
+        val journal =
+            ComposerJournalStore(
                 ApplicationProvider.getApplicationContext(),
                 temporary.newFolder(),
                 dispatcher,
@@ -92,6 +122,8 @@ class SessionModelTest {
                                 },
                                 "https://api.okou.ai/",
                                 cache,
+                                drafts,
+                                journal,
                                 dispatcher,
                             )
                         }
@@ -101,6 +133,8 @@ class SessionModelTest {
         } finally {
             store.clear()
             cache.close()
+            drafts.close()
+            journal.close()
             runCurrent()
             Dispatchers.resetMain()
         }

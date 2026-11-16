@@ -5,9 +5,10 @@ use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::Instant;
 
-use sandbox::{BackingProcessIdentity, DeviceRateLimits, SandboxBackingProcess, SandboxId};
+use sandbox::{DeviceRateLimits, SandboxId};
 use uuid::Uuid;
 
+use crate::captured_backing::CapturedBacking;
 use crate::host_memory_operations::{
     HostMemoryOperations, MemoryGrowthPermit, MemoryOperationError, MemoryOperationPlan,
 };
@@ -21,12 +22,6 @@ use super::{
 mod substitution;
 
 pub use substitution::IdlePoolSubstitutionStarted;
-
-#[derive(Clone)]
-pub(super) struct CapturedBacking {
-    pub(super) process: Arc<dyn SandboxBackingProcess>,
-    pub(super) identity: BackingProcessIdentity,
-}
 
 /// Immutable resource proof from one pool insertion. Cloning does not detach
 /// inventory or grant memory authority. Provider methods never run under a pool

@@ -89,7 +89,7 @@ describe("SSH chat authorization", () => {
       pending.actor,
       { sshChatApproval: true, connectorChatAccountAccess: memberMode },
     );
-    const run = await publicRuns.claim(pending, {
+    const run = await publicRuns.executionInput(pending, {
       authorization: `Bearer vm0_official_${"c".repeat(64)}`,
     });
     authenticate(owner);

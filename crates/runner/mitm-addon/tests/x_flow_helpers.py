@@ -26,14 +26,20 @@ def x_json_user_page(count: int = 1_000, *, representation: str = "escaped") -> 
             "id": str(10**18 + index),
             "name": f"User {index}",
             "username": f"user{index}",
-            "description": description,
+            "description": "",
         }
         for index in range(count)
     ]
-    return json.dumps(
+    ensure_ascii = representation != "utf8"
+    envelope = json.dumps(
         {"data": users, "meta": {"result_count": count}},
-        ensure_ascii=representation != "utf8",
+        ensure_ascii=ensure_ascii,
     ).encode()
+    # Encode the shared text once, retaining the fixed fields' exact JSON bytes.
+    return envelope.replace(
+        b'"description": ""',
+        b'"description": ' + json.dumps(description, ensure_ascii=ensure_ascii).encode(),
+    )
 
 
 def x_original_url(path: str, query: str = "") -> str:

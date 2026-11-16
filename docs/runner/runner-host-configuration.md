@@ -7,7 +7,7 @@ configuration examples and startup-log checks, use the component's
 ## Diagnostic Host Attribution
 
 `runner.yaml` may contain an optional `hostname` used to identify the physical
-runner in claims, sandbox telemetry, and Runner Axiom warning/error events.
+runner in execution inputs, sandbox telemetry, and Runner Axiom warning/error events.
 Production automation writes the exact Ansible `inventory_hostname`; it does
 not derive the value from DNS or the operating system at runtime.
 
@@ -49,7 +49,7 @@ Runner Axiom warning/error events similarly include optional
 readers before writer changes, keep outgoing SQL legal, and remove retired
 columns only after incompatible serving readers have drained and incompatible
 rollback targets have been retired.
-Verify claim snapshots, telemetry/Axiom dimensions, and distinct hostnames on
+Verify execution inputs, telemetry/Axiom dimensions, and distinct hostnames on
 hosts running the same version. Remove a historical query fallback only after
 its bounded observation window expires.
 
@@ -72,7 +72,7 @@ Free-page reporting and parked reclamation are not substitutes for that budget.
 Tenant-free sandboxes prepared for the blank pool retain their full profile
 resource budget. Firecracker pauses vCPUs without requesting aggressive idle
 balloon inflation. Guest quiesce and operation fencing still complete before pause. This avoids a
-large idle-only inflate/deflate cycle when a prepared sandbox is claimed.
+large idle-only inflate/deflate cycle when a prepared sandbox is activated.
 
 Reusable exact/session park inflates the balloon under the existing bounded
 reclamation policy, then requests target zero and completes deflation before
@@ -126,7 +126,7 @@ resume before opening operations; it does not issue a vCPU resume for this runni
 handoff. A request after pause has started receives the completed parked resource.
 Running handoffs remain bound to the exact successor and cannot enter ordinary
 idle inventory. Cancelled or rejected transfers retain their full resource lease
-through destruction. This policy also applies after a claimed blank completes its
+through destruction. This policy also applies after an activated blank completes its
 first run; the initial tenant-free blank preparation still skips reclamation.
 The handoff acceptance grace remains 1.5 seconds, starting from the later of
 predecessor finalization and successor wait initiation so late demand gets an

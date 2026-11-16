@@ -109,8 +109,8 @@ async fn assert_fallback(available: Available) {
             | Available::ReplacedHome
             | Available::Home
     );
-    // Match the old Claim's finalizing-to-home fixture: real published bytes
-    // and a controlled producer transition, with the successor entering by HTTP.
+    // Publish real home bytes and control the finalizing producer transition
+    // while the successor enters by HTTP.
     let source = if cached_home {
         seed_home_cache_state(&cache, &paths, key, "vm0/default", IMAGE_BYTES).await
     } else {

@@ -21,7 +21,8 @@ use runner_executor::executor::{BlankPoolSelection, BlankPoolSelectionReason};
 use runner_executor::pre_spawn_admission::{BackgroundPreSpawnAdmissionLease, PreSpawnAdmission};
 use runner_lifecycle::home_mount::ensure_home_drive_mounted;
 use runner_lifecycle::idle_pool::{
-    DestroyOutcome, IdlePool, ParkResult, ParkedIdleCandidate, RetainedIdleDestroyResult,
+    BlankIdleReservationMiss, DestroyOutcome, IdlePool, ParkResult, ParkedIdleCandidate,
+    ReservedIdleSandbox, RetainedIdleDestroyResult,
 };
 use runner_lifecycle::lifecycle::RunnerMode;
 use runner_lifecycle::resource_budget::{
@@ -171,6 +172,41 @@ impl BlankPoolDiagnostics {
         self.state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+/// Reserve one blank using the foreground selection diagnostic policy.
+pub(crate) fn reserve_blank_with_diagnostics(
+    pool: &mut IdlePool,
+    profile_name: &str,
+    device_rate_limits: &Option<sandbox::DeviceRateLimits>,
+    diagnostics: Option<&BlankPoolDiagnostics>,
+    budget: &ResourceBudget,
+) -> (Option<ReservedIdleSandbox>, BlankPoolSelection) {
+    match pool.reserve_blank(profile_name, device_rate_limits) {
+        Ok(reservation) => (Some(reservation), BlankPoolSelection::Hit),
+        Err(BlankIdleReservationMiss::Empty) => (
+            None,
+            diagnostics.map_or(
+                BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown),
+                |diagnostics| {
+                    diagnostics.classify_empty(
+                        profile_name,
+                        device_rate_limits,
+                        pool.revision(),
+                        budget,
+                    )
+                },
+            ),
+        ),
+        Err(BlankIdleReservationMiss::Incompatible) => (
+            None,
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::IncompatibleShape),
+        ),
+        Err(BlankIdleReservationMiss::Unknown) => (
+            None,
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::Unknown),
+        ),
     }
 }
 

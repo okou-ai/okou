@@ -12,6 +12,21 @@ root = ARGV[0]
 desktop = YAML.safe_load(File.read("#{root}/.github/workflows/desktop.yml"), aliases: true).fetch("jobs")
 release = YAML.safe_load(File.read("#{root}/.github/workflows/release-please.yml"), aliases: true).fetch("jobs")
 deploy = desktop.fetch("deploy-desktop")
+package_steps = desktop.fetch("package-macos").fetch("steps")
+preview_url_step = package_steps.find { |step| step["id"] == "preview" }
+raise "Desktop previews must use the public gateway domain" unless preview_url_step.fetch("env").fetch("APP_PREVIEW_DOMAIN") == '${{ vars.CF_PAGES_PREVIEW_DOMAIN }}'
+Dir.mktmpdir("desktop-preview-url") do |dir|
+  output_file = "#{dir}/outputs"
+  File.write(output_file, "")
+  command = preview_url_step.fetch("run").gsub('${{ github.event.pull_request.number }}', "47222")
+  output, status = Open3.capture2e(
+    {"APP_PREVIEW_DOMAIN" => "omby.ai", "GITHUB_OUTPUT" => output_file},
+    "bash", "-e", "-c", command, chdir: root)
+  raise "Desktop preview URL resolution failed: #{output}" unless status.success?
+  raise "Desktop preview resolved another origin" unless File.read(output_file) == "url=https://pr-47222-app.omby.ai\n"
+end
+preview_build = package_steps.find { |step| step["name"] == "Build isolated preview app" }
+raise "Desktop build must consume its resolved public preview" unless preview_build.fetch("env").fetch("OKOU_DESKTOP_PLATFORM_URL") == '${{ steps.preview.outputs.url }}'
 # Evaluate the actual job conditions across event contexts, including release PRs.
 evaluate = lambda do |condition, event_name, head_ref, changed, detection_result, cancelled|
   expression = condition.strip.delete_prefix('${{').delete_suffix('}}')

@@ -4,6 +4,8 @@ import { artifactOgHtml } from "@okouai/core/artifact-og";
 import { artifactOgMetadataSchema } from "@okouai/api-contracts/contracts/artifact-og-metadata";
 import { HOSTED_SITE_ACCESS_PATH } from "@okouai/api-contracts/contracts/hosted-site-access";
 
+import { isBoundPublicPreview } from "./preview-origin.js";
+
 import posthogClientMetadata from "../assets/posthog-metadata.json" with { type: "json" };
 
 const POSTHOG_CLIENT_METADATA_PATH = "/connectors/posthog/metadata.json";
@@ -109,8 +111,11 @@ function staticAssetUrl(metadata, path) {
   return `${metadata.staticAssetsOrigin}/${path.replace(/^\/+/u, "")}`;
 }
 
-function previewAppAssetHtml(indexHtml, requestUrl) {
-  if (!requestUrl.hostname.toLowerCase().endsWith(".workers.dev")) {
+function previewAppAssetHtml(indexHtml, requestUrl, env) {
+  if (
+    !requestUrl.hostname.toLowerCase().endsWith(".workers.dev") &&
+    !isBoundPublicPreview(requestUrl, env)
+  ) {
     return indexHtml;
   }
 
@@ -345,9 +350,12 @@ function clerkEdgeSessionAuthorizedParty(requestUrl, env) {
   if (requestUrl.hostname === PRODUCTION_APP_HOSTNAME) {
     return requestUrl.origin;
   }
-  return CLERK_EDGE_SESSION_PREVIEW_HOSTNAME_PATTERN.test(
+  return (CLERK_EDGE_SESSION_PREVIEW_HOSTNAME_PATTERN.test(
     requestUrl.hostname,
-  ) && env.CLERK_EDGE_AUTHORIZED_PARTY === requestUrl.origin
+  ) ||
+    (/^pr-[1-9][0-9]*-app\.omby\.ai$/u.test(requestUrl.hostname) &&
+      isBoundPublicPreview(requestUrl, env))) &&
+    env.CLERK_EDGE_AUTHORIZED_PARTY === requestUrl.origin
     ? requestUrl.origin
     : null;
 }
@@ -686,7 +694,7 @@ function embeddedShellAsset(pathname, embeddedShell) {
   }
 }
 
-function embeddedShellResponse(request, embeddedShell) {
+function embeddedShellResponse(request, embeddedShell, env) {
   if (!embeddedShell) {
     return null;
   }
@@ -705,7 +713,7 @@ function embeddedShellResponse(request, embeddedShell) {
   const sourceBody = embeddedShellAsset(pathname, embeddedShell);
   const body =
     pathname === "/index.html" && typeof sourceBody === "string"
-      ? previewAppAssetHtml(sourceBody, requestUrl)
+      ? previewAppAssetHtml(sourceBody, requestUrl, env)
       : sourceBody;
   const isImage = exactContentType?.startsWith("image/") ?? false;
   if (
@@ -722,8 +730,8 @@ function embeddedShellResponse(request, embeddedShell) {
   });
 }
 
-function fetchShellAsset(request, embeddedShell) {
-  const embeddedResponse = embeddedShellResponse(request, embeddedShell);
+function fetchShellAsset(request, embeddedShell, env) {
+  const embeddedResponse = embeddedShellResponse(request, embeddedShell, env);
   return Promise.resolve(embeddedResponse ?? gatewayResponse(503));
 }
 
@@ -843,6 +851,7 @@ async function artifactPageResponse(
   requestUrl,
   embeddedShell,
   apiFetcher,
+  env,
 ) {
   const reference =
     /^\/artifacts\/((?:[a-f0-9]{32}|[a-z0-9]{10})(?:\.[a-z0-9]{1,12})?)$/u.exec(
@@ -892,9 +901,10 @@ async function artifactPageResponse(
   const shell = await fetchShellAsset(
     new Request(new URL("/index.html", requestUrl)),
     embeddedShell,
+    env,
   );
   if (!shell.ok) return shell;
-  const html = previewAppAssetHtml(await shell.text(), requestUrl);
+  const html = previewAppAssetHtml(await shell.text(), requestUrl, env);
   return htmlResponse(
     artifactOgHtml(html, metadata, "replace-all"),
     shell,
@@ -1018,6 +1028,7 @@ async function handleRequest(
       requestUrl,
       embeddedShell,
       apiFetcher,
+      env,
     );
     if (artifactResponse) return artifactResponse;
   }
@@ -1037,6 +1048,7 @@ async function handleRequest(
       assetResponse = await fetchShellAsset(
         new Request(indexRequestUrl),
         embeddedShell,
+        env,
       );
       if (!assetResponse.ok) {
         return gatewayResponse(503);
@@ -1095,7 +1107,7 @@ async function handleRequest(
     );
   }
 
-  const assetResponse = await fetchShellAsset(request, embeddedShell);
+  const assetResponse = await fetchShellAsset(request, embeddedShell, env);
   if (request.method !== "GET") {
     return assetResponse;
   }

@@ -6,14 +6,14 @@ import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 
 import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const mocks = createRouteMocks(context);
 
 interface AuthenticatedFixture {
@@ -138,10 +138,10 @@ describe("GET /api/connector-accounts/:connectionId", () => {
     });
   });
 
-  it("allows an exact account read with a claimed Runner credential", async () => {
+  it("allows an exact account read with a dispatched Runner credential", async () => {
     const fixture = seedAuthenticatedFixture();
 
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });

@@ -68,7 +68,7 @@ async function setupFixture(): Promise<{
   readonly subscriptionId: string;
 }> {
   mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
-  // Webhook runs are claimed by the native Runner, so the owner selects
+  // Webhook runs are executed by the native Runner, so the owner selects
   // Fable, whose personal subscription route never uses Pi.
   const { actor, subscriptionId } = await wf.setupWorkflowOrg({
     tier: "team",
@@ -196,8 +196,8 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
     if (!job) {
       throw new Error("Expected the accepted delivery to launch a run");
     }
-    const workflowClaim = await runsApi.executionInput(job.runId);
-    const workflowPrompt = workflowClaim.appendSystemPrompt ?? "";
+    const workflowExecution = await runsApi.executionInput(job.runId);
+    const workflowPrompt = workflowExecution.appendSystemPrompt ?? "";
     expect(workflowPrompt).toContain("okou slack message send --help");
     expect(workflowPrompt).not.toContain("Never use SLACK_TOKEN directly");
 

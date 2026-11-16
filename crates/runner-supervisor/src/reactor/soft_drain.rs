@@ -29,7 +29,7 @@ impl SoftDrain {
         }
     }
 
-    /// Called in Draining only after in-flight claims have settled.
+    /// Called in Draining only after in-flight acceptance tasks have settled.
     pub(super) async fn start_if_needed(
         &mut self,
         tracker: &IdleDestroyTracker,

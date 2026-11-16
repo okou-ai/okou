@@ -6,7 +6,6 @@ import {
   AGENT_EXECUTION_TIMEOUT_SECONDS,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
-  executionInputSchema,
   connectorRuntimeSyncResultSchema,
   elapsedSinceApiStartMs,
   executionContextSchema,
@@ -121,50 +120,6 @@ function loadRunnerExecutionContextFixture(): unknown {
 }
 
 describe("runner execution context contract", () => {
-  it.each([true, false, undefined])(
-    "round-trips minimum intent with preview authorization %s",
-    (previewBypassAuthorized) => {
-      const input = {
-        ...(previewBypassAuthorized === undefined
-          ? {}
-          : { previewBypassAuthorized }),
-        platformEnvironment: {
-          OKOU_TOKEN: "captured-run-authorization",
-          OKOU_DISABLED_PAID_TOOLS: "[]",
-        },
-        nativeContinuation: {
-          sessionId: null,
-          generationRunId: null,
-          recoveryPrompt: null,
-        },
-        apiStartTime: 1_794_288_000_000,
-        featureFlags: { connectorChatAccountAccess: true },
-      };
-      expect(
-        executionInputSchema.parse(JSON.parse(JSON.stringify(input))),
-      ).toStrictEqual(input);
-    },
-  );
-  it.each([
-    { field: "previewBypassAuthorized", value: null },
-    { field: "previewBypassAuthorized", value: "true" },
-    { field: "nativeContinuation", value: undefined },
-    { field: "platformEnvironment", value: {} },
-    { field: "platformEnvironment", value: { OKOU_DISABLED_PAID_TOOLS: null } },
-  ])("requires captured admission input $field", ({ field, value }) => {
-    expect(
-      executionInputSchema.safeParse({
-        previewBypassAuthorized: false,
-        nativeContinuation: {
-          sessionId: null,
-          generationRunId: null,
-          recoveryPrompt: null,
-        },
-        platformEnvironment: { OKOU_DISABLED_PAID_TOOLS: "[]" },
-        [field]: value,
-      }).success,
-    ).toBe(false);
-  });
   it.each([".claude", ".codex", ".pi/agent"])(
     "accepts the X Connector Skill in the %s execution context",
     (root) => {
@@ -173,15 +128,15 @@ describe("runner execution context contract", () => {
       );
       const mountPath = `/home/user/${root}/skills/x`;
       const bundle = { ...context.contentBundles.skills[0]!, mountPath };
-      const claimed = executionContextSchema.parse({
+      const execution = executionContextSchema.parse({
         ...context,
         contentBundles: { ...context.contentBundles, skills: [bundle] },
       });
-      expect(claimed.contentBundles.skills).toStrictEqual([bundle]);
+      expect(execution.contentBundles.skills).toStrictEqual([bundle]);
     },
   );
 
-  it("accepts the shared current response fixture", () => {
+  it("accepts the shared execution context fixture", () => {
     const context = executionContextSchema.parse(
       loadRunnerExecutionContextFixture(),
     );
@@ -212,7 +167,7 @@ describe("runner execution context contract", () => {
       },
     },
   ])(
-    "round-trips trusted environments and captured Claim decisions",
+    "preserves execution environments and captured admission decisions",
     ({ featureFlags }) => {
       const preparedContext = preparedExecutionContextSchema.parse({
         cliAgentType: "codex",
@@ -222,7 +177,7 @@ describe("runner execution context contract", () => {
         environment: {
           USER_VALUE: "user-value",
         },
-        platformEnvironment: { OKOU_AGENT_ID: "stored-agent-id" },
+        platformEnvironment: { OKOU_AGENT_ID: "prepared-agent-id" },
         secretValueEnvironmentKeys: null,
         nativeContinuation: {
           sessionId: null,
@@ -232,17 +187,13 @@ describe("runner execution context contract", () => {
         encryptedSecrets: null,
         featureFlags,
       });
-      const roundTripped = preparedExecutionContextSchema.parse(
-        JSON.parse(JSON.stringify(preparedContext)),
-      );
-
-      expect(roundTripped.platformEnvironment).toStrictEqual({
-        OKOU_AGENT_ID: "stored-agent-id",
+      expect(preparedContext.platformEnvironment).toStrictEqual({
+        OKOU_AGENT_ID: "prepared-agent-id",
       });
-      expect(roundTripped.environment).toStrictEqual({
+      expect(preparedContext.environment).toStrictEqual({
         USER_VALUE: "user-value",
       });
-      expect(roundTripped.featureFlags).toStrictEqual(featureFlags);
+      expect(preparedContext.featureFlags).toStrictEqual(featureFlags);
 
       const emptyTrustedContext = preparedExecutionContextSchema.parse({
         ...preparedContext,
@@ -315,32 +266,21 @@ describe("prepared Seed Skill bundle contract", () => {
 });
 
 describe("admitted Workflow selection contract", () => {
-  it("preserves explicit claim-time invocation and mount-precedence intent", () => {
-    const context = {
-      previewBypassAuthorized: false,
-      platformEnvironment: { OKOU_DISABLED_PAID_TOOLS: "[]" },
-      nativeContinuation: {
-        sessionId: null,
-        generationRunId: null,
-        recoveryPrompt: null,
-      },
-    };
+  it("preserves admitted agent, automation and mount-precedence selections", () => {
     const agentId = "11111111-1111-4111-8111-111111111111";
-    const invocationId = "22222222-2222-4222-8222-222222222222";
     const automationId = "33333333-3333-4333-8333-333333333333";
     for (const selection of [
-      { agentId },
-      { agentId, invokedWorkflowId: null, protectedMountPaths: [] },
+      { agentId, protectedMountPaths: [] },
       {
         agentId,
-        invokedWorkflowId: invocationId,
         automationId,
         protectedMountPaths: ["/home/user/.codex/skills/official-workflow"],
       },
     ]) {
-      const queued = { ...context, customWorkflowSelection: selection };
       expect(
-        executionInputSchema.parse(queued).customWorkflowSelection,
+        preparedExecutionContextSchema.shape.customWorkflowSelection.parse(
+          selection,
+        ),
       ).toStrictEqual(selection);
     }
   });
@@ -587,18 +527,18 @@ describe("Pi sandbox execution contract", () => {
   );
 
   it("preserves the Chat Thread session across prepared and Runner-facing contexts", () => {
-    const stored = preparedExecutionContextSchema.parse({
+    const prepared = preparedExecutionContextSchema.parse({
       ...preparedContext,
       ...piPreparedContext,
     });
-    const claimed = executionContextSchema.parse({
+    const execution = executionContextSchema.parse({
       ...executionContextSchema.parse(loadRunnerExecutionContextFixture()),
       cliAgentType: "pi",
       ...piRunnerContext,
     });
 
-    expect(stored.piSessionId).toBe(piPreparedContext.piSessionId);
-    expect(claimed.piSessionId).toBe(piPreparedContext.piSessionId);
+    expect(prepared.piSessionId).toBe(piPreparedContext.piSessionId);
+    expect(execution.piSessionId).toBe(piPreparedContext.piSessionId);
   });
 
   it.each([
@@ -642,19 +582,20 @@ describe("Pi sandbox execution contract", () => {
   it.each(["piLaunchConfig", "piModelConfig"] as const)(
     "rejects prepared %s for another framework",
     (field) => {
-      const invalidStoredContext = {
+      const invalidPreparedContext = {
         ...preparedContext,
         cliAgentType: "claude-code",
         [field]: piPreparedContext[field],
       };
 
       expect(
-        preparedExecutionContextSchema.safeParse(invalidStoredContext).success,
+        preparedExecutionContextSchema.safeParse(invalidPreparedContext)
+          .success,
       ).toBe(false);
     },
   );
 
-  it("requires all Pi fields on a claimed Pi context", () => {
+  it("requires all Pi fields on a Pi execution context", () => {
     const fixture = executionContextSchema.parse(
       loadRunnerExecutionContextFixture(),
     );
@@ -673,7 +614,7 @@ describe("Pi sandbox execution contract", () => {
     }
   });
 
-  it("rejects Pi fields for non-Pi claimed frameworks", () => {
+  it("rejects Pi fields for non-Pi execution frameworks", () => {
     expect(
       executionContextSchema.safeParse({
         ...executionContextSchema.parse(loadRunnerExecutionContextFixture()),
@@ -1587,7 +1528,8 @@ describe("runner apiStartTime contract", () => {
     const timestamp = 1_700_000_000_000;
 
     expect(
-      executionInputSchema.shape.apiStartTime.safeParse(timestamp).success,
+      preparedExecutionContextSchema.shape.apiStartTime.safeParse(timestamp)
+        .success,
     ).toBe(true);
     expect(
       executionContextSchema.shape.apiStartTime.safeParse(timestamp).success,
@@ -1598,7 +1540,8 @@ describe("runner apiStartTime contract", () => {
     const timestamp = 1_700_000_000_000.5;
 
     expect(
-      executionInputSchema.shape.apiStartTime.safeParse(timestamp).success,
+      preparedExecutionContextSchema.shape.apiStartTime.safeParse(timestamp)
+        .success,
     ).toBe(false);
     expect(
       executionContextSchema.shape.apiStartTime.safeParse(timestamp).success,
@@ -1606,9 +1549,9 @@ describe("runner apiStartTime contract", () => {
   });
 
   it("rejects negative timestamps", () => {
-    expect(executionInputSchema.shape.apiStartTime.safeParse(-1).success).toBe(
-      false,
-    );
+    expect(
+      preparedExecutionContextSchema.shape.apiStartTime.safeParse(-1).success,
+    ).toBe(false);
     expect(
       executionContextSchema.shape.apiStartTime.safeParse(-1).success,
     ).toBe(false);
@@ -1618,7 +1561,8 @@ describe("runner apiStartTime contract", () => {
     const timestamp = 1_700_000_000;
 
     expect(
-      executionInputSchema.shape.apiStartTime.safeParse(timestamp).success,
+      preparedExecutionContextSchema.shape.apiStartTime.safeParse(timestamp)
+        .success,
     ).toBe(false);
     expect(
       executionContextSchema.shape.apiStartTime.safeParse(timestamp).success,
@@ -1709,7 +1653,7 @@ describe("pinned Official Workflow prepared metadata", () => {
     encryptedSecrets: null,
     cliAgentType: "claude-code",
   };
-  it("preserves exact descriptors before Runner response assembly", () => {
+  it("preserves exact descriptors through execution preparation", () => {
     const officialWorkflowBundles = [
       {
         sha256: "a".repeat(64),
@@ -1717,9 +1661,9 @@ describe("pinned Official Workflow prepared metadata", () => {
         mountPath: "/home/user/.claude/skills/morning-brief",
       },
     ];
-    const queued = { ...context, officialWorkflowBundles };
+    const prepared = { ...context, officialWorkflowBundles };
     expect(
-      preparedExecutionContextSchema.parse(queued).officialWorkflowBundles,
+      preparedExecutionContextSchema.parse(prepared).officialWorkflowBundles,
     ).toStrictEqual(officialWorkflowBundles);
     expect(preparedExecutionContextSchema.parse(context)).not.toHaveProperty(
       "officialWorkflowBundles",

@@ -257,7 +257,7 @@ export function createBillingCheckoutFixture() {
     return sessionStates;
   }
 
-  async function claimAgentToken(fixture: BillingOrgFixture): Promise<string> {
+  async function issueAgentToken(fixture: BillingOrgFixture): Promise<string> {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user(fixture);
@@ -284,11 +284,11 @@ export function createBillingCheckoutFixture() {
         prompt: "Use the issued agent credential for billing",
       });
       await runs.heartbeatRunner(runnerGroup);
-      const claim = await owner.claim(run.runId);
+      const execution = await owner.executionInput(run.runId);
       restoreAccepted = captureCheckoutExternalState();
-      const token = claim.platformEnvironment?.OKOU_TOKEN;
+      const token = execution.platformEnvironment?.OKOU_TOKEN;
       if (!token) {
-        throw new Error("Expected the real claim's Okou token");
+        throw new Error("Expected the execution's Okou token");
       }
       return token;
     });
@@ -788,7 +788,7 @@ export function createBillingCheckoutFixture() {
     currentSecond,
     stripeInputMetadata,
     mockStatefulUsagePackCheckoutSessions,
-    claimAgentToken,
+    issueAgentToken,
     createOrgFixture,
     usagePackCheckoutBody,
     authenticateOrg,

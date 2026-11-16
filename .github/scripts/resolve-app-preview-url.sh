@@ -2,26 +2,23 @@
 set -euo pipefail
 
 if (( $# != 2 )); then
-  echo "usage: $0 <job-ref> <cloudflare-workers-subdomain>" >&2
+  echo "usage: $0 <job-ref> <public-preview-domain>" >&2
   exit 1
 fi
 
 job_ref="$1"
-cloudflare_workers_subdomain="$2"
+public_preview_domain="$2"
 
-: "${job_ref:?job ref is required}"
-: "${cloudflare_workers_subdomain:?Cloudflare Workers subdomain is required}"
-
-if [[ ! "$job_ref" =~ ^pr-[0-9]+$ && "$job_ref" != "staging" ]]; then
+if [[ ! "$job_ref" =~ ^pr-[1-9][0-9]*$ && "$job_ref" != "staging" ]]; then
   echo "unsupported app preview job ref: $job_ref" >&2
   exit 1
 fi
 
-if [[ ! "$cloudflare_workers_subdomain" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
-  echo "invalid Cloudflare Workers subdomain: $cloudflare_workers_subdomain" >&2
+# The public gateway and preview authentication own this zone. Do not turn a CI
+# variable into an arbitrary authorized origin or a silent provider fallback.
+if [[ "$public_preview_domain" != "omby.ai" ]]; then
+  echo "unsupported public app preview domain: $public_preview_domain" >&2
   exit 1
 fi
 
-printf 'https://%s-app-okou-app-preview.%s.workers.dev\n' \
-  "$job_ref" \
-  "$cloudflare_workers_subdomain"
+printf 'https://%s-app.%s\n' "$job_ref" "$public_preview_domain"

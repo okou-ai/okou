@@ -28,8 +28,7 @@ function projects() {
   return setupApp({ context, routes: projectRoutes })(projectsContract);
 }
 test("prepares queued inputs from current membership while preserving an already started Run and captured mentions", async () => {
-  const { actor, agentId, runnerGroup } =
-    await fixture.entitledNativeChatActor();
+  const { actor, agentId } = await fixture.entitledNativeChatActor();
   if (!actor.orgId) {
     throw new Error("Missing organization");
   }
@@ -42,7 +41,7 @@ test("prepares queued inputs from current membership while preserving an already
     agentId,
     prompt: "Start the work",
   });
-  const claimed = await fixture.claimChatRun(runnerGroup, first.runId);
+  const execution = await fixture.runExecution(first.runId);
   const initial = await fixture.api.readRun(actor, first.runId);
   expect(initial.appendSystemPrompt).toContain("currently unassigned");
   const id = operation();
@@ -148,7 +147,7 @@ test("prepares queued inputs from current membership while preserving an already
   expect(
     (await fixture.api.readRun(actor, first.runId)).appendSystemPrompt,
   ).toBe(initial.appendSystemPrompt);
-  await fixture.cancelChatRun(actor, first.runId, claimed.sandboxHeaders);
+  await fixture.cancelChatRun(actor, first.runId, execution.sandboxHeaders);
   await flushWaitUntilForTest();
   const history = await fixture.waitForThreadMessages(
     actor,

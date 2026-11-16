@@ -167,7 +167,7 @@ describe("Computer Use host START", () => {
           hostName: "PAT Desktop",
         });
 
-        const agent = await scenario.claim(actor);
+        const agent = await scenario.launchRun(actor);
         const sandboxDenied = await computerUse.requestStartComputerUseHost(
           { bearer: agent.token },
           [403],

@@ -12,6 +12,8 @@ from mitmproxy import http
 import flow_metadata_keys as metadata_keys
 from tests.model_provider_flow_helpers import RealFlowFactory, make_model_provider_sse_flow
 
+_SSE_JSON_ENCODER = json.JSONEncoder(separators=(",", ":"))
+
 
 def make_model_sse_pipeline_flow(
     real_flow: RealFlowFactory,
@@ -60,7 +62,7 @@ def model_sse_update(protocol: str, output: int) -> bytes:
         event = None
         data = {"usage": {"completion_tokens": output}}
     prefix = f"event: {event}\n".encode() if event else b""
-    return prefix + b"data: " + json.dumps(data, separators=(",", ":")).encode() + b"\n\n"
+    return prefix + b"data: " + _SSE_JSON_ENCODER.encode(data).encode() + b"\n\n"
 
 
 @lru_cache(maxsize=6)
@@ -78,9 +80,8 @@ def model_sse_terminal(protocol: str, output: int) -> bytes:
         return model_sse_update(protocol, output) + b"data: [DONE]\n\n"
     return (
         b"event: response.completed\ndata: "
-        + json.dumps(
-            {"type": "response.completed", "response": {"usage": {"output_tokens": output}}},
-            separators=(",", ":"),
+        + _SSE_JSON_ENCODER.encode(
+            {"type": "response.completed", "response": {"usage": {"output_tokens": output}}}
         ).encode()
         + b"\n\n"
     )

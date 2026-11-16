@@ -93,7 +93,7 @@ fn execution_context_deserializes_pi_sandbox_resources() {
 #[test]
 fn execution_context_preserves_optional_first_run_context() {
     for label in [None, Some(false), Some(true)] {
-        let mut claim = json!({
+        let mut publication = json!({
             "runId": "11111111-1111-4111-8111-111111111111",
             "prompt": "hello",
             "sandboxToken": "tok",
@@ -103,9 +103,9 @@ fn execution_context_preserves_optional_first_run_context() {
             "connectorRuntimeTargets": []
         });
         if let Some(label) = label {
-            claim["isFirstRun"] = json!(label);
+            publication["isFirstRun"] = json!(label);
         }
-        let context: ExecutionContext = serde_json::from_value(claim).unwrap();
+        let context: ExecutionContext = serde_json::from_value(publication).unwrap();
         assert_eq!(context.is_first_run, label);
     }
 }

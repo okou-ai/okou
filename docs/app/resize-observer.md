@@ -125,9 +125,8 @@ what the follow-up needs:
 - A plain re-measure of a box can wait one animation frame under the caller's
   signal, as `refreshChatListLayout$` does.
 - Scroll restoration, focus handoffs, and anything else that targets exact
-  committed nodes use a commit boundary: `LayoutCommit` or `RequestCommit` from
-  `@okouai/ui`. The commit fulfills an action the command already requested;
-  rendering must not invent a new action.
+  committed nodes establish the required DOM boundary in the owning command
+  before using those nodes. Rendering must not invent a new action.
 - An initial measurement waits for its inputs, such as the main stylesheet.
   Otherwise the first read sees unstyled geometry.
 
@@ -276,9 +275,8 @@ own restoration lifetimes.
 
 Focus handoffs have a DOM mount lifetime independent of a remote connection.
 Record user intent as an exact request and consume it once at the corresponding
-enabled destination commit. Shared `LayoutCommit` and `RequestCommit` boundaries
-use stable callbacks and semantic keys, not render counters or fresh-per-render
-requests. A remote operation receipt is not a DOM commit. Revalidate mount,
+enabled destination commit. Use stable callbacks and semantic keys, not render
+counters or fresh-per-render requests. A remote operation receipt is not a DOM commit. Revalidate mount,
 authority, selection, destination availability, and retained intent before
 focusing; later user input supersedes a pending handoff.
 

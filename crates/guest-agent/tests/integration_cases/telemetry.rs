@@ -1383,6 +1383,12 @@ async fn urgent_oom_stalled_http_has_two_bounded_attempts_and_retains_evidence()
             .await
             .unwrap()
             .unwrap();
+            // The complete request proves its production timeout is armed.
+            // Resume before the timed-out uploader or peer performs real I/O.
+            raw_http_test_support::clock::advance_timer_phase(Duration::from_millis(
+                api_contracts::generated::constants::runners::AGENT_TELEMETRY_INCIDENT_TIMEOUT_MS,
+            ))
+            .await;
             held.push(stream);
         }
         (listener, held)

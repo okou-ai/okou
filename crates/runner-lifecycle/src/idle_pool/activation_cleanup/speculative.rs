@@ -100,10 +100,7 @@ impl GuardedSpeculativeIdleOwner {
                     .ok_or(MemoryOperationError::Consumed)?
                     .backing_process()
                     .ok_or(MemoryOperationError::MissingBacking)?;
-                owner.original_backing = Some(CapturedBacking {
-                    identity: process.identity(),
-                    process,
-                });
+                owner.original_backing = Some(CapturedBacking::capture(process));
             }
             Self::validate(owner)
         }))

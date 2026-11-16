@@ -7,8 +7,9 @@ import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
+import { controlBrowserDeadline } from "./helpers/browser-deadline";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import {
   createBrowserFixtures,
   MINUTE,
@@ -23,7 +24,7 @@ function client() {
   return setupApp({ context, routes: browserRoutes })(browserContract);
 }
 function runHeaders(chat: Chat) {
-  return { authorization: `Bearer ${okouTokenFromClaim(chat.claim)}` };
+  return { authorization: `Bearer ${okouTokenFromExecution(chat.execution)}` };
 }
 async function use(chat: Chat) {
   return (
@@ -38,6 +39,7 @@ describe("shared Browser public consumers", () => {
       installBrowserWindowContentCommands(f.provider.native);
       const a = await f.start();
       f.provider.native.windowReply = "withhold";
+      f.provider.native.onWithheldReply = controlBrowserDeadline(context);
       await expect(
         client().use({ headers: runHeaders(a), body: {} }),
       ).resolves.toMatchObject({
@@ -69,7 +71,7 @@ describe("shared Browser public consumers", () => {
         { windowId: recovered.browser.window?.primaryWindowId },
       ]);
     });
-  }, 20_000);
+  });
 
   it("waits for the first window before admitting a sibling into a newly published instance", async () => {
     const f = await fixture();

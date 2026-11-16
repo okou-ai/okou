@@ -30,7 +30,23 @@ import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MemberPreferencesModelTest {
-    private class Service : WorkspaceSession, ChatListService by TestChatService() {
+    private class Service :
+        WorkspaceSession,
+        ai.okou.android.chat.RealtimeService by ai.okou.android.TestRealtimeService(),
+        ChatListService by TestChatService(),
+        ai.okou.android.chat.ChatComposerService by ai.okou.android.TestChatComposerService() {
+        override suspend fun personalInstructionsEnabled() = false
+
+        override suspend fun personalInstructions():
+            ai.okou.android.api.generated.PersonalInstructions =
+            error("Instructions are not enabled in this fixture")
+
+        override suspend fun updatePersonalInstructions(
+            content: String,
+            ifVersion: String,
+        ): ai.okou.android.api.generated.PersonalInstructions =
+            error("Instructions are not enabled in this fixture")
+
         var stored = testBootstrap().preferences
         val requests = mutableListOf<UpdatePreferencesRequest>()
         var load: suspend () -> UserPreferences = { stored }

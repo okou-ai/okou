@@ -6,11 +6,11 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const store = createStore();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
@@ -59,7 +59,7 @@ function client() {
 describe("GET /api/chat-threads/:id/metadata", () => {
   it("returns thread metadata with an Okou run token carrying chat-thread:read", async () => {
     const fixture = await seedChatThread("Launch plan");
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });

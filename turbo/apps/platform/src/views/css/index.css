@@ -1172,6 +1172,13 @@ body {
   initial-value: 0;
 }
 
+/* One inherited reveal length drives the virtual list extent and child clip. */
+@property --okou-project-fold-height {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 /* The home suggestion progress segment draws its edge at this fraction. It is
    registered so the keyframes interpolate a number; the initial value of 1 is
    what a segment shows when reduced motion drops the animation. */

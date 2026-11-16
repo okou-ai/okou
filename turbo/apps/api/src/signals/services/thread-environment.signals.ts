@@ -6,71 +6,65 @@ import {
 } from "@okouai/api-contracts/contracts/paid-tools";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
 import { expandVariables } from "@okouai/core/variable-expander";
-import { computed } from "ccstate";
+import { computed, type Computed } from "ccstate";
 import { badRequestMessage } from "../../lib/error";
 import { safeSync } from "../utils";
 import { compactRecord } from "./connector-runtime-preparation.service";
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
 import { emptyEnvironment, type Environment } from "./run-environment";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
-import type { ThreadContext } from "./thread-context.signals";
-import type { ThreadModelError } from "./thread-model.signals";
-
-type EnvironmentError = ThreadModelError | ReturnType<typeof badRequestMessage>;
-
-function isEnvironmentError(value: unknown): value is EnvironmentError {
-  return typeof value === "object" && value !== null && "status" in value;
-}
+import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 
 /** The selected model provider's environment, secrets and firewall. */
 export function createModelProviderEnvironmentSignals(
-  bootstrap: Pick<AgentRunContextSignals, "bodyEnvironment$">,
-  threadContext: Pick<ThreadContext, "modelRoute$">,
+  bodyEnvironment$: AgentRunContextSignals["bodyEnvironment$"],
+  modelRoute$: Computed<Promise<ResolvedModelProviderEnvironment | null>>,
 ) {
-  return computed(async (get): Promise<Environment | EnvironmentError> => {
-    const [modelProvider, body] = await Promise.all([
-      get(threadContext.modelRoute$),
-      get(bootstrap.bodyEnvironment$),
-    ]);
-    if (isEnvironmentError(modelProvider)) {
-      return modelProvider;
-    }
-    if (!modelProvider) {
-      return emptyEnvironment();
-    }
-    const manifestResult = safeSync(() => {
-      return modelProviderPermissionManifest(modelProvider, body.vars);
-    });
-    if ("error" in manifestResult) {
-      if (manifestResult.error instanceof FirewallBaseUrlResolutionError) {
-        return badRequestMessage(manifestResult.error.message);
+  return computed(
+    async (
+      get,
+    ): Promise<Environment | ReturnType<typeof badRequestMessage>> => {
+      const [modelProvider, body] = await Promise.all([
+        get(modelRoute$),
+        get(bodyEnvironment$),
+      ]);
+      if (!modelProvider) {
+        return emptyEnvironment();
       }
-      throw manifestResult.error;
-    }
-    const manifest = manifestResult.ok;
-    return {
-      vars: undefined,
-      environment: compactRecord(
-        expandVariables(modelProvider.environment, {
-          vars: body.vars,
-          secrets: {
-            ...modelProvider.secrets,
-            ...manifest?.environmentSecretPlaceholders,
-          },
-        }).result,
-      ),
-      platformEnvironment: undefined,
-      secrets: compactRecord(modelProvider.secrets),
-      secretConnectorMap: modelProvider.secretConnectorMap,
-      secretConnectorMetadataMap: modelProvider.secretConnectorMetadataMap,
-      firewalls: manifest?.firewalls ?? [],
-      networkPolicies: manifest?.networkPolicies ?? {},
-      environmentSecretPlaceholders: manifest?.environmentSecretPlaceholders,
-      billableFirewalls: manifest?.billableFirewalls ?? [],
-      runtimeTargets: [],
-      reservedSecretAliases: [],
-    };
-  });
+      const manifestResult = safeSync(() => {
+        return modelProviderPermissionManifest(modelProvider, body.vars);
+      });
+      if ("error" in manifestResult) {
+        if (manifestResult.error instanceof FirewallBaseUrlResolutionError) {
+          return badRequestMessage(manifestResult.error.message);
+        }
+        throw manifestResult.error;
+      }
+      const manifest = manifestResult.ok;
+      return {
+        vars: undefined,
+        environment: compactRecord(
+          expandVariables(modelProvider.environment, {
+            vars: body.vars,
+            secrets: {
+              ...modelProvider.secrets,
+              ...manifest?.environmentSecretPlaceholders,
+            },
+          }).result,
+        ),
+        platformEnvironment: undefined,
+        secrets: compactRecord(modelProvider.secrets),
+        secretConnectorMap: modelProvider.secretConnectorMap,
+        secretConnectorMetadataMap: modelProvider.secretConnectorMetadataMap,
+        firewalls: manifest?.firewalls ?? [],
+        networkPolicies: manifest?.networkPolicies ?? {},
+        environmentSecretPlaceholders: manifest?.environmentSecretPlaceholders,
+        billableFirewalls: manifest?.billableFirewalls ?? [],
+        runtimeTargets: [],
+        reservedSecretAliases: [],
+      };
+    },
+  );
 }
 
 export function paidToolPlatformEnvironment(args: {

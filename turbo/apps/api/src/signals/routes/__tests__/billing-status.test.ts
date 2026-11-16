@@ -6,7 +6,7 @@ import { createStore } from "ccstate";
 import StripeSDK from "stripe";
 import { beforeEach } from "vitest";
 import {
-  okouTokenFromClaim,
+  okouTokenFromExecution,
   createChatEventsFixture,
 } from "./helpers/chat-events-fixture";
 
@@ -136,7 +136,7 @@ describe("GET /api/billing/status", () => {
       store.set(seedBillingStatusOrg$, { credits: 100_000 }, context.signal),
     );
     const chat = createChatEventsFixture(context);
-    const { actor, agentId, runnerGroup } = await chat.entitledNativeChatActor({
+    const { actor, agentId } = await chat.entitledNativeChatActor({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
@@ -144,8 +144,8 @@ describe("GET /api/billing/status", () => {
       agentId,
       prompt: "Read billing status",
     });
-    const claimed = await chat.claimChatRun(runnerGroup, run.runId);
-    const token = okouTokenFromClaim(claimed.claim);
+    const execution = await chat.runExecution(run.runId);
+    const token = okouTokenFromExecution(execution.execution);
 
     const client = setupApp({ context, routes: billingStatusRoutes })(
       billingStatusContract,
@@ -157,7 +157,7 @@ describe("GET /api/billing/status", () => {
     );
 
     expect(response.body.credits).toBe(120_000);
-    await chat.cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+    await chat.cancelChatRun(actor, run.runId, execution.sandboxHeaders);
   });
 
   it("returns correct data for subscribed org", async () => {

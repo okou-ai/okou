@@ -6,7 +6,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { tailscaleRoutes } from "../tailscale";
-import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
+import { createVncExecutionApi } from "./helpers/vnc-execution";
 import {
   createVncRuntimeApi,
   initializeVncRuntimeTest,
@@ -15,11 +15,11 @@ import {
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
 const context = testContext();
-const claimed = createClaimedVncApi(context);
+const executionApi = createVncExecutionApi(context);
 const api = createVncRuntimeApi(context);
 beforeEach(initializeVncRuntimeTest);
 afterEach(async () => {
-  await claimed.cleanup();
+  await executionApi.cleanup();
 });
 type Provider = "cloudflare_access" | "tailscale";
 const combinations = [
@@ -61,7 +61,7 @@ async function config(provider: Provider) {
       ).body;
 }
 async function fixture(rfbProvider: Provider, kdcProvider: Provider) {
-  const owner = await claimed.paidOwner();
+  const owner = await executionApi.paidOwner();
   const rfb = await config(rfbProvider);
   const kdc = rfbProvider === kdcProvider ? rfb : await config(kdcProvider);
   const host = (
@@ -118,7 +118,7 @@ async function fixture(rfbProvider: Provider, kdcProvider: Provider) {
     )
   ).body;
   await api.enableDefault(owner, "vnc", host.id);
-  const running = await claimed.runtime(owner);
+  const running = await executionApi.runtime(owner);
   return {
     ...running,
     connectionId: host.id,

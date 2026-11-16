@@ -46,6 +46,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.PhoneUse]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Phone Use",
+    description: "Internal cloud-controlled iOS device automation.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.SshChatApproval]: {
     maintainer: "yuma@okou.ai",
     displayName: "Remote host chat approval",

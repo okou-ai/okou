@@ -186,7 +186,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     return state;
   }
 
-  async function claim(
+  async function readExecution(
     run: PublicRemoteAccessRun,
     runnerHeaders: { readonly authorization: string },
   ) {
@@ -207,9 +207,7 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     });
     const sandboxToken = input.sandboxToken;
     if (!sandboxToken) {
-      throw new Error(
-        "Expected the real Runner claim to issue its sandbox token",
-      );
+      throw new Error("Expected the execution to issue its sandbox token");
     }
     ownedRun(run.runId).sandboxToken = sandboxToken;
     await expect(runs.readRun(run.actor, run.runId)).resolves.toMatchObject({
@@ -218,13 +216,13 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     await flushWaitUntilForTest();
     const agentToken = input.platformEnvironment.OKOU_TOKEN;
     if (!agentToken) {
-      throw new Error("Expected the claim's real Agent credential");
+      throw new Error("Expected the execution's Agent credential");
     }
     return { ...run, runnerIdentity, sandboxToken, agentToken };
   }
 
   async function finish(
-    run: Awaited<ReturnType<typeof claim>>,
+    run: Awaited<ReturnType<typeof readExecution>>,
     status: "completed" | "cancelled" | "failed",
   ) {
     const runs = createRunsApi(context);
@@ -307,5 +305,5 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     }
   }
 
-  return { start, claim, finish, cleanup };
+  return { start, executionInput: readExecution, finish, cleanup };
 }

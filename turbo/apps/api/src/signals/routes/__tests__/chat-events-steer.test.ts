@@ -30,7 +30,7 @@ const {
   chatCallbacks,
   entitledNativeChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   waitForThreadMessages,
   waitForRunStatus,
   completeChatRunOk,
@@ -93,7 +93,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   )(
     "renders $kind steering from current settings after starting disabled=$initiallyDisabled",
     async ({ kind, title, template, initiallyDisabled }) => {
-      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+      const { actor, agentId } = await entitledNativeChatActor();
       await setPaidToolDisabled(
         context,
         actor,
@@ -104,9 +104,9 @@ describe("CHAT-02: steering input prompts into a running run", () => {
         agentId,
         prompt: "Start with captured tool settings",
       });
-      const claimed = await claimChatRun(runnerGroup, active.runId);
+      const execution = await runExecution(active.runId);
       expect(
-        claimed.claim.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
+        execution.execution.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
       ).toBe(initiallyDisabled ? '["image-generation"]' : "[]");
       const originalPrompt = (await api.readRun(actor, active.runId))
         .appendSystemPrompt;
@@ -131,7 +131,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
         !initiallyDisabled,
       );
       const first = await api.nextSteerableInput(
-        claimed.claim.sandboxToken,
+        execution.execution.sandboxToken,
         active.runId,
       );
       await setPaidToolDisabled(
@@ -141,7 +141,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
         initiallyDisabled,
       );
       const second = await api.nextSteerableInput(
-        claimed.claim.sandboxToken,
+        execution.execution.sandboxToken,
         active.runId,
       );
       const enabled = initiallyDisabled ? first : second;
@@ -170,35 +170,31 @@ describe("CHAT-02: steering input prompts into a running run", () => {
         input: { eventId, prompt: `${disabledGolden}\n\n${userPrompt}` },
       });
       await expect(
-        api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+        api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
       ).resolves.toStrictEqual(second);
       expect((await api.readRun(actor, active.runId)).appendSystemPrompt).toBe(
         originalPrompt,
       );
       await api.declareSteeredInput(
-        claimed.claim.sandboxToken,
+        execution.execution.sandboxToken,
         active.runId,
         eventId,
       );
       await expect(
-        api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+        api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
       ).resolves.toStrictEqual({ input: null });
       await cancelChatRun(actor, active.runId);
     },
   );
 
   it("steers Document input with its pinned source before the next queued prompt", async () => {
-    const {
-      actor: owner,
-      agentId,
-      runnerGroup,
-    } = await entitledNativeChatActor();
+    const { actor: owner, agentId } = await entitledNativeChatActor();
     if (!owner.orgId) {
       throw new Error("Expected an organization");
     }
     const actor = { ...owner, orgId: owner.orgId };
     const active = await sendChatRun(actor, { agentId, prompt: "Start a run" });
-    const claimed = await claimChatRun(runnerGroup, active.runId);
+    const execution = await runExecution(active.runId);
     const eventId = randomUUID();
     const userMessage = userMessageWithTemplate("Prepare an invoice", {
       type: "document",
@@ -226,7 +222,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       expect.objectContaining({ id: eventId, userMessage }),
     );
     const next = await api.nextSteerableInput(
-      claimed.claim.sandboxToken,
+      execution.execution.sandboxToken,
       active.runId,
     );
     expect(next.input?.eventId).toBe(eventId);
@@ -235,13 +231,13 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       "https://raw.githubusercontent.com/sparksuite/simple-html-invoice-template/7d74fe34c862b7712f1a23a3f12147a4a8bd53e1/invoice.html",
     );
     await api.requestDeclareSteeredInputAs(
-      `Bearer ${claimed.claim.sandboxToken}`,
+      `Bearer ${execution.execution.sandboxToken}`,
       active.runId,
       eventId,
       [200],
     );
     await expect(
-      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+      api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
     ).resolves.toStrictEqual({
       input: { eventId: nextEventId, prompt: "Then summarize the invoice" },
     });
@@ -249,17 +245,13 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   });
 
   it("includes cover guidance for a template steered into an existing run", async () => {
-    const {
-      actor: owner,
-      agentId,
-      runnerGroup,
-    } = await entitledNativeChatActor();
+    const { actor: owner, agentId } = await entitledNativeChatActor();
     if (!owner.orgId) {
       throw new Error("Expected an organization");
     }
     const actor = { ...owner, orgId: owner.orgId };
     const active = await sendChatRun(actor, { agentId, prompt: "Start a run" });
-    const claimed = await claimChatRun(runnerGroup, active.runId);
+    const execution = await runExecution(active.runId);
     const template = WEBSITE_TEMPLATE_ITEMS[0];
     if (!template) {
       throw new Error("Expected a website template");
@@ -289,7 +281,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       [201],
     );
     const next = await api.nextSteerableInput(
-      claimed.claim.sandboxToken,
+      execution.execution.sandboxToken,
       active.runId,
     );
     expect(next.input?.prompt).toContain("Make a website");
@@ -299,13 +291,13 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   });
 
   it("returns the next prompt after the run's own input and declares it steered once", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const active = await sendChatRun(actor, {
       agentId,
       prompt: "run that steers queued prompts",
     });
-    const claimed = await claimChatRun(runnerGroup, active.runId);
-    const token = claimed.claim.sandboxToken;
+    const execution = await runExecution(active.runId);
+    const token = execution.execution.sandboxToken;
 
     // The run's own bound input is never steerable.
     await expect(
@@ -420,13 +412,13 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   }, 90_000);
 
   it("skips recalled prompts and rejects unknown input", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const active = await sendChatRun(actor, {
       agentId,
       prompt: "run that skips unsteerable input",
     });
-    const claimed = await claimChatRun(runnerGroup, active.runId);
-    const token = claimed.claim.sandboxToken;
+    const execution = await runExecution(active.runId);
+    const token = execution.execution.sandboxToken;
 
     const unknown = await api.requestDeclareSteeredInputAs(
       `Bearer ${token}`,
@@ -506,12 +498,12 @@ describe("CHAT-02: steering input prompts into a running run", () => {
   }, 90_000);
 
   it("rejects a declaration once the run ended and another run took the prompt", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {
       agentId,
       prompt: "run that ends before steering",
     });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    const firstExecution = await runExecution(first.runId);
     const queuedEventId = await sendQueuedPrompt(
       actor,
       agentId,
@@ -519,13 +511,16 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       "picked by the next run",
     );
     await expect(
-      api.nextSteerableInput(firstClaim.claim.sandboxToken, first.runId),
+      api.nextSteerableInput(
+        firstExecution.execution.sandboxToken,
+        first.runId,
+      ),
     ).resolves.toStrictEqual({
       input: { eventId: queuedEventId, prompt: "picked by the next run" },
     });
 
     chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
+    await completeChatRunOk(first.runId, firstExecution.sandboxHeaders);
     await flushWaitUntilForTest();
     await waitForRunStatus(actor, first.runId, "completed");
     const picked = await waitForThreadMessages(
@@ -548,10 +543,13 @@ describe("CHAT-02: steering input prompts into a running run", () => {
     }
 
     await expect(
-      api.nextSteerableInput(firstClaim.claim.sandboxToken, first.runId),
+      api.nextSteerableInput(
+        firstExecution.execution.sandboxToken,
+        first.runId,
+      ),
     ).resolves.toStrictEqual({ input: null });
     const late = await api.requestDeclareSteeredInputAs(
-      `Bearer ${firstClaim.claim.sandboxToken}`,
+      `Bearer ${firstExecution.execution.sandboxToken}`,
       first.runId,
       queuedEventId,
       [409],
@@ -573,21 +571,21 @@ describe("CHAT-02: steering input prompts into a running run", () => {
 
   it("accepts only the run's own sandbox token", async () => {
     const owned = await publicChatActor(context);
-    const { actor, agentId, runnerGroup } = owned;
+    const { actor, agentId } = owned;
     await owned.run(async () => {
       await api.updateUserModelPreference(actor, "claude-fable-5-1");
       const other = await owned.sendChatRun(actor, {
         agentId,
         prompt: "another run of the same user",
       });
-      const otherClaim = await owned.claimChatRun(runnerGroup, other.runId);
-      await cancelChatRun(actor, other.runId, otherClaim.sandboxHeaders);
-      const otherToken = otherClaim.claim.sandboxToken;
+      const otherExecution = await owned.runExecution(other.runId);
+      await cancelChatRun(actor, other.runId, otherExecution.sandboxHeaders);
+      const otherToken = otherExecution.execution.sandboxToken;
       const active = await owned.sendChatRun(actor, {
         agentId,
         prompt: "run whose steering is protected",
       });
-      const claimed = await owned.claimChatRun(runnerGroup, active.runId);
+      const execution = await owned.runExecution(active.runId);
       const eventId = await sendQueuedPrompt(
         actor,
         agentId,
@@ -631,26 +629,26 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       expectApiError(otherThread.body);
 
       await expect(
-        api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+        api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
       ).resolves.toStrictEqual({
         input: { eventId, prompt: "only the owning run may steer" },
       });
       await expect(
         api.declareSteeredInput(
-          claimed.claim.sandboxToken,
+          execution.execution.sandboxToken,
           active.runId,
           eventId,
         ),
       ).resolves.toStrictEqual({ outcome: "steered" });
       await expect(
         api.declareSteeredInput(
-          claimed.claim.sandboxToken,
+          execution.execution.sandboxToken,
           active.runId,
           eventId,
         ),
       ).resolves.toStrictEqual({ outcome: "steered" });
       await expect(
-        api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+        api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
       ).resolves.toStrictEqual({ input: null });
       const replacements = (
         await chat.listThreadEvents(actor, active.threadId)

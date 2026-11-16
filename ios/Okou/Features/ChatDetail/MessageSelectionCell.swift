@@ -8,6 +8,7 @@ final class MessageSelectionCell: UICollectionViewCell {
   var representedRowID: String?
   var message: ChatMessage?
   var quote: ((ChatFeedbackSelection) -> Void)?
+  var fork: ((ChatFeedbackSelection) -> Void)?
 
   isolated deinit {
     prefetchedContent?.removeFromSuperview()
@@ -19,6 +20,7 @@ final class MessageSelectionCell: UICollectionViewCell {
     representedRowID = nil
     message = nil
     quote = nil
+    fork = nil
   }
 
   func setMessageConfiguration(_ configuration: some UIContentConfiguration) {
@@ -62,14 +64,26 @@ final class MessageSelectionCell: UICollectionViewCell {
 
   override func buildMenu(with builder: any UIMenuBuilder) {
     super.buildMenu(with: builder)
-    guard let action = quoteAction() else { return }
+    let actions = [quoteAction(), forkAction()].compactMap { $0 }
+    guard !actions.isEmpty else { return }
     builder.insertChild(
-      UIMenu(options: .displayInline, children: [action]), atEndOfMenu: .standardEdit)
+      UIMenu(options: .displayInline, children: actions), atEndOfMenu: .standardEdit)
   }
 
   func quoteAction() -> UIAction? {
-    guard quote != nil, let (input, selection) = selectedPassage() else { return nil }
-    return UIAction(title: String(localized: "Quote"), image: OkouIcon.uiImage("quote")) {
+    selectionAction(title: String(localized: "Quote"), icon: "quote", perform: quote)
+  }
+
+  func forkAction() -> UIAction? {
+    guard message?.runID != nil else { return nil }
+    return selectionAction(title: String(localized: "Fork"), icon: "git-branch", perform: fork)
+  }
+
+  private func selectionAction(
+    title: String, icon: String, perform: ((ChatFeedbackSelection) -> Void)?
+  ) -> UIAction? {
+    guard let perform, let (input, selection) = selectedPassage() else { return nil }
+    return UIAction(title: title, image: OkouIcon.uiImage(icon)) {
       [weak self, weak input] _ in
       guard let self, let input, input.window != nil,
         let (currentInput, current) = selectedPassage(), currentInput === input,
@@ -77,7 +91,7 @@ final class MessageSelectionCell: UICollectionViewCell {
       else { return }
       input.selectedTextRange = nil
       input.resignFirstResponder()
-      quote?(selection)
+      perform(selection)
     }
   }
 

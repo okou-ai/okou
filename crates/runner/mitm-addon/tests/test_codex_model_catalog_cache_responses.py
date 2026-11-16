@@ -22,6 +22,7 @@ from tests.codex_model_catalog_cache_helpers import (
     prepare_prefetch_miss,
 )
 from tests.flow_helpers import header_map, response_stream
+from tests.repeated_bytes_helpers import repeat_bytes
 
 
 async def test_brotli_miss_without_length_is_cached_and_passed_through(real_flow):
@@ -357,7 +358,9 @@ async def test_json_nesting_bound_ignores_structural_characters_inside_strings(r
         ),
         pytest.param(
             brotli.compress(
-                b'{"models":[],"padding":"' + b"x" * catalog_validation.MAX_ENTRY_BYTES + b'"}'
+                repeat_bytes(
+                    b'{"models":[],"padding":"', b"x", catalog_validation.MAX_ENTRY_BYTES, b'"}'
+                )
             ),
             None,
             "response_size",
@@ -597,8 +600,8 @@ async def test_unsafe_encoded_headers_pass_through_without_caching(
 async def test_complete_decoded_body_bound_is_cached(real_flow):
     prefix = b'{"models":[],"padding":"'
     suffix = b'"}'
-    exact_body = (
-        prefix + b"x" * (catalog_validation.MAX_ENTRY_BYTES - len(prefix) - len(suffix)) + suffix
+    exact_body = repeat_bytes(
+        prefix, b"x", catalog_validation.MAX_ENTRY_BYTES - len(prefix) - len(suffix), suffix
     )
     exact = catalog_flow(real_flow, version="exact-cap")
     assert (await install_catalog(exact, body=exact_body, encoding="br"))[

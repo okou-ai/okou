@@ -10,7 +10,6 @@ import sys
 import unittest
 import uuid
 
-import claim_producer_report_test as fixture
 import cleanup_report as cleanup
 import fixed_restore_report as fixed
 import report
@@ -19,24 +18,47 @@ import report_test
 
 class FixedRestoreReportTests(unittest.TestCase):
     def setUp(self):
-        def prepare_home(seed):
-            self.thread=str(uuid.uuid4())
-            self.original=b'{"type":"session_meta","payload":{"id":"'+self.thread.encode()+b'"}}\n'
-            self.session_path=f"/home/user/.codex/sessions/2026/06/04/rollout-2026-06-04T07-18-08-{self.thread}.jsonl"
-            target=seed/self.session_path.removeprefix("/home/user/")
-            target.parent.mkdir(parents=True)
-            target.write_bytes(self.original)
-
-        fixture.ClaimProducerReportTests.setUp(self, prepare_home=prepare_home)
-        raw=self.collector["metadata"].pop("native_claim_producer_policy_json")
+        report_test.NativeReportTests.setUp(self, cases={"FixedRestore-capture-drop-fresh"})
+        gib = 1024**3
+        self.policy = {
+            "host_total_bytes": 64*gib, "operating_floor_bytes": gib,
+            "cleanup_reserve_bytes": 256*1024**2, "critical_available_bytes": 12*gib,
+            "recovery_available_bytes": 20*gib, "live_growth_bytes": 4*1024**2,
+            "tail_growth_bytes": 65*1024**2, "replacement_preparation_bytes": 32*1024**2,
+            "max_sample_age_millis": 1000, "max_operations": 8, "max_cleanup_inflight": 2,
+            "pressure_sample_period_millis": 50, "pressure_recovery_sustain_millis": 100,
+            "pressure_wave_cooldown_millis": 100, "pressure_optional_start_interval_millis": 100,
+            "pressure_max_wave_entries": 1,
+        }
+        raw=json.dumps(self.policy)
+        self.artifacts["policy_sha256"]=hashlib.sha256(raw.encode()).hexdigest()
         self.collector["metadata"]["native_fixed_restore_policy_json"]=raw
+        self.collector.update(success=False, driver_exit_code=101, cleanup_intervened=True)
+        self.ident,self.backing,self.history,self.run,self.runner = [str(uuid.uuid4()) for _ in range(5)]
+        self.payload=(self.history.encode()*2000)[:65536]
+        seed=self.root/"seed"
+        private=seed/".vm0"/"guest-agent"/"runs"/self.history
+        private.mkdir(parents=True)
+        (private/"fixture-private").write_bytes(b"fixture private bytes")
+        (seed/"guarded-idle-ordinary").write_bytes(b"native ordinary home bytes")
+        (seed/"guarded-idle-payload").write_bytes(self.payload)
+        self.thread=str(uuid.uuid4())
+        self.original=b'{"type":"session_meta","payload":{"id":"'+self.thread.encode()+b'"}}\n'
+        self.session_path=f"/home/user/.codex/sessions/2026/06/04/rollout-2026-06-04T07-18-08-{self.thread}.jsonl"
+        target=seed/self.session_path.removeprefix("/home/user/")
+        target.parent.mkdir(parents=True)
+        target.write_bytes(self.original)
         self.image=self.root/"retained-home.ext4"
+        with self.image.open("wb") as stream:stream.truncate(report.NATIVE_HOME_BYTES)
+        subprocess.run(["/usr/sbin/mke2fs", "-q", "-F", "-t", "ext4", "-O", "^has_journal",
+                        "-d", str(seed), str(self.image)], check=True, capture_output=True)
         with self.image.open("rb") as stream:stream.seek(1024);block=stream.read(1024)
         home={"path":f"/var/tmp/native-case/workspaces/{self.ident}/home.ext4","bytes":report.NATIVE_HOME_BYTES,
               "filesystem_uuid":block[104:120].hex(),"superblock_sha256":hashlib.sha256(block).hexdigest()}
         at=lambda n:10_000_000_000+int(n*1_000_000)
         self.at=at
         template=copy.deepcopy(self.events[1])
+        template.update(sandbox_id=self.ident,backing_generation=self.backing)
         def event(phase,n,value):
             return template|dict(phase=phase,monotonic_ns=at(n),unix_ns=at(n)+1000,evidence=value)
         def wire(kind,data):
@@ -45,9 +67,11 @@ class FixedRestoreReportTests(unittest.TestCase):
         self.request=wire(0x1a,struct.pack(">IQIBH",300000,10,5500000,2,3)+b"UTC"+bytes(range(256)))
         self.response=wire(0x1b,bytes(5)+struct.pack(">I",3)+b"\x01\0"+bytes(4)+b"\x01\0"+bytes(4)+bytes(2))
         physical={"path":self.session_path,"bytes":len(self.original),"sha256":hashlib.sha256(self.original).hexdigest(),"raw_hex":self.original.hex()}
-        heartbeat=copy.deepcopy(self.witnesses[2]["evidence"]["heartbeat"])
-        heartbeat["receipt"].update(received_ns=at(16))
-        heartbeat["completed_ns"]=at(17)
+        heartbeat={"receipt":{"received_ns":at(16),"acknowledgement_status":204,
+            "state":{"runnerId":self.runner,"snapshotGeneration":1,"snapshotSequence":1,
+                "group":"native-foreground","mode":"running","allocatedVcpu":2,
+                "allocatedMemoryMb":4096,"heldSandboxStates":[]}},
+            "send_joined":True,"completed_ns":at(17)}
         self.values=[
             {"history_run_id":self.history,"thread_id":self.thread,"history_hex":self.original.hex(),
              "history_sha256":hashlib.sha256(self.original).hexdigest(),"history_bytes":len(self.original),

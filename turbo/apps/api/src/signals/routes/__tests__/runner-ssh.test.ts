@@ -1,4 +1,4 @@
-import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
+import { createSshExecutionApi } from "./helpers/ssh-execution";
 import { inlineSshKey, sshCredentialId } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 
@@ -121,15 +121,15 @@ interface Fixture extends Owner {
   readonly credentialId: string;
 }
 
-const ordinary = createClaimedSshRuntimeApi(context, {
+const ordinary = createSshExecutionApi(context, {
   runnerHeaders,
   authenticate,
 });
 
 async function ordinaryFixture(group?: string) {
   const owner = {
-    orgId: `org_ssh_claimed_${randomUUID()}`,
-    userId: `user_ssh_claimed_${randomUUID()}`,
+    orgId: `org_ssh_execution_${randomUUID()}`,
+    userId: `user_ssh_execution_${randomUUID()}`,
   };
   authenticate(owner);
   const connection = await accept(
@@ -157,11 +157,11 @@ async function ordinaryFixture(group?: string) {
   };
 }
 
-function useClaimedFixture() {
-  const claimedRunCleanups: (() => Promise<void>)[] = [];
+function useExecutionFixture() {
+  const executionRunCleanups: (() => Promise<void>)[] = [];
   // Finish owned Run cancellation before the parent context tears down its signal/mocks.
   afterEach(async () => {
-    const cleanups = claimedRunCleanups.splice(0);
+    const cleanups = executionRunCleanups.splice(0);
     if (cleanups.length === 0) {
       await flushWaitUntilForTest();
       return;
@@ -174,8 +174,8 @@ function useClaimedFixture() {
     }
   });
 
-  /** A currently claimed chat Run and owner-configured host, through production routes. */
-  async function claimedFixture(): Promise<Fixture> {
+  /** A running chat Run and owner-configured host, through production routes. */
+  async function executionFixture(): Promise<Fixture> {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user();
@@ -208,7 +208,7 @@ function useClaimedFixture() {
         headers: sessionHeaders,
         body: {
           id: randomUUID(),
-          displayName: "SSH claimed Run",
+          displayName: "SSH execution Run",
           host: "ssh.example.com",
           credential: inlineSshKey("deploy", privateKey, passphrase),
         },
@@ -221,10 +221,10 @@ function useClaimedFixture() {
       prompt: "Use my configured SSH host",
     });
     const input = await runs.executionInput(runId);
-    claimedRunCleanups.push(async () => {
+    executionRunCleanups.push(async () => {
       await runs.requestCancelRun(actor, runId, [200]);
       await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId: runId, exitCode: 137 },
+        { runId, exitCode: 137 },
         { authorization: `Bearer ${input.sandboxToken}` },
         [200],
       );
@@ -232,7 +232,7 @@ function useClaimedFixture() {
     // Preserve the process-generation bigint boundary with a real heartbeat and dispatch.
     const sandboxToken = input.sandboxToken;
     if (!sandboxToken) {
-      throw new Error("Expected the Runner claim to issue its sandbox token");
+      throw new Error("Expected execution input to include its sandbox token");
     }
     await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
       status: "running",
@@ -251,12 +251,12 @@ function useClaimedFixture() {
     };
   }
 
-  return claimedFixture;
+  return executionFixture;
 }
 
 describe("SSH authority invalidation", () => {
   afterEach(ordinary.cleanup);
-  const claimedFixture = useClaimedFixture();
+  const executionFixture = useExecutionFixture();
 
   it("notifies all active owner Runs after committed edits, rotations, reset and deletion", async () => {
     const group = `vm0/bdd-${randomUUID().slice(0, 8)}`;
@@ -351,7 +351,7 @@ describe("SSH authority invalidation", () => {
   });
 
   it("keeps committed mutations successful when notification delivery fails", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     context.mocks.ably.publish.mockClear();
     context.mocks.ably.publish.mockRejectedValue(
       new Error("Synthetic Ably publish failure"),
@@ -389,7 +389,7 @@ describe("SSH authority invalidation", () => {
   });
 
   it("resolves the current host credentials after overlapping low-frequency edits", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     context.mocks.ably.publish.mockClear();
     const outcomes = await Promise.all(
       ["first-login", "second-login"].map(async (username) => {
@@ -496,7 +496,7 @@ function createPublicHostApi() {
       userId: `user_ssh_public_${randomUUID()}`,
     };
     const run = await selectedRuns.start(owner);
-    const claimed = await selectedRuns.claim(run, runnerHeaders);
+    const execution = await selectedRuns.executionInput(run, runnerHeaders);
     authenticate(owner);
     const connection = await accept(
       config().create({
@@ -514,7 +514,7 @@ function createPublicHostApi() {
       await enableHostDefault(owner, connection.body.id);
     }
     return {
-      ...claimed,
+      ...execution,
       connectionId: connection.body.id,
       connectionCreatedAt: connection.body.createdAt,
       credentialId: sshCredentialId(connection.body),
@@ -531,7 +531,7 @@ const selected = createPublicHostApi();
 
 describe("chat thread SSH authority", () => {
   afterEach(selected.cleanup);
-  it("uses current per-host defaults and overrides for a claimed chat Run", async () => {
+  it("uses current per-host defaults and overrides for a dispatched chat Run", async () => {
     const f = await selected.runtime(false);
     if (!f.threadId) {
       throw new Error("Missing fixture chat thread");
@@ -599,10 +599,10 @@ describe("chat thread SSH authority", () => {
 });
 
 describe("shared credential runtime authority", () => {
-  const claimedFixture = useClaimedFixture();
+  const executionFixture = useExecutionFixture();
 
   it("rotates every referencing host, preserves pins, invalidates the Run, and rebinds only one host", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const credentials = setupApp({ context, routes: sshConnectionsRoutes })(
       sshCredentialsContract,
     );
@@ -783,7 +783,7 @@ describe("shared credential runtime authority", () => {
 
 describe("SSH connection observations", () => {
   afterEach(ordinary.cleanup);
-  const claimedFixture = useClaimedFixture();
+  const executionFixture = useExecutionFixture();
 
   async function observe(
     f: Fixture,
@@ -817,7 +817,7 @@ describe("SSH connection observations", () => {
   }
 
   it("ignores delayed evidence when a deleted SSH ID is recreated", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const failedAt = new Date(now() - 1000).toISOString();
     await expect(observe(f, { observedAt: failedAt })).resolves.toStrictEqual({
       outcome: "recorded",
@@ -875,7 +875,7 @@ describe("SSH connection observations", () => {
   it.each(["deploy", "ubuntu"])(
     "isolates credentials, trust and observations for a shared endpoint with sibling username %s",
     async (username) => {
-      const f = await claimedFixture();
+      const f = await executionFixture();
       const additional = await accept(
         config().create({
           headers: sessionHeaders,
@@ -1003,7 +1003,7 @@ describe("SSH connection observations", () => {
   );
 
   it("records bounded owner-only failures and recovery without changing configuration or invalidating credentials", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const original = await list(f);
     const resolved = await accept(
       client().resolve({
@@ -1053,7 +1053,7 @@ describe("SSH connection observations", () => {
     expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
       ["ssh:changed", { orgId: f.orgId }],
     ]);
-    const other = await claimedFixture();
+    const other = await executionFixture();
     await expect(observations(other)).resolves.toStrictEqual([]);
     const recoveredAt = nowDate().toISOString();
     await expect(
@@ -1097,7 +1097,7 @@ describe("SSH connection observations", () => {
   });
 
   it("fences configuration changes and uses the post-TOFU generation", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     await observe(f);
     await expect(pin(f)).resolves.toStrictEqual({
       outcome: "pinned",
@@ -1191,7 +1191,7 @@ describe("SSH connection observations", () => {
   });
 
   it("rejects diagnostic text and command outcomes instead of storing them as connection failures", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const raw = setupRawAppRequest({ context, routes: runnerSshRoutes });
     const body = {
       connectionId: f.connectionId,
@@ -1223,7 +1223,7 @@ describe("SSH connection observations", () => {
 });
 
 describe("official Runner SSH authority", () => {
-  const claimedFixture = useClaimedFixture();
+  const executionFixture = useExecutionFixture();
   const publicRuns = createPublicRemoteAccessRunApi(context);
   afterEach(async () => {
     await publicRuns.cleanup();
@@ -1231,7 +1231,7 @@ describe("official Runner SSH authority", () => {
   });
 
   it("allows an ordinary owner and preserves a pinned connection", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     await expect(resolve(f)).resolves.toMatchObject({ outcome: "resolved" });
     await expect(pin(f)).resolves.toMatchObject({ outcome: "pinned" });
     expect((await list(f))[0]?.learnedHostKey).toStrictEqual(hostKey);
@@ -1241,7 +1241,7 @@ describe("official Runner SSH authority", () => {
   });
 
   it("only delivers the exact current credential to the winning official process", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const kms = useSecretKmsProbe();
     await expect(resolve(f)).resolves.toStrictEqual({
       outcome: "resolved",
@@ -1264,7 +1264,7 @@ describe("official Runner SSH authority", () => {
   });
 
   it("rejects unauthenticated, session, guest and local Runner credentials before decryption", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const kms = useSecretKmsProbe();
     for (const authorization of [
       undefined,
@@ -1362,13 +1362,13 @@ describe("official Runner SSH authority", () => {
     expect(kms.decryptCalls).toBe(0);
     for (const status of ["completed", "cancelled", "failed"] as const) {
       const run = await selected.runs.start(f);
-      const claimed = await selected.runs.claim(run, runnerHeaders);
-      await selected.runs.finish(claimed, status);
+      const execution = await selected.runs.executionInput(run, runnerHeaders);
+      await selected.runs.finish(execution, status);
       kms = useSecretKmsProbe();
-      await expect(resolve({ ...f, ...claimed })).resolves.toStrictEqual({
+      await expect(resolve({ ...f, ...execution })).resolves.toStrictEqual({
         outcome: "unavailable",
       });
-      await expect(pin({ ...f, ...claimed })).resolves.toStrictEqual({
+      await expect(pin({ ...f, ...execution })).resolves.toStrictEqual({
         outcome: "unavailable",
       });
       expect(kms.decryptCalls).toBe(0);
@@ -1395,7 +1395,7 @@ describe("official Runner SSH authority", () => {
     );
     await enableHostDefault(owner, connection.body.id);
     const run = await publicRuns.start(owner, "automation-event");
-    const runtime = await publicRuns.claim(run, runnerHeaders);
+    const runtime = await publicRuns.executionInput(run, runnerHeaders);
     const f = {
       ...runtime,
       connectionId: connection.body.id,
@@ -1441,7 +1441,7 @@ describe("official Runner SSH authority", () => {
   });
 
   it("reflects credential rotation and deletion without a cached admission", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     await expect(pin(f)).resolves.toStrictEqual({
       outcome: "pinned",
       generation: 2,
@@ -1485,7 +1485,7 @@ describe("official Runner SSH authority", () => {
   });
 
   it("pins exactly once for concurrent equal observations and only accepts expected plus one", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const kms = useSecretKmsProbe();
     context.mocks.ably.publish.mockClear();
     const outcomes = await Promise.all([pin(f), pin(f), pin(f)]);
@@ -1516,7 +1516,7 @@ describe("official Runner SSH authority", () => {
   });
 
   it("never overwrites trust when concurrent first observations disagree", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const result = await Promise.all([pin(f), pin(f, 1, otherHostKey)]);
     expect(
       result
@@ -1537,7 +1537,7 @@ describe("official Runner SSH authority", () => {
   });
 
   it("rejects stale endpoint edits and resets instead of silently repinning", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     authenticate(f);
     await accept(
       config().update({
@@ -1583,7 +1583,7 @@ describe("official Runner SSH authority", () => {
   });
 
   it("rejects malformed or extra authority fields before sensitive work", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const kms = useSecretKmsProbe();
     const raw = setupRawAppRequest({ context, routes: runnerSshRoutes });
     const base = {
@@ -1621,7 +1621,7 @@ describe("official Runner SSH authority", () => {
   });
 
   it("surfaces KMS failure and does not pin as a side effect of resolving", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     useSecretKmsProbe(undefined, () => {
       return Promise.reject(new Error("KMS unavailable"));
     });
@@ -1635,7 +1635,7 @@ describe("official Runner SSH authority", () => {
   });
 
   it("does not hold authorization locks across KMS or pretend to claw back an in-flight handoff", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const entered = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<Uint8Array>(context.signal);
     useSecretKmsProbe(undefined, (_request, call) => {
@@ -1669,13 +1669,13 @@ describe("official Runner SSH authority", () => {
   });
 });
 
-const mutationClaimedFixture = useClaimedFixture();
+const mutationExecutionFixture = useExecutionFixture();
 
 test("concurrent winning-Runner pins publish exactly one trust generation", async () => {
-  const f = await mutationClaimedFixture();
+  const f = await mutationExecutionFixture();
   const [before] = await list(f);
   if (!before) {
-    throw new Error("Expected the claimed SSH Host");
+    throw new Error("Expected the selected SSH Host");
   }
   const results = await joinAll([pin(f), pin(f)]);
   expect(
@@ -1701,7 +1701,7 @@ test("concurrent winning-Runner pins publish exactly one trust generation", asyn
 });
 
 test("overlapping winning-Runner observations retain the newest clock without changing Host metadata", async () => {
-  const f = await mutationClaimedFixture();
+  const f = await mutationExecutionFixture();
   const before = await list(f);
   const newer = nowDate().toISOString();
   const older = new Date(now() - 1000).toISOString();
@@ -1753,7 +1753,7 @@ test("overlapping winning-Runner observations retain the newest clock without ch
 test.each(["insert", "replace", "remove"] as const)(
   "ssh override %s revocation preserves metadata and refuses the winning Runner",
   async (operation) => {
-    const f = await mutationClaimedFixture();
+    const f = await mutationExecutionFixture();
     if (operation !== "insert") {
       authenticate(f);
       const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(

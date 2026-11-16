@@ -18,7 +18,7 @@ use crate::log::log;
 use crate::process::{kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
 use crate::wait::{
-    WaitOutcome, await_drain_deadline, wait_with_kill_timeout_or_connection_cancelled,
+    WaitOutcome, collect_bounded_output, wait_with_kill_timeout_or_connection_cancelled,
 };
 pub(crate) use crate::worker_ownership::LazyConnectionWorkerSubmitError as GuestStateRestoreSubmitError;
 use crate::worker_ownership::{LazyConnectionWorker, SingleActivePermit};
@@ -347,16 +347,12 @@ fn run_restore(input: RunRestoreInput<'_>) -> GuestStateRestoreOutput {
     if !matches!(outcome, WaitOutcome::Exited(_)) || cancellation_observed {
         drain_cancel.cancel();
     }
-    let completed = await_drain_deadline(&drain_done_rx, 1, &drain_cancel, drain_deadline);
-    let stderr_result = stderr_drain.join();
-    let drains_incomplete = completed < 1 || stderr_result.is_err();
-    let mut stderr = stderr_result.unwrap_or_default();
-    if drains_incomplete {
-        stderr.capture_truncated = true;
-    }
-    if stderr.captured.is_none() {
-        stderr.captured = Some(Vec::new());
-    }
+    let [stderr] = collect_bounded_output(
+        [stderr_drain],
+        &drain_done_rx,
+        &drain_cancel,
+        drain_deadline,
+    );
 
     let (termination, diagnostic) =
         outcome.into_exec_result("failed to wait for guest state helper");

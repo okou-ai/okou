@@ -16,7 +16,7 @@ import { vncAccessRoutes } from "../vnc-access";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
+import { createVncExecutionApi } from "./helpers/vnc-execution";
 import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { inlineSshKey } from "./helpers/ssh-credential";
@@ -90,16 +90,16 @@ async function visibility(agentId: string, value: "public" | "private") {
 }
 
 describe("live chat VNC Run inventory", () => {
-  const claimed = createClaimedVncApi(context);
+  const executionApi = createVncExecutionApi(context);
   const publicRuns = createPublicRemoteAccessRunApi(context);
   afterEach(async () => {
     await publicRuns.cleanup();
-    await claimed.cleanup();
+    await executionApi.cleanup();
   });
 
   it("advertises the exact client-certificate profile without revealing private material", async () => {
     const kms = useSecretKmsProbe();
-    const f = await claimed.fixture({
+    const f = await executionApi.fixture({
       defaultEnabled: false,
     });
     api.authenticate(f);
@@ -137,7 +137,7 @@ describe("live chat VNC Run inventory", () => {
     );
     const decryptsBeforeInventory = kms.decryptCalls;
     const result = await accept(
-      inventory().list({ headers: claimed.agentHeaders(f) }),
+      inventory().list({ headers: executionApi.agentHeaders(f) }),
       [200],
     );
     const item = result.body.hosts.find((host) => {
@@ -158,7 +158,7 @@ describe("live chat VNC Run inventory", () => {
   });
 
   it("lists the owner-selected QEMU SCRAM pair without exposing its password", async () => {
-    const f = await claimed.fixture({
+    const f = await executionApi.fixture({
       defaultEnabled: false,
     });
     api.authenticate(f);
@@ -188,7 +188,7 @@ describe("live chat VNC Run inventory", () => {
     expect(
       (
         await accept(
-          inventory().list({ headers: claimed.agentHeaders(f) }),
+          inventory().list({ headers: executionApi.agentHeaders(f) }),
           [200],
         )
       ).body,
@@ -205,7 +205,7 @@ describe("live chat VNC Run inventory", () => {
     );
     const kms = useSecretKmsProbe();
     const listed = await accept(
-      inventory().list({ headers: claimed.agentHeaders(f) }),
+      inventory().list({ headers: executionApi.agentHeaders(f) }),
       [200],
     );
     expect(listed.body.hosts).toContainEqual({
@@ -222,7 +222,7 @@ describe("live chat VNC Run inventory", () => {
   });
 
   it("filters live chat inventory by VNC access and the exact SSH dependency", async () => {
-    const f = await claimed.fixture({
+    const f = await executionApi.fixture({
       defaultEnabled: false,
     });
     if (!f.threadId) {
@@ -236,7 +236,7 @@ describe("live chat VNC Run inventory", () => {
     const listIds = async () => {
       return (
         await accept(
-          inventory().list({ headers: claimed.agentHeaders(f) }),
+          inventory().list({ headers: executionApi.agentHeaders(f) }),
           [200],
         )
       ).body.hosts.map((host) => {
@@ -312,13 +312,13 @@ describe("live chat VNC Run inventory", () => {
   }
 
   it("keeps first-host and recreated-host chat access default off", async () => {
-    const current = await claimed.paidOwner();
-    const runtime = { ...current, ...(await claimed.runtime(current)) };
+    const current = await executionApi.paidOwner();
+    const runtime = { ...current, ...(await executionApi.runtime(current)) };
     const first = await createHost();
     expect(
       (
         await accept(
-          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
           [200],
         )
       ).body,
@@ -335,7 +335,7 @@ describe("live chat VNC Run inventory", () => {
     expect(
       (
         await accept(
-          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
           [200],
         )
       ).body,
@@ -343,8 +343,8 @@ describe("live chat VNC Run inventory", () => {
   });
 
   it("commits concurrent first hosts without implicit chat access", async () => {
-    const current = await claimed.paidOwner();
-    const runtime = { ...current, ...(await claimed.runtime(current)) };
+    const current = await executionApi.paidOwner();
+    const runtime = { ...current, ...(await executionApi.runtime(current)) };
     await Promise.all([
       createHost("one.example.com"),
       createHost("two.example.com"),
@@ -356,7 +356,7 @@ describe("live chat VNC Run inventory", () => {
     expect(
       (
         await accept(
-          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
           [200],
         )
       ).body,
@@ -364,9 +364,9 @@ describe("live chat VNC Run inventory", () => {
   });
 
   it("lists a chat-enabled host for an Agent without decrypting credentials", async () => {
-    const f = await claimed.fixture();
+    const f = await executionApi.fixture();
     const listed = await accept(
-      inventory().list({ headers: claimed.agentHeaders(f) }),
+      inventory().list({ headers: executionApi.agentHeaders(f) }),
       [200],
     );
     expect(listed.body).toStrictEqual({
@@ -390,7 +390,10 @@ describe("live chat VNC Run inventory", () => {
       ],
     });
     const kms = useSecretKmsProbe();
-    await accept(inventory().list({ headers: claimed.agentHeaders(f) }), [200]);
+    await accept(
+      inventory().list({ headers: executionApi.agentHeaders(f) }),
+      [200],
+    );
     expect(kms.decryptCalls).toBe(0);
     await accept(
       api.connections().create({ headers, body: vncConnectionBody() }),
@@ -399,7 +402,7 @@ describe("live chat VNC Run inventory", () => {
     expect(
       (
         await accept(
-          inventory().list({ headers: claimed.agentHeaders(f) }),
+          inventory().list({ headers: executionApi.agentHeaders(f) }),
           [200],
         )
       ).body,
@@ -407,12 +410,12 @@ describe("live chat VNC Run inventory", () => {
   });
 
   it("returns an authorized empty inventory for current and later Agents", async () => {
-    const current = await claimed.paidOwner();
-    const runtime = { ...current, ...(await claimed.runtime(current)) };
+    const current = await executionApi.paidOwner();
+    const runtime = { ...current, ...(await executionApi.runtime(current)) };
     expect(
       (
         await accept(
-          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
           [200],
         )
       ).body,
@@ -421,7 +424,7 @@ describe("live chat VNC Run inventory", () => {
     const laterAgent = await bdd.createAgent(bdd.user(current), {
       displayName: "Later VNC Agent",
     });
-    const other = await claimed.runtime({
+    const other = await executionApi.runtime({
       ...current,
       agentId: laterAgent.agentId,
     });
@@ -429,7 +432,7 @@ describe("live chat VNC Run inventory", () => {
       (
         await accept(
           inventory().list({
-            headers: claimed.agentHeaders({ ...current, ...other }),
+            headers: executionApi.agentHeaders({ ...current, ...other }),
           }),
           [200],
         )
@@ -438,8 +441,8 @@ describe("live chat VNC Run inventory", () => {
   });
 
   it("requires both VNC and SSH chat host permissions for SSH-backed inventory rows", async () => {
-    const current = await claimed.paidOwner();
-    const runtime = { ...current, ...(await claimed.runtime(current)) };
+    const current = await executionApi.paidOwner();
+    const runtime = { ...current, ...(await executionApi.runtime(current)) };
     const ssh = await accept(
       sshConnections().create({
         headers,
@@ -481,7 +484,7 @@ describe("live chat VNC Run inventory", () => {
 
     const listIds = async () => {
       const result = await accept(
-        inventory().list({ headers: claimed.agentHeaders(runtime) }),
+        inventory().list({ headers: executionApi.agentHeaders(runtime) }),
         [200],
       );
       expect(JSON.stringify(result.body)).not.toContain(ssh.body.id);
@@ -501,8 +504,8 @@ describe("live chat VNC Run inventory", () => {
   });
 
   it("lists the authorized Mac classic password profile without exposing its secret", async () => {
-    const current = await claimed.paidOwner();
-    const runtime = { ...current, ...(await claimed.runtime(current)) };
+    const current = await executionApi.paidOwner();
+    const runtime = { ...current, ...(await executionApi.runtime(current)) };
     const ssh = await accept(
       sshConnections().create({
         headers,
@@ -541,7 +544,7 @@ describe("live chat VNC Run inventory", () => {
     await api.enableDefault(current, "ssh", ssh.body.id);
     const kms = useSecretKmsProbe();
     const listed = await accept(
-      inventory().list({ headers: claimed.agentHeaders(runtime) }),
+      inventory().list({ headers: executionApi.agentHeaders(runtime) }),
       [200],
     );
     expect(listed.body).toStrictEqual({
@@ -570,7 +573,7 @@ describe("live chat VNC Run inventory", () => {
     expect(
       (
         await accept(
-          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
           [200],
         )
       ).body,
@@ -578,8 +581,8 @@ describe("live chat VNC Run inventory", () => {
   });
 
   it("returns both exact supported pairs without decrypting credentials", async () => {
-    const current = await claimed.paidOwner();
-    const runtime = { ...current, ...(await claimed.runtime(current)) };
+    const current = await executionApi.paidOwner();
+    const runtime = { ...current, ...(await executionApi.runtime(current)) };
     const kms = useSecretKmsProbe();
     const plain = await accept(
       api.connections().create({
@@ -611,7 +614,7 @@ describe("live chat VNC Run inventory", () => {
     expect(
       (
         await accept(
-          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
           [200],
         )
       ).body,
@@ -641,7 +644,7 @@ describe("live chat VNC Run inventory", () => {
     expect(
       (
         await accept(
-          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
           [200],
         )
       ).body,
@@ -684,7 +687,7 @@ describe("live chat VNC Run inventory", () => {
 
   it("isolates a shared Agent's inventory by the Run owner", async () => {
     const bdd = createBddApi(context);
-    const creatorOwner = await claimed.paidOwner();
+    const creatorOwner = await executionApi.paidOwner();
     const sharedAgent = await bdd.createAgent(bdd.user(creatorOwner), {
       displayName: "Shared VNC Agent",
       visibility: "public",
@@ -695,7 +698,7 @@ describe("live chat VNC Run inventory", () => {
     );
     await api.enableDefault(creatorOwner, "vnc", creatorHost.body.id);
     const creator = {
-      ...(await claimed.runtime({
+      ...(await executionApi.runtime({
         ...creatorOwner,
         agentId: sharedAgent.agentId,
       })),
@@ -711,12 +714,15 @@ describe("live chat VNC Run inventory", () => {
     );
     const runtime = {
       ...consumer,
-      ...(await claimed.runtime({ ...consumer, agentId: creator.agentId })),
+      ...(await executionApi.runtime({
+        ...consumer,
+        agentId: creator.agentId,
+      })),
     };
     expect(
       (
         await accept(
-          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
           [200],
         )
       ).body,
@@ -732,7 +738,7 @@ describe("live chat VNC Run inventory", () => {
     expect(
       (
         await accept(
-          inventory().list({ headers: claimed.agentHeaders(runtime) }),
+          inventory().list({ headers: executionApi.agentHeaders(runtime) }),
           [200],
         )
       ).body.hosts.map((entry) => {
@@ -743,7 +749,7 @@ describe("live chat VNC Run inventory", () => {
     expect(
       (
         await accept(
-          inventory().list({ headers: claimed.agentHeaders(creator) }),
+          inventory().list({ headers: executionApi.agentHeaders(creator) }),
           [200],
         )
       ).body.hosts.map((entry) => {
@@ -753,13 +759,13 @@ describe("live chat VNC Run inventory", () => {
     await visibility(creator.agentId, "private");
     api.authenticate(consumer);
     await accept(
-      inventory().list({ headers: claimed.agentHeaders(runtime) }),
+      inventory().list({ headers: executionApi.agentHeaders(runtime) }),
       [404],
     );
   });
 
   it("does not accept another organization or Run owner from a valid token", async () => {
-    const f = await claimed.fixture();
+    const f = await executionApi.fixture();
     const foreign = owner({ userId: f.userId });
     expect(
       (
@@ -790,8 +796,8 @@ describe("live chat VNC Run inventory", () => {
   });
 
   it("rechecks membership for already issued tokens", async () => {
-    const f = await claimed.fixture();
-    const stale = claimed.agentHeaders(f);
+    const f = await executionApi.fixture();
+    const stale = executionApi.agentHeaders(f);
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       { data: [], totalCount: 0 },
     );
@@ -809,7 +815,7 @@ describe("live chat VNC Run inventory", () => {
       );
       await api.enableDefault(value, "vnc", connection.body.id);
       const f = await publicRuns.start(value);
-      const runtime = await publicRuns.claim(f, vncRunnerHeaders);
+      const runtime = await publicRuns.executionInput(f, vncRunnerHeaders);
       await publicRuns.finish(runtime, status);
       api.authenticate(f);
       const unavailableInventory = await accept(
@@ -821,7 +827,7 @@ describe("live chat VNC Run inventory", () => {
   );
 
   it("keeps VNC inventory Agent-token and capability-specific", async () => {
-    const f = await claimed.fixture();
+    const f = await executionApi.fixture();
     expect((await accept(inventory().list({ headers }), [403])).status).toBe(
       403,
     );

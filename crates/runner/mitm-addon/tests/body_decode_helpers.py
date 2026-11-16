@@ -2,6 +2,7 @@
 
 import gzip
 import zlib
+from functools import lru_cache
 
 import brotli
 import zstandard
@@ -185,7 +186,9 @@ def track_brotli_decompressor(monkeypatch):
     return stats
 
 
+@lru_cache(maxsize=7)
 def pseudo_random_ascii(size: int) -> bytes:
+    """Reuse deterministic fixture bytes, never codec or capture state."""
     state = 0x12345678
     body = bytearray()
     for _ in range(size):

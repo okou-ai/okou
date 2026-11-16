@@ -1,16 +1,10 @@
 import {
-  executionInputSchema,
   preparedExecutionContextSchema,
+  type ExecutionInput,
 } from "@okouai/api-contracts/contracts/runners";
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
 import { computed, type Computed } from "ccstate";
-import { monotonicNow } from "../../lib/time";
-import { settle } from "../utils";
-import { ExecutionStorageUnavailableError } from "./execution-storage.service";
-import {
-  ExecutionRuntimeUnavailableError,
-  createExecutionRuntimeContext,
-} from "./execution-runtime-context";
+import { createExecutionRuntimeContext } from "./execution-runtime-context";
 
 export type ExecutionContextRun = Pick<
   typeof agentRuns.$inferSelect,
@@ -42,57 +36,16 @@ export function createExecutionContext(
   input$: Computed<
     Promise<{
       readonly run: ExecutionContextRun;
-      readonly executionContext: unknown;
+      readonly context: ExecutionInput;
     }>
   >,
 ) {
-  const decoded$ = computed(async (get) => {
-    const input = await get(input$);
-    return {
-      input,
-      parsed: executionInputSchema.safeParse(input.executionContext),
-    };
-  });
-  const runtimeInput$ = computed(async (get) => {
-    const { input, parsed } = await get(decoded$);
-    if (!parsed.success) {
-      throw new Error("Runtime sources require valid execution inputs");
-    }
-    return { run: input.run, context: parsed.data };
-  });
-  const runtime$ = createExecutionRuntimeContext(runtimeInput$);
+  const runtime$ = createExecutionRuntimeContext(input$);
   return computed(async (get) => {
-    const { parsed } = await get(decoded$);
-    if (!parsed.success) {
-      return {
-        status: "ready" as const,
-        result: parsed,
-        hydrationMs: undefined,
-        secrets: null,
-        storageCacheWrites: [],
-        connectorOperationTimings: [],
-        networkPolicyInputs: null,
-      };
-    }
-    const startedAt = monotonicNow();
-    const runtime = await settle(get(runtime$));
-    if (!runtime.ok) {
-      if (
-        runtime.error instanceof ExecutionRuntimeUnavailableError ||
-        runtime.error instanceof ExecutionStorageUnavailableError
-      ) {
-        return { status: "unavailable" as const };
-      }
-      throw runtime.error;
-    }
+    const runtime = await get(runtime$);
     return {
-      status: "ready" as const,
-      result: preparedExecutionContextSchema.safeParse(runtime.value.context),
-      hydrationMs: monotonicNow() - startedAt,
-      secrets: runtime.value.secrets,
-      storageCacheWrites: runtime.value.storageCacheWrites,
-      connectorOperationTimings: runtime.value.connectorOperationTimings,
-      networkPolicyInputs: runtime.value.networkPolicyInputs,
+      ...runtime,
+      context: preparedExecutionContextSchema.parse(runtime.context),
     };
   });
 }

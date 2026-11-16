@@ -1,5 +1,52 @@
 # Changelog
 
+## [1.10.193](https://github.com/okou-ai/okou/compare/app-worker-v1.10.192...app-worker-v1.10.193) (2026-11-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.68.0
+    * @okouai/core bumped to 8.839.7
+
+## [1.10.192](https://github.com/okou-ai/okou/compare/app-worker-v1.10.191...app-worker-v1.10.192) (2026-11-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.67.0
+    * @okouai/core bumped to 8.839.6
+
+## [1.10.191](https://github.com/okou-ai/okou/compare/app-worker-v1.10.190...app-worker-v1.10.191) (2026-11-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.66.0
+    * @okouai/core bumped to 8.839.5
+
+## [1.10.190](https://github.com/okou-ai/okou/compare/app-worker-v1.10.189...app-worker-v1.10.190) (2026-11-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.65.0
+    * @okouai/core bumped to 8.839.4
+
+## [1.10.189](https://github.com/okou-ai/okou/compare/app-worker-v1.10.188...app-worker-v1.10.189) (2026-11-14)
+
+
+### Bug Fixes
+
+* **app:** restore omby worker preview ingress ([#47222](https://github.com/okou-ai/okou/issues/47222)) ([fe51570](https://github.com/okou-ai/okou/commit/fe51570f9c71be958c5b070e70d720e7e5e83b36))
+
 ## [1.10.188](https://github.com/okou-ai/okou/compare/app-worker-v1.10.187...app-worker-v1.10.188) (2026-11-14)
 
 

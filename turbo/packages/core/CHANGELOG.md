@@ -1,5 +1,46 @@
 # Changelog
 
+## [8.839.7](https://github.com/okou-ai/okou/compare/core-v8.839.6...core-v8.839.7) (2026-11-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.68.0
+
+## [8.839.6](https://github.com/okou-ai/okou/compare/core-v8.839.5...core-v8.839.6) (2026-11-15)
+
+
+### Refactoring
+
+* **runner:** model direct execution without claim scaffolding ([#47235](https://github.com/okou-ai/okou/issues/47235)) ([8bf20fb](https://github.com/okou-ai/okou/commit/8bf20fb75b2788038d699332435a84e551660c49))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.67.0
+
+## [8.839.5](https://github.com/okou-ai/okou/compare/core-v8.839.4...core-v8.839.5) (2026-11-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.66.0
+
+## [8.839.4](https://github.com/okou-ai/okou/compare/core-v8.839.3...core-v8.839.4) (2026-11-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.65.0
+
 ## [8.839.3](https://github.com/okou-ai/okou/compare/core-v8.839.2...core-v8.839.3) (2026-11-14)
 
 

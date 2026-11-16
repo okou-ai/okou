@@ -107,9 +107,8 @@ async fn control_failure_overrides_post_result_cleanup() {
     assert!(runtime.has_post_result_cleanup());
 
     assert!(runtime.begin_control_failure(
-        TerminationReason::HeartbeatError,
         AgentError::Execution("heartbeat failed".to_string()),
-        ControlTerminationLog::HeartbeatFailed,
+        ControlFailure::HeartbeatFailed,
         deadline.as_mut(),
     ));
 
@@ -140,15 +139,13 @@ async fn second_control_failure_does_not_overwrite_first() {
     let mut runtime = CliTerminationRuntime::new(None, test_policy());
 
     assert!(runtime.begin_control_failure(
-        TerminationReason::HeartbeatError,
         AgentError::Execution("first heartbeat failure".to_string()),
-        ControlTerminationLog::HeartbeatFailed,
+        ControlFailure::HeartbeatFailed,
         deadline.as_mut(),
     ));
     assert!(!runtime.begin_control_failure(
-        TerminationReason::StuckTool,
         AgentError::Execution("second tool failure".to_string()),
-        ControlTerminationLog::StuckTool {
+        ControlFailure::StuckTool {
             name: "WebFetch".to_string(),
             elapsed: 30,
         },
@@ -205,9 +202,8 @@ async fn child_exit_parks_termination_and_prevents_late_post_result_arm() {
     assert!(!runtime.has_post_result_cleanup());
     assert!(!runtime.arm_post_result_cleanup(false, deadline.as_mut()));
     assert!(!runtime.begin_control_failure(
-        TerminationReason::HeartbeatError,
         AgentError::Execution("late heartbeat failure".to_string()),
-        ControlTerminationLog::HeartbeatFailed,
+        ControlFailure::HeartbeatFailed,
         deadline.as_mut(),
     ));
     assert!(runtime.control_error.is_none());

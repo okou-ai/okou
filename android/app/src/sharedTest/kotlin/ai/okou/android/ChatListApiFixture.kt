@@ -46,6 +46,7 @@ fun historyEventWire(
 class ChatListApiFixture : Closeable {
     val server = MockWebServer()
     @Volatile var beforeResponse: () -> Unit = {}
+    @Volatile var commandResponse: (RecordedRequest) -> MockResponse? = { null }
     @Volatile var beforeHistoryResponse: (RecordedRequest) -> Unit = {}
     val readRequests = java.util.concurrent.atomic.AtomicInteger()
     @Volatile
@@ -128,6 +129,9 @@ class ChatListApiFixture : Closeable {
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     beforeResponse()
+                    commandResponse(request)?.let {
+                        return it
+                    }
                     val segments = request.requestUrl?.pathSegments.orEmpty()
                     if (
                         segments.size >= 3 &&

@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.44.0](https://github.com/okou-ai/okou/compare/ios-v0.43.9...ios-v0.44.0) (2026-11-15)
+
+
+### Features
+
+* **ios:** fork selected passages in a sheet ([#47450](https://github.com/okou-ai/okou/issues/47450)) ([2ca4ef5](https://github.com/okou-ai/okou/commit/2ca4ef5df81498919d2cbfa065e5606a096ffc4e))
+
+## [0.43.9](https://github.com/okou-ai/okou/compare/ios-v0.43.8...ios-v0.43.9) (2026-11-15)
+
+
+### Bug Fixes
+
+* **ios:** preserve cancellation through aliases and switches ([#47252](https://github.com/okou-ai/okou/issues/47252)) ([22088a6](https://github.com/okou-ai/okou/commit/22088a64171461c16dfab329c6c51b6c9f471f5c))
+
+
+### Performance Improvements
+
+* **ios:** coalesce project startup and healthy resume reads ([#47461](https://github.com/okou-ai/okou/issues/47461)) ([97ce489](https://github.com/okou-ai/okou/commit/97ce4894082954d3ec5944675091b3ff60bab411))
+* **ios:** narrow history warming triggers ([#47251](https://github.com/okou-ai/okou/issues/47251)) ([f767dca](https://github.com/okou-ai/okou/commit/f767dca04f1577ee18c6387abc86e91632ffb74c))
+* **ios:** narrow notification reconciliation demand ([#47421](https://github.com/okou-ai/okou/issues/47421)) ([6b8fdf5](https://github.com/okou-ai/okou/commit/6b8fdf5391b75f6a954a87286985f4328b5f666a))
+
+## [0.43.8](https://github.com/okou-ai/okou/compare/ios-v0.43.7...ios-v0.43.8) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** preserve share selection bottom corners ([#47238](https://github.com/okou-ai/okou/issues/47238)) ([b783453](https://github.com/okou-ai/okou/commit/b7834534422818a17e2228f793eb95c3e9fce111))
+
+## [0.43.7](https://github.com/okou-ai/okou/compare/ios-v0.43.6...ios-v0.43.7) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** keep avatars beside share selection indicators ([#47225](https://github.com/okou-ai/okou/issues/47225)) ([dab0641](https://github.com/okou-ai/okou/commit/dab0641360d957a7615bf7e9c6c33c9cc3f0f8d7))
+
+## [0.43.6](https://github.com/okou-ai/okou/compare/ios-v0.43.5...ios-v0.43.6) (2026-11-14)
+
+
+### Bug Fixes
+
+* **ios:** align list refresh triggers with web ([#47204](https://github.com/okou-ai/okou/issues/47204)) ([4aab60e](https://github.com/okou-ai/okou/commit/4aab60ea48ad722a76d781d9a637100206722abf))
+* **ios:** check collection publication after await ([#47208](https://github.com/okou-ai/okou/issues/47208)) ([b32c72b](https://github.com/okou-ai/okou/commit/b32c72b765f0127b998460407e951d07fa18cd22))
+
 ## [0.43.5](https://github.com/okou-ai/okou/compare/ios-v0.43.4...ios-v0.43.5) (2026-11-14)
 
 

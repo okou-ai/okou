@@ -10,12 +10,12 @@ import { integrationsSlackUploadInitContract } from "@okouai/api-contracts/contr
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { integrationsSlackUploadInitRoutes } from "../integrations-slack-upload-init";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const store = createStore();
 const slackOrgs = createPublicSlackOrgApi(context);
 const LARGE_DIRECT_UPLOAD_BYTES = 100 * 1024 * 1024 + 1;
@@ -100,7 +100,7 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
         routes: integrationsSlackUploadInitRoutes,
       })(integrationsSlackUploadInitContract);
       for (const [index, request] of requests.entries()) {
-        const claim = await scenario.claim(request.actor);
+        const execution = await scenario.launchRun(request.actor);
         await flushWaitUntilForTest();
         context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
           {
@@ -126,7 +126,7 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
         const uploads =
           context.mocks.slack.files.getUploadURLExternal.mock.calls.length;
         const response = client.init({
-          headers: { authorization: `Bearer ${claim.token}` },
+          headers: { authorization: `Bearer ${execution.token}` },
           body: { filename, length },
         });
         if (!request.installation) {

@@ -63,7 +63,7 @@ enum TerminationState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum TerminationReason {
+enum TerminationReason {
     ExecutionTimeout,
     UserCancellation,
     PostResult,
@@ -223,7 +223,7 @@ impl PostResultCleanupState {
     }
 }
 
-pub(super) enum ControlTerminationLog {
+pub(super) enum ControlFailure {
     ExecutionTimeout { timeout_secs: u64 },
     UserCancellation,
     StdinWriterFailed { error: String },
@@ -236,7 +236,24 @@ pub(super) enum ControlTerminationLog {
     StdoutIngestionFailed { error: String },
 }
 
-impl ControlTerminationLog {
+impl ControlFailure {
+    fn reason(&self) -> TerminationReason {
+        match self {
+            Self::ExecutionTimeout { .. } => TerminationReason::ExecutionTimeout,
+            Self::UserCancellation => TerminationReason::UserCancellation,
+            Self::StdinWriterFailed { .. } | Self::StdinWriterTaskFailed { .. } => {
+                TerminationReason::InitialPromptStdin
+            }
+            Self::StuckTool { .. } => TerminationReason::StuckTool,
+            Self::HeartbeatFailed => TerminationReason::HeartbeatError,
+            Self::HeartbeatTaskPanicked | Self::HeartbeatStoppedBeforeStatus => {
+                TerminationReason::HeartbeatPanic
+            }
+            Self::EventDeliveryFailed { .. } => TerminationReason::EventDelivery,
+            Self::StdoutIngestionFailed { .. } => TerminationReason::StdoutIngestion,
+        }
+    }
+
     fn write(self, pgid: &str) {
         match self {
             Self::ExecutionTimeout { timeout_secs } => {
@@ -452,17 +469,17 @@ impl CliTerminationRuntime {
 
     pub(super) fn begin_control_failure(
         &mut self,
-        reason: TerminationReason,
         error: AgentError,
-        log: ControlTerminationLog,
+        failure: ControlFailure,
         termination_deadline: Pin<&mut Sleep>,
     ) -> bool {
         if self.control_error.is_some() || matches!(self.state, TerminationState::Done) {
             return false;
         }
 
+        let reason = failure.reason();
         let pgid = self.pgid_label();
-        log.write(&pgid);
+        failure.write(&pgid);
         self.begin_forced_sigkill_pending(reason, error, termination_deadline);
         true
     }

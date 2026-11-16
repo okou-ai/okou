@@ -89,18 +89,18 @@ function check(
 
 describe("private Runner VNC authority", () => {
   const selectedRuns = createPublicRemoteAccessRunApi(context);
-  const claimedRunCleanups: (() => Promise<void>)[] = [];
+  const executionRunCleanups: (() => Promise<void>)[] = [];
 
   // Cancel owned Runs while the parent context still owns its signal and mocks.
   afterEach(async () => {
     await selectedRuns.cleanup();
-    for (const cleanup of claimedRunCleanups.splice(0)) {
+    for (const cleanup of executionRunCleanups.splice(0)) {
       await cleanup();
       await flushWaitUntilForTest();
     }
   });
 
-  async function claimedRuntime(
+  async function executionRuntime(
     owner: Pick<VncRuntimeFixture, "orgId" | "userId" | "agentId">,
   ) {
     const actor = createBddApi(context).user(owner);
@@ -117,20 +117,20 @@ describe("private Runner VNC authority", () => {
       prompt: "Use my configured VNC desktop",
     });
     const input = await runs.executionInput(runId);
-    claimedRunCleanups.push(async () => {
+    executionRunCleanups.push(async () => {
       // Negative admission and KMS cases must not prevent owned Run cleanup.
       api.authenticate(owner);
       useSecretKmsProbe();
       await runs.requestCancelRun(actor, runId, [200]);
       await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId: runId, exitCode: 137 },
+        { runId, exitCode: 137 },
         { authorization: `Bearer ${input.sandboxToken}` },
         [200],
       );
     });
     const sandboxToken = input.sandboxToken;
     if (!sandboxToken) {
-      throw new Error("Expected the Runner claim to issue its sandbox token");
+      throw new Error("Expected execution input to include its sandbox token");
     }
     await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
       status: "running",
@@ -139,8 +139,8 @@ describe("private Runner VNC authority", () => {
     return { runId, threadId, runnerIdentity, sandboxToken };
   }
 
-  /** Ordinary chat Runs use production launch and claim. */
-  async function claimedFixture(
+  /** Ordinary chat Runs use production launch and dispatch. */
+  async function executionFixture(
     options: { readonly defaultEnabled?: boolean } = {},
   ): Promise<VncRuntimeFixture & { readonly connectionCreatedAt: string }> {
     const bdd = createBddApi(context);
@@ -171,7 +171,7 @@ describe("private Runner VNC authority", () => {
     if (options.defaultEnabled !== false) {
       await api.enableDefault(owner, "vnc", connection.body.id);
     }
-    const running = await claimedRuntime({ ...owner, agentId });
+    const running = await executionRuntime({ ...owner, agentId });
     return {
       ...owner,
       ...running,
@@ -221,7 +221,7 @@ describe("private Runner VNC authority", () => {
     // Historical-clock heartbeats prune the fleet across groups.
     await setupApp({ context, routes: runnerVncRoutes, isolatePg: true });
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
-    const f = await claimedFixture();
+    const f = await executionFixture();
     for (const type of ["cloudflare_access", "tailscale"] as const) {
       const transport = { type, configId: randomUUID(), generation: 1 };
       await expect(
@@ -249,7 +249,7 @@ describe("private Runner VNC authority", () => {
   it("records bounded owner evidence, recovers and ignores reordered, duplicate and future VNC observations", async () => {
     await setupApp({ context, routes: runnerVncRoutes, isolatePg: true });
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
-    const f = await claimedFixture();
+    const f = await executionFixture();
     await expect(observations(f)).resolves.toStrictEqual([]);
     await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
     await expect(observations(f)).resolves.toStrictEqual([
@@ -308,8 +308,8 @@ describe("private Runner VNC authority", () => {
   it("isolates VNC observations by owner, configuration generation and deletion", async () => {
     await setupApp({ context, routes: runnerVncRoutes, isolatePg: true });
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
-    const f = await claimedFixture();
-    const other = await claimedFixture();
+    const f = await executionFixture();
+    const other = await executionFixture();
     api.authenticate(f);
     await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
     await expect(observations(other)).resolves.toStrictEqual([]);
@@ -348,7 +348,7 @@ describe("private Runner VNC authority", () => {
   it("ignores delayed evidence when a deleted VNC ID is recreated", async () => {
     await setupApp({ context, routes: runnerVncRoutes, isolatePg: true });
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const handoff = await accept(
       api.runner().resolve({
         headers: vncRunnerHeaders,
@@ -416,7 +416,7 @@ describe("private Runner VNC authority", () => {
   it("rejects secret-bearing and non-connection observation payloads without reflecting their values", async () => {
     await setupApp({ context, routes: runnerVncRoutes, isolatePg: true });
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
-    const f = await claimedFixture();
+    const f = await executionFixture();
     for (const invalid of [
       { failureReason: "sensitive-secret-provider-error" },
       { failureReason: "cancelled" },
@@ -453,7 +453,7 @@ describe("private Runner VNC authority", () => {
     async (route) => {
       await setupApp({ context, routes: runnerVncRoutes, isolatePg: true });
       mockNow(new Date("2026-10-14T00:00:30.000Z"));
-      const f = await claimedFixture();
+      const f = await executionFixture();
       const sshApi = setupApp({ context, routes: sshConnectionsRoutes })(
         sshConnectionsContract,
       );
@@ -594,7 +594,7 @@ describe("private Runner VNC authority", () => {
   it("does not record VNC evidence after chat authority is revoked or membership is lost", async () => {
     await setupApp({ context, routes: runnerVncRoutes, isolatePg: true });
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
-    const f = await claimedFixture();
+    const f = await executionFixture();
     await api.setDefault(f, "vnc", f.connectionId, false);
     await expect(observe(f)).resolves.toStrictEqual({ outcome: "unavailable" });
     await expect(observations(f)).resolves.toStrictEqual([]);
@@ -606,7 +606,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("admits exact online Kerberos capabilities before KMS and independently fences source revision and KDC route", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const kms = useSecretKmsProbe();
     const initiator = { realm: "EXAMPLE.INVALID", components: ["alice"] };
     const changed = await accept(
@@ -728,7 +728,7 @@ describe("private Runner VNC authority", () => {
   )(
     "independently authorizes and fences $method / $rfb RFB / $kdc KDC routes",
     async ({ method, rfb, kdc }) => {
-      const f = await claimedFixture();
+      const f = await executionFixture();
       const ssh = setupApp({ context, routes: sshConnectionsRoutes })(
         sshConnectionsContract,
       );
@@ -918,7 +918,7 @@ describe("private Runner VNC authority", () => {
   it.each(["direct", "ssh"] as const)(
     "admits an offline ticket through %s without a KDC and refuses expiry before KMS",
     async (route) => {
-      const f = await claimedFixture();
+      const f = await executionFixture();
       mockNow(new Date(200_000));
       const ssh = setupApp({ context, routes: sshConnectionsRoutes })(
         sshConnectionsContract,
@@ -1031,7 +1031,7 @@ describe("private Runner VNC authority", () => {
   );
 
   it("uses current chat VNC and exact SSH dependency access during an active Run", async () => {
-    const f = await claimedFixture({
+    const f = await executionFixture({
       defaultEnabled: false,
     });
     if (!f.threadId) {
@@ -1132,7 +1132,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("rejects a delayed stale credential rotation without changing shared hosts or the Runner secret", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     await accept(
       api.connections().create({
         headers: vncSessionHeaders,
@@ -1223,7 +1223,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("preserves the exact VNC secret only in the no-store Runner handoff", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const kms = useSecretKmsProbe();
     expect(kms.decryptCalls).toBe(0);
     const result = await accept(
@@ -1260,7 +1260,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("requires an exact X509None capability and resolves without decrypting a credential", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     await accept(
       api.connections().update({
         headers: vncSessionHeaders,
@@ -1305,7 +1305,7 @@ describe("private Runner VNC authority", () => {
   ] as const)(
     "requires exact %s capability before KMS and hands identity only to the Runner",
     async (method, securityType, passwordRequired) => {
-      const f = await claimedFixture();
+      const f = await executionFixture();
       const host = await accept(
         api.connections().create({
           headers: vncSessionHeaders,
@@ -1375,7 +1375,7 @@ describe("private Runner VNC authority", () => {
   );
 
   it("requires independent SSH access and the exact certificate/SSH tuple before decrypting a client key", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const ssh = await accept(
       setupApp({ context, routes: sshConnectionsRoutes })(
         sshConnectionsContract,
@@ -1455,7 +1455,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("requires the SSH-specific X509None capability and independent SSH authority", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const ssh = await accept(
       setupApp({ context, routes: sshConnectionsRoutes })(
         sshConnectionsContract,
@@ -1522,7 +1522,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("rejects wrong auth classes and exact winning-process mismatches before KMS", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const { generation } = await api.resolved(f);
     const kms = useSecretKmsProbe();
     const body = {
@@ -1606,8 +1606,8 @@ describe("private Runner VNC authority", () => {
   });
 
   it("keeps cross-owner connections opaque", async () => {
-    const f = await claimedFixture();
-    const foreign = await claimedFixture();
+    const f = await executionFixture();
+    const foreign = await executionFixture();
     const { generation } = await api.resolved(foreign);
     api.authenticate(f);
     const kms = useSecretKmsProbe();
@@ -1621,7 +1621,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("reports unsupported exact profiles before decrypting and rejects injected authority fields", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const kms = useSecretKmsProbe();
     await expect(
       api.resolve(f, { supportedProfiles: [] }),
@@ -1657,7 +1657,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("returns an explicit direct snapshot to a capable Runner", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     await expect(
       api.resolve(f, { supportedProfiles: [...vncProfiles] }),
     ).resolves.toStrictEqual({
@@ -1692,7 +1692,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("refuses saved SSH transport before decrypting VNC credentials", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const ssh = await accept(
       setupApp({ context, routes: sshConnectionsRoutes })(
         sshConnectionsContract,
@@ -1739,7 +1739,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("requires both chat host permissions and binds SSH-backed handoff and checks to the exact SSH generation", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const ssh = await accept(
       setupApp({ context, routes: sshConnectionsRoutes })(
         sshConnectionsContract,
@@ -1877,7 +1877,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("resolves QEMU SCRAM only for the exact Runner capability, before and after rotation", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const scramSecurity = {
       type: "qemu_x509_sasl" as const,
       trust: { mode: "system" as const },
@@ -2030,7 +2030,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("admits Mac classic password only for an exact authorized SSH loopback profile", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const ssh = await accept(
       setupApp({ context, routes: sshConnectionsRoutes })(
         sshConnectionsContract,
@@ -2193,7 +2193,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("admits Apple DH only for an authorized SSH-to-Mac-loopback profile", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const ssh = await accept(
       setupApp({ context, routes: sshConnectionsRoutes })(
         sshConnectionsContract,
@@ -2326,7 +2326,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("admits Apple SRP only for an authorized SSH-to-Mac-loopback profile", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const ssh = await accept(
       setupApp({ context, routes: sshConnectionsRoutes })(
         sshConnectionsContract,
@@ -2531,7 +2531,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("admits Apple RSA/SRP only for a matching saved SSH loopback and exact Runner capability", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const ssh = await accept(
       setupApp({ context, routes: sshConnectionsRoutes })(
         sshConnectionsContract,
@@ -2692,7 +2692,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("rejects X509Plain for an old Runner before KMS and resolves it for a capable Runner", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const kms = useSecretKmsProbe();
     const plain = await accept(
       api.connections().create({
@@ -2759,7 +2759,7 @@ describe("private Runner VNC authority", () => {
       userId: `user_vnc_public_${randomUUID()}`,
     };
     const run = await selectedRuns.start(owner);
-    const claimed = await selectedRuns.claim(run, vncRunnerHeaders);
+    const execution = await selectedRuns.executionInput(run, vncRunnerHeaders);
     api.authenticate(owner);
     const connection = await accept(
       api
@@ -2769,7 +2769,7 @@ describe("private Runner VNC authority", () => {
     );
     await api.enableDefault(owner, "vnc", connection.body.id);
     const f = {
-      ...claimed,
+      ...execution,
       connectionId: connection.body.id,
       credentialId: requireVncCredentialId(connection.body),
     };
@@ -2785,7 +2785,7 @@ describe("private Runner VNC authority", () => {
     expect(kms.decryptCalls).toBe(0);
     for (const status of ["completed", "cancelled", "failed"] as const) {
       const next = await selectedRuns.start(owner);
-      const current = await selectedRuns.claim(next, vncRunnerHeaders);
+      const current = await selectedRuns.executionInput(next, vncRunnerHeaders);
       await selectedRuns.finish(current, status);
       kms = useSecretKmsProbe();
       await expect(api.resolve({ ...f, ...current })).resolves.toStrictEqual({
@@ -2799,7 +2799,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("rechecks current membership on private calls", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const { generation } = await api.resolved(f);
     const kms = useSecretKmsProbe();
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
@@ -2815,8 +2815,8 @@ describe("private Runner VNC authority", () => {
   });
 
   it("authorizes independent Runs concurrently without reserving the connection or decrypting on checks", async () => {
-    const f = await claimedFixture();
-    const other = { ...f, ...(await claimedRuntime(f)) };
+    const f = await executionFixture();
+    const other = { ...f, ...(await executionRuntime(f)) };
     const [first, second] = await Promise.all([
       api.resolved(f),
       api.resolved(other),
@@ -2834,7 +2834,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("preserves a rejected profile edit and checks generation through rotation, deletion and recreation", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const original = await api.resolved(f);
     const rejected = await accept(
       api.credentials().update({
@@ -2921,7 +2921,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("surfaces KMS failure as a sanitized error", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     useSecretKmsProbe(undefined, () => {
       return Promise.reject(new Error("KMS secret-response-canary"));
     });
@@ -2943,7 +2943,7 @@ describe("private Runner VNC authority", () => {
   });
 
   it("allows rotation while KMS is pending and discards the old secret handoff", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const entered = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<Uint8Array>(context.signal);
     useSecretKmsProbe(undefined, (_request, call) => {
@@ -2976,8 +2976,8 @@ describe("private Runner VNC authority", () => {
   });
 
   it("discards an in-flight direct VNC password when its Run is cancelled before KMS returns", async () => {
-    const f = await claimedFixture();
-    const peer = await claimedFixture();
+    const f = await executionFixture();
+    const peer = await executionFixture();
     api.authenticate(f);
     const entered = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<Uint8Array>(context.signal);

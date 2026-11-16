@@ -1,6 +1,6 @@
 import { createPublicComputerUseHosts } from "./helpers/public-computer-use-hosts";
 import { publicChatActor } from "./helpers/public-chat-actor";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
@@ -273,7 +273,7 @@ async function createNativePasswordActionForPreflightTest(
   readonly providerId: string;
 }> {
   const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
-  const current = await createClaimedChatRun(
+  const current = await createDispatchedChatRun(
     chat,
     runs,
     actor,
@@ -298,13 +298,16 @@ async function createNativePasswordActionForPreflightTest(
     }),
   );
   await accept(
-    useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
+    useInputBrowser({
+      headers: current.receivedExecution.browserHeaders,
+      body: {},
+    }),
     [200],
   );
   routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const created = await accept(
     userActionClient().create({
-      headers: current.claim.browserHeaders,
+      headers: current.receivedExecution.browserHeaders,
       body: nativePasswordRequest("Continue after entering the password"),
     }),
     [201],
@@ -659,7 +662,7 @@ async function setupNativeMixedVerificationScenario(
   verificationStarted?: () => void,
 ) {
   const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
-  const current = await createClaimedChatRun(
+  const current = await createDispatchedChatRun(
     chat,
     runs,
     actor,
@@ -819,14 +822,17 @@ async function setupNativeMixedVerificationScenario(
     }),
   );
   await accept(
-    useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
+    useInputBrowser({
+      headers: current.receivedExecution.browserHeaders,
+      body: {},
+    }),
     [200],
   );
   routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const create = async () => {
     const created = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -889,7 +895,7 @@ async function setupNativeMixedVerificationScenario(
 
 async function setupNativeScalarGuardScenario(laterType = "password") {
   const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
-  const current = await createClaimedChatRun(
+  const current = await createDispatchedChatRun(
     chat,
     runs,
     actor,
@@ -1149,14 +1155,17 @@ async function setupNativeScalarGuardScenario(laterType = "password") {
     }),
   );
   await accept(
-    useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
+    useInputBrowser({
+      headers: current.receivedExecution.browserHeaders,
+      body: {},
+    }),
     [200],
   );
   routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const create = async () => {
     const created = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -1506,7 +1515,7 @@ async function setupNativeFileScenario(
     });
   const current =
     owned?.current ??
-    (await createClaimedChatRun(
+    (await createDispatchedChatRun(
       chat,
       runs,
       actor,
@@ -1598,7 +1607,10 @@ async function setupNativeFileScenario(
   }
   await run(() => {
     return accept(
-      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({
+        headers: current.receivedExecution.browserHeaders,
+        body: {},
+      }),
       [200],
     );
   });
@@ -1607,7 +1619,7 @@ async function setupNativeFileScenario(
     return await run(async () => {
       const created = await accept(
         userActionClient().create({
-          headers: current.claim.browserHeaders,
+          headers: current.receivedExecution.browserHeaders,
           body: {
             kind: "input",
             title: "Sign in to download invoices",
@@ -2121,7 +2133,7 @@ describe("Browser user-action route", () => {
     const value = nativeFileValue("");
     state.writable = false;
     const unavailable = await userActionClient().create({
-      headers: current.claim.browserHeaders,
+      headers: current.receivedExecution.browserHeaders,
       body: {
         kind: "input",
         title: "Sign in to download invoices",
@@ -2156,7 +2168,7 @@ describe("Browser user-action route", () => {
       { name: "note.txt", size: 4, type: "text/plain" },
     ]);
     const unsupportedFileRoot = await userActionClient().create({
-      headers: current.claim.browserHeaders,
+      headers: current.receivedExecution.browserHeaders,
       body: {
         kind: "input",
         title: "Sign in to download invoices",
@@ -2834,7 +2846,7 @@ describe("Browser user-action route", () => {
         };
         const creating = settleIncludingAbort(
           userActionClient().create({
-            headers: current.claim.browserHeaders,
+            headers: current.receivedExecution.browserHeaders,
             body,
           }),
         );
@@ -2888,7 +2900,7 @@ describe("Browser user-action route", () => {
             body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
           });
           const stillExpired = await userActionClient().create({
-            headers: current.claim.browserHeaders,
+            headers: current.receivedExecution.browserHeaders,
             body,
           });
           expect(stillExpired).toMatchObject({
@@ -2926,7 +2938,7 @@ describe("Browser user-action route", () => {
           }),
         );
         const failed = await userActionClient().create({
-          headers: current.claim.browserHeaders,
+          headers: current.receivedExecution.browserHeaders,
           body: {
             kind: "input",
             title: "Sign in to download invoices",
@@ -3206,7 +3218,7 @@ describe("Browser user-action route", () => {
   it("applies explicit checkbox booleans, preserves untouched state, and rejects changed or required checkboxes", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();
-    const current = await createClaimedChatRun(
+    const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
@@ -3254,14 +3266,17 @@ describe("Browser user-action route", () => {
       }),
     );
     await accept(
-      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({
+        headers: current.receivedExecution.browserHeaders,
+        body: {},
+      }),
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const createCheckbox = async (required = false) => {
       return await accept(
         userActionClient().create({
-          headers: current.claim.browserHeaders,
+          headers: current.receivedExecution.browserHeaders,
           body: {
             kind: "input",
             title: "Sign in to download invoices",
@@ -3383,7 +3398,7 @@ describe("Browser user-action route", () => {
     siteRequired = false;
     writable = false;
     const disabled = await userActionClient().create({
-      headers: current.claim.browserHeaders,
+      headers: current.receivedExecution.browserHeaders,
       body: {
         kind: "input",
         title: "Sign in to download invoices",
@@ -3407,7 +3422,7 @@ describe("Browser user-action route", () => {
     expect(
       (
         await userActionClient().create({
-          headers: current.claim.browserHeaders,
+          headers: current.receivedExecution.browserHeaders,
           body: {
             kind: "input",
             title: "Sign in to download invoices",
@@ -3445,7 +3460,7 @@ describe("Browser user-action route", () => {
   it("discovers exact radio member identities, selects duplicate-valued option by index, and rejects group drift", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();
-    const current = await createClaimedChatRun(
+    const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
@@ -3487,14 +3502,17 @@ describe("Browser user-action route", () => {
       }),
     );
     await accept(
-      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({
+        headers: current.receivedExecution.browserHeaders,
+        body: {},
+      }),
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const create = async () => {
       return await accept(
         userActionClient().create({
-          headers: current.claim.browserHeaders,
+          headers: current.receivedExecution.browserHeaders,
           body: {
             kind: "input",
             title: "Sign in to download invoices",
@@ -3718,7 +3736,7 @@ describe("Browser user-action route", () => {
       const createMixed = async () => {
         return await accept(
           userActionClient().create({
-            headers: current.claim.browserHeaders,
+            headers: current.receivedExecution.browserHeaders,
             body: {
               kind: "input",
               title: "Sign in to download invoices",
@@ -3838,7 +3856,7 @@ describe("Browser user-action route", () => {
   it("selects by option index, rejects disabled and drifted options, and supports explicit clear", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();
-    const current = await createClaimedChatRun(
+    const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
@@ -3919,14 +3937,17 @@ describe("Browser user-action route", () => {
       }),
     );
     await accept(
-      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({
+        headers: current.receivedExecution.browserHeaders,
+        body: {},
+      }),
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const createSelect = async (required = false) => {
       return await accept(
         userActionClient().create({
-          headers: current.claim.browserHeaders,
+          headers: current.receivedExecution.browserHeaders,
           body: {
             kind: "input",
             title: "Sign in to download invoices",
@@ -4098,7 +4119,7 @@ describe("Browser user-action route", () => {
       const createMixed = async () => {
         return await accept(
           userActionClient().create({
-            headers: current.claim.browserHeaders,
+            headers: current.receivedExecution.browserHeaders,
             body: {
               kind: "input",
               title: "Sign in to download invoices",
@@ -4196,7 +4217,7 @@ describe("Browser user-action route", () => {
   it("supports live number constraints, optional clear, and exact readback", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();
-    const current = await createClaimedChatRun(
+    const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
@@ -4234,14 +4255,17 @@ describe("Browser user-action route", () => {
       }),
     );
     await accept(
-      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({
+        headers: current.receivedExecution.browserHeaders,
+        body: {},
+      }),
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const createNumber = async (required = false) => {
       return await accept(
         userActionClient().create({
-          headers: current.claim.browserHeaders,
+          headers: current.receivedExecution.browserHeaders,
           body: {
             kind: "input",
             title: "Sign in to download invoices",
@@ -4419,7 +4443,7 @@ describe("Browser user-action route", () => {
   it("guards native slider position, constraints, required confirmation and post-event readback", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();
-    const current = await createClaimedChatRun(
+    const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
@@ -4478,14 +4502,17 @@ describe("Browser user-action route", () => {
       }),
     );
     await accept(
-      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({
+        headers: current.receivedExecution.browserHeaders,
+        body: {},
+      }),
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const create = async (required = false) => {
       return await accept(
         userActionClient().create({
-          headers: current.claim.browserHeaders,
+          headers: current.receivedExecution.browserHeaders,
           body: {
             kind: "input",
             title: "Sign in to download invoices",
@@ -4714,7 +4741,7 @@ describe("Browser user-action route", () => {
     ).resolves.toMatchObject({ body: { state: "succeeded" } });
     writable = false;
     const disabled = await userActionClient().create({
-      headers: current.claim.browserHeaders,
+      headers: current.receivedExecution.browserHeaders,
       body: {
         kind: "input",
         title: "Sign in to download invoices",
@@ -4738,7 +4765,7 @@ describe("Browser user-action route", () => {
   it("guards native opaque color selection, unchanged values, stale targets and independent readback", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();
-    const current = await createClaimedChatRun(
+    const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
@@ -4787,14 +4814,17 @@ describe("Browser user-action route", () => {
       }),
     );
     await accept(
-      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({
+        headers: current.receivedExecution.browserHeaders,
+        body: {},
+      }),
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const create = (required = false) => {
       return accept(
         userActionClient().create({
-          headers: current.claim.browserHeaders,
+          headers: current.receivedExecution.browserHeaders,
           body: {
             kind: "input",
             title: "Sign in to download invoices",
@@ -4943,7 +4973,7 @@ describe("Browser user-action route", () => {
     expect(
       (
         await userActionClient().create({
-          headers: current.claim.browserHeaders,
+          headers: current.receivedExecution.browserHeaders,
           body: {
             kind: "input",
             title: "Sign in to download invoices",
@@ -4968,7 +4998,7 @@ describe("Browser user-action route", () => {
   it("validates all five native date/time subtypes, empty/required values and independent readback", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();
-    const current = await createClaimedChatRun(
+    const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
@@ -5022,14 +5052,17 @@ describe("Browser user-action route", () => {
       }),
     );
     await accept(
-      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({
+        headers: current.receivedExecution.browserHeaders,
+        body: {},
+      }),
       [200],
     );
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const create = async (required = false) => {
       return await accept(
         userActionClient().create({
-          headers: current.claim.browserHeaders,
+          headers: current.receivedExecution.browserHeaders,
           body: {
             kind: "input",
             title: "Sign in to download invoices",
@@ -5462,7 +5495,7 @@ describe("Browser user-action route", () => {
   it("validates and applies CLI-resolved Browser input without exposing target or value data", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();
-    const current = await createClaimedChatRun(
+    const current = await createDispatchedChatRun(
       chat,
       runs,
       actor,
@@ -5677,12 +5710,15 @@ describe("Browser user-action route", () => {
     );
 
     await accept(
-      useInputBrowser({ headers: current.claim.browserHeaders, body: {} }),
+      useInputBrowser({
+        headers: current.receivedExecution.browserHeaders,
+        body: {},
+      }),
       [200],
     );
     controlWritable = false;
     const unsupported = await userActionClient().create({
-      headers: current.claim.browserHeaders,
+      headers: current.receivedExecution.browserHeaders,
       body: {
         kind: "input",
         title: "Sign in to download invoices",
@@ -5713,7 +5749,7 @@ describe("Browser user-action route", () => {
     controlWritable = true;
     controlMainDocument = false;
     const unsupportedRoot = await userActionClient().create({
-      headers: current.claim.browserHeaders,
+      headers: current.receivedExecution.browserHeaders,
       body: {
         kind: "input",
         title: "Sign in to download invoices",
@@ -5741,7 +5777,7 @@ describe("Browser user-action route", () => {
     providerReadCount = 0;
 
     const mismatchedKind = await userActionClient().create({
-      headers: current.claim.browserHeaders,
+      headers: current.receivedExecution.browserHeaders,
       body: {
         kind: "input",
         title: "Sign in to download invoices",
@@ -5775,7 +5811,7 @@ describe("Browser user-action route", () => {
 
     resolveNodeAvailable = false;
     const missingBackendNode = await userActionClient().create({
-      headers: current.claim.browserHeaders,
+      headers: current.receivedExecution.browserHeaders,
       body: {
         kind: "input",
         title: "Sign in to download invoices",
@@ -5813,7 +5849,7 @@ describe("Browser user-action route", () => {
 
     missingBackendNodeId = 42;
     const secondFieldMissing = await userActionClient().create({
-      headers: current.claim.browserHeaders,
+      headers: current.receivedExecution.browserHeaders,
       body: {
         kind: "input",
         title: "Sign in to download invoices",
@@ -5851,7 +5887,7 @@ describe("Browser user-action route", () => {
     missingBackendNodeId = null;
 
     const nodeInspectionRequest = {
-      headers: current.claim.browserHeaders,
+      headers: current.receivedExecution.browserHeaders,
       body: {
         kind: "input" as const,
         title: "Sign in to download invoices",
@@ -5888,7 +5924,7 @@ describe("Browser user-action route", () => {
     nodeResolutionFailure = null;
 
     const missingPage = await userActionClient().create({
-      headers: current.claim.browserHeaders,
+      headers: current.receivedExecution.browserHeaders,
       body: {
         kind: "input",
         title: "Sign in to download invoices",
@@ -5921,7 +5957,7 @@ describe("Browser user-action route", () => {
       { title: "Sign in to download invoices", reason: "   " },
     ]) {
       const invalidExplanation = await userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           ...nativePasswordRequest("Continue after input"),
           ...explanation,
@@ -5935,7 +5971,7 @@ describe("Browser user-action route", () => {
 
     const created = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6239,7 +6275,7 @@ describe("Browser user-action route", () => {
 
     const optionalBlankCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6303,7 +6339,7 @@ describe("Browser user-action route", () => {
     controlSiteRequired = false;
     const multiline = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6365,7 +6401,7 @@ describe("Browser user-action route", () => {
     providerReadCount = 0;
     const providerRetryCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6456,7 +6492,7 @@ describe("Browser user-action route", () => {
 
     const staleCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6501,7 +6537,7 @@ describe("Browser user-action route", () => {
 
     const navigatedCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6536,7 +6572,7 @@ describe("Browser user-action route", () => {
 
     const detachedCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6579,7 +6615,7 @@ describe("Browser user-action route", () => {
 
     const shadowCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6614,7 +6650,7 @@ describe("Browser user-action route", () => {
 
     const unwritableCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6649,7 +6685,7 @@ describe("Browser user-action route", () => {
 
     const replacedControlCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6686,7 +6722,7 @@ describe("Browser user-action route", () => {
 
     const stoppedProviderCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6723,7 +6759,7 @@ describe("Browser user-action route", () => {
 
     const uncertainCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6765,7 +6801,7 @@ describe("Browser user-action route", () => {
 
     const rerenderedCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6814,7 +6850,7 @@ describe("Browser user-action route", () => {
 
     const stuckCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6879,7 +6915,7 @@ describe("Browser user-action route", () => {
 
     const concurrentCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6932,7 +6968,7 @@ describe("Browser user-action route", () => {
 
     const expiringCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -6958,7 +6994,7 @@ describe("Browser user-action route", () => {
     mockNow(STARTED_AT_MS + 9 * MINUTE_MS);
     await accept(
       client().lease({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {},
       }),
       [200],
@@ -6976,7 +7012,7 @@ describe("Browser user-action route", () => {
 
     const expiredCandidate = await accept(
       userActionClient().create({
-        headers: current.claim.browserHeaders,
+        headers: current.receivedExecution.browserHeaders,
         body: {
           kind: "input",
           title: "Sign in to download invoices",
@@ -7009,7 +7045,7 @@ describe("Browser user-action route", () => {
     });
     expect(browserInputWrites()).toHaveLength(writesBeforeExpiry);
     const cannotReviveExpiredBrowser = await userActionClient().create({
-      headers: current.claim.browserHeaders,
+      headers: current.receivedExecution.browserHeaders,
       body: nativePasswordRequest("Continue after Browser expiry"),
     });
     expect(cannotReviveExpiredBrowser).toMatchObject({
@@ -7178,20 +7214,20 @@ function acceptBrowserUseCdpSessions(
   }
 }
 
-async function claimChatRun(
+async function runExecution(
   runs: ReturnType<typeof createRunsApi>,
   runId: string,
 ) {
   await flushWaitUntilForTest();
-  const claim = await runs.executionInput(runId);
-  const okouToken = claim.platformEnvironment.OKOU_TOKEN;
+  const execution = await runs.executionInput(runId);
+  const okouToken = execution.platformEnvironment.OKOU_TOKEN;
   if (!okouToken) {
-    throw new Error("Expected the runner claim to include OKOU_TOKEN");
+    throw new Error("Expected the Runner execution to include OKOU_TOKEN");
   }
   return {
     browserHeaders: { authorization: `Bearer ${okouToken}` },
     sandboxHeaders: {
-      authorization: `Bearer ${claim.sandboxToken}`,
+      authorization: `Bearer ${execution.sandboxToken}`,
     },
   };
 }
@@ -7312,7 +7348,7 @@ async function setupOwnedNativeFileBrowserScenario() {
       cloudBrowserEnabled: true,
     });
     threadId = sent.threadId;
-    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    const execution = await owned.runExecution(sent.runId);
     return {
       ...owned,
       actor,
@@ -7323,11 +7359,11 @@ async function setupOwnedNativeFileBrowserScenario() {
       current: {
         runId: sent.runId,
         threadId: sent.threadId,
-        claim: {
+        receivedExecution: {
           browserHeaders: {
-            authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
+            authorization: `Bearer ${okouTokenFromExecution(execution.execution)}`,
           },
-          sandboxHeaders: claimed.sandboxHeaders,
+          sandboxHeaders: execution.sandboxHeaders,
         },
       },
       rememberAction(requestToken: string) {
@@ -7369,7 +7405,7 @@ async function setupOwnedComputerBrowserScenario() {
   };
 }
 
-async function createClaimedChatRun(
+async function createDispatchedChatRun(
   chat: ReturnType<typeof createChatFilesBddApi>,
   runs: ReturnType<typeof createRunsApi>,
   actor: ApiTestUser,
@@ -7384,7 +7420,7 @@ async function createClaimedChatRun(
   return {
     runId: sent.runId,
     threadId: sent.threadId,
-    claim: await claimChatRun(runs, sent.runId),
+    receivedExecution: await runExecution(runs, sent.runId),
   };
 }
 
@@ -7510,11 +7546,11 @@ describe("okou browser route", () => {
         chat.readThreadMetadata(actor, sent.threadId),
       ).resolves.toMatchObject({ cloudBrowserEnabled: enabled });
       await flushWaitUntilForTest();
-      const claim = await runs.executionInput(sent.runId);
+      const execution = await runs.executionInput(sent.runId);
       const browser = await accept(
         client().get({
           headers: {
-            authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+            authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
           },
           params: { threadId: sent.threadId },
         }),
@@ -7579,25 +7615,25 @@ describe("okou browser route", () => {
       cloudBrowserEnabled: false,
     });
     await flushWaitUntilForTest();
-    const claim = await runs.executionInput(sent.runId);
-    expect(claim.appendSystemPrompt ?? "").toContain(
+    const execution = await runs.executionInput(sent.runId);
+    expect(execution.appendSystemPrompt ?? "").toContain(
       "Okou Browser is currently off for this chat thread",
     );
-    expect(claim.appendSystemPrompt ?? "").not.toContain(
+    expect(execution.appendSystemPrompt ?? "").not.toContain(
       "Browser user input priority:",
     );
-    expect(claim.appendSystemPrompt ?? "").not.toContain(
+    expect(execution.appendSystemPrompt ?? "").not.toContain(
       "okou browser input-request",
     );
-    expect(claim.appendSystemPrompt ?? "").not.toContain(
+    expect(execution.appendSystemPrompt ?? "").not.toContain(
       "Browser tab continuity:",
     );
-    expect(claim.appendSystemPrompt ?? "").not.toContain(
+    expect(execution.appendSystemPrompt ?? "").not.toContain(
       "Browser shared profile:",
     );
-    const browserToken = claim.platformEnvironment.OKOU_TOKEN;
+    const browserToken = execution.platformEnvironment.OKOU_TOKEN;
     if (!browserToken) {
-      throw new Error("Expected a claimed agent token");
+      throw new Error("Expected an execution agent token");
     }
     const rejected = await requestBrowserUse({
       authorization: `Bearer ${browserToken}`,
@@ -7617,8 +7653,8 @@ describe("okou browser route", () => {
     });
 
     await flushWaitUntilForTest();
-    const claim = await runs.executionInput(sent.runId);
-    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+    const execution = await runs.executionInput(sent.runId);
+    const appendSystemPrompt = execution.appendSystemPrompt ?? "";
     expect(appendSystemPrompt).toContain("this chat's managed Browser");
     expect(appendSystemPrompt).toContain(
       "Each chat has its own window and tabs",
@@ -7654,8 +7690,8 @@ describe("okou browser route", () => {
     });
 
     await flushWaitUntilForTest();
-    const claim = await runs.executionInput(sent.runId);
-    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+    const execution = await runs.executionInput(sent.runId);
+    const appendSystemPrompt = execution.appendSystemPrompt ?? "";
     expect(appendSystemPrompt).toContain(
       "prefer `okou browser input-request` over direct Browser takeover",
     );
@@ -7700,8 +7736,8 @@ describe("okou browser route", () => {
         cloudBrowserEnabled: true,
       });
     });
-    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
-    const browserToken = okouTokenFromClaim(claimed.claim);
+    const execution = await owned.runExecution(sent.runId);
+    const browserToken = okouTokenFromExecution(execution.execution);
     const host = await owned.startHost();
 
     await owned.run(() => {
@@ -7740,9 +7776,9 @@ describe("okou browser route", () => {
         cloudBrowserEnabled: false,
       });
     });
-    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    const execution = await owned.runExecution(sent.runId);
     await owned.run(async () => {
-      const sandboxRunToken = claimed.claim.sandboxToken;
+      const sandboxRunToken = execution.execution.sandboxToken;
       const sandboxCreated = await accept(
         authorizationClient().create({
           headers: { authorization: `Bearer ${sandboxRunToken}` },
@@ -7753,7 +7789,7 @@ describe("okou browser route", () => {
       expect(new URL(sandboxCreated.body.authorizationUrl).origin).toBe(
         "https://app.okou.ai",
       );
-      const okouRunToken = okouTokenFromClaim(claimed.claim);
+      const okouRunToken = okouTokenFromExecution(execution.execution);
       const createdOnOkouApi = await accept(
         authorizationClient("https://api.okou.ai").create({
           headers: { authorization: `Bearer ${okouRunToken}` },
@@ -7843,12 +7879,12 @@ describe("okou browser route", () => {
           cloudBrowserEnabled: false,
         });
       });
-      const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+      const execution = await owned.runExecution(sent.runId);
       await owned.run(async () => {
         const created = await accept(
           authorizationClient().create({
             headers: {
-              authorization: `Bearer ${claimed.claim.sandboxToken}`,
+              authorization: `Bearer ${execution.execution.sandboxToken}`,
             },
             body: {},
           }),
@@ -7934,12 +7970,12 @@ describe("okou browser route", () => {
         cloudBrowserEnabled: false,
       });
     });
-    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    const execution = await owned.runExecution(sent.runId);
     await owned.run(async () => {
       const created = await accept(
         authorizationClient().create({
           headers: {
-            authorization: `Bearer ${claimed.claim.sandboxToken}`,
+            authorization: `Bearer ${execution.execution.sandboxToken}`,
           },
           body: {},
         }),
@@ -8017,12 +8053,12 @@ describe("okou browser route", () => {
         cloudBrowserEnabled: false,
       });
     });
-    const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+    const execution = await owned.runExecution(sent.runId);
     await owned.run(async () => {
       const created = await accept(
         authorizationClient().create({
           headers: {
-            authorization: `Bearer ${claimed.claim.sandboxToken}`,
+            authorization: `Bearer ${execution.execution.sandboxToken}`,
           },
           body: {},
         }),

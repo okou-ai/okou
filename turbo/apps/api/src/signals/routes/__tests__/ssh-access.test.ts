@@ -1,4 +1,4 @@
-import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
+import { createSshExecutionApi } from "./helpers/ssh-execution";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 import {
@@ -59,16 +59,16 @@ function authenticate(owner: { userId: string; orgId: string }) {
 
 describe("live chat SSH Run inventory", () => {
   const publicRuns = createPublicRemoteAccessRunApi(context);
-  const ordinary = createClaimedSshRuntimeApi(context, {
+  const ordinary = createSshExecutionApi(context, {
     runnerHeaders: { authorization: `Bearer vm0_official_${"c".repeat(64)}` },
     authenticate,
   });
-  const claimedRunCleanups: (() => Promise<void>)[] = [];
+  const executionCleanups: (() => Promise<void>)[] = [];
 
   afterEach(async () => {
     await publicRuns.cleanup();
     await ordinary.cleanup();
-    for (const cleanup of claimedRunCleanups.splice(0)) {
+    for (const cleanup of executionCleanups.splice(0)) {
       await cleanup();
       await flushWaitUntilForTest();
     }
@@ -82,19 +82,19 @@ describe("live chat SSH Run inventory", () => {
   ) {
     mockEnv("OFFICIAL_RUNNER_SECRET", "c".repeat(64));
     const run = await publicRuns.start(owner);
-    const claimed = await publicRuns.claim(run, {
+    const execution = await publicRuns.executionInput(run, {
       authorization: `Bearer vm0_official_${"c".repeat(64)}`,
     });
     authenticate(owner);
     return {
-      ...claimed,
+      ...execution,
       token: () => {
-        return { authorization: `Bearer ${claimed.agentToken}` };
+        return { authorization: `Bearer ${execution.agentToken}` };
       },
     };
   }
 
-  async function claimedFixture() {
+  async function executionFixture() {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user();
@@ -128,17 +128,17 @@ describe("live chat SSH Run inventory", () => {
       prompt: "List my enabled SSH hosts",
     });
     const input = await runs.executionInput(runId);
-    claimedRunCleanups.push(async () => {
+    executionCleanups.push(async () => {
       await runs.requestCancelRun(actor, runId, [200]);
       await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId: runId, exitCode: 137 },
+        { runId, exitCode: 137 },
         { authorization: `Bearer ${input.sandboxToken}` },
         [200],
       );
     });
     const agentToken = input.platformEnvironment.OKOU_TOKEN;
     if (!agentToken) {
-      throw new Error("Expected the Runner claim to issue its Agent token");
+      throw new Error("Expected the execution to issue its Agent token");
     }
     await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
       status: "running",
@@ -316,7 +316,7 @@ describe("live chat SSH Run inventory", () => {
   }
 
   it("keeps first-host and recreated-host chat access default off", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     context.mocks.ably.publish.mockClear();
     const first = await createHost();
     expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
@@ -362,7 +362,7 @@ describe("live chat SSH Run inventory", () => {
   });
 
   it("lists both chat-enabled logins at a shared endpoint", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const first = await createHost();
     await enableChatDefault(first.body.id);
     const second = await accept(
@@ -557,7 +557,7 @@ describe("live chat SSH Run inventory", () => {
     const secret = "c".repeat(64);
     mockEnv("OFFICIAL_RUNNER_SECRET", secret);
     const run = await publicRuns.start(owner);
-    const f = await publicRuns.claim(run, {
+    const f = await publicRuns.executionInput(run, {
       authorization: `Bearer vm0_official_${secret}`,
     });
     await publicRuns.finish(f, "completed");

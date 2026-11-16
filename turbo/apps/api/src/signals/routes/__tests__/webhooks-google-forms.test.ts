@@ -972,8 +972,8 @@ describe("Google Forms Pub/Sub webhook", () => {
     if (!runId) {
       throw new Error("Expected a dispatched Google Forms workflow run");
     }
-    const claim = await runs.executionInput(runId);
-    const eventContext = eventContextFromAgentPrompt(claim.prompt);
+    const execution = await runs.executionInput(runId);
+    const eventContext = eventContextFromAgentPrompt(execution.prompt);
     expect(eventContext).toStrictEqual({
       automationId,
       formId: FORM_ID,
@@ -986,7 +986,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       respondentEmail: "respondent@example.test",
       previouslyDelivered: false,
     });
-    expect(claim.appendSystemPrompt).toContain("# Agent Identity");
+    expect(execution.appendSystemPrompt).toContain("# Agent Identity");
     const retry = await postWebhook(push);
     expect(retry).toStrictEqual({
       status: 200,
@@ -1027,7 +1027,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       if (!runId) {
         throw new Error("Expected a running Forms workflow");
       }
-      const claim = await runs.executionInput(runId);
+      const execution = await runs.executionInput(runId);
       const connection = await connectors.readDefaultBuiltinAccount(
         actor,
         "google-forms",
@@ -1050,7 +1050,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       // while only the application's OAuth expiry clock advances below.
       const googleIdToken = signedGoogleIdToken();
       mockNow(startedAt + 2 * 60 * 60 * 1000);
-      const headers = { authorization: `Bearer ${claim.sandboxToken}` };
+      const headers = { authorization: `Bearer ${execution.sandboxToken}` };
       const refreshedForms = configureFormsApi(["forms-refresh-success"]);
       let preparedSuccess = false;
       server.use(
@@ -1811,9 +1811,9 @@ describe("Google Forms Pub/Sub webhook", () => {
     if (!secondRunId) {
       throw new Error("Expected a second-account Google Forms run");
     }
-    const claim = await runs.executionInput(secondRunId);
+    const execution = await runs.executionInput(secondRunId);
     expect(
-      Object.values(claim.secretConnectorMetadataMap ?? {}),
+      Object.values(execution.secretConnectorMetadataMap ?? {}),
     ).toContainEqual(expect.objectContaining({ sourceId: secondConnector.id }));
     await flushWaitUntilForTest();
   });
@@ -2168,9 +2168,9 @@ describe("Google Forms Pub/Sub webhook", () => {
         if (!runId) {
           throw new Error("Expected a repaired Google Forms workflow run");
         }
-        const claim = await runs.executionInput(runId);
+        const execution = await runs.executionInput(runId);
         expect(
-          Object.values(claim.secretConnectorMetadataMap ?? {}),
+          Object.values(execution.secretConnectorMetadataMap ?? {}),
         ).toContainEqual(
           expect.objectContaining({ sourceId: readdedConnector.id }),
         );

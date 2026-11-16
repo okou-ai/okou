@@ -74,13 +74,13 @@ export function createPublicFirewallConnections(context: TestContext) {
       throw new Error("Expected an active Run for firewall authorization");
     }
     await runs.heartbeatRunner(runnerGroup);
-    const claim = await runs.executionInput(created.runId);
-    credential.token = claim.sandboxToken;
+    const execution = await runs.executionInput(created.runId);
+    credential.token = execution.sandboxToken;
     return {
       actor,
       runId: created.runId,
-      claim,
-      headers: { authorization: `Bearer ${claim.sandboxToken}` },
+      execution,
+      headers: { authorization: `Bearer ${execution.sandboxToken}` },
     };
   }
 

@@ -23,6 +23,8 @@ import {
   agentsByIdContract,
   agentsMainContract,
 } from "./agents";
+import { androidUpdatesContract as OriginalAndroidUpdatesContract } from "../contracts/android-updates";
+import { androidUpdatesContract } from "./android-updates";
 import { artifactCatalogContract as OriginalArtifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactCatalogContract } from "./artifact-catalog";
 import { artifactDownloadsContract as OriginalArtifactDownloadsContract } from "../contracts/artifact-downloads";
@@ -564,6 +566,8 @@ import {
   personalModelProvidersMainContract,
   personalSubscriptionsContract,
 } from "./personal-model-providers";
+import { phoneUseContract as OriginalPhoneUseContract } from "../contracts/phone-use";
+import { phoneUseContract } from "./phone-use";
 import { presentationTemplatesContract as OriginalPresentationTemplatesContract } from "../contracts/presentation-templates";
 import { presentationTemplatesContract } from "./presentation-templates";
 import { proactiveLearningContract as OriginalProactiveLearningContract } from "../contracts/proactive-nightly";
@@ -794,6 +798,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [agentInstructionsContract, OriginalAgentInstructionsContract],
   [agentsByIdContract, OriginalAgentsByIdContract],
   [agentsMainContract, OriginalAgentsMainContract],
+  [androidUpdatesContract, OriginalAndroidUpdatesContract],
   [artifactCatalogContract, OriginalArtifactCatalogContract],
   [artifactDownloadsContract, OriginalArtifactDownloadsContract],
   [artifactGoogleDriveContract, OriginalArtifactGoogleDriveContract],
@@ -1243,6 +1248,7 @@ export const clientDescriptorContracts: readonly (readonly [
     OriginalPersonalModelProvidersMainContract,
   ],
   [personalSubscriptionsContract, OriginalPersonalSubscriptionsContract],
+  [phoneUseContract, OriginalPhoneUseContract],
   [presentationTemplatesContract, OriginalPresentationTemplatesContract],
   [proactiveLearningContract, OriginalProactiveLearningContract],
   [proactiveSuggestionsContract, OriginalProactiveSuggestionsContract],

@@ -10,6 +10,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,6 +68,7 @@ class ChatListModel(
     private val authorized: () -> Boolean,
     private val onFailure: (Exception) -> Unit,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    realtime: RealtimeService? = null,
 ) : ViewModel() {
     private val mutable = MutableStateFlow(ChatListUiState())
     val uiState = mutable.asStateFlow()
@@ -95,6 +97,37 @@ class ChatListModel(
     private var indicatorsJob: Job? = null
     private val writes = Mutex()
     private val projectSync = ProjectSync(service, dispatcher)
+    private val listInvalidations = Channel<Unit>(Channel.CONFLATED)
+    private val indicatorInvalidations = Channel<Unit>(Channel.CONFLATED)
+    val updates =
+        ChatUpdatesModel(realtime, viewModelScope, { current() }, onFailure) {
+            if (current()) {
+                listInvalidations.trySend(Unit)
+                indicatorInvalidations.trySend(Unit)
+                history.invalidate()
+            }
+        }
+
+    init {
+        viewModelScope.launch {
+            for (ignored in listInvalidations) {
+                listJob?.join()
+                if (current()) {
+                    refreshList()
+                    listJob?.join()
+                }
+            }
+        }
+        viewModelScope.launch {
+            for (ignored in indicatorInvalidations) {
+                indicatorsJob?.join()
+                if (current()) {
+                    refreshIndicators()
+                    indicatorsJob?.join()
+                }
+            }
+        }
+    }
 
     private fun navigation() =
         mutable.value.let { state ->
@@ -152,6 +185,14 @@ class ChatListModel(
 
     fun selectFilter(value: ChatListFilter) {
         if (current()) mutable.value = mutable.value.copy(filter = value)
+    }
+
+    fun refreshAfterSend(threadId: String) {
+        viewModelScope.launch {
+            listJob?.join()
+            if (current()) refreshList()
+        }
+        if (history.uiState.value.thread?.id == threadId) history.refreshAfterSend(threadId)
     }
 
     fun refresh() {
@@ -425,6 +466,9 @@ class ChatListModel(
 
     override fun onCleared() {
         retired = true
+        updates.close()
+        listInvalidations.close()
+        indicatorInvalidations.close()
         history.close()
         cache.close()
     }

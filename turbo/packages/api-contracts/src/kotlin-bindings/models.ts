@@ -521,10 +521,12 @@ object CanonicalEmptyArraySerializer : KSerializer<CanonicalEmptyArray> {
         ];
       },
     );
-    if (fields.length === 0)
-      throw new Error(
-        `${name}: empty objects need an explicit wire representation`,
+    if (fields.length === 0) {
+      declarations.push(
+        `@Serializable\ndata object ${name}${parent ? ` : ${parent}` : ""}`,
       );
+      return name;
+    }
     declarations.push(
       `@Serializable\ndata class ${name}(\n${fields.join("\n")}\n)${parent ? ` : ${parent}` : ""}`,
     );

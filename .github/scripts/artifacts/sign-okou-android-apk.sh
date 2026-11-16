@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sign an aligned release APK using the three production signing inputs.
 # Arguments: x.y.z, unsigned APK, output APK (must not exist). Requires JDK,
-# Python 3 and ANDROID_HOME/build-tools/36.0.0. No Gradle or remote writes.
+# Python 3, complete Git history and ANDROID_HOME/build-tools/36.0.0. No Gradle or remote writes.
 set +x
 set -euo pipefail
 umask 077
@@ -19,15 +19,8 @@ output=$(realpath -m "$3")
 : "${ANDROID_RELEASE_KEYSTORE_PASSWORD:?Release keystore password is required}"
 : "${ANDROID_RELEASE_KEY_ALIAS:?Release key alias is required}"
 tools="$ANDROID_HOME/build-tools/36.0.0"
-version_code=$(python3 - "$version" <<'PY'
-import sys
-major, minor, patch = map(int, sys.argv[1].split('.'))
-code = major * 1_000_000 + minor * 1_000 + patch
-if minor >= 1000 or patch >= 1000 or not 0 < code <= 2_147_483_647:
-    raise SystemExit('Android version does not fit versionCode')
-print(code)
-PY
-)
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
+version_code=$(bash "$root/android/scripts/version-code.sh")
 badging=$("$tools/aapt" dump badging "$unsigned")
 if [[ "$badging" != "package: name='ai.okou.android' versionCode='$version_code' versionName='$version' "* ]]; then
   echo 'Unsigned APK package/version does not match the Android release' >&2

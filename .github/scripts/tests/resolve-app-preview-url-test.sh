@@ -4,29 +4,23 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 script="${repo_root}/.github/scripts/resolve-app-preview-url.sh"
 
-test "$(bash "$script" pr-22085 vm0)" = \
-  "https://pr-22085-app-okou-app-preview.vm0.workers.dev"
-test "$(bash "$script" staging vm0-preview)" = \
-  "https://staging-app-okou-app-preview.vm0-preview.workers.dev"
+test "$(bash "$script" pr-47172 omby.ai)" = \
+  "https://pr-47172-app.omby.ai"
+test "$(bash "$script" staging omby.ai)" = \
+  "https://staging-app.omby.ai"
 
-if bash "$script" pr-22085 '' >/dev/null 2>&1; then
-  echo "expected a missing Cloudflare Workers subdomain to be rejected" >&2
-  exit 1
-fi
+for job_ref in '' production pr-0 pr-1-app 'pr-1/../../'; do
+  if bash "$script" "$job_ref" omby.ai >/dev/null 2>&1; then
+    echo "expected an unsupported job ref to be rejected: $job_ref" >&2
+    exit 1
+  fi
+done
 
-if bash "$script" production vm0 >/dev/null 2>&1; then
-  echo "expected an unsupported job ref to be rejected" >&2
-  exit 1
-fi
-
-if bash "$script" '' vm0 >/dev/null 2>&1; then
-  echo "expected a missing job ref to be rejected" >&2
-  exit 1
-fi
-
-if bash "$script" pr-22085 'evil.example' >/dev/null 2>&1; then
-  echo "expected an invalid Cloudflare Workers subdomain to be rejected" >&2
-  exit 1
-fi
+for domain in '' vm0 workers.dev omby.ai.evil.example 'omby.ai:443'; do
+  if bash "$script" pr-47172 "$domain" >/dev/null 2>&1; then
+    echo "expected an unsupported public preview domain to be rejected: $domain" >&2
+    exit 1
+  fi
+done
 
 echo "resolve-app-preview-url tests passed"

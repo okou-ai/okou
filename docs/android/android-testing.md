@@ -58,6 +58,25 @@ Keep formatter/lint evidence separate from behavior checks. Do not weaken a
 valid assertion, hide diagnostics or manufacture new production abstractions
 just to preserve tests for an obsolete API.
 
+## Saved-State Boundaries
+
+Exercise the actual Activity save path. Debug saves use the shared
+`SavedStatePolicy` budget after Jetpack provider collection, so long-editor and
+navigation/recreation tests exercise the same check. Do not add independent
+per-feature byte thresholds or treat a supported Saver type as proof of size.
+
+Use a real registered saved-state provider to establish that oversized nested
+Jetpack payloads reach the checker, and verify a small provider restores normally.
+Cover the minimum supported API as well as the standard API 35 host cohort when
+changing callback ordering; a post-save callback available only on API 29 cannot
+establish behavior on API 24-28. Keep host and device evidence distinct.
+
+Exercise bounded presentation retention through observable scroll/expansion
+state and restore recent entries. `StateRestorationTester` is appropriate for
+the native UI adapter; it does not establish disk durability or OS process death.
+Journal hydration must not consume restored selection against an empty body.
+Keep diagnostics to sizes and approved structural metadata, never saved content.
+
 ## First Display With Pending API Requests
 
 For new startup API consumers, verify the

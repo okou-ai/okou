@@ -107,10 +107,6 @@ fn source_home_hint_remains_independent_of_advertisement_filtering() {
         Some("thread:peer".into()),
         "vm0/default".into(),
     );
-    assert!(
-        snapshot
-            .current_held_home_states(&active_runs, None)
-            .is_empty()
-    );
+    assert!(snapshot.current_held_home_states(&active_runs).is_empty());
     assert!(snapshot.has_source_home_hint("thread:peer", "vm0/default", source));
 }

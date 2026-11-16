@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.109.85](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.84...guest-agent-v0.109.85) (2026-11-16)
+
+
+### Refactoring
+
+* **guest-agent:** retain steered worker joins during finalization ([#47536](https://github.com/okou-ai/okou/issues/47536)) ([cbcc675](https://github.com/okou-ai/okou/commit/cbcc675a8f9a35cba5a04c1890c08469877a40a1))
+
+## [0.109.84](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.83...guest-agent-v0.109.84) (2026-11-15)
+
+## [0.109.83](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.82...guest-agent-v0.109.83) (2026-11-14)
+
+
+### Refactoring
+
+* **guest-agent:** derive termination reasons from control failures ([#47259](https://github.com/okou-ai/okou/issues/47259)) ([fb752b2](https://github.com/okou-ai/okou/commit/fb752b2083439127da7928b1f8726b43022a3f93))
+
+## [0.109.82](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.81...guest-agent-v0.109.82) (2026-11-14)
+
 ## [0.109.81](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.80...guest-agent-v0.109.81) (2026-11-14)
 
 ## [0.109.80](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.79...guest-agent-v0.109.80) (2026-11-14)

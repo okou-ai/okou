@@ -4,6 +4,7 @@ import { orgContract } from "../contracts/org-routes";
 import { userPreferencesContract } from "../contracts/user-preferences";
 import { apiErrorSchema } from "../contracts/api-error";
 import { androidUpgradeRequiredSchema } from "../contracts/android-client-compatibility";
+import { androidUpdatesContract } from "../contracts/android-updates";
 import {
   chatThreadsContract,
   chatThreadSnapshotArchiveSchema,
@@ -16,8 +17,14 @@ import { agentsMainContract } from "../contracts/agents";
 import { projectsContract } from "../contracts/projects";
 import { projectSnapshotArchiveSchema } from "../validators/projects";
 import { featureSwitchesContract } from "../contracts/feature-switches";
+import { instructionsContract } from "../contracts/instructions";
+import { chatEventsContract } from "../contracts/chat-event-send";
+import { chatInputStatusContract } from "../contracts/chat-input-status";
+import { onboardingStatusContract } from "../contracts/onboarding";
+import { platformRealtimeTokenContract } from "../contracts/realtime";
 
 export interface KotlinRouteBinding {
+  readonly authenticated?: boolean;
   readonly name: string;
   readonly response: string;
   readonly request?: string;
@@ -90,7 +97,52 @@ const historyReadBindings: readonly KotlinRouteBinding[] = [
 
 /** Only routes used by the installed native client, not every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
+  {
+    name: "androidUpdates",
+    response: "AndroidUpdates",
+    authenticated: false,
+    route: androidUpdatesContract.get,
+  },
+  {
+    name: "createThread",
+    request: "CreateThreadRequest",
+    response: "CreatedThread",
+    route: chatThreadsContract.create,
+  },
+  {
+    name: "sendInput",
+    request: "SendRequest",
+    response: "AcceptedInput",
+    route: chatEventsContract.send,
+  },
+  {
+    name: "inputStatus",
+    response: "InputStatus",
+    route: chatInputStatusContract.get,
+  },
+  {
+    name: "onboardingStatus",
+    response: "OnboardingStatus",
+    route: onboardingStatusContract.getStatus,
+  },
+  {
+    name: "personalInstructions",
+    response: "PersonalInstructions",
+    route: instructionsContract.get,
+  },
+  {
+    name: "updatePersonalInstructions",
+    response: "PersonalInstructions",
+    request: "UpdateInstructionsRequest",
+    route: instructionsContract.update,
+  },
   { name: "organization", response: "Organization", route: orgContract.get },
+  {
+    name: "realtimeToken",
+    response: "RealtimeToken",
+    request: "RealtimeTokenRequest",
+    route: platformRealtimeTokenContract.create,
+  },
   {
     name: "preferences",
     response: "UserPreferences",
@@ -119,6 +171,61 @@ export interface KotlinTypeBinding {
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
+  {
+    name: "RealtimeTokenRequest",
+    schema: platformRealtimeTokenContract.create.body,
+    direction: "input",
+  },
+  {
+    name: "RealtimeToken",
+    schema: platformRealtimeTokenContract.create.responses[200],
+    direction: "output",
+  },
+  {
+    name: "AndroidUpdates",
+    schema: androidUpdatesContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "CreateThreadRequest",
+    schema: chatThreadsContract.create.body,
+    direction: "input",
+  },
+  {
+    name: "CreatedThread",
+    schema: chatThreadsContract.create.responses[201],
+    direction: "output",
+  },
+  {
+    name: "SendRequest",
+    schema: chatEventsContract.send.body,
+    direction: "input",
+  },
+  {
+    name: "AcceptedInput",
+    schema: chatEventsContract.send.responses[201],
+    direction: "output",
+  },
+  {
+    name: "InputStatus",
+    schema: chatInputStatusContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "OnboardingStatus",
+    schema: onboardingStatusContract.getStatus.responses[200],
+    direction: "output",
+  },
+  {
+    name: "PersonalInstructions",
+    schema: instructionsContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "UpdateInstructionsRequest",
+    schema: instructionsContract.update.body,
+    direction: "input",
+  },
   {
     name: "Organization",
     schema: orgContract.get.responses[200],

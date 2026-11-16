@@ -19,7 +19,10 @@ pub(in super::super) fn push_job(
     env.provider.set_claim_result(run_id, ctx);
     env.handle
         .discover_tx
-        .send(JobCandidate::new(run_id, profile.into()).with_reuse_key(reuse_key))
+        .send(
+            JobCandidate::new(run_id, profile.into(), format!("{run_id}.job").into())
+                .with_reuse_key(reuse_key),
+        )
         .unwrap();
 }
 

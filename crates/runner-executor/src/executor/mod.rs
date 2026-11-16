@@ -1,6 +1,6 @@
 //! In-process job execution for the runner.
 //!
-//! `cmd/start/job_spawn.rs::spawn_job` calls this module after a provider claim and
+//! Runner Supervisor calls this module with accepted execution input and a
 //! budget reservation. The executor owns the sandbox-side run flow, while the
 //! caller owns provider completion and the final sandbox lifecycle decision.
 //!
@@ -724,7 +724,7 @@ fn initialize_execution_telemetry(
         config.runner_hostname.clone(),
     );
     telemetry.set_first_run(context.is_first_run);
-    spawn_timing.record_claim_to_executor_start(&mut telemetry);
+    spawn_timing.record_acceptance_to_executor_start(&mut telemetry);
     record_api_latency("api_to_sandbox_start", context, &mut telemetry);
 
     (spawn_timing, telemetry)
@@ -744,7 +744,6 @@ fn prepare_execution_context(
     Ok(payload)
 }
 
-/// uploads (~383 ms saved per job).
 #[cfg(test)]
 pub async fn execute_job(
     factory: &dyn SandboxFactory,
@@ -824,7 +823,7 @@ pub async fn execute_job_with_prepared_notifier(
 ///
 /// Skips create + start. Re-registers proxy, fixes clock, then runs the agent.
 /// Returns [`ExecuteOutcome`] with the sandbox still alive plus the pending
-/// [`JobTelemetry`] buffer — the caller (`spawn_job` in `cmd/start/job_spawn.rs`)
+/// [`JobTelemetry`] buffer — the caller (`spawn_job` in Runner Supervisor)
 /// must flush telemetry after firing `provider.complete`, matching the fresh
 /// sandbox path's completion ordering.
 #[cfg(test)]
@@ -912,11 +911,11 @@ pub async fn execute_job_reuse_with_hooks(
     let kind = identity.kind();
     let idle_reuse_key = identity.reuse_key();
     let resume_session_error = validate_resume_session_id(&context).err();
-    let claimed_reuse_key = context.reuse_key();
+    let execution_reuse_key = context.reuse_key();
     let expected_promotion_reuse_key = if resume_session_error.is_some() {
         idle_reuse_key
     } else {
-        idle_reuse_key.map(|exact_key| claimed_reuse_key.unwrap_or(exact_key))
+        idle_reuse_key.map(|exact_key| execution_reuse_key.unwrap_or(exact_key))
     };
     let home_image = match resolve_reused_home_promotion(
         config.home_cache.as_ref(),
@@ -965,7 +964,7 @@ pub async fn execute_job_reuse_with_hooks(
                             sandbox_id,
                             profile_name: &params.profile_name,
                             rootfs_hash: &params.rootfs_hash,
-                            reuse_key: claimed_reuse_key,
+                            reuse_key: execution_reuse_key,
                             working_dir: CANONICAL_WORKING_DIR,
                             image_size_bytes: u64::from(params.home_disk_mb) * 1024 * 1024,
                         },

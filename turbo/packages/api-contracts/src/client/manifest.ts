@@ -27,6 +27,10 @@ export const clientDescriptorManifest = [
     ],
   },
   {
+    module: "android-updates",
+    contracts: ["androidUpdatesContract"],
+  },
+  {
     module: "artifact-catalog",
     contracts: ["artifactCatalogContract"],
   },
@@ -571,6 +575,10 @@ export const clientDescriptorManifest = [
       "personalModelProvidersMainContract",
       "personalSubscriptionsContract",
     ],
+  },
+  {
+    module: "phone-use",
+    contracts: ["phoneUseContract"],
   },
   {
     module: "presentation-templates",

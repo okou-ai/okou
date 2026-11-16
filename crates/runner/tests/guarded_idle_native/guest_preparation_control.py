@@ -32,12 +32,10 @@ class Preparation(Controller):
     """Own a direct helper child; the enclosing accepted exec owns this process."""
 
     def __init__(self, parent):
-        # The regular-file base initializer would arm the wrong kind of gate.
-        # Initialize its complete ownership state with the directory original.
-        self.original = self.executable = self.gate = None
-        self.event = self.child = None
+        super().__init__()
+        self.child = None
         self.stdout = self.stderr = None
-        self.observed = self.decided = self.joined = False
+        self.joined = False
         self.retirement = None
         self.parent = Path(parent)
         self.request = json.dumps({"currentRuntimeDir": str(self.parent / "current"),

@@ -648,19 +648,16 @@ describe("AUTH-01 sandbox and agent bearers", () => {
         model: "claude-fable-5-1",
       });
       activeCarrier.runId = run.runId;
-      const { claim } = await fixture.claimChatRun(
-        owned.runnerGroup,
-        run.runId,
-      );
-      activeCarrier.sandboxToken = claim.sandboxToken;
+      const { execution } = await fixture.runExecution(run.runId);
+      activeCarrier.sandboxToken = execution.sandboxToken;
       cfg.mockSession(null);
       cfg.mockClerkUsers([owned.actor]);
       cfg.mockMembership(owned.actor, "org:admin");
-      const agentToken = claim.platformEnvironment?.OKOU_TOKEN;
+      const agentToken = execution.platformEnvironment?.OKOU_TOKEN;
       if (!agentToken) {
-        throw new Error("Expected the actual claim's Okou token");
+        throw new Error("Expected the actual execution's Okou token");
       }
-      for (const token of [claim.sandboxToken, agentToken]) {
+      for (const token of [execution.sandboxToken, agentToken]) {
         const identity = await cfg.requestMe(
           { authorization: `Bearer ${token}` },
           [200],
@@ -680,16 +677,16 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     });
   });
 
-  it("updates user connectors with a claimed agent token and rejects push registration", async () => {
+  it("updates user connectors with an execution agent token and rejects push registration", async () => {
     const owned = await publicChatActor(context);
     const run = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
       prompt: "configure connectors with the issued agent credential",
     });
-    const { claim } = await owned.claimChatRun(owned.runnerGroup, run.runId);
-    const token = claim.platformEnvironment?.OKOU_TOKEN;
+    const { execution } = await owned.runExecution(run.runId);
+    const token = execution.platformEnvironment?.OKOU_TOKEN;
     if (!token) {
-      throw new Error("Expected the claim's Okou token");
+      throw new Error("Expected the execution's Okou token");
     }
     await owned.run(async () => {
       cfg.mockMembership(owned.actor, "org:admin");
@@ -720,16 +717,16 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     });
   });
 
-  it("drops the organization from claimed agent identity after public member removal", async () => {
+  it("drops the organization from execution agent identity after public member removal", async () => {
     const owned = await publicChatActor(context);
     const run = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
       prompt: "read identity after organization membership removal",
     });
-    const { claim } = await owned.claimChatRun(owned.runnerGroup, run.runId);
-    const token = claim.platformEnvironment?.OKOU_TOKEN;
+    const { execution } = await owned.runExecution(run.runId);
+    const token = execution.platformEnvironment?.OKOU_TOKEN;
     if (!token) {
-      throw new Error("Expected the claim's Okou token");
+      throw new Error("Expected the execution's Okou token");
     }
     await owned.run(async () => {
       const admin = api.user({ orgId: owned.actor.orgId });

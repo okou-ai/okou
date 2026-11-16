@@ -88,6 +88,21 @@ if run_lint; then
 fi
 grep -F 'okou_discarded_throwing_task' "$test_root/lint.log" >/dev/null
 rm "$fixture/Okou/DiscardedTask.swift"
+cat > "$fixture/Okou/GraphFactory.swift" <<'SWIFT'
+import CCState
+func makeRead(_ value: Int) -> Computed<Int> { Computed { _ in value } }
+let action = Command<Void, Void> { _ in let _ = makeRead(1) }
+final class Owner {
+  var read: Computed<Int> { Computed { _ in 1 } }
+}
+SWIFT
+if run_lint; then
+  echo 'Repeated graph factory calls and getter construction passed the configured lint entry point.' >&2
+  exit 1
+fi
+grep -F 'GraphFactory.swift' "$test_root/lint.log" >/dev/null
+grep -F 'okou_stable_graph' "$test_root/lint.log" >/dev/null
+rm "$fixture/Okou/GraphFactory.swift"
 cat > "$fixture/Okou/CollectionWrite.swift" <<'SWIFT'
 import CCState
 final class Owner {
@@ -106,6 +121,27 @@ if run_lint; then
 fi
 grep -F 'okou_check_after_await' "$test_root/lint.log" >/dev/null
 rm "$fixture/Okou/CollectionWrite.swift"
+cat > "$fixture/Okou/ResourceCancellation.swift" <<'SWIFT'
+import CCState
+let read = computedTask { get, options in
+  do { return try await service.load() }
+  catch {
+    let cause = error
+    let cancelled = cause is CancellationError
+    switch cancelled {
+    case true: return []
+    case false: throw error
+    }
+  }
+}
+SWIFT
+if run_lint; then
+  echo 'An aliased cancellation switch passed the configured lint entry point.' >&2
+  exit 1
+fi
+grep -F 'ResourceCancellation.swift' "$test_root/lint.log" >/dev/null
+grep -F 'okou_resource_failures' "$test_root/lint.log" >/dev/null
+rm "$fixture/Okou/ResourceCancellation.swift"
 for path in "${test_paths[@]}"; do
   printf 'var fixtureState = 0\n' >> "$fixture/$path/Fixture.swift"
 done

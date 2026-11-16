@@ -33,6 +33,19 @@ describe("selected Kotlin wire generation", () => {
     }).toThrow(/unsupported.*union/u);
   });
 
+  it("represents the consumed empty token body as a serializable singleton", () => {
+    const files = renderKotlinFiles();
+    expect(files.get("ApiModels.kt")).toContain(
+      "@Serializable\ndata object RealtimeTokenRequest",
+    );
+    expect(files.get("CanonicalApi.kt")).toContain(
+      '@POST("/api/realtime/token")',
+    );
+    expect(files.get("CanonicalApi.kt")).toContain(
+      "@Body body: RealtimeTokenRequest",
+    );
+  });
+
   it("binds the selected bootstrap methods to generated DTOs", () => {
     const files = renderKotlinFiles();
     expect(files.get("CanonicalApi.kt")).toContain('@GET("/api/org")');
@@ -45,6 +58,9 @@ describe("selected Kotlin wire generation", () => {
     expect(files.get("ApiHeaders.kt")).toContain('CLIENT_TYPE = "Android"');
     expect(files.get("ApiModels.kt")).toContain(
       'SerialName("ANDROID_UPDATE_REQUIRED")',
+    );
+    expect(files.get("CanonicalApi.kt")).toContain(
+      "suspend fun `androidUpdates`(): Response<AndroidUpdates>",
     );
   });
 });

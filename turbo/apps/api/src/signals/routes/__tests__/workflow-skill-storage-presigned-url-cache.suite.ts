@@ -93,18 +93,15 @@ describe("workflow skill storage presigned URL cache", () => {
       throw new Error("Expected a Workflow");
     }
     mockUniquePresignedUrls();
-    const claimWorkflow = async () => {
+    const readWorkflowExecution = async () => {
       await createRunsApi(context).registerDirectRunner(runnerGroup);
       const run = await chats.sendChatRun(actor, {
         agentId,
         prompt: "Read the immutable Workflow attachment",
       });
-      const { claim, sandboxHeaders } = await chats.claimChatRun(
-        runnerGroup,
-        run.runId,
-      );
+      const { execution, sandboxHeaders } = await chats.runExecution(run.runId);
       await chats.cancelChatRun(actor, run.runId, sandboxHeaders);
-      return claim.contentBundles;
+      return execution.contentBundles;
     };
     return {
       actor,
@@ -113,7 +110,7 @@ describe("workflow skill storage presigned URL cache", () => {
       workflow: workflow.body,
       misc,
       chats,
-      claimWorkflow,
+      readWorkflowExecution,
     };
   }
 
@@ -148,14 +145,14 @@ describe("workflow skill storage presigned URL cache", () => {
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
     const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(custom.slug, custom.id)}`;
     mockUniquePresignedUrls();
-    const createAndClaim = async (prompt: string) => {
+    const createExecution = async (prompt: string) => {
       const run = await api.createThreadRun(actor, {
         agentId,
         prompt,
       });
       await api.heartbeatRunner(runnerGroup);
-      const claim = await api.executionInput(run.runId);
-      const mount = claim.contentBundles.skills.find((entry) => {
+      const execution = await api.executionInput(run.runId);
+      const mount = execution.contentBundles.skills.find((entry) => {
         return entry.mountPath === mountPath;
       });
       if (!mount?.downloadUrl) {
@@ -164,7 +161,7 @@ describe("workflow skill storage presigned URL cache", () => {
       expect(mount.mountPath).toBe(
         `/home/user/.claude/skills/custom-${custom.slug.slice(1, 49)}-${custom.id.replaceAll("-", "").slice(0, 8)}`,
       );
-      expect(claim.connectorRuntimeTargets).not.toContainEqual(
+      expect(execution.connectorRuntimeTargets).not.toContainEqual(
         expect.objectContaining({
           kind: "custom",
           customConnectorId: custom.id,
@@ -173,21 +170,21 @@ describe("workflow skill storage presigned URL cache", () => {
       return { runId: run.runId, archiveUrl: mount.downloadUrl };
     };
 
-    const first = await createAndClaim("request the readonly skill archive");
+    const first = await createExecution("request the readonly skill archive");
     expect(new URL(first.archiveUrl).searchParams.get("X-Amz-Expires")).toBe(
       "172800",
     );
     await flushWaitUntilForTest();
     await api.requestCancelRun(actor, first.runId, [200]);
-    const second = await createAndClaim("reuse the readonly skill archive");
+    const second = await createExecution("reuse the readonly skill archive");
     expect(second.archiveUrl).toBe(first.archiveUrl);
     await api.requestCancelRun(actor, second.runId, [200]);
   });
 
   it("reuses complete Content Bundle URLs across claims with unchanged mounts", async () => {
-    const { claimWorkflow } = await workflowCacheFixture();
-    const first = await claimWorkflow();
-    const second = await claimWorkflow();
+    const { readWorkflowExecution } = await workflowCacheFixture();
+    const first = await readWorkflowExecution();
+    const second = await readWorkflowExecution();
     expect(second).toStrictEqual(first);
     expect(first.skills).toHaveLength(4);
     expect(first.instructions).toBeDefined();
@@ -206,12 +203,12 @@ describe("workflow skill storage presigned URL cache", () => {
     async (hours) => {
       const startedAt = Math.floor(now() / 1000) * 1000;
       mockNow(startedAt);
-      const { claimWorkflow } = await workflowCacheFixture();
-      const first = await claimWorkflow();
+      const { readWorkflowExecution } = await workflowCacheFixture();
+      const first = await readWorkflowExecution();
       mockNow(startedAt + 43 * 60 * 60 * 1000);
-      await expect(claimWorkflow()).resolves.toStrictEqual(first);
+      await expect(readWorkflowExecution()).resolves.toStrictEqual(first);
       mockNow(startedAt + hours * 60 * 60 * 1000 + 1000);
-      const fresh = await claimWorkflow();
+      const fresh = await readWorkflowExecution();
       expect(
         fresh.skills.map((bundle) => {
           return bundle.sha256;
@@ -231,37 +228,32 @@ describe("workflow skill storage presigned URL cache", () => {
   );
 
   it("uses the replacement signer's credentials and endpoint instead of cached old URLs", async () => {
-    const { claimWorkflow } = await workflowCacheFixture();
-    const first = await claimWorkflow();
+    const { readWorkflowExecution } = await workflowCacheFixture();
+    const first = await readWorkflowExecution();
     // Model replacement API instances: configuration is fixed for a client lifetime.
     closeS3Clients();
     mockEnv("R2_SECRET_ACCESS_KEY", "rotated-content-bundle-secret");
-    const rotatedCredentials = await claimWorkflow();
+    const rotatedCredentials = await readWorkflowExecution();
     expect(rotatedCredentials.skills[0]?.sha256).toBe(first.skills[0]?.sha256);
     expect(rotatedCredentials.skills[0]?.downloadUrl).not.toBe(
       first.skills[0]?.downloadUrl,
     );
     closeS3Clients();
     mockEnv("S3_ENDPOINT", "https://replacement-r2.example.com");
-    const rotatedEndpoint = await claimWorkflow();
+    const rotatedEndpoint = await readWorkflowExecution();
     expect(rotatedEndpoint.skills[0]?.sha256).toBe(first.skills[0]?.sha256);
     expect(rotatedEndpoint.skills[0]?.downloadUrl).not.toBe(
       rotatedCredentials.skills[0]?.downloadUrl,
     );
-    await expect(claimWorkflow()).resolves.toStrictEqual(rotatedEndpoint);
+    await expect(readWorkflowExecution()).resolves.toStrictEqual(
+      rotatedEndpoint,
+    );
   });
 
   it("pins dispatched Workflow URLs and selects later edits for the following Run", async () => {
-    const {
-      actor,
-      agentId,
-      runnerGroup,
-      workflow,
-      misc,
-      chats,
-      claimWorkflow,
-    } = await workflowCacheFixture();
-    const cached = await claimWorkflow();
+    const { actor, agentId, workflow, misc, chats, readWorkflowExecution } =
+      await workflowCacheFixture();
+    const cached = await readWorkflowExecution();
     const queued = await chats.sendChatRun(actor, {
       agentId,
       prompt: "use the latest Workflow",
@@ -272,30 +264,30 @@ describe("workflow skill storage presigned URL cache", () => {
       "# Updated Workflow package",
       [200],
     );
-    const { claim, sandboxHeaders } = await chats.claimChatRun(
-      runnerGroup,
+    const { execution, sandboxHeaders } = await chats.runExecution(
       queued.runId,
     );
-    expect(claim.contentBundles.skills[0]?.mountPath).toBe(
+    expect(execution.contentBundles.skills[0]?.mountPath).toBe(
       cached.skills[0]?.mountPath,
     );
-    expect(claim.contentBundles.skills[0]?.sha256).toBe(
+    expect(execution.contentBundles.skills[0]?.sha256).toBe(
       cached.skills[0]?.sha256,
     );
-    expect(claim.contentBundles.skills[0]?.downloadUrl).toBe(
+    expect(execution.contentBundles.skills[0]?.downloadUrl).toBe(
       cached.skills[0]?.downloadUrl,
     );
     await chats.cancelChatRun(actor, queued.runId, sandboxHeaders);
-    const updated = await claimWorkflow();
+    const updated = await readWorkflowExecution();
     expect(updated.skills[0]?.sha256).not.toBe(cached.skills[0]?.sha256);
     expect(updated.skills[0]?.downloadUrl).not.toBe(
       cached.skills[0]?.downloadUrl,
     );
-    await expect(claimWorkflow()).resolves.toStrictEqual(updated);
+    await expect(readWorkflowExecution()).resolves.toStrictEqual(updated);
   });
 
   it("settles a preparation signing failure and caches URLs for a later fresh Run", async () => {
-    const { actor, agentId, claimWorkflow } = await workflowCacheFixture();
+    const { actor, agentId, readWorkflowExecution } =
+      await workflowCacheFixture();
     const api = createRunsApi(context);
     context.mocks.s3.getSignedUrl.mockRejectedValueOnce(
       new Error("Fixture signer unavailable"),
@@ -328,12 +320,12 @@ describe("workflow skill storage presigned URL cache", () => {
       status: "failed",
     });
     expect((await api.readRunQueue(actor)).body.concurrency.active).toBe(0);
-    const successful = await claimWorkflow();
-    await expect(claimWorkflow()).resolves.toStrictEqual(successful);
+    const successful = await readWorkflowExecution();
+    await expect(readWorkflowExecution()).resolves.toStrictEqual(successful);
   });
 
   it("retains the newer URL when an older cold signer publishes last", async () => {
-    const { actor, agentId, chats, claimWorkflow } =
+    const { actor, agentId, chats, readWorkflowExecution } =
       await workflowCacheFixture();
     const api = createRunsApi(context);
     const startedAt = Math.floor(now() / 1000) * 1000;
@@ -348,7 +340,7 @@ describe("workflow skill storage presigned URL cache", () => {
       await release.promise;
       return await sign(...args);
     });
-    const oldClaim = withMockNowForTest(startedAt, () => {
+    const oldExecution = withMockNowForTest(startedAt, () => {
       return api.createThreadRun(actor, {
         agentId,
         prompt: "Older cache publisher",
@@ -358,12 +350,15 @@ describe("workflow skill storage presigned URL cache", () => {
       if (!release.settled()) {
         release.resolve();
       }
-      await oldClaim;
+      await oldExecution;
     });
     await started.promise;
-    const newer = await withMockNowForTest(startedAt + 1000, claimWorkflow);
+    const newer = await withMockNowForTest(
+      startedAt + 1000,
+      readWorkflowExecution,
+    );
     release.resolve();
-    const oldRun = await oldClaim;
+    const oldRun = await oldExecution;
     const older = await api.executionInput(oldRun.runId);
     await chats.cancelChatRun(actor, oldRun.runId, {
       authorization: `Bearer ${older.sandboxToken}`,
@@ -371,7 +366,10 @@ describe("workflow skill storage presigned URL cache", () => {
     expect(older.contentBundles.instructions?.downloadUrl).not.toBe(
       newer.instructions?.downloadUrl,
     );
-    const reused = await withMockNowForTest(startedAt + 2000, claimWorkflow);
+    const reused = await withMockNowForTest(
+      startedAt + 2000,
+      readWorkflowExecution,
+    );
     expect(reused.instructions?.downloadUrl).toBe(
       newer.instructions?.downloadUrl,
     );

@@ -24,6 +24,8 @@
 1 publish-okou-app-assets-test.sh
 1 reconcile-and-start-runner-groups-test.sh
 1 resolve-app-preview-url-test.sh
+1 resolve-app-worker-preview-url-test.sh
+1 verify-app-preview-ingress-test.sh
 1 runner-api-curl-test.sh
 1 crates/runner/tests/behavior/tests/runner-behavior-durable-test.sh
 1 crates/runner/tests/behavior/tests/runner-behavior-keep-alive-preflight-test.sh

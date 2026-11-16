@@ -99,18 +99,18 @@ function ExploreCapabilityCard({
   readonly kind: HomeExploreKind;
 }) {
   const { t } = useTranslation();
-  const copy = t(
-    ($) => {
-      return $.chat.capabilityHome;
-    },
-    { returnObjects: true },
-  );
+  const title = t(($) => {
+    return $.chat.capabilityHome[kind].title;
+  });
+  const description = t(($) => {
+    return $.chat.capabilityHome[kind].description;
+  });
   const swap = useHomeSwap(signals);
   const art = kind === "search" ? "people" : "research";
   return (
     <section
       className={cn(CAPABILITY_CARD, "min-h-42 @2xl:col-span-9")}
-      aria-label={copy[kind].title}
+      aria-label={title}
     >
       <CapabilityGround card={art} />
       <CapabilityStage
@@ -120,8 +120,8 @@ function ExploreCapabilityCard({
         <CapabilityObjects art={art} />
       </CapabilityStage>
       <CapabilityCopy
-        title={copy[kind].title}
-        description={copy[kind].description}
+        title={title}
+        description={description}
         className="max-w-36"
       />
       <div className="relative z-[2] mt-auto flex pt-4">
@@ -133,7 +133,9 @@ function ExploreCapabilityCard({
             swap({ kind: "explore", explore: kind });
           }}
         >
-          {copy.explore}
+          {t(($) => {
+            return $.chat.capabilityHome.explore;
+          })}
         </Button>
       </div>
     </section>
@@ -174,12 +176,9 @@ function CapabilityCards({
   readonly entrance: boolean;
 }) {
   const { t } = useTranslation();
-  const copy = t(
-    ($) => {
-      return $.chat.capabilityHome;
-    },
-    { returnObjects: true },
-  );
+  const createTitle = t(($) => {
+    return $.chat.capabilityHome.create.title;
+  });
   const tasks = t(
     ($) => {
       return $.chat.taskChips.tasks;
@@ -199,13 +198,15 @@ function CapabilityCards({
           "[&>*]:motion-safe:animate-capability-row-in [&>*:nth-child(-n+2)]:[--capability-row-delay:140ms] [&>*:nth-child(n+3)]:[--capability-row-delay:210ms]",
       )}
       role="group"
-      aria-label={copy.capabilities}
+      aria-label={t(($) => {
+        return $.chat.capabilityHome.capabilities;
+      })}
     >
       <ExploreCapabilityCard signals={signals} kind="search" />
       <ExploreCapabilityCard signals={signals} kind="research" />
       <section
         className={cn(CAPABILITY_CARD, "min-h-46 @2xl:col-span-10")}
-        aria-label={copy.create.title}
+        aria-label={createTitle}
       >
         <CapabilityGround card="create" />
         <CapabilityStage card="create">
@@ -216,8 +217,10 @@ function CapabilityCards({
           })}
         </CapabilityStage>
         <CapabilityCopy
-          title={copy.create.title}
-          description={copy.create.description}
+          title={createTitle}
+          description={t(($) => {
+            return $.chat.capabilityHome.create.description;
+          })}
           className="max-w-70"
         />
         <div className="relative z-[2] mt-auto flex flex-wrap gap-1.5 pt-4">
@@ -238,7 +241,11 @@ function CapabilityCards({
             return task === "document" ? (
               <Tooltip key={task}>
                 <TooltipTrigger render={button} />
-                <TooltipContent>{copy.create.documentFormats}</TooltipContent>
+                <TooltipContent>
+                  {t(($) => {
+                    return $.chat.capabilityHome.create.documentFormats;
+                  })}
+                </TooltipContent>
               </Tooltip>
             ) : (
               button
@@ -260,7 +267,9 @@ function CapabilityCards({
         </CapabilityStage>
         <CapabilityCopy
           title={tasks.workflow}
-          description={copy.workflow.summary}
+          description={t(($) => {
+            return $.chat.capabilityHome.workflow.summary;
+          })}
           className="max-w-33"
         />
         <div className="relative z-[2] mt-auto flex flex-wrap gap-1.5 pt-4">
@@ -271,12 +280,16 @@ function CapabilityCards({
                 variant="neutral"
                 size="sm"
                 data-art={art}
-                aria-label={copy.workflow[kind].title}
+                aria-label={t(($) => {
+                  return $.chat.capabilityHome.workflow[kind].title;
+                })}
                 onClick={() => {
                   swap({ kind: "workflow", workflow: kind });
                 }}
               >
-                {copy.workflow[kind].shortTitle}
+                {t(($) => {
+                  return $.chat.capabilityHome.workflow[kind].shortTitle;
+                })}
               </Button>
             );
           })}

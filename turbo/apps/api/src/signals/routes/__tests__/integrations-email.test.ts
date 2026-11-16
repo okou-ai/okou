@@ -75,7 +75,7 @@ function emailSessionClient() {
   );
 }
 
-async function claimEmailFileRun(additionalEmail?: string) {
+async function startEmailFileExecution(additionalEmail?: string) {
   const { actor, group } = await entitledActor();
   if (additionalEmail) {
     const code = await connectionCode();
@@ -87,13 +87,13 @@ async function claimEmailFileRun(additionalEmail?: string) {
   });
   await message.send();
   await runs.heartbeatRunner(group);
-  const claim = await runs.nextReceivedExecution(group);
-  const runId = claim.runId;
-  const token = claim.platformEnvironment.OKOU_TOKEN;
+  const execution = await runs.nextReceivedExecution(group);
+  const runId = execution.runId;
+  const token = execution.platformEnvironment.OKOU_TOKEN;
   if (!token) {
     throw new Error("Expected the run token");
   }
-  return { actor, claim, token, message, group, runId };
+  return { actor, execution, token, message, group, runId };
 }
 
 async function prepareEmailFile(token: string) {
@@ -326,9 +326,11 @@ describe("email-native signup", () => {
     });
     expect(prompts).toHaveLength(1);
     await runs.heartbeatRunner(group);
-    const claim = await runs.nextReceivedExecution(group);
-    expect(claim.prompt).toContain("Please compare these options after signup");
-    expect(claim.prompt).not.toContain(pending.line);
+    const execution = await runs.nextReceivedExecution(group);
+    expect(execution.prompt).toContain(
+      "Please compare these options after signup",
+    );
+    expect(execution.prompt).not.toContain(pending.line);
     verifiedDirectory(actor);
     await expect(
       emailClient().getLinkStatus({ headers: authHeaders() }),
@@ -336,7 +338,7 @@ describe("email-native signup", () => {
       status: 200,
       body: { emails: [pending.sender] },
     });
-    const runId = claim.runId;
+    const runId = execution.runId;
     await webhooks.requestAgentEvents(
       {
         runId,
@@ -348,7 +350,7 @@ describe("email-native signup", () => {
           },
         ],
       },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
     await webhooks.requestAgentComplete(
@@ -357,12 +359,12 @@ describe("email-native signup", () => {
         exitCode: 0,
         lastEventSequence: 0,
         completion: {
-          cliAgentType: claim.cliAgentType,
-          cliAgentSessionId: claim.piSessionId ?? `email-signup-${runId}`,
+          cliAgentType: execution.cliAgentType,
+          cliAgentSessionId: execution.piSessionId ?? `email-signup-${runId}`,
           cliAgentSessionHistoryDisposition: "native_only",
         },
       },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
@@ -784,7 +786,7 @@ async function setGmailContextReadPermission(action: "allow" | "deny") {
   );
 }
 
-async function claimPendingEmail(
+async function readPendingEmailExecution(
   group: Awaited<ReturnType<typeof runs.configureRunnerGroup>>,
 ) {
   await runs.heartbeatRunner(group);
@@ -1014,47 +1016,51 @@ describe("Email integration", () => {
       );
       await message.send();
       await runs.heartbeatRunner(group);
-      const claim = await runs.nextReceivedExecution(group);
-      const runId = claim.runId;
-      expect(claim.prompt).toContain("Original message content");
-      expect(claim.prompt).not.toContain(sourceBody);
-      expect(claim.prompt).not.toContain("# Email Thread Context");
-      expect(claim.appendSystemPrompt).toContain(sourceBody);
-      expect(claim.appendSystemPrompt).toContain(historyBody);
-      expect(claim.appendSystemPrompt).toContain("- LOOKUP_STATUS: found");
-      expect(claim.appendSystemPrompt).toContain("- HISTORY_STATUS: found");
-      expect(claim.appendSystemPrompt).toContain("- HISTORY_TRUNCATED: false");
-      expect(claim.appendSystemPrompt).toContain(
+      const execution = await runs.nextReceivedExecution(group);
+      const runId = execution.runId;
+      expect(execution.prompt).toContain("Original message content");
+      expect(execution.prompt).not.toContain(sourceBody);
+      expect(execution.prompt).not.toContain("# Email Thread Context");
+      expect(execution.appendSystemPrompt).toContain(sourceBody);
+      expect(execution.appendSystemPrompt).toContain(historyBody);
+      expect(execution.appendSystemPrompt).toContain("- LOOKUP_STATUS: found");
+      expect(execution.appendSystemPrompt).toContain("- HISTORY_STATUS: found");
+      expect(execution.appendSystemPrompt).toContain(
+        "- HISTORY_TRUNCATED: false",
+      );
+      expect(execution.appendSystemPrompt).toContain(
         "# Email Thread Context\n\n" +
           "The messages below are from an Email conversation. When responding:\n" +
           "- Messages closer to RELATIVE_INDEX 0 are more recent — prioritize them.",
       );
-      expect(emailThreadMessages(claim.appendSystemPrompt)).toStrictEqual([
+      expect(emailThreadMessages(execution.appendSystemPrompt)).toStrictEqual([
         expect.stringContaining(historyBody),
       ]);
-      expect(emailThreadMessages(claim.appendSystemPrompt)[0]).toContain(
+      expect(emailThreadMessages(execution.appendSystemPrompt)[0]).toContain(
         "- RELATIVE_INDEX: -1\n- SENDER: {id: Reviewer <reviewer@example.com>}",
       );
-      expect(emailThreadMessages(claim.appendSystemPrompt)[0]).toContain(
+      expect(emailThreadMessages(execution.appendSystemPrompt)[0]).toContain(
         `- DATE: ${JSON.stringify(new Date(historyReceivedAt).toUTCString())}`,
       );
-      expect(claim.appendSystemPrompt).toContain(source.providerMessageId);
-      expect(claim.appendSystemPrompt).toContain(source.providerConversationId);
-      expect(claim.appendSystemPrompt).toMatch(
+      expect(execution.appendSystemPrompt).toContain(source.providerMessageId);
+      expect(execution.appendSystemPrompt).toContain(
+        source.providerConversationId,
+      );
+      expect(execution.appendSystemPrompt).toMatch(
         /# Integration Note[\s\S]*# Email Message Context[\s\S]*# Email Thread Context[\s\S]*# This Chat Thread[\s\S]*# Restricted Explicit Content/,
       );
 
-      expect(claim.appendSystemPrompt).toContain(
+      expect(execution.appendSystemPrompt).toContain(
         'Subject: "Fwd: Customer discussion"',
       );
-      expect(claim.appendSystemPrompt).toContain(
+      expect(execution.appendSystemPrompt).toContain(
         `In-Reply-To: ${JSON.stringify(parentId)}`,
       );
-      expect(claim.appendSystemPrompt).toContain(
+      expect(execution.appendSystemPrompt).toContain(
         `References: ${JSON.stringify([parentId])}`,
       );
       const prefix = "Connected mailbox for this Run: ";
-      const mailboxes = (claim.appendSystemPrompt ?? "")
+      const mailboxes = (execution.appendSystemPrompt ?? "")
         .split("\n")
         .filter((line) => {
           return line.startsWith(prefix);
@@ -1093,7 +1099,7 @@ describe("Email integration", () => {
         },
       ]);
       await followUp.send();
-      const next = await runs.nextSteerableInput(claim.sandboxToken, runId);
+      const next = await runs.nextSteerableInput(execution.sandboxToken, runId);
       expect(next.input?.prompt).toContain(
         "A follow-up while the Run is active",
       );
@@ -1110,7 +1116,7 @@ describe("Email integration", () => {
           throw new Error("Expected the active Email input");
         }
         await runs.declareSteeredInput(
-          claim.sandboxToken,
+          execution.sandboxToken,
           runId,
           next.input.eventId,
         );
@@ -1121,7 +1127,7 @@ describe("Email integration", () => {
           text: "A follow-up after mailbox reads were revoked",
         }).send();
         const revoked = await runs.nextSteerableInput(
-          claim.sandboxToken,
+          execution.sandboxToken,
           runId,
         );
         expect(revoked.input?.prompt).toContain(
@@ -1198,8 +1204,8 @@ describe("Email integration", () => {
         },
       ]);
       await message.send();
-      const claim = await claimPendingEmail(group);
-      const history = emailThreadMessages(claim.appendSystemPrompt);
+      const receivedExecution = await readPendingEmailExecution(group);
+      const history = emailThreadMessages(receivedExecution.appendSystemPrompt);
       expect(history).toHaveLength(3);
       expect(history[0]).toContain("- RELATIVE_INDEX: -3");
       expect(history[0]).toContain(
@@ -1221,15 +1227,27 @@ describe("Email integration", () => {
       );
       expect(history[2]).toContain(newer.body);
       expect(history[2]).toContain("- BODY_ALREADY_INCLUDED: false");
-      expect(claim.appendSystemPrompt).toContain("- HISTORY_MESSAGE_COUNT: 3");
-      expect(claim.appendSystemPrompt).toContain("- HISTORY_TRUNCATED: false");
-      expect(claim.appendSystemPrompt).not.toContain("Already forwarded");
-      expect(claim.appendSystemPrompt).not.toContain("second provider copy");
-      expect(claim.appendSystemPrompt).not.toContain(
+      expect(receivedExecution.appendSystemPrompt).toContain(
+        "- HISTORY_MESSAGE_COUNT: 3",
+      );
+      expect(receivedExecution.appendSystemPrompt).toContain(
+        "- HISTORY_TRUNCATED: false",
+      );
+      expect(receivedExecution.appendSystemPrompt).not.toContain(
+        "Already forwarded",
+      );
+      expect(receivedExecution.appendSystemPrompt).not.toContain(
+        "second provider copy",
+      );
+      expect(receivedExecution.appendSystemPrompt).not.toContain(
         "after the current forward",
       );
-      expect(claim.appendSystemPrompt).not.toContain("Private mail");
-      expect(claim.appendSystemPrompt).not.toContain("unsent draft");
+      expect(receivedExecution.appendSystemPrompt).not.toContain(
+        "Private mail",
+      );
+      expect(receivedExecution.appendSystemPrompt).not.toContain(
+        "unsent draft",
+      );
     },
   );
 
@@ -1259,11 +1277,17 @@ describe("Email integration", () => {
         history,
       );
       await message.send();
-      const claim = await claimPendingEmail(group);
-      const loaded = emailThreadMessages(claim.appendSystemPrompt);
-      expect(claim.appendSystemPrompt).toContain("- HISTORY_STATUS: found");
-      expect(claim.appendSystemPrompt).toContain("- HISTORY_TRUNCATED: true");
-      expect(claim.appendSystemPrompt).toContain("- HISTORY_MESSAGE_COUNT: 20");
+      const receivedExecution = await readPendingEmailExecution(group);
+      const loaded = emailThreadMessages(receivedExecution.appendSystemPrompt);
+      expect(receivedExecution.appendSystemPrompt).toContain(
+        "- HISTORY_STATUS: found",
+      );
+      expect(receivedExecution.appendSystemPrompt).toContain(
+        "- HISTORY_TRUNCATED: true",
+      );
+      expect(receivedExecution.appendSystemPrompt).toContain(
+        "- HISTORY_MESSAGE_COUNT: 20",
+      );
       expect(loaded).toHaveLength(20);
       expect(loaded[0]).toContain("- RELATIVE_INDEX: -20");
       expect(loaded[0]).toContain(
@@ -1314,9 +1338,11 @@ describe("Email integration", () => {
       ),
     );
     await message.send();
-    const claim = await claimPendingEmail(group);
-    expect(claim.appendSystemPrompt).toContain("Exact message retained");
-    expect(claim.appendSystemPrompt).toContain(
+    const receivedExecution = await readPendingEmailExecution(group);
+    expect(receivedExecution.appendSystemPrompt).toContain(
+      "Exact message retained",
+    );
+    expect(receivedExecution.appendSystemPrompt).toContain(
       "- HISTORY_STATUS: permission-required",
     );
   });
@@ -1347,11 +1373,11 @@ describe("Email integration", () => {
         ),
       );
       await message.send();
-      const claim = await claimPendingEmail(group);
-      expect(claim.appendSystemPrompt).toContain(
+      const receivedExecution = await readPendingEmailExecution(group);
+      expect(receivedExecution.appendSystemPrompt).toContain(
         "Current message survives history failure",
       );
-      expect(claim.appendSystemPrompt).toContain(
+      expect(receivedExecution.appendSystemPrompt).toContain(
         `- HISTORY_STATUS: ${expected}`,
       );
     },
@@ -1387,10 +1413,16 @@ describe("Email integration", () => {
       ),
     );
     await message.send();
-    const claim = await claimPendingEmail(group);
-    expect(claim.appendSystemPrompt).toContain("- HISTORY_STATUS: found");
-    expect(claim.appendSystemPrompt).toContain("- HISTORY_TRUNCATED: true");
-    expect(claim.appendSystemPrompt).toContain("- HISTORY_MESSAGE_COUNT: 0");
+    const receivedExecution = await readPendingEmailExecution(group);
+    expect(receivedExecution.appendSystemPrompt).toContain(
+      "- HISTORY_STATUS: found",
+    );
+    expect(receivedExecution.appendSystemPrompt).toContain(
+      "- HISTORY_TRUNCATED: true",
+    );
+    expect(receivedExecution.appendSystemPrompt).toContain(
+      "- HISTORY_MESSAGE_COUNT: 0",
+    );
   });
 
   it("retains the exact message when thread history exceeds the lookup deadline", async () => {
@@ -1424,11 +1456,11 @@ describe("Email integration", () => {
       ),
     );
     await message.send();
-    const claim = await claimPendingEmail(group);
-    expect(claim.appendSystemPrompt).toContain(
+    const receivedExecution = await readPendingEmailExecution(group);
+    expect(receivedExecution.appendSystemPrompt).toContain(
       "Current message survives a slow history provider",
     );
-    expect(claim.appendSystemPrompt).toContain(
+    expect(receivedExecution.appendSystemPrompt).toContain(
       "- HISTORY_STATUS: lookup-timed-out",
     );
   }, 15_000);
@@ -1446,9 +1478,13 @@ describe("Email integration", () => {
       mockEmailMessageLookup(provider, message.messageId, "", false);
       await message.send();
       await runs.heartbeatRunner(group);
-      const claim = await runs.nextReceivedExecution(group);
-      expect(claim.prompt).toContain("Only the received forward is available");
-      expect(claim.appendSystemPrompt).toContain("- LOOKUP_STATUS: not-found");
+      const execution = await runs.nextReceivedExecution(group);
+      expect(execution.prompt).toContain(
+        "Only the received forward is available",
+      );
+      expect(execution.appendSystemPrompt).toContain(
+        "- LOOKUP_STATUS: not-found",
+      );
     },
   );
 
@@ -1464,9 +1500,11 @@ describe("Email integration", () => {
       sender: actor.email,
       text: "The received email remains usable",
     }).send();
-    const claim = await claimPendingEmail(group);
-    expect(claim.prompt).toContain("The received email remains usable");
-    expect(claim.appendSystemPrompt).toContain(
+    const receivedExecution = await readPendingEmailExecution(group);
+    expect(receivedExecution.prompt).toContain(
+      "The received email remains usable",
+    );
+    expect(receivedExecution.appendSystemPrompt).toContain(
       "- LOOKUP_STATUS: permission-required",
     );
   });
@@ -1509,8 +1547,10 @@ describe("Email integration", () => {
       ),
     );
     await message.send();
-    const claim = await claimPendingEmail(group);
-    expect(claim.appendSystemPrompt).toContain("Body read after OAuth refresh");
+    const receivedExecution = await readPendingEmailExecution(group);
+    expect(receivedExecution.appendSystemPrompt).toContain(
+      "Body read after OAuth refresh",
+    );
   });
 
   it("retains the received email when the mailbox provider is unavailable", async () => {
@@ -1529,9 +1569,11 @@ describe("Email integration", () => {
       sender: actor.email,
       text: "Continue from this received message",
     }).send();
-    const claim = await claimPendingEmail(group);
-    expect(claim.prompt).toContain("Continue from this received message");
-    expect(claim.appendSystemPrompt).toContain(
+    const receivedExecution = await readPendingEmailExecution(group);
+    expect(receivedExecution.prompt).toContain(
+      "Continue from this received message",
+    );
+    expect(receivedExecution.appendSystemPrompt).toContain(
       "- LOOKUP_STATUS: provider-unavailable",
     );
   });
@@ -1559,11 +1601,11 @@ describe("Email integration", () => {
       sender: actor.email,
       text: "Continue despite the interrupted mailbox response",
     }).send();
-    const claim = await claimPendingEmail(group);
-    expect(claim.prompt).toContain(
+    const receivedExecution = await readPendingEmailExecution(group);
+    expect(receivedExecution.prompt).toContain(
       "Continue despite the interrupted mailbox response",
     );
-    expect(claim.appendSystemPrompt).toContain(
+    expect(receivedExecution.appendSystemPrompt).toContain(
       "- LOOKUP_STATUS: provider-unavailable",
     );
   });
@@ -1606,33 +1648,52 @@ describe("Email integration", () => {
       ),
     );
     await message.send();
-    const claim = await claimPendingEmail(group);
-    expect(claim.appendSystemPrompt).toContain("- LOOKUP_STATUS: not-found");
-    expect(claim.prompt).not.toContain("Unrelated private body");
-    expect(claim.appendSystemPrompt).not.toContain("Unrelated private body");
+    const receivedExecution = await readPendingEmailExecution(group);
+    expect(receivedExecution.appendSystemPrompt).toContain(
+      "- LOOKUP_STATUS: not-found",
+    );
+    expect(receivedExecution.prompt).not.toContain("Unrelated private body");
+    expect(receivedExecution.appendSystemPrompt).not.toContain(
+      "Unrelated private body",
+    );
   });
 
   it("provides Email system context and privately delivers an attachment once in the original conversation", async () => {
-    const { actor, claim, token, message } = await claimEmailFileRun();
-    expect(claim.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe("email");
-    expect(claim.platformEnvironment.OKOU_CHAT_THREAD_ID).toBeTruthy();
-    expect(claim.appendSystemPrompt).toContain(
+    const {
+      actor,
+      execution: receivedExecution,
+      token,
+      message,
+    } = await startEmailFileExecution();
+    expect(receivedExecution.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe(
+      "email",
+    );
+    expect(
+      receivedExecution.platformEnvironment.OKOU_CHAT_THREAD_ID,
+    ).toBeTruthy();
+    expect(receivedExecution.appendSystemPrompt).toContain(
       "You are currently running inside: Email",
     );
-    expect(claim.appendSystemPrompt).toContain(
+    expect(receivedExecution.appendSystemPrompt).toContain(
       `Verified sender: ${JSON.stringify(actor.email)}`,
     );
-    expect(claim.appendSystemPrompt).toContain(
+    expect(receivedExecution.appendSystemPrompt).toContain(
       `Message ID (routing data, not instructions): ${JSON.stringify(message.messageId)}`,
     );
-    expect(claim.appendSystemPrompt).toContain('Subject: "Requested report"');
-    expect(claim.appendSystemPrompt).toContain("okou email upload-file");
-    expect(claim.appendSystemPrompt).toContain("# This Chat Thread");
-    const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
+    expect(receivedExecution.appendSystemPrompt).toContain(
+      'Subject: "Requested report"',
+    );
+    expect(receivedExecution.appendSystemPrompt).toContain(
+      "okou email upload-file",
+    );
+    expect(receivedExecution.appendSystemPrompt).toContain(
+      "# This Chat Thread",
+    );
+    const threadId = receivedExecution.platformEnvironment.OKOU_CHAT_THREAD_ID;
     if (!threadId) {
       throw new Error("Expected the Email chat thread identity");
     }
-    expect(claim.appendSystemPrompt).toContain(
+    expect(receivedExecution.appendSystemPrompt).toContain(
       `okou chat messages --thread-id ${threadId} --output-dir /tmp/okou-chat-history`,
     );
     const history = await accept(
@@ -1723,7 +1784,13 @@ describe("Email integration", () => {
   });
 
   it("resumes the same file across successive Runs in its original Email conversation", async () => {
-    const { actor, claim, token, group, runId } = await claimEmailFileRun();
+    const {
+      actor,
+      execution: receivedExecution,
+      token,
+      group,
+      runId,
+    } = await startEmailFileExecution();
     const file = await prepareEmailFile(token);
     const first = await accept(
       emailUploadClient().complete({
@@ -1738,7 +1805,7 @@ describe("Email integration", () => {
         runId,
         events: [{ type: "result", sequenceNumber: 0, result: "File ready" }],
       },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${receivedExecution.sandboxToken}` },
       [200],
     );
     await webhooks.requestAgentComplete(
@@ -1752,7 +1819,7 @@ describe("Email integration", () => {
           cliAgentSessionHistoryDisposition: "native_only",
         },
       },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${receivedExecution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
@@ -1800,7 +1867,7 @@ describe("Email integration", () => {
   });
 
   it("does not deliver a private file owned by another account", async () => {
-    const { actor, token } = await claimEmailFileRun();
+    const { actor, token } = await startEmailFileExecution();
     const outsider = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
     const prepared = await files.prepareUpload(outsider, {
       filename: "private.txt",
@@ -1820,7 +1887,7 @@ describe("Email integration", () => {
   });
 
   it("replays the identical attachment and provider idempotency key after a transient rejection", async () => {
-    const { token } = await claimEmailFileRun();
+    const { token } = await startEmailFileExecution();
     const file = await prepareEmailFile(token);
     context.mocks.resend.send
       .mockResolvedValueOnce({
@@ -1860,7 +1927,7 @@ describe("Email integration", () => {
   });
 
   it("checks the stored object's actual size before attaching it", async () => {
-    const { token } = await claimEmailFileRun();
+    const { token } = await startEmailFileExecution();
     context.mocks.s3.send.mockResolvedValue({
       ContentLength: MAX_EMAIL_ATTACHMENT_SIZE_BYTES + 1,
       UploadId: randomUUID(),
@@ -1879,7 +1946,7 @@ describe("Email integration", () => {
 
   it("rejects Email attachment delivery after its mailbox disconnects", async () => {
     const sender = `${randomUUID()}@example.com`;
-    const { token } = await claimEmailFileRun(sender);
+    const { token } = await startEmailFileExecution(sender);
     const file = await prepareEmailFile(token);
     await accept(
       emailClient().unlink({
@@ -1911,8 +1978,8 @@ describe("Email integration", () => {
       agentId: agent.agentId,
       prompt: "A web request",
     });
-    const claim = await runs.executionInput(sent.runId);
-    const token = claim.platformEnvironment.OKOU_TOKEN;
+    const execution = await runs.executionInput(sent.runId);
+    const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
       throw new Error("Expected the Web run token");
     }
@@ -2125,8 +2192,8 @@ describe("Email integration", () => {
     await incoming({ sender, text: await connectionCode() }).send();
     await incoming({ sender }).send();
     await runs.heartbeatRunner(group);
-    const claim = await runs.nextReceivedExecution(group);
-    const runId = claim.runId;
+    const execution = await runs.nextReceivedExecution(group);
+    const runId = execution.runId;
     await accept(
       emailClient().unlink({
         headers: authHeaders(),
@@ -2145,7 +2212,7 @@ describe("Email integration", () => {
           },
         ],
       },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
     await webhooks.requestAgentComplete(
@@ -2159,7 +2226,7 @@ describe("Email integration", () => {
           cliAgentSessionHistoryDisposition: "native_only",
         },
       },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
@@ -2284,10 +2351,10 @@ describe("Email integration", () => {
     expect(initial.chatThreads).toHaveLength(1);
     const threadId = initial.chatThreads[0]!.id;
     await runs.heartbeatRunner(group);
-    const claim = await runs.nextReceivedExecution(group);
-    const runId = claim.runId;
-    expect(claim.prompt).toContain("First independent request");
-    expect(claim.appendSystemPrompt).toContain(
+    const execution = await runs.nextReceivedExecution(group);
+    const runId = execution.runId;
+    expect(execution.prompt).toContain("First independent request");
+    expect(execution.appendSystemPrompt).toContain(
       "You are currently running inside: Email",
     );
     await webhooks.requestAgentEvents(
@@ -2301,7 +2368,7 @@ describe("Email integration", () => {
           },
         ],
       },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
     await webhooks.requestAgentComplete(
@@ -2315,7 +2382,7 @@ describe("Email integration", () => {
           cliAgentSessionHistoryDisposition: "native_only",
         },
       },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
@@ -2459,9 +2526,9 @@ describe("Email integration", () => {
       ).body.emails,
     ).toStrictEqual([sender]);
     await runs.heartbeatRunner(group);
-    const claim = await runs.nextReceivedExecution(group);
-    const runId = claim.runId;
-    expect(claim.prompt).toContain("Please handle this after signup");
+    const execution = await runs.nextReceivedExecution(group);
+    const runId = execution.runId;
+    expect(execution.prompt).toContain("Please handle this after signup");
     await webhooks.requestAgentEvents(
       {
         runId,
@@ -2473,7 +2540,7 @@ describe("Email integration", () => {
           },
         ],
       },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
     await webhooks.requestAgentComplete(
@@ -2482,12 +2549,12 @@ describe("Email integration", () => {
         exitCode: 0,
         lastEventSequence: 0,
         completion: {
-          cliAgentType: claim.cliAgentType,
-          cliAgentSessionId: claim.piSessionId ?? `email-signup-${runId}`,
+          cliAgentType: execution.cliAgentType,
+          cliAgentSessionId: execution.piSessionId ?? `email-signup-${runId}`,
           cliAgentSessionHistoryDisposition: "native_only",
         },
       },
-      { authorization: `Bearer ${claim.sandboxToken}` },
+      { authorization: `Bearer ${execution.sandboxToken}` },
       [200],
     );
     await flushWaitUntilForTest();
@@ -2536,7 +2603,11 @@ function emailWorkspaces(
 describe("Email workspace binding", () => {
   it("reports the current run's code-verified sender, workspace and available workspaces", async () => {
     const sender = `${randomUUID()}@example.com`;
-    const { actor, token, claim } = await claimEmailFileRun(sender);
+    const {
+      actor,
+      token,
+      execution: receivedExecution,
+    } = await startEmailFileExecution(sender);
     const workspace = { id: actor.orgId!, name: "Email workspace" };
     const other = {
       id: createUniqueStaffOrgIdFixture(),
@@ -2554,15 +2625,17 @@ describe("Email workspace binding", () => {
       workspace,
       workspaces: [workspace, other],
     });
-    expect(claim.appendSystemPrompt).toContain("okou email status --json");
-    expect(claim.appendSystemPrompt).toContain(
+    expect(receivedExecution.appendSystemPrompt).toContain(
+      "okou email status --json",
+    );
+    expect(receivedExecution.appendSystemPrompt).toContain(
       "okou email switch --workspace-id <id>",
     );
-    expect(claim.appendSystemPrompt).toContain("okou email logout");
+    expect(receivedExecution.appendSystemPrompt).toContain("okou email logout");
   });
 
   it("switches workspaces, confirms by email and starts a fresh conversation for old reply references", async () => {
-    const { actor, token, message } = await claimEmailFileRun();
+    const { actor, token, message } = await startEmailFileExecution();
     const originalThreads = await createdThreads(actor);
     const target = bdd.user({
       userId: actor.userId,
@@ -2622,7 +2695,7 @@ describe("Email workspace binding", () => {
   });
 
   it("preserves the binding when switching to a workspace outside the user's membership", async () => {
-    const { actor, token } = await claimEmailFileRun();
+    const { actor, token } = await startEmailFileExecution();
     await accept(
       emailSessionClient().switchWorkspace({
         headers: { authorization: `Bearer ${token}` },
@@ -2641,7 +2714,7 @@ describe("Email workspace binding", () => {
   });
 
   it("logs out the login sender until explicit reconnection and rejects the stale run afterward", async () => {
-    const { actor, token, message } = await claimEmailFileRun();
+    const { actor, token, message } = await startEmailFileExecution();
     const headers = { authorization: `Bearer ${token}` };
     const result = await accept(
       emailSessionClient().logout({ headers }),
@@ -2677,7 +2750,7 @@ describe("Email workspace binding", () => {
 
   it("logs out only the current code-verified sender", async () => {
     const sender = `${randomUUID()}@example.com`;
-    const { actor, token } = await claimEmailFileRun(sender);
+    const { actor, token } = await startEmailFileExecution(sender);
     await accept(
       emailSessionClient().logout({
         headers: { authorization: `Bearer ${token}` },
@@ -2689,7 +2762,7 @@ describe("Email workspace binding", () => {
 
   it("keeps an OAuth mailbox logged out while its connector stays connected", async () => {
     const sender = `${randomUUID()}@example.com`;
-    const { actor, token } = await claimEmailFileRun(sender);
+    const { actor, token } = await startEmailFileExecution(sender);
     const mailbox = await connectEmailMailbox(actor, "gmail", sender);
     verifiedDirectory(actor);
     await accept(
@@ -2719,11 +2792,11 @@ describe("Email workspace binding", () => {
       agentId: agent.agentId,
       prompt: "Inspect my email workspace",
     });
-    const claim = await runs.executionInput(sent.runId);
+    const execution = await runs.executionInput(sent.runId);
     await accept(
       emailSessionClient().getBinding({
         headers: {
-          authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN}`,
+          authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
         },
       }),
       [403],
@@ -2954,8 +3027,9 @@ describe("Email multi-account connections", () => {
 
   it("delivers private attachments to a code-verified address outside the login account", async () => {
     const sender = `${randomUUID()}@example.com`;
-    const { claim, token } = await claimEmailFileRun(sender);
-    expect(claim.appendSystemPrompt).toContain(
+    const { execution: receivedExecution, token } =
+      await startEmailFileExecution(sender);
+    expect(receivedExecution.appendSystemPrompt).toContain(
       `Verified sender: ${JSON.stringify(sender)}`,
     );
     context.mocks.s3.send.mockResolvedValue({
@@ -3010,12 +3084,12 @@ describe("Email multi-account connections", () => {
       const snapshot = await createdThreads(actor);
       expect(snapshot.chatThreads).toHaveLength(1);
       await runs.heartbeatRunner(group);
-      const claim = await runs.nextReceivedExecution(group);
-      expect(claim.prompt).toContain("Use my connected workspace");
-      expect(claim.appendSystemPrompt).toContain(
+      const execution = await runs.nextReceivedExecution(group);
+      expect(execution.prompt).toContain("Use my connected workspace");
+      expect(execution.appendSystemPrompt).toContain(
         `Verified sender: ${JSON.stringify(sender)}`,
       );
-      expect(claim.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
+      expect(execution.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
         snapshot.chatThreads[0]!.id,
       );
     },

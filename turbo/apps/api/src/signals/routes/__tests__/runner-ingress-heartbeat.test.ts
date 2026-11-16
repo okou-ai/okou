@@ -85,7 +85,7 @@ describe("Runner ingress service heartbeat contract", () => {
     }
   });
 
-  it("does not let claimed service activity bypass heartbeat authentication", async () => {
+  it("does not let execution service activity bypass heartbeat authentication", async () => {
     await expect(
       api().heartbeat({
         headers: {},

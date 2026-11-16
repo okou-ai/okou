@@ -10,6 +10,7 @@ from mitmproxy.flow import Error
 import mitm_addon
 import usage
 from tests.flow_helpers import response_stream
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.x_flow_helpers import make_x_pipeline_flow
 from usage.providers.connectors import x_resources
 
@@ -79,7 +80,7 @@ async def test_json_preserves_occurrences_expansions_exact_ids_and_unidentified_
     ("body", "reason", "quantity"),
     [
         pytest.param(
-            b'{"data":[{"id":"1"}],"text":"' + b"a" * (256 * 1024) + b'"}',
+            repeat_bytes(b'{"data":[{"id":"1"}],"text":"', b"a", 256 * 1024, b'"}'),
             "identity_limit",
             1,
             id="oversized-body",

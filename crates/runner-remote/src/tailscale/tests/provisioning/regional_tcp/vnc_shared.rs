@@ -15,6 +15,15 @@ use std::sync::atomic::Ordering;
 
 #[tokio::test]
 async fn same_uuid_protocol_revocations_preserve_the_other_consumer_and_shared_native_node() {
+    shared_revocations(false).await;
+}
+
+#[tokio::test]
+async fn vnc_revocation_during_partial_relay_write_preserves_original_ssh_and_native_node() {
+    shared_revocations(true).await;
+}
+
+async fn shared_revocations(partial_write: bool) {
     let mut h = Harness::new(Reply::default()).await;
     let desktop = Peer::classic().await;
     let vnc = VncRuntime::official(
@@ -31,7 +40,7 @@ async fn same_uuid_protocol_revocations_preserve_the_other_consumer_and_shared_n
     h.restart_with_vnc(Arc::clone(&vnc)).await;
 
     let api = Api::secure(None).await;
-    let home = Server::secure().await;
+    let home = Server::secure_reconnecting().await;
     let key = NodeKeyPair::random();
     let mut value: serde_json::Value = serde_json::from_slice(&map(&home)).unwrap();
     let mut peer = node(2, "peer.synthetic.ts.net.", 2, &key);
@@ -49,9 +58,14 @@ async fn same_uuid_protocol_revocations_preserve_the_other_consumer_and_shared_n
         hyper::StatusCode::OK,
         br#"{"NodeKeyExpired":true}"#.to_vec(),
     );
+    let relay_gate = WriteGate::new();
     let services = control.test_services(
         api.secure.as_ref().unwrap().clone(),
-        Relay::new(&home, WriteGate::new(), Arc::new(Mutex::new(Vec::new()))),
+        Relay::new(
+            &home,
+            Arc::clone(&relay_gate),
+            Arc::new(Mutex::new(Vec::new())),
+        ),
     );
     *h.runtime.native_services.lock().unwrap() = Some(services.clone());
     *vnc.native_services.lock().unwrap() = Some(services);
@@ -116,6 +130,22 @@ async fn same_uuid_protocol_revocations_preserve_the_other_consumer_and_shared_n
         peers.finish(desktop.event()).await,
         Event::Mode(1)
     ));
+    if partial_write {
+        // Retiring an incomplete encrypted frame must replace the relay, while
+        // the original SSH connection and external SDK TCP state remain live.
+        relay_gate.pause_after(12);
+        let input = peers
+            .finish(
+                h.raw(
+                    json!({"version":1,"method":"vnc.input","remaining_ms":60000,
+            "params":{"sessionId":session,"input":{"type":"key_chord","keys":["Enter"]}}})
+                    .to_string(),
+                ),
+            )
+            .await;
+        assert_eq!(input.last().unwrap()["data"]["outcome"], "sent");
+        peers.finish(relay_gate.pending()).await;
+    }
     assert!(vnc.handle(&ably_subscriber::Message {
         name: Some("vnc-authority-invalidated".into()),
         data: json!({"runId":h.run,"connectionId":CONNECTION}),
@@ -123,6 +153,10 @@ async fn same_uuid_protocol_revocations_preserve_the_other_consumer_and_shared_n
         client_id: None,
         timestamp: Some(1)
     }));
+    if partial_write {
+        peers.finish(relay_gate.destroyed()).await;
+        relay_gate.resume();
+    }
     let revoked = h
         .raw(
             json!({"version":1,"method":"vnc.session.status","remaining_ms":60000,
@@ -134,7 +168,8 @@ async fn same_uuid_protocol_revocations_preserve_the_other_consumer_and_shared_n
     let original = peers.finish(h.request(params())).await;
     assert_eq!(
         original.last().unwrap()["data"]["exit"],
-        json!({"type":"status","code":7})
+        json!({"type":"status","code":7}),
+        "{original:?}"
     );
     assert_eq!(
         h.observed.auth.load(Ordering::SeqCst),
@@ -198,6 +233,9 @@ async fn same_uuid_protocol_revocations_preserve_the_other_consumer_and_shared_n
     check.assert_calls_async(4).await;
     api.assert_contract(1, 0);
     h.shutdown().await;
+    for service in &mut peers.services {
+        service.shutdown().await;
+    }
     ssh_proxy.abort();
     vnc_proxy.abort();
     assert!(ssh_proxy.await.unwrap_err().is_cancelled());

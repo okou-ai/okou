@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from tests.repeated_bytes_helpers import repeat_bytes
 from usage import (
     create_anthropic_messages_sse_usage_extractor,
     create_model_json_response_inspector,
@@ -387,8 +388,8 @@ class TestAnthropicSseUsageExtractor:
         # Now send a large content_block_delta (should be skipped)
         parse(b"event: content_block_delta\n")
         # Large data line split across chunks — should not be buffered
-        parse(b"data: " + b"x" * 100_000)
-        parse(b"y" * 100_000 + b"\n\n")
+        parse(repeat_bytes(b"data: ", b"x", 100_000, b""))
+        parse(repeat_bytes(b"", b"y", 100_000, b"\n\n"))
         # Parser should recover for the next event
         parse(b'event: message_delta\ndata: {"usage":{"output_tokens":999}}\n\n')
         assert usage["tokens.output"] == 999
@@ -445,8 +446,13 @@ class TestAnthropicSseUsageExtractor:
         parse, usage = create_anthropic_messages_sse_usage_extractor()
         parse(b"event: message_start\n")
         parse(
-            b'data: {"type":"message_start","message":{"id":"msg_big",'
-            b'"model":"claude-sonnet-4-6","content":[{"type":"text","text":"' + b"x" * 100_000
+            repeat_bytes(
+                b'data: {"type":"message_start","message":{"id":"msg_big",'
+                b'"model":"claude-sonnet-4-6","content":[{"type":"text","text":"',
+                b"x",
+                100_000,
+                b"",
+            )
         )
         parse(
             b'"}],"usage":{"input_tokens":123,"cache_read_input_tokens":45,"output_tokens":6}}}\n\n'
@@ -653,11 +659,11 @@ class TestAnthropicModelJsonResponseInspector:
         assert inspection.usage_error == "work limit exceeded"
 
     def test_large_discarded_ascii_content_stays_within_work_limit(self):
-        body = (
-            b'{"id":"msg_bulk","model":"claude-sonnet-4-6",'
-            b'"content":[{"type":"text","text":"'
-            + b"x" * (3 * 1024 * 1024)
-            + b'"}],"usage":{"input_tokens":50,"output_tokens":100}}'
+        body = repeat_bytes(
+            b'{"id":"msg_bulk","model":"claude-sonnet-4-6","content":[{"type":"text","text":"',
+            b"x",
+            3 * 1024 * 1024,
+            b'"}],"usage":{"input_tokens":50,"output_tokens":100}}',
         )
 
         result, error = _inspect_anthropic_json(body)
@@ -672,11 +678,11 @@ class TestAnthropicModelJsonResponseInspector:
 
     def test_large_discarded_utf8_content_stays_within_work_limit(self) -> None:
         content_bytes = 3 * 1024 * 1024
-        body = (
-            b'{"id":"msg_bulk","model":"claude-sonnet-4-6",'
-            b'"content":[{"type":"text","text":"'
-            + b"\xe2\x98\x83" * (content_bytes // 3)
-            + b'"}],"usage":{"input_tokens":50,"output_tokens":100}}'
+        body = repeat_bytes(
+            b'{"id":"msg_bulk","model":"claude-sonnet-4-6","content":[{"type":"text","text":"',
+            b"\xe2\x98\x83",
+            content_bytes // 3,
+            b'"}],"usage":{"input_tokens":50,"output_tokens":100}}',
         )
 
         result, error = _inspect_anthropic_json(body)

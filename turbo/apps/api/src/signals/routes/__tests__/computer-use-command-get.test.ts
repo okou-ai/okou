@@ -42,7 +42,7 @@ function createScenario() {
     actor: ApiTestUser,
     hostId: string | undefined,
   ): Promise<string> {
-    return (await scenario.claim(actor, hostId)).token;
+    return (await scenario.launchRun(actor, hostId)).token;
   }
 
   async function createRunningWriteCommand(args: {

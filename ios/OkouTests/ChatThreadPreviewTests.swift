@@ -59,15 +59,19 @@ final class ChatThreadPreviewTests: XCTestCase {
         await gate.wait()
       })
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    let reads = LifecycleTasks()
+    addTeardownBlock { @MainActor in
+      let closing = workspace.close()
+      let reading = reads.close()
+      gate.open()
+      await reading.value
+      await closing.value
+    }
     await workspace.list.refresh()
     workspace.previewChat(ConversationHistoryFixture.threadID)
     let preview = try XCTUnwrap(workspace.threadPreview)
     let request = try preview.store.get(preview.content)
-    addTeardownBlock { @MainActor in
-      workspace.close()
-      gate.open()
-      _ = await request.result
-    }
+    reads.track(request)
     await fulfillment(of: [started], timeout: 3)
     workspace.dismissChatPreview(ConversationHistoryFixture.threadID)
     gate.open()

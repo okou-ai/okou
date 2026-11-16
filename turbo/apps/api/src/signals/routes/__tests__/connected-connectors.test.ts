@@ -19,14 +19,14 @@ import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 import { createBddApi } from "./helpers/api-bdd";
 import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
 const authDevice = createAuthDeviceApiActions(context);
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const routes = Object.freeze([
   ...connectedConnectorsRoutes,
@@ -83,7 +83,7 @@ test.each(["PAT", "Run"] as const)(
     });
 
     const run =
-      credentialType === "Run" ? await credentials.claim(actor) : null;
+      credentialType === "Run" ? await credentials.forActor(actor) : null;
     let token: string;
     if (run) {
       token = run.token;
@@ -106,7 +106,7 @@ test.each(["PAT", "Run"] as const)(
     }
 
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    // Saving accounts after issuance does not add them to an already claimed Run.
+    // Saving accounts after issuance does not add them to an already dispatched Run.
     await accept(
       app(builtinConnectorManualGrantContract).connect({
         headers,

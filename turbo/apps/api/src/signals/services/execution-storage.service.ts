@@ -154,13 +154,6 @@ interface ResolvedExecutionStorageInput {
   readonly cacheRows: ExecutionStorageCacheRows;
 }
 
-/** A selected version can be removed by its owner after Run admission. */
-export class ExecutionStorageUnavailableError extends Error {
-  constructor() {
-    super("Accepted execution storage is unavailable");
-  }
-}
-
 function acceptedStorageRequests(
   mounts: readonly PersistedStorageMount[],
 ): readonly ExecutionStorageRequest[] {
@@ -253,7 +246,8 @@ export function createAcceptedExecutionStorageObjects(
           return !found.has(key);
         })
       ) {
-        throw new ExecutionStorageUnavailableError();
+        // Selected versions can be removed by their owner after Run admission.
+        throw new Error("Accepted execution storage is unavailable");
       }
       return {
         mounts,

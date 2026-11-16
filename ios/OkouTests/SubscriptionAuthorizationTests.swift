@@ -207,10 +207,19 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     let starts = Mutex(0)
     let cancellations = Mutex<Set<String>>([])
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("/sessions") {
-        let attempt = starts.withLock {
-          $0 += 1
-          return $0
+      guard request.httpMethod == "POST" else { throw URLError(.unsupportedURL) }
+      let path = request.url?.path
+      if path == "/api/model-providers/codex/device-auth/sessions"
+        || path == "/api/model-providers/claude-code/device-auth/sessions"
+      {
+        let attempt = try starts.withLock { count in
+          let attempt = count + 1
+          let provider = attempt == 1 ? "codex" : "claude-code"
+          guard attempt <= 2, path == "/api/model-providers/\(provider)/device-auth/sessions" else {
+            throw URLError(.unsupportedURL)
+          }
+          count = attempt
+          return attempt
         }
         if attempt == 1 {
           firstStarted.fulfill()
@@ -221,8 +230,14 @@ final class SubscriptionAuthorizationTests: XCTestCase {
         }
         return authSession(code: true, token: "late-session-\(attempt)")
       }
-      if request.url!.path.hasSuffix("/cancel") {
+      if path == "/api/model-providers/codex/device-auth/sessions/cancel"
+        || path == "/api/model-providers/claude-code/device-auth/sessions/cancel"
+      {
         let token = try XCTUnwrap(authBody(request)["sessionToken"])
+        let provider = token == "late-session-1" ? "codex" : "claude-code"
+        guard ["late-session-1", "late-session-2"].contains(token),
+          path == "/api/model-providers/\(provider)/device-auth/sessions/cancel"
+        else { throw URLError(.unsupportedURL) }
         cancellations.withLock { _ = $0.insert(token) }
         return ChatHTTPResponse(body: "{\"status\":\"cancelled\"}")
       }
@@ -256,14 +271,20 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     let response = ModelResponseGate()
     let cancelled = Mutex(false)
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path.hasSuffix("/sessions") { return authSession(code: false) }
-      if request.url!.path.hasSuffix("/cancel") {
+      guard request.httpMethod == "POST" else { throw URLError(.unsupportedURL) }
+      switch request.url?.path {
+      case "/api/model-providers/claude-code/device-auth/sessions":
+        return authSession(code: false)
+      case "/api/model-providers/claude-code/device-auth/sessions/cancel":
+        guard try authBody(request)["sessionToken"] == "synthetic-session-token" else {
+          throw URLError(.unsupportedURL)
+        }
         cancelling.fulfill()
         await response.wait()
         cancelled.withLock { $0 = true }
         return ChatHTTPResponse(body: "{\"status\":\"cancelled\"}")
+      default: throw URLError(.unsupportedURL)
       }
-      throw URLError(.unsupportedURL)
     }
     let store = PersonalSubscriptionStore(
       client: fixture.client, authNow: { clock.now }, authSleep: clock.sleep, didFail: { _ in })

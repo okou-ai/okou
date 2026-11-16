@@ -202,7 +202,8 @@ impl Core {
         Ok(response)
     }
 
-    fn retire(&mut self) {
+    fn retire(&mut self) -> bool {
+        let before = self.active.len();
         self.active.retain_mut(|active| {
             if !active.binding.live()
                 || active
@@ -216,6 +217,7 @@ impl Core {
             }
             true
         });
+        self.active.len() != before
     }
 
     fn emit(&mut self, mut frames: Frames) -> Result<(), Failure> {
@@ -271,7 +273,8 @@ impl Core {
     }
 
     pub(super) fn poll(&mut self, cx: &mut Context<'_>) -> Result<bool, Failure> {
-        self.retire();
+        // Retirement must reach the Root's route projection even without IO.
+        let mut progress = self.retire();
         self.peers.maintain()?;
         // One complete SDK batch can contain 64 frames. Do not consume more
         // plaintext or ciphertext while that physical writer capacity is held.
@@ -284,7 +287,7 @@ impl Core {
                 self.capacity.take();
                 cx.waker().wake_by_ref();
             }
-            return Ok(false);
+            return Ok(progress);
         }
         self.capacity.take();
         let work = self.work;
@@ -308,6 +311,7 @@ impl Core {
                 Err(failure) => {
                     active.finish_opening(Err(failure));
                     self.active.swap_remove(index);
+                    progress = true;
                     self.peers.maintain()?;
                     continue;
                 }
@@ -331,6 +335,7 @@ impl Core {
                     active.connection.retire();
                     active.finish_opening(Err(Failure::Cancelled));
                     self.active.swap_remove(index);
+                    progress = true;
                     self.peers.maintain()?;
                 }
                 Err(failure) => return Err(failure),
@@ -339,7 +344,7 @@ impl Core {
         if self.receive(cx)? {
             return Ok(true);
         }
-        self.events()
+        Ok(self.events()? || progress)
     }
 
     fn next_delay(&mut self) -> Option<Duration> {

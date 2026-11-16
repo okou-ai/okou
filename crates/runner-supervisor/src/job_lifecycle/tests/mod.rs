@@ -12,7 +12,7 @@ use sandbox::SandboxId;
 use runner_lifecycle::active_runs::ActiveRuns;
 use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
 use runner_lifecycle::status::StatusTracker;
-use runner_provider::{ClaimedJob, HttpClient, HttpClientConfig, JobCandidate, JobProvider};
+use runner_provider::{ExecutionJob, HttpClient, HttpClientConfig, JobCandidate, JobProvider};
 use runner_types::ids::RunId;
 use runner_types::types::HeartbeatState;
 
@@ -192,7 +192,7 @@ impl runner_provider::LocalJobSource for CompletionAuthProvider {
     async fn discover(&self) -> Option<JobCandidate> {
         None
     }
-    async fn claim(&self, _candidate: JobCandidate) -> Option<ClaimedJob> {
+    async fn claim(&self, _candidate: JobCandidate) -> Option<ExecutionJob> {
         None
     }
 }
@@ -243,7 +243,7 @@ impl runner_provider::LocalJobSource for SequencingProvider {
     async fn discover(&self) -> Option<JobCandidate> {
         None
     }
-    async fn claim(&self, _candidate: JobCandidate) -> Option<ClaimedJob> {
+    async fn claim(&self, _candidate: JobCandidate) -> Option<ExecutionJob> {
         None
     }
 }
@@ -396,7 +396,7 @@ async fn completed_claimed_run_settles_after_reporting_and_records_release() {
         sandbox_id,
         CompletionAuth::sandbox_token(run_id, "completion-token".to_owned()),
     )
-    .complete_claimed_run(&provider, finalized, &status, active_run_guard, &cleanup);
+    .complete_execution_run(&provider, finalized, &status, active_run_guard, &cleanup);
     tokio::pin!(completion);
     tokio::time::timeout(Duration::from_secs(2), async {
         tokio::select! {
@@ -486,7 +486,7 @@ async fn assert_dropped_completion_keeps_recovery_status(poll_finalization: bool
             sandbox_id,
             CompletionAuth::sandbox_token(run_id, "completion-token".to_owned()),
         )
-        .complete_claimed_run(
+        .complete_execution_run(
             &provider,
             make_finalization,
             &status,

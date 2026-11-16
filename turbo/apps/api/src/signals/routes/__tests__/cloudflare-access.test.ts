@@ -1,5 +1,5 @@
 import { credentialBackedSshHost } from "./helpers/ssh-credential";
-import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
+import { createSshExecutionApi } from "./helpers/ssh-execution";
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
@@ -434,19 +434,19 @@ async function configuredOwnerFixture(o = owner()) {
   return { ...o, config: c, host: h };
 }
 
-function useClaimedFixture() {
-  const claimedRunCleanups: (() => Promise<void>)[] = [];
+function useExecutionFixture() {
+  const executionRunCleanups: (() => Promise<void>)[] = [];
 
   // Finish owned cancellation while the parent context still owns its mocks and signal.
   afterEach(async () => {
-    for (const cleanup of claimedRunCleanups.splice(0)) {
+    for (const cleanup of executionRunCleanups.splice(0)) {
       await cleanup();
       await flushWaitUntilForTest();
     }
   });
 
   /** Ordinary chat Runs use production launch and dispatch. */
-  return async function claimedFixture() {
+  return async function executionFixture() {
     const o = owner();
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
@@ -482,21 +482,21 @@ function useClaimedFixture() {
       prompt: "Use my configured Cloudflare Access SSH host",
     });
     const input = await runs.executionInput(runId);
-    claimedRunCleanups.push(async () => {
+    executionRunCleanups.push(async () => {
       // Restore test-owned external failures after assertions, without hiding cleanup errors.
       authenticate(o);
       useSecretKmsProbe();
       context.mocks.ably.publish.mockResolvedValue(undefined);
       await runs.requestCancelRun(actor, runId, [200]);
       await createWebhookCallbackApi(context).requestAgentComplete(
-        { runId: runId, exitCode: 137 },
+        { runId, exitCode: 137 },
         { authorization: `Bearer ${input.sandboxToken}` },
         [200],
       );
     });
     const agentToken = input.platformEnvironment.OKOU_TOKEN;
     if (!agentToken) {
-      throw new Error("Expected the Runner claim to issue its Agent token");
+      throw new Error("Expected the Runner execution to issue its Agent token");
     }
     await expect(runs.readRun(actor, runId)).resolves.toMatchObject({
       status: "running",
@@ -514,7 +514,7 @@ function useClaimedFixture() {
   };
 }
 
-const ordinary = createClaimedSshRuntimeApi(context, {
+const ordinary = createSshExecutionApi(context, {
   runnerHeaders,
   authenticate,
 });
@@ -536,7 +536,7 @@ async function ordinaryFixture() {
 }
 
 async function resolve(
-  f: Awaited<ReturnType<ReturnType<typeof useClaimedFixture>>>,
+  f: Awaited<ReturnType<ReturnType<typeof useExecutionFixture>>>,
 ) {
   return (
     await accept(
@@ -983,7 +983,7 @@ describe("organization Cloudflare Access", () => {
 
 describe("Cloudflare Access owner configuration", () => {
   afterEach(ordinary.cleanup);
-  const claimedFixture = useClaimedFixture();
+  const executionFixture = useExecutionFixture();
 
   it("refreshes Access metadata for unreferenced config changes without SSH invalidation", async () => {
     const o = owner();
@@ -1275,7 +1275,7 @@ describe("Cloudflare Access owner configuration", () => {
   );
 
   it("preserves chat host authority across Access config updates", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const second = await config("Second");
     await host(second.id);
     let revision = f.config.revision;
@@ -1301,7 +1301,7 @@ describe("Cloudflare Access owner configuration", () => {
 
 describe("protected SSH authority", () => {
   afterEach(ordinary.cleanup);
-  const claimedFixture = useClaimedFixture();
+  const executionFixture = useExecutionFixture();
 
   it("treats a protected host awaiting rebind as unavailable, never Direct", async () => {
     const kms = useSecretKmsProbe();
@@ -1595,7 +1595,7 @@ describe("protected SSH authority", () => {
   });
 
   it("preserves key authentication separately from the Access token", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     await accept(
       connections().update({
         headers,
@@ -1629,7 +1629,7 @@ describe("protected SSH authority", () => {
   });
 
   it("keeps KMS failure an error instead of returning unavailable or Direct authority", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     useSecretKmsProbe(undefined, () => {
       return Promise.reject(new Error("KMS unavailable"));
     });
@@ -1726,7 +1726,7 @@ describe("protected SSH authority", () => {
   });
 
   it("commits token replacement even when realtime publication fails", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     context.mocks.ably.publish.mockRejectedValue(
       new Error("Realtime unavailable"),
     );
@@ -1770,7 +1770,7 @@ describe("protected SSH authority", () => {
   });
 
   it("hands off two independent credentials only to the winning Runner", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     await expect(resolve(f)).resolves.toMatchObject({
       outcome: "resolved_access",
       port: 443,
@@ -1830,7 +1830,7 @@ describe("protected SSH authority", () => {
   });
 
   it("preserves an omitted transport binding and rejects a stale editor without affecting Direct hosts", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const direct = await host();
     await enableHostDefault(direct.id);
     expect(sshConnectionResponseSchema.parse(direct)).toStrictEqual(direct);
@@ -1880,7 +1880,7 @@ describe("protected SSH authority", () => {
   });
 
   it("uses chat host permission for inventory, resolve, observe and pin", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     expect((await resolve(f)).outcome).toBe("resolved_access");
     const inventory = setupApp({ context, routes: sshAccessRoutes })(
       sshHostsContract,
@@ -1929,7 +1929,7 @@ describe("protected SSH authority", () => {
   });
 
   it("allows ordinary owners to manage and execute Direct and Access hosts without feature overrides", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const direct = await host();
     await enableHostDefault(direct.id);
     const inventory = setupApp({ context, routes: sshAccessRoutes })(
@@ -1970,7 +1970,7 @@ describe("protected SSH authority", () => {
   });
 
   it("preserves host trust across rotation, protected edits and Access transitions; rejects stale evidence", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const second = await host(f.config.id);
     const direct = await host();
     await accept(
@@ -2076,7 +2076,7 @@ describe("protected SSH authority", () => {
   });
 
   it("preserves precise Access-stage evidence instead of misclassifying SSH authentication", async () => {
-    const f = await claimedFixture();
+    const f = await executionFixture();
     const body = {
       ...f.body,
       expectedGeneration: 1,

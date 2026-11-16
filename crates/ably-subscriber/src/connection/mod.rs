@@ -6,6 +6,7 @@ mod errors;
 mod event_loop;
 mod handshake;
 mod message;
+mod reconnect;
 mod session;
 mod state;
 mod transport;

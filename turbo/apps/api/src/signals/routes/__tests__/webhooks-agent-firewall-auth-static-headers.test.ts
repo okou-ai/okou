@@ -89,23 +89,20 @@ async function admittedConfiguredMcp(
     agentId: owned.agentId,
     prompt: "Use the admitted configured MCP profile",
   });
-  const { claim, sandboxHeaders } = await owned.claimChatRun(
-    owned.runnerGroup,
-    run.runId,
-  );
-  expect(claim.firewalls).toContainEqual({
+  const { execution, sandboxHeaders } = await owned.runExecution(run.runId);
+  expect(execution.firewalls).toContainEqual({
     kind: "builtin",
     name: catalog.slug,
     sourceId: connectionId,
   });
   return {
     catalog,
-    claim,
+    execution,
     connectionId,
     sandboxHeaders,
     body: {
       encryptedSecrets:
-        claim.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
+        execution.encryptedSecrets ?? firewall.encryptedSecretsBody({}),
       authHeaders: catalog.firewallAuthHeaders,
       matchedFirewall: {
         name: catalog.slug,
@@ -123,16 +120,23 @@ describe("catalog-owned Automatic MCP static headers", () => {
   it("resolves the configured profile privately through refresh and denies a deleted account", async () => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
-      const { catalog, claim, body, sandboxHeaders, connectionId } =
-        await admittedConfiguredMcp(owned);
-      expect(claim.environment).not.toHaveProperty("MCP_ACCESS_TOKEN");
-      expect(claim.environment).not.toHaveProperty(
+      const {
+        catalog,
+        execution: receivedExecution,
+        body,
+        sandboxHeaders,
+        connectionId,
+      } = await admittedConfiguredMcp(owned);
+      expect(receivedExecution.environment).not.toHaveProperty(
+        "MCP_ACCESS_TOKEN",
+      );
+      expect(receivedExecution.environment).not.toHaveProperty(
         "AUTOMATIC_STATIC_ACCESS_TOKEN",
       );
-      expect(claim.platformEnvironment).not.toHaveProperty(
+      expect(receivedExecution.platformEnvironment).not.toHaveProperty(
         "AUTOMATIC_STATIC_ACCESS_TOKEN",
       );
-      expect(claim.secretValues).not.toContain(
+      expect(receivedExecution.secretValues).not.toContain(
         "automatic-initial-access-token",
       );
 

@@ -9,7 +9,8 @@ final class WorkspaceResources {
   let store = CCState.Store()
   private let lifetime = CCState.State(true)
   private let invalidateReads: Command<Void, Set<ChatInvalidation>>
-  private let modelBootstrap: WorkspaceModelBootstrap?
+  private let modelBootstrap: WorkspaceReadBootstrap?
+  private let projectBootstrap: WorkspaceReadBootstrap?
   let navigation: Computed<Task<[AgentRecord], Error>>
   let reloadNavigation: Command<Void, Void>
   let projectList: Computed<Task<[ChatProject], Error>>
@@ -29,10 +30,12 @@ final class WorkspaceResources {
 
   init(
     client: APIClient, sync: ChatSync, sleep: @escaping @Sendable (Duration) async throws -> Void,
-    modelBootstrap: WorkspaceModelBootstrap? = nil,
+    modelBootstrap: WorkspaceReadBootstrap? = nil,
+    projectBootstrap: WorkspaceReadBootstrap? = nil,
     lifecycleTasks: LifecycleTasks? = nil
   ) {
     self.modelBootstrap = modelBootstrap
+    self.projectBootstrap = projectBootstrap
     let lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     let lifetime = lifetime
     let modelReadiness: (@MainActor () async throws -> Void)?
@@ -71,8 +74,18 @@ final class WorkspaceResources {
     self.agents = agents
     navigation = agents.value
     reloadNavigation = agents.reload
+    let projectReadiness: (@MainActor () async throws -> Void)?
+    if let projectBootstrap {
+      projectReadiness = {
+        try await projectBootstrap.wait()
+        projectBootstrap.didScheduleRead()
+      }
+    } else {
+      projectReadiness = nil
+    }
     let projects = WorkspaceRead(
       "Projects", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      readiness: projectReadiness,
       read: sync.projectList)
     self.projects = projects
     projectList = projects.value
@@ -145,6 +158,10 @@ final class WorkspaceResources {
     try sidebarDrafts.retryFailed(in: store)
   }
 
+  func retryProjects() throws {
+    try projects.retryFailed(in: store)
+  }
+
   func prepareSettings() throws {
     try store.set(billing.reload)
   }
@@ -158,6 +175,7 @@ final class WorkspaceResources {
 
   func close() {
     modelBootstrap?.close()
+    projectBootstrap?.close()
     preference.close()
     available.close()
     catalog.close()

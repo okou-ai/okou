@@ -50,7 +50,7 @@ pub mod runners {
         pub mod by_run_id {
             /// Generated route bindings under `runners::runs::by_run_id::cancellation`.
             pub mod cancellation {
-                /// Read the stop intent or confirmed absence of a claimed Run.
+                /// Read the stop intent or confirmed absence of an executing Run.
                 /// Route contract: `GET /api/runners/runs/:runId/cancellation`.
                 pub const GET: crate::RouteTemplate = crate::RouteTemplate {
                     method: crate::Method::Get,

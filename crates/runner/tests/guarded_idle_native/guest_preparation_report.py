@@ -10,7 +10,6 @@ import subprocess
 from typing import Callable
 
 import batch_aba_report as batch
-import claim_producer_report as retained
 import cleanup_report as cleanup
 import progress_report as foreground
 import later_parking_report as later
@@ -100,7 +99,7 @@ def validate(directory, contract):
     running = contract.field("running_helper_observed", "running_exec_observed", "preterminal_quiesce_observed")
     is_running = contract.name == "RunningRestore"
     directory = pathlib.Path(directory)
-    collector = json.loads(retained.regular(directory/"report.json", 1024**2), object_pairs_hook=report.unique_object)
+    collector = json.loads(report.regular(directory/"report.json", 1024**2), object_pairs_hook=report.unique_object)
     if (collector.get("format") != "runner-memory-calibration-v2" or collector.get("success") is not False
             or type(collector.get("driver_exit_code")) is not int or collector["driver_exit_code"] != 101
             or collector.get("driver_wait_confirmed") is not True or collector.get("cleanup_confirmed") is not True
@@ -108,8 +107,8 @@ def validate(directory, contract):
             or collector.get("errors") != [] or any(collector.get(key) is not False for key in
                ("timed_out", "headroom_stop", "logs_truncated", "calibrated", "native_vm_exit_confirmed"))):
         raise ValueError("original failed driver/collector outcome changed")
-    stdout = retained.regular(directory/"stdout.log", 16*1024**2).decode()
-    stderr = retained.regular(directory/"stderr.log", 16*1024**2).decode()
+    stdout = report.regular(directory/"stdout.log", 16*1024**2).decode()
+    stderr = report.regular(directory/"stderr.log", 16*1024**2).decode()
     if "test result: FAILED" not in stdout or f"Error: {contract.name}Uncertain" not in stderr:
         raise ValueError("original fixed uncertainty failure missing")
     artifacts, samples = report._load_measurement_inputs(directory, collector)

@@ -3,8 +3,8 @@ import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createRunsApi } from "./api-bdd-runs";
 
-/** A real chat-admitted Run and Runner claim, never a locally signed JWT. */
-export async function claimPublicDiscordTestRun(
+/** Credentials issued by a chat-admitted execution. */
+export async function launchPublicDiscordTestRun(
   context: TestContext,
   actor: ApiTestUser,
 ) {
@@ -24,10 +24,14 @@ export async function claimPublicDiscordTestRun(
     agentId: agent.agentId,
     prompt: "Use the Discord integration",
   });
-  const claim = await runs.executionInput(sent.runId);
-  const token = claim.platformEnvironment.OKOU_TOKEN;
+  const execution = await runs.executionInput(sent.runId);
+  const token = execution.platformEnvironment.OKOU_TOKEN;
   if (!token) {
-    throw new Error("Expected the Runner claim to issue an Okou run token");
+    throw new Error("Expected the execution to issue an Okou run token");
   }
-  return { ...sent, claim, headers: { authorization: `Bearer ${token}` } };
+  return {
+    ...sent,
+    execution,
+    headers: { authorization: `Bearer ${token}` },
+  };
 }

@@ -65,13 +65,12 @@ class TestRegistryBuiltinSnapshot:
             builtin_firewall_catalog_snapshot=snapshot,
         )
 
-        assert resolved.firewalls is not None
-        assert [firewall["name"] for firewall in resolved.firewalls] == ["retained"]
+        assert resolved.entries is not None
+        assert [entry.firewall["name"] for entry in resolved.entries] == ["retained"]
         assert resolved.omitted_builtin_names == frozenset({"missing"})
-        assert resolved.builtin_cache_keys is not None
-        assert len(resolved.builtin_cache_keys) == 1
-        assert resolved.builtin_cache_keys[0] is not None
-        assert resolved.builtin_cache_keys[0][0] == "retained"
+        assert len(resolved.entries) == 1
+        assert resolved.entries[0].cache_key is not None
+        assert resolved.entries[0].cache_key[0] == "retained"
 
     def test_catalog_identity_is_checked_only_for_cached_builtin_registry(self, tmp_path, mitm_ctx):
         registry_path = tmp_path / "registry.json"

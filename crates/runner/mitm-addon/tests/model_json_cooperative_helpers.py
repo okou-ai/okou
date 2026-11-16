@@ -18,6 +18,7 @@ from tests.model_provider_response_helpers import (
     ModelProviderJsonCase,
     model_provider_flow,
 )
+from tests.repeated_bytes_helpers import repeat_marker
 
 _CHAT_CASE = ModelProviderJsonCase(
     host="api.openai.com",
@@ -77,7 +78,7 @@ def model_json_body(
         body["content"] = [{"type": "text", "text": text}]
     envelope = json.dumps(body, ensure_ascii=ensure_ascii, separators=(",", ":")).encode()
     encoded_text = b"\\u4e2d" if ensure_ascii else "中".encode()
-    return envelope.replace(encoded_text, encoded_text * characters, 1)
+    return repeat_marker(envelope, encoded_text, characters)
 
 
 def encode_model_json(body: bytes, encoding: str) -> bytes:

@@ -277,15 +277,14 @@ describe("POST /api/uploads/complete", () => {
   });
 
   it("associates completed-run uploads with their owning thread and retains files after thread deletion", async () => {
-    const { actor, agentId, runnerGroup } =
-      await eventsFixture.entitledNativeChatActor();
+    const { actor, agentId } = await eventsFixture.entitledNativeChatActor();
     const orgId = requireOrgId(actor);
     const run = await eventsFixture.sendChatRun(actor, {
       agentId,
       prompt: "Produce an artifact that finishes uploading after execution.",
     });
-    const claimed = await eventsFixture.claimChatRun(runnerGroup, run.runId);
-    await eventsFixture.completeChatRunOk(run.runId, claimed.sandboxHeaders);
+    const execution = await eventsFixture.runExecution(run.runId);
+    await eventsFixture.completeChatRunOk(run.runId, execution.sandboxHeaders);
     await flushWaitUntilForTest();
 
     const objectStore = eventsFixture.chatCallbacks.acceptChatObjectStorage();

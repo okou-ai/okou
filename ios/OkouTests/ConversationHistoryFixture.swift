@@ -20,14 +20,15 @@ final class ConversationHistoryFixture: Sendable {
     threadSnapshot: ChatHTTPFixture.Handler? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
     eventRowsStatus: @escaping @Sendable () -> Int = { 200 },
-    detail: ChatHTTPFixture.Handler? = nil, additional: ChatHTTPFixture.Handler? = nil,
+    detail: ChatHTTPFixture.Handler? = nil, updateDetail: ChatHTTPFixture.Handler? = nil,
+    additional: ChatHTTPFixture.Handler? = nil,
     indicators: ChatHTTPFixture.Handler? = nil
   ) {
     self.init(
       rows: (0..<count).map { Self.row($0 + 1) }, beforeRequest: beforeRequest, snapshot: snapshot,
       threadSnapshot: threadSnapshot,
       beforeEventRows: beforeEventRows, eventRowsStatus: eventRowsStatus,
-      detail: detail, additional: additional,
+      detail: detail, updateDetail: updateDetail, additional: additional,
       indicators: indicators)
   }
 
@@ -39,22 +40,49 @@ final class ConversationHistoryFixture: Sendable {
     threadSnapshot: ChatHTTPFixture.Handler? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
     eventRowsStatus: @escaping @Sendable () -> Int = { 200 },
-    detail: ChatHTTPFixture.Handler? = nil, additional: ChatHTTPFixture.Handler? = nil,
+    detail: ChatHTTPFixture.Handler? = nil, updateDetail: ChatHTTPFixture.Handler? = nil,
+    additional: ChatHTTPFixture.Handler? = nil,
     indicators: ChatHTTPFixture.Handler? = nil
   ) {
     let rows = HistoryRows(initial)
     self.rows = rows
     let requests = requests
+    let path = "/api/chat-threads/\(Self.threadID)"
+    let methods = [
+      "/api/indicators": "GET",
+      "/api/chat-threads/snapshot": "GET",
+      "/api/chat-threads/events": "GET",
+      "/api/ios-notifications/prefetch": "POST",
+      path + "/activity-summary": "POST",
+      "/api/connector-catalog/slack": "GET",
+      "/api/connector-accounts/connections": "GET",
+      "/api/agents/\(Self.agentID)/user-connectors": "GET",
+      path + "/usage": "POST",
+      "/api/web/file-url": "GET",
+      path + "/event-snapshot": "GET",
+      path + "/event-rows": "GET",
+      path: "GET",
+      path + "/mark-read": "POST",
+      path + "/connector-selections": "GET",
+      path + "/metadata": "GET",
+      "/api/chat/events": "POST",
+    ]
     http = ChatHTTPFixture { request in
+      let requestPath = request.url?.path ?? ""
+      if let method = methods[requestPath], request.httpMethod != method {
+        guard requestPath == path, request.httpMethod == "PATCH", updateDetail != nil else {
+          throw URLError(.unsupportedURL)
+        }
+      }
+      let artifactPath =
+        requestPath.hasPrefix("/api/artifact-references/") || requestPath == path + "/artifacts"
+      let artifactRequest = artifactResources != nil && artifactPath
+      if artifactRequest, request.httpMethod != "GET" { throw URLError(.unsupportedURL) }
       try beforeRequest?()
       requests.values.withLock {
         $0.append("\(request.httpMethod ?? "GET") \(request.url?.path ?? "")")
       }
-      let path = "/api/chat-threads/\(Self.threadID)"
-      if let artifactResources,
-        request.url?.path.hasPrefix("/api/artifact-references/") == true
-          || request.url?.path == path + "/artifacts"
-      {
+      if let artifactResources, artifactRequest {
         return try await artifactResources(request)
       }
       switch request.url?.path {
@@ -129,6 +157,9 @@ final class ConversationHistoryFixture: Sendable {
               """)
         }
       case path:
+        if request.httpMethod == "PATCH", let updateDetail {
+          return try await updateDetail(request)
+        }
         if let detail { return try await detail(request) }
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
       case path + "/mark-read":

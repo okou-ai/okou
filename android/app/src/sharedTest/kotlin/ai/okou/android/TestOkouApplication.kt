@@ -1,6 +1,8 @@
 package ai.okou.android
 
 import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.generated.AndroidUpdates
+import ai.okou.android.api.generated.AndroidUpdatesRelease
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.OrganizationRole
 import ai.okou.android.api.generated.UpdatePreferencesRequest
@@ -14,13 +16,83 @@ import ai.okou.android.auth.WorkspaceBootstrap
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceMembership
 import ai.okou.android.auth.WorkspaceSession
+import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
+import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.chat.RealtimeService
+import ai.okou.android.instructions.PersonalInstructionsDraftStore
+import ai.okou.android.instructions.PersonalInstructionsService
+import ai.okou.android.updates.AppUpdates
+import ai.okou.android.updates.UpdateRecord
+import ai.okou.android.updates.UpdateService
+import ai.okou.android.updates.UpdateStore
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
 
 /** Compiled only into host/device tests. Production has no authentication bypass switch. */
 open class TestOkouApplication : OkouApplication() {
+    var updateService: UpdateService? = null
+    var updateOwner: AppUpdates? = null
+    override val updates
+        get() = updateOwner ?: testUpdates
+
+    private val testUpdates by lazy {
+        val service =
+            object : UpdateService {
+                override suspend fun initialize() {
+                    updateService?.initialize()
+                }
+
+                override suspend fun check() =
+                    updateService?.check()
+                        ?: AndroidUpdates(
+                            null,
+                            AndroidUpdatesRelease(
+                                BuildConfig.VERSION_NAME,
+                                24,
+                                1,
+                                "0".repeat(64),
+                                "https://static.okou.io/unused",
+                                "",
+                            ),
+                        )
+
+                override suspend fun recover(release: AndroidUpdatesRelease) =
+                    updateService?.recover(release)
+
+                override suspend fun download(
+                    release: AndroidUpdatesRelease,
+                    progress: (Long) -> Unit,
+                ): File = checkNotNull(updateService).download(release, progress)
+
+                override fun close() {
+                    updateService?.close()
+                }
+            }
+        AppUpdates(
+            service,
+            object : UpdateStore {
+                override suspend fun load(): UpdateRecord? = null
+
+                override suspend fun save(record: UpdateRecord) = Unit
+            },
+            BuildConfig.VERSION_NAME,
+            android.os.Build.VERSION.SDK_INT,
+        )
+    }
     var chatService: ChatListService = TestChatService()
+    var realtimeService: RealtimeService = TestRealtimeService()
+    var composerService: ChatComposerService = TestChatComposerService()
+    var journalStore: ComposerJournalStore? = null
+    override val composerJournal
+        get() = journalStore ?: super.composerJournal
+
+    var instructionsService: PersonalInstructionsService? = null
+    var instructionsStore: PersonalInstructionsDraftStore? = null
+    override val instructionsDrafts
+        get() = instructionsStore ?: super.instructionsDrafts
+
     // External API fixture data survives a new Activity/session owner, as the real server does.
     private val preferences = mutableMapOf<Triple<String, String, String>, UserPreferences>()
 
@@ -39,7 +111,20 @@ open class TestOkouApplication : OkouApplication() {
     ): WorkspaceSession {
         val key = Triple(identity.apiOrigin, identity.userId, identity.workspaceId)
         fun stored() = preferences.getOrPut(key) { testBootstrap(identity.workspaceId).preferences }
-        return object : WorkspaceSession, ChatListService by chatService {
+        return object :
+            WorkspaceSession,
+            RealtimeService by realtimeService,
+            ChatListService by chatService,
+            ChatComposerService by composerService {
+
+            override suspend fun personalInstructionsEnabled() =
+                instructionsService?.personalInstructionsEnabled() == true
+
+            override suspend fun personalInstructions() =
+                checkNotNull(instructionsService).personalInstructions()
+
+            override suspend fun updatePersonalInstructions(content: String, ifVersion: String) =
+                checkNotNull(instructionsService).updatePersonalInstructions(content, ifVersion)
 
             override suspend fun bootstrap() =
                 testBootstrap(identity.workspaceId).copy(preferences = stored())

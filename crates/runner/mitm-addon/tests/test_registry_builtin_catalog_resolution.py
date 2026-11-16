@@ -21,26 +21,12 @@ from tests.registry_helpers import builtin_sandbox, inline_sandbox, write_multi_
 
 
 class TestRegistryBuiltinCatalogResolution:
-    def test_resolved_firewall_entries_enforces_cache_key_alignment(self):
-        inline_firewall = {"name": "inline", "apis": []}
-
-        registry_firewalls.ResolvedFirewallEntries(None, None)
-        registry_firewalls.ResolvedFirewallEntries([], ())
-        registry_firewalls.ResolvedFirewallEntries([], (), frozenset({"omitted"}))
-        registry_firewalls.ResolvedFirewallEntries([inline_firewall], (None,))
-
-        with pytest.raises(ValueError, match="absent when firewalls are absent"):
-            registry_firewalls.ResolvedFirewallEntries(None, (None,))
+    def test_resolved_firewall_entries_rejects_omissions_without_firewalls(self):
         with pytest.raises(ValueError, match="omitted builtin names must be absent"):
             registry_firewalls.ResolvedFirewallEntries(
                 None,
-                None,
                 frozenset({"omitted"}),
             )
-        with pytest.raises(ValueError, match="present when firewalls are present"):
-            registry_firewalls.ResolvedFirewallEntries([inline_firewall], None)
-        with pytest.raises(ValueError, match="align with resolved firewalls"):
-            registry_firewalls.ResolvedFirewallEntries([inline_firewall], ())
 
     @pytest.mark.parametrize(
         ("connector_runtime_targets", "expected_message"),
@@ -550,8 +536,8 @@ class TestRegistryBuiltinCatalogResolution:
             explicit_omitted_builtin_names=frozenset({"github"}),
         )
 
-        assert resolved.firewalls is not None
-        assert [firewall["name"] for firewall in resolved.firewalls] == ["slack"]
+        assert resolved.entries is not None
+        assert [entry.firewall["name"] for entry in resolved.entries] == ["slack"]
         assert resolved.omitted_builtin_names == frozenset({"github"})
 
     def test_inline_custom_connector_id_is_preserved_on_firewall_and_apis(self):
@@ -581,11 +567,11 @@ class TestRegistryBuiltinCatalogResolution:
             builtin_firewall_catalog_snapshot=None,
         )
 
-        assert resolved.firewalls is not None
-        assert resolved.firewalls[0]["customConnectorId"] == custom_connector_id
-        assert resolved.firewalls[0]["apis"][0]["customConnectorId"] == custom_connector_id
-        assert resolved.firewalls[0]["sourceId"] == source_id
-        assert resolved.firewalls[0]["apis"][0]["sourceId"] == source_id
+        assert resolved.entries is not None
+        assert resolved.entries[0].firewall["customConnectorId"] == custom_connector_id
+        assert resolved.entries[0].firewall["apis"][0]["customConnectorId"] == custom_connector_id
+        assert resolved.entries[0].firewall["sourceId"] == source_id
+        assert resolved.entries[0].firewall["apis"][0]["sourceId"] == source_id
 
     def test_inline_custom_connector_id_rejects_invalid_identity(self):
         with pytest.raises(registry_firewalls.FirewallEntryResolutionError):

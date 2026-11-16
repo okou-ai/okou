@@ -11,7 +11,7 @@ import { createDeferredPromise, joinAll, onRejection } from "../../utils";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
 import { runnerSshRoutes } from "../runner-ssh";
 import { sshConnectionsRoutes } from "../ssh-connections";
-import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
+import { createSshExecutionApi } from "./helpers/ssh-execution";
 import { createRouteMocks } from "./helpers/route-test";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 
@@ -34,7 +34,7 @@ const connections = () => {
 };
 
 describe("SSH host edits overlapping credential rotation", () => {
-  const ordinary = createClaimedSshRuntimeApi(context, {
+  const ordinary = createSshExecutionApi(context, {
     runnerHeaders,
     authenticate: (owner) => {
       mocks.clerk.session(owner.userId, owner.orgId);

@@ -212,7 +212,7 @@ async function startWatchedChatRun(
   return { runId, threadId: sent.body.threadId };
 }
 
-async function claimChatRun(
+async function runExecution(
   runnerGroup: string,
   runId: string,
 ): Promise<{ readonly authorization: string }> {
@@ -546,8 +546,8 @@ describe("chat-run-finished workflow automations", () => {
           },
         },
       ]);
-      const sandboxHeaders = await claimChatRun(fixture.runnerGroup, run.runId);
-      ownedRuns.rememberClaim(
+      const sandboxHeaders = await runExecution(fixture.runnerGroup, run.runId);
+      ownedRuns.rememberExecution(
         run.runId,
         sandboxHeaders.authorization.slice("Bearer ".length),
       );
@@ -581,8 +581,8 @@ describe("chat-run-finished workflow automations", () => {
       if (!automationRunId) {
         throw new Error("Expected a triggered automation run");
       }
-      const claimed = await ownedRuns.claim(automationRunId);
-      expect(claimed.prompt).toContain('"failureReason": null');
+      const execution = await ownedRuns.executionInput(automationRunId);
+      expect(execution.prompt).toContain('"failureReason": null');
     },
   );
 
@@ -620,8 +620,8 @@ describe("chat-run-finished workflow automations", () => {
         reasonWithPattern,
       );
 
-      const sandboxHeaders = await claimChatRun(fixture.runnerGroup, run.runId);
-      ownedRuns.rememberClaim(
+      const sandboxHeaders = await runExecution(fixture.runnerGroup, run.runId);
+      ownedRuns.rememberExecution(
         run.runId,
         sandboxHeaders.authorization.slice("Bearer ".length),
       );
@@ -698,11 +698,11 @@ describe("chat-run-finished workflow automations", () => {
         runStatuses: ["failed"],
       });
       automationIds.push(automationId);
-      const sandboxHeaders = await claimChatRun(
+      const sandboxHeaders = await runExecution(
         fixture.runnerGroup,
         sourceRun.runId,
       );
-      ownedRuns.rememberClaim(
+      ownedRuns.rememberExecution(
         sourceRun.runId,
         sandboxHeaders.authorization.slice("Bearer ".length),
       );
@@ -749,9 +749,9 @@ describe("chat-run-finished workflow automations", () => {
         automationId,
         sourceRun,
       );
-      const claimed = await ownedRuns.claim(recovery.runId);
-      expect(claimed.prompt).toContain('"runStatus": "failed"');
-      expect(claimed.prompt).toContain(
+      const execution = await ownedRuns.executionInput(recovery.runId);
+      expect(execution.prompt).toContain('"runStatus": "failed"');
+      expect(execution.prompt).toContain(
         `"failureReason": ${JSON.stringify(expectedReason)}`,
       );
     },
@@ -770,11 +770,11 @@ describe("chat-run-finished workflow automations", () => {
         runStatuses: ["cancelled"],
       });
       automationIds.push(automationId);
-      const sandboxHeaders = await claimChatRun(
+      const sandboxHeaders = await runExecution(
         fixture.runnerGroup,
         sourceRun.runId,
       );
-      ownedRuns.rememberClaim(
+      ownedRuns.rememberExecution(
         sourceRun.runId,
         sandboxHeaders.authorization.slice("Bearer ".length),
       );
@@ -790,9 +790,9 @@ describe("chat-run-finished workflow automations", () => {
         automationId,
         sourceRun,
       );
-      const claimed = await ownedRuns.claim(recovery.runId);
-      expect(claimed.prompt).toContain('"runStatus": "cancelled"');
-      expect(claimed.prompt).toContain('"failureReason": null');
+      const execution = await ownedRuns.executionInput(recovery.runId);
+      expect(execution.prompt).toContain('"runStatus": "cancelled"');
+      expect(execution.prompt).toContain('"failureReason": null');
     },
   );
 });

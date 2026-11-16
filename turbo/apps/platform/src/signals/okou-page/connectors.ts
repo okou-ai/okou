@@ -123,6 +123,7 @@ export interface ComposerConnectorSignals {
   readonly connectorUiState$: Computed<ComposerConnectorUiState>;
   readonly popoverOpen$: Computed<boolean>;
   readonly remoteAccessDialogOpen$: Computed<boolean>;
+  readonly remoteAccessScopeId$: Computed<string>;
   readonly dialogsOpen$: Computed<boolean>;
   readonly permissionConnectorSlug$: Computed<ConnectorSlug | null>;
   readonly openAddConnectorsDialog$: Command<void, []>;
@@ -376,6 +377,7 @@ function createConnectorUiSelectors(
   ComposerConnectorSignals,
   | "popoverOpen$"
   | "remoteAccessDialogOpen$"
+  | "remoteAccessScopeId$"
   | "dialogsOpen$"
   | "permissionConnectorSlug$"
 > {
@@ -385,6 +387,9 @@ function createConnectorUiSelectors(
     }),
     remoteAccessDialogOpen$: computed((get) => {
       return get(connectorUiState$).remoteAccessDialogOpen;
+    }),
+    remoteAccessScopeId$: computed((get) => {
+      return get(connectorUiState$).remoteAccessScopeId;
     }),
     dialogsOpen$: computed((get) => {
       const uiState = get(connectorUiState$);

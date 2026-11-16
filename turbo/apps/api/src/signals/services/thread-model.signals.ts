@@ -2,7 +2,6 @@ import { performance } from "node:perf_hooks";
 import {
   getFrameworkForType,
   isBuiltInModelProviderType,
-  type ModelProviderCredentialScope,
   modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
@@ -108,10 +107,8 @@ export interface ThreadModelSelection {
   readonly owner: { readonly userId: string; readonly orgId: string };
   readonly agentRunModelPin: AgentRunModelPin;
   readonly modelProviderId: string | undefined;
-  readonly modelProviderCredentialScope:
-    ModelProviderCredentialScope | undefined;
   readonly modelProviderType: string | undefined;
-  readonly selectedModelOverride: string;
+  readonly selectedModel: string;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
   readonly codexServiceTier: "fast" | undefined;
   readonly reasoningEffort: ReasoningEffort | undefined;
@@ -119,28 +116,6 @@ export interface ThreadModelSelection {
   /** The CLI runtime the run executes in; Pi when Pi execution applies. */
   readonly cliAgentType: string | null;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
-}
-
-interface ThreadModelProviderArgs {
-  readonly catalog: ModelCatalog;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelProviderId?: string;
-  readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
-  readonly modelProviderType?: string;
-  readonly selectedModelOverride?: string;
-  readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
-  readonly piExecution: boolean;
-  readonly codexServiceTier?: "fast";
-  readonly agentRunMetadata?: {
-    readonly reasoningEffort?: ReasoningEffort | null;
-  };
-  readonly queueFirstAssociation?: QueueFirstRunAssociation;
-}
-
-interface ThreadModelProviderInput {
-  readonly timing: ApiDispatchTimingCollector;
-  readonly args: ThreadModelProviderArgs;
 }
 
 export interface ThreadModelSignals {
@@ -155,7 +130,7 @@ export interface ThreadModelSignals {
     Promise<SupportedFramework | ThreadModelError>
   >;
   readonly modelRoute$: Computed<
-    Promise<ResolvedModelProviderEnvironment | ThreadModelError | null>
+    Promise<ResolvedModelProviderEnvironment | ThreadModelError>
   >;
   /** Provider-native framework; preserves provider-specific prompt guidance. */
   readonly providerFramework$: Computed<
@@ -166,10 +141,6 @@ export interface ThreadModelSignals {
 type ThreadModelSelectionSignal = Computed<
   Promise<ThreadModelSelection | ThreadModelError>
 >;
-type ThreadModelProviderInputSignal = Computed<
-  Promise<ThreadModelProviderInput | ThreadModelError>
->;
-
 /** Resolve one immutable event selection, then share its captured provider route. */
 export function createThreadModelSignals(
   bootstrap: AgentRunContextSignals,
@@ -194,29 +165,23 @@ export function createThreadModelSignals(
     selection$,
     dispatchTiming$,
   );
-  const providerInput$ = createProviderInput(
+  const providerContext$ = createProviderContext(
     bootstrap,
     subscriptionSelection$,
     dispatchTiming$,
   );
-  const requestedFramework$ = createRequestedFramework(
-    bootstrap,
-    providerInput$,
-  );
-  const providerContext$ = createProviderContext(
-    providerInput$,
-    requestedFramework$,
+  const requestedFramework$ = computed(
+    async (get): Promise<SupportedFramework | ThreadModelError> => {
+      const context = await get(providerContext$);
+      return "status" in context ? context : context.framework;
+    },
   );
   const modelEnvironment$ = createModelEnvironment(bootstrap, providerContext$);
   const modelRoute$ = createModelRoute(providerContext$, modelEnvironment$);
   const providerFramework$ = computed(
     async (get): Promise<SupportedFramework | ThreadModelError> => {
       const model = await get(modelRoute$);
-      return model === null
-        ? get(requestedFramework$)
-        : "status" in model
-          ? model
-          : getFrameworkForType(model.type);
+      return "status" in model ? model : getFrameworkForType(model.type);
     },
   );
   return {
@@ -486,10 +451,8 @@ function createModelSelection(
           selectedModel: model.pin.selectedModel,
         },
         modelProviderId: model.pin.modelProviderId ?? undefined,
-        modelProviderCredentialScope:
-          model.pin.modelProviderCredentialScope ?? undefined,
         modelProviderType: modelProviderType ?? undefined,
-        selectedModelOverride: model.pin.selectedModel,
+        selectedModel: model.pin.selectedModel,
         builtInModelRuntimeRoute: model.builtInModelRuntimeRoute ?? undefined,
         codexServiceTier: model.runCodexServiceTier,
         reasoningEffort: resolveReasoningEffortForDispatch({
@@ -533,128 +496,75 @@ function createSubscriptionSelection(
       }
       const providerType = pin.modelProvider;
       const collector = get(dispatchTiming$);
-      return (async () => {
-        const startedAt = performance.now();
-        const operation = (async () => {
-          const candidates = personalSubscriptionAccountCandidates({
-            command: selection,
-            providerType,
-            modelProviderId: pin.modelProviderId,
-            snapshot: await get(bootstrap.memberModels$),
-          });
-          const account =
-            candidates.find((candidate) => {
-              return candidate.id === pin.modelProviderId;
-            }) ?? candidates[0];
-          if (!account || account.type !== providerType) {
-            return conflict(
-              "The selected subscription account is unavailable. Reconnect it before starting another run.",
-            );
-          }
-          return {
-            ...selection,
-            modelProviderId: account.id,
-            agentRunModelPin: { ...pin, modelProviderId: account.id },
-          };
-        })();
-        return await (async () => {
-          return await operation;
-        })().finally(() => {
-          collector.recordDuration(
-            "api_dispatch_pre_create_agent_capture_subscription_account",
-            "nested",
-            performance.now() - startedAt,
-            now(),
-          );
+      const startedAt = performance.now();
+      return await (async () => {
+        const candidates = personalSubscriptionAccountCandidates({
+          providerType,
+          modelProviderId: pin.modelProviderId,
+          snapshot: await get(bootstrap.memberModels$),
         });
-      })();
+        const account =
+          candidates.find((candidate) => {
+            return candidate.id === pin.modelProviderId;
+          }) ?? candidates[0];
+        if (!account || account.type !== providerType) {
+          return conflict(
+            "The selected subscription account is unavailable. Reconnect it before starting another run.",
+          );
+        }
+        return {
+          ...selection,
+          modelProviderId: account.id,
+          agentRunModelPin: { ...pin, modelProviderId: account.id },
+        };
+      })().finally(() => {
+        collector.recordDuration(
+          "api_dispatch_pre_create_agent_capture_subscription_account",
+          "nested",
+          performance.now() - startedAt,
+          now(),
+        );
+      });
     },
   );
   return subscriptionSelection$;
 }
 
-function createProviderInput(
+function createProviderContext(
   bootstrap: AgentRunContextSignals,
   subscriptionSelection$: ThreadModelSignals["subscriptionSelection$"],
   dispatchTiming$: ThreadModelSignals["dispatchTiming$"],
 ) {
-  const providerInput$ = computed(
-    async (get): Promise<ThreadModelProviderInput | ThreadModelError> => {
-      const selection = await get(subscriptionSelection$);
-      if ("status" in selection) {
-        return selection;
-      }
-      return {
-        timing: get(dispatchTiming$),
-        args: {
-          catalog: await get(bootstrap.modelCatalog$),
-          orgId: selection.owner.orgId,
-          userId: selection.owner.userId,
-          modelProviderId: selection.modelProviderId,
-          modelProviderCredentialScope: selection.modelProviderCredentialScope,
-          modelProviderType: selection.modelProviderType,
-          selectedModelOverride: selection.selectedModelOverride,
-          builtInModelRuntimeRoute: selection.builtInModelRuntimeRoute,
-          piExecution: selection.piExecution,
-          codexServiceTier: selection.codexServiceTier,
-          agentRunMetadata: { reasoningEffort: selection.reasoningEffort },
-          queueFirstAssociation: selection.queueFirstAssociation,
-        },
-      };
-    },
-  );
-  return providerInput$;
-}
-
-function createRequestedFramework(
-  bootstrap: AgentRunContextSignals,
-  providerInput$: ThreadModelProviderInputSignal,
-) {
-  const requestedFramework$ = computed(
-    async (get): Promise<SupportedFramework | ThreadModelError> => {
-      const input = await get(providerInput$);
-      if ("status" in input) {
-        return input;
-      }
-      const args = input.args;
-      const parsed = modelProviderTypeSchema.safeParse(args.modelProviderType);
-      if (parsed.success) {
-        return getFrameworkForType(parsed.data);
-      }
-      if (!args.modelProviderId) {
-        return getValidatedFramework(undefined);
-      }
+  const providerContext$ = computed(async (get) => {
+    const selection = await get(subscriptionSelection$);
+    if ("status" in selection) {
+      return selection;
+    }
+    const timing = get(dispatchTiming$);
+    const catalog = await get(bootstrap.modelCatalog$);
+    const parsed = modelProviderTypeSchema.safeParse(
+      selection.modelProviderType,
+    );
+    let framework: SupportedFramework;
+    if (parsed.success) {
+      framework = getFrameworkForType(parsed.data);
+    } else if (selection.modelProviderId) {
       const member = await get(bootstrap.memberModels$);
       const provider =
         member.providers.find((row) => {
-          return row.id === args.modelProviderId;
+          return row.id === selection.modelProviderId;
         }) ??
         member.accounts.find((row) => {
-          return row.id === args.modelProviderId;
+          return row.id === selection.modelProviderId;
         });
       const type = modelProviderTypeSchema.safeParse(provider?.type);
-      return type.success
+      framework = type.success
         ? getFrameworkForType(type.data)
         : getValidatedFramework(undefined);
-    },
-  );
-  return requestedFramework$;
-}
-
-function createProviderContext(
-  providerInput$: ThreadModelProviderInputSignal,
-  requestedFramework$: ThreadModelSignals["requestedFramework$"],
-) {
-  const providerContext$ = computed(async (get) => {
-    const input = await get(providerInput$);
-    if ("status" in input) {
-      return input;
+    } else {
+      framework = getValidatedFramework(undefined);
     }
-    const framework = await get(requestedFramework$);
-    if (typeof framework !== "string") {
-      return framework;
-    }
-    return { input, environmentArgs: { ...input.args, framework } };
+    return { selection, catalog, timing, framework };
   });
   return providerContext$;
 }
@@ -669,14 +579,14 @@ function createModelEnvironment(
       if ("status" in context) {
         return null;
       }
-      const args = context.environmentArgs;
-      if (isBuiltInModelProviderType(args.modelProviderType)) {
-        const route = args.builtInModelRuntimeRoute;
+      const { selection, framework } = context;
+      if (isBuiltInModelProviderType(selection.modelProviderType)) {
+        const route = selection.builtInModelRuntimeRoute;
         if (
           !route ||
-          route.selectedModel !== args.selectedModelOverride ||
+          route.selectedModel !== selection.selectedModel ||
           !isBuiltInModelRuntimeRoutePermitted(route) ||
-          getFrameworkForType(route.providerType) !== args.framework
+          getFrameworkForType(route.providerType) !== framework
         ) {
           return null;
         }
@@ -685,34 +595,40 @@ function createModelEnvironment(
             return key.id === route.modelKeyId;
           }),
         );
-        return source ? prepareManagedModelEnvironment(source, args) : null;
+        return source
+          ? prepareManagedModelEnvironment(source, {
+              framework,
+              selectedModel: selection.selectedModel,
+              builtInModelRuntimeRoute: route,
+            })
+          : null;
       }
       if (
-        !args.modelProviderId ||
-        !args.modelProviderType ||
-        !isPersonalSubscriptionProviderType(args.modelProviderType)
+        !selection.modelProviderId ||
+        !selection.modelProviderType ||
+        !isPersonalSubscriptionProviderType(selection.modelProviderType)
       ) {
         return null;
       }
       const source = memberAccountSourceFromSnapshot(
         await get(bootstrap.memberModels$),
-        args.modelProviderId,
+        selection.modelProviderId,
       );
       if (!source) {
         return null;
       }
       const type = source.configuration.providerType;
       if (
-        !args.selectedModelOverride ||
+        !selection.selectedModel ||
         !isPersonalSubscriptionProviderType(type) ||
-        getFrameworkForType(type) !== args.framework ||
-        args.modelProviderType !== type
+        getFrameworkForType(type) !== framework ||
+        selection.modelProviderType !== type
       ) {
         return null;
       }
       const upstreamModel = catalogSubscriptionUpstreamModel(
         await get(bootstrap.modelCatalog$),
-        args.selectedModelOverride,
+        selection.selectedModel,
         type,
       );
       if (!upstreamModel) {
@@ -720,12 +636,12 @@ function createModelEnvironment(
       }
       return prepareSubscriptionModelEnvironment(
         source,
-        args.selectedModelOverride,
+        selection.selectedModel,
         {
           upstreamModel,
-          userId: args.userId,
-          sourceId: args.modelProviderId,
-          piExecution: args.piExecution,
+          userId: selection.owner.userId,
+          sourceId: selection.modelProviderId,
+          piExecution: selection.piExecution,
         },
       );
     },
@@ -740,32 +656,27 @@ function createModelRoute(
   const modelRoute$ = computed(
     async (
       get,
-    ): Promise<ResolvedModelProviderEnvironment | ThreadModelError | null> => {
+    ): Promise<ResolvedModelProviderEnvironment | ThreadModelError> => {
       const context = await get(providerContext$);
       if ("status" in context) {
         return context;
       }
-      const collector = context.input.timing;
+      const collector = context.timing;
+      const startedAt = performance.now();
       const result = await settle(
         (async () => {
-          const startedAt = performance.now();
-          const operation = (async () => {
-            return (
-              (await get(modelEnvironment$)) ??
-              providerUnavailable("No model provider is available for this run")
-            );
-          })();
-          return await (async () => {
-            return await operation;
-          })().finally(() => {
-            collector.recordDuration(
-              "api_dispatch_prepare_context_resolve_model_provider",
-              "nested",
-              performance.now() - startedAt,
-              now(),
-            );
-          });
-        })(),
+          return (
+            (await get(modelEnvironment$)) ??
+            providerUnavailable("No model provider is available for this run")
+          );
+        })().finally(() => {
+          collector.recordDuration(
+            "api_dispatch_prepare_context_resolve_model_provider",
+            "nested",
+            performance.now() - startedAt,
+            now(),
+          );
+        }),
       );
       if (!result.ok) {
         return piConfigurationRouteError(result.error);
@@ -774,14 +685,14 @@ function createModelRoute(
       if ("status" in provider) {
         return provider;
       }
-      const args = context.input.args;
+      const selection = context.selection;
       const materialized = safeSync(() => {
         return materializePreparedPiProvider(
           {
-            catalog: args.catalog,
-            piExecution: args.piExecution,
-            codexServiceTier: args.codexServiceTier,
-            reasoningEffort: args.agentRunMetadata?.reasoningEffort,
+            catalog: context.catalog,
+            piExecution: selection.piExecution,
+            codexServiceTier: selection.codexServiceTier,
+            reasoningEffort: selection.reasoningEffort,
           },
           provider,
         );
@@ -815,9 +726,6 @@ function unpricedBuiltInModelRejection(
 }
 
 function personalSubscriptionAccountCandidates(args: {
-  readonly command: {
-    readonly owner: { readonly orgId: string; readonly userId: string };
-  };
   readonly providerType: string;
   readonly modelProviderId: string | null;
   readonly snapshot: MemberModelAccountSnapshot;

@@ -11,7 +11,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { vncConnectionsRoutes } from "../vnc-connections";
 import { sshConnectionsRoutes } from "../ssh-connections";
-import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
+import { createVncExecutionApi } from "./helpers/vnc-execution";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { requireVncCredentialId } from "./helpers/vnc-response";
@@ -41,13 +41,13 @@ function raw(path: string, body: unknown) {
 }
 
 describe("RSA-AES owner and private Runner boundaries", () => {
-  const claimed = createClaimedVncApi(context);
-  afterEach(claimed.cleanup);
+  const executionApi = createVncExecutionApi(context);
+  afterEach(executionApi.cleanup);
 
   it.each(VNC_RSA_AES_SECURITY_TYPES)(
     "preserves both exact credential subtypes and pin for %s",
     async (type) => {
-      const f = await claimed.fixture();
+      const f = await executionApi.fixture();
       api.authenticate(f);
       let generation = 1;
       let transport: { type: "ssh"; connectionId: string } | undefined;
@@ -117,7 +117,7 @@ describe("RSA-AES owner and private Runner boundaries", () => {
   );
 
   it("denies wrong capabilities before KMS and invalidates pin/password generations and revoked authority", async () => {
-    const f = await claimed.fixture();
+    const f = await executionApi.fixture();
     api.authenticate(f);
     const saved = await accept(
       api.connections().update({
@@ -210,7 +210,7 @@ describe("RSA-AES owner and private Runner boundaries", () => {
   });
 
   it("rejects bytes, NUL, malformed Unicode, CA alias and direct-ne without encrypting", async () => {
-    const f = claimed.owner();
+    const f = executionApi.owner();
     api.authenticate(f);
     const kms = useSecretKmsProbe();
     const before = kms.generateDataKeyCalls;
@@ -253,7 +253,7 @@ describe("RSA-AES owner and private Runner boundaries", () => {
   it.each([3072, 4096] as const)(
     "preserves the independently computed fixed-width pin for %s-bit public keys",
     async (modulusBits) => {
-      const f = claimed.owner();
+      const f = executionApi.owner();
       api.authenticate(f);
       // Public-only deterministic material avoids unrelated private-key generation.
       const modulus = Buffer.alloc(modulusBits / 8, 0xa5);
@@ -290,7 +290,7 @@ describe("RSA-AES owner and private Runner boundaries", () => {
   );
 
   it("rejects unsupported RSA sizes and exponents and non-RSA public keys without parser diagnostics", async () => {
-    const f = claimed.owner();
+    const f = executionApi.owner();
     api.authenticate(f);
     const unsupportedRsa = [
       { bytes: 128, exponent: "AQAB" },
@@ -325,7 +325,7 @@ describe("RSA-AES owner and private Runner boundaries", () => {
   });
 
   it("converts public PEM to a fixed-width wire hash and rejects private or extra material", async () => {
-    const f = claimed.owner();
+    const f = executionApi.owner();
     api.authenticate(f);
     const pair = generateKeyPairSync("rsa", {
       modulusLength: 2048,

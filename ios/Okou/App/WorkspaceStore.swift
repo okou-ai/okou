@@ -14,13 +14,22 @@ final class WorkspaceStore {
   private let sync: ChatSync
   private let projectDisclosure: ProjectDisclosureStorage?
   private let resources: WorkspaceResources
-  private let modelBootstrap: WorkspaceModelBootstrap?
+  private let modelBootstrap: WorkspaceReadBootstrap?
+  private let projectBootstrap: WorkspaceReadBootstrap?
   private let createRealtime: RealtimeService.ClientFactory?
   private let commands: ChatCommands
   private let conversationLimit: Int
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private let historyWarmingSleep: @Sendable (Duration) async throws -> Void
   private let didRefreshReadState: @MainActor () -> Void
+  private struct NotificationReadState: Equatable {
+    let agentID: String
+    let hidden: Bool
+    let muted: Bool
+    let unreadAt: Date?
+  }
+  private var notificationReadState: [String: NotificationReadState]?
+  private var notificationReadRevision = 0
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
   var settingsResources: WorkspaceResources { resources }
@@ -31,6 +40,7 @@ final class WorkspaceStore {
   var error: String?
   private(set) var chatLinkError: String?
   private(set) var threadFeedback: ChatThreadFeedback?
+  private(set) var fork: ChatForkStore?
   private(set) var threadPreview: ChatThreadPreviewResources?
   let sidebarInteraction = SidebarInteraction()
   private var chatLinkRequestID = UUID()
@@ -123,6 +133,7 @@ final class WorkspaceStore {
     client: client, sync: sync, commands: commands, resources: resources,
     didRefresh: { [weak self] in self?.applyThreads($0) },
     didFail: { [weak self] in self?.handle($0) },
+    didChangeReadState: { [weak self] in self?.notificationReadStateChanged() },
     didLoadAgents: { [weak self] in self?.prepareDefaultDraft(from: $0) },
     readRetrySleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
   @ObservationIgnored lazy var projects = ChatProjectStore(
@@ -146,6 +157,7 @@ final class WorkspaceStore {
   private var pruneAgain = false
   private var warmingTask: Task<Void, Never>?
   private var warmAgain = false
+  private var startupHistoryWarmingRequested = false
   private var closed = false
   private var isForeground = false
   private var startupGeneration = UUID()
@@ -162,7 +174,8 @@ final class WorkspaceStore {
     historyWarmingSleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
-    modelBootstrap: WorkspaceModelBootstrap? = nil,
+    modelBootstrap: WorkspaceReadBootstrap? = nil,
+    projectBootstrap: WorkspaceReadBootstrap? = nil,
     createRealtime: RealtimeService.ClientFactory? = nil,
     didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
@@ -177,9 +190,11 @@ final class WorkspaceStore {
     let sync = sharedSync ?? ChatSync(client: client, cache: cache)
     self.sync = sync
     self.modelBootstrap = modelBootstrap
+    self.projectBootstrap = projectBootstrap
     self.createRealtime = createRealtime
     resources = WorkspaceResources(
       client: client, sync: sync, sleep: readRetrySleep, modelBootstrap: modelBootstrap,
+      projectBootstrap: projectBootstrap,
       lifecycleTasks: lifecycleTasks)
     self.readRetrySleep = readRetrySleep
     self.historyWarmingSleep = historyWarmingSleep
@@ -224,10 +239,16 @@ final class WorkspaceStore {
         tokenProvider: { [client] in
           try await client.data("/api/realtime/token", method: "POST", body: Data("{}".utf8)).data
         },
-        onChange: { [weak self] in self?.requestRefresh($0) },
+        onChange: { [weak self] change in
+          guard let self, !closed, !needsUpgrade else { return }
+          // Manual history refreshes share this invalidation but must not start a global warm.
+          if case .history = change { warmAgain = true }
+          requestRefresh(change)
+        },
         onConnection: { [weak self] status in
           self?.connectionStatus = status
           self?.modelBootstrap?.connectionChanged(status)
+          self?.projectBootstrap?.connectionChanged(status)
         },
         createRealtime: createRealtime, lifecycleTasks: lifecycleTasks)
       self.realtime = realtime
@@ -332,6 +353,8 @@ final class WorkspaceStore {
 
   @discardableResult
   func close() -> Task<Void, Never> {
+    fork?.close()
+    fork = nil
     sidebarDrafts.close()
     threadPreview?.close()
     threadPreview = nil
@@ -378,10 +401,12 @@ final class WorkspaceStore {
     realtime?.setForeground(active)
     if phase == .background {
       modelBootstrap?.beginRecovery()
+      projectBootstrap?.beginRecovery()
       refreshSuspended = true
       refreshGeneration = UUID()
       refreshTask?.cancel()
       refreshTask = nil
+      if let warmingTask, !warmingTask.isCancelled { warmAgain = true }
       warmingTask?.cancel()
       warmingTask = nil
       if list.cancelRefresh() { invalidations.insert(.threadList) }
@@ -392,6 +417,9 @@ final class WorkspaceStore {
       refreshSuspended = false
       if resuming, connectionStatus == .connected {
         _ = modelBootstrap?.subscriptionsReady()
+      }
+      if resuming, realtime?.hasContinuousSubscription == true {
+        projectBootstrap?.resumeContinuously()
       }
     }
     newComposer.setForeground(active)
@@ -427,6 +455,11 @@ final class WorkspaceStore {
     guard !closed, !needsUpgrade else { return }
     if invalidation == .realtimeResume || invalidation == .realtimeGap {
       modelBootstrap?.beginRecovery()
+    }
+    if invalidation == .realtimeGap {
+      projectBootstrap?.requireRecoveryRead()
+    } else if invalidation == .realtimeResume {
+      projectBootstrap?.resumeContinuously()
     }
     invalidations.insert(invalidation)
     resumePendingRefresh()
@@ -464,6 +497,7 @@ final class WorkspaceStore {
     }
     let generation = refreshGeneration
     let full = batch.contains(where: \.requiresFullRefresh)
+    let notificationRevision = notificationReadRevision
     let selectedBeforeRefresh = selectedThreadID
     let awaitingSelectedThread = selectedThreadID != nil && selectedConversation == nil
     async let historyRefresh: Void = refreshConversations(batch, generation: generation)
@@ -492,7 +526,19 @@ final class WorkspaceStore {
       await selectedConversation?.modelSelection?.refresh()
     }
     await trimConversations(limit: conversationLimit)
-    requestHistoryWarming()
+    if notificationReadRevision == notificationRevision,
+      batch.contains(.indicators) || batch.contains(.readCursor)
+        || batch.contains(.initialSubscriptions) || batch.contains(.realtimeGap)
+        || batch.contains(.reconnected)
+    {
+      // These signals can affect receipts outside the sidebar or leave unreadAt unchanged.
+      notificationReadStateChanged()
+    }
+    if batch.contains(.startup), !startupHistoryWarmingRequested {
+      startupHistoryWarmingRequested = true
+      warmAgain = true
+    }
+    if warmAgain { requestHistoryWarming() }
   }
 
   private func refreshComputerAuthorizations(_ batch: Set<ChatInvalidation>) async {
@@ -526,10 +572,36 @@ final class WorkspaceStore {
   }
 
   private func refreshProjects(_ batch: Set<ChatInvalidation>) async {
-    if projects.active
-      && (batch.contains(where: \.requiresFullRefresh) || batch.contains(.threadList))
-    {
+    let generation = refreshGeneration
+    let recovery =
+      batch.contains(.foregroundResume) || batch.contains(.realtimeResume)
+      || batch.contains(.realtimeGap)
+    var reload = batch.contains(.threadList) || batch.contains(.reconnected)
+    if batch.contains(.startup) {
+      reload = (projectBootstrap?.beginStartup() ?? true) || reload
+    }
+    if batch.contains(.initialSubscriptions) {
+      reload = (projectBootstrap?.subscriptionsReady() ?? true) || reload
+    }
+    guard projects.active else { return }
+    if recovery {
+      if let projectBootstrap {
+        do { try await projectBootstrap.wait() } catch is CancellationError {
+          return
+        } catch {
+          handle(error)
+          return
+        }
+        guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
+        reload = projectBootstrap.needsRecoveryRead || reload
+      } else {
+        reload = batch.contains(.foregroundResume) || batch.contains(.realtimeGap) || reload
+      }
+    }
+    if reload {
       await projects.refresh()
+    } else if recovery || batch.contains(.startup) || batch.contains(.initialSubscriptions) {
+      await projects.activate()
     }
   }
 
@@ -857,6 +929,38 @@ final class WorkspaceStore {
     error = nil
   }
 
+  func startFork(_ selection: ChatFeedbackSelection, from conversation: ConversationStore) {
+    guard !closed, !needsUpgrade, fork == nil,
+      selectedConversation === conversation, let agentID = defaultAgentID,
+      let message = conversation.messages.first(where: { $0.id == selection.eventID }),
+      message.role == .assistant, !message.isError, !message.isQueued,
+      message.text.utf16.elementsEqual(selection.text.utf16), let runID = message.runID
+    else { return }
+    fork = ChatForkStore(
+      selection: selection, sourceRunID: runID,
+      agentID: agentID, commands: commands, models: modelStore, workflowSource: composerWorkflows,
+      lifecycleTasks: lifecycleTasks,
+      didCreate: { [weak self] thread in self?.list.insertCreated(thread) },
+      didSend: { [weak self] thread in self?.finishFork(thread) },
+      didFail: { [weak self] in self?.handle($0) })
+  }
+
+  func dismissFork() {
+    guard fork?.isSending != true else { return }
+    fork?.close()
+    fork = nil
+  }
+
+  private func finishFork(_ thread: ChatThread) {
+    guard !closed else { return }
+    dismissFork()
+    requestRefresh(.threadList)
+    threadFeedback = ChatThreadFeedback(
+      threadID: thread.id, message: String(localized: "New chat created"),
+      actionTitle: String(localized: "Open"), requiresNavigation: true,
+      action: { [weak self] in self?.selectChat(thread.id) })
+  }
+
   func removeNewChatProject() { newChatProjectID = nil }
 
   func deleteProject(_ id: String) async {
@@ -1025,7 +1129,15 @@ final class WorkspaceStore {
 
   private func applyThreads(_ threads: [ChatThread]) {
     guard !closed else { return }
-    didRefreshReadState()
+    let state = Dictionary(
+      uniqueKeysWithValues: threads.map {
+        let state = NotificationReadState(
+          agentID: $0.agentID, hidden: $0.isHidden, muted: $0.isMuted, unreadAt: $0.unreadAt)
+        return ($0.id, state)
+      })
+    let changed = notificationReadState.map { $0 != state } ?? false
+    notificationReadState = state
+    if changed { notificationReadStateChanged() }
     for thread in threads { conversations[thread.id]?.thread = thread }
     if let selectedThreadID {
       if threads.contains(where: { $0.id == selectedThreadID }) {
@@ -1034,6 +1146,11 @@ final class WorkspaceStore {
         self.selectedThreadID = nil
       }
     }
+  }
+
+  private func notificationReadStateChanged() {
+    notificationReadRevision += 1
+    didRefreshReadState()
   }
 
   private func trimConversations(limit: Int) async {

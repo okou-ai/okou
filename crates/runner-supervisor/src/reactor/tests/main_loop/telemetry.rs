@@ -8,7 +8,7 @@ use crate::home_image_cache::HomeImageCache;
 use runner_host::paths::RunnerPaths;
 
 #[tokio::test]
-async fn telemetry_flush_includes_start_loop_claim_phase_spans() {
+async fn telemetry_flush_includes_runner_pre_spawn_phase_spans() {
     use httpmock::prelude::*;
 
     let server = MockServer::start_async().await;
@@ -16,15 +16,15 @@ async fn telemetry_flush_includes_start_loop_claim_phase_spans() {
         .mock_async(|when, then| {
             when.method(POST)
                 .path("/api/webhooks/agent/telemetry")
-                .body_includes("runner_claim_to_executor_start")
-                .body_includes("runner_claim_resume_session_validation")
-                .body_includes("runner_claim_device_rate_limits")
-                .body_includes("runner_claim_idle_reuse_lookup")
-                .body_includes("runner_claim_home_cache_state_lookup")
-                .body_includes("runner_claim_active_status_publish")
-                .body_includes("runner_claim_spawn_job_setup")
-                .body_includes("runner_claim_task_schedule_wait")
-                .body_includes("runner_claim_blank_pool_selection")
+                .body_includes("runner_accepted_to_executor_start")
+                .body_includes("runner_pre_spawn_resume_session_validation")
+                .body_includes("runner_pre_spawn_device_rate_limits")
+                .body_includes("runner_pre_spawn_idle_reuse_lookup")
+                .body_includes("runner_pre_spawn_home_cache_state_lookup")
+                .body_includes("runner_pre_spawn_active_status_publish")
+                .body_includes("runner_pre_spawn_job_setup")
+                .body_includes("runner_pre_spawn_task_schedule_wait")
+                .body_includes("runner_pre_spawn_blank_pool_selection")
                 .body_includes(r#""outcome":"miss""#)
                 .body_includes(r#""reason":"disabled_plan""#)
                 .body_includes(r#""runner_pre_spawn_concurrency_bucket":"1""#)
@@ -241,9 +241,9 @@ async fn telemetry_flush_preserves_claim_spans_and_publishes_settled_reuse() {
         .mock_async(|when, then| {
             when.method(POST)
                 .path("/api/webhooks/agent/telemetry")
-                .body_includes("runner_claim_idle_reuse_lookup")
-                .body_includes("runner_claim_idle_unpark")
-                .body_includes("runner_claim_task_schedule_wait");
+                .body_includes("runner_pre_spawn_idle_reuse_lookup")
+                .body_includes("runner_pre_spawn_idle_unpark")
+                .body_includes("runner_pre_spawn_task_schedule_wait");
             then.status(200)
                 .header("content-type", "application/json")
                 .body(r#"{"success":true,"id":"ok"}"#);
@@ -318,7 +318,7 @@ async fn invalid_resume_session_flushes_blank_selection_without_startup_fact() {
         .mock_async(|when, then| {
             when.method(POST)
                 .path("/api/webhooks/agent/telemetry")
-                .body_includes("runner_claim_blank_pool_selection")
+                .body_includes("runner_pre_spawn_blank_pool_selection")
                 .body_includes(r#""outcome":"miss""#)
                 .body_includes(r#""reason":"disabled_plan""#);
             then.status(200)

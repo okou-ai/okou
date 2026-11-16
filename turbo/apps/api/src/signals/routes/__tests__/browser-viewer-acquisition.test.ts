@@ -7,7 +7,7 @@ import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { browserRoutes } from "../browser";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import {
   createBrowserFixtures,
@@ -166,7 +166,7 @@ test("only signed-in shared callers can opt into viewer credentials", async () =
     await open(a);
     const params = { threadId: a.threadId };
     const runHeaders = {
-      authorization: `Bearer ${okouTokenFromClaim(a.claim)}`,
+      authorization: `Bearer ${okouTokenFromExecution(a.execution)}`,
     };
     for (const response of [
       await client().get({ headers: runHeaders, params, query }),

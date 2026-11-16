@@ -28,7 +28,7 @@ const {
   chatCallbacks,
   entitledNativeChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   waitForThreadMessages,
   completeChatRunOk,
   failChatRun,
@@ -94,14 +94,14 @@ function recommendedFollowupEvents(
 
 describe("CHAT-02: incomplete-round context", () => {
   it("injects incomplete rounds and truncates old content chronologically", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
 
     const anchor = await sendChatRun(actor, {
       agentId,
       prompt: "establish native session history",
     });
-    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    const anchorExecution = await runExecution(anchor.runId);
+    await completeChatRunOk(anchor.runId, anchorExecution.sandboxHeaders);
     await waitForThreadMessages(actor, anchor.threadId, (messages) => {
       return messages.some((message) => {
         return (
@@ -116,8 +116,8 @@ describe("CHAT-02: incomplete-round context", () => {
       threadId: anchor.threadId,
       prompt: "first incomplete",
     });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    await failChatRun(first.runId, firstClaim.sandboxHeaders, "boom one");
+    const firstExecution = await runExecution(first.runId);
+    await failChatRun(first.runId, firstExecution.sandboxHeaders, "boom one");
     await readCompletedRunSessionId(context, actor, anchor.runId);
 
     const longPrompt = `second ${"x".repeat(4100)}`;
@@ -126,8 +126,8 @@ describe("CHAT-02: incomplete-round context", () => {
       threadId: first.threadId,
       prompt: longPrompt,
     });
-    const secondClaim = await claimChatRun(runnerGroup, second.runId);
-    await failChatRun(second.runId, secondClaim.sandboxHeaders, "boom two");
+    const secondExecution = await runExecution(second.runId);
+    await failChatRun(second.runId, secondExecution.sandboxHeaders, "boom two");
 
     const third = await sendChatRun(actor, {
       agentId,
@@ -144,15 +144,15 @@ describe("CHAT-02: incomplete-round context", () => {
     );
     expect(appended).toContain("...[truncated]");
     expect(thirdRun.prompt).toBe("retry after two failures");
-    const thirdClaim = await claimChatRun(runnerGroup, third.runId);
-    expect(thirdClaim.claim.nativeContinuation).toStrictEqual({
+    const thirdExecution = await runExecution(third.runId);
+    expect(thirdExecution.execution.nativeContinuation).toStrictEqual({
       sessionId: null,
       generationRunId: null,
       recoveryPrompt: expect.stringContaining(
         "okou chat messages --output-dir /tmp/okou-chat-history",
       ),
     });
-    await completeChatRunOk(third.runId, thirdClaim.sandboxHeaders);
+    await completeChatRunOk(third.runId, thirdExecution.sandboxHeaders);
     await expect(
       readCompletedRunSessionId(context, actor, third.runId),
     ).resolves.toBe(`bdd-cli-${third.runId}`);
@@ -161,7 +161,7 @@ describe("CHAT-02: incomplete-round context", () => {
 
 describe("CHAT-02: prior rounds and thread titles", () => {
   it("leaves prior completed rounds to the session, generates the thread title, and accepts immutable follow-up revokes", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     mockGoogleText();
     let upstreamAuthorization: string | null = null;
     let titleRequests = 0;
@@ -242,11 +242,11 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       },
     });
 
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    const firstExecution = await runExecution(first.runId);
     chatCallbacks.mockChatOutputEvents([
       assistantEvent(0, "Assistant migration answer"),
     ]);
-    await completeChatRunOk(first.runId, firstClaim.sandboxHeaders, {
+    await completeChatRunOk(first.runId, firstExecution.sandboxHeaders, {
       lastEventSequence: 0,
     });
 
@@ -380,7 +380,7 @@ describe("CHAT-02: prior rounds and thread titles", () => {
   }, 90_000);
 
   it("steers an active-run recommended follow-up", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     mockGoogleText();
     server.use(
       http.post(VERTEX_TEXT_URL, async ({ request }) => {
@@ -416,13 +416,17 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       agentId,
       prompt: "prepare a recommended follow-up",
     });
-    const completedClaim = await claimChatRun(runnerGroup, completed.runId);
+    const completedExecution = await runExecution(completed.runId);
     chatCallbacks.mockChatOutputEvents([
       assistantEvent(0, "A completed answer with follow-ups"),
     ]);
-    await completeChatRunOk(completed.runId, completedClaim.sandboxHeaders, {
-      lastEventSequence: 0,
-    });
+    await completeChatRunOk(
+      completed.runId,
+      completedExecution.sandboxHeaders,
+      {
+        lastEventSequence: 0,
+      },
+    );
     const completedEvents = await waitForThreadMessages(
       actor,
       completed.threadId,
@@ -449,7 +453,7 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       threadId: completed.threadId,
       prompt: "keep working while the follow-up is steered",
     });
-    const activeClaim = await claimChatRun(runnerGroup, active.runId);
+    const activeExecution = await runExecution(active.runId);
     const eventId = randomUUID();
     const followup = await chat.requestSendEvent(
       actor,
@@ -466,13 +470,16 @@ describe("CHAT-02: prior rounds and thread titles", () => {
       throw new Error("Expected the recommended follow-up to succeed");
     }
     await expect(
-      api.nextSteerableInput(activeClaim.claim.sandboxToken, active.runId),
+      api.nextSteerableInput(
+        activeExecution.execution.sandboxToken,
+        active.runId,
+      ),
     ).resolves.toStrictEqual({
       input: { eventId, prompt: "steer the recommended follow-up" },
     });
     await expect(
       api.declareSteeredInput(
-        activeClaim.claim.sandboxToken,
+        activeExecution.execution.sandboxToken,
         active.runId,
         eventId,
       ),

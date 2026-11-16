@@ -64,7 +64,7 @@ const GMAIL_TOPIC_NAME = "projects/vm0-ai-488909/topics/gmail-events";
 const GMAIL_AUDIENCE = "https://api.okou.ai/api/webhooks/gmail";
 const GMAIL_PUSH_SERVICE_ACCOUNT =
   "gmail-pubsub-push@vm0-ai-488909.iam.gserviceaccount.com";
-// Queue/claim fixtures deliberately use the permanently native Claude route.
+// Queued-execution fixtures deliberately use the permanently native Claude route.
 const GMAIL_WORKSPACE_MODEL = "claude-fable-5-1";
 const GOOGLE_OIDC_CERT_KID = "gmail-pubsub-test-key";
 const googleOidcKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -416,7 +416,7 @@ function expectResponseStatus(
 async function configureWorkspaceModelProvider(
   actor: ApiTestUser & { readonly orgId: string },
 ): Promise<void> {
-  // Keep native claim/callback coverage through a supported personal subscription.
+  // Keep native execution/callback coverage through a supported personal subscription.
   await runsApi.ensurePersonalSubscriptionModel(actor, {
     model: GMAIL_WORKSPACE_MODEL,
   });
@@ -729,8 +729,8 @@ async function completeRunThroughSandbox(
   runId: string,
 ): Promise<void> {
   await runsApi.heartbeatRunner(runnerGroup);
-  const claim = await runsApi.executionInput(runId);
-  const sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
+  const execution = await runsApi.executionInput(runId);
+  const sandboxHeaders = { authorization: `Bearer ${execution.sandboxToken}` };
   await webhooksApi.requestAgentComplete(
     {
       runId,
@@ -1553,10 +1553,10 @@ describe("POST /api/webhooks/gmail", () => {
         throw new Error("Expected a dispatched Gmail workflow run");
       }
       await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await runsApi.executionInput(runId);
-      expect(claim.prompt).toContain("Not included below: the email body.");
-      expect(claim.prompt).not.toContain("Please draft a helpful reply.");
-      expectGmailEventContextInPrompt(claim.prompt, {
+      const execution = await runsApi.executionInput(runId);
+      expect(execution.prompt).toContain("Not included below: the email body.");
+      expect(execution.prompt).not.toContain("Please draft a helpful reply.");
+      expectGmailEventContextInPrompt(execution.prompt, {
         automationId: created.body.id,
         event: "new_message",
         emailAddress: secondEmail,
@@ -1567,9 +1567,9 @@ describe("POST /api/webhooks/gmail", () => {
         cc: [],
         subject: "Invoice needs a reply",
       });
-      expect(claim.appendSystemPrompt).toContain("# Agent Identity");
+      expect(execution.appendSystemPrompt).toContain("# Agent Identity");
       expect(
-        Object.values(claim.secretConnectorMetadataMap ?? {}),
+        Object.values(execution.secretConnectorMetadataMap ?? {}),
       ).toContainEqual(
         expect.objectContaining({ sourceId: secondConnectorId }),
       );
@@ -2076,8 +2076,8 @@ describe("POST /api/webhooks/gmail", () => {
       );
     }
     await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.executionInput(runId);
-    expectGmailEventContextInPrompt(claim.prompt, {
+    const execution = await runsApi.executionInput(runId);
+    expectGmailEventContextInPrompt(execution.prompt, {
       automationId: created.body.id,
       event: "new_message",
       emailAddress: firstEmail,
@@ -2089,7 +2089,7 @@ describe("POST /api/webhooks/gmail", () => {
       subject: "Invoice needs a reply",
     });
     expect(
-      Object.values(claim.secretConnectorMetadataMap ?? {}),
+      Object.values(execution.secretConnectorMetadataMap ?? {}),
     ).toContainEqual(expect.objectContaining({ sourceId: firstConnectorId }));
   });
 
@@ -2316,14 +2316,14 @@ describe("POST /api/webhooks/gmail", () => {
       }
 
       await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await runsApi.executionInput(queuedRunId);
-      const appendSystemPrompt = claim.appendSystemPrompt;
+      const execution = await runsApi.executionInput(queuedRunId);
+      const appendSystemPrompt = execution.appendSystemPrompt;
       if (typeof appendSystemPrompt !== "string") {
         throw new Error("Expected appendSystemPrompt on the queued run");
       }
-      expect(claim.prompt).toContain("Not included below: the email body.");
-      expect(claim.prompt).not.toContain("Please draft a helpful reply.");
-      expectGmailEventContextInPrompt(claim.prompt, {
+      expect(execution.prompt).toContain("Not included below: the email body.");
+      expect(execution.prompt).not.toContain("Please draft a helpful reply.");
+      expectGmailEventContextInPrompt(execution.prompt, {
         automationId: created.body.id,
         event: "new_message",
         emailAddress: gmailEmail,

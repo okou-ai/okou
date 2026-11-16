@@ -11,6 +11,7 @@ export interface SystemPromptVariables {
   readonly continuationContext?: string;
   readonly generationTemplatePrompt?: string;
   readonly computerUseContext?: string;
+  readonly phoneUseContext?: string;
   readonly suggestionFeedback?: string;
   readonly connectors?: string;
   readonly codexImageUpload?: string;
@@ -152,6 +153,7 @@ export function renderRunPrompts(part: RunPromptAndSkills): RenderedRunPrompts {
       variables.continuationContext,
       variables.generationTemplatePrompt,
       variables.computerUseContext,
+      variables.phoneUseContext,
       variables.suggestionFeedback,
       variables.connectors,
       variables.codexImageUpload,

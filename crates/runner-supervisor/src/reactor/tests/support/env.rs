@@ -129,20 +129,20 @@ pub(in super::super) fn mock_run_config(
     )
 }
 
-/// Variant with an explicit poll delay for regression testing.
-pub(in super::super) fn mock_run_config_with_delay(
+/// Variant with an explicit discovery delay for regression testing.
+pub(in super::super) fn mock_run_config_with_discovery_delay(
     profiles: BTreeMap<String, RuntimeProfile>,
     budget_vcpu: u32,
     budget_memory_mb: u32,
     max_concurrent: usize,
-    poll_delay: Duration,
+    discovery_delay: Duration,
 ) -> (RunConfig, MockRunEnv) {
     build_mock_run_config(
         profiles,
         budget_vcpu,
         budget_memory_mb,
         max_concurrent,
-        |cancel| MockJobProvider::with_poll_delay(cancel, Some(poll_delay)),
+        |cancel| MockJobProvider::with_discovery_delay(cancel, Some(discovery_delay)),
     )
 }
 

@@ -1,8 +1,7 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
+use crate::captured_backing::CapturedBacking;
 use runner_host::host_memory::HostMemoryObservation;
-use sandbox::{BackingProcessIdentity, SandboxBackingProcess};
 
 use super::{
     MemoryOperationError as Error, MemoryOperationId, MemoryOperationPlan, MemoryOperationPolicy,
@@ -13,22 +12,6 @@ use super::{
 pub(super) enum Class {
     Ordinary,
     Cleanup,
-}
-
-#[derive(Clone)]
-pub(super) struct CapturedBacking {
-    pub identity: BackingProcessIdentity,
-    pub process: Arc<dyn SandboxBackingProcess>,
-}
-
-impl CapturedBacking {
-    pub fn capture(process: Arc<dyn SandboxBackingProcess>) -> Self {
-        // Provider accessors run outside accounting, just like wait observation.
-        Self {
-            identity: process.identity(),
-            process,
-        }
-    }
 }
 
 #[derive(Clone)]

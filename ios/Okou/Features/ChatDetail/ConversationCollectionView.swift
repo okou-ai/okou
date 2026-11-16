@@ -131,6 +131,7 @@ struct ConversationCollectionView<Content: View>: UIViewControllerRepresentable 
   let rowsPresented: (String?) -> Void
   var earlierMessages: () -> [ChatMessage] = { [] }
   var quote: ((ChatFeedbackSelection) -> Void)? = nil
+  var fork: ((ChatFeedbackSelection) -> Void)? = nil
   let refresh: () async -> Void
   @ViewBuilder let content: (ConversationCollectionRow, ConversationScrollAnchor?) -> Content
 
@@ -302,6 +303,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       cell.representedRowID = row.id
       cell.message = row.message
       cell.quote = source.quote
+      cell.fork = source.fork
       cell.clipsToBounds = true
       let prepared = prefetchedContent.removeValue(forKey: row.id)
       contentOrder.removeAll { $0 == row.id }

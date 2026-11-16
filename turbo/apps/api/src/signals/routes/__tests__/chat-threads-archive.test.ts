@@ -11,11 +11,11 @@ import { chatThreadArchiveRoutes } from "../chat-threads-archive";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const store = createStore();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
@@ -59,7 +59,7 @@ async function readMetadata(args: {
   const response = await accept(
     client.get({
       headers: {
-        authorization: `Bearer ${await claimedToken({ userId: args.userId, orgId: args.orgId })}`,
+        authorization: `Bearer ${await executionToken({ userId: args.userId, orgId: args.orgId })}`,
       },
       params: { id: args.threadId },
     }),
@@ -82,7 +82,7 @@ describe("POST /api/chat-threads/:id/archive and /unarchive", () => {
     });
 
     const headers = {
-      authorization: `Bearer ${await claimedToken({ userId: owner.userId, orgId: owner.orgId })}`,
+      authorization: `Bearer ${await executionToken({ userId: owner.userId, orgId: owner.orgId })}`,
     };
     const archiveEventId = randomUUID();
     await accept(
@@ -149,7 +149,7 @@ describe("POST /api/chat-threads/:id/archive and /unarchive", () => {
     const response = await accept(
       archiveClient().archive({
         headers: {
-          authorization: `Bearer ${await claimedToken({ userId: fixture.actor.userId, orgId: otherOrgId })}`,
+          authorization: `Bearer ${await executionToken({ userId: fixture.actor.userId, orgId: otherOrgId })}`,
         },
         params: { id: fixture.threadId },
       }),

@@ -62,7 +62,7 @@ where
     )
     .await?;
     Ok(Authenticated {
-        stream: AuthenticatedStream::apple_dh_raw(stream),
+        stream: AuthenticatedStream::raw(stream),
     })
 }
 

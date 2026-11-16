@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.14](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.13...ably-subscriber-v2.0.14) (2026-11-15)
+
+
+### Refactoring
+
+* **ably:** isolate reconnect acquisition from reactor state ([#47460](https://github.com/okou-ai/okou/issues/47460)) ([df170d7](https://github.com/okou-ai/okou/commit/df170d77b9768e1ae85c8be898de9fd919296504))
+
+## [2.0.13](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.12...ably-subscriber-v2.0.13) (2026-11-14)
+
 ## [2.0.12](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.11...ably-subscriber-v2.0.12) (2026-11-12)
 
 

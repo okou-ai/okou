@@ -1,4 +1,4 @@
-//! Per-run cancellation state shared by provider, lifecycle, admission, and
+//! Per-run cancellation state shared by provider, lifecycle, acceptance, and
 //! execution paths.
 //!
 //! [`RunCancellationRegistry`] owns one [`RunCancellationHandle`] for each
@@ -48,7 +48,7 @@
 //! follows this ordering. The broader lifecycle is exercised by
 //! [`signals`](https://github.com/okou-ai/okou/blob/main/crates/runner-supervisor/src/reactor/signals.rs),
 //! [`provider cancellation`](https://github.com/okou-ai/okou/blob/main/crates/runner-provider/src/provider/api_ably_supervisor.rs),
-//! [`job discovery`](https://github.com/okou-ai/okou/blob/main/crates/runner-supervisor/src/reactor/job_discovery.rs),
+//! [`job activation`](https://github.com/okou-ai/okou/blob/main/crates/runner-supervisor/src/reactor/job_activation.rs),
 //! [`sandbox finalization`](https://github.com/okou-ai/okou/blob/main/crates/runner/src/cmd/start/sandbox_finalization.rs#L697-L732),
 //! and the focused
 //! [`cancellation tests`](https://github.com/okou-ai/okou/blob/main/crates/runner-provider/src/run_cancellation.rs).
@@ -92,7 +92,7 @@ pub struct DuplicateRunCancellationRegistration;
 #[must_use = "the registration must remain owned until its run is cleaned up"]
 /// Lifecycle owner for one entry in a [`RunCancellationRegistry`].
 ///
-/// Keep this value alive from registration through provider claim, activation,
+/// Keep this value alive from registration through acceptance, activation,
 /// execution, and the final cleanup path so provider or lifecycle cancellation
 /// can continue to find the run. Registration teardown is explicit: dropping
 /// this value does not unregister it, so callers must invoke

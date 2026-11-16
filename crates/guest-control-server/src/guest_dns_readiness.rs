@@ -274,9 +274,8 @@ fn run_probe(
     if !matches!(outcome, WaitOutcome::Exited(_)) {
         drain_cancel.cancel();
     }
-    let (stdout_result, stderr_result) = collect_bounded_output(
-        stdout_drain,
-        stderr_drain,
+    let [stdout_result, stderr_result] = collect_bounded_output(
+        [stdout_drain, stderr_drain],
         &drain_done_rx,
         &drain_cancel,
         OUTPUT_DRAIN_DEADLINE,

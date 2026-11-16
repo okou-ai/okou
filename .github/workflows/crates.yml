@@ -644,7 +644,7 @@ jobs:
           done
 
       - name: Install coverage tools
-        uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.148
 
@@ -1161,6 +1161,13 @@ jobs:
           cp "$TEST_BIN" target/runner-rootfs-process-test
           echo "TEST_BIN=crates/target/runner-rootfs-process-test" >> "$GITHUB_ENV"
 
+      - name: Save pinned Kerberos dependencies
+        if: github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: ${{ steps.kerberos-cache.outputs.cache-primary-key }}
+
       - name: Setup SSH via Cloudflare Tunnel
         uses: ./.github/actions/setup-ssh-tunnel
         with:
@@ -1440,7 +1447,6 @@ jobs:
     outputs:
       producer-attempt: ${{ steps.build.outputs.producer-attempt }}
     env:
-      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
       TARGET_TRIPLE: ${{ needs.runner-host-groups.outputs.selected-target }}
       TEST_NAME: host_cpu_fairness
       ARTIFACT_DIR: native-test-artifact
@@ -1470,16 +1476,6 @@ jobs:
           workspaces: crates -> target
           shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-host-cpu-fairness-release-${{ hashFiles('crates/Cargo.toml') }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Configure pinned Kerberos cache
-        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
-
-      - name: Restore pinned Kerberos dependencies
-        id: kerberos-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
-          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}-${{ env.TARGET_TRIPLE }}
 
       - name: Cross-compile host CPU fairness test
         id: build
@@ -1584,7 +1580,6 @@ jobs:
       producer-attempt-arm64: ${{ steps.producer.outputs.producer-attempt-arm64 }}
       producer-attempt-x86_64: ${{ steps.producer.outputs.producer-attempt-x86_64 }}
     env:
-      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
       TARGET_TRIPLE: ${{ matrix.target }}
       TEST_NAME: guest_rpc
       ARTIFACT_DIR: native-test-artifact
@@ -1597,16 +1592,6 @@ jobs:
           workspaces: crates -> target
           shared-key: ${{ matrix.target }}-guest-rpc-release-${{ hashFiles('crates/Cargo.toml') }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Configure pinned Kerberos cache
-        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
-
-      - name: Restore pinned Kerberos dependencies
-        id: kerberos-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
-          key: kerberos-native-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/*') }}-${{ env.TARGET_TRIPLE }}
 
       - name: Cross-compile native Guest RPC and duplex test
         id: build
@@ -1637,13 +1622,6 @@ jobs:
         env:
           NATIVE_ARCH: ${{ matrix.id }}
         run: echo "producer-attempt-${NATIVE_ARCH}=${PRODUCER_ATTEMPT}" >> "$GITHUB_OUTPUT"
-
-      - name: Save pinned Kerberos dependencies
-        if: github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
-          key: ${{ steps.kerberos-cache.outputs.cache-primary-key }}
 
       - name: Report peak memory
         if: always()

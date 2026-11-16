@@ -1,5 +1,72 @@
 # Changelog
 
+## [0.249.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.14...runner-rs-v0.249.15) (2026-11-16)
+
+## [0.249.14](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.13...runner-rs-v0.249.14) (2026-11-16)
+
+
+### Refactoring
+
+* **python:** derive websocket activation from owned lifecycle state ([#47532](https://github.com/okou-ai/okou/issues/47532)) ([e005ddf](https://github.com/okou-ai/okou/commit/e005ddf5f98a697259f62c07731c90fa3364f464))
+* **python:** unify x response parser success admission ([#47552](https://github.com/okou-ai/okou/issues/47552)) ([2425935](https://github.com/okou-ai/okou/commit/242593530d304c60ab7d66429b3624e0974cc2c3))
+* **runner:** centralize guest permission controller initialization ([#47543](https://github.com/okou-ai/okou/issues/47543)) ([f9e9c45](https://github.com/okou-ai/okou/commit/f9e9c45c626439876c1ed4b066642c93bcfe9ede))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.12...runner-rs-v0.249.13) (2026-11-15)
+
+
+### Refactoring
+
+* **python:** reuse the canonical raw authority host value ([#47512](https://github.com/okou-ai/okou/issues/47512)) ([59a9005](https://github.com/okou-ai/okou/commit/59a90058eb532a2e57952f979b02b48854f29939))
+
+## [0.249.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.11...runner-rs-v0.249.12) (2026-11-15)
+
+
+### Refactoring
+
+* **python:** centralize auth-base worker finalization ([#47320](https://github.com/okou-ai/okou/issues/47320)) ([663c9d5](https://github.com/okou-ai/okou/commit/663c9d533775ae1e2d0e97b763aad7d4bc883855))
+* **python:** centralize webhook outcome publication ([#47413](https://github.com/okou-ai/okou/issues/47413)) ([b490e26](https://github.com/okou-ai/okou/commit/b490e269c95cf32b1b5c724f0b8e14f27fa82095))
+* **python:** keep catalog prefetch role on its owner ([#47448](https://github.com/okou-ai/okou/issues/47448)) ([5582016](https://github.com/okou-ai/okou/commit/5582016ef6205fdae90f93a977e02d5e8103e2fd))
+* **python:** let the report lease own its release directly ([#47459](https://github.com/okou-ai/okou/issues/47459)) ([15530c5](https://github.com/okou-ai/okou/commit/15530c51287c3e1f93745b1af1101da99d0ae9e0))
+* **python:** own active websocket correlation as one record ([#47310](https://github.com/okou-ai/okou/issues/47310)) ([53385a4](https://github.com/okou-ai/okou/commit/53385a44a212832eda20271fb7503b46504d72b8))
+* **python:** own catalog validation loop admission ([#47325](https://github.com/okou-ai/okou/issues/47325)) ([28bed1e](https://github.com/okou-ai/okou/commit/28bed1e62bf5097ebb1fb56856935c852109549f))
+* **python:** select connection winner from owned sockets ([#47361](https://github.com/okou-ai/okou/issues/47361)) ([465706e](https://github.com/okou-ai/okou/commit/465706e925a0e3f5552390fe10dd4cfa3ebb6277))
+* **runner:** centralize existing local group directory admission ([#47363](https://github.com/okou-ai/okou/issues/47363)) ([9fd19ae](https://github.com/okou-ai/okou/commit/9fd19ae9963a714844b1e207b3208e5e9a5c1522))
+* **runner:** model direct execution without claim scaffolding ([#47235](https://github.com/okou-ai/okou/issues/47235)) ([8bf20fb](https://github.com/okou-ai/okou/commit/8bf20fb75b2788038d699332435a84e551660c49))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.10...runner-rs-v0.249.11) (2026-11-14)
+
+
+### Refactoring
+
+* **python:** consolidate firewall auth cache ownership ([#47269](https://github.com/okou-ai/okou/issues/47269)) ([4827fe2](https://github.com/okou-ai/okou/commit/4827fe2cea2ae181d4f581e1f88d21295d47ae01))
+* **python:** unify jsonl path progress ownership ([#47301](https://github.com/okou-ai/okou/issues/47301)) ([b1b6826](https://github.com/okou-ai/okou/commit/b1b68262b5c029ea0715d181494a99e88c1f26b0))
+* **python:** unify metadata alias exit state ([#47256](https://github.com/okou-ai/okou/issues/47256)) ([9a6c3d0](https://github.com/okou-ai/okou/commit/9a6c3d00d438327184777f0228ba30dbcea6c898))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.9...runner-rs-v0.249.10) (2026-11-14)
+
+
+### Refactoring
+
+* **python:** bind firewall cache provenance to resolved entries ([#47230](https://github.com/okou-ai/okou/issues/47230)) ([b9c0370](https://github.com/okou-ai/okou/commit/b9c0370dc9cb42a17ac1ca3527d8c17253c9a08d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.8...runner-rs-v0.249.9) (2026-11-14)
+
 ## [0.249.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.7...runner-rs-v0.249.8) (2026-11-14)
 
 

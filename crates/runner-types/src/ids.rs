@@ -4,7 +4,7 @@
 //! `runner local submit` allocates one locally.
 //!
 //! `RunId` is the server/API-facing job handle — visible on dashboards,
-//! used in claim/complete/cancel. It is distinct from [`sandbox::SandboxId`]
+//! used in dispatch/completion/cancellation. It is distinct from [`sandbox::SandboxId`]
 //! which identifies the Firecracker VM workspace and survives sandbox reuse.
 //!
 //! `SandboxId` lives in the `sandbox` crate (not here) because sandbox
@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Per-job identifier supplied by the server or allocated by `runner local submit`.
-/// This is what the user sees on dashboards and what API claim/complete use.
+/// This is what the user sees on dashboards and what dispatch/completion use.
 ///
 /// A fresh sandbox receives an independently allocated [`sandbox::SandboxId`].
 /// On reuse, the sandbox keeps its existing `SandboxId` while the new job has

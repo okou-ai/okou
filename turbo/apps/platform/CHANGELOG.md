@@ -13,6 +13,99 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1133.1](https://github.com/okou-ai/okou/compare/app-v0.1133.0...app-v0.1133.1) (2026-11-16)
+
+
+### Performance Improvements
+
+* **app:** isolate browser history navigation consumers ([#47538](https://github.com/okou-ai/okou/issues/47538)) ([551df61](https://github.com/okou-ai/okou/commit/551df6159c5e059f1feaa16f3b7cf086bff30071))
+* **app:** isolate vnc form rendering from wizard steps ([#47522](https://github.com/okou-ai/okou/issues/47522)) ([27fb093](https://github.com/okou-ai/okou/commit/27fb093874176ee7b237380d0a1342758a0ff41c))
+* **app:** localize vnc profile subscriptions ([#47548](https://github.com/okou-ai/okou/issues/47548)) ([42d965a](https://github.com/okou-ai/okou/commit/42d965aefbe0b5f4020cd2d27b949a4c0f713647))
+* **app:** narrow capability translation reads ([#47540](https://github.com/okou-ai/okou/issues/47540)) ([88339c4](https://github.com/okou-ai/okou/commit/88339c45d101fc25b97a5fe25f3a408882d12b56))
+* **test:** avoid unrelated browser style proxies ([#47556](https://github.com/okou-ai/okou/issues/47556)) ([ef1d6a1](https://github.com/okou-ai/okou/commit/ef1d6a10a0fcaa744ba004e5b5ab855d5bf2826a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.68.0
+    * @okouai/core bumped to 8.839.7
+    * @okouai/ui bumped to 1.21.23
+
+## [0.1133.0](https://github.com/okou-ai/okou/compare/app-v0.1132.2...app-v0.1133.0) (2026-11-15)
+
+
+### Features
+
+* **android:** add native apk update and recovery flows ([#47331](https://github.com/okou-ai/okou/issues/47331)) ([c9d9bdb](https://github.com/okou-ai/okou/commit/c9d9bdb0c7a3affbfc4f0a3910a1eb22cbeddf21))
+
+
+### Bug Fixes
+
+* **app:** highlight the whole browser tab on hover ([#47482](https://github.com/okou-ai/okou/issues/47482)) ([2102cce](https://github.com/okou-ai/okou/commit/2102cce0e41c384545a5cedca454c58a76b51104))
+* **platform:** keep forks in their source project ([#47444](https://github.com/okou-ai/okou/issues/47444)) ([ecb5350](https://github.com/okou-ai/okou/commit/ecb53502c1fc05aaae4d7e79dbc9e8815fa2d10a))
+
+
+### Performance Improvements
+
+* **test:** trim ordinary invitation click simulation ([#47389](https://github.com/okou-ai/okou/issues/47389)) ([78a93f1](https://github.com/okou-ai/okou/commit/78a93f1506f4940f29b0d489f9d22c14b3cd85ba))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.67.0
+    * @okouai/core bumped to 8.839.6
+    * @okouai/ui bumped to 1.21.22
+
+## [0.1132.2](https://github.com/okou-ai/okou/compare/app-v0.1132.1...app-v0.1132.2) (2026-11-14)
+
+
+### Performance Improvements
+
+* **app:** isolate browser new-tab availability updates ([#47257](https://github.com/okou-ai/okou/issues/47257)) ([cf064b9](https://github.com/okou-ai/okou/commit/cf064b983e51cc646821453f7487970fab9387d3))
+* **app:** narrow native browser input subscription ([#47298](https://github.com/okou-ai/okou/issues/47298)) ([f9735a1](https://github.com/okou-ai/okou/commit/f9735a17f4c2a61f766e50af866db1bf78cad7d2))
+* **app:** narrow remote-access dialog subscriptions ([#47262](https://github.com/okou-ai/okou/issues/47262)) ([d2318bb](https://github.com/okou-ai/okou/commit/d2318bb2f6022b91bc87fde4003d9f1504737fbb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.66.0
+    * @okouai/core bumped to 8.839.5
+    * @okouai/ui bumped to 1.21.21
+
+## [0.1132.1](https://github.com/okou-ai/okou/compare/app-v0.1132.0...app-v0.1132.1) (2026-11-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.65.0
+    * @okouai/core bumped to 8.839.4
+    * @okouai/ui bumped to 1.21.20
+
+## [0.1132.0](https://github.com/okou-ai/okou/compare/app-v0.1131.1...app-v0.1132.0) (2026-11-14)
+
+
+### Features
+
+* **platform:** animate project folds within virtual chat windows ([#47172](https://github.com/okou-ai/okou/issues/47172)) ([3ebfc3c](https://github.com/okou-ai/okou/commit/3ebfc3ca70613d52bb1d432f7085d47f739ed86b))
+
+
+### Bug Fixes
+
+* **app:** preserve reading position across narrow sidebar reveals ([#47192](https://github.com/okou-ai/okou/issues/47192)) ([ff3b21b](https://github.com/okou-ai/okou/commit/ff3b21bd9fcc80758340cee0a3a048b9aaf85960))
+
+
+### Performance Improvements
+
+* **browser:** size screencast windows from sampled cdp latency ([#47191](https://github.com/okou-ai/okou/issues/47191)) ([8af86d9](https://github.com/okou-ai/okou/commit/8af86d99a0c521c2c43df969c901737b60a59ca2))
+
 ## [0.1131.1](https://github.com/okou-ai/okou/compare/app-v0.1131.0...app-v0.1131.1) (2026-11-14)
 
 

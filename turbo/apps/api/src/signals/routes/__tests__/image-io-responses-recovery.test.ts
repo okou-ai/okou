@@ -10,7 +10,7 @@ import {
   mockOpenAiImageResponses,
 } from "./helpers/openai-image-responses";
 import {
-  createClaimedImageRun,
+  createImageRun,
   createImageIoTestApp,
   orgCredits,
   readAcceptedGenerationId,
@@ -25,11 +25,7 @@ const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 describe("durable image settlement recovery", () => {
   it("resumes an interrupted debit through a fresh owner request without charging twice", async () => {
-    const fixture = await createClaimedImageRun(
-      context,
-      "gpt-image-2.5-flare",
-      0,
-    );
+    const fixture = await createImageRun(context, "gpt-image-2.5-flare", 0);
     await fixture.run(async () => {
       // The fixture snapshots external implementations when run starts:
       // install provider/env mocks before the first awaited request.
@@ -93,7 +89,7 @@ describe("durable image settlement recovery", () => {
       // delivery boundary for the following settlement interruption.
       await createWebhookCallbackApi(context).requestAgentComplete(
         { runId: fixture.runId, exitCode: 0 },
-        { authorization: `Bearer ${fixture.claim.sandboxToken}` },
+        { authorization: `Bearer ${fixture.execution.sandboxToken}` },
         [200],
       );
       await flushWaitUntilForTest();

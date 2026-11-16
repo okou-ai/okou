@@ -48,7 +48,7 @@ if deploy_app.fetch("outputs").key?("deployment-url")
   raise "deploy-app must not expose a second provider deployment URL"
 end
 unless deploy_app.fetch("outputs").fetch("preview-url") == expected_deployment_url
-  raise "deploy-app preview-url must expose the deployed Worker version"
+  raise "deploy-app preview-url must expose the verified public gateway URL"
 end
 
 deploy_step = find_step.call("Deploy standalone app Worker preview")
@@ -110,14 +110,34 @@ if deploy_source.include?("--var CLERK_SECRET_KEY")
   raise "Worker preview deployment must not expose the Clerk secret on the command line"
 end
 
-preview_step = find_step.call("Resolve app Worker preview URL")
+preview_step = find_step.call("Resolve public and upstream app preview URLs")
 raise "app preview step id changed" unless preview_step["id"] == "app-preview"
 if preview_step.key?("if")
-  raise "app Worker preview URL must be resolved on every deploy-app run"
+  raise "public and upstream preview URLs must be resolved on every deploy-app run"
 end
-unless preview_step.fetch("run").include?("CF_WORKERS_SUBDOMAIN") &&
-    preview_step.fetch("run").include?("resolve-app-preview-url.sh")
-  raise "app preview URL must use the configured Workers subdomain"
+unless preview_step.fetch("run").include?('"$APP_PREVIEW_DOMAIN"') &&
+    preview_step.fetch("run").include?("resolve-app-preview-url.sh") &&
+    preview_step.fetch("run").include?("resolve-app-worker-preview-url.sh") &&
+    preview_step.fetch("run").include?('"$CF_WORKERS_SUBDOMAIN"')
+  raise "public preview must use the gateway domain and retain the Worker upstream for diagnostics"
+end
+unless deploy_app.dig("env", "APP_PREVIEW_DOMAIN") == "${{ vars.CF_PAGES_PREVIEW_DOMAIN }}"
+  raise "public preview must retain the existing gateway domain variable"
+end
+unless version_source.include?('--var "APP_PREVIEW_ORIGIN:$EXPECTED_PREVIEW_URL"')
+  raise "each Worker version must bind its exact public preview origin"
+end
+verify_step = find_step.call("Verify public app preview ingress")
+unless verify_step.dig("env", "APP_PREVIEW_URL") == expected_deployment_url &&
+    verify_step.dig("env", "ARTIFACT_SHA") == "${{ steps.artifact.outputs.sha }}" &&
+    verify_step.fetch("run").include?("verify-app-preview-ingress.sh") &&
+    steps.index(verify_step) > steps.index(deploy_step)
+  raise "deploy-app must gate the public gateway on the uploaded artifact identity"
+end
+prepare_urls = jobs.fetch("prepare").fetch("steps").find { |step| step["id"] == "preview-urls" }
+unless prepare_urls.fetch("run").include?('APP_PREVIEW_DOMAIN="${{ vars.CF_PAGES_PREVIEW_DOMAIN }}"') &&
+    prepare_urls.fetch("run").include?('"$APP_PREVIEW_DOMAIN"')
+  raise "prepare and deployed app previews must resolve the same public gateway origin"
 end
 
 browser_e2e = jobs.fetch("cli-e2e-02-browser")

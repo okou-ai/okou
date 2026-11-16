@@ -55,7 +55,11 @@ async fn home_cache_snapshot_filters_active_reuse_keys() {
         &snapshot,
         vec![
             held_home_state("sess-cache", "2026-06-01T00:00:02.000Z", &["vm0/default"]),
-            held_home_state("sess-claimed", "2026-06-01T00:00:03.000Z", &["vm0/default"]),
+            held_home_state(
+                "sess-other-active",
+                "2026-06-01T00:00:03.000Z",
+                &["vm0/default"],
+            ),
             held_home_state("sess-active", "2026-06-01T00:00:04.000Z", &["vm0/default"]),
         ],
     );
@@ -65,7 +69,12 @@ async fn home_cache_snapshot_filters_active_reuse_keys() {
         Some("sess-active".into()),
         "vm0/default".into(),
     );
-    let states = snapshot.current_held_home_states(&active_runs, Some("sess-claimed"));
+    let _other_active_guard = active_runs.register(
+        runner_types::ids::RunId::new_v4(),
+        Some("sess-other-active".into()),
+        "vm0/default".into(),
+    );
+    let states = snapshot.current_held_home_states(&active_runs);
 
     assert_eq!(
         states,
@@ -77,7 +86,7 @@ async fn home_cache_snapshot_filters_active_reuse_keys() {
     );
 
     assert!(active_guard.reuse_publisher().publish_no_exact_sandbox());
-    let states = snapshot.current_held_home_states(&active_runs, Some("sess-claimed"));
+    let states = snapshot.current_held_home_states(&active_runs);
     assert_eq!(
         states,
         vec![
@@ -213,14 +222,14 @@ fn home_cache_snapshot_refresh_preserves_concurrent_upsert() {
 
     let active_runs = test_active_runs();
     assert_eq!(
-        snapshot.current_held_home_states(&active_runs, None),
+        snapshot.current_held_home_states(&active_runs),
         vec![merged]
     );
 
     let refresh = snapshot.begin_home_cache_refresh();
     snapshot.finish_home_cache_refresh(refresh, inventory(vec![original.clone()]));
     assert_eq!(
-        snapshot.current_held_home_states(&active_runs, None),
+        snapshot.current_held_home_states(&active_runs),
         vec![original]
     );
 }

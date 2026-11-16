@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.25.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.8...runner-supervisor-v0.25.9) (2026-11-16)
+
+## [0.25.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.7...runner-supervisor-v0.25.8) (2026-11-15)
+
+
+### Refactoring
+
+* **runner:** finish execution input and timing cleanup ([#47356](https://github.com/okou-ai/okou/issues/47356)) ([4b7190a](https://github.com/okou-ai/okou/commit/4b7190afbe6ae6571dbfcf6f122573891065937b))
+* **runner:** finish native execution model cleanup ([#47328](https://github.com/okou-ai/okou/issues/47328)) ([d4f131f](https://github.com/okou-ai/okou/commit/d4f131fab3253a843b49afaf4589afa043c8ce13))
+* **runner:** model direct execution without claim scaffolding ([#47235](https://github.com/okou-ai/okou/issues/47235)) ([8bf20fb](https://github.com/okou-ai/okou/commit/8bf20fb75b2788038d699332435a84e551660c49))
+* **supervisor:** centralize diagnosed blank reservations ([#47420](https://github.com/okou-ai/okou/issues/47420)) ([8f0bd96](https://github.com/okou-ai/okou/commit/8f0bd96482c2575a920733cde8c95c10f3cffdfb))
+
+## [0.25.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.6...runner-supervisor-v0.25.7) (2026-11-14)
+
+## [0.25.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.5...runner-supervisor-v0.25.6) (2026-11-14)
+
 ## [0.25.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.4...runner-supervisor-v0.25.5) (2026-11-14)
 
 ## [0.25.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.3...runner-supervisor-v0.25.4) (2026-11-14)

@@ -164,7 +164,7 @@ describe("Computer Use audit events", () => {
           });
         expect(personalAccessToken).toStrictEqual(session);
 
-        const agent = await scenario.claim(actor, host.hostId);
+        const agent = await scenario.launchRun(actor, host.hostId);
         const agentDenied = await computerUse.requestListComputerUseAuditEvents(
           { bearer: agent.token },
           {},
@@ -210,7 +210,7 @@ describe("Computer Use audit events", () => {
         const foreign = orgScoped(bdd.user({ orgId: `org_${randomUUID()}` }));
         const host = await startAuditHost(actor, "Payload Desktop");
         mockClerkMembership(context, actor, "org:admin");
-        const granted = await scenario.claim(actor, host.hostId);
+        const granted = await scenario.launchRun(actor, host.hostId);
 
         const succeeded = await computerUse.createComputerUseWriteCommand(
           { bearer: granted.token },

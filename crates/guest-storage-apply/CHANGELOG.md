@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.32.7](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.6...guest-storage-apply-v0.32.7) (2026-11-15)
+
+## [0.32.6](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.5...guest-storage-apply-v0.32.6) (2026-11-14)
+
+
+### Refactoring
+
+* **guest-storage-apply:** unify instruction directory admission ([#47284](https://github.com/okou-ai/okou/issues/47284)) ([839842f](https://github.com/okou-ai/okou/commit/839842f6b94dcb7dcaefc853ad46b4b2b49a274f))
+
+## [0.32.5](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.4...guest-storage-apply-v0.32.5) (2026-11-14)
+
 ## [0.32.4](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.3...guest-storage-apply-v0.32.4) (2026-11-14)
 
 ## [0.32.3](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.2...guest-storage-apply-v0.32.3) (2026-11-14)

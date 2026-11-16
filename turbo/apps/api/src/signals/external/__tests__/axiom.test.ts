@@ -1,5 +1,4 @@
 import { publicChatActor } from "../../routes/__tests__/helpers/public-chat-actor";
-import { randomUUID } from "node:crypto";
 
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
 import { createStore } from "ccstate";
@@ -15,7 +14,6 @@ import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-a
 import { createDeferredPromise } from "../../utils";
 import {
   recordBillingOperationTimings,
-  recordClaimResponseJsonSerialization,
   recordMcpClientNameLookup,
 } from "../sandbox-op-log";
 
@@ -46,7 +44,7 @@ describe("shared SDK ingestion", () => {
       agentId: owned.agentId,
       prompt: "measure rootfs and home independently",
     });
-    const { claim } = await owned.claimChatRun(owned.runnerGroup, runId);
+    const { execution } = await owned.runExecution(runId);
     await owned.run(async () => {
       const metric = {
         ts: "2026-10-10T00:00:00Z",
@@ -94,7 +92,7 @@ describe("shared SDK ingestion", () => {
         setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
           webhookTelemetryContract,
         ).send({
-          headers: { authorization: `Bearer ${claim.sandboxToken}` },
+          headers: { authorization: `Bearer ${execution.sandboxToken}` },
           body: {
             runId,
             metrics: [
@@ -180,40 +178,6 @@ describe("shared SDK ingestion", () => {
         startedAt: performance.now(),
       }),
     ).resolves.toBeUndefined();
-  });
-
-  it("emits bounded claim JSON size without response content", () => {
-    // Telemetry-client suite exception: no API read endpoint exposes this event.
-    const runId = randomUUID();
-    for (const [byteLength, bucket] of [
-      [0, "lt_4_kib"],
-      [4 * 1024, "4_16_kib"],
-      [16 * 1024, "16_64_kib"],
-      [64 * 1024, "64_256_kib"],
-      [256 * 1024, "256_kib_1_mib"],
-      [1024 * 1024, "ge_1_mib"],
-    ] as const) {
-      recordClaimResponseJsonSerialization({
-        runId,
-        byteLength,
-        serializationDurationMs: 7,
-      });
-      expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-        "vm0-sandbox-op-log-dev",
-        [
-          {
-            _time: expect.any(String),
-            source: "api",
-            op_type: "api_claim_response_json_serialize",
-            sandbox_type: "runner",
-            duration_ms: 7,
-            success: true,
-            run_id: runId,
-            serialized_json_size_bucket: bucket,
-          },
-        ],
-      );
-    }
   });
 
   it("emits ID-free billing timings through the existing operation dataset", () => {
@@ -305,9 +269,9 @@ describe("shared SDK ingestion", () => {
       agentId: owned.agentId,
       prompt: "check archive startup",
     });
-    const { claim } = await owned.claimChatRun(owned.runnerGroup, runId);
+    const { execution } = await owned.runExecution(runId);
     await owned.run(async () => {
-      const token = claim.sandboxToken;
+      const token = execution.sandboxToken;
       const operation = {
         ts: "2026-09-18T00:00:00Z",
         action_type: "storage_cache_fresh_delivery_headers",
@@ -409,9 +373,9 @@ describe("shared SDK ingestion", () => {
       agentId: owned.agentId,
       prompt: "measure storage batch application",
     });
-    const { claim } = await owned.claimChatRun(owned.runnerGroup, runId);
+    const { execution } = await owned.runExecution(runId);
     await owned.run(async () => {
-      const token = claim.sandboxToken;
+      const token = execution.sandboxToken;
       const ts = "2026-09-15T00:00:00Z";
       const storageBatch = {
         ts,

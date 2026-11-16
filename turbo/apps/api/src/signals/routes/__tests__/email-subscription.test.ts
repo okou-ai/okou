@@ -14,12 +14,12 @@ import { env } from "../../../lib/env";
 import { emailSubscriptionRoutes } from "../email-subscription";
 import { emailUnsubscribeRoutes } from "../email-unsubscribe";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
@@ -260,7 +260,7 @@ describe("email subscription preferences", () => {
       [401],
     );
     const owner = actor();
-    const token = await claimedToken(owner);
+    const token = await executionToken(owner);
     const runHeaders = { authorization: `Bearer ${token}` };
     const response = await accept(client().get({ headers: runHeaders }), [403]);
     expect(response.body.error.code).toBe("FORBIDDEN");

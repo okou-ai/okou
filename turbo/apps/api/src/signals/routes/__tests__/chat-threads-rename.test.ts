@@ -11,11 +11,11 @@ import { chatThreadGetRoutes } from "../chat-threads-get";
 import { chatThreadRenameRoutes } from "../chat-threads-rename";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const store = createStore();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
@@ -70,7 +70,7 @@ function metadataClient() {
 describe("POST /api/chat-threads/:id/rename", () => {
   it("renames a thread with an Okou run token carrying chat-thread:write", async () => {
     const fixture = await seedChatThread("Original title");
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
@@ -88,7 +88,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
     const metadataResponse = await accept(
       metadataClient().get({
         headers: {
-          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
+          authorization: `Bearer ${await executionToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
         },
         params: { id: fixture.threadId },
       }),
@@ -210,7 +210,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
     const response = await accept(
       renameClient().rename({
         headers: {
-          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: otherOrgId })}`,
+          authorization: `Bearer ${await executionToken({ userId: fixture.userId, orgId: otherOrgId })}`,
         },
         params: { id: fixture.threadId },
         body: { title: "Wrong org title" },
@@ -224,7 +224,7 @@ describe("POST /api/chat-threads/:id/rename", () => {
     const metadataResponse = await accept(
       metadataClient().get({
         headers: {
-          authorization: `Bearer ${await claimedToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
+          authorization: `Bearer ${await executionToken({ userId: fixture.userId, orgId: fixture.orgId })}`,
         },
         params: { id: fixture.threadId },
       }),

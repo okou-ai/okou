@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
+import { createVncExecutionApi } from "./helpers/vnc-execution";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
 import {
   createVncRuntimeApi,
@@ -17,11 +17,11 @@ import {
 
 const context = testContext();
 const api = createVncRuntimeApi(context);
-const claimed = createClaimedVncApi(context);
+const executionApi = createVncExecutionApi(context);
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 beforeEach(initializeVncRuntimeTest);
-afterEach(claimed.cleanup);
+afterEach(executionApi.cleanup);
 
 function check(
   f: Pick<
@@ -56,13 +56,13 @@ describe("VNC authority and revocation", () => {
   it.each(["configuration", "metadata"] as const)(
     "agent %s privacy changes revoke member Runs and preserve the owner's authority",
     async (entry) => {
-      const owner = await claimed.paidOwner();
+      const owner = await executionApi.paidOwner();
       const actor = bdd.user(owner);
       const agent = await bdd.createAgent(actor, {
         displayName: "Shared VNC Agent",
         visibility: "public",
       });
-      const ownRun = await claimed.runtime({
+      const ownRun = await executionApi.runtime({
         ...owner,
         agentId: agent.agentId,
       });
@@ -72,7 +72,7 @@ describe("VNC authority and revocation", () => {
       });
       await bdd.readOnboardingStatus(bdd.user(member));
       await bdd.completeOnboarding(bdd.user(member));
-      const memberRun = await claimed.runtime({
+      const memberRun = await executionApi.runtime({
         ...member,
         agentId: agent.agentId,
       });
@@ -119,7 +119,7 @@ describe("VNC authority and revocation", () => {
   );
 
   it("requires exact current Run/Runner/configuration", async () => {
-    const f = await claimed.fixture();
+    const f = await executionApi.fixture();
     expect((await check(f)).body).toStrictEqual({
       outcome: "valid",
     });
@@ -140,15 +140,15 @@ describe("VNC authority and revocation", () => {
     expect((await check({ ...f, runId: randomUUID() })).body).toStrictEqual({
       outcome: "unavailable",
     });
-    const another = await claimed.fixture();
+    const another = await executionApi.fixture();
     expect(
       (await check({ ...another, connectionId: f.connectionId })).body,
     ).toStrictEqual({ outcome: "unavailable" });
   });
 
   it("delivers host changes only to the exact owner/connection and refuses stale generations", async () => {
-    const f = await claimed.fixture();
-    const another = await claimed.fixture();
+    const f = await executionApi.fixture();
+    const another = await executionApi.fixture();
     api.authenticate(f);
     context.mocks.ably.publish.mockClear();
     await accept(
@@ -206,7 +206,7 @@ describe("VNC authority and revocation", () => {
   });
 
   it("revokes current credential references and preserves unrelated connections", async () => {
-    const f = await claimed.fixture();
+    const f = await executionApi.fixture();
     api.authenticate(f);
     const linked = await accept(
       api.connections().create({
@@ -258,7 +258,7 @@ describe("VNC authority and revocation", () => {
   });
 
   it("a publication failure preserves the committed host change and current admission refusal", async () => {
-    const f = await claimed.fixture();
+    const f = await executionApi.fixture();
     api.authenticate(f);
     context.mocks.ably.publish.mockRejectedValue(
       new Error("notification unavailable"),

@@ -11,14 +11,14 @@ import { connectorAccountRoutes } from "../connector-accounts";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const connectors = createConnectorBddApi(context);
-const tokenFor = createClaimedRunCredentials(context).okouToken;
+const tokenFor = createRunExecutionCredentials(context).okouToken;
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const target = { kind: "builtin", connectorSlug: "openai" } as const;

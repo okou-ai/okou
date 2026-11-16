@@ -23,11 +23,11 @@ import { chatThreadModelSelectionRoutes } from "../chat-threads-model-selection"
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const store = createStore();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
@@ -577,7 +577,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     async (retiredModel, replacement) => {
       const fixture = await seedChatThread("Model retirement");
 
-      const token = await claimedToken({
+      const token = await executionToken({
         userId: fixture.userId,
         orgId: fixture.orgId,
       });
@@ -616,7 +616,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
 
   it("updates thread model selection with an Okou run token carrying chat-thread:write", async () => {
     const fixture = await seedChatThread("Launch plan");
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });

@@ -31,7 +31,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
@@ -44,7 +44,7 @@ import {
 } from "./helpers/vnc-runtime";
 
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const store = createStore();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
@@ -180,7 +180,7 @@ describe("POST /api/chat-threads", () => {
         { cloudBrowserEnabledByDefault: enabled },
         [200],
       );
-      const token = await claimedToken({
+      const token = await executionToken({
         userId: fixture.userId,
         orgId: fixture.orgId,
       });
@@ -369,7 +369,7 @@ describe("POST /api/chat-threads", () => {
       [201],
     );
     const threadId = randomUUID();
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
@@ -427,7 +427,7 @@ describe("POST /api/chat-threads", () => {
     if (firstResponse.status !== 200 || secondResponse.status !== 200) {
       throw new Error("Expected connector account creation to succeed");
     }
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
@@ -706,7 +706,7 @@ describe("POST /api/chat-threads", () => {
       { apiKey: "selected-openai-key" },
       fixture.agentId,
     );
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
@@ -774,7 +774,7 @@ describe("POST /api/chat-threads", () => {
       }),
       [400],
     );
-    const foreignToken = await claimedToken({
+    const foreignToken = await executionToken({
       userId: foreignActor.userId,
       orgId: fixture.orgId,
     });
@@ -791,7 +791,7 @@ describe("POST /api/chat-threads", () => {
       { orgId: otherOrgId, userId: fixture.userId },
       context.signal,
     );
-    const otherOrgToken = await claimedToken({
+    const otherOrgToken = await executionToken({
       userId: fixture.userId,
       orgId: otherOrgId,
     });
@@ -964,7 +964,7 @@ describe("POST /api/chat-threads", () => {
       { apiKey: "concurrent-create-key" },
       fixture.agentId,
     );
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
@@ -1095,7 +1095,7 @@ describe("POST /api/chat-threads", () => {
     if (!httpConnectionId || !mcpConnectionId) {
       throw new Error("Expected custom connector account fixtures");
     }
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
@@ -1337,7 +1337,7 @@ describe("POST /api/chat-threads", () => {
         }),
         [200],
       );
-      const token = await claimedToken({
+      const token = await executionToken({
         userId: fixture.userId,
         orgId: fixture.orgId,
       });
@@ -1432,7 +1432,7 @@ describe("POST /api/chat-threads", () => {
 
   it("routes thread-list invalidations only to the user-org channel", async () => {
     const fixture = await seedAgent();
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
@@ -1463,7 +1463,7 @@ describe("POST /api/chat-threads", () => {
 
   it("creates a titled thread with an Okou run token carrying chat-thread:write", async () => {
     const fixture = await seedAgent();
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
@@ -1533,11 +1533,13 @@ describe("POST /api/chat-threads", () => {
       prompt: "Create a separate thread using the workspace default",
     });
     await api.heartbeatRunner(runnerGroup);
-    const claim = await api.executionInput(runId);
-    expect(claim.modelUsageProvider).toBe(OTHER_WORKSPACE_MODEL);
-    const token = claim.platformEnvironment.OKOU_TOKEN;
+    const execution = await api.executionInput(runId);
+    expect(execution.modelUsageProvider).toBe(OTHER_WORKSPACE_MODEL);
+    const token = execution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
-      throw new Error("Expected the caller Run claim to provide OKOU_TOKEN");
+      throw new Error(
+        "Expected the caller execution input to provide OKOU_TOKEN",
+      );
     }
 
     const response = await accept(
@@ -1579,7 +1581,7 @@ describe("POST /api/chat-threads", () => {
       }),
       [200],
     );
-    const sourceToken = await claimedToken({
+    const sourceToken = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
@@ -1603,14 +1605,16 @@ describe("POST /api/chat-threads", () => {
       prompt: "Create a separate thread with the member's priority default",
     });
     await api.heartbeatRunner(runnerGroup);
-    const claim = await api.executionInput(runId);
-    expect(claim.piModelConfig).toMatchObject({
+    const execution = await api.executionInput(runId);
+    expect(execution.piModelConfig).toMatchObject({
       model: PRIORITY_MODEL,
       serviceTier: "fast",
     });
-    const inheritedToken = claim.platformEnvironment.OKOU_TOKEN;
+    const inheritedToken = execution.platformEnvironment.OKOU_TOKEN;
     if (!inheritedToken) {
-      throw new Error("Expected the caller Run claim to provide OKOU_TOKEN");
+      throw new Error(
+        "Expected the caller execution input to provide OKOU_TOKEN",
+      );
     }
 
     const inherited = await accept(
@@ -1653,7 +1657,7 @@ describe("POST /api/chat-threads", () => {
 
   it("uses the workspace default when the request omits a model", async () => {
     const fixture = await seedAgent();
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
@@ -1681,7 +1685,7 @@ describe("POST /api/chat-threads", () => {
       { apiKey: "duplicate-delivery-openai-key" },
       fixture.agentId,
     );
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
@@ -1751,7 +1755,7 @@ describe("POST /api/chat-threads", () => {
 
   it("replays the stored thread instead of the repeated request body", async () => {
     const fixture = await seedAgent();
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
@@ -1810,7 +1814,7 @@ describe("POST /api/chat-threads", () => {
 
   it("creates one thread when two deliveries race on a client thread id", async () => {
     const fixture = await seedAgent();
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
@@ -1855,7 +1859,7 @@ describe("POST /api/chat-threads", () => {
 
   it("answers a client thread id owned by another member like a missing thread", async () => {
     const owner = await seedAgent();
-    const ownerToken = await claimedToken({
+    const ownerToken = await executionToken({
       userId: owner.userId,
       orgId: owner.orgId,
     });
@@ -1874,7 +1878,7 @@ describe("POST /api/chat-threads", () => {
     );
 
     const other = await seedAgent();
-    const otherToken = await claimedToken({
+    const otherToken = await executionToken({
       userId: other.userId,
       orgId: other.orgId,
     });
@@ -1909,7 +1913,7 @@ describe("POST /api/chat-threads", () => {
 
   it("answers a client thread id held by another agent like a missing thread", async () => {
     const fixture = await seedAgent();
-    const token = await claimedToken({
+    const token = await executionToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });

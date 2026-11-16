@@ -8,6 +8,7 @@ import flow_metadata_keys as metadata_keys
 import managed_upload
 import mitm_addon
 from tests.managed_openrouter_helpers import sandbox
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import _sandbox_without_firewalls, _write_registry
 
 
@@ -82,7 +83,7 @@ def test_buffered_auth_checks_use_only_header_names(real_flow, check, transfer_f
 
 def _native_valid_http1_flow(real_flow, *, host: str, path: str):
     flow = real_flow(with_response=False, client_ip="10.200.0.5", host=host)
-    value = b"gzip" + b" " * (1_048_576 - len(b"gzip,chunked")) + b",chunked"
+    value = repeat_bytes(b"gzip", b" ", 1_048_576 - len(b"gzip,chunked"), b",chunked")
     flow.request = http1.read_request_head(
         [
             f"POST https://{host}{path} HTTP/1.1".encode(),

@@ -249,13 +249,9 @@ impl HomeCacheStateSnapshot {
         })
     }
 
-    pub fn current_held_home_states(
-        &self,
-        active_runs: &ActiveRuns,
-        extra_active_reuse_key: Option<&str>,
-    ) -> Vec<HeldHomeState> {
+    pub fn current_held_home_states(&self, active_runs: &ActiveRuns) -> Vec<HeldHomeState> {
         let states = self.lock_inner().states();
-        filter_current_held_home_states(states, active_runs, extra_active_reuse_key)
+        filter_current_held_home_states(states, active_runs)
     }
 
     pub fn loaded_home_cache_snapshot(&self) -> HomeCacheRefreshOutcome {
@@ -279,12 +275,8 @@ impl HomeCacheStateSnapshot {
 pub fn filter_current_held_home_states(
     states: Vec<HeldHomeState>,
     active_runs: &ActiveRuns,
-    extra_active_reuse_key: Option<&str>,
 ) -> Vec<HeldHomeState> {
-    let mut active_reuse_keys = active_runs.reuse_keys();
-    if let Some(reuse_key) = extra_active_reuse_key {
-        active_reuse_keys.insert(reuse_key.to_owned());
-    }
+    let active_reuse_keys = active_runs.reuse_keys();
     let mut states = states
         .into_iter()
         .filter(|state| !active_reuse_keys.contains(&state.reuse_key))

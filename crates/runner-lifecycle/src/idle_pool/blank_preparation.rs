@@ -10,8 +10,8 @@ use crate::resource_budget::BudgetLease;
 use crate::storage_fingerprints::StorageFingerprints;
 
 use super::entry::{IdleSandboxMetadata, IdleSandboxResources};
-use super::inventory_retirement::CapturedBacking;
 use super::{IdleActivationOwner, IdleActivationState, IdlePoolIncoming, ParkedIdleCandidate};
+use crate::captured_backing::CapturedBacking;
 
 /// A created sandbox is not a parked candidate. Retain this capsule outside
 /// borrowed stage futures, including failure, cancellation and provider panic.
@@ -73,16 +73,14 @@ impl BlankPreparationResource {
                 .sandbox
                 .backing_process()
                 .ok_or(MemoryOperationError::MissingBacking)?;
-            let identity = backing.identity();
+            let captured = CapturedBacking::capture(backing);
+            let identity = captured.identity;
             if let Some(original) = &self.backing
                 && (original.identity != identity || original.process.identity() != identity)
             {
                 return Err(MemoryOperationError::OwnershipInvariant);
             }
-            Ok(CapturedBacking {
-                process: backing,
-                identity,
-            })
+            Ok(captured)
         }))
         .unwrap_or(Err(MemoryOperationError::ProducerLost))?;
         if self.backing.is_none() {

@@ -27,7 +27,7 @@ import { integrationsTelegramRoutes } from "../integrations-telegram";
 import { integrationsTelegramMessageRoutes } from "../integrations-telegram-message";
 import { integrationsTelegramUploadCompleteRoutes } from "../integrations-telegram-upload-complete";
 import { integrationsTelegramUploadInitRoutes } from "../integrations-telegram-upload-init";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
   createAuthDeviceApiActions,
@@ -44,7 +44,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const store = createStore();
 const mocks = createRouteMocks(context);
 
@@ -163,7 +163,7 @@ async function sendOfficialModelMessage(token: string, actor: ApiTestUser) {
   return { chatId, telegramBody, responseBody: response.body };
 }
 
-function sendClaimedModelMessage(model: FooterModel) {
+function sendExecutionModelMessage(model: FooterModel) {
   const restoreBaseline = captureConnectorExternalState(context);
   onTestFinished(restoreBaseline);
   let restoreAccepted = restoreBaseline;
@@ -231,10 +231,10 @@ function sendClaimedModelMessage(model: FooterModel) {
         prompt: "Exercise footer",
       });
       await api.heartbeatRunner(runnerGroup);
-      const claim = await owner.claim(run.runId);
-      expect(claim.runId).toBe(run.runId);
+      const execution = await owner.executionInput(run.runId);
+      expect(execution.runId).toBe(run.runId);
       if (fast) {
-        const config = claim.piModelConfig;
+        const config = execution.piModelConfig;
         expect({
           provider: config?.provider,
           model: config?.model,
@@ -246,11 +246,11 @@ function sendClaimedModelMessage(model: FooterModel) {
           serviceTier: "fast",
         });
       } else {
-        expect(claim.environment?.ANTHROPIC_MODEL).toBe("claude-fable-5-1");
+        expect(execution.environment?.ANTHROPIC_MODEL).toBe("claude-fable-5-1");
       }
-      const token = claim.platformEnvironment.OKOU_TOKEN;
+      const token = execution.platformEnvironment.OKOU_TOKEN;
       if (!token?.startsWith("vm0_sandbox_")) {
-        throw new Error("Expected the actual claim to issue an OKOU_TOKEN");
+        throw new Error("Expected execution input to include an OKOU_TOKEN");
       }
       return await sendOfficialModelMessage(token, actor);
     })
@@ -334,7 +334,7 @@ describe("POST /api/integrations/telegram/message", () => {
 
   it("attributes an official message to the agent and sender with a Standard Run", async () => {
     const { chatId, telegramBody, responseBody } =
-      await sendClaimedModelMessage("claude-fable-5-1");
+      await sendExecutionModelMessage("claude-fable-5-1");
     expect(telegramBody).toStrictEqual({
       chat_id: chatId,
       text: `Hello from this Run\n\n<i>Sent via Model footer sender · Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
@@ -345,7 +345,7 @@ describe("POST /api/integrations/telegram/message", () => {
 
   it("attributes an official message to the agent and sender with a Fast Run", async () => {
     const { chatId, telegramBody, responseBody } =
-      await sendClaimedModelMessage("gpt-6.1-sol");
+      await sendExecutionModelMessage("gpt-6.1-sol");
     expect(telegramBody).toStrictEqual({
       chat_id: chatId,
       text: `Hello from this Run\n\n<i>Sent via Model footer sender · Triggered by <a href="tg://user?id=${chatId}">Sender</a></i>`,
@@ -354,7 +354,7 @@ describe("POST /api/integrations/telegram/message", () => {
     expect(responseBody).toStrictEqual({ ok: true, messageId: 325, chatId });
   });
 
-  it("appends the claimed Run's agent label to an official message", async () => {
+  it("appends the dispatched Run's agent label to an official message", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
     const token = await credentials.okouToken({ userId, orgId });

@@ -22,6 +22,7 @@ from tests.aws_sigv4_helpers import (
 )
 from tests.firewall_auth_helpers import firewall_auth_response
 from tests.firewall_aws_sigv4_helpers import aws_api_entry
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 
 
@@ -153,7 +154,7 @@ async def test_pending_action_rejects_exhausted_capacity_before_buffering(
         b"Action=DeleteIdentity",
         b"Action=GetCallerIdentity&Action=DeleteIdentity",
         b"Action=\xff",
-        STS_FORM_BODY + b"&Padding=" + b"x" * (64 * 1024),
+        repeat_bytes(STS_FORM_BODY + b"&Padding=", b"x", 64 * 1024, b""),
     ],
     ids=["unallowed-action", "ambiguous-action", "invalid-utf8", "oversized-form"],
 )

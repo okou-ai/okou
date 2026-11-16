@@ -20,7 +20,7 @@ import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 
 import { uniqueSlackUserId } from "./helpers/slack-public-install";
 import { holdSecretKms } from "./helpers/hold-secret-kms";
@@ -39,7 +39,7 @@ function client() {
 }
 type Chat = Awaited<ReturnType<Awaited<ReturnType<typeof fixture>>["start"]>>;
 function runHeaders(chat: Chat) {
-  return { authorization: `Bearer ${okouTokenFromClaim(chat.claim)}` };
+  return { authorization: `Bearer ${okouTokenFromExecution(chat.execution)}` };
 }
 async function use(chat: Chat) {
   return (
@@ -321,10 +321,12 @@ describe("shared Browser public consumers", () => {
           )
         ).body.triggerSource,
       ).toBe("slack");
-      const claim = await f.owned.claimRunnerRun(runId);
+      const execution = await f.owned.executionInput(runId);
       const used = await accept(
         client().use({
-          headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+          headers: {
+            authorization: `Bearer ${okouTokenFromExecution(execution)}`,
+          },
           body: {},
         }),
         [200],
@@ -336,7 +338,7 @@ describe("shared Browser public consumers", () => {
       );
       await createWebhookCallbackApi(context).requestAgentComplete(
         { runId, exitCode: 1, error: "The fixture Run finished" },
-        { authorization: `Bearer ${claim.sandboxToken}` },
+        { authorization: `Bearer ${execution.sandboxToken}` },
         [200],
       );
       await flushWaitUntilForTest();

@@ -9,6 +9,7 @@ SSO = "com.clerk.api.sso.SSOReceiverActivity"
 SHARED = "com.clerk.api.sharedsession.SharedSessionSyncProvider"
 PROFILE = "androidx.profileinstaller.ProfileInstallReceiver"
 REVOCATION = "com.google.android.gms.auth.api.signin.RevocationBoundService"
+UPDATES = "androidx.core.content.FileProvider"
 
 
 def require(condition, message):
@@ -37,10 +38,22 @@ def audit(path, package):
         expected.add(("activity", "androidx.activity.ComponentActivity"))
     found = set()
     shared_found = False
+    updates_found = False
     for component in app:
         if component.tag not in {"activity", "activity-alias", "provider", "service", "receiver"}:
             continue
         name = component.get(A + "name")
+        if name == UPDATES:
+            require(not updates_found, "Duplicate update file provider")
+            updates_found = True
+            require(component.tag == "provider" and component.get(A + "exported") == "false" and
+                    component.get(A + "grantUriPermissions") == "true" and
+                    component.get(A + "authorities") == f"{package}.updates" and
+                    not component.findall("intent-filter"), "Update files must stay private")
+            metadata = component.findall("meta-data")
+            require(len(metadata) == 1 and metadata[0].attrib == {
+                A + "name": "android.support.FILE_PROVIDER_PATHS", A + "resource": "@xml/update_paths"
+            }, "Unexpected update file scope")
         if name == SHARED:
             require(not shared_found, "Duplicate SDK shared-session provider")
             shared_found = True
@@ -87,6 +100,7 @@ def audit(path, package):
             require([e.attrib for e in filters[0].findall("category")] == [{A + "name": "android.intent.category.LAUNCHER"}], "Unexpected launcher category")
     require(found == expected, f"Merged public entries changed: {found ^ expected}")
     require(shared_found, "Clerk initialization requires its disabled provider to be registered")
+    require(updates_found, "Missing private update file provider")
 
 
 if __name__ == "__main__":

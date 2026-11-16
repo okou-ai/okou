@@ -1,5 +1,6 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { animationFrame } from "signal-timers";
+import { flushSync } from "react-dom";
 import { onRef } from "../utils.ts";
 import {
   CHAT_THREAD_VIRTUAL_FALLBACK_VIEWPORT_HEIGHT,
@@ -24,6 +25,10 @@ import {
 import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "./chat-thread-only-muted.ts";
 import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";
+import {
+  createProjectFoldMotionSignals,
+  type ProjectFoldMotion,
+} from "./project-fold-motion.ts";
 
 const CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE = 100;
 const CHAT_THREAD_VIRTUAL_OVERSCAN = 8;
@@ -38,6 +43,9 @@ export interface SidebarChatThreadWindow {
   readonly startIndex: number;
   readonly rows: readonly SidebarChatThreadRow[];
   readonly showAllChatsRow: boolean;
+  /** Sparse retained rows keep their expanded-list indices during a fold. */
+  readonly indexes?: readonly number[];
+  readonly motion?: ProjectFoldMotion;
 }
 
 export interface SidebarChatThreadListSignals {
@@ -47,6 +55,10 @@ export interface SidebarChatThreadListSignals {
   readonly currentThreadListed$: Computed<boolean>;
   readonly hasHiddenArchivedThreads$: Computed<boolean>;
   readonly window$: Computed<SidebarChatThreadWindow>;
+  readonly motionHostRef$: Command<
+    (() => void) | undefined,
+    [HTMLElement | null]
+  >;
 }
 
 interface SidebarChatThreadScrollMetrics {
@@ -63,6 +75,12 @@ export interface ScrollToRowRequest {
 export interface SidebarChatThreadScrollSignals {
   readonly isScrolled$: Computed<boolean>;
   readonly list$: Computed<Promise<SidebarChatThreadListSignals>>;
+  /** Returns false when this viewport is not mounted/visible. */
+  readonly cancelProjectFold$: Command<void, []>;
+  readonly foldProject$: Command<
+    Promise<void> | false,
+    [string, boolean, AbortSignal]
+  >;
   readonly setScrollMetrics$: Command<void, [SidebarChatThreadScrollMetrics]>;
   readonly setScrollViewport$: Command<
     (() => void) | undefined,
@@ -264,6 +282,7 @@ function createSidebarChatThreadViewportSignals(
   list: ChatThreadListSignals,
   showAllChatsRow: boolean,
   rowHeight: number,
+  foldMotion: ReturnType<typeof createProjectFoldMotionSignals>,
 ): SidebarChatThreadListSignals {
   const rows$ = computed((get): readonly SidebarChatThreadRow[] => {
     return attachItemSignals(
@@ -286,6 +305,55 @@ function createSidebarChatThreadViewportSignals(
     );
     const viewportHeight =
       measuredViewportHeight || CHAT_THREAD_VIRTUAL_FALLBACK_VIEWPORT_HEIGHT;
+    const motion = get(foldMotion.motion$);
+    if (motion?.logicalRows === rows) {
+      const { geometry, range, expandedRows } = motion;
+      const { blockStartIndex, childCount } = geometry;
+      const indexes = [
+        ...Array.from(
+          { length: blockStartIndex - range.startIndex },
+          (_, index) => {
+            return range.startIndex + index;
+          },
+        ),
+        ...Array.from(
+          { length: range.childEnd - range.childStart },
+          (_, index) => {
+            return blockStartIndex + range.childStart + index;
+          },
+        ),
+        ...Array.from(
+          { length: range.suffixEnd - range.suffixStart },
+          (_, index) => {
+            return blockStartIndex + childCount + range.suffixStart + index;
+          },
+        ),
+      ];
+      const logicalHeader = rows.find((row) => {
+        return row.kind === "project" && row.project.id === motion.projectId;
+      });
+      const visibleIndexes = indexes.filter((index) => {
+        return index < expandedRows.length;
+      });
+      return {
+        startIndex: range.startIndex,
+        rows: visibleIndexes.map((index) => {
+          const row = expandedRows[index];
+          if (!row) {
+            throw new Error("Project fold range exceeds expanded rows");
+          }
+          return row.kind === "project" &&
+            row.project.id === motion.projectId &&
+            logicalHeader
+            ? logicalHeader
+            : row;
+        }),
+        indexes: visibleIndexes,
+        showAllChatsRow:
+          showAllChatsRow && indexes.includes(expandedRows.length),
+        motion,
+      };
+    }
     const { startIndex, endIndex } = getFixedVirtualRange({
       itemCount: rowCount,
       scrollTop,
@@ -312,6 +380,13 @@ function createSidebarChatThreadViewportSignals(
     };
   });
 
+  const motionHostRef$ = command(({ set }, host: HTMLElement | null) => {
+    if (!host) {
+      return;
+    }
+    set(foldMotion.bindList$, rows$, showAllChatsRow);
+    return set(foldMotion.hostRef$, host);
+  });
   return {
     count$: list.count$,
     rowCount$,
@@ -319,6 +394,7 @@ function createSidebarChatThreadViewportSignals(
     currentThreadListed$: list.currentThreadListed$,
     hasHiddenArchivedThreads$: list.hasHiddenArchivedThreads$,
     window$,
+    motionHostRef$,
   };
 }
 
@@ -380,6 +456,7 @@ export function createSidebarChatThreadScrollSignals({
   restoreScrollPosition?: boolean;
 } = {}): SidebarChatThreadScrollSignals {
   const domSignals = createSidebarChatThreadDomSignals(restoreScrollPosition);
+  const foldMotion = createProjectFoldMotionSignals(domSignals, rowHeight);
   // The async boundary selects the shared list context. Each viewport only
   // adds its own synchronous virtual window over that list.
   const list$ = computed(async (get): Promise<SidebarChatThreadListSignals> => {
@@ -393,6 +470,7 @@ export function createSidebarChatThreadScrollSignals({
       list,
       showAllChatsRow,
       rowHeight,
+      foldMotion,
     );
   });
   const scrollListToIndex$ = createScrollListToIndexCommand(
@@ -404,6 +482,11 @@ export function createSidebarChatThreadScrollSignals({
       const { key, align = "top" } = request;
       const list = await get(list$);
       signal.throwIfAborted();
+      if (get(foldMotion.motion$)) {
+        flushSync(() => {
+          set(foldMotion.cancel$);
+        });
+      }
 
       const index = get(list.rows$).findIndex((row) => {
         return row.key === key;
@@ -416,25 +499,84 @@ export function createSidebarChatThreadScrollSignals({
     },
   );
   const scrollCurrentChatThreadOnRef$ = onRef(
-    command(async ({ set }, element: HTMLSpanElement, signal: AbortSignal) => {
-      const threadId = element.dataset.chatThreadId;
-      if (!threadId) {
-        return;
-      }
-      await set(
-        scrollToRow$,
-        { key: threadRowKey(threadId), align: "top" },
-        signal,
-      );
-    }),
+    command(
+      async ({ get, set }, element: HTMLSpanElement, signal: AbortSignal) => {
+        const threadId = element.dataset.chatThreadId;
+        if (!threadId) {
+          return;
+        }
+        const motion = get(foldMotion.motion$);
+        const mountedList = get(foldMotion.list$);
+        if (
+          motion &&
+          mountedList &&
+          get(mountedList.rows$) === motion.logicalRows
+        ) {
+          const index = motion.logicalRows.findIndex((row) => {
+            return row.kind === "thread" && row.threadId === threadId;
+          });
+          const { scrollTop, clientHeight } = get(domSignals.scrollMetrics$);
+          // Expanding can mount this existing marker. Its already-visible target
+          // needs no scroll and must not cancel the command that revealed it.
+          if (
+            index !== -1 &&
+            index * rowHeight >= scrollTop &&
+            (index + 1) * rowHeight <= scrollTop + clientHeight
+          ) {
+            return;
+          }
+        }
+        await set(
+          scrollToRow$,
+          { key: threadRowKey(threadId), align: "top" },
+          signal,
+        );
+      },
+    ),
   );
 
+  const setScrollMetrics$ = command(
+    ({ set }, metrics: SidebarChatThreadScrollMetrics) => {
+      set(foldMotion.cancel$);
+      set(domSignals.setScrollMetrics$, metrics);
+    },
+  );
+  const measureViewport$ = command(({ set }) => {
+    set(foldMotion.cancel$);
+    set(domSignals.measureViewport$);
+  });
+  const foldProject$ = command(
+    (
+      { get, set },
+      projectId: string,
+      expanded: boolean,
+      signal: AbortSignal,
+    ) => {
+      const viewport = get(domSignals.scrollViewport$);
+      const list = get(foldMotion.list$);
+      if (!viewport?.isConnected || viewport.clientHeight <= 0 || !list) {
+        return false;
+      }
+      return set(
+        foldMotion.fold$,
+        {
+          rows$: list.rows$,
+          trailingRow: list.trailingRow,
+          projectId,
+          expanded,
+        },
+        signal,
+      );
+    },
+  );
   return {
     isScrolled$: domSignals.isScrolled$,
     list$,
-    setScrollMetrics$: domSignals.setScrollMetrics$,
+    foldProject$,
+    cancelProjectFold$: foldMotion.cancel$,
+    setScrollMetrics$,
     setScrollViewport$: domSignals.setScrollViewport$,
-    measureViewport$: domSignals.measureViewport$,
+    measureViewport$,
     scrollToRow$,
     scrollCurrentChatThreadOnRef$,
   };

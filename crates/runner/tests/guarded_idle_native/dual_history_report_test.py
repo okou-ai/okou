@@ -109,7 +109,7 @@ class DualHistoryReportTests(unittest.TestCase):
         self.assertTrue(result["native_dual_history_complete"])
         self.assertTrue(result["incoming_required_history_proven"])
         for key in ("permanent_dual_cache_retention_claimed","memory_envelope_calibrated",
-                    "bootstrap_provenance_verified","production_protection_proven","actual_api_claim_loss_proven"):
+                    "bootstrap_provenance_verified","production_protection_proven"):
             self.assertIs(result[key],False)
 
     def test_complete_raw_oracles_are_required(self):

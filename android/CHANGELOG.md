@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.14.0](https://github.com/okou-ai/okou/compare/android-v0.13.0...android-v0.14.0) (2026-11-16)
+
+
+### Features
+
+* **android:** refresh chats from foreground realtime ([#47513](https://github.com/okou-ai/okou/issues/47513)) ([fbfbd14](https://github.com/okou-ai/okou/commit/fbfbd14d336aaa49fc887093b4c90886ce83eff7))
+
+## [0.13.0](https://github.com/okou-ai/okou/compare/android-v0.12.0...android-v0.13.0) (2026-11-15)
+
+
+### Features
+
+* **android:** add native apk update and recovery flows ([#47331](https://github.com/okou-ai/okou/issues/47331)) ([c9d9bdb](https://github.com/okou-ai/okou/commit/c9d9bdb0c7a3affbfc4f0a3910a1eb22cbeddf21))
+
+## [0.12.0](https://github.com/okou-ai/okou/compare/android-v0.11.0...android-v0.12.0) (2026-11-14)
+
+
+### Features
+
+* **android:** add durable text drafts and sending ([#47239](https://github.com/okou-ai/okou/issues/47239)) ([23db870](https://github.com/okou-ai/okou/commit/23db8702960c836e9119fbeca27fad1cfe9283c3))
+
+
+### Refactoring
+
+* **api:** stop accepting the retired chat resources preference write ([#47299](https://github.com/okou-ai/okou/issues/47299)) ([c2fbb97](https://github.com/okou-ai/okou/commit/c2fbb97cd4c674b73720b375573bd592e7ee7f77))
+
+## [0.11.0](https://github.com/okou-ai/okou/compare/android-v0.10.0...android-v0.11.0) (2026-11-14)
+
+
+### Features
+
+* **android:** add personal instructions editing and recovery ([#47183](https://github.com/okou-ai/okou/issues/47183)) ([e0e425a](https://github.com/okou-ai/okou/commit/e0e425a3aaa6ba7ea21ccddcdba51f88ba922e83))
+
 ## [0.10.0](https://github.com/okou-ai/okou/compare/android-v0.9.0...android-v0.10.0) (2026-11-14)
 
 

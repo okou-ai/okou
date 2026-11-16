@@ -31,9 +31,7 @@ def _record_ids(path: Path) -> list[str]:
 def _assert_drained() -> None:
     assert jsonl_writer._pending_bytes == 0
     assert jsonl_writer._queued_writes == 0
-    assert not jsonl_writer._accepted_by_path
-    assert not jsonl_writer._completed_by_path
-    assert not jsonl_writer._flush_waiters_by_path
+    assert not jsonl_writer._progress_by_path
 
 
 @pytest.mark.parametrize("failure_errno", [errno.ENOSPC, errno.EIO, None])

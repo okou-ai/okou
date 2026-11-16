@@ -550,6 +550,7 @@ final class NotificationSystemFixture: NotificationSystem {
   var prompts = 0
   var delivered: [DeliveredChatNotification] = []
   var badgeCount = 0
+  var badgeFailures = 0
   var didSetBadgeCount: (@MainActor (Int) -> Void)?
   var widgetToken: String?
   let environment: String? = "production"
@@ -568,6 +569,10 @@ final class NotificationSystemFixture: NotificationSystem {
     delivered.removeAll { removed.contains($0.identifier) }
   }
   func setBadgeCount(_ count: Int) async throws {
+    if badgeFailures > 0 {
+      badgeFailures -= 1
+      throw URLError(.cannotWriteToFile)
+    }
     badgeCount = count
     didSetBadgeCount?(count)
   }

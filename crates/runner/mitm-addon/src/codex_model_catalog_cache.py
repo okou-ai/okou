@@ -91,6 +91,7 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
 from mitmproxy import http
 
@@ -192,7 +193,6 @@ class _FlowState:
     request_started_at: float
     entry_age_ms: int | None
     in_flight: _InFlight = field(repr=False)
-    prefetch_owner: bool = False
     upstream_encoding: str | None = None
     compressed_content_length: int | None = None
     capture: bytearray | None = field(default=None, repr=False)
@@ -204,13 +204,19 @@ class _FlowState:
     result_published: bool = False
 
 
+class _ValidationAdmission(NamedTuple):
+    """One event loop and the validation permit it owns."""
+
+    loop: asyncio.AbstractEventLoop
+    semaphore: asyncio.Semaphore
+
+
 _entries: OrderedDict[_CacheKey, _CacheEntry] = OrderedDict()
 _in_flight: dict[_CacheKey, _InFlight] = {}
 _owned_body_bytes = 0
 _active_flow_states = 0
 _process_hmac_key = secrets.token_bytes(32)
-_validation_loop: asyncio.AbstractEventLoop | None = None
-_validation_semaphore: asyncio.Semaphore | None = None
+_validation_admission: _ValidationAdmission | None = None
 _validation_executor: ThreadPoolExecutor | None = None
 _validation_shut_down = False
 
@@ -441,7 +447,7 @@ def _set_not_stored(
         entry_age_ms=state.entry_age_ms,
         validation_latency_ms=_bounded_milliseconds(completed_at - state.request_started_at),
         upstream_encoding=state.upstream_encoding,
-        prefetch_role="producer" if state.prefetch_owner else None,
+        prefetch_role="producer" if state.in_flight.prefetch_owner else None,
     )
 
 
@@ -644,7 +650,6 @@ async def prepare_request(flow: http.HTTPFlow, *, request_end_stream: bool) -> b
             request_started_at=now,
             entry_age_ms=entry_age_ms,
             in_flight=in_flight,
-            prefetch_owner=is_prefetch,
         )
         flow.metadata[_FLOW_STATE] = state
         if is_prefetch:
@@ -730,7 +735,7 @@ def handle_response_headers(flow: http.HTTPFlow) -> bool:
         if bypass_reason is not None:
             _bypass_response(flow, state, bypass_reason)
         return True
-    if not state.prefetch_owner:
+    if not state.in_flight.prefetch_owner:
         if encoding == catalog_validation.BROTLI_ENCODING:
             state.upstream_encoding = catalog_validation.BROTLI_ENCODING
         _reject_encoded_response(flow, state)
@@ -808,12 +813,11 @@ def _unwrap_response_stream(flow: http.HTTPFlow, state: _FlowState) -> None:
 
 
 def _validation_semaphore_for_running_loop() -> asyncio.Semaphore:
-    global _validation_loop, _validation_semaphore
+    global _validation_admission
     loop = asyncio.get_running_loop()
-    if _validation_loop is not loop or _validation_semaphore is None:
-        _validation_loop = loop
-        _validation_semaphore = asyncio.Semaphore(1)
-    return _validation_semaphore
+    if _validation_admission is None or _validation_admission.loop is not loop:
+        _validation_admission = _ValidationAdmission(loop, asyncio.Semaphore(1))
+    return _validation_admission.semaphore
 
 
 async def _validate_response_off_loop(
@@ -873,7 +877,7 @@ async def _finalize_response_snapshot(
                     content_type=validated.content_type,
                     etag=validated.etag,
                     validated_at=completed_at,
-                    prefetched=state.prefetch_owner,
+                    prefetched=state.in_flight.prefetch_owner,
                 )
                 evictions = _replace_entry(state.key, entry)
                 _publish_result(state, entry)
@@ -886,7 +890,7 @@ async def _finalize_response_snapshot(
                     ),
                     eviction_count=evictions,
                     upstream_encoding=state.upstream_encoding,
-                    prefetch_role="producer" if state.prefetch_owner else None,
+                    prefetch_role="producer" if state.in_flight.prefetch_owner else None,
                 )
         if cancellation is not None:
             raise cancellation
@@ -1036,7 +1040,7 @@ def shutdown() -> None:
 def reset_for_tests() -> None:
     """Reset process cache ownership between tests."""
     global _active_flow_states, _owned_body_bytes, _process_hmac_key
-    global _validation_loop, _validation_semaphore, _validation_shut_down
+    global _validation_admission, _validation_shut_down
     shutdown()
     for in_flight in _in_flight.values():
         if not in_flight.future.done():
@@ -1046,6 +1050,5 @@ def reset_for_tests() -> None:
     _owned_body_bytes = 0
     _active_flow_states = 0
     _process_hmac_key = secrets.token_bytes(32)
-    _validation_loop = None
-    _validation_semaphore = None
+    _validation_admission = None
     _validation_shut_down = False

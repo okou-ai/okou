@@ -15,15 +15,21 @@ describe("Memory publication authorization", () => {
     await fixture.run(async () => {
       const agentId = await fixture.initializeNative();
       fixture.installObjects();
-      const initial = await fixture.claim(
+      const initial = await fixture.startExecution(
         agentId,
         "initialize a nonempty base",
       );
       const base = await fixture.publish(initial, [
         { path: "base.md", content: "Original base" },
       ]);
-      const writer = await fixture.claim(agentId, "publish concurrently");
-      const stale = await fixture.claim(agentId, "merge my Memory changes");
+      const writer = await fixture.startExecution(
+        agentId,
+        "publish concurrently",
+      );
+      const stale = await fixture.startExecution(
+        agentId,
+        "merge my Memory changes",
+      );
       const head = await fixture.publish(writer, [
         { path: "head.md", content: "Newest HEAD" },
       ]);
@@ -129,7 +135,10 @@ describe("Memory publication authorization", () => {
         stale.headers,
         [200],
       );
-      const next = await fixture.claim(agentId, "read the merged Memory");
+      const next = await fixture.startExecution(
+        agentId,
+        "read the merged Memory",
+      );
       expect(next.memory.versionId).toBe(merged.body.versionId);
       expect(
         (await fixture.api.readRun(fixture.actor, writer.run.runId)).status,
@@ -154,24 +163,24 @@ describe("Memory publication authorization", () => {
     const fixture = createPublicRunnerMemory(context);
     await fixture.run(async () => {
       const agentId = await fixture.initializeNative();
-      const claimed = await fixture.claim(
+      const receivedExecution = await fixture.startExecution(
         agentId,
         "read my empty Memory merge base",
       );
       const prepared = await fixture.webhooks.requestAgentStoragePrepare(
         {
-          runId: claimed.run.runId,
-          storageId: claimed.memory.storageId,
+          runId: receivedExecution.run.runId,
+          storageId: receivedExecution.memory.storageId,
           files: [],
           includeMemoryMerge: true,
         },
-        claimed.headers,
+        receivedExecution.headers,
         [200],
       );
       expect(prepared.body).toMatchObject({
         memoryMerge: {
-          base: { versionId: claimed.memory.versionId, empty: true },
-          head: { versionId: claimed.memory.versionId, empty: true },
+          base: { versionId: receivedExecution.memory.versionId, empty: true },
+          head: { versionId: receivedExecution.memory.versionId, empty: true },
         },
       });
     });
@@ -182,10 +191,10 @@ describe("Memory publication authorization", () => {
     const other = createPublicRunnerMemory(context);
     await owner.run(async () => {
       const ownerAgent = await owner.initializeNative();
-      const owned = await owner.claim(ownerAgent, "own Memory");
+      const owned = await owner.startExecution(ownerAgent, "own Memory");
       await other.run(async () => {
         const otherAgent = await other.initializeNative();
-        const foreign = await other.claim(otherAgent, "other Memory");
+        const foreign = await other.startExecution(otherAgent, "other Memory");
         const denied = await owner.webhooks.requestAgentStoragePrepare(
           {
             runId: owned.run.runId,
@@ -201,23 +210,26 @@ describe("Memory publication authorization", () => {
     });
   });
 
-  it("commits native memory and preserves its version on the next Runner claim", async () => {
+  it("commits native memory and preserves its version on the next Runner execution", async () => {
     const fixture = createPublicRunnerMemory(context);
     await fixture.run(async () => {
       const agentId = await fixture.initializeNative();
-      const claimed = await fixture.claim(agentId, "publish owned memory");
-      const baseVersionId = claimed.memory.versionId;
+      const receivedExecution = await fixture.startExecution(
+        agentId,
+        "publish owned memory",
+      );
+      const baseVersionId = receivedExecution.memory.versionId;
       if (!baseVersionId) {
-        throw new Error("Expected the claimed memory version");
+        throw new Error("Expected the pinned memory version");
       }
       const ordinaryCommit = await fixture.webhooks.requestAgentStorageCommit(
         {
-          runId: claimed.run.runId,
-          storageId: claimed.memory.storageId,
+          runId: receivedExecution.run.runId,
+          storageId: receivedExecution.memory.storageId,
           versionId: baseVersionId,
           files: [],
         },
-        claimed.headers,
+        receivedExecution.headers,
         [200],
       );
       expect(ordinaryCommit.body).toMatchObject({
@@ -225,42 +237,51 @@ describe("Memory publication authorization", () => {
         versionId: baseVersionId,
         deduplicated: true,
       });
-      const next = await fixture.claim(agentId, "verify owned memory head");
+      const next = await fixture.startExecution(
+        agentId,
+        "verify owned memory head",
+      );
       expect(next.memory.versionId).toBe(baseVersionId);
     });
   });
 
-  it("publishes memory content and returns its version in the next Runner claim", async () => {
+  it("publishes memory content and returns its version in the next Runner execution", async () => {
     const fixture = createPublicRunnerMemory(context);
     await fixture.run(async () => {
       const agentId = await fixture.initializeNative();
-      const claimed = await fixture.claim(agentId, "publish memory content");
+      const receivedExecution = await fixture.startExecution(
+        agentId,
+        "publish memory content",
+      );
       const committed = await commitMemoryVersion(
         context,
         {
-          runId: claimed.run.runId,
-          sandboxHeaders: claimed.headers,
-          storageManifest: claimed.execution.storageManifest,
+          runId: receivedExecution.run.runId,
+          sandboxHeaders: receivedExecution.headers,
+          storageManifest: receivedExecution.execution.storageManifest,
         },
         [
           {
             path: "notes.md",
-            content: "Published memory survives the next claim.",
+            content: "Published memory survives the next execution.",
           },
         ],
       );
-      expect(committed.versionId).not.toBe(claimed.memory.versionId);
-      const next = await fixture.claim(agentId, "read published memory");
+      expect(committed.versionId).not.toBe(receivedExecution.memory.versionId);
+      const next = await fixture.startExecution(
+        agentId,
+        "read published memory",
+      );
       expect(next.memory.storageId).toBe(committed.storageId);
       expect(next.memory.versionId).toBe(committed.versionId);
     });
   });
-  it("preserves the winning Memory when another claimed Run publishes a stale candidate or no-op", async () => {
+  it("preserves the winning Memory when another dispatched Run publishes a stale candidate or no-op", async () => {
     const fixture = createPublicRunnerMemory(context);
     await fixture.run(async () => {
       const agentId = await fixture.initializeNative();
-      const first = await fixture.claim(agentId, "first writer");
-      const stale = await fixture.claim(agentId, "concurrent writer");
+      const first = await fixture.startExecution(agentId, "first writer");
+      const stale = await fixture.startExecution(agentId, "concurrent writer");
       expect(stale.memory.versionId).toBe(first.memory.versionId);
       const published = await commitMemoryVersion(
         context,
@@ -310,7 +331,10 @@ describe("Memory publication authorization", () => {
         stale.headers,
         [200],
       );
-      const next = await fixture.claim(agentId, "read concurrent winner");
+      const next = await fixture.startExecution(
+        agentId,
+        "read concurrent winner",
+      );
       expect(next.memory.versionId).toBe(published.versionId);
       const reviewed = await commitMemoryVersion(
         context,
@@ -327,7 +351,7 @@ describe("Memory publication authorization", () => {
           },
         ],
       );
-      const recovered = await fixture.claim(
+      const recovered = await fixture.startExecution(
         agentId,
         "read freshly reviewed consolidation",
       );
@@ -338,16 +362,22 @@ describe("Memory publication authorization", () => {
     const fixture = createPublicRunnerMemory(context);
     await fixture.run(async () => {
       const agentId = await fixture.initializeNative();
-      const left = await fixture.claim(agentId, "concurrent left writer");
-      const right = await fixture.claim(agentId, "concurrent right writer");
+      const left = await fixture.startExecution(
+        agentId,
+        "concurrent left writer",
+      );
+      const right = await fixture.startExecution(
+        agentId,
+        "concurrent right writer",
+      );
       const outcomes = await Promise.all(
-        [left, right].map((claimed, index) => {
+        [left, right].map((receivedExecution, index) => {
           return commitMemoryVersion(
             context,
             {
-              runId: claimed.run.runId,
-              sandboxHeaders: claimed.headers,
-              storageManifest: claimed.execution.storageManifest,
+              runId: receivedExecution.run.runId,
+              sandboxHeaders: receivedExecution.headers,
+              storageManifest: receivedExecution.execution.storageManifest,
             },
             [{ path: "notes.md", content: `Verified candidate ${index}` }],
             [200, 409],
@@ -364,7 +394,7 @@ describe("Memory publication authorization", () => {
       const winner = outcomes.find((outcome) => {
         return outcome.status === 200;
       });
-      const next = await fixture.claim(
+      const next = await fixture.startExecution(
         agentId,
         "read the published concurrent winner",
       );

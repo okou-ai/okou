@@ -18,6 +18,7 @@ import {
 import { shouldHandleShortcutPress } from "./nav.ts";
 import { agentChatPageActive$ } from "../active-route.ts";
 import { pwaChatListVisible$ } from "./pwa-navigation.ts";
+import { cancelProjectFoldAnimations$ } from "../projects/project-fold.ts";
 
 export type ChatThreadFilter = "all" | "unread" | "archived" | "muted";
 
@@ -29,6 +30,7 @@ const resetChatThreadFilterSelection$ = resetSignal();
 export const selectChatThreadFilter$ = command(
   async ({ get, set }, filter: ChatThreadFilter, parentSignal: AbortSignal) => {
     const signal = set(resetChatThreadFilterSelection$, parentSignal);
+    set(cancelProjectFoldAnimations$);
     if (filter === "archived") {
       set(setChatThreadArchivedFilter$);
     } else if (filter === "muted") {
@@ -63,6 +65,7 @@ export const selectChatThreadFilter$ = command(
 // filter selection, so that selection cannot open a filtered chat after the
 // rail has navigated away.
 export const showChatThreadInbox$ = command(({ set }) => {
+  set(cancelProjectFoldAnimations$);
   set(resetChatThreadFilterSelection$);
   set(setChatThreadUnreadFilter$, false);
 });

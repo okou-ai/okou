@@ -250,7 +250,7 @@ async fn drain_during_startup_exits_after_readiness_without_running() {
     assert_eq!(
         *env.mode_tx.borrow(),
         RunnerMode::Draining,
-        "resume before startup readiness must not open admission",
+        "resume before startup readiness must not open acceptance",
     );
 
     release_tx

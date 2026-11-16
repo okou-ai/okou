@@ -51,6 +51,8 @@ export type AgentAuthContext = SingleAgentRuntimeContext &
         readonly orgRole?: ApiOrgRole;
         readonly runId: string;
         readonly capabilities: readonly Capability[];
+        readonly phoneUseDeviceId?: string;
+        readonly phoneUseGrantId?: string;
         readonly computerUseHostId?: string;
         readonly customConnectorSourceIds?: Readonly<Record<string, string>>;
         readonly builtinConnectorSourceIds?: Readonly<Record<string, string>>;
@@ -98,6 +100,8 @@ export interface AgentAuth extends SingleAgentRuntimeContext {
   readonly runId: string;
   readonly orgId: string;
   readonly capabilities: readonly Capability[];
+  readonly phoneUseDeviceId?: string;
+  readonly phoneUseGrantId?: string;
   readonly computerUseHostId?: string;
   readonly cloudBrowserEnabled?: true;
   readonly customConnectorSourceIds?: Readonly<Record<string, string>>;

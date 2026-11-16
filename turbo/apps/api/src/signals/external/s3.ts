@@ -566,6 +566,26 @@ export function deleteArtifactSnapshotObjects(
   );
 }
 
+/** Delete request-owned keys without constructing a request-scoped graph. */
+export const deleteS3Objects$ = command(
+  async (
+    { get },
+    bucket: string,
+    keys: readonly string[],
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (keys.length === 0) {
+      return;
+    }
+    await deleteS3ObjectBatches(
+      get(s3ClientForBucket(bucket)),
+      bucket,
+      keys,
+      signal,
+    );
+  },
+);
+
 function deleteS3ObjectsWithClient(
   client$: Computed<S3Client>,
   bucket: string,
@@ -576,33 +596,41 @@ function deleteS3ObjectsWithClient(
     if (keys.length === 0) {
       return;
     }
-    const client = get(client$);
-    // Stop at the first failed batch. Retrying already deleted keys is safe.
-    for (
-      let offset = 0;
-      offset < keys.length;
-      offset += S3_DELETE_OBJECTS_LIMIT
-    ) {
-      const response = await client.send(
-        new DeleteObjectsCommand({
-          Bucket: bucket,
-          Delete: {
-            Objects: keys
-              .slice(offset, offset + S3_DELETE_OBJECTS_LIMIT)
-              .map((Key) => {
-                return { Key };
-              }),
-          },
-        }),
-        signal ? { abortSignal: signal } : undefined,
-      );
-      if (response.Errors && response.Errors.length > 0) {
-        throw new Error(
-          `S3 object deletion failed for ${response.Errors.length.toString()} object(s)`,
-        );
-      }
-    }
+    await deleteS3ObjectBatches(get(client$), bucket, keys, signal);
   });
+}
+
+async function deleteS3ObjectBatches(
+  client: S3Client,
+  bucket: string,
+  keys: readonly string[],
+  signal?: AbortSignal,
+): Promise<void> {
+  // Stop at the first failed batch. Retrying already deleted keys is safe.
+  for (
+    let offset = 0;
+    offset < keys.length;
+    offset += S3_DELETE_OBJECTS_LIMIT
+  ) {
+    const response = await client.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: {
+          Objects: keys
+            .slice(offset, offset + S3_DELETE_OBJECTS_LIMIT)
+            .map((Key) => {
+              return { Key };
+            }),
+        },
+      }),
+      signal ? { abortSignal: signal } : undefined,
+    );
+    if (response.Errors && response.Errors.length > 0) {
+      throw new Error(
+        `S3 object deletion failed for ${response.Errors.length.toString()} object(s)`,
+      );
+    }
+  }
 }
 
 export function downloadS3Buffer(

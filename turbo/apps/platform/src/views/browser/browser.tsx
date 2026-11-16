@@ -890,29 +890,22 @@ function BrowserAddress({
   );
 }
 
-function BrowserNavigation({
+function BrowserHistoryButtons({
   signals,
-  settingsDisabled,
-}: BrowserNavigationProps) {
+  streaming,
+  navigating,
+  onNavigate,
+}: {
+  readonly signals: BrowserSignals;
+  readonly streaming: boolean;
+  readonly navigating: boolean;
+  readonly onNavigate: (action: "back" | "forward") => void;
+}) {
   const { t } = useTranslation();
   const history = useLoadable(signals.history$);
-  const scope = useGet(signals.navigationScope$);
-  const streaming = useGet(signals.streaming$);
-  const canSubmitAddress = useGet(signals.canSubmitAddress$);
-  const pageSignal = useGet(pageSignal$);
-  const [operation, navigate] = useLoadableSet(signals.navigate$);
-  const navigating = operation.state === "loading";
   const entries = history.state === "hasData" ? history.data : null;
-  const failures = [
-    history.state === "hasError" &&
-      isBrowserOperationFailure(history.error) &&
-      history,
-    operation.state === "hasError" &&
-      isCurrentNavigationFailure(operation.error, scope) &&
-      operation,
-  ];
   return (
-    <div className="relative flex shrink-0 items-center gap-1 border-b border-divider px-2 py-1.5">
+    <>
       <IconButton
         type="button"
         className="size-8"
@@ -921,7 +914,7 @@ function BrowserNavigation({
         })}
         disabled={!streaming || !entries?.canGoBack || navigating}
         onClick={() => {
-          detach(navigate("back", pageSignal), Reason.DomCallback);
+          onNavigate("back");
         }}
       >
         <ArrowLeft size={16} />
@@ -934,11 +927,60 @@ function BrowserNavigation({
         })}
         disabled={!streaming || !entries?.canGoForward || navigating}
         onClick={() => {
-          detach(navigate("forward", pageSignal), Reason.DomCallback);
+          onNavigate("forward");
         }}
       >
         <ArrowRight size={16} />
       </IconButton>
+    </>
+  );
+}
+
+function BrowserNavigationErrors({
+  signals,
+  operation,
+}: {
+  readonly signals: BrowserSignals;
+  readonly operation: Loadable<unknown> | { readonly state: "idle" };
+}) {
+  const history = useLoadable(signals.history$);
+  const scope = useGet(signals.navigationScope$);
+  const failures = [
+    history.state === "hasError" &&
+      isBrowserOperationFailure(history.error) &&
+      history,
+    operation.state === "hasError" &&
+      isCurrentNavigationFailure(operation.error, scope) &&
+      operation,
+  ];
+  return (
+    <BrowserOperationError
+      occurrences={failures}
+      className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
+    />
+  );
+}
+
+function BrowserNavigation({
+  signals,
+  settingsDisabled,
+}: BrowserNavigationProps) {
+  const { t } = useTranslation();
+  const streaming = useGet(signals.streaming$);
+  const canSubmitAddress = useGet(signals.canSubmitAddress$);
+  const pageSignal = useGet(pageSignal$);
+  const [operation, navigate] = useLoadableSet(signals.navigate$);
+  const navigating = operation.state === "loading";
+  return (
+    <div className="relative flex shrink-0 items-center gap-1 border-b border-divider px-2 py-1.5">
+      <BrowserHistoryButtons
+        signals={signals}
+        streaming={streaming}
+        navigating={navigating}
+        onNavigate={(action) => {
+          detach(navigate(action, pageSignal), Reason.DomCallback);
+        }}
+      />
       <IconButton
         type="button"
         className="size-8"
@@ -962,10 +1004,7 @@ function BrowserNavigation({
       />
       <BrowserSettings signals={signals} disabled={settingsDisabled} />
       {/* Overlays keep the canvas box stable; layout changes are commanded. */}
-      <BrowserOperationError
-        occurrences={failures}
-        className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
-      />
+      <BrowserNavigationErrors signals={signals} operation={operation} />
     </div>
   );
 }
@@ -1021,8 +1060,12 @@ function BrowserTab({
   return (
     <div
       className={cn(
-        "@container/browser-tab relative flex h-9 min-w-14 max-w-56 flex-1 basis-0 items-center rounded-lg pr-1",
+        "@container/browser-tab relative flex h-9 min-w-14 max-w-56 flex-1 basis-0 items-center rounded-lg pr-1 transition-colors",
         selected && "bg-state-selected",
+        !triggerDisabled && [
+          "group/browser-tab",
+          selected ? "hover:bg-state-selected-hover" : "hover:bg-state-hover",
+        ],
       )}
     >
       <Tooltip>
@@ -1033,7 +1076,7 @@ function BrowserTab({
               data-browser-tab-id={target.id}
               aria-label={name}
               disabled={triggerDisabled}
-              className="min-w-0 flex-1 justify-start rounded-lg px-1.5 text-xs data-active:bg-transparent data-active:shadow-none"
+              className="min-w-0 flex-1 justify-start rounded-lg px-1.5 text-xs group-hover/browser-tab:text-foreground not-data-active:hover:bg-transparent data-active:bg-transparent data-active:shadow-none"
             />
           }
         >
@@ -1054,7 +1097,10 @@ function BrowserTab({
           { title: name },
         )}
         disabled={!canMutateTabs || closing || selecting}
-        className="size-6 shrink-0 rounded-md text-muted-foreground hover:text-foreground"
+        className={cn(
+          "size-6 shrink-0 rounded-md text-muted-foreground hover:bg-transparent",
+          canMutateTabs && "group-hover/browser-tab:text-foreground",
+        )}
         onClick={() => {
           detach(closeTab(target.id, pageSignal), Reason.DomCallback);
         }}
@@ -1130,6 +1176,35 @@ function BrowserTabPicker({
   );
 }
 
+function BrowserNewTabButton({
+  signals,
+  creating,
+  onCreate,
+}: {
+  readonly signals: BrowserSignals;
+  readonly creating: boolean;
+  readonly onCreate: () => Promise<string>;
+}) {
+  const { t } = useTranslation();
+  const canCreateTab = useGet(signals.canCreateTab$);
+  return (
+    <IconButton
+      data-browser-new-tab
+      type="button"
+      aria-label={t(($) => {
+        return $.browserViewer.newTab;
+      })}
+      disabled={!canCreateTab || creating}
+      className="size-8"
+      onClick={() => {
+        detach(onCreate(), Reason.DomCallback);
+      }}
+    >
+      <Plus size={16} />
+    </IconButton>
+  );
+}
+
 function BrowserTabs({
   signals,
   actions,
@@ -1150,11 +1225,9 @@ function BrowserTabs({
   const selectedTabId = useGet(signals.selectedTabId$);
   const navigation = useGet(signals.navigation$);
   const layout = useGet(signals.tabLayout$);
-  const canCreateTab = useGet(signals.canCreateTab$);
   const toolbarRef = useSet(signals.refs.toolbar$);
   const tabsRef = useSet(signals.refs.tabs$);
   const actionsRef = useSet(signals.refs.toolbarActions$);
-  const newTabDisabled = !canCreateTab || creating;
   const title = (id: string, value: string) => {
     return (selectedTabId === id && navigation?.url === "about:blank") ||
       value === "about:blank"
@@ -1209,20 +1282,11 @@ function BrowserTabs({
           />
         )}
       </div>
-      <IconButton
-        data-browser-new-tab
-        type="button"
-        aria-label={t(($) => {
-          return $.browserViewer.newTab;
-        })}
-        disabled={newTabDisabled}
-        className="size-8"
-        onClick={() => {
-          detach(onCreate(), Reason.DomCallback);
-        }}
-      >
-        <Plus size={16} />
-      </IconButton>
+      <BrowserNewTabButton
+        signals={signals}
+        creating={creating}
+        onCreate={onCreate}
+      />
       {actions && (
         <div ref={actionsRef} className="flex shrink-0 items-center gap-1">
           {actions}
@@ -1549,7 +1613,7 @@ function BrowserClipboard({ signals }: { readonly signals: BrowserSignals }) {
 // React restores input properties after events, so render the applied native type.
 function BrowserInput({ signals }: { readonly signals: BrowserSignals }) {
   const { t } = useTranslation();
-  const controls = useGet(signals.controls$);
+  const streaming = useGet(signals.streaming$);
   const type = useGet(signals.proxyType$);
   const inputRef = useSet(signals.refs.input$);
   return (
@@ -1560,7 +1624,7 @@ function BrowserInput({ signals }: { readonly signals: BrowserSignals }) {
         aria-label={t(($) => {
           return $.browserViewer.remoteInput;
         })}
-        disabled={!controls.streaming}
+        disabled={!streaming}
         type={type}
         inputMode="text"
         enterKeyHint="enter"

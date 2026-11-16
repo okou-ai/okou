@@ -10,12 +10,12 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { builtinConnectorsRoutes } from "../connectors";
 import { featureSwitchesRoutes } from "../feature-switches";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
-const claimedToken = createClaimedRunCredentials(context).okouToken;
+const executionToken = createRunExecutionCredentials(context).okouToken;
 const mocks = createRouteMocks(context);
 const store = createStore();
 
@@ -281,7 +281,7 @@ describe("GET /api/connectors/search", () => {
       { orgId, userId, role: "admin" },
       context.signal,
     );
-    const token = await claimedToken({ userId, orgId });
+    const token = await executionToken({ userId, orgId });
 
     const client = setupApp({ context, routes: builtinConnectorsRoutes })(
       builtinConnectorsSearchContract,

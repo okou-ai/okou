@@ -11,7 +11,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { paidToolsRoutes } from "../paid-tools";
 import {
   createChatEventsFixture,
-  claimEnvironment,
+  executionEnvironment,
 } from "./helpers/chat-events-fixture";
 
 const context = testContext();
@@ -23,7 +23,7 @@ const {
   webhooks,
   entitledNativeChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   cancelChatRun,
 } = createChatEventsFixture(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
@@ -103,11 +103,12 @@ describe("batched identity preload through chat entry", () => {
         model: "claude-fable-5-1",
         prompt: "member snapshot isolation",
       });
-      const claimed = await claimChatRun(owner.runnerGroup, run.runId);
+      const execution = await runExecution(run.runId);
       expect(
         JSON.parse(
-          claimEnvironment(claimed.claim)[DISABLED_PAID_TOOLS_ENV_VAR] ??
-            "null",
+          executionEnvironment(execution.execution)[
+            DISABLED_PAID_TOOLS_ENV_VAR
+          ] ?? "null",
         ),
       ).toStrictEqual(entry.disabled);
       await expect(
@@ -116,7 +117,7 @@ describe("batched identity preload through chat entry", () => {
         modelSettings: {},
         cloudBrowserEnabled: entry.cloudBrowserEnabled,
       });
-      await cancelChatRun(entry.actor, run.runId, claimed.sandboxHeaders);
+      await cancelChatRun(entry.actor, run.runId, execution.sandboxHeaders);
     }
   });
 });

@@ -5,12 +5,14 @@ from __future__ import annotations
 import inspect
 import itertools
 import os
-import runpy
 import shutil
 import subprocess
 import sys
+from functools import cache
+from importlib.machinery import SourceFileLoader
 from pathlib import Path
-from types import SimpleNamespace
+from types import CodeType, ModuleType, SimpleNamespace
+from typing import Any
 
 import flow_metadata_key_linter
 import pytest
@@ -25,6 +27,36 @@ _COMPLEX_STAR_ARGS_TIMEOUT_SECONDS = 2
 _COMPLEX_STAR_ARGS_BRANCH_COUNT = 24
 _NESTED_FINALLY_TIMEOUT_SECONDS = 2
 _NESTED_FINALLY_DEPTH = 24
+
+
+@cache
+def _runtime_fixture_code(path: str) -> CodeType:
+    return compile(Path(path).read_bytes(), path, "exec", dont_inherit=True)
+
+
+class _RuntimeFixtureLoader(SourceFileLoader):
+    def get_code(self, fullname: str) -> CodeType:
+        return _runtime_fixture_code(self.path)
+
+
+def _runtime_fixture_namespace(
+    name: str, *, init_globals: dict[str, object] | None = None
+) -> dict[str, Any]:
+    # Cache only immutable code; each oracle keeps its own functions and globals.
+    module = ModuleType("<run_path>")
+    namespace = vars(module)
+    namespace.update(init_globals or {})
+    path = str(_FIXTURE_ROOT / name)
+    namespace.update(
+        __name__="<run_path>",
+        __file__=path,
+        __doc__=None,
+        __loader__=None,
+        __package__="",
+        __spec__=None,
+    )
+    _RuntimeFixtureLoader(module.__name__, path).exec_module(module)
+    return namespace
 
 
 def _fixture_text(*names: str) -> str:
@@ -502,9 +534,7 @@ def test_registered_flow_metadata_guard_preserves_reordered_first_arguments(tmp_
     ],
 )
 def test_reordered_first_argument_fixture_matches_runtime_key(case, expected):
-    namespace = runpy.run_path(
-        str(_FIXTURE_ROOT / "reordered_iterable_first_arguments.base.py.txt")
-    )
+    namespace = _runtime_fixture_namespace("reordered_iterable_first_arguments.base.py.txt")
     flow = SimpleNamespace(
         metadata={
             "sandbox_run_id": "registered",
@@ -605,7 +635,7 @@ def test_check_flow_metadata_keys_cli_projects_nested_mapping_constructor_keys(
 )
 def test_nested_mapping_constructor_fixture_matches_runtime_metadata(case):
     # Execute only explicitly selected, checked-in bounded functions as a diagnostic oracle.
-    namespace = runpy.run_path(str(_FIXTURE_ROOT / "nested_mapping_constructors.base.py.txt"))
+    namespace = _runtime_fixture_namespace("nested_mapping_constructors.base.py.txt")
     flow = SimpleNamespace(metadata={})
 
     namespace[case](flow)
@@ -628,8 +658,8 @@ def test_nested_mapping_constructor_fixture_matches_runtime_metadata(case):
     ],
 )
 def test_nested_mapping_control_fixture_matches_runtime_metadata(case, expected):
-    namespace = runpy.run_path(
-        str(_FIXTURE_ROOT / "nested_mapping_constructors.allowed.py.txt"),
+    namespace = _runtime_fixture_namespace(
+        "nested_mapping_constructors.allowed.py.txt",
         init_globals={"metadata_keys": metadata_keys},
     )
     flow = SimpleNamespace(metadata={})
@@ -776,7 +806,7 @@ class _TrackedMetadata(dict[str, object]):
 )
 async def test_loop_alias_fixture_matches_runtime_metadata_accesses(case, access_count):
     # Execute only this checked-in, bounded fixture to validate the diagnostic oracle.
-    namespace = runpy.run_path(str(_FIXTURE_ROOT / "loop_carried_aliases.base.py.txt"))
+    namespace = _runtime_fixture_namespace("loop_carried_aliases.base.py.txt")
     metadata = _TrackedMetadata()
 
     result = namespace[case](SimpleNamespace(metadata=metadata))
@@ -839,7 +869,7 @@ def test_registered_flow_metadata_guard_tracks_comprehension_walrus_exits(tmp_pa
 )
 async def test_comprehension_walrus_fixture_matches_runtime_metadata_accesses(case, access_count):
     # Execute only the checked-in bounded fixture; consume generators only inside its controls.
-    namespace = runpy.run_path(str(_FIXTURE_ROOT / "comprehension_walrus_flow.base.py.txt"))
+    namespace = _runtime_fixture_namespace("comprehension_walrus_flow.base.py.txt")
     metadata = _TrackedMetadata()
 
     result = namespace[case](SimpleNamespace(metadata=metadata), [], False)
@@ -911,9 +941,7 @@ async def test_comprehension_loop_alias_fixture_matches_runtime_accesses(case, a
     # Execute only these checked-in bounded functions as the diagnostic oracle.
     namespace = {}
     for suffix in ("base", "allowed"):
-        namespace.update(
-            runpy.run_path(str(_FIXTURE_ROOT / f"comprehension_loop_aliases.{suffix}.py.txt"))
-        )
+        namespace.update(_runtime_fixture_namespace(f"comprehension_loop_aliases.{suffix}.py.txt"))
     metadata = _TrackedMetadata()
 
     result = namespace[case](SimpleNamespace(metadata=metadata))

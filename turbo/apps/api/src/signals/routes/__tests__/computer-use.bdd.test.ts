@@ -104,7 +104,7 @@ function createScenario() {
     return actor.orgId;
   }
 
-  async function claimCanonicalIntegrationRun(args: {
+  async function readCanonicalIntegrationExecution(args: {
     readonly actor: ApiTestUser;
     readonly source: "slack" | "teams";
     readonly prompt: string;
@@ -147,8 +147,8 @@ function createScenario() {
       return args.runs.heartbeatRunner(args.runnerGroup);
     });
     const runId = input.runId;
-    const claim = await scenario.claimExisting(args.actor, runId);
-    expect(claim.prompt).toContain(args.prompt);
+    const receivedExecution = await scenario.executionInput(args.actor, runId);
+    expect(receivedExecution.prompt).toContain(args.prompt);
     const log = await scenario.run(() => {
       return createRunReadsApi(context).requestReadLogById(
         args.actor,
@@ -157,9 +157,9 @@ function createScenario() {
       );
     });
     expect(log.body.triggerSource).toBe(args.source);
-    const token = claim.platformEnvironment.OKOU_TOKEN;
+    const token = receivedExecution.platformEnvironment.OKOU_TOKEN;
     if (!token) {
-      throw new Error("Expected the Runner claim to issue an Okou token");
+      throw new Error("Expected the Runner execution to issue an Okou token");
     }
     return { runId: input.runId, threadId, token };
   }
@@ -175,7 +175,7 @@ function createScenario() {
 
   async function createAuthorizationScenario(actor: ApiTestUser) {
     const chat = createChatFilesBddApi(context);
-    const run = await scenario.claim(actor);
+    const run = await scenario.launchRun(actor);
     const token = run.token;
     mockClerkMembership(context, actor, "org:admin");
     const created = await api.createComputerUseAuthorizationRequest({
@@ -207,7 +207,7 @@ function createScenario() {
     bdd,
     api,
     requireOrg,
-    claimCanonicalIntegrationRun,
+    readCanonicalIntegrationExecution,
     requestTokenFromUrl,
     createAuthorizationScenario,
     readAuthorizationThreadLifecycle,
@@ -731,7 +731,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
       return scenario.run(async () => {
         const orgId = `org_${randomUUID()}`;
         const actor = bdd.user({ orgId });
-        const run = await scenario.claim(actor);
+        const run = await scenario.launchRun(actor);
         const base = now();
         mockNow(base);
         const staleHost = await api.startComputerUseHost(actor, {
@@ -814,7 +814,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
 
   it("uses chat-thread authorization for a canonical Slack run", async () => {
     const scenario = createScenario();
-    const { bdd, api, claimCanonicalIntegrationRun, requestTokenFromUrl } =
+    const { bdd, api, readCanonicalIntegrationExecution, requestTokenFromUrl } =
       scenario;
     return await withNowScopeForTest(() => {
       return scenario.run(async () => {
@@ -850,7 +850,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
             channel_type: "channel",
           });
         });
-        const run = await claimCanonicalIntegrationRun({
+        const run = await readCanonicalIntegrationExecution({
           actor,
           source: "slack",
           prompt,
@@ -894,7 +894,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
 
   it("uses chat-thread authorization for a canonical Teams run", async () => {
     const scenario = createScenario();
-    const { bdd, api, claimCanonicalIntegrationRun, requestTokenFromUrl } =
+    const { bdd, api, readCanonicalIntegrationExecution, requestTokenFromUrl } =
       scenario;
     return await withNowScopeForTest(() => {
       return scenario.run(async () => {
@@ -980,7 +980,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
           });
         });
         expect(message.status).toBe(200);
-        const run = await claimCanonicalIntegrationRun({
+        const run = await readCanonicalIntegrationExecution({
           actor,
           source: "teams",
           prompt,
@@ -1346,7 +1346,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         });
         mockClerkMembership(context, actor, "org:admin");
 
-        const bound = await scenario.claim(actor, host.hostId);
+        const bound = await scenario.launchRun(actor, host.hostId);
         const listed = await api.listComputerUseHosts({ bearer: bound.token });
         expect(listed.hosts).toHaveLength(1);
         expect(listed.hosts[0]).toMatchObject({
@@ -1355,7 +1355,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
           supportedCapabilities: ["app.state"],
         });
 
-        const unbound = await scenario.claim(actor);
+        const unbound = await scenario.launchRun(actor);
         const rejected = await api.requestListComputerUseHosts(
           { bearer: unbound.token },
           [403],
@@ -1523,7 +1523,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
 
         const missingCapability = await api.requestCreateComputerUseReadCommand(
           {
-            bearer: (await scenario.claim(actor)).token,
+            bearer: (await scenario.launchRun(actor)).token,
           },
           { kind: "apps.list" },
           [403],
@@ -1533,7 +1533,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
           "Computer Use is not authorized for this run. Authorize a computer once in the conversation, then retry.",
         );
 
-        const granted = await scenario.claim(actor, hostB.hostId);
+        const granted = await scenario.launchRun(actor, hostB.hostId);
         const readCreated = await api.createComputerUseReadCommand(
           { bearer: granted.token },
           { kind: "apps.list" },
@@ -1664,7 +1664,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
           JSON.stringify(audit.auditEvents[0]?.redactedResult),
         ).not.toContain("<app_state>");
 
-        const grantedOffline = await scenario.claim(actor, hostA.hostId);
+        const grantedOffline = await scenario.launchRun(actor, hostA.hostId);
         mockNow(base + 182_000);
         const idleB = await api.claimNextComputerUseCommand(hostB.connection);
         expect(idleB.status).toBe("idle");

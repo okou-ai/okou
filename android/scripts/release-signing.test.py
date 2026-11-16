@@ -45,8 +45,7 @@ class ReleaseSigningTest(unittest.TestCase):
         self.unsigned = self.apk("1.2.3")
 
     def apk(self, version):
-        major, minor, patch = map(int, version.split("."))
-        code = major * 1_000_000 + minor * 1_000 + patch
+        code = subprocess.check_output(["bash", str(ROOT / "android/scripts/version-code.sh")], text=True).strip()
         fixture = self.work / version
         fixture.mkdir()
         manifest = fixture / "AndroidManifest.xml"
@@ -73,7 +72,7 @@ class ReleaseSigningTest(unittest.TestCase):
         self.assertNotIn(self.encoded_key, result.stdout + result.stderr)
         return result, output
 
-    def test_same_key_signs_increasing_versions_and_preserves_existing_output(self):
+    def test_same_key_signs_different_versions_and_preserves_existing_output(self):
         certificates = []
         for version in ["1.2.3", "1.2.4"]:
             unsigned = self.unsigned if version == "1.2.3" else self.apk(version)

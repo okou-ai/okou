@@ -12,7 +12,7 @@ import { browserRoutes } from "../browser";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -299,7 +299,7 @@ test("keeps Run tokens scoped to their live Run while session Browser ownership 
   await f.owned.run(async () => {
     const run = await f.start();
     const runHeaders = {
-      authorization: `Bearer ${okouTokenFromClaim(run.claim)}`,
+      authorization: `Bearer ${okouTokenFromExecution(run.execution)}`,
     };
     const own = await accept(
       client().use({ headers: runHeaders, body: {} }),
@@ -322,7 +322,7 @@ test("keeps Run tokens scoped to their live Run while session Browser ownership 
     }
     await createWebhookCallbackApi(context).requestAgentComplete(
       { runId: run.runId, exitCode: 1, error: "The calling Run finished" },
-      { authorization: `Bearer ${run.claim.sandboxToken}` },
+      { authorization: `Bearer ${run.execution.sandboxToken}` },
       [200],
     );
     await expect(

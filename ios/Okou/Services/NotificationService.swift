@@ -118,9 +118,15 @@ final class NotificationService {
   }
   private var notificationAccount = NotificationAccount.unresolved
   private var notificationStateRevision = UUID()
+  private var notificationStateAgain = false
+  private struct ReconciledNotificationState {
+    let revision: UUID
+    let receipts: Set<NotificationStateRequest.Receipt>
+  }
+  private var reconciledNotificationState: ReconciledNotificationState?
   private var notificationStateTask: Task<Void, Never>?
   private var notificationStateRequest: Task<NotificationStateResponse, Error>?
-  private var badgeUpdateTask: Task<Void, Never>?
+  private var badgeUpdateTask: Task<Bool, Never>?
   private var isForeground = false
   private var badgeClearSequence: Int?
   private var pendingBadgeClearSequence: Int?
@@ -194,6 +200,7 @@ final class NotificationService {
     if self.workspace?.scopeID != workspace?.scopeID {
       registrationError = nil
       generation = UUID()
+      notificationStateRevision = UUID()
       notificationStateRequest?.cancel()
       registrationTask?.cancel()
       if self.workspace != nil { for task in backgroundTasks.values { task.cancel() } }
@@ -211,7 +218,7 @@ final class NotificationService {
       }
     }
     await refreshRegistration()
-    requestNotificationStateRefresh()
+    ensureNotificationStateRefresh()
   }
 
   /// Called by foreground view tasks; receipt uploads never hold an NSE alert.
@@ -340,6 +347,7 @@ final class NotificationService {
     guard let workspace, binding != nil || defaults.bool(forKey: "ios-push-registration-attempted")
     else { return }
     generation = UUID()
+    notificationStateRevision = UUID()
     let generation = generation
     registrationTask?.cancel()
     for task in backgroundTasks.values { task.cancel() }
@@ -396,12 +404,16 @@ final class NotificationService {
 
   /// Serialize only OS writes; a foreground clear must never wait for an HTTP or token request.
   @discardableResult
-  private func enqueueBadgeCount(_ count: Int) -> Task<Void, Never> {
+  private func enqueueBadgeCount(_ count: Int) -> Task<Bool, Never> {
     let previous = badgeUpdateTask
     let task = Task { [system, log] in
-      await previous?.value
-      do { try await system.setBadgeCount(count) } catch {
+      _ = await previous?.value
+      do {
+        try await system.setBadgeCount(count)
+        return true
+      } catch {
         log.error("Cannot update app icon badge: \(error.localizedDescription, privacy: .public)")
+        return false
       }
     }
     badgeUpdateTask = task
@@ -416,6 +428,7 @@ final class NotificationService {
   private func updateNotificationAccount(_ account: NotificationAccount) {
     guard notificationAccount != account else { return }
     notificationStateRequest?.cancel()
+    notificationStateRevision = UUID()
     notificationAccount = account
     badgeClearSequence = nil
     if case .user(let userID) = account {
@@ -433,7 +446,7 @@ final class NotificationService {
 
   func refreshNotificationState(userID: String?) async {
     updateNotificationAccount(userID.map(NotificationAccount.user) ?? .signedOut)
-    requestNotificationStateRefresh()
+    ensureNotificationStateRefresh()
     await notificationStateTask?.value
   }
 
@@ -441,14 +454,22 @@ final class NotificationService {
   func requestNotificationStateRefresh() {
     guard notificationAccount != .unresolved else { return }
     notificationStateRevision = UUID()
+    ensureNotificationStateRefresh()
+  }
+
+  /// Coordination rescans OS receipts without superseding an equivalent in-flight demand.
+  private func ensureNotificationStateRefresh() {
+    guard notificationAccount != .unresolved else { return }
+    notificationStateAgain = true
     guard notificationStateTask == nil else { return }
     notificationStateTask = Task { [weak self] in
       guard let self else { return }
       defer { notificationStateTask = nil }
       while !Task.isCancelled {
+        notificationStateAgain = false
         let revision = notificationStateRevision
         await reconcileNotificationState(revision: revision)
-        if notificationStateRevision == revision { return }
+        if notificationStateRevision == revision, !notificationStateAgain { return }
       }
     }
   }
@@ -469,12 +490,33 @@ final class NotificationService {
         return
       case .signedOut:
         system.removeDeliveredNotifications(identifiers: delivered.map(\.identifier))
-        await enqueueBadgeCount(0).value
+        _ = await enqueueBadgeCount(0).value
       case .user(let userID):
         guard let workspace, workspace.userID == userID else { return }
         system.removeDeliveredNotifications(
           identifiers: delivered.filter { $0.destination.userId != userID }.map(\.identifier))
         let current = delivered.filter { $0.destination.userId == userID }
+        let receipts = current.map {
+          NotificationStateRequest.Receipt(
+            identifier: $0.identifier, threadId: $0.destination.threadId,
+            runId: $0.destination.runId)
+        }
+        // Dismissing retained OS receipts creates no new server work. A genuine read/indicator
+        // change still advances revision, even when the JSON body is unchanged.
+        if let reconciledNotificationState,
+          reconciledNotificationState.revision == revision,
+          Set(receipts).isSubset(of: reconciledNotificationState.receipts)
+        {
+          return
+        }
+        if binding == nil, receipts.isEmpty {
+          let updated = await enqueueBadgeCount(0).value
+          guard ownsRequest(), updated else { return }
+          reconciledNotificationState = ReconciledNotificationState(
+            revision: revision, receipts: [])
+          return
+        }
+        var retainedReceipts = Set(receipts)
         for offset in stride(from: 0, to: max(1, current.count), by: 500) {
           let batch = Array(current.dropFirst(offset).prefix(500))
           let request = NotificationStateRequest(
@@ -501,10 +543,14 @@ final class NotificationService {
             Set(response.removeIdentifiers).isSubset(of: submitted)
           else { throw APIClientError.incompatibleData }
           system.removeDeliveredNotifications(identifiers: response.removeIdentifiers)
+          let removed = Set(response.removeIdentifiers)
+          retainedReceipts = retainedReceipts.filter { !removed.contains($0.identifier) }
           // Older APIs expose chat unread counts, which must not restore an acknowledged badge.
-          await enqueueBadgeCount(response.badgeCount ?? 0).value
-          guard ownsRequest() else { return }
+          let updated = await enqueueBadgeCount(response.badgeCount ?? 0).value
+          guard ownsRequest(), updated else { return }
         }
+        reconciledNotificationState = ReconciledNotificationState(
+          revision: revision, receipts: retainedReceipts)
       }
     } catch {
       guard ownsRequest() else { return }

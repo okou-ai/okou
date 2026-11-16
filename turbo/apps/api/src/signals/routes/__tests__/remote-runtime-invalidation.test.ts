@@ -11,7 +11,7 @@ import { runnerSshRoutes } from "../runner-ssh";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createBddApi } from "./helpers/api-bdd";
-import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
+import { createSshExecutionApi } from "./helpers/ssh-execution";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import {
@@ -26,7 +26,7 @@ const context = testContext();
 const vnc = createVncRuntimeApi(context);
 const runs = createRunsApi(context);
 const bdd = createBddApi(context);
-const claimed = createClaimedSshRuntimeApi(context, {
+const executionApi = createSshExecutionApi(context, {
   runnerHeaders: vncRunnerHeaders,
   authenticate: vnc.authenticate,
 });
@@ -37,7 +37,7 @@ const remote = () => {
 };
 
 describe("protocol-specific remote runtime invalidation", () => {
-  afterEach(claimed.cleanup);
+  afterEach(executionApi.cleanup);
 
   it("isolates VNC defaults and chat overrides by owner and thread while SSH and Runs remain authorized", async () => {
     initializeVncRuntimeTest();
@@ -46,13 +46,13 @@ describe("protocol-specific remote runtime invalidation", () => {
       userId: `user-${randomUUID()}`,
     };
     const group = await runs.configureRunnerGroup();
-    const first = await claimed.runtime(owner, { group });
-    const second = await claimed.runtime(owner, { group });
-    const otherUser = await claimed.runtime({
+    const first = await executionApi.runtime(owner, { group });
+    const second = await executionApi.runtime(owner, { group });
+    const otherUser = await executionApi.runtime({
       orgId: owner.orgId,
       userId: `user-${randomUUID()}`,
     });
-    const otherOrg = await claimed.runtime({
+    const otherOrg = await executionApi.runtime({
       orgId: `org-${randomUUID()}`,
       userId: owner.userId,
     });

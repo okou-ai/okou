@@ -245,3 +245,68 @@ async fn finalization_waits_for_a_declaration_during_api_cold_start()
     assert_eq!(server.completed_response_count(), 1);
     Ok(())
 }
+
+async fn assert_shared_steered_finalization(
+    cancel_first: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut server = common::ControlledHttpServer::start().await?;
+    let runtime = ActiveInputRuntime::new_enabled(RUN_ID, "initial", steer_http(&server.base_url)?);
+    let controller = runtime.controller();
+    let mut writer = runtime.into_writer();
+    assert_eq!(
+        controller.handle_control_payload(&payload(PROMPT)?),
+        ActiveInputControlOutcome::Accepted
+    );
+    let frame = writer
+        .next_frame()
+        .await
+        .ok_or("input should reach the sink")?;
+    writer.mark_writing(&frame.uuid);
+    writer.mark_backend_accepted_without_replay(&frame)?;
+
+    controller.close_terminal();
+    let mut first = Box::pin(controller.finalize_steered_declarations());
+    let request = tokio::select! {
+        biased;
+        result = &mut first => {
+            return Err(format!("finalization returned before request receipt: {result:?}").into());
+        }
+        request = server.next_request(Duration::from_secs(5)) => request?,
+    };
+    assert_eq!(request.request.path, steered_path());
+    assert_eq!(server.request_count(), 1);
+    assert_eq!(server.completed_response_count(), 0);
+
+    let first = if cancel_first {
+        drop(first);
+        None
+    } else {
+        Some(first)
+    };
+    let mut second = Box::pin(controller.finalize_steered_declarations());
+    assert!(
+        futures_util::poll!(&mut second).is_pending(),
+        "shared finalization returned before the declaration response"
+    );
+
+    request.respond(200)?;
+    if let Some(first) = first {
+        tokio::time::timeout(Duration::from_secs(5), first).await??;
+    }
+    tokio::time::timeout(Duration::from_secs(5), second).await??;
+    assert_eq!(server.request_count(), 1);
+    assert_eq!(server.completed_response_count(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn shared_steered_finalization_waits_for_concurrent_observer()
+-> Result<(), Box<dyn std::error::Error>> {
+    assert_shared_steered_finalization(false).await
+}
+
+#[tokio::test]
+async fn shared_steered_finalization_waits_after_observer_cancellation()
+-> Result<(), Box<dyn std::error::Error>> {
+    assert_shared_steered_finalization(true).await
+}

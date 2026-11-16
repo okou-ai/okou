@@ -68,19 +68,6 @@ fn run_stream_json_input(parsed: ParsedArgs) -> ExitCode {
             expected_follow_ups,
             true,
         ),
-        MockScenario::InvalidActiveInputSmokeCount(count) => {
-            eprintln!(
-                "{}",
-                stream_json_input::invalid_count_message("@active-input-smoke", count)
-            );
-            ExitCode::from(1)
-        }
-        MockScenario::InvalidActiveInputSmokeReadyCount(count) => {
-            let message =
-                stream_json_input::invalid_count_message("@active-input-smoke-ready", count);
-            eprintln!("{message}");
-            ExitCode::from(1)
-        }
         scenario => run_scenario(scenario, first_frame.content(), &parsed.output_format),
     }
 }

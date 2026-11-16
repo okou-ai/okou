@@ -7,7 +7,7 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
 import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
-import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
+import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 import { testContext } from "../../../__tests__/test-context";
 import { buildArtifactKeyV2 } from "../../../lib/file-url";
 import { createDeferredPromise } from "../../utils";
@@ -24,7 +24,7 @@ const {
   connectors,
   entitledNativeChatActor,
   sendChatRun,
-  claimChatRun,
+  runExecution,
   cancelAndCompleteChatRun,
   cancelChatRun,
   waitForThreadMessages,
@@ -33,15 +33,15 @@ const {
 
 describe("chat agent bootstrap prefetch", () => {
   it("mounts user memory published through the Sandbox API in matching and independent picks", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const webhooks = createWebhookCallbackApi(context);
     const seed = await sendChatRun(actor, {
       agentId,
       prompt: "publish my memory",
     });
-    const seedClaim = await claimChatRun(runnerGroup, seed.runId);
+    const seedExecution = await runExecution(seed.runId);
     const initialMemory = expectCanonicalStorageManifest(
-      seedClaim.claim.storageManifest,
+      seedExecution.execution.storageManifest,
     )?.storageMounts.find((mount) => {
       return mount.name === "memory";
     });
@@ -58,7 +58,7 @@ describe("chat agent bootstrap prefetch", () => {
         changes: { added: [file.path], modified: [], deleted: [] },
         files: [file],
       },
-      seedClaim.sandboxHeaders,
+      seedExecution.sandboxHeaders,
       [200],
     );
     if (prepared.status !== 200) {
@@ -71,17 +71,17 @@ describe("chat agent bootstrap prefetch", () => {
         versionId: prepared.body.versionId,
         files: [file],
       },
-      seedClaim.sandboxHeaders,
+      seedExecution.sandboxHeaders,
       [200],
     );
-    await cancelChatRun(actor, seed.runId, seedClaim.sandboxHeaders);
+    await cancelChatRun(actor, seed.runId, seedExecution.sandboxHeaders);
     const first = await sendChatRun(actor, {
       agentId,
       prompt: "mount the published memory",
     });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    const firstExecution = await runExecution(first.runId);
     const memory = expectCanonicalStorageManifest(
-      firstClaim.claim.storageManifest,
+      firstExecution.execution.storageManifest,
     )?.storageMounts.find((mount) => {
       return mount.name === "memory";
     });
@@ -100,7 +100,7 @@ describe("chat agent bootstrap prefetch", () => {
       },
       [201],
     );
-    await cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
+    await cancelChatRun(actor, first.runId, firstExecution.sandboxHeaders);
     const messages = await waitForThreadMessages(
       actor,
       first.threadId,
@@ -119,9 +119,9 @@ describe("chat agent bootstrap prefetch", () => {
     if (!promoted?.runId) {
       throw new Error("Expected independent memory promotion");
     }
-    const nextClaim = await claimChatRun(runnerGroup, promoted.runId);
+    const nextExecution = await runExecution(promoted.runId);
     const nextMemory = expectCanonicalStorageManifest(
-      nextClaim.claim.storageManifest,
+      nextExecution.execution.storageManifest,
     )?.storageMounts.find((mount) => {
       return mount.name === "memory";
     });
@@ -129,10 +129,10 @@ describe("chat agent bootstrap prefetch", () => {
       storageId: initialMemory.storageId,
       versionId: prepared.body.versionId,
     });
-    await cancelChatRun(actor, promoted.runId, nextClaim.sandboxHeaders);
+    await cancelChatRun(actor, promoted.runId, nextExecution.sandboxHeaders);
   });
   it("preserves a non-default member model preference through prefetch and an independent pick", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     await api.ensurePersonalSubscriptionModel(actor, {
       model: "claude-fable-5-1",
     });
@@ -144,8 +144,10 @@ describe("chat agent bootstrap prefetch", () => {
       agentId,
       prompt: "use my saved non-default model",
     });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    expect(firstClaim.claim.modelUsageProvider).toBe("claude-sonnet-5-5");
+    const firstExecution = await runExecution(first.runId);
+    expect(firstExecution.execution.modelUsageProvider).toBe(
+      "claude-sonnet-5-5",
+    );
     const eventId = randomUUID();
     await chat.requestSendEvent(
       actor,
@@ -157,7 +159,7 @@ describe("chat agent bootstrap prefetch", () => {
       },
       [201],
     );
-    await cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
+    await cancelChatRun(actor, first.runId, firstExecution.sandboxHeaders);
     const messages = await waitForThreadMessages(
       actor,
       first.threadId,
@@ -176,13 +178,15 @@ describe("chat agent bootstrap prefetch", () => {
     if (!promoted?.runId) {
       throw new Error("Expected the independent queued pick");
     }
-    const nextClaim = await claimChatRun(runnerGroup, promoted.runId);
-    expect(nextClaim.claim.modelUsageProvider).toBe("claude-sonnet-5-5");
-    await cancelChatRun(actor, promoted.runId, nextClaim.sandboxHeaders);
+    const nextExecution = await runExecution(promoted.runId);
+    expect(nextExecution.execution.modelUsageProvider).toBe(
+      "claude-sonnet-5-5",
+    );
+    await cancelChatRun(actor, promoted.runId, nextExecution.sandboxHeaders);
   });
 
   it("selects the same current Workflow from prefetch and a later independent pick", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const misc = createMiscRoutesApi(context);
     const s3 = installWorkflowVolumeS3Fixture(context);
     const workflow = await misc.createWorkflow(
@@ -199,14 +203,16 @@ describe("chat agent bootstrap prefetch", () => {
       agentId,
       prompt: "prefetched skill",
     });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    const firstMount = firstClaim.claim.contentBundles.skills.find((mount) => {
-      return mount.mountPath.endsWith(`/${workflow.body.name}`);
-    });
+    const firstExecution = await runExecution(first.runId);
+    const firstMount = firstExecution.execution.contentBundles.skills.find(
+      (mount) => {
+        return mount.mountPath.endsWith(`/${workflow.body.name}`);
+      },
+    );
     if (!firstMount) {
       throw new Error("Expected the prefetched Workflow bundle");
     }
-    const firstDownload = readClaimedContentBundle(s3.objects, firstMount);
+    const firstDownload = readExecutionContentBundle(s3.objects, firstMount);
     expect(firstDownload.get("SKILL.md")?.toString()).toContain(
       "Keep this published skill mounted.",
     );
@@ -222,7 +228,7 @@ describe("chat agent bootstrap prefetch", () => {
       },
       [201],
     );
-    await cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
+    await cancelChatRun(actor, first.runId, firstExecution.sandboxHeaders);
     const messages = await waitForThreadMessages(
       actor,
       first.threadId,
@@ -241,10 +247,12 @@ describe("chat agent bootstrap prefetch", () => {
     if (!promoted?.runId) {
       throw new Error("Expected independently prepared queued run");
     }
-    const nextClaim = await claimChatRun(runnerGroup, promoted.runId);
-    const nextMount = nextClaim.claim.contentBundles.skills.find((mount) => {
-      return mount.mountPath === firstMount.mountPath;
-    });
+    const nextExecution = await runExecution(promoted.runId);
+    const nextMount = nextExecution.execution.contentBundles.skills.find(
+      (mount) => {
+        return mount.mountPath === firstMount.mountPath;
+      },
+    );
     expect(nextMount).toMatchObject({
       sha256: firstMount.sha256,
       archiveBytes: firstMount.archiveBytes,
@@ -253,14 +261,14 @@ describe("chat agent bootstrap prefetch", () => {
     if (!nextMount) {
       throw new Error("Expected the independently selected Workflow bundle");
     }
-    expect(readClaimedContentBundle(s3.objects, nextMount)).toStrictEqual(
+    expect(readExecutionContentBundle(s3.objects, nextMount)).toStrictEqual(
       firstDownload,
     );
-    await cancelChatRun(actor, promoted.runId, nextClaim.sandboxHeaders);
+    await cancelChatRun(actor, promoted.runId, nextExecution.sandboxHeaders);
   });
 
   it("loads the same read-only context when a later request drains queued input", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const first = await sendChatRun(actor, {
       agentId,
       prompt: "context anchor",
@@ -300,11 +308,11 @@ describe("chat agent bootstrap prefetch", () => {
       model: "claude-fable-5-1",
       providerType: "claude-code-oauth-token",
     });
-    const claimed = await claimChatRun(runnerGroup, promoted.runId);
-    await cancelChatRun(actor, promoted.runId, claimed.sandboxHeaders);
+    const execution = await runExecution(promoted.runId);
+    await cancelChatRun(actor, promoted.runId, execution.sandboxHeaders);
   });
   it("preserves the custom account through prefetch and a later independent pick", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const connector = await connectors.createCustomConnector(
       actor,
       manualHttpCustomConnectorCreateBody({
@@ -338,8 +346,10 @@ describe("chat agent bootstrap prefetch", () => {
       agentId,
       prompt: "prefetched custom account",
     });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    expect(firstClaim.claim.connectorRuntimeTargets).toContainEqual(target);
+    const firstExecution = await runExecution(first.runId);
+    expect(firstExecution.execution.connectorRuntimeTargets).toContainEqual(
+      target,
+    );
     const queuedId = randomUUID();
     await chat.requestSendEvent(
       actor,
@@ -352,7 +362,7 @@ describe("chat agent bootstrap prefetch", () => {
       [201],
     );
     // This separate API request cannot reuse the queued send's context signals.
-    await cancelChatRun(actor, first.runId, firstClaim.sandboxHeaders);
+    await cancelChatRun(actor, first.runId, firstExecution.sandboxHeaders);
     const messages = await waitForThreadMessages(
       actor,
       first.threadId,
@@ -371,13 +381,15 @@ describe("chat agent bootstrap prefetch", () => {
     if (!next?.runId) {
       throw new Error("Expected the independent custom-account pick");
     }
-    const nextClaim = await claimChatRun(runnerGroup, next.runId);
-    expect(nextClaim.claim.connectorRuntimeTargets).toContainEqual(target);
-    await cancelChatRun(actor, next.runId, nextClaim.sandboxHeaders);
+    const nextExecution = await runExecution(next.runId);
+    expect(nextExecution.execution.connectorRuntimeTargets).toContainEqual(
+      target,
+    );
+    await cancelChatRun(actor, next.runId, nextExecution.sandboxHeaders);
   });
 
   it("keeps the captured model selection when the member preference changes during attachment resolution", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const fileId = randomUUID();
     const filename = "model-snapshot.txt";
     const key = buildArtifactKeyV2(fileId, filename);
@@ -432,14 +444,14 @@ describe("chat agent bootstrap prefetch", () => {
       providerType: "claude-code-oauth-token",
       credentialScope: "member",
     });
-    const claimed = await claimChatRun(runnerGroup, sent.runId);
-    await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);
+    const execution = await runExecution(sent.runId);
+    await cancelChatRun(actor, sent.runId, execution.sandboxHeaders);
   });
 
   it.each(["web", "cli"] as const)(
     "preserves the queued input and claimable run through %s",
     async (entry) => {
-      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+      const { actor, agentId } = await entitledNativeChatActor();
       const clientEventId = randomUUID();
       const body = { agentId, prompt: "prepare my agent", clientEventId };
       const sent =
@@ -468,14 +480,16 @@ describe("chat agent bootstrap prefetch", () => {
       expect(run).toMatchObject({ prompt: "prepare my agent" });
       const metadata = await chat.readThreadMetadata(actor, sent.body.threadId);
       expect(metadata.agentId).toBe(agentId);
-      const claimed = await claimChatRun(runnerGroup, associated.runId);
-      expect(claimed.claim.platformEnvironment).toHaveProperty("OKOU_TOKEN");
-      await cancelChatRun(actor, associated.runId, claimed.sandboxHeaders);
+      const execution = await runExecution(associated.runId);
+      expect(execution.execution.platformEnvironment).toHaveProperty(
+        "OKOU_TOKEN",
+      );
+      await cancelChatRun(actor, associated.runId, execution.sandboxHeaders);
     },
   );
 
   it("uses the selected default account for each successive pick", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const { actor, agentId } = await entitledNativeChatActor();
     const first = await connectors.connectManualGrant(
       actor,
       "openai",
@@ -499,11 +513,11 @@ describe("chat agent bootstrap prefetch", () => {
       agentId,
       prompt: "use the first default",
     });
-    const claimed = await claimChatRun(runnerGroup, sent.runId);
+    const execution = await runExecution(sent.runId);
     expect(
-      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+      execution.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
     ).toMatchObject({ sourceId: first.id });
-    await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, sent.runId, execution.sandboxHeaders);
     await connectors.setDefaultBuiltinConnectorAccount(
       actor,
       "openai",
@@ -514,11 +528,11 @@ describe("chat agent bootstrap prefetch", () => {
       threadId: sent.threadId,
       prompt: "use the next default",
     });
-    const nextClaim = await claimChatRun(runnerGroup, next.runId);
+    const nextExecution = await runExecution(next.runId);
     expect(
-      nextClaim.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+      nextExecution.execution.secretConnectorMetadataMap?.OPENAI_TOKEN,
     ).toMatchObject({ sourceId: second.id });
-    await cancelChatRun(actor, next.runId, nextClaim.sandboxHeaders);
+    await cancelChatRun(actor, next.runId, nextExecution.sandboxHeaders);
   });
 
   it("delivers a steer input to the active authenticated Runner", async () => {
@@ -527,7 +541,7 @@ describe("chat agent bootstrap prefetch", () => {
       agentId,
       prompt: "keep working",
     });
-    const claimed = await claimChatRun(runnerGroup, active.runId);
+    const execution = await runExecution(active.runId);
     const clientEventId = randomUUID();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped actor");
@@ -559,10 +573,10 @@ describe("chat agent bootstrap prefetch", () => {
     });
 
     await expect(
-      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
+      api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
     ).resolves.toStrictEqual({
       input: { eventId: clientEventId, prompt: "steer the existing run" },
     });
-    await cancelChatRun(actor, active.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, active.runId, execution.sandboxHeaders);
   });
 });

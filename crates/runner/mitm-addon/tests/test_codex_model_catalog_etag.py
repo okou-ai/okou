@@ -16,6 +16,7 @@ from tests.codex_model_catalog_cache_helpers import (
     prepare_prefetch_miss,
 )
 from tests.flow_helpers import response_stream
+from tests.repeated_bytes_helpers import repeat_bytes
 
 _FIELD_LIMIT = 8 * 1024
 _VALUE_LIMIT = 8 * 1024
@@ -111,7 +112,7 @@ class _TrackedValue(bytes):
             id="raw-value-one-over-budget",
         ),
         pytest.param(
-            (b'"' + b"x" * (1024 * 1024 - 2) + b'"',),
+            (repeat_bytes(b'"', b"x", 1024 * 1024 - 2, b'"'),),
             None,
             False,
             id="megabyte-singleton",

@@ -148,7 +148,18 @@ fn template_guidance_remote_archive_above_skill_and_host_cache_limits_is_verifie
             state as u8
         })
         .collect::<Vec<_>>();
-    let archive = create_tar_gz(&[("first.bin", &data), ("second.bin", &data)]).unwrap();
+    // Exercise package size and identity without searching for compression matches
+    // in the original 34 MiB payload. Other cases retain compressed/canonical inputs.
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
+    let mut builder = tar::Builder::new(encoder);
+    for name in ["first.bin", "second.bin"] {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(data.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder.append_data(&mut header, name, &data[..]).unwrap();
+    }
+    let archive = builder.into_inner().unwrap().finish().unwrap();
     assert!(archive.len() > 32 * 1024 * 1024);
     let server = MockServer::start();
     let dir = tempfile::tempdir().unwrap();

@@ -10,7 +10,7 @@ import { chatThreadCreateRoutes } from "../chat-threads-create";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import {
   createChatEventsFixture,
-  okouTokenFromClaim,
+  okouTokenFromExecution,
   userMessages,
 } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
@@ -44,18 +44,19 @@ async function sourceFixture() {
     model: "claude-fable-5-1",
     prompt: "Coordinate related chats",
   });
-  const claimed = await fixture.claimChatRun(fixture.runnerGroup, source.runId);
+  const execution = await fixture.runExecution(source.runId);
   return {
     ...fixture,
     source,
-    claimed,
-    token: okouTokenFromClaim(claimed.claim),
+    receivedExecution: execution,
+    token: okouTokenFromExecution(execution.execution),
   };
 }
 
 describe("chat relationships", () => {
   it("returns all created chats once without inferring human-created children", async () => {
-    const { actor, agentId, source, claimed, token } = await sourceFixture();
+    const { actor, agentId, source, receivedExecution, token } =
+      await sourceFixture();
     const createdIds: string[] = [];
     for (let index = 0; index < 51; index++) {
       const clientThreadId = randomUUID();
@@ -105,7 +106,7 @@ describe("chat relationships", () => {
       [200],
     );
     expect(messages.body.items).toStrictEqual([]);
-    await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, source.runId, receivedExecution.sandboxHeaders);
   });
 
   it("records both directions between existing chats and attributes only consumed messages", async () => {
@@ -113,10 +114,9 @@ describe("chat relationships", () => {
       actor,
       agentId,
       source,
-      claimed,
+      receivedExecution,
       token,
-      runnerGroup,
-      claimChatRun,
+      runExecution,
       requestSendEventWithBearer,
     } = await sourceFixture();
     const peer = await chat.createThread(actor, { agentId });
@@ -140,10 +140,10 @@ describe("chat relationships", () => {
     if (!peerRunId) {
       throw new Error("Expected the accepted message to launch a run");
     }
-    const peerClaim = await claimChatRun(runnerGroup, peerRunId);
+    const peerExecution = await runExecution(peerRunId);
     const replyId = randomUUID();
     await requestSendEventWithBearer(
-      okouTokenFromClaim(peerClaim.claim),
+      okouTokenFromExecution(peerExecution.execution),
       {
         agentId,
         threadId: source.threadId,
@@ -183,12 +183,12 @@ describe("chat relationships", () => {
       })?.userMessage?.parts,
     ).toContainEqual({ type: "text", text: send.prompt });
     await api.declareSteeredInput(
-      claimed.claim.sandboxToken,
+      receivedExecution.execution.sandboxToken,
       source.runId,
       replyId,
     );
     await api.declareSteeredInput(
-      claimed.claim.sandboxToken,
+      receivedExecution.execution.sandboxToken,
       source.runId,
       replyId,
     );
@@ -279,8 +279,8 @@ describe("chat relationships", () => {
       [200],
     );
     expect(children.body.items).toStrictEqual([]);
-    await cancelChatRun(actor, peerRunId, peerClaim.sandboxHeaders);
-    await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, peerRunId, peerExecution.sandboxHeaders);
+    await cancelChatRun(actor, source.runId, receivedExecution.sandboxHeaders);
   });
 
   it.each([
@@ -299,7 +299,7 @@ describe("chat relationships", () => {
       actor,
       agentId,
       source,
-      claimed,
+      receivedExecution,
       token,
       requestSendEventWithBearer,
     } = await sourceFixture();
@@ -396,7 +396,7 @@ describe("chat relationships", () => {
         ).size,
       ).toBeGreaterThan(1);
     }
-    await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, source.runId, receivedExecution.sandboxHeaders);
   });
 
   it("records implicit creation and enforces user and organization boundaries", async () => {
@@ -404,7 +404,7 @@ describe("chat relationships", () => {
       actor,
       agentId,
       source,
-      claimed,
+      receivedExecution,
       token,
       requestSendEventWithBearer,
     } = await sourceFixture();
@@ -465,6 +465,6 @@ describe("chat relationships", () => {
       }),
       [404],
     );
-    await cancelChatRun(actor, source.runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, source.runId, receivedExecution.sandboxHeaders);
   });
 });

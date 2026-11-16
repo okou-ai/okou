@@ -33,7 +33,7 @@ import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostBddApi } from "./helpers/api-bdd-host";
 import {
   createChatEventsFixture,
-  okouTokenFromClaim,
+  okouTokenFromExecution,
 } from "./helpers/chat-events-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -518,11 +518,8 @@ describe("sandbox hosted previews", () => {
       agentId: entitled.agentId,
       prompt: "Publish a site with a preview",
     });
-    const { claim } = await fixture.claimChatRun(
-      entitled.runnerGroup,
-      run.runId,
-    );
-    const runner = { bearerToken: okouTokenFromClaim(claim) };
+    const { execution } = await fixture.runExecution(run.runId);
+    const runner = { bearerToken: okouTokenFromExecution(execution) };
     const features = setupAppWithRoutes({
       context,
       routes: featureSwitchesRoutes,
@@ -619,11 +616,8 @@ describe("sandbox hosted previews", () => {
       agentId: entitled.agentId,
       prompt: "Publish a site with a retryable preview",
     });
-    const { claim } = await fixture.claimChatRun(
-      entitled.runnerGroup,
-      run.runId,
-    );
-    const runner = { bearerToken: okouTokenFromClaim(claim) };
+    const { execution } = await fixture.runExecution(run.runId);
+    const runner = { bearerToken: okouTokenFromExecution(execution) };
     const objects = previewStorage({ failStagingDeleteOnce: true });
     const bytes = jpeg;
     const body = {

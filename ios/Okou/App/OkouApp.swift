@@ -319,7 +319,8 @@ private struct WorkspaceRootView: View {
           mentionSource: ComposerMentionSource(
             agentID: conversation.thread.agentID,
             threads: store.list.threads),
-          onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) }
+          onFirstMessagePresented: { store.newChatSubmission?.presentMessage($0) },
+          fork: { store.startFork($0, from: conversation) }
         )
         .id(conversation.thread.id)
       } else {
@@ -352,6 +353,13 @@ private struct WorkspaceRootView: View {
         }
     }
     .background { OkouColor.background.ignoresSafeArea() }
+    .sheet(
+      item: Binding(get: { store.fork }, set: { if $0 == nil { store.dismissFork() } })
+    ) { flow in
+      ChatForkView(
+        flow: flow, webURL: store.webURL, threads: store.list.threads,
+        needsUpgrade: store.needsUpgrade, dismiss: store.dismissFork)
+    }
     .composerSuggestionOverlay(
       topInset: topContentHeight, isEnabled: !sidebar.isOpen && !sidebar.isTransitioning
     )

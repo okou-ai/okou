@@ -87,6 +87,14 @@ class _FirewallAuthState:
     last_force_refresh_monotonic_at: float | None = None
 
 
+@dataclass(frozen=True, repr=False)
+class _OwnedFirewallAuthState:
+    """One scope's credential identity and retained mutable lifecycle state."""
+
+    cache_key: FirewallAuthCacheKey
+    state: _FirewallAuthState
+
+
 @dataclass(frozen=True)
 class FirewallAuthStateSnapshotForTests:
     """Copied auth cache state exposed to tests without leaking private storage."""
@@ -107,8 +115,7 @@ class FirewallAuthStateSnapshotForTests:
 FIREWALL_AUTH_REGISTRY_GENERATION_ATTRIBUTE = "_firewall_auth_registry_generation"
 type _FirewallAuthScope = tuple[str, str, str]
 
-_auth_state: dict[FirewallAuthCacheKey, _FirewallAuthState] = {}
-_owned_auth_keys: dict[_FirewallAuthScope, FirewallAuthCacheKey] = {}
+_owned_auth_states: dict[_FirewallAuthScope, _OwnedFirewallAuthState] = {}
 _active_registry_generations: dict[str, int] = {}
 MAX_CONCURRENT_FIREWALL_AUTH_FETCHES = 4
 MAX_ADMITTED_FIREWALL_AUTH_FETCHES = 16
@@ -124,6 +131,16 @@ _firewall_auth_fetch_semaphore: asyncio.Semaphore | None = None
 _FORCE_REFRESH_COOLDOWN_SECS = 120.0
 
 
+def _auth_scope(cache_key: FirewallAuthCacheKey) -> _FirewallAuthScope:
+    return cache_key.run_id, cache_key.api_id, cache_key.purpose
+
+
+def _find_auth_state(cache_key: FirewallAuthCacheKey) -> _FirewallAuthState | None:
+    """Read equivalent owned state without creating or reclaiming ownership."""
+    owned = _owned_auth_states.get(_auth_scope(cache_key))
+    return owned.state if owned is not None and owned.cache_key == cache_key else None
+
+
 def _get_auth_state(cache_key: FirewallAuthCacheKey) -> _FirewallAuthState:
     """Return shared state, or detached state for a stale registry key.
 
@@ -133,7 +150,7 @@ def _get_auth_state(cache_key: FirewallAuthCacheKey) -> _FirewallAuthState:
     A stale key may use equivalent existing state, but cannot mutate shared ownership; if that
     state is absent, it receives a detached state object.
     """
-    state = _auth_state.get(cache_key)
+    state = _find_auth_state(cache_key)
 
     registry_generation = cache_key.registry_generation
     is_current_registry_generation = registry_generation is None or (
@@ -142,16 +159,9 @@ def _get_auth_state(cache_key: FirewallAuthCacheKey) -> _FirewallAuthState:
     if not is_current_registry_generation:
         return state if state is not None else _FirewallAuthState()
 
-    scope = (cache_key.run_id, cache_key.api_id, cache_key.purpose)
-    owned_key = _owned_auth_keys.get(scope)
-    if owned_key is not None and owned_key != cache_key:
-        _auth_state.pop(owned_key, None)
-        state = None
-
-    _owned_auth_keys[scope] = cache_key
     if state is None:
         state = _FirewallAuthState()
-        _auth_state[cache_key] = state
+        _owned_auth_states[_auth_scope(cache_key)] = _OwnedFirewallAuthState(cache_key, state)
     return state
 
 
@@ -187,7 +197,7 @@ def request_force_refresh(cache_key: FirewallAuthCacheKey) -> None:
     """
     if cache_key.purpose == "network":
         return
-    state = _auth_state.get(cache_key)
+    state = _find_auth_state(cache_key)
     if state is None:
         return
     now = time.monotonic()
@@ -204,7 +214,7 @@ def invalidate_cached_firewall_headers(
     cache_entry_identity: FirewallAuthCacheEntryIdentity,
 ) -> None:
     """Invalidate the matching entry; only application keys force OAuth refresh."""
-    state = _auth_state.get(cache_key)
+    state = _find_auth_state(cache_key)
     if state is None or state.cache is None or state.cache.identity is not cache_entry_identity:
         return
     state.cache = None
@@ -220,23 +230,21 @@ def reconcile_registry_cache_ownership(active_run_generations: dict[str, int]) -
     is unchanged, because generation is excluded from cache-key equality. A current key with a new
     identity replaces the prior owner, while stale keys cannot reclaim it.
 
-    Runs absent from ``active_run_generations`` are no longer active owners, so their entries are
-    removed from both ownership and auth state, including cached payload and refresh lifecycle
-    state.
+    Runs absent from ``active_run_generations`` are no longer active owners, so their owner
+    records are removed, including cached payload and refresh lifecycle state. Already-admitted
+    fetches retain their original mutable state until completion without reclaiming ownership.
     """
     _active_registry_generations.clear()
     _active_registry_generations.update(active_run_generations)
 
-    stale_scopes = [scope for scope in _owned_auth_keys if scope[0] not in active_run_generations]
+    stale_scopes = [scope for scope in _owned_auth_states if scope[0] not in active_run_generations]
     for scope in stale_scopes:
-        cache_key = _owned_auth_keys.pop(scope)
-        _auth_state.pop(cache_key, None)
+        _owned_auth_states.pop(scope)
 
 
 def evict_all_cache_keys() -> None:
     """Remove all auth cache entries when active registry ownership is unknown."""
-    _auth_state.clear()
-    _owned_auth_keys.clear()
+    _owned_auth_states.clear()
     _active_registry_generations.clear()
 
 
@@ -321,7 +329,7 @@ def auth_state_snapshot_for_tests(
     cache_key: FirewallAuthCacheKey,
 ) -> FirewallAuthStateSnapshotForTests | None:
     """Return a copied snapshot of one auth cache state for tests."""
-    state = _auth_state.get(cache_key)
+    state = _find_auth_state(cache_key)
     if state is None:
         return None
 
@@ -352,7 +360,7 @@ def auth_state_snapshot_for_tests(
 
 def auth_state_is_empty_for_tests() -> bool:
     """Return whether tests have left the auth cache without any state."""
-    return not _auth_state
+    return not _owned_auth_states
 
 
 def _has_valid_expiry(value: object, now: float | None = None) -> bool:

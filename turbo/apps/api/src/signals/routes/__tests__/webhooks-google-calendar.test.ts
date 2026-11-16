@@ -869,9 +869,9 @@ describe("POST /api/webhooks/google-calendar", () => {
           },
         });
         await flushWaitUntilForTest();
-        const claim = receivedCalendarRun(scenario.runnerGroup);
+        const receivedExecution = receivedCalendarRun(scenario.runnerGroup);
         expect(
-          Object.values(claim.secretConnectorMetadataMap ?? {}),
+          Object.values(receivedExecution.secretConnectorMetadataMap ?? {}),
         ).toContainEqual(
           expect.objectContaining({ sourceId: secondConnectorId }),
         );
@@ -1447,7 +1447,7 @@ describe("POST /api/webhooks/google-calendar", () => {
       created.body.chatThreadId,
       'Google Calendar event "Existing updated" was updated.',
     );
-    const firstClaim = receivedCalendarRun(runnerGroup);
+    const firstExecution = receivedCalendarRun(runnerGroup);
 
     // The same revision (same etag) arriving again dispatches nothing.
     const second = await postGoogleCalendarWebhook(webhookHeaders(watch));
@@ -1462,7 +1462,10 @@ describe("POST /api/webhooks/google-calendar", () => {
     expect(runsApi.receivedDispatches(runnerGroup)).toHaveLength(1);
 
     // Finish the first run so the workflow queue can dispatch the next event.
-    await completeRunThroughSandbox(firstClaim.sandboxToken, firstClaim.runId);
+    await completeRunThroughSandbox(
+      firstExecution.sandboxToken,
+      firstExecution.runId,
+    );
 
     // A new revision (new etag) dispatches exactly one more run.
     const third = await postGoogleCalendarWebhook(webhookHeaders(watch));
@@ -1476,7 +1479,7 @@ describe("POST /api/webhooks/google-calendar", () => {
     });
     await flushWaitUntilForTest();
     const thirdRun = receivedCalendarRun(runnerGroup);
-    expect(thirdRun.runId).not.toBe(firstClaim.runId);
+    expect(thirdRun.runId).not.toBe(firstExecution.runId);
     expect(runsApi.receivedDispatches(runnerGroup)).toHaveLength(2);
   });
 

@@ -68,7 +68,7 @@ import {
 import { normalizeMountOverlay } from "./storage-mount-overlay";
 import { createSystemSkillsContext } from "./system-skills-context.service";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { createClaimConnectedAccounts } from "./thread-connected-accounts.signals";
+import { createExecutionConnectedAccounts } from "./thread-connected-accounts.signals";
 import { createConnectorEnvironmentSignals } from "./thread-connector-environment.signals";
 import {
   createModelProviderEnvironmentSignals,
@@ -102,14 +102,7 @@ type InitialInput =
   InitialInput$ extends Computed<infer T> ? Awaited<T> : never;
 type DisabledTools$ = Computed<Promise<readonly string[]>>;
 
-/** An expected source removal or cancellation, distinct from dependency failures. */
-export class ExecutionRuntimeUnavailableError extends Error {
-  constructor() {
-    super("Run execution sources are unavailable");
-  }
-}
-
-/** All dependencies belong to this execution; no captured runtime snapshot participates. */
+/** Assemble runtime input from this Run's authoritative sources. */
 export function createExecutionRuntimeContext(input$: ExecutionInput$) {
   const identities = createExecutionIdentities(input$);
   const { run$, identity$, features$ } = identities;
@@ -149,8 +142,8 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
     return (await get(model$))?.provider ?? null;
   });
   const modelEnvironment$ = createModelProviderEnvironmentSignals(
-    { bodyEnvironment$: connectors.bodyEnvironment$ },
-    { modelRoute$ },
+    connectors.bodyEnvironment$,
+    modelRoute$,
   );
   const initialInput$ = createExecutionInitialInput(run$);
   const storage$ = createExecutionStorage(input$);
@@ -305,7 +298,7 @@ function createExecutionConnectorContext(
       .from(agentRunConnectorDiagnosticRegistrations)
       .where(eq(agentRunConnectorDiagnosticRegistrations.runId, run.id));
     if (!row) {
-      throw new ExecutionRuntimeUnavailableError();
+      throw new Error("Run execution sources are unavailable");
     }
     return agentRunConnectorDiagnosticRegistrationPayloadSchema.parse(
       row.payload,
@@ -323,7 +316,7 @@ function createExecutionConnectorContext(
   const timing$ = computed(() => {
     return new ApiDispatchTimingCollector();
   });
-  const connected = createClaimConnectedAccounts({
+  const connected = createExecutionConnectedAccounts({
     identity$: connectorIdentity$,
     targets$,
     scope$: sources.signals.connectorScope$,
@@ -331,7 +324,7 @@ function createExecutionConnectorContext(
     definitions$: sources.signals.customConnectorDefinitions$,
     connectors$: sources.signals.connectors$,
     policies$: sources.signals.permissionPolicies$,
-    features$: features$,
+    features$,
     timing$,
   });
   const bodyEnvironment$ = computed(async (get) => {
@@ -400,12 +393,11 @@ function createExecutionModel(run$: ExecutionRun$, global: GlobalModels) {
       });
       const source = managedSourceFromSnapshot(key);
       if (!source) {
-        throw new ExecutionRuntimeUnavailableError();
+        throw new Error("Run execution sources are unavailable");
       }
       provider = await prepareManagedModelEnvironment(source, {
-        catalog,
         framework: getFrameworkForType(AUTO_RUN_PROVIDER),
-        selectedModelOverride: run.selectedModel,
+        selectedModel: run.selectedModel,
         builtInModelRuntimeRoute: {
           selectedModel: run.selectedModel,
           providerType: AUTO_RUN_PROVIDER,
@@ -425,11 +417,11 @@ function createExecutionModel(run$: ExecutionRun$, global: GlobalModels) {
           personalSubscriptionAccountIdentity(account) !==
             run.modelProviderAccountIdentity)
       ) {
-        throw new ExecutionRuntimeUnavailableError();
+        throw new Error("Run execution sources are unavailable");
       }
       const source = memberAccountSourceFromSnapshot(members, account.id);
       if (!source) {
-        throw new ExecutionRuntimeUnavailableError();
+        throw new Error("Run execution sources are unavailable");
       }
       provider = prepareSubscriptionModelEnvironment(
         source,
@@ -443,7 +435,7 @@ function createExecutionModel(run$: ExecutionRun$, global: GlobalModels) {
       );
     }
     if (!provider) {
-      throw new ExecutionRuntimeUnavailableError();
+      throw new Error("Run execution sources are unavailable");
     }
     const resolved = materializePreparedPiProvider(preparation, provider);
     return {
@@ -563,7 +555,7 @@ function createExecutionPackages(
             get(templates$),
           ]);
     if (templates && "error" in templates) {
-      throw new ExecutionRuntimeUnavailableError();
+      throw new Error("Run execution sources are unavailable");
     }
     const parts = [connectors, seedSkills, templates].filter((part) => {
       return part !== undefined;
@@ -653,7 +645,7 @@ function createExecutionPlatform(
         ...paidToolPlatformEnvironment({
           disabledTools,
           framework,
-          modelProviderType: model?.provider?.type ?? null,
+          modelProviderType: model?.provider.type ?? null,
           piExecution: framework === "pi",
         }),
         ...(integration ? { OKOU_CURRENT_INTEGRATION: integration } : {}),
@@ -686,7 +678,7 @@ function createExecutionEnvironment(
         run.agentId === null ? emptyEnvironment() : get(connectorEnvironment$),
       ]);
     if ("status" in connectorEnvironment || "status" in modelEnvironment) {
-      throw new ExecutionRuntimeUnavailableError();
+      throw new Error("Run execution sources are unavailable");
     }
     const data = dataRouterEnvironment();
     const token = context.platformEnvironment.OKOU_TOKEN;
@@ -846,7 +838,7 @@ function executionModelConfiguration(
       run.modelProvider === "built-in"
         ? (run.modelLongContextMinTotalInputTokens ?? undefined)
         : 0,
-    codexRuntimeConfig: model?.provider?.codexRuntimeConfig ?? null,
+    codexRuntimeConfig: model?.provider.codexRuntimeConfig ?? null,
     piModelConfig: model?.piModelConfig,
     piLaunchConfig: framework === "pi" ? { schemaVersion: 2 } : undefined,
     piSessionId:

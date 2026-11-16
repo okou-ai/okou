@@ -95,9 +95,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::process::{ExitStatus, Stdio};
 use std::time::{Duration, Instant};
-use termination::{
-    CliTerminationRuntime, ControlTerminationLog, PostResultCleanupPolicy, TerminationReason,
-};
+use termination::{CliTerminationRuntime, ControlFailure, PostResultCleanupPolicy};
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::oneshot;
 use tokio::time::Sleep;
@@ -1353,9 +1351,8 @@ async fn execute_cli_inner(
                 }
                 active_input_controller.close_terminal();
                 termination_runtime.begin_control_failure(
-                    TerminationReason::UserCancellation,
                     AgentError::Execution("Run cancelled by user".to_string()),
-                    ControlTerminationLog::UserCancellation,
+                    ControlFailure::UserCancellation,
                     termination_deadline.as_mut(),
                 );
             }
@@ -1392,9 +1389,8 @@ async fn execute_cli_inner(
                     "Agent execution timed out after {agent_execution_timeout_secs} seconds"
                 ));
                 termination_runtime.begin_control_failure(
-                    TerminationReason::ExecutionTimeout,
                     timeout_error,
-                    ControlTerminationLog::ExecutionTimeout {
+                    ControlFailure::ExecutionTimeout {
                         timeout_secs: agent_execution_timeout_secs,
                     },
                     termination_deadline.as_mut(),
@@ -1428,9 +1424,8 @@ async fn execute_cli_inner(
                         active_input_controller.close_terminal();
                         let error_log = error.to_string();
                         termination_runtime.begin_control_failure(
-                            TerminationReason::InitialPromptStdin,
                             error,
-                            ControlTerminationLog::StdinWriterFailed { error: error_log },
+                            ControlFailure::StdinWriterFailed { error: error_log },
                             termination_deadline.as_mut(),
                         );
                     }
@@ -1443,9 +1438,8 @@ async fn execute_cli_inner(
                         let control_error =
                             AgentError::Execution(format!("CLI stdin writer task failed: {error_log}"));
                         termination_runtime.begin_control_failure(
-                            TerminationReason::InitialPromptStdin,
                             control_error,
-                            ControlTerminationLog::StdinWriterTaskFailed { error: error_log },
+                            ControlFailure::StdinWriterTaskFailed { error: error_log },
                             termination_deadline.as_mut(),
                         );
                     }
@@ -1503,9 +1497,8 @@ async fn execute_cli_inner(
                                                 }
                                                 let error_log = error.to_string();
                                                 termination_runtime.begin_control_failure(
-                                                    TerminationReason::StdoutIngestion,
                                                     error,
-                                                    ControlTerminationLog::StdoutIngestionFailed {
+                                                    ControlFailure::StdoutIngestionFailed {
                                                         error: error_log,
                                                     },
                                                     termination_deadline.as_mut(),
@@ -1527,9 +1520,8 @@ async fn execute_cli_inner(
                                             }
                                             let error_log = error.to_string();
                                             termination_runtime.begin_control_failure(
-                                                TerminationReason::StdoutIngestion,
                                                 error,
-                                                ControlTerminationLog::StdoutIngestionFailed {
+                                                ControlFailure::StdoutIngestionFailed {
                                                     error: error_log,
                                                 },
                                                 termination_deadline.as_mut(),
@@ -1558,9 +1550,8 @@ async fn execute_cli_inner(
                                         }
                                         let error_log = error.to_string();
                                         termination_runtime.begin_control_failure(
-                                            TerminationReason::StdoutIngestion,
                                             error,
-                                            ControlTerminationLog::StdoutIngestionFailed {
+                                            ControlFailure::StdoutIngestionFailed {
                                                 error: error_log,
                                             },
                                             termination_deadline.as_mut(),
@@ -1607,9 +1598,8 @@ async fn execute_cli_inner(
                                 }
                                 let error_log = error.to_string();
                                 termination_runtime.begin_control_failure(
-                                    TerminationReason::StdoutIngestion,
                                     error,
-                                    ControlTerminationLog::StdoutIngestionFailed {
+                                    ControlFailure::StdoutIngestionFailed {
                                         error: error_log,
                                     },
                                     termination_deadline.as_mut(),
@@ -1742,9 +1732,8 @@ async fn execute_cli_inner(
                                 }
                                 let error_log = error.to_string();
                                 termination_runtime.begin_control_failure(
-                                    TerminationReason::EventDelivery,
                                     error,
-                                    ControlTerminationLog::EventDeliveryFailed { error: error_log },
+                                    ControlFailure::EventDeliveryFailed { error: error_log },
                                     termination_deadline.as_mut(),
                                 );
                             }
@@ -1763,9 +1752,8 @@ async fn execute_cli_inner(
                             }
                             let error_log = error.to_string();
                             termination_runtime.begin_control_failure(
-                                TerminationReason::StdoutIngestion,
                                 error,
-                                ControlTerminationLog::StdoutIngestionFailed {
+                                ControlFailure::StdoutIngestionFailed {
                                     error: error_log,
                                 },
                                 termination_deadline.as_mut(),
@@ -1791,9 +1779,8 @@ async fn execute_cli_inner(
                             }
                             let error_log = error.to_string();
                             termination_runtime.begin_control_failure(
-                                TerminationReason::StdoutIngestion,
                                 error,
-                                ControlTerminationLog::StdoutIngestionFailed {
+                                ControlFailure::StdoutIngestionFailed {
                                     error: error_log,
                                 },
                                 termination_deadline.as_mut(),
@@ -1878,9 +1865,8 @@ async fn execute_cli_inner(
                             CliExitObservation::NoNewExit => {
                                 let error_log = error.to_string();
                                 termination_runtime.begin_control_failure(
-                                    TerminationReason::StdoutIngestion,
                                     error,
-                                    ControlTerminationLog::StdoutIngestionFailed {
+                                    ControlFailure::StdoutIngestionFailed {
                                         error: error_log,
                                     },
                                     termination_deadline.as_mut(),
@@ -1961,9 +1947,8 @@ async fn execute_cli_inner(
                         name.as_str()
                     ));
                     termination_runtime.begin_control_failure(
-                        TerminationReason::StuckTool,
                         timeout_error,
-                        ControlTerminationLog::StuckTool {
+                        ControlFailure::StuckTool {
                             name: name.as_str().to_owned(),
                             elapsed,
                         },
@@ -1999,9 +1984,8 @@ async fn execute_cli_inner(
                         // Heartbeat failed — kill process group
                         heartbeat_failure = Some(failure.diagnostic);
                         termination_runtime.begin_control_failure(
-                            TerminationReason::HeartbeatError,
                             failure.error,
-                            ControlTerminationLog::HeartbeatFailed,
+                            ControlFailure::HeartbeatFailed,
                             termination_deadline.as_mut(),
                         );
                     }
@@ -2012,18 +1996,16 @@ async fn execute_cli_inner(
                     Ok(HeartbeatStatus::TaskFailed(message)) => {
                         let error = AgentError::Execution(format!("heartbeat task panicked: {message}"));
                         termination_runtime.begin_control_failure(
-                            TerminationReason::HeartbeatPanic,
                             error,
-                            ControlTerminationLog::HeartbeatTaskPanicked,
+                            ControlFailure::HeartbeatTaskPanicked,
                             termination_deadline.as_mut(),
                         );
                     }
                     Err(e) => {
                         let error = AgentError::Execution(format!("heartbeat task stopped before reporting status: {e}"));
                         termination_runtime.begin_control_failure(
-                            TerminationReason::HeartbeatPanic,
                             error,
-                            ControlTerminationLog::HeartbeatStoppedBeforeStatus,
+                            ControlFailure::HeartbeatStoppedBeforeStatus,
                             termination_deadline.as_mut(),
                         );
                     }

@@ -948,6 +948,9 @@ function mockTabAdmissionGeometry(budget: number, panel = budget + 200) {
     const tabs =
       Object.hasOwn(element.dataset, "browserTabBudget") ||
       element.getAttribute("role") === "tablist";
+    if (!widthOwner && !tabs) {
+      return style;
+    }
     return new Proxy(style, {
       get(target, property) {
         if (panel && property === "flexGrow") {
@@ -1177,7 +1180,9 @@ test("Browser tab admission narrows conservatively on the chat-list action befor
 
 test("Browser tab admission settles surviving shell motion after navigation cancels visibility paint", async () => {
   mockWideScreen();
-  const native = mockTabAdmissionGeometry(800, 1000);
+  // Start narrow; wide-to-narrow preparation is covered above. This case
+  // widens after navigation while the surviving native motions still own it.
+  const native = mockTabAdmissionGeometry(200, 400);
   const initial = await openManyTabBrowser();
   await selectLastBrowserTab(initial.sidebar);
   click(buttonByName("Hide chat list"));

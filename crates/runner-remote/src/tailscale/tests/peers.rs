@@ -1,5 +1,6 @@
 //! Real public SDK map, route, crypto and TCP boundaries of the owned candidate.
 
+mod core_retirement;
 pub(in crate::tailscale::tests) mod relay;
 mod retirement;
 pub(in crate::tailscale::tests) mod shared_derp;

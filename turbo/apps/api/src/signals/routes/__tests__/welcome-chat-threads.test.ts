@@ -26,7 +26,7 @@ import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { welcomeChatThreadRoutes } from "../welcome-chat-threads";
 import { featureSwitchesRoutes } from "../feature-switches";
-import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createRunExecutionCredentials } from "./helpers/run-execution-credentials";
 
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -41,7 +41,7 @@ const personalModelProviderTestRoutes = Object.freeze([
 ]);
 
 const context = testContext();
-const credentials = createClaimedRunCredentials(context);
+const credentials = createRunExecutionCredentials(context);
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
@@ -133,7 +133,7 @@ describe("POST /api/welcome-chat-threads", () => {
     expect(response.status).toBe(401);
   });
 
-  it("rejects a claimed credential after the member leaves the organization", async () => {
+  it("rejects an execution credential after the member leaves the organization", async () => {
     const actor = bdd.user();
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     const token = await credentials.okouToken(member);
