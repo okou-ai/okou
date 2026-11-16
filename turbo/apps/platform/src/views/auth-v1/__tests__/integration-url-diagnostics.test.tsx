@@ -7,7 +7,6 @@ import type { CaptureResult } from "posthog-js/dist/module.slim";
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { initPostHog } from "../../../lib/posthog.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 
 const context = testContext();
 const PROOF_PATHS = [
@@ -59,7 +58,7 @@ test.each(PROOF_PATHS)(
     });
     expect(logs.mock.calls.length).toBeGreaterThan(0);
     expectRedacted(logs.mock.calls);
-    const authParams = new URLSearchParams(window.location.hash.split("?")[1]);
+    const authParams = new URL(window.location.href).searchParams;
     expect(authParams.get("redirect_url") === target).toBeTruthy();
     expect(JSON.stringify(logs.mock.calls)).toContain(
       "context=one&context=two",
@@ -67,13 +66,7 @@ test.each(PROOF_PATHS)(
   },
 );
 
-test("Query-form Clerk redirects redact the emitted redirectUrl diagnostic too", async () => {
-  context.mocks.clerk();
-  mockedClerk.buildSignInUrl.mockImplementation((options) => {
-    const url = new URL("/sign-in", "https://app.okou.ai");
-    url.searchParams.set("redirect_url", options?.redirectUrl ?? "");
-    return url.href;
-  });
+test("App redirects redact the emitted redirectUrl diagnostic too", async () => {
   const logs = vi.spyOn(console, "info").mockImplementation(() => {});
   const target = signedEntry("/settings/telegram");
   await startPage({ context, host: "app.okou.ai", path: target, auth: null });

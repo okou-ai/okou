@@ -475,7 +475,7 @@ export const setupAuthPageWrapper = (
 
     if (!user) {
       const signInUrl = new URL(
-        clerk.buildSignInUrl({ redirectUrl: location.href }),
+        resolveAppAuthUrl("/sign-in", { redirectUrl: location.href }),
       );
       const redirectUrl = signInUrl.searchParams.get("redirect_url");
       L.info("redirect unauthenticated user to app sign-in", {

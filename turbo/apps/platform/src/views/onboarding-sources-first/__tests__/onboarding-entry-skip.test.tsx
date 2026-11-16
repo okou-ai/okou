@@ -11,7 +11,9 @@ import {
   click,
   queryAllByRoleFast,
   setupPage,
+  startPage,
 } from "../../../__tests__/page-helper.ts";
+import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname, search } from "../../../signals/location.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
@@ -22,6 +24,49 @@ const TASK = "What is 1 + 2? Reply with only the number.";
 const HASH = "a".repeat(12);
 const FILE_ID = "bc3125d1-dc3f-4422-955c-f69f1d077608";
 const ENABLED = { [FeatureSwitchKey.SkipOnboarding]: true } as const;
+
+test("Authentication keeps task text separate from the actual onboarding flags", async () => {
+  context.mocks.clerk();
+  // The deployed Clerk builder decodes the nested query before serializing it.
+  mockedClerk.buildSignInUrl.mockImplementation((options) => {
+    const url = new URL("/sign-in", "https://app.okou.ai");
+    const params = new URLSearchParams({
+      redirect_url: decodeURIComponent(options?.redirectUrl ?? ""),
+    });
+    url.hash = `/?${params}`;
+    return url.toString();
+  });
+  const prompt = "Find C++ teams &skipOnboarding=true&redeemCode=TASK-TEXT";
+  const params = new URLSearchParams({
+    prompt,
+    skipOnboarding: "false",
+    redeemCode: "PRO-ENTRY",
+  });
+  await startPage({
+    context,
+    host: "app.okou.ai",
+    path: `/onboarding?${params}`,
+    auth: null,
+  });
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/sign-in");
+  });
+  const signIn = new URL(window.location.href);
+  const target =
+    signIn.searchParams.get("redirect_url") ??
+    new URLSearchParams(signIn.hash.split("?")[1] ?? "").get("redirect_url");
+  if (!target) {
+    throw new Error("Expected an authentication return URL");
+  }
+  const returned = new URL(target);
+  expect(returned.searchParams.get("prompt")).toBe(prompt);
+  expect(returned.searchParams.getAll("skipOnboarding")).toStrictEqual([
+    "false",
+  ]);
+  expect(returned.searchParams.getAll("redeemCode")).toStrictEqual([
+    "PRO-ENTRY",
+  ]);
+});
 
 function needsOnboarding(isAdmin = true): void {
   context.mocks.data.onboardingStatus({
