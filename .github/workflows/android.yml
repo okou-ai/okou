@@ -105,6 +105,7 @@ jobs:
           test -r /dev/kvm && test -w /dev/kvm
       - name: Test the optimized release on Android API 35
         id: native-tests
+        timeout-minutes: 20
         shell: bash
         working-directory: android
         run: |
@@ -114,20 +115,10 @@ jobs:
             -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect \
             --stacktrace --console=plain \
             2>&1 | tee build/reports/instrumentation/gradle.log
-      - name: Retain the native test driver mapping
-        if: always()
-        shell: bash
-        working-directory: android
-        env:
-          RELEASE_ARTIFACTS: ${{ steps.native-tests.outputs.release-directory }}
-        run: |
-          set -euo pipefail
-          mapping=app/build/outputs/mapping/releaseAndroidTest/mapping.txt
-          if test -n "$RELEASE_ARTIFACTS" && test -s "$mapping"; then
-            gzip -n -c "$mapping" > "$RELEASE_ARTIFACTS/native-test-mapping.txt.gz"
-          fi
+          python3 scripts/check-native-results.py \
+            app/build/outputs/androidTest-results/managedDevice/release/pixel2Api35 9
       - name: Restore failed release stack traces
-        if: failure()
+        if: always() && steps.native-tests.outcome != 'success'
         shell: bash
         working-directory: android
         env:
@@ -135,19 +126,20 @@ jobs:
         run: |
           set -euo pipefail
           export ANDROID_HOME="${ANDROID_HOME:-$HOME/.local/share/android-sdk}"
-          version=$(cat version.txt)
           reports=app/build/outputs/androidTest-results/managedDevice/release
           release=$RELEASE_ARTIFACTS
-          if test -n "$release" && test -d "$reports" && test -s "$release/okou-android-$version-mapping.txt.gz"; then
+          diagnostics=build/reports/instrumentation
+          if test -d "$reports"; then
+            cp -R "$reports" "$diagnostics/managed-device"
+          fi
+          if test -n "$release" && test -s "$release/tested-app-mapping.txt.gz"; then
             python3 scripts/retrace-release.py \
-              "$release/okou-android-$version-unsigned.apk" \
-              "$release/okou-android-$version-mapping.txt.gz" \
-              "$reports" build/reports/retraced/app
+              "$release/tested-app.apk" "$release/tested-app-mapping.txt.gz" \
+              "$diagnostics" build/reports/retraced/app
             if test -s "$release/native-test-mapping.txt.gz"; then
               python3 scripts/retrace-release.py \
-                app/build/outputs/apk/androidTest/release/app-release-androidTest.apk \
-                "$release/native-test-mapping.txt.gz" \
-                "$reports" build/reports/retraced/test-driver
+                "$release/native-test.apk" "$release/native-test-mapping.txt.gz" \
+                "$diagnostics" build/reports/retraced/test-driver
             fi
           fi
       - name: Retain Android test reports and diagnostics

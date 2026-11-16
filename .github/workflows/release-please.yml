@@ -584,6 +584,12 @@ jobs:
             echo 'Android release tag does not match the checked-out source' >&2
             exit 1
           }
+      - name: Archive Android release mapping
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/release/archive-android-mapping.py "$ANDROID_TAG" \
+            "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION-mapping.txt.gz"
       - name: Publish verified Android update
         env:
           GH_TOKEN: ${{ github.token }}
@@ -603,7 +609,6 @@ jobs:
           set -euo pipefail
           gh release upload "$ANDROID_TAG" \
             "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION.apk" \
-            "$RUNNER_TEMP/android-release/okou-android-$ANDROID_VERSION-mapping.txt.gz" \
             --repo "$GITHUB_REPOSITORY"
 
       - name: Calculate duration

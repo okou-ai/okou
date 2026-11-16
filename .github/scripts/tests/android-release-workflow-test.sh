@@ -54,21 +54,36 @@ with tempfile.TemporaryDirectory() as temp:
     binary = work / 'gh'
     binary.write_text('''#!/usr/bin/env python3
 import gzip
+import hashlib
+import json
 import os
 from pathlib import Path
 import sys
 args = sys.argv[1:]
 root = Path(os.environ['RUNNER_TEMP'])
 if args[0] == 'api':
-    assert args[1] == 'repos/okou-ai/okou/commits/android-v0.2.0'
-    if os.environ.get('FAIL_LOOKUP') == 'true':
-        sys.exit(17)
-    print(os.environ.get('TAG_SOURCE', 'a' * 40))
+    if args[1] == 'repos/okou-ai/okou/commits/android-v0.2.0':
+        if os.environ.get('FAIL_LOOKUP') == 'true':
+            sys.exit(17)
+        print(os.environ.get('TAG_SOURCE', 'a' * 40))
+    else:
+        assert args[1] == 'repos/okou-ai/okou/releases/tags/android-v0.2.0'
+        mapping = root / 'archived-map'
+        print(json.dumps({'assets': [{'name': 'okou-android-0.2.0-mapping.txt.gz',
+              'digest': 'sha256:' + hashlib.sha256(mapping.read_bytes()).hexdigest()}] if mapping.exists() else []}))
 elif args[:2] == ['release', 'upload']:
     assert args[2] == 'android-v0.2.0'
-    assert Path(args[3]).read_bytes() == b'fixture-apk'
-    assert gzip.decompress(Path(args[4]).read_bytes()) == b'fixture-r8-mapping'
     assert '--clobber' not in args
+    if args[3].endswith('-mapping.txt.gz'):
+        assert gzip.decompress(Path(args[3]).read_bytes()) == b'fixture-r8-mapping'
+        if os.environ.get('FAIL_MAPPING_UPLOAD') == 'true':
+            sys.exit(29)
+        with (root / 'archived-map').open('xb') as output:
+            output.write(Path(args[3]).read_bytes())
+        if os.environ.get('UNKNOWN_MAPPING_UPLOAD') == 'true':
+            sys.exit(31)  # Commit happened before the caller lost the receipt.
+        sys.exit(0)
+    assert Path(args[3]).read_bytes() == b'fixture-apk'
     if os.environ.get('FAIL_UPLOAD') == 'true':
         sys.exit(23)
     with (root / 'uploaded').open('x') as output:
@@ -156,6 +171,7 @@ else:
     # CI checkouts. Give the publisher its own complete, real source history.
     source = work / 'source'
     for relative in ['.github/scripts/release/publish-android-update.py',
+                     '.github/scripts/release/archive-android-mapping.py',
                      'android/scripts/version-code.sh']:
         target = source / relative
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -186,7 +202,7 @@ else:
                     ['bash', str(source / 'android/scripts/version-code.sh')], text=True).strip())
     steps = [step for step in job['steps'] if step.get('name') in {
         'Verify Android release tag', 'Publish verified Android update',
-        'Publish APK on the Android Release',
+        'Publish APK on the Android Release', 'Archive Android release mapping',
     }]
     def run_publication(**overrides):
         for step in steps:
@@ -206,6 +222,7 @@ else:
     assert data['release']['minimumSdk'] == 24
     assert (work / 'r2' / data['release']['url'].removeprefix('https://static.okou.io/')).read_bytes() == b'fixture-apk'
     assert (work / 'uploaded').read_text() == 'android-v0.2.0'
+    assert (work / 'archived-map').read_bytes() == (apk_dir / 'okou-android-0.2.0-mapping.txt.gz').read_bytes()
 
     shutil.rmtree(work / 'r2')
     (work / 'uploaded').unlink()
@@ -217,6 +234,20 @@ else:
     assert result.returncode != 0
     assert not manifest.exists()
     assert not (work / 'uploaded').exists()
+
+    (work / 'archived-map').unlink()
+    result = run_publication(FAIL_MAPPING_UPLOAD='true')
+    assert result.returncode != 0
+    assert not manifest.exists(), 'Unarchived mapping allowed update discovery'
+    result = run_publication(UNKNOWN_MAPPING_UPLOAD='true')
+    assert result.returncode == 0, result.stderr
+    assert manifest.exists(), 'Committed mapping was not recovered by readback'
+    shutil.rmtree(work / 'r2')
+    (work / 'uploaded').unlink()
+    (work / 'archived-map').write_bytes(b'wrong-version-mapping')
+    result = run_publication()
+    assert result.returncode != 0
+    assert not manifest.exists(), 'A mismatched same-name mapping allowed publication'
 
 print('Android release selection, publication and failure propagation: ok')
 PY
