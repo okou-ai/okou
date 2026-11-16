@@ -26,6 +26,7 @@ underlying ownership contracts. Setup commands belong in the
 | `okou_storage_boundaries`      | Keep raw UserDefaults dependencies at existing persistence owners; allow AppStorage only for registered UI preferences and tests to construct explicit suites.                          | `no-direct-local-storage` and `no-direct-session-storage`         |
 | `okou_task_lifecycle`          | Cancel or drain newly created, retained business Tasks at explicit owner teardown; preserve the original single handle or dictionary slot when replacing it.                            | Native extension of async ownership; no identical Web rule        |
 | `okou_discarded_throwing_task` | Do not explicitly discard a newly constructed Task whose visible errors escape its operation; retain a result owner or handle those errors inside the Task.                             | `no-floating-promises` and `no-void-statement`                    |
+| `okou_logging_boundaries`      | Use OSLog.Logger for production diagnostics; keep explicit output streams and native test/tool/Preview diagnostics with their owners.                                                   | `no-console`                                                      |
 
 The existing SwiftLint rules also check discarded throwing Tasks
 (`unhandled_throwing_task`), discarded block-based notification observer handles
@@ -238,6 +239,17 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   Fixtures still own unique suite names and immediate domain cleanup as required
   by [iOS testing](ios-testing.md#external-fixtures-and-isolation).
 
+- App, Push, Widgets, ChatDomain, and ChatData production sources use
+  `OSLog.Logger` for diagnostics under the [logging contract](ios-development.md#diagnostic-logging).
+  Direct `print`, `debugPrint`, `dump`, `NSLog`, and `os_log` references, including
+  known module-qualified forms, cannot bypass that entry point. Visible local
+  declarations and parameters, business member methods, and explicit `to:`
+  output streams retain their own meaning. Inline `#Preview` macros can use
+  diagnostics without exempting the rest of their source file. Test and
+  test-support targets and tools keep their diagnostic scope; an App filename
+  ending in `Tests` or a `DEBUG` block does not change its production owner.
+  The rule does not enforce message wording, event names, severity, or fields.
+
 ## Static Analysis Limits
 
 These are syntax checks, not a whole-program ownership proof. They recognize
@@ -310,6 +322,12 @@ App, Push, ChatDomain and ChatData production source paths. They do not prove
 that a `let` reference is deeply immutable, that a computed property is pure,
 or that a singleton has the right identity, cache bound or teardown. Other
 packages, cross-module storage and generated accessors still require review.
+Logging checks recognize direct standard-library/legacy diagnostic spellings
+at the owned production source paths beneath `ios/`. Cross-file overloads,
+indirect wrappers, arbitrary C/file output, and custom macro semantics remain
+review responsibilities. Additional production targets need an explicit scope
+registration; test/support paths are not inferred from a filename. Passing this
+entry check does not prove message privacy or remote delivery.
 In particular, a variable called `isLoading` or `error` is not by itself a
 violation. The rules do not prove cache bounds, complete teardown, mutation
 rollback, or every cancellation path.

@@ -1,4 +1,5 @@
 import ChatData
+import Foundation
 import OSLog
 import SwiftUI
 import WidgetKit
@@ -24,7 +25,8 @@ struct OkouStatusProvider: TimelineProvider {
       return try store.read()
     } catch {
       Self.log.error(
-        "Cannot read the widget snapshot: \(error.localizedDescription, privacy: .public)")
+        "event=widgets.snapshot.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+      )
       return nil
     }
   }

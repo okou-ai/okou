@@ -50,7 +50,8 @@ extension ChatSync {
       } catch {
         Logger(subsystem: "ai.okou.ios", category: "ChatCache")
           .error(
-            "Cannot save Project event baseline: \(error.localizedDescription, privacy: .public)")
+            "event=chat.cache.projects.baseline.save.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+          )
       }
     }
     return snapshot.projects
@@ -60,7 +61,8 @@ extension ChatSync {
     do { return try await cache?.loadProjectSnapshot() } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
         .error(
-          "Cannot read Project event baseline: \(error.localizedDescription, privacy: .public)")
+          "event=chat.cache.projects.baseline.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       return nil
     }
   }

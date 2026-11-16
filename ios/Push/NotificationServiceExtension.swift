@@ -67,7 +67,7 @@ private final class NotificationExtensionDelivery {
       do { try await session.synchronize(destination) } catch {
         Logger(subsystem: "ai.okou.ios", category: "NotificationExtension")
           .info(
-            "Notification delivered with available cache: \(error.localizedDescription, privacy: .public)"
+            "event=notifications.delivery.cached error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
           )
       }
       guard requestID == id else { return }

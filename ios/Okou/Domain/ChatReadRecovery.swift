@@ -29,7 +29,7 @@ enum ChatReadRecovery {
         let endedIn = UIApplication.shared.applicationState.rawValue
         Logger(subsystem: "ai.okou.ios", category: "ChatSync")
           .notice(
-            "Read failed: \(operation, privacy: .public), attempt \(attempt + 1), \(failure.domain, privacy: .public)/\(failure.code), app state \(startedIn)->\(endedIn)"
+            "event=chat.read.failed operation=\(operation, privacy: .public) attempt=\(attempt + 1) error_domain=\(failure.domain, privacy: .public) error_code=\(failure.code) app_state_started=\(startedIn) app_state_ended=\(endedIn)"
           )
         guard let delay = retryDelay(for: error, attempt: attempt) else { throw error }
         try await sleep(delay)

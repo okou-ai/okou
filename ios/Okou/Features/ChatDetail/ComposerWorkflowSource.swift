@@ -75,7 +75,9 @@ final class ComposerWorkflowSource {
 
   private func reportHistoryError(_ error: Error) {
     Logger(subsystem: "ai.okou.ios", category: "Composer")
-      .error("Cannot persist recent Workflows: \(error.localizedDescription, privacy: .public)")
+      .error(
+        "event=composer.workflows.recent.persist.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+      )
   }
 }
 
