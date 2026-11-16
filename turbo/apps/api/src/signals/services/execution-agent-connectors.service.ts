@@ -82,6 +82,9 @@ function executionDefinitionFromRow(
     row.oauthConfig,
   );
   const shared = {
+    ...(definition.networkBinding
+      ? { networkBinding: definition.networkBinding }
+      : {}),
     id: definition.id,
     orgId: definition.orgId,
     slug: definition.slug,
