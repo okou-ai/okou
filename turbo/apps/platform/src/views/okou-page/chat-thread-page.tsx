@@ -377,6 +377,7 @@ import {
   CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS,
   CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
   CHAT_THREAD_CONTENT_MAIN_CLASS,
+  CHAT_THREAD_CONTENT_COLUMN_CLASS,
   CHAT_THREAD_MESSAGE_LIST_CLASS,
   CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
   CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
@@ -2984,18 +2985,20 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
 
   return withChatScrollLayout(
     <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
-      <div
-        ref={scrollContentOnRef}
-        data-message-container
-        className={cn(
-          CHAT_THREAD_MESSAGE_LIST_CLASS,
-          // Preserve the mounted layout for scroll restoration while loading.
-          !showTranscript && "invisible",
-        )}
-      >
-        <ChatThreadEmptyState thread={thread} />
-        <ChatThreadRenderedEventGroups thread={thread} />
-        <ChatThreadNextRunModelNotice thread={thread} />
+      <div className={CHAT_THREAD_CONTENT_COLUMN_CLASS}>
+        <div
+          ref={scrollContentOnRef}
+          data-message-container
+          className={cn(
+            CHAT_THREAD_MESSAGE_LIST_CLASS,
+            // Preserve the mounted layout for scroll restoration while loading.
+            !showTranscript && "invisible",
+          )}
+        >
+          <ChatThreadEmptyState thread={thread} />
+          <ChatThreadRenderedEventGroups thread={thread} />
+          <ChatThreadNextRunModelNotice thread={thread} />
+        </div>
       </div>
     </main>,
   );
@@ -3443,13 +3446,15 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
       className="absolute inset-0 overflow-hidden pointer-events-none"
     >
       <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
-        <div
-          className={cn(
-            "opacity-0 animate-chat-skeleton-reveal",
-            CHAT_THREAD_MESSAGE_LIST_CLASS,
-          )}
-        >
-          <ChatSkeleton />
+        <div className={CHAT_THREAD_CONTENT_COLUMN_CLASS}>
+          <div
+            className={cn(
+              "opacity-0 animate-chat-skeleton-reveal",
+              CHAT_THREAD_MESSAGE_LIST_CLASS,
+            )}
+          >
+            <ChatSkeleton />
+          </div>
         </div>
       </main>
     </div>

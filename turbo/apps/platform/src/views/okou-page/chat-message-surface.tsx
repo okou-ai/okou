@@ -1,10 +1,13 @@
 import { cn } from "@okouai/ui";
 import type { HTMLAttributes } from "react";
 
-// Width reserves the responsive outer gutters without changing padding on
-// prose ancestors. Its content box remains the same container-query width.
+// Grid tracks reserve outer gutters without changing ancestor margins or
+// padding. The middle column owns the original content-box query width.
 export const CHAT_THREAD_CONTENT_MAIN_CLASS =
-  "items-center py-4 w-[calc(100%-2rem)] sm:w-[calc(100%-3rem)] mx-auto @container";
+  "grid grid-cols-[16px_minmax(0,1fr)_16px] sm:grid-cols-[24px_minmax(0,1fr)_24px] py-4";
+
+export const CHAT_THREAD_CONTENT_COLUMN_CLASS =
+  "col-start-2 min-w-0 @container";
 
 // One gap separates the rows of the transcript. Anything that wraps rows and
 // interrupts this flex column has to reproduce it, so the value has one home.

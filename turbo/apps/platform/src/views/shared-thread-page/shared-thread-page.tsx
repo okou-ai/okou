@@ -56,6 +56,7 @@ import {
   CHAT_THREAD_ASSISTANT_NAME_LINE_CLASS,
   CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
   CHAT_THREAD_CONTENT_MAIN_CLASS,
+  CHAT_THREAD_CONTENT_COLUMN_CLASS,
   CHAT_THREAD_MESSAGE_LIST_CLASS,
   CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
   CHAT_THREAD_NAME_LINE_ASSISTANT_MESSAGE_ROW_CLASS,
@@ -559,22 +560,24 @@ function SharedThreadTranscript({
         )}
       >
         <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
-          <div
-            data-message-container=""
-            className={CHAT_THREAD_MESSAGE_LIST_CLASS}
-          >
-            {groups.map((group) => {
-              return group.role === "user" ? (
-                <SharedUserGroup key={group.key} group={group} />
-              ) : (
-                <SharedAssistantGroup
-                  key={group.key}
-                  assistantName={assistantName}
-                  group={group}
-                  richContent={richContent}
-                />
-              );
-            })}
+          <div className={CHAT_THREAD_CONTENT_COLUMN_CLASS}>
+            <div
+              data-message-container=""
+              className={CHAT_THREAD_MESSAGE_LIST_CLASS}
+            >
+              {groups.map((group) => {
+                return group.role === "user" ? (
+                  <SharedUserGroup key={group.key} group={group} />
+                ) : (
+                  <SharedAssistantGroup
+                    key={group.key}
+                    assistantName={assistantName}
+                    group={group}
+                    richContent={richContent}
+                  />
+                );
+              })}
+            </div>
           </div>
         </main>
       </div>
