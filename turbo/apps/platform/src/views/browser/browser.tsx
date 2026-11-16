@@ -80,14 +80,18 @@ function BrowserOperationError({
   readonly className?: string;
 }) {
   const { t } = useTranslation();
-  const message = t(($) => {
-    return $.browserViewer.operationFailed;
+  const failures = occurrences.filter((occurrence): occurrence is object => {
+    return Boolean(occurrence);
   });
+  const message =
+    failures.length > 0
+      ? t(($) => {
+          return $.browserViewer.operationFailed;
+        })
+      : undefined;
   return (
     <TransientAlert
-      occurrences={occurrences.filter((occurrence): occurrence is object => {
-        return Boolean(occurrence);
-      })}
+      occurrences={failures}
       hidden={message === duplicateMessage}
       className={className}
     >
