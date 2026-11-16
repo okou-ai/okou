@@ -326,7 +326,15 @@ test("A report recommendation previews its sample pages, dismisses and attaches 
     "src",
     report.previewPages[0],
   );
-  click(control("button", "Use this template", reopened));
+  await user.click(control("button", "Document", reopened));
+  await expectDismissed(eye);
+  expect(editor).toHaveTextContent(DRAFT);
+  expect(capture.sentMessages).toHaveLength(0);
+  await user.click(eye);
+  const finalHeading = await screen.findByRole("heading", {
+    name: `Document / ${report.title}`,
+  });
+  click(control("button", "Use this template", dialogAround(finalHeading)));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(composerInlineTemplates()).toHaveLength(1);
@@ -395,6 +403,55 @@ test.each(["presentation", "document"] as const)(
     expect(capture.sentMessages).toHaveLength(0);
   },
 );
+
+test("Pending custom deletion keeps its confirmation guarded and recovers after failure", async () => {
+  const capture = mockTemplateChat();
+  const detail = mockCustomTemplate("presentation");
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(userTemplatesContract.delete, async ({ respond }) => {
+    await release.promise;
+    return respond(500, {
+      error: { code: "INTERNAL_SERVER_ERROR", message: "Delete failed" },
+    });
+  });
+  const { editor, shelf } = await openTray("Presentation");
+  const user = userEvent.setup({ delay: null });
+  const eye = await waitFor(() => {
+    return control("button", `Preview template ${detail.title}`, shelf);
+  });
+  await user.click(eye);
+  const preview = await customDetail("presentation");
+  click(control("button", "Delete", preview));
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Delete template?",
+  });
+  click(control("button", "Delete template", confirmation));
+  const deleting = await waitFor(() => {
+    return control("button", "Deleting...", confirmation);
+  });
+  expect(deleting).toBeDisabled();
+  expect(control("button", "Cancel", confirmation)).toBeDisabled();
+  await user.keyboard("{Escape}");
+  expect(confirmation).toBeInTheDocument();
+  expect(preview).toBeInTheDocument();
+  await user.click(control("button", "Close", confirmation));
+  expect(confirmation).toBeInTheDocument();
+  expect(preview).toBeInTheDocument();
+  release.resolve();
+  await within(confirmation).findByText("Couldn't delete the template.");
+  expect(control("button", "Delete template", confirmation)).toBeEnabled();
+  expect(control("button", "Cancel", confirmation)).toBeEnabled();
+  click(control("button", "Cancel", confirmation));
+  await waitFor(() => {
+    expect(confirmation).not.toBeInTheDocument();
+  });
+  expect(preview).toBeInTheDocument();
+  expect(within(shelf).getByText(detail.title)).toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  await expectDismissed(eye);
+  expect(editor).toHaveTextContent(DRAFT);
+  expect(capture.sentMessages).toHaveLength(0);
+});
 
 async function dismissCustomPresentation(
   dialog: HTMLElement,

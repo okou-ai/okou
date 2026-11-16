@@ -1,10 +1,18 @@
+import type { DocumentTemplateCategory } from "@okouai/core/document-template-items";
 import { createDocumentTemplateSignals } from "./document-template-picker.ts";
 import { command, computed, state, type Command } from "ccstate";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { onRef } from "../utils.ts";
-import { createPresentationTemplatePreviewSignals } from "./presentation-template-preview.ts";
+import {
+  createPresentationTemplatePreviewSignals,
+  type SelectTemplatePreview,
+} from "./presentation-template-preview.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
-import { deleteCustomTemplate$ as deleteCustomTemplateRecord$ } from "./custom-template-library.ts";
+import {
+  deleteCustomTemplate$ as deleteCustomTemplateRecord$,
+  openCustomTemplate$,
+} from "./custom-template-library.ts";
+import type { WorkflowComposerSignals } from "./tiptap-workflow-composer.ts";
 
 /** `category` is null until an entry point or the member names one. */
 export function resolveTemplatePickerCategory(category: string | null): string {
@@ -478,3 +486,76 @@ export function createComposerUiSignals() {
 }
 
 export type ComposerUiSignalGroups = ReturnType<typeof createComposerUiSignals>;
+
+type TemplateRecommendationPreview =
+  | {
+      readonly type: "presentation";
+      readonly selection: SelectTemplatePreview;
+    }
+  | {
+      readonly type: "website";
+      readonly templateId: string;
+    }
+  | {
+      readonly type: "document";
+      readonly templateId: string;
+      readonly category: DocumentTemplateCategory | "custom" | "all";
+    }
+  | {
+      readonly type: "custom";
+      readonly kind: "presentation";
+      readonly templateId: string;
+    }
+  | {
+      readonly type: "custom";
+      readonly kind: "document";
+      readonly templateId: string;
+      readonly category: DocumentTemplateCategory | "custom" | "all";
+    };
+
+export function createTemplateRecommendationPreviewCommand(
+  template: ComposerUiSignalGroups["template"],
+  openTemplatePicker$: WorkflowComposerSignals["openTemplatePicker$"],
+) {
+  return command(({ set }, preview: TemplateRecommendationPreview) => {
+    if (
+      preview.type === "document" ||
+      (preview.type === "custom" && preview.kind === "document")
+    ) {
+      set(template.setDocumentCategory$, preview.category);
+    }
+    const category =
+      preview.type === "presentation" ||
+      (preview.type === "custom" && preview.kind === "presentation")
+        ? "slides"
+        : preview.type === "custom"
+          ? "document"
+          : preview.type;
+    set(openTemplatePicker$, {
+      kind: "insert",
+      category,
+      directPreview: true,
+    });
+    switch (preview.type) {
+      case "presentation": {
+        set(template.openPresentationTemplate$, preview.selection);
+        break;
+      }
+      case "document": {
+        set(template.openDocumentPreview$, preview.templateId);
+        break;
+      }
+      case "website": {
+        set(template.openWebsiteTemplatePreview$, preview.templateId);
+        break;
+      }
+      case "custom": {
+        set(openCustomTemplate$, {
+          templateId: preview.templateId,
+          kind: preview.kind,
+        });
+        break;
+      }
+    }
+  });
+}

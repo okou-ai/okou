@@ -793,6 +793,7 @@ export function CustomTemplatePickerSection({
   const { t } = useTranslation();
   const catalog = useLastLoadable(customTemplateCatalog$);
   const projectPicker = useGet(projectCustomTemplatePicker$);
+  const previewOpen = useGet(openCustomTemplateKind$) !== null;
   // A menu item disappears when it opens a dialog. Restore the current type
   // instead of letting the focus fallback activate the first category.
   const returnFocus = useSet(signals.template.templatePickerInitialFocus$);
@@ -800,6 +801,12 @@ export function CustomTemplatePickerSection({
     catalog.state === "hasData"
       ? projectPicker(catalog.data, kind, query)
       : null;
+  const deleteConfirmation = (
+    <CustomTemplateDeleteConfirmSlot
+      signals={signals}
+      returnFocus={returnFocus}
+    />
+  );
   return (
     <>
       <TemplateSourceSection source="custom">
@@ -846,11 +853,10 @@ export function CustomTemplatePickerSection({
         onSelect={onSelect}
         returnFocus={returnFocus}
         onClose={onPreviewClose}
-      />
-      <CustomTemplateDeleteConfirmSlot
-        signals={signals}
-        returnFocus={returnFocus}
-      />
+      >
+        {previewOpen ? deleteConfirmation : null}
+      </CustomTemplatePreviewDialog>
+      {previewOpen ? null : deleteConfirmation}
       <CustomTemplateRenameSlot returnFocus={returnFocus} />
     </>
   );

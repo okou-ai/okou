@@ -1,6 +1,6 @@
 import { Loader2 } from "lucide-react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { LoadErrorRow } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
@@ -239,10 +239,12 @@ export function CustomTemplatePreviewDialog({
   onSelect,
   returnFocus,
   onClose,
+  children,
 }: {
   readonly onSelect: (template: UserTemplateCatalogEntry) => void;
   readonly returnFocus: (interactionType: string) => HTMLElement | null;
   readonly onClose?: () => void;
+  readonly children?: ReactNode;
 }) {
   const { t } = useTranslation();
   const openKind = useGet(openCustomTemplateKind$);
@@ -362,6 +364,7 @@ export function CustomTemplatePreviewDialog({
           </div>
         )}
       </DialogContent>
+      {children}
     </Dialog>
   );
 }

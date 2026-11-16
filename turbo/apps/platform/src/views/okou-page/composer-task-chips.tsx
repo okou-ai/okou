@@ -42,7 +42,6 @@ import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 import { ComposerTaskChipRow } from "./composer-task-chip-row.tsx";
 import { ComposerTemplatePickerButton } from "./composer-template-picker-button.tsx";
 import { ComposerTemplateSuggestion } from "./composer-template-suggestion.tsx";
-import { openCustomTemplate$ } from "../../signals/okou-page/custom-template-library.ts";
 
 /**
  * An idea is a sentence, not a label, so it gets a card rather than the pill
@@ -268,10 +267,7 @@ function ComposerTemplateShelf({
   const custom = useCustomTemplateRecommendations(signals, "illustration");
   const setMode = useSet(signals.create.setMode$);
   const insertTemplate = useSet(signals.template.insertTemplate$);
-  const openTemplates = useSet(signals.template.openTemplatePicker$);
-  const openWebsitePreview = useSet(
-    signals.template.openWebsiteTemplatePreview$,
-  );
+  const previewRecommendation = useSet(signals.template.previewRecommendation$);
   const browse = useTaskTemplateBrowse(signals, task);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
@@ -359,12 +355,10 @@ function ComposerTemplateShelf({
                   websiteTemplateId === null
                     ? undefined
                     : () => {
-                        openTemplates({
-                          kind: "insert",
-                          category: "website",
-                          directPreview: true,
+                        previewRecommendation({
+                          type: "website",
+                          templateId: websiteTemplateId,
                         });
-                        openWebsitePreview(websiteTemplateId);
                       }
                 }
                 onSelect={() => {
@@ -456,10 +450,7 @@ function ComposerDocumentTemplateRail({
 }) {
   const setMode = useSet(signals.create.setMode$);
   const selectTemplate = useSet(signals.taskChips.selectTemplate$);
-  const openTemplates = useSet(signals.template.openTemplatePicker$);
-  const openDocumentPreview = useSet(signals.template.openDocumentPreview$);
-  const setPickerCategory = useSet(signals.template.setDocumentCategory$);
-  const openCustomTemplate = useSet(openCustomTemplate$);
+  const previewRecommendation = useSet(signals.template.previewRecommendation$);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
   return (
@@ -490,15 +481,11 @@ function ComposerDocumentTemplateRail({
                       hasMorePages: template.coverHasMorePages,
                     }}
                     onPreview={() => {
-                      setPickerCategory(category ?? "all");
-                      openTemplates({
-                        kind: "insert",
-                        category: "document",
-                        directPreview: true,
-                      });
-                      openCustomTemplate({
+                      previewRecommendation({
+                        type: "custom",
                         templateId: template.id,
                         kind: "document",
+                        category: category ?? "all",
                       });
                     }}
                     onSelect={() => {
@@ -532,13 +519,11 @@ function ComposerDocumentTemplateRail({
               ratio="aspect-[4/3]"
               documentPage={{ hasMorePages: item.previewPages.length > 1 }}
               onPreview={() => {
-                setPickerCategory(category ?? "all");
-                openTemplates({
-                  kind: "insert",
-                  category: "document",
-                  directPreview: true,
+                previewRecommendation({
+                  type: "document",
+                  templateId: item.id,
+                  category: category ?? "all",
                 });
-                openDocumentPreview(item.id);
               }}
               onSelect={() => {
                 selectTemplate(toDocumentGenerationTemplate(item), {

@@ -196,10 +196,7 @@ import {
 } from "../../signals/okou-page/connector-accounts.ts";
 import type { ComposerConnectorData } from "../../signals/okou-page/connectors.ts";
 import { resolveTemplatePickerCategory } from "../../signals/okou-page/chat-composer.ts";
-import {
-  openCustomTemplate$,
-  resetCustomTemplatePicker$,
-} from "../../signals/okou-page/custom-template-library.ts";
+import { resetCustomTemplatePicker$ } from "../../signals/okou-page/custom-template-library.ts";
 import { resolveDefaultModelSelection } from "../../signals/okou-page/model-default-selection.ts";
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
 import {
@@ -3323,8 +3320,9 @@ export function ComposerPresentationRecommendations({
   const custom = useCustomTemplateRecommendations(signals, "presentation");
   const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   const openTemplates = useSet(signals.template.openTemplatePicker$);
-  const previewPresentation = usePresentationTemplatePreview(signals);
-  const openCustomTemplate = useSet(openCustomTemplate$);
+  const previewRecommendation = useSet(signals.template.previewRecommendation$);
+  const presentationSelection =
+    usePresentationTemplatePreviewSelection(signals);
   const setMode = useSet(signals.create.setMode$);
   const label = t(($) => {
     return $.chat.taskChips.presentationTemplates;
@@ -3368,12 +3366,8 @@ export function ComposerPresentationRecommendations({
                 key={template.id}
                 title={template.title}
                 onPreview={() => {
-                  openTemplates({
-                    kind: "insert",
-                    category: "slides",
-                    directPreview: true,
-                  });
-                  openCustomTemplate({
+                  previewRecommendation({
+                    type: "custom",
                     templateId: template.id,
                     kind: "presentation",
                   });
@@ -3406,12 +3400,10 @@ export function ComposerPresentationRecommendations({
                 key={item.slug}
                 title={item.title}
                 onPreview={() => {
-                  openTemplates({
-                    kind: "insert",
-                    category: "slides",
-                    directPreview: true,
+                  previewRecommendation({
+                    type: "presentation",
+                    selection: presentationSelection(item),
                   });
-                  previewPresentation(item);
                 }}
                 onSelect={() => {
                   picker.onChange(toPresentationGenerationTemplate(item));
@@ -3544,19 +3536,26 @@ function TemplatePickerDialogFrame({
   );
 }
 
-function usePresentationTemplatePreview(signals: ComposerSignals) {
-  const openDetailPreview = useSet(signals.template.openPresentationTemplate$);
+function usePresentationTemplatePreviewSelection(signals: ComposerSignals) {
   const cardThemeIdBySlug = useGet(signals.template.templateCardThemeIdBySlug$);
   return (item: PresentationTemplateItem, slideIndex = 0) => {
     const selectedTheme = findPresentationTemplateTheme(
       cardThemeIdBySlug[item.slug] ?? defaultPresentationTemplateThemeId(item),
     );
-    openDetailPreview({
+    return {
       index: Math.max(0, Math.floor(slideIndex)),
       item,
       themeCss: presentationTemplateThemeCss(selectedTheme),
       themeId: selectedTheme.id,
-    });
+    };
+  };
+}
+
+function usePresentationTemplatePreview(signals: ComposerSignals) {
+  const selection = usePresentationTemplatePreviewSelection(signals);
+  const openDetailPreview = useSet(signals.template.openPresentationTemplate$);
+  return (item: PresentationTemplateItem, slideIndex = 0) => {
+    openDetailPreview(selection(item, slideIndex));
   };
 }
 
