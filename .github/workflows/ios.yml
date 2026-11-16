@@ -327,6 +327,27 @@ jobs:
       - name: Build app and run isolated simulator tests
         if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
         run: bash ios/scripts/run-ci-tests.sh
+      - name: Repeat controlled unread schedules (temporary issue 47761 diagnostic)
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test_runs=("$RUNNER_TEMP"/okou-ios-ci/DerivedData/Build/Products/*.xctestrun)
+          test "${#test_runs[@]}" -eq 1
+          xcodebuild -xctestrun "${test_runs[0]}" \
+            -destination "$IOS_TEST_DESTINATION" \
+            -parallel-testing-enabled NO \
+            -maximum-concurrent-test-simulator-destinations 1 \
+            -collect-test-diagnostics never \
+            -only-testing:OkouTests/ChatSearchUnreadTests/testNewServerDeliveryCanBeReadAfterManualUnreadWithoutReopening \
+            -only-testing:OkouTests/ChatSearchUnreadTests/testNewServerDeliveryCanBeReadWhenIndicatorsPublishBeforeRecovery \
+            -only-testing:OkouTests/ChatSearchUnreadTests/testReadCursorRefreshAwaitsAResidentConversationRefresh \
+            -only-testing:OkouTests/ChatSearchUnreadTests/testConcurrentReadReconciliationSharesOneMarkRead \
+            -only-testing:OkouTests/ChatSearchUnreadTests/testBackgroundCancelsReadReconciliationAfterLateIndicators \
+            -only-testing:OkouTests/ChatSearchUnreadTests/testFailedAutomaticReadRequiresAnotherRefreshInsteadOfAJoinRetry \
+            -test-iterations 5 \
+            -resultBundlePath "$RUNNER_TEMP/okou-ios-ci/Unread-47761.xcresult" \
+            test-without-building
       - name: Upload Xcode startup observations
         if: always() && github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

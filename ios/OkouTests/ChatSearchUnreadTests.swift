@@ -197,9 +197,60 @@ final class ChatSearchUnreadTests: XCTestCase {
     try await assertNewDeliveryIsRead(indicatorsFirst: true, residentRefresh: true)
   }
 
-  private func assertNewDeliveryIsRead(indicatorsFirst: Bool, residentRefresh: Bool = false)
-    async throws
-  {
+  func testConcurrentReadReconciliationSharesOneMarkRead() async throws {
+    try await assertNewDeliveryIsRead(indicatorsFirst: false, completion: .shared)
+  }
+
+  func testBackgroundCancelsReadReconciliationAfterLateIndicators() async throws {
+    try await assertNewDeliveryIsRead(indicatorsFirst: false, completion: .background)
+  }
+
+  func testFailedAutomaticReadRequiresAnotherRefreshInsteadOfAJoinRetry() async throws {
+    let fixture = SearchUnreadFixture()
+    let store = fixture.workspace()
+    addTeardownBlock { await store.close().value }
+    await store.refresh()
+    store.setPhase(.active)
+    store.selectChat(SearchUnreadFixture.id(1))
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    await conversation.refresh(waitForCurrent: true)
+    let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
+    await store.setRead(thread, read: false)
+
+    let recoveryStarted = expectation(description: "Recovery waits for the newer indicators")
+    let gate = SearchResponseGate()
+    defer { gate.open() }
+    fixture.state.value.withLock {
+      $0.marker = "2026-10-19T12:01:00Z"
+      $0.failNextRead = true
+      $0.recoveryGate = gate
+      $0.recoveryStarted = { recoveryStarted.fulfill() }
+    }
+    let refresh = Task { await store.refresh([.readCursor]) }
+    addTeardownBlock {
+      refresh.cancel()
+      gate.open()
+      await refresh.value
+    }
+    await fulfillment(of: [recoveryStarted], timeout: 3)
+    await store.list.refreshIndicators()
+    gate.open()
+    await refresh.value
+    XCTAssertNotNil(conversation.readSyncError)
+    XCTAssertTrue(store.list.threads.first { $0.id == thread.id }?.isUnread == true)
+    XCTAssertEqual(fixture.state.value.withLock { $0.writes }, ["read", "unread"])
+
+    await store.refresh([.readCursor])
+    XCTAssertNil(conversation.readSyncError)
+    XCTAssertFalse(store.list.threads.first { $0.id == thread.id }?.isUnread == true)
+    XCTAssertEqual(fixture.state.value.withLock { $0.writes }, ["read", "unread", "read"])
+  }
+
+  private enum ReadCompletion: Equatable { case immediate, shared, background }
+
+  private func assertNewDeliveryIsRead(
+    indicatorsFirst: Bool, residentRefresh: Bool = false, completion: ReadCompletion = .immediate
+  ) async throws {
     let fixture = SearchUnreadFixture()
     let store = fixture.workspace()
     addTeardownBlock { await store.close().value }
@@ -216,8 +267,18 @@ final class ChatSearchUnreadTests: XCTestCase {
     let indicatorsStarted = expectation(description: "New unread indicators reached HTTP")
     let recoveryStarted =
       indicatorsFirst ? expectation(description: "Conversation recovery reached HTTP") : nil
+    let readStarted =
+      completion == .immediate ? nil : expectation(description: "New delivery mark-read reached HTTP")
+    let readCancelled =
+      completion == .background ? expectation(description: "Background cancelled mark-read HTTP") : nil
+    let readFinished =
+      completion == .background ? expectation(description: "Retired HTTP handler finished") : nil
     let gate = SearchResponseGate()
-    defer { gate.open() }
+    let readGate = SearchResponseGate()
+    defer {
+      gate.open()
+      readGate.open()
+    }
     fixture.state.value.withLock {
       $0.marker = "2026-10-19T12:01:00Z"
       $0.indicatorsStarted = { indicatorsStarted.fulfill() }
@@ -226,6 +287,12 @@ final class ChatSearchUnreadTests: XCTestCase {
         $0.recoveryStarted = { recoveryStarted?.fulfill() }
       } else {
         $0.indicatorsGate = gate
+      }
+      if completion != .immediate {
+        $0.readGate = readGate
+        $0.readStarted = { readStarted?.fulfill() }
+        $0.readCancelled = { readCancelled?.fulfill() }
+        $0.readFinished = { readFinished?.fulfill() }
       }
     }
     let resident = Task {
@@ -248,6 +315,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     addTeardownBlock {
       refresh.cancel()
       gate.open()
+      readGate.open()
       _ = await refresh.value
     }
     await fulfillment(of: [indicatorsStarted], timeout: 3)
@@ -265,8 +333,34 @@ final class ChatSearchUnreadTests: XCTestCase {
       XCTAssertEqual(fixture.state.value.withLock { $0.writes }, ["read", "unread"])
     }
     gate.open()
+    if let readStarted {
+      await fulfillment(of: [readStarted], timeout: 3)
+      if completion == .shared {
+        let shared = Task.immediate { await conversation.reconcileReadState() }
+        addTeardownBlock {
+          shared.cancel()
+          readGate.open()
+          await shared.value
+        }
+        readGate.open()
+        await shared.value
+      } else if let readCancelled, let readFinished {
+        store.setPhase(.background)
+        await fulfillment(of: [readCancelled], timeout: 3)
+        readGate.open()
+        await fulfillment(of: [readFinished], timeout: 3)
+        _ = await refresh.value
+        // Remote acceptance is not cancellation rollback. The retired response
+        // must not clear the locally confirmed unread state while backgrounded.
+        XCTAssertTrue(store.list.threads.first { $0.id == thread.id }?.isUnread == true)
+        store.setPhase(.active)
+        await store.refresh([.readCursor])
+      }
+    }
     let writesAtCompletion = await refresh.value
-    XCTAssertEqual(writesAtCompletion, ["read", "unread", "read"])
+    if completion != .background {
+      XCTAssertEqual(writesAtCompletion, ["read", "unread", "read"])
+    }
     await resident.value
     XCTAssertEqual(fixture.state.value.withLock { $0.writes }, ["read", "unread", "read"])
     XCTAssertFalse(store.list.threads.first { $0.id == thread.id }?.isUnread == true)
@@ -863,6 +957,7 @@ private final class SearchUnreadFixture: Sendable {
     var marker = SearchUnreadFixture.timestamp
     var bulkAgent: String?
     var failWrites = false
+    var failNextRead = false
     var omitThreadIndicators = false
     var dropUnreadResponse = false
     var writes: [String] = []
@@ -870,6 +965,8 @@ private final class SearchUnreadFixture: Sendable {
     var bulkReadStarted: (@Sendable () -> Void)?
     var readGate: SearchResponseGate?
     var readStarted: (@Sendable () -> Void)?
+    var readCancelled: (@Sendable () -> Void)?
+    var readFinished: (@Sendable () -> Void)?
     var indicatorsGate: SearchResponseGate?
     var indicatorsStarted: (@Sendable () -> Void)?
     var recoveryGate: SearchResponseGate?
@@ -959,16 +1056,30 @@ private final class SearchUnreadFixture: Sendable {
         let number = Int(id.suffix(12)) ?? 0
         if path.hasSuffix("/mark-read") || path.hasSuffix("/mark-unread") {
           let read = path.hasSuffix("/mark-read")
-          let gate = state.value.withLock { value -> SearchResponseGate? in
-            guard read else { return nil }
-            let gate = value.readGate
-            value.readGate = nil
-            value.readStarted?()
-            value.readStarted = nil
-            return gate
+          let (gate, cancelled, finished) = state.value.withLock { value in
+            let gate = read ? value.readGate : nil
+            let cancelled = read ? value.readCancelled : nil
+            let finished = read ? value.readFinished : nil
+            if read {
+              value.readGate = nil
+              value.readCancelled = nil
+              value.readFinished = nil
+              value.readStarted?()
+              value.readStarted = nil
+            }
+            return (gate, cancelled, finished)
           }
-          if let gate { await gate.wait() }
+          defer { finished?() }
+          if let gate {
+            await withTaskCancellationHandler {
+              await gate.wait()
+            } onCancel: { cancelled?() }
+          }
           let response = state.value.withLock { value in
+            if read && value.failNextRead {
+              value.failNextRead = false
+              return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Try later\"}}")
+            }
             if value.failWrites {
               return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Try later\"}}")
             }
