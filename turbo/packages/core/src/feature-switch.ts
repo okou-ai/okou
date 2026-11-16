@@ -67,14 +67,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Internal cloud-controlled iOS device automation.",
     enabled: false,
   },
-  [FeatureSwitchKey.SshChatApproval]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Remote host chat approval",
-    description:
-      "Review SSH and VNC host access in chat and continue after approval.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.CustomConnectorCloudflareAccess]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Custom connector Cloudflare Access",
