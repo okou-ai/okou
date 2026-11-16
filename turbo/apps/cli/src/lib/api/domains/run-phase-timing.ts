@@ -1,0 +1,56 @@
+import {
+  runPhaseMarkResultSchema,
+  runPhaseTimingContract,
+  type RunPhaseMark,
+  type RunPhaseMarkResult,
+} from "@okouai/api-contracts/contracts/run-phase-timing";
+import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
+import { getClientConfig } from "../core/client-factory";
+import { decodeSandboxTokenPayload } from "../sandbox-token";
+
+type PhaseMarkOutcome =
+  | RunPhaseMarkResult
+  | {
+      readonly schemaVersion: 1;
+      readonly status: "unavailable";
+      readonly reason:
+        | "missing-capability"
+        | "http-error"
+        | "invalid-response"
+        | "timeout-commit-unknown"
+        | "transport-error";
+    };
+
+/** Best-effort telemetry: one bounded HTTP attempt and no automatic retry. */
+export async function markRunPhase(
+  body: RunPhaseMark,
+): Promise<PhaseMarkOutcome> {
+  if (!decodeSandboxTokenPayload()?.capabilities.includes("run-timing:write")) {
+    return {
+      schemaVersion: 1,
+      status: "unavailable",
+      reason: "missing-capability",
+    };
+  }
+  const signal = AbortSignal.timeout(500);
+  try {
+    const client = initClient(runPhaseTimingContract, await getClientConfig());
+    const result = await client.mark({
+      headers: {},
+      body,
+      fetchOptions: { signal },
+    });
+    if (result.status !== 200)
+      return { schemaVersion: 1, status: "unavailable", reason: "http-error" };
+    const parsed = runPhaseMarkResultSchema.safeParse(result.body);
+    return parsed.success
+      ? parsed.data
+      : { schemaVersion: 1, status: "unavailable", reason: "invalid-response" };
+  } catch {
+    return {
+      schemaVersion: 1,
+      status: "unavailable",
+      reason: signal.aborted ? "timeout-commit-unknown" : "transport-error",
+    };
+  }
+}

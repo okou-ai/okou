@@ -4584,6 +4584,10 @@ function prepareRunnerLaunchInput(input: {
     realAgentInPreview: args.realAgentInPreview || undefined,
     apiStartTime: args.apiStartTime,
     featureFlags: {
+      [FeatureSwitchKey.ArtifactGenerationTiming]: isFeatureEnabled(
+        FeatureSwitchKey.ArtifactGenerationTiming,
+        args.featureSwitchContext,
+      ),
       [FeatureSwitchKey.SingleAgent]: isFeatureEnabled(
         FeatureSwitchKey.SingleAgent,
         args.featureSwitchContext,

@@ -598,6 +598,8 @@ import { runConnectorAccountsContract as OriginalRunConnectorAccountsContract } 
 import { runConnectorAccountsContract } from "./run-connector-accounts";
 import { runModelsMainContract as OriginalRunModelsMainContract } from "../contracts/run-models";
 import { runModelsMainContract } from "./run-models";
+import { runPhaseTimingContract as OriginalRunPhaseTimingContract } from "../contracts/run-phase-timing";
+import { runPhaseTimingContract } from "./run-phase-timing";
 import {
   runAgentEventsContract as OriginalRunAgentEventsContract,
   runContextContract as OriginalRunContextContract,
@@ -1264,6 +1266,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [remotesContract, OriginalRemotesContract],
   [runConnectorAccountsContract, OriginalRunConnectorAccountsContract],
   [runModelsMainContract, OriginalRunModelsMainContract],
+  [runPhaseTimingContract, OriginalRunPhaseTimingContract],
   [runAgentEventsContract, OriginalRunAgentEventsContract],
   [runContextContract, OriginalRunContextContract],
   [runNetworkLogsContract, OriginalRunNetworkLogsContract],

@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.ArtifactGenerationTiming]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Artifact generation phase timing",
+    description:
+      "Record research and generation boundaries for the current Run.",
+    enabled: false,
+  },
   [FeatureSwitchKey.PhoneUse]: {
     maintainer: "lancy@okou.ai",
     displayName: "Phone Use",
