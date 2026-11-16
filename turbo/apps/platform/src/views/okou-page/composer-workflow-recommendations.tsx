@@ -10,7 +10,6 @@ import {
   DialogTitle,
   Textarea,
 } from "@okouai/ui";
-import { cn } from "@okouai/ui/lib/utils";
 import { findWorkflowTemplateItem } from "@okouai/core/workflow-template-items";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import {
@@ -22,12 +21,8 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
-import {
-  ComposerRail,
-  RAIL_TILE,
-  RAIL_TILE_ART,
-  RAIL_TILE_CAPTION,
-} from "./composer-rail.tsx";
+import { ComposerRail } from "./composer-rail.tsx";
+import { TemplateCard } from "./template-card.tsx";
 import { WorkflowCover } from "./workflow-cover.tsx";
 import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
 import { WorkflowResultPreview } from "./workflow-result-preview.tsx";
@@ -82,24 +77,15 @@ export function WorkflowTile({
   readonly onSelect: () => void;
 }) {
   return (
-    <Button
-      type="button"
-      variant="quiet"
-      data-slot="workflow-recommendation-tile"
-      aria-description={description}
-      className={cn(RAIL_TILE, "w-full")}
-      onClick={onSelect}
+    <TemplateCard
+      title={title}
+      description={description}
+      slot="workflow-recommendation-tile"
+      ratio="aspect-video"
+      onSelect={onSelect}
     >
-      <span
-        className={cn(
-          "block aspect-video overflow-hidden rounded-xl border border-border bg-muted",
-          RAIL_TILE_ART,
-        )}
-      >
-        <WorkflowCover cover={cover} />
-      </span>
-      <span className={RAIL_TILE_CAPTION}>{title}</span>
-    </Button>
+      <WorkflowCover cover={cover} />
+    </TemplateCard>
   );
 }
 

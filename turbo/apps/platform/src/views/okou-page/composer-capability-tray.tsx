@@ -157,23 +157,24 @@ const CAPABILITY_TAB_INDICATOR = cn(
 );
 
 /**
- * The tray's tint is the track: the types drop the control's own recessed
- * track and keep its raised selection, so the open type is a white segment
- * lifted off the tray, its left edge on the covers' left edge. The scroller
- * needs 4px above and below for that segment's shadow, taken back with a
- * negative margin so the row keeps the 32px of its neighbours.
+ * The types are the shared segment control's trackless variant: the tray's
+ * tint is ground enough, and the open type takes the selected layer the
+ * template picker marks its open category with, so one set of types is chosen
+ * the same way in both places. The scroller keeps 4px above and below for a
+ * segment's focus ring, taken back with a negative margin so the row keeps the
+ * 32px of its neighbours.
  */
 const CAPABILITY_TYPE_TABS = cn(
-  "-my-1 h-10 min-w-0 overflow-x-auto bg-transparent px-0 py-1 [scrollbar-width:none]",
+  "-my-1 h-10 min-w-0 overflow-x-auto py-1 [scrollbar-width:none]",
   RAIL_ITEM_ENTER,
 );
 /**
- * A type switch hands the raised segment from one type to the next: the old
- * one's fill and shadow fade out as the new one's fade in, on the same timing
- * as the choices that follow it, rather than the shadow jumping across.
+ * A type switch hands the selected layer from one type to the next: the old
+ * one's fill fades out as the new one's fades in, on the same timing as the
+ * choices that follow it.
  */
 const CAPABILITY_TYPE_TAB =
-  "motion-safe:transition-[color,background-color,box-shadow] motion-safe:duration-200 motion-safe:ease-capability";
+  "motion-safe:transition-[color,background-color] motion-safe:duration-200 motion-safe:ease-capability";
 
 /**
  * Create's types and Workflow's kinds switch in the tray's own header, so a
@@ -207,6 +208,7 @@ function CapabilityTabs({
     return (
       <SegmentControl
         size="sm"
+        variant="plain"
         className={CAPABILITY_TYPE_TABS}
         aria-label={tasks.workflow}
         value={workflowKind}
@@ -231,6 +233,7 @@ function CapabilityTabs({
   return (
     <SegmentControl
       size="sm"
+      variant="plain"
       className={CAPABILITY_TYPE_TABS}
       aria-label={copy.create.title}
       value={selected}
@@ -297,8 +300,8 @@ function CapabilityViewAll({
  * they feed. Its foot runs under the composer's top edge, so the two read as
  * one surface opening upward. The tray is a very light tint of the ink rather
  * than the composer's white, so it carries no border or shadow: the white
- * composer, covers and selected type sit raised on it, and it needs no line to
- * separate it from the page. The tint is one mix, so it holds in Dark, where
+ * composer sits on it and the covers keep the picker's own hairline, so it
+ * needs no line to separate it from the page. The tint is one mix, so it holds in Dark, where
  * the ink is light.
  *
  * Its capability tabs sit on its top edge, the open one in its tint; the tray
@@ -369,8 +372,8 @@ export function CapabilityTray({
           <div className="flex min-w-0 items-center justify-between gap-3">
             {/* Keyed by capability, so moving between Create and Workflow
                 brings the other set of types in with the choices under them,
-                while a type switch keeps the control and hands its raised
-                segment over. */}
+                while a type switch keeps the control and hands its selected
+                layer over. */}
             <CapabilityTabs key={group} signals={signals} selected={selected} />
             <div className="flex shrink-0 items-center gap-1">
               <CapabilityViewAll signals={signals} selected={selected} />
@@ -419,9 +422,9 @@ export function CapabilityTray({
  *
  * The window also bleeds through the tray's side padding and puts it back
  * inside, so the overlay scrollbar sits in the tray's gutter rather than over
- * the covers. The 4px at the top is the room a cover lifts into under the
- * pointer, kept inside the clip; rows snap to their tops, and the window keeps
- * its scroll to itself at either end.
+ * the covers. The 4px at the top is the room a card's focus ring needs, kept
+ * inside the clip; rows snap to their tops, and the window keeps its scroll to
+ * itself at either end.
  */
 function CapabilityTrayBody({ children }: { readonly children: ReactNode }) {
   return (
