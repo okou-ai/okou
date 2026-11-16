@@ -105,7 +105,7 @@ describe("Pi failed native continuation", () => {
       });
       expect(retained).toMatchObject({
         status: "failed",
-        error: "Codex request failed",
+        error: "Oops, something went wrong. Please try again later.",
         result: { framework: "pi", frameworkSessionId: first.threadId },
       });
       await own(() => {
