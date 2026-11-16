@@ -1,5 +1,7 @@
 use super::*;
 
+mod raw_json;
+
 #[test]
 fn complete_publication_preserves_canonical_execution_inputs() {
     let run_id: RunId = RUNNER_EXECUTION_CONTEXT_FIXTURE_RUN_ID.parse().unwrap();

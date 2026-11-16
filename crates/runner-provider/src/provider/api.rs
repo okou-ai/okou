@@ -27,7 +27,7 @@ use api_contracts::generated::{
 };
 pub use execution_inputs::decode_execution_publication;
 use reqwest::{Response, StatusCode};
-use response_decode::{ApiDecodePath, decode_api_json, decode_api_json_bytes};
+use response_decode::{decode_api_json, decode_api_json_bytes};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 use runner_types::types::{
