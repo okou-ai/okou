@@ -210,6 +210,17 @@ describe("chat-window CDP proxy protocol", () => {
     );
   });
 
+  it("retires the transport when native peer cleanup fails without closing browser windows", async () => {
+    const peer = await client(proxy.endpoint);
+    clients.push(peer);
+    await peer.request("Target.getTargets");
+    provider.rejectNextDetach();
+    peer.close();
+    await Promise.all([connection.closed, peer.closed, proxy.closed]);
+    expect(provider.hasWindow(0)).toBe(true);
+    expect(provider.hasWindow(1)).toBe(true);
+  });
+
   it("filters native page and unattributed iframe discovery while preserving result fields and global workers", async () => {
     const result = await connection.request("Target.getTargets");
     expect(result.extra).toBe("native-result-field");

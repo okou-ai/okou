@@ -29,6 +29,10 @@ interface PeerRequest {
   readonly method: string;
   readonly sessionId: string | undefined;
 }
+interface DetachRequest {
+  readonly kind: "detach";
+  readonly timer: ReturnType<typeof setTimeout>;
+}
 
 /** A peer owns a browser session, never the shared provider connection. */
 export class PeerWire {
@@ -94,7 +98,10 @@ export class PeerWire {
 /** One Guest-owned provider socket; logical peers retain independent CDP roots. */
 export class ControlWire implements CdpTransport {
   private nextId = 0;
-  private readonly pending = new Map<number, ControlRequest | PeerRequest>();
+  private readonly pending = new Map<
+    number,
+    ControlRequest | PeerRequest | DetachRequest
+  >();
   private readonly peers = new Set<PeerWire>();
   private readonly sessions = new Map<
     string,
@@ -130,7 +137,11 @@ export class ControlWire implements CdpTransport {
     const entry = this.pending.get(id);
     if (!entry) return;
     this.pending.delete(id);
-    if (entry.kind === "control") {
+    if (entry.kind === "detach") {
+      clearTimeout(entry.timer);
+      // An unconfirmed release can leave native selectors pausing future pages.
+      if (record(value.error)) this.close();
+    } else if (entry.kind === "control") {
       clearTimeout(entry.timer);
       if (entry.expired) {
         if (record(value.result) && typeof value.result.sessionId === "string")
@@ -191,6 +202,7 @@ export class ControlWire implements CdpTransport {
     ) {
       const detached = this.sessions.get(params.sessionId);
       if (detached && params.sessionId === detached.peer.root) {
+        this.forget(params.sessionId);
         detached.peer.close();
         return;
       }
@@ -327,24 +339,34 @@ export class ControlWire implements CdpTransport {
 
   release(peer: PeerWire): void {
     if (!this.peers.delete(peer)) return;
+    const attached = this.sessions.has(peer.root);
     for (const [id, request] of this.pending)
       if (request.kind === "peer" && request.peer === peer)
         this.pending.delete(id);
     for (const [id, owner] of this.sessions)
       if (owner.peer === peer) this.sessions.delete(id);
-    this.detach(peer.root);
+    if (attached) this.detach(peer.root);
   }
 
   private detach(sessionId: string, parent?: string): void {
-    if (!this.closed && this.socket.readyState === WebSocket.OPEN)
+    if (this.closed || this.socket.readyState !== WebSocket.OPEN) return;
+    const id = ++this.nextId;
+    const timer = setTimeout(() => {
+      this.close();
+    }, 15_000);
+    this.pending.set(id, { kind: "detach", timer });
+    try {
       this.socket.send(
         JSON.stringify({
-          id: ++this.nextId,
+          id,
           method: "Target.detachFromTarget",
           params: { sessionId },
           sessionId: parent,
         }),
       );
+    } catch {
+      this.close();
+    }
   }
 
   private forget(sessionId: string): void {
@@ -375,8 +397,8 @@ export class ControlWire implements CdpTransport {
     this.releaseOwner?.();
     this.releaseOwner = undefined;
     for (const entry of this.pending.values()) {
+      if (entry.kind !== "peer") clearTimeout(entry.timer);
       if (entry.kind === "control") {
-        clearTimeout(entry.timer);
         entry.reject(new Error("Browser control connection closed"));
       }
     }
