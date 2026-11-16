@@ -196,6 +196,9 @@ export async function browserCdpProvider() {
       url: target.url,
       title: "private-title",
       browserContextId: "default",
+      attached: [...connections].some((connection) => {
+        return [...connection.sessions.values()].includes(target.id);
+      }),
       ...(target.parent ? { parentId: target.parent } : {}),
     };
   };

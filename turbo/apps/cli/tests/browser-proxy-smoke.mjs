@@ -55,6 +55,7 @@ async function traceRelay(endpoint) {
   await once(listener, "listening");
   const pairs = new Set();
   const attachments = [];
+  const observers = new Set();
   let peakConnections = 0;
   let totalConnections = 0;
   listener.on("connection", (client) => {
@@ -76,6 +77,8 @@ async function traceRelay(endpoint) {
       const event = JSON.parse(data);
       if (event.method === "Target.attachedToTarget")
         attachments.push(event.params);
+      if (typeof event.method === "string")
+        for (const observer of observers) observer(event);
       if (client.readyState === client.OPEN) client.send(data);
     });
     upstream.addEventListener("error", () => {
@@ -95,6 +98,12 @@ async function traceRelay(endpoint) {
   const relay = {
     endpoint: `ws://127.0.0.1:${listener.address().port}/devtools/browser`,
     attachments,
+    onEvent(observer) {
+      observers.add(observer);
+      return () => {
+        observers.delete(observer);
+      };
+    },
     get connections() {
       return {
         active: pairs.size,
@@ -103,6 +112,7 @@ async function traceRelay(endpoint) {
       };
     },
     async close() {
+      observers.clear();
       for (const { client, upstream } of pairs) {
         client.terminate();
         upstream.close();
@@ -315,6 +325,51 @@ try {
     await direct.request("Browser.getWindowForTarget", { targetId: b })
   ).windowId;
   assert.notEqual(winA, winB);
+  // An empty outer session ID is a logical root, never the shared physical root.
+  const rootRelay = await traceRelay(endpoint);
+  const rootProxy = await proxy(rootRelay.endpoint, runtimeId, winA);
+  const keeper = await wire(rootProxy.endpoint);
+  await keeper.request("Target.getTargets");
+  assert.equal(
+    (await direct.request("Target.getTargetInfo", { targetId: a })).targetInfo
+      .attached,
+    false,
+  );
+  const emptyRoot = await wire(rootProxy.endpoint);
+  await emptyRoot.request(
+    "Target.attachToTarget",
+    { targetId: a, flatten: true },
+    "",
+  );
+  assert.equal(
+    (await direct.request("Target.getTargetInfo", { targetId: a })).targetInfo
+      .attached,
+    true,
+  );
+  await observe(
+    rootRelay,
+    (event) => {
+      return (
+        event.method === "Target.detachedFromTarget" &&
+        event.sessionId === undefined
+      );
+    },
+    async () => {
+      emptyRoot.close();
+    },
+  );
+  assert.equal(
+    (await direct.request("Target.getTargetInfo", { targetId: a })).targetInfo
+      .attached,
+    false,
+  );
+  assert.ok(
+    (await pages(keeper)).some((page) => {
+      return page.targetId === a;
+    }),
+  );
+  assert.deepEqual(rootRelay.connections, { active: 1, peak: 1, total: 1 });
+  keeper.close();
   const proxyA = await proxy(endpoint, runtimeId, winA);
   const proxyB = await proxy(endpoint, runtimeId, winB);
   const scopedA = await wire(proxyA.endpoint);
@@ -1472,6 +1527,7 @@ try {
         nativeRootDestructionPreservesOtherSessions: true,
         noForeignNativeDebuggerAttachment: true,
         sharedProviderConnections: relay.connections,
+        emptyRootAttachmentReleased: true,
         oopifParentage: true,
         agentBrowser: true,
         guestTaskAdmission: options["guest-task"],

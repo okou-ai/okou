@@ -607,6 +607,11 @@ export class ProxyPeer {
     raw: string,
     inherited?: string,
   ): Promise<void> {
+    // CDP's empty session ID denotes the current root, including nested messages.
+    if (message.sessionId === "") {
+      message = { ...message, sessionId: undefined };
+      raw = JSON.stringify(message);
+    }
     const channel =
       typeof message.sessionId === "string" ? message.sessionId : inherited;
     const params = record(message.params) ? message.params : {};

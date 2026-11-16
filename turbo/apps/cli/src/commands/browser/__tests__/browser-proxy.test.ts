@@ -178,6 +178,43 @@ describe("chat-window CDP proxy protocol", () => {
     }
   });
 
+  it.each([
+    { root: "default", sessionId: undefined },
+    { root: "empty", sessionId: "" },
+  ])(
+    "releases native attachments after a peer closes ($root root)",
+    async ({ sessionId }) => {
+      const observer = await client(provider.endpoint);
+      clients.push(observer);
+      await expect(
+        observer.request("Target.getTargetInfo", { targetId: "A" }),
+      ).resolves.toMatchObject({ targetInfo: { attached: false } });
+      const peer = await client(proxy.endpoint);
+      clients.push(peer);
+      await peer.request(
+        "Target.attachToTarget",
+        { targetId: "A", flatten: true },
+        sessionId,
+      );
+      await expect(
+        observer.request("Target.getTargetInfo", { targetId: "A" }),
+      ).resolves.toMatchObject({ targetInfo: { attached: true } });
+      const release = provider.holdReply("Target.detachFromTarget", "BROWSER");
+      try {
+        peer.close();
+        await Promise.all([peer.closed, release.observed]);
+        await expect(
+          observer.request("Target.getTargetInfo", { targetId: "A" }),
+        ).resolves.toMatchObject({ targetInfo: { attached: false } });
+        await expect(
+          connection.request("Future.echo", { stillUsable: true }),
+        ).resolves.toStrictEqual({ opaque: { stillUsable: true } });
+      } finally {
+        release.resume();
+      }
+    },
+  );
+
   it.each(["connected", "connecting"])(
     "ends a %s peer on transport loss during a native close and preserves the window for a new proxy",
     async (state) => {
@@ -516,32 +553,36 @@ describe("chat-window CDP proxy protocol", () => {
     });
   });
 
-  it("encodes legacy nested sessions while preserving nested command IDs", async () => {
-    const { sessionId } = await connection.request("Target.attachToTarget", {
-      targetId: "A",
-      flatten: false,
-    });
-    const reply = connection.event((message) => {
-      return (
-        message.method === "Target.receivedMessageFromTarget" &&
-        message.params?.sessionId === sessionId
-      );
-    });
-    expect(
-      await connection.request("Target.sendMessageToTarget", {
-        sessionId,
-        message: JSON.stringify({
-          id: 771,
-          method: "Future.echo",
-          params: { targetId: "opaque" },
+  it.each([undefined, ""])(
+    "encodes legacy nested sessions while preserving nested command IDs (inner root=%j)",
+    async (innerRoot) => {
+      const { sessionId } = await connection.request("Target.attachToTarget", {
+        targetId: "A",
+        flatten: false,
+      });
+      const reply = connection.event((message) => {
+        return (
+          message.method === "Target.receivedMessageFromTarget" &&
+          message.params?.sessionId === sessionId
+        );
+      });
+      expect(
+        await connection.request("Target.sendMessageToTarget", {
+          sessionId,
+          message: JSON.stringify({
+            id: 771,
+            sessionId: innerRoot,
+            method: "Future.echo",
+            params: { targetId: "opaque" },
+          }),
         }),
-      }),
-    ).toStrictEqual({});
-    expect(JSON.parse(String((await reply).params?.message))).toStrictEqual({
-      id: 771,
-      result: { opaque: { targetId: "opaque" } },
-    });
-  });
+      ).toStrictEqual({});
+      expect(JSON.parse(String((await reply).params?.message))).toStrictEqual({
+        id: 771,
+        result: { opaque: { targetId: "opaque" } },
+      });
+    },
+  );
 
   it("keeps browser attachment non-recursive and admits page-level iframe sessions", async () => {
     const roots: unknown[] = [];
