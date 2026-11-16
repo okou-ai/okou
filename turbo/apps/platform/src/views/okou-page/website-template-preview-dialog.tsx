@@ -103,8 +103,10 @@ function WebsiteTemplatePreviewDialog({
 
 export function WebsiteTemplatePreviewDialogSlot({
   signals,
+  onClose,
 }: {
   signals: ComposerSignals;
+  readonly onClose?: () => void;
 }) {
   const previewId = useGet(signals.template.websiteTemplatePreviewId$);
   const open = useGet(signals.template.websiteTemplatePreviewOpen$);
@@ -127,6 +129,7 @@ export function WebsiteTemplatePreviewDialogSlot({
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
           closePreview();
+          onClose?.();
         }
       }}
       onOpenChangeComplete={(nextOpen) => {

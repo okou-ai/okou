@@ -3567,7 +3567,10 @@ function TemplatePickerDialogFrame({
             signals={signals}
           />
         ) : null}
-        <WebsiteTemplatePreviewDialogSlot signals={signals} />
+        <WebsiteTemplatePreviewDialogSlot
+          signals={signals}
+          onClose={directPreview ? onClose : undefined}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -3633,6 +3636,9 @@ function TemplatePickerDialog({
     signals.template.setIllustrationVariantIndex$,
   );
   const closeDocumentPreview = useSet(signals.template.closeDocumentPreview$);
+  const completeWebsitePreviewClose = useSet(
+    signals.template.completeWebsiteTemplatePreviewClose$,
+  );
   // A persona pill filters the grid, ideation-gallery style.
   // resolveWorkflowCatalog() keeps that logic out of this component to stay
   // under the complexity budget.
@@ -3661,6 +3667,7 @@ function TemplatePickerDialog({
   const completeTemplatePickerClose = () => {
     clearPresentationPreviews();
     closeDocumentPreview();
+    completeWebsitePreviewClose();
     resetCustomTemplatePicker();
     setPresentationGridScrollTop(0);
     onCloseComplete();

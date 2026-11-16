@@ -284,6 +284,10 @@ function ComposerTemplateShelf({
   const custom = useCustomTemplateRecommendations(signals, "illustration");
   const setMode = useSet(signals.create.setMode$);
   const insertTemplate = useSet(signals.template.insertTemplate$);
+  const openTemplates = useSet(signals.template.openTemplatePicker$);
+  const openWebsitePreview = useSet(
+    signals.template.openWebsiteTemplatePreview$,
+  );
   const browse = useTaskTemplateBrowse(signals, task);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
@@ -358,12 +362,28 @@ function ComposerTemplateShelf({
             );
           }),
           ...previews.map((preview) => {
+            const websiteTemplateId =
+              preview.template.type === "website"
+                ? preview.template.selection.websiteTemplateId
+                : null;
             return (
               <ComposerTemplateCover
                 key={preview.slug}
                 title={preview.title}
                 coverUrl={preview.coverUrl}
                 ratio={ratio}
+                onPreview={
+                  websiteTemplateId === null
+                    ? undefined
+                    : () => {
+                        openTemplates({
+                          kind: "insert",
+                          category: "website",
+                          directPreview: true,
+                        });
+                        openWebsitePreview(websiteTemplateId);
+                      }
+                }
                 onSelect={() => {
                   insertTemplate(preview.template, preview.attachment);
                   detach(saveDraft(pageSignal), Reason.DomCallback);
