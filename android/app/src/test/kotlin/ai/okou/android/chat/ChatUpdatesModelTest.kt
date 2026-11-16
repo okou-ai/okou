@@ -6,6 +6,7 @@ import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -51,7 +52,9 @@ class ChatUpdatesModelTest {
         val service =
             object : RealtimeService {
                 override suspend fun observeRealtime(
-                    observe: suspend (RealtimeSnapshot) -> Unit
+                    target: StateFlow<RunOutputTarget?>,
+                    output: suspend (RunOutputTarget, RunOutputSignal) -> Unit,
+                    observe: suspend (RealtimeSnapshot) -> Unit,
                 ): Nothing {
                     observers += observe
                     try {
@@ -98,7 +101,9 @@ class ChatUpdatesModelTest {
             ChatUpdatesModel(
                 object : RealtimeService {
                     override suspend fun observeRealtime(
-                        observe: suspend (RealtimeSnapshot) -> Unit
+                        target: StateFlow<RunOutputTarget?>,
+                        output: suspend (RunOutputTarget, RunOutputSignal) -> Unit,
+                        observe: suspend (RealtimeSnapshot) -> Unit,
                     ): Nothing = throw ApiFailure.Unauthenticated()
                 },
                 backgroundScope,

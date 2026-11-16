@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="output_live">Risposta in tempo reale</string>
+    <string name="output_waiting">In attesa della risposta in tempo reale</string>
+    <string name="output_catching_up">Aggiornamento dei messaggi salvati. Il testo ricevuto viene conservato.</string>
     <string name="settings">Impostazioni</string>
     <string name="back">Indietro</string>
     <string name="appearance">Aspetto</string>

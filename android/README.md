@@ -104,8 +104,8 @@ or truncated data never publishes a partial checkpoint. Projection preserves
 revocation/rejection and queued/running/stopped/failure facts. CommonMark 0.24.0
 renders selectable native text/code; references and unsupported structured parts
 remain explicit with their original JSON. HTML remains literal text, and reading
-does not automatically download attachments or open links. Live updates, sending
-and interactive viewers remain later work.
+does not automatically download attachments or open links. Interactive viewers
+remain later work.
 
 An authorized, resumed, visible conversation marks read only after successful
 network confirmation and display. This calls the existing server mark-read POST
@@ -215,6 +215,16 @@ failed authentication. `RealtimeCatchUpTest` keeps canonical history held while
 list changes and status failures remain independent. `NativeRealtimeTest` covers
 the real native route's connecting first display, cross-client confirmed changes,
 disconnect/reconnect and foreground restoration while retaining a typed draft.
+The same foreground SDK connection carries the visible conversation's confirmed active-run
+output channel. `RunOutputModelTest` covers Web-compatible transient output, ownership,
+retention and persisted-ID replacement; real-SDK protocol tests cover decoding and run-channel
+cleanup. The native realtime journey displays streamed text, preserves it through a gap and
+reconnect, then replaces it with canonical saved text while retaining the draft. Chunks never
+enter the durable cache. Chunk zero starts a block, later payloads append in arrival order,
+and a missing first chunk waits for canonical history. Cached active runs can subscribe before
+HTTP catch-up; reconnects and thread navigation preserve received blocks. Native output adds no
+message, character or callback-queue limits that would discard data Web accepts. Persistence
+reconciles matching IDs, and the workspace owner releases remaining transient text on close.
 Its external SDK observations are controlled; this is not provider-live evidence.
 
 Meaningful drafts and pending text operations live in `noBackupFilesDir/chat-input`,

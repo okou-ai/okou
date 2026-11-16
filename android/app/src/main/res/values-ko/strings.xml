@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="output_live">실시간 응답</string>
+    <string name="output_waiting">실시간 응답을 기다리는 중</string>
+    <string name="output_catching_up">저장된 메시지를 불러오는 중입니다. 받은 텍스트는 유지됩니다.</string>
     <string name="settings">설정</string>
     <string name="back">뒤로</string>
     <string name="appearance">화면 모드</string>
