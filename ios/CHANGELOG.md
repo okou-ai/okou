@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.45.3](https://github.com/okou-ai/okou/compare/ios-v0.45.2...ios-v0.45.3) (2026-11-16)
+
+
+### Bug Fixes
+
+* **ios:** standardize native diagnostic logging ([#47892](https://github.com/okou-ai/okou/issues/47892)) ([edf71fc](https://github.com/okou-ai/okou/commit/edf71fc2a86ab1f02a4ff9d3852af457ad03bfbf))
+
+
+### CI
+
+* **ios:** retain simulator selection failure evidence ([#47897](https://github.com/okou-ai/okou/issues/47897)) ([cf93b96](https://github.com/okou-ai/okou/commit/cf93b96f94c32ce6d04880087d81c864dd49c5d2))
+
 ## [0.45.2](https://github.com/okou-ai/okou/compare/ios-v0.45.1...ios-v0.45.2) (2026-11-16)
 
 
