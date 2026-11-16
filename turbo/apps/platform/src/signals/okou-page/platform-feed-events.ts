@@ -3,6 +3,7 @@ import type { PlatformEvent } from "@okouai/api-contracts/contracts/feed";
 import { feedContract } from "@okouai/api-contracts/client/feed";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import { createForYouReadRef } from "./for-you-sources.ts";
 
 export function createPlatformEventEntry(
   item: PlatformEvent,
@@ -30,5 +31,10 @@ export function createPlatformEventEntry(
       ];
     });
   });
-  return { item, dismissed$, dismiss$ };
+  return {
+    item,
+    dismissed$,
+    dismiss$,
+    readOnRef$: createForYouReadRef(item.id),
+  };
 }

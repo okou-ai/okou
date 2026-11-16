@@ -8,6 +8,7 @@ import {
   type Suggestion,
   type SuggestionOption,
   type PlatformEvent,
+  type FeedSources,
 } from "@okouai/api-contracts/contracts/feed";
 import {
   chatEventsContract,
@@ -160,6 +161,34 @@ function notifySuggestionsChanged(): void {
 }
 function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
   let items = initial;
+  let sources: FeedSources = {
+    suggestions: true,
+    whatsNew: true,
+    offers: true,
+  };
+  const read = new Set<string>();
+  context.mocks.api(feedContract.sources, ({ respond }) => {
+    return respond(200, sources);
+  });
+  context.mocks.api(feedContract.updateSources, ({ body, respond }) => {
+    sources = { ...sources, ...body };
+    notifySuggestionsChanged();
+    return respond(200, sources);
+  });
+  context.mocks.api(feedContract.summary, ({ respond }) => {
+    return respond(200, {
+      hasUnread:
+        sources.suggestions &&
+        items.some((item) => {
+          return !read.has(item.id);
+        }),
+    });
+  });
+  context.mocks.api(feedContract.markRead, ({ params, respond }) => {
+    read.add(params.id);
+    notifySuggestionsChanged();
+    return respond(200, { readAt: nowDate().toISOString() });
+  });
   const retired = new Map<string, Suggestion>();
   const consumed: string[] = [];
   const selections: {
@@ -1514,17 +1543,15 @@ test("Disabling Suggestions returns a direct For you link to the regular homepag
   expect(pathname()).toBe(homePath);
 });
 
-test("For you handles a suggestion and a platform event in the same deck", async () => {
-  const suggestion = makeSuggestion();
-  const pool = mockPool([suggestion]);
-  let dismissed = false;
-  const event: PlatformEvent = {
+function makePlatformEvent(): PlatformEvent {
+  const timestamp = nowDate().toISOString();
+  return {
     id: "11111111-1111-4111-8111-111111111111",
     type: "event",
     sourceType: "platform-event",
     priority: 0,
-    createdAt: suggestion.createdAt,
-    updatedAt: suggestion.updatedAt,
+    createdAt: timestamp,
+    updatedAt: timestamp,
     expiresAt: null,
     state: { status: "active" },
     content: {
@@ -1533,11 +1560,18 @@ test("For you handles a suggestion and a platform event in the same deck", async
       automationId: "e0000000-0000-4000-a000-000000000201",
       workspaceId: "org_example",
       automationName: "Daily work summary",
-      disabledAt: suggestion.createdAt,
+      disabledAt: timestamp,
       consecutiveFailures: 3,
       recoveryScheduled: false,
     },
   };
+}
+
+test("For you handles a suggestion and a platform event in the same deck", async () => {
+  const suggestion = makeSuggestion();
+  const pool = mockPool([suggestion]);
+  let dismissed = false;
+  const event = makePlatformEvent();
   context.mocks.api(feedContract.list, ({ respond }) => {
     return respond(200, {
       items: [
@@ -1560,4 +1594,214 @@ test("For you handles a suggestion and a platform event in the same deck", async
   await screen.findByRole("heading", { name: "All caught up" });
   expect(pool.consumed).toStrictEqual([suggestion.id]);
   expect(dismissed).toBeTruthy();
+});
+
+const sourceFeatures = {
+  ...features,
+  [FeatureSwitchKey.ForYouSources]: true,
+} as const;
+
+test("A hidden For you page leaves its card unread until the member sees it", async () => {
+  mockPool();
+  const visibility = context.mocks.browser.visibilityState("hidden");
+  await setupPage({
+    context,
+    path: suggestionPath,
+    featureSwitches: sourceFeatures,
+  });
+  await activeForYouCard("Review the pending decision");
+  click(link("/agents"));
+  await screen.findByRole("heading", { name: "Agents" });
+  await within(link(suggestionPath)).findByText("Unread");
+  click(link(suggestionPath));
+  await activeForYouCard("Review the pending decision");
+  visibility.changeTo("visible");
+  await waitFor(() => {
+    return expect(
+      within(link(suggestionPath)).queryByText("Unread"),
+    ).not.toBeInTheDocument();
+  });
+  expect(screen.getByText("1 to go")).toBeInTheDocument();
+});
+
+test("A failed For you source change keeps the saved choice and allows an explicit retry", async () => {
+  mockPool(numberedSuggestions(2));
+  let enabled = true;
+  let failed = false;
+  context.mocks.api(feedContract.sources, ({ respond }) => {
+    return respond(200, {
+      suggestions: enabled,
+      whatsNew: true,
+      offers: true,
+    });
+  });
+  context.mocks.api(feedContract.updateSources, ({ body, respond }) => {
+    if (!failed) {
+      failed = true;
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Source preference could not be saved",
+        },
+      });
+    }
+    enabled = body.suggestions ?? enabled;
+    return respond(200, { suggestions: enabled, whatsNew: true, offers: true });
+  });
+  await setupPage({
+    context,
+    path: suggestionPath,
+    featureSwitches: sourceFeatures,
+  });
+  await activeForYouCard("Suggested action 1");
+  click(button("For you sources"));
+  const dialog = await screen.findByRole("dialog", { name: "For you sources" });
+  const toggle = await within(dialog).findByRole("switch", {
+    name: "Suggestions",
+  });
+  click(toggle);
+  await screen.findByText("Source preference could not be saved");
+  expect(toggle).toHaveAttribute("aria-checked", "true");
+  await waitFor(() => {
+    return expect(toggle).not.toHaveAttribute("aria-disabled", "true");
+  });
+  click(toggle);
+  await waitFor(() => {
+    return expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+});
+
+test("For you marks only displayed cards as read and new deliveries restore its unread dot", async () => {
+  const items = numberedSuggestions(4);
+  const pool = mockPool(items.slice(0, 3));
+  await setupPage({ context, path: homePath, featureSwitches: sourceFeatures });
+  await within(link(suggestionPath)).findByText("Unread");
+  click(link(suggestionPath));
+  await activeForYouCard("Suggested action 1");
+  click(link(`/for-you?suggestion=${items[1].id}`));
+  await activeForYouCard("Suggested action 2");
+  expect(within(link(suggestionPath)).getByText("Unread")).toBeInTheDocument();
+  click(link(`/for-you?suggestion=${items[2].id}`));
+  await activeForYouCard("Suggested action 3");
+  await waitFor(() => {
+    expect(
+      within(link(suggestionPath)).queryByText("Unread"),
+    ).not.toBeInTheDocument();
+  });
+  expect(screen.getByText("3 to go")).toBeInTheDocument();
+  expect(pool.consumed).toStrictEqual([]);
+  click(link("/agents"));
+  await screen.findByRole("heading", { name: "Agents" });
+  click(link(suggestionPath));
+  await activeForYouCard("Suggested action 1");
+  expect(
+    within(link(suggestionPath)).queryByText("Unread"),
+  ).not.toBeInTheDocument();
+  pool.publish(items[3]);
+  notifySuggestionsChanged();
+  await within(link(suggestionPath)).findByText("Unread");
+});
+
+test("For you source choices persist without removing delivered cards and only enabled sources alert", async () => {
+  mockPool(numberedSuggestions(3));
+  await setupPage({
+    context,
+    path: suggestionPath,
+    featureSwitches: sourceFeatures,
+  });
+  await activeForYouCard("Suggested action 1");
+  let row = link(suggestionPath);
+  await within(row).findByText("Unread");
+  click(button("For you sources"));
+  const dialog = await screen.findByRole("dialog", { name: "For you sources" });
+  const suggestions = await within(dialog).findByRole("switch", {
+    name: "Suggestions",
+  });
+  await waitFor(() => {
+    return expect(suggestions).not.toHaveAttribute("aria-disabled", "true");
+  });
+  click(suggestions);
+  await waitFor(() => {
+    return expect(suggestions).toHaveAttribute("aria-checked", "false");
+  });
+  await waitFor(() => {
+    return expect(within(row).queryByText("Unread")).not.toBeInTheDocument();
+  });
+  await waitFor(() => {
+    return expect(suggestions).not.toHaveAttribute("aria-disabled", "true");
+  });
+  click(within(dialog).getByRole("switch", { name: "Offers" }));
+  await waitFor(() => {
+    return expect(
+      within(dialog).getByRole("switch", { name: "Offers" }),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+  await waitFor(() => {
+    return expect(suggestions).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(within(dialog).getByText("Always on")).toBeInTheDocument();
+  click(button("Close", "button", dialog));
+  await activeForYouCard("Suggested action 1");
+  click(link("/agents"));
+  await screen.findByRole("heading", { name: "Agents" });
+  click(link(suggestionPath));
+  await activeForYouCard("Suggested action 1");
+  row = link(suggestionPath);
+  click(button("For you sources"));
+  const reopened = await screen.findByRole("dialog", {
+    name: "For you sources",
+  });
+  const toggle = await within(reopened).findByRole("switch", {
+    name: "Suggestions",
+  });
+  await waitFor(() => {
+    return expect(toggle).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(toggle).toHaveAttribute("aria-checked", "false");
+  expect(
+    within(reopened).getByRole("switch", { name: "Offers" }),
+  ).toHaveAttribute("aria-checked", "false");
+  click(toggle);
+  await waitFor(() => {
+    return expect(toggle).toHaveAttribute("aria-checked", "true");
+  });
+  await within(row).findByText("Unread");
+});
+
+test("System updates remain unread with optional sources off until their card is displayed", async () => {
+  mockPool([]);
+  const event = makePlatformEvent();
+  let read = false;
+  context.mocks.api(feedContract.sources, ({ respond }) => {
+    return respond(200, { suggestions: false, whatsNew: false, offers: false });
+  });
+  context.mocks.api(feedContract.list, ({ respond }) => {
+    return respond(200, { items: [event] });
+  });
+  context.mocks.api(feedContract.summary, ({ respond }) => {
+    return respond(200, { hasUnread: !read });
+  });
+  context.mocks.api(feedContract.markRead, ({ respond }) => {
+    read = true;
+    notifySuggestionsChanged();
+    return respond(200, { readAt: nowDate().toISOString() });
+  });
+  await setupPage({ context, path: homePath, featureSwitches: sourceFeatures });
+  await within(link(suggestionPath)).findByText("Unread");
+  click(link(suggestionPath));
+  await screen.findByRole("heading", { name: "Automation disabled" });
+  await waitFor(() => {
+    expect(
+      within(link(suggestionPath)).queryByText("Unread"),
+    ).not.toBeInTheDocument();
+  });
+  expect(screen.getByText(event.content.automationName)).toBeInTheDocument();
+  expect(screen.getByText("1 to go")).toBeInTheDocument();
+  click(button("For you sources"));
+  const dialog = await screen.findByRole("dialog", { name: "For you sources" });
+  const suggestions = await within(dialog).findByRole("switch", {
+    name: "Suggestions",
+  });
+  expect(suggestions).toHaveAttribute("aria-checked", "false");
+  expect(within(dialog).getByText("Always on")).toBeInTheDocument();
 });

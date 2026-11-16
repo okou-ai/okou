@@ -3354,6 +3354,13 @@
       "when": 1794815633315,
       "tag": "1557_platform_event_feed",
       "breakpoints": true
+    },
+    {
+      "idx": 1558,
+      "version": "7",
+      "when": 1794819499473,
+      "tag": "1558_for_you_sources_and_read_receipts",
+      "breakpoints": true
     }
   ]
 }

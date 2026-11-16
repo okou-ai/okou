@@ -297,6 +297,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ForYouSources]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "For you sources and unread",
+    description: "Choose For you sources and show unread cards with a dot.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ProactiveLearning]: {
     maintainer: "lancy@okou.ai",
     displayName: "Proactive learning",

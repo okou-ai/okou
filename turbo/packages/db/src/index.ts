@@ -15,6 +15,7 @@ import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as activeAgentRunSchema from "./schema/active-agent-run";
 import * as agentSuggestionSchema from "./schema/feed-item";
+import * as feedPreferenceSchema from "./schema/feed-preference";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
 import * as featureGuideSchema from "./schema/feature-guide";
@@ -196,6 +197,7 @@ export const schema = {
   ...userNotificationSchema,
   ...activeAgentRunSchema,
   ...agentSuggestionSchema,
+  ...feedPreferenceSchema,
   ...userSchema,
   ...featureGuideSchema,
   ...artifactShareSchema,
