@@ -20,6 +20,7 @@ from tests.codex_model_catalog_cache_helpers import (
     prepare_miss,
     responses_flow,
 )
+from tests.repeated_bytes_helpers import repeat_bytes
 
 
 async def test_singleflight_delivers_owner_response_to_follower(real_flow):
@@ -164,7 +165,9 @@ async def test_stream_overflow_releases_singleflight_owner_before_response_end(r
     stream = owner.response.stream
     assert callable(stream)
 
-    overflow_chunk = b'{"models":[],"padding":"' + b"x" * catalog_validation.MAX_ENTRY_BYTES
+    overflow_chunk = repeat_bytes(
+        b'{"models":[],"padding":"', b"x", catalog_validation.MAX_ENTRY_BYTES, b""
+    )
     assert stream(overflow_chunk) == overflow_chunk
 
     assert await asyncio.wait_for(replacement_prepare, timeout=0.1)

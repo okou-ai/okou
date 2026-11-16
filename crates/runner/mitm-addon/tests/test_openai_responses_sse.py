@@ -5,6 +5,7 @@ import json
 import pytest
 
 import usage.openai_responses as openai_responses
+from tests.repeated_bytes_helpers import repeat_bytes
 from usage import (
     create_openai_responses_sse_usage_extractor,
 )
@@ -381,10 +382,13 @@ class TestOpenAIResponsesSseUsageExtractor:
         )
         parse, usage = create_openai_responses_sse_usage_extractor()
         parse(
-            b"event: response.output_item.done\n"
-            b'data: {"type":"response.output_item.done","item":{"content":"'
-            + b"x" * (5 * 1024 * 1024)
-            + b'"}}\n\n'
+            repeat_bytes(
+                b"event: response.output_item.done\n"
+                b'data: {"type":"response.output_item.done","item":{"content":"',
+                b"x",
+                5 * 1024 * 1024,
+                b'"}}\n\n',
+            )
         )
 
         assert usage == {}
@@ -457,7 +461,9 @@ class TestOpenAIResponsesSseUsageExtractor:
 
     def test_named_unknown_event_with_large_known_non_usage_type_recovers_for_next_event(self):
         parse, usage = create_openai_responses_sse_usage_extractor()
-        large_delta = b'{"type":"response.output_text.delta","delta":"' + b"x" * 100_000 + b'"}'
+        large_delta = repeat_bytes(
+            b'{"type":"response.output_text.delta","delta":"', b"x", 100_000, b'"}'
+        )
 
         parse(b"event: response.future_delta\n")
         parse(b"data: " + large_delta + b"\n\n")
@@ -598,7 +604,9 @@ class TestOpenAIResponsesSseUsageExtractor:
 
     def test_eventless_large_non_terminal_delta_recovers_for_next_event(self):
         parse, usage = create_openai_responses_sse_usage_extractor()
-        delta_payload = b'{"type":"response.output_text.delta","delta":"' + b"x" * 100_000 + b'"}'
+        delta_payload = repeat_bytes(
+            b'{"type":"response.output_text.delta","delta":"', b"x", 100_000, b'"}'
+        )
 
         parse(
             b"data: "
@@ -917,8 +925,8 @@ class TestOpenAIResponsesSseUsageExtractor:
     def test_skips_large_irrelevant_events_without_buffering(self):
         parse, usage = create_openai_responses_sse_usage_extractor()
         parse(b"event: response.output_text.delta\n")
-        parse(b"data: " + b"x" * 100_000)
-        parse(b"y" * 100_000 + b"\n\n")
+        parse(repeat_bytes(b"data: ", b"x", 100_000, b""))
+        parse(repeat_bytes(b"", b"y", 100_000, b"\n\n"))
         parse(
             b"event: response.completed\n"
             b'data: {"response":{"model":"gpt-5.2",'
@@ -943,10 +951,13 @@ class TestOpenAIResponsesSseUsageExtractor:
         parse, usage = create_openai_responses_sse_usage_extractor()
         parse(b"event: response.completed\n")
         parse(
-            b'data: {"type":"response.completed","response":{"id":"resp_big",'
-            b'"model":"gpt-5.5","output":[{"content":[{"type":"output_text","text":"'
-            + b"x"
-            * 100_000
+            repeat_bytes(
+                b'data: {"type":"response.completed","response":{"id":"resp_big",'
+                b'"model":"gpt-5.5","output":[{"content":[{"type":"output_text","text":"',
+                b"x",
+                100_000,
+                b"",
+            )
         )
         parse(
             b'"}]}],"usage":{"input_tokens":100,"output_tokens":40,'

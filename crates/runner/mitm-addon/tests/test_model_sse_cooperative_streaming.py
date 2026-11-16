@@ -20,6 +20,7 @@ from tests.model_sse_cooperative_helpers import (
     model_sse_update,
     model_sse_updates,
 )
+from tests.repeated_bytes_helpers import repeat_bytes
 
 
 @pytest.fixture(autouse=True)
@@ -119,9 +120,9 @@ async def test_blank_and_ignored_frames_consume_work_before_usage(real_flow, tmp
 @pytest.mark.parametrize(
     "prefix",
     [
-        b"event: content_block_delta\ndata: " + b"x" * 100_000,
-        b":" + b"x" * 100_000,
-        b'event: message_delta\ndata: {"ignored":"' + b"x" * 100_000 + b'"}',
+        repeat_bytes(b"event: content_block_delta\ndata: ", b"x", 100_000, b""),
+        repeat_bytes(b":", b"x", 100_000, b""),
+        repeat_bytes(b'event: message_delta\ndata: {"ignored":"', b"x", 100_000, b'"}'),
     ],
     ids=["discarded-data", "malformed-control", "captured-large-data"],
 )

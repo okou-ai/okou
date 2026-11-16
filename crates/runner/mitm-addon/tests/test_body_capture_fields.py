@@ -11,6 +11,7 @@ import zstandard
 from body_capture import add_capture_fields
 from body_limits import BODY_CAPTURE_LIMIT
 from tests.body_decode_helpers import pseudo_random_ascii, track_zstd_decompressor
+from tests.repeated_bytes_helpers import repeat_bytes
 
 
 def _track_zlib_max_input(monkeypatch) -> dict[str, int]:
@@ -595,7 +596,7 @@ class TestAddCaptureFields:
             host="api.example.com",
             response_content_type="application/json",
             include_request_id=True,
-            request_body=b"\x89PNG" + b"\x00" * BODY_CAPTURE_LIMIT,
+            request_body=repeat_bytes(b"\x89PNG", b"\x00", BODY_CAPTURE_LIMIT, b""),
             request_content_type="image/png",
         )
         entry = {}
@@ -769,8 +770,8 @@ class TestAddCaptureFields:
         assert base64.b64decode(entry["response_body"]) == response_body
 
     def test_large_non_utf8_text_bodies_capture_truncated_base64(self, real_flow):
-        request_body = b"\xff" + b"r" * BODY_CAPTURE_LIMIT
-        response_body = b"\xfe" + b"s" * BODY_CAPTURE_LIMIT
+        request_body = repeat_bytes(b"\xff", b"r", BODY_CAPTURE_LIMIT, b"")
+        response_body = repeat_bytes(b"\xfe", b"s", BODY_CAPTURE_LIMIT, b"")
         flow = real_flow(
             method="POST",
             host="api.example.com",

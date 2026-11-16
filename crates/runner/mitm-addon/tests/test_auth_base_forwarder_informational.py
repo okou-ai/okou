@@ -17,6 +17,7 @@ from tests.auth_base_forwarder_helpers import (
 )
 from tests.firewall_auth_helpers import handle_firewall_request_without_upstream_admission
 from tests.firewall_rewrite_helpers import make_forwarding_rewrite_inputs
+from tests.repeated_bytes_helpers import repeat_bytes
 
 _INFORMATIONAL_SEQUENCES = [
     pytest.param((), id="final-only"),
@@ -250,7 +251,7 @@ async def test_truncated_final_body_fails_after_informational_response():
 
 @pytest.mark.parametrize(
     "interim_headers",
-    [b"X-Long: " + b"x" * 65536 + b"\r\n", b"X-Many: x\r\n" * 101],
+    [repeat_bytes(b"X-Long: ", b"x", 65536, b"\r\n"), b"X-Many: x\r\n" * 101],
     ids=["line-length", "header-count"],
 )
 async def test_informational_headers_retain_parser_limits(interim_headers: bytes):

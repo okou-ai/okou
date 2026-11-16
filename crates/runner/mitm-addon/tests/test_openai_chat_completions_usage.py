@@ -18,6 +18,7 @@ import usage.openai_chat_completions as openai_chat_completions
 from tests.flow_helpers import header_map, response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.model_provider_flow_helpers import make_model_provider_flow
+from tests.repeated_bytes_helpers import repeat_bytes
 from usage.quantities import MAX_USAGE_QUANTITY
 
 
@@ -553,14 +554,17 @@ class TestOpenAIChatCompletionsUsage:
             mitm_addon.responseheaders(flow)
             callback = response_stream(flow)
             callback(
-                b"data: "
-                + _chat_payload(usage_payload={"prompt_tokens": 90, "completion_tokens": 40})
-                + b"\n\n"
-                + delta * 2_560
-                + b'data: {"id":"chatcmpl_discarded"\n'
-                + b"x" * 4_097
-                + b"\n\n"
-                + b'data: {"id":"chatcmpl_bad","usage":{"prompt_tokens":30}\n\n'
+                repeat_bytes(
+                    b"data: "
+                    + _chat_payload(usage_payload={"prompt_tokens": 90, "completion_tokens": 40})
+                    + b"\n\n",
+                    delta,
+                    2_560,
+                    b'data: {"id":"chatcmpl_discarded"\n'
+                    + b"x" * 4_097
+                    + b"\n\n"
+                    + b'data: {"id":"chatcmpl_bad","usage":{"prompt_tokens":30}\n\n',
+                )
             )
             await mitm_addon.responseinspection(flow)
             final_payload = {

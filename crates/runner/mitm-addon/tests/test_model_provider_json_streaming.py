@@ -36,6 +36,7 @@ from tests.model_provider_response_helpers import (
     run_response,
     standard_success_payload,
 )
+from tests.repeated_bytes_helpers import repeat_bytes
 from usage.quantities import MAX_USAGE_QUANTITY
 
 
@@ -416,10 +417,11 @@ class TestModelProviderJsonStreaming:
             OPENAI_RESPONSES_CASE,
             proxy_log_path=proxy_log_path,
         )
-        payload = (
-            b'{"id":"resp_1","model":"gpt-5.5","output":[{"text":"'
-            + b"A" * (STREAM_DECODE_EXPANSION_GRACE + 1024)
-            + b'"}],"usage":{"input_tokens":50,"output_tokens":200}}'
+        payload = repeat_bytes(
+            b'{"id":"resp_1","model":"gpt-5.5","output":[{"text":"',
+            b"A",
+            STREAM_DECODE_EXPANSION_GRACE + 1024,
+            b'"}],"usage":{"input_tokens":50,"output_tokens":200}}',
         )
         compressed = gzip.compress(payload) if encoding_case == "gzip" else zlib.compress(payload)
         allowed_decoded_bytes = max(

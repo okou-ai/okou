@@ -21,6 +21,7 @@ import managed_upload
 import mitm_addon
 from tests.managed_openrouter_helpers import PATHS, PRESET, sandbox
 from tests.managed_wire_helpers import WireSession
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import _write_registry
 from tests.upstream_connection_helpers import mark_connected_tls_upstream
 
@@ -38,10 +39,10 @@ async def test_response_credit_while_upload_has_no_upstream_window(
         loop.set_task_factory(asyncio.eager_task_factory)
     key = b"messages" if dialect == "openai-completions" else b"input"
     prefix = b'{"model":"' + PRESET.encode() + b'","' + key + b'":[{"content":"'
-    body = prefix + b"x" * (2 * 1024 * 1024) + b'"}]}'
+    body = repeat_bytes(prefix, b"x", 2 * 1024 * 1024, b'"}]}')
     small_body = b'{"model":"' + PRESET.encode() + b'","' + key + b'":[]}'
     warmup = b": ready\n\n" if parallel else b""
-    reply = b": " + b"x" * 100_000 + b"\n\n"
+    reply = repeat_bytes(b": ", b"x", 100_000, b"\n\n")
     target = len(warmup) + len(reply)
     upload_stream = 3 if parallel else 1
     registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path, dialect))

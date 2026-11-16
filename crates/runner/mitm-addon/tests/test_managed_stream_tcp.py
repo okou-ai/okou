@@ -20,6 +20,7 @@ import mitm_addon
 from tests.firewall_auth_helpers import firewall_auth_response
 from tests.managed_openrouter_helpers import PATHS, PRESET, sandbox
 from tests.managed_wire_helpers import WireSession
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import _write_registry
 from tests.upstream_connection_helpers import mark_connected_tls_upstream
 
@@ -45,12 +46,11 @@ async def test_split_early_response_with_blocked_upload_writer(
     parsed_eof = upload_state != "receiving"
     response_first = upload_state == "response-first"
     registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
-    body = (
-        b'{"model":"'
-        + PRESET.encode()
-        + b'","messages":[{"content":"'
-        + b"x" * (60_000 if parsed_eof else 2 * 1024 * 1024)
-        + b'"}]}'
+    body = repeat_bytes(
+        b'{"model":"' + PRESET.encode() + b'","messages":[{"content":"',
+        b"x",
+        60_000 if parsed_eof else 2 * 1024 * 1024,
+        b'"}]}',
     )
     header = (
         b"POST "
@@ -252,8 +252,8 @@ async def test_native_header_wait_binds_before_body_reads_and_resumes_on_cancel(
     tmp_path, fake_firewall_headers, scheduling, ending
 ):
     registry = _write_registry(tmp_path, sandbox_info=sandbox(tmp_path))
-    body = (
-        b'{"model":"' + PRESET.encode() + b'","messages":[{"content":"' + b"x" * 200_000 + b'"}]}'
+    body = repeat_bytes(
+        b'{"model":"' + PRESET.encode() + b'","messages":[{"content":"', b"x", 200_000, b'"}]}'
     )
     if ending == "timeout":
         body = body[:-1] + b',"provider":{}}'

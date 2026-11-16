@@ -19,6 +19,7 @@ from body_limits import BODY_CAPTURE_LIMIT
 from tests.aws_sigv4_helpers import RESOLVED_AWS_ACCESS_KEY_ID
 from tests.body_decode_helpers import track_zlib_decompressor
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.test_request_handler_aws_sigv4_body import (
     _header_auth_flow,
     _resolved_token_meta,
@@ -33,13 +34,11 @@ def _single_member_body(encoding: str, wire_size: int, decoded_body: bytes) -> b
     padding_size = wire_size - len(compressed)
     if encoding == "gzip":
         # RFC 1952 FNAME flag, followed by a zero-terminated name after the header.
-        body = (
-            compressed[:3]
-            + bytes([compressed[3] | 8])
-            + compressed[4:10]
-            + b"m" * (padding_size - 1)
-            + b"\0"
-            + compressed[10:]
+        body = repeat_bytes(
+            compressed[:3] + bytes([compressed[3] | 8]) + compressed[4:10],
+            b"m",
+            padding_size - 1,
+            b"\0" + compressed[10:],
         )
     else:
         # Empty non-final stored blocks are five bytes. An empty fixed-Huffman

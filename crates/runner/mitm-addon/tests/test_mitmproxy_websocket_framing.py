@@ -29,6 +29,7 @@ import flow_metadata_keys as metadata_keys
 import mitm_addon
 import websocket_framing
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
+from tests.repeated_bytes_helpers import repeat_bytes
 
 _CLIENT_IP = "10.200.0.5"
 _HOST = "websocket.example.com"
@@ -1241,9 +1242,12 @@ async def test_compressed_interleaved_controls_preserve_cumulative_limits(
         monkeypatch.setattr(websocket_framing, "MAX_MESSAGE_DATA_FRAMES", 1)
     # Retain decoded prefix bytes, but keep the wire continuation below the
     # remaining budget so skipping decompression cannot mimic a byte overflow.
-    content = hashlib.shake_256(b"compressed interleaved control limit").digest(
-        64 * 1024
-    ) + b"x" * (64 * 1024)
+    content = repeat_bytes(
+        hashlib.shake_256(b"compressed interleaved control limit").digest(64 * 1024),
+        b"x",
+        64 * 1024,
+        b"",
+    )
     control = control_type(payload=b"heartbeat")
     negotiation = _PERMESSAGE_DEFLATE
     if no_context_takeover:

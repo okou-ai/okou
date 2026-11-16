@@ -5,6 +5,7 @@ from types import FrameType
 
 import pytest
 
+from tests.repeated_bytes_helpers import repeat_bytes
 from usage.json_selective import JsonSelectiveExtractor, ScalarField
 
 
@@ -257,7 +258,7 @@ def test_bulk_skip_accepts_empty_unselected_key_and_value():
 def test_bulk_skip_stops_before_invalid_string_byte(invalid_suffix, error):
     extractor = JsonSelectiveExtractor()
 
-    extractor.feed(b'{"content":"' + b"x" * (64 * 1024))
+    extractor.feed(repeat_bytes(b'{"content":"', b"x", 64 * 1024, b""))
     extractor.feed(invalid_suffix + b'"}')
     result = extractor.finish()
 
@@ -278,7 +279,7 @@ def test_bulk_skip_preserves_pending_escape_state_across_chunks(first_suffix, se
         scalar_fields={("usage", "input_tokens"): ScalarField("int")}
     )
 
-    extractor.feed(b'{"content":"' + b"x" * (64 * 1024) + first_suffix)
+    extractor.feed(repeat_bytes(b'{"content":"', b"x", 64 * 1024, first_suffix))
     extractor.feed(second_suffix + b'","usage":{"input_tokens":7}}')
     result = extractor.finish()
 
@@ -491,7 +492,7 @@ def test_selected_string_limit_stops_collecting_current_chunk():
         scalar_fields={("model",): ScalarField("string", max_bytes=3)}
     )
 
-    extractor.feed(b'{"model":"' + b"x" * (64 * 1024))
+    extractor.feed(repeat_bytes(b'{"model":"', b"x", 64 * 1024, b""))
     result = extractor.finish()
 
     assert result.complete is False

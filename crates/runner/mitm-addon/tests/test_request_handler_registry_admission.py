@@ -9,6 +9,7 @@ import mitm_addon
 import registry
 from tests.auth_state_helpers import auth_cache_key, has_auth_state
 from tests.registry_helpers import write_multi_sandbox_registry
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 
 
@@ -34,7 +35,7 @@ async def test_large_registry_allows_request_after_complete_read(
     )
     reg_path = _write_registry(tmp_path, client_ip="10.200.0.5", sandbox_info=sandbox_info)
     # Keep the valid registry JSON beyond the first 1 MiB read.
-    payload = b" " * (1024 * 1024 + 17) + reg_path.read_bytes()
+    payload = repeat_bytes(b"", b" ", 1024 * 1024 + 17, reg_path.read_bytes())
     assert len(payload) < registry.MAX_REGISTRY_BYTES
     reg_path.write_bytes(payload)
     flow = real_flow(with_response=False, client_ip="10.200.0.5", host="api.github.com")

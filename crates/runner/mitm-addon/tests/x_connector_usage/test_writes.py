@@ -11,6 +11,7 @@ import flow_metadata_keys as metadata_keys
 import request_streaming
 from body_limits import REQUEST_BODY_BILLING_INSPECTION_LIMIT, STREAM_BUFFER_LIMIT
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.x_flow_helpers import (
     json_body_that_exceeds_integer_digit_limit,
     json_body_that_exceeds_nesting_limit,
@@ -503,7 +504,9 @@ def test_tweet_create_gzip_decoded_body_over_cap_stays_conservative(x_usage, tmp
 
 def test_tweet_create_raw_body_over_cap_stays_conservative(x_usage, tmp_path, real_flow):
     """An oversized identity request body is not refined."""
-    request_body = b"{" + b'"text":"' + b"x" * REQUEST_BODY_BILLING_INSPECTION_LIMIT + b'"}'
+    request_body = repeat_bytes(
+        b"{" + b'"text":"', b"x", REQUEST_BODY_BILLING_INSPECTION_LIMIT, b'"}'
+    )
     flow = x_usage.make_flow(
         real_flow,
         tmp_path,
@@ -610,7 +613,7 @@ def test_tweet_create_truncated_stream_capture_ignores_stale_raw_content(
     request_streaming.configure_request_stream(flow)
     stream = flow.request.stream
     assert callable(stream)
-    request_body = b"{" + b'"text":"' + b"x" * STREAM_BUFFER_LIMIT + b'"}'
+    request_body = repeat_bytes(b"{" + b'"text":"', b"x", STREAM_BUFFER_LIMIT, b'"}')
     assert stream(request_body) == request_body
     flow.metadata[metadata_keys.REQUEST_STREAM_COMPLETE] = True
 
@@ -656,7 +659,7 @@ def test_tweet_create_truncated_stream_capture_stays_conservative(x_usage, tmp_p
     request_streaming.configure_request_stream(flow)
     stream = flow.request.stream
     assert callable(stream)
-    request_body = b"{" + b'"text":"' + b"x" * STREAM_BUFFER_LIMIT + b'"}'
+    request_body = repeat_bytes(b"{" + b'"text":"', b"x", STREAM_BUFFER_LIMIT, b'"}')
     assert stream(request_body) == request_body
     flow.metadata[metadata_keys.REQUEST_STREAM_COMPLETE] = True
 

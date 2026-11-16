@@ -36,6 +36,7 @@ import usage
 from body_limits import STREAM_BUFFER_LIMIT
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.mitmproxy_http_framing_helpers import start_http_layer
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import (
     _sandbox_without_firewalls,
     _single_firewall_sandbox,
@@ -318,7 +319,10 @@ async def test_uncaptured_billable_upload_preserves_usage(
     [
         (b'{"text":"hello"}', "content.create"),
         (b'{"text":"https://example.com"}', "content.create_with_url"),
-        (b'{"text":"hello"}' + b" " * STREAM_BUFFER_LIMIT, "content.create_with_url"),
+        (
+            repeat_bytes(b'{"text":"hello"}', b" ", STREAM_BUFFER_LIMIT, b""),
+            "content.create_with_url",
+        ),
     ],
     ids=["plain", "with-url", "over-inspection-limit"],
 )

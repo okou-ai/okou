@@ -10,6 +10,7 @@ import mitm_addon
 from body_limits import STREAM_BUFFER_LIMIT
 from tests.auth_base_forwarder_helpers import fake_forwarder_upstream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 from tests.requestheaders_helpers import _assert_no_request_stream, await_requestheaders_result
 
@@ -166,7 +167,7 @@ async def test_large_http1_override_is_rejected_without_value_conversion(
             b"Host: api.example.com",
             f"Content-Length: {body_size}".encode(),
             *([b"X-HTTP-Method-Override: "] if early_presence else []),
-            b"X-hTtP-mEtHoD-oVeRrIdE: " + b"x" * 1_048_576,
+            repeat_bytes(b"X-hTtP-mEtHoD-oVeRrIdE: ", b"x", 1_048_576, b""),
         ]
     )
     validate.validate_headers(request)

@@ -1218,7 +1218,10 @@ finally:
             extension = tarfile.TarInfo('././@PaxHeader')
             extension.type = tarfile.XHDTYPE
             extension.size = 128 * 1024
-            payload = extension.tobuf(format=tarfile.USTAR_FORMAT) + b'0' * extension.size + b'\0' * 1024
+            slab = b'0' * 1024
+            blocks, tail = divmod(extension.size, len(slab))
+            payload = b''.join((extension.tobuf(format=tarfile.USTAR_FORMAT),
+                                *(slab,) * blocks, slab[:tail], b'\0' * 1024))
             archive = self.public_payload_deb(base, payload)
             root = base / 'root'
             root.mkdir()

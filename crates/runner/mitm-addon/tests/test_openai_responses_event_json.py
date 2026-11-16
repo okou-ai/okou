@@ -5,6 +5,7 @@ import json
 import pytest
 
 import usage.openai_responses as openai_responses
+from tests.repeated_bytes_helpers import repeat_bytes
 from usage import extract_openai_responses_usage_from_event as _extract_usage_with_error
 from usage import (
     inspect_openai_responses_client_event_json,
@@ -346,10 +347,8 @@ def test_large_documented_non_usage_event_skips_full_extractor(
         "JsonSelectiveExtractor",
         reject_full_extractor,
     )
-    body = (
-        b'{"type":"response.output_item.done","item":{"content":"'
-        + b"x" * (5 * 1024 * 1024)
-        + b'"}}'
+    body = repeat_bytes(
+        b'{"type":"response.output_item.done","item":{"content":"', b"x", 5 * 1024 * 1024, b'"}}'
     )
     event = inspect_openai_responses_event_json(body)
 
@@ -456,11 +455,12 @@ def test_terminal_event_type_after_skipped_fields_still_extracts_usage():
 
 
 def test_terminal_event_with_large_bulk_string_still_extracts_usage():
-    body = (
-        b'{"type":"response.completed","padding":"'
-        + b"x" * (256 * 1024)
-        + b'","response":{"id":"resp_bulk","model":"gpt-5.6",'
-        b'"usage":{"input_tokens":9,"output_tokens":4}}}'
+    body = repeat_bytes(
+        b'{"type":"response.completed","padding":"',
+        b"x",
+        256 * 1024,
+        b'","response":{"id":"resp_bulk","model":"gpt-5.6",'
+        b'"usage":{"input_tokens":9,"output_tokens":4}}}',
     )
     event = inspect_openai_responses_event_json(body)
 

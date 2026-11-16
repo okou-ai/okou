@@ -31,6 +31,7 @@ from tests.body_decode_helpers import (
     track_zstd_decompressor,
     zstd_skippable_frame,
 )
+from tests.repeated_bytes_helpers import repeat_bytes
 from usage.json_selective import JsonSelectiveExtractor
 
 _ZLIB_INPUT_BOUND = 1024
@@ -302,16 +303,13 @@ class TestStreamDecodeSession:
 
     @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
     def test_document_parser_termination_stops_zlib_traversal(self, headers, monkeypatch, encoding):
-        dense_array = b"0," * 40_000 + b"0"
+        dense_array = repeat_bytes(b"", b"0,", 40_000, b"0")
         random_tail = hashlib.shake_256(b"issue-25212-regression").hexdigest(128 * 1024).encode()
-        plaintext = (
-            b'{"padding":['
-            + dense_array
-            + b'],"random":"'
-            + random_tail
-            + b'","bulk":"'
-            + b"A" * (12 * 1024 * 1024)
-            + b'"}'
+        plaintext = repeat_bytes(
+            b'{"padding":[' + dense_array + b'],"random":"' + random_tail + b'","bulk":"',
+            b"A",
+            12 * 1024 * 1024,
+            b'"}',
         )
         compressed = compress_one_shot_body(encoding, plaintext)
         assert 50 * len(compressed) < len(plaintext) < 100 * len(compressed)

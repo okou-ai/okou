@@ -15,6 +15,7 @@ from tests.codex_model_catalog_cache_helpers import (
     prepare_prefetch_miss,
 )
 from tests.flow_helpers import response_stream
+from tests.repeated_bytes_helpers import repeat_bytes
 
 _VALUE_LIMIT = 8 * 1024
 
@@ -45,7 +46,7 @@ class _TrackedPolicyValue(bytes):
             id="oversized-single-value",
         ),
         pytest.param(
-            ((b"Cache-Control", b"x=0," * (256 * 1024) + b"public"),),
+            ((b"Cache-Control", repeat_bytes(b"", b"x=0,", 256 * 1024, b"public")),),
             False,
             id="megabyte-comma-heavy-value",
         ),

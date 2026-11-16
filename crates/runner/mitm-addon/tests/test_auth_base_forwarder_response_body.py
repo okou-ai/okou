@@ -15,6 +15,7 @@ from tests.auth_base_forwarder_helpers import (
     fake_forwarder_upstream,
     http_response,
 )
+from tests.repeated_bytes_helpers import repeat_bytes
 
 
 def _response(payload: bytes, framing: str) -> bytes:
@@ -100,7 +101,7 @@ async def test_tiny_chunks_keep_peak_allocations_comparable_to_fixed_length(size
     responses = {
         "fixed": _response(payload, "fixed"),
         "tiny-chunks": http_response(
-            body=b"1\r\nx\r\n" * size + b"0\r\n\r\n",
+            body=repeat_bytes(b"", b"1\r\nx\r\n", size, b"0\r\n\r\n"),
             headers=[("Transfer-Encoding", "chunked")],
         ),
     }

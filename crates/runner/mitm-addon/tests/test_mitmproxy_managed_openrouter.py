@@ -16,6 +16,7 @@ import mitm_addon
 from logging_utils import flush_log_path
 from tests.managed_openrouter_helpers import PATHS, PRESET, sandbox
 from tests.managed_wire_helpers import WireSession
+from tests.repeated_bytes_helpers import repeat_bytes
 from tests.request_handler_helpers import _write_registry
 
 
@@ -33,7 +34,7 @@ async def test_native_stream_validates_before_forwarding_and_finishes_once(
     registry = _write_registry(tmp_path, sandbox_info=info)
     key = b"messages" if dialect == "openai-completions" else b"input"
     prefix = b'{"model":"' + PRESET.encode() + b'","' + key + b'":[{"content":"'
-    prompt = b"private-prompt-canary" + b"x" * 100_000
+    prompt = repeat_bytes(b"private-prompt-canary", b"x", 100_000, b"")
     suffix = b'"}]}'
     if case == "routing":
         suffix = b'"}],"provider":{}}'
