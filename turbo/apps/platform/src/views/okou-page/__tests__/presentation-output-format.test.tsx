@@ -93,6 +93,10 @@ test.each(["HTML", "PPTX"] as const)(
     ]);
     expect(capture.selectedTemplates[0]).toMatchObject({
       type: "presentation",
+      selection: {
+        templateId: template.templateId,
+        outputFormat: format.toLowerCase(),
+      },
     });
     expect(capture.sentMessages[0]?.parts).toContainEqual({
       type: "additional_info",
@@ -106,6 +110,30 @@ test.each(["HTML", "PPTX"] as const)(
     });
   },
 );
+
+test("A format changed after choosing a template is frozen at send time", async () => {
+  const capture = mockTemplateChat();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: enabledFeatures,
+  });
+  const editor = await findComposerEditor();
+  const formats = await openPresentation();
+  await fill(editor, "Prepare the quarterly deck");
+  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+  const shelf = screen.getByRole("group", { name: "Presentation templates" });
+  click(button(template.title, shelf));
+  click(button("PPTX", formats));
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(capture.selectedTemplates[0]).toMatchObject({
+    type: "presentation",
+    selection: { templateId: template.templateId, outputFormat: "pptx" },
+  });
+});
 
 test("A changed format survives a fresh page and is shared by Chart presentation output", async () => {
   mockTemplateChat();
@@ -152,6 +180,12 @@ test("A changed format survives a fresh page and is shared by Chart presentation
     type: "additional_info",
     text: expect.stringContaining(
       "- Preferred output format: presentation (PPTX format)",
+    ),
+  });
+  expect(capture.sentMessages[0]?.parts).toContainEqual({
+    type: "additional_info",
+    text: expect.stringContaining(
+      'okou generate presentation --format pptx --prompt "<user request>"',
     ),
   });
   // Keep the structured selection compatible with message summaries.
@@ -244,10 +278,20 @@ test.each([
     await screen.findByRole("group", { name: "Presentation templates" });
     expect(screen.queryByRole("group", { name: "Output format" })).toBeNull();
     await fill(editor, "Prepare our deck");
+    const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+    const shelf = screen.getByRole("group", { name: "Presentation templates" });
+    click(button(template.title, shelf));
     click(button("Send"));
     await waitFor(() => {
       expect(capture.sentMessages).toHaveLength(1);
     });
+    expect(capture.selectedTemplates[0]).toMatchObject({
+      type: "presentation",
+      selection: { templateId: template.templateId },
+    });
+    expect(capture.selectedTemplates[0]).not.toHaveProperty(
+      "selection.outputFormat",
+    );
     expect(capture.sentMessages[0]?.parts).toContainEqual({
       type: "additional_info",
       text: [

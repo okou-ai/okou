@@ -1,10 +1,18 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core";
 import chalk from "chalk";
 import { HttpResponse, http } from "msw";
+import * as tar from "tar";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { server } from "../../../mocks/server";
@@ -187,42 +195,127 @@ describe("okou resource pull command", () => {
     );
   });
 
-  it("pulls the current presentation template by id without a digest", async () => {
-    const id = "template:html-ppt-schoolhouse-runbook";
+  it.each([
+    {
+      format: "html",
+      id: "template:html-ppt-schoolhouse-runbook",
+      useDefaultDir: true,
+    },
+    {
+      format: "pptx",
+      id: "template:pptx-schoolhouse-runbook",
+      useDefaultDir: false,
+    },
+  ])(
+    "extracts the current $format presentation package by concrete id",
+    async ({ format, id, useDefaultDir }) => {
+      const fixtureDir = path.join(outputDir, "fixture");
+      const archivePath = path.join(outputDir, "schoolhouse.tar.gz");
+      const extractionDir = useDefaultDir
+        ? path.join(outputDir, "generated/resources")
+        : path.join(outputDir, "resources", format);
+      const presentationDownloadUrl = `https://r2.example.com/registry/schoolhouse-${format}.tar.gz`;
+      const skill = `# Schoolhouse ${format.toUpperCase()} Presentation\n\nFollow this package's ${format === "pptx" ? "native PowerPoint" : "HTML"} authoring workflow and verify every slide before delivery.\n`;
+      await mkdir(path.join(fixtureDir, "schoolhouse"), { recursive: true });
+      await writeFile(path.join(fixtureDir, "schoolhouse/SKILL.md"), skill);
+      await tar.create({ file: archivePath, cwd: fixtureDir, gzip: true }, [
+        "schoolhouse",
+      ]);
+      const archive = await readFile(archivePath);
+
+      server.use(
+        http.get(
+          "http://localhost:3000/api/registry/presentation-templates/download",
+          ({ request }) => {
+            const url = new URL(request.url);
+            expect(url.searchParams.get("id")).toBe(id);
+            expect(url.searchParams.has("expectedSha256")).toBe(false);
+            expect(request.headers.get("authorization")).toBe(
+              "Bearer test-token",
+            );
+            return HttpResponse.json({
+              url: presentationDownloadUrl,
+            });
+          },
+        ),
+        http.get(presentationDownloadUrl, () => {
+          return new HttpResponse(archive, {
+            headers: { "content-type": "application/gzip" },
+          });
+        }),
+      );
+
+      const previousCwd = process.cwd();
+      process.chdir(outputDir);
+      try {
+        await resourceCommand.parseAsync([
+          "node",
+          "cli",
+          "pull",
+          id,
+          ...(useDefaultDir ? [] : ["--dir", extractionDir]),
+        ]);
+      } finally {
+        process.chdir(previousCwd);
+      }
+
+      expect(
+        await readFile(
+          path.join(extractionDir, "schoolhouse/SKILL.md"),
+          "utf8",
+        ),
+      ).toBe(skill);
+      expect(await readdir(extractionDir)).toEqual(["schoolhouse"]);
+      const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(stdout).toContain(`✓ Pulled ${id}`);
+      expect(stdout).toContain(
+        `Source path:  ${path.join(extractionDir, "schoolhouse")}`,
+      );
+    },
+  );
+
+  it("fails clearly without files or fallback when a native package is unpublished", async () => {
+    const id = "template:pptx-schoolhouse-runbook";
+    const requestedIds: (string | null)[] = [];
     server.use(
       http.get(
         "http://localhost:3000/api/registry/presentation-templates/download",
         ({ request }) => {
           const url = new URL(request.url);
-          expect(url.searchParams.get("id")).toBe(id);
-          expect(url.searchParams.has("expectedSha256")).toBe(false);
+          requestedIds.push(url.searchParams.get("id"));
           expect(request.headers.get("authorization")).toBe(
             "Bearer test-token",
           );
-          return HttpResponse.json({
-            url: downloadUrl,
-          });
+          return HttpResponse.json(
+            {
+              error: {
+                code: "NOT_FOUND",
+                message: `Presentation template "${id}" not found`,
+              },
+            },
+            { status: 404 },
+          );
         },
       ),
-      http.get(downloadUrl, () => {
-        return new HttpResponse(ILLUSTRATION_ARCHIVE, {
-          headers: { "content-type": "application/gzip" },
-        });
-      }),
     );
 
-    await resourceCommand.parseAsync([
-      "node",
-      "cli",
-      "pull",
-      id,
-      "--dir",
-      outputDir,
-    ]);
+    await expect(
+      resourceCommand.parseAsync([
+        "node",
+        "cli",
+        "pull",
+        id,
+        "--dir",
+        path.join(outputDir, "resources"),
+      ]),
+    ).rejects.toThrow("process.exit called");
 
-    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
-      `✓ Pulled ${id}`,
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      `404: Presentation template "${id}" not found`,
     );
+    expect(requestedIds).toEqual([id]);
+    expect(await readdir(outputDir)).toEqual([]);
+    expect(mockExit).toHaveBeenCalledWith(1);
   });
 
   it("resolves the pull-only presentation reverse-template guide through the command", async () => {

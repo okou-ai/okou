@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import chalk from "chalk";
 import { listPresentationRunbookPackages } from "@okouai/core/resource-registry";
 import { createGenerateCommand } from "../index";
-import { presentationCommand } from "../presentation";
+import { createPresentationGenerateCommand } from "../../shared/presentation-generate";
 
 const generateCommand = createGenerateCommand();
 
@@ -50,6 +50,7 @@ describe("okou generate presentation command", () => {
       "Select a built-in presentation template from the catalog below",
     );
     expect(stdout).toContain("API migration plan");
+    expect(stdout).toContain("Requested output format: html");
     expect(stdout).toContain("Slide count: 10");
     expect(stdout).toContain(
       "Before choosing a template, planning slides, or launching workers, read the user's request and supplied source text and inspect important charts and images",
@@ -178,70 +179,157 @@ describe("okou generate presentation command", () => {
     expect(imageWorkflow).not.toContain("--visibility org");
   });
 
-  it("should reject slide counts outside the supported range", async () => {
-    const mockStderrWrite = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation((() => {
-        return true;
-      }) as never);
+  it.each([
+    { label: "automatic selection", templateArgs: [] },
+    {
+      label: "selected template",
+      templateArgs: ["--template", "html-ppt-schoolhouse"],
+    },
+  ])(
+    "uses native PPTX packages and file delivery for $label",
+    async ({ templateArgs }) => {
+      await createPresentationGenerateCommand().parseAsync([
+        "node",
+        "okou",
+        "--format",
+        "pptx",
+        "--prompt",
+        "A school community planning deck",
+        "--site-slug",
+        "school-plan",
+        "--visibility",
+        "org",
+        ...templateArgs,
+      ]);
 
-    try {
-      await expect(async () => {
-        await generateCommand.parseAsync([
-          "node",
-          "cli",
-          "presentation",
-          "--prompt",
-          "launch plan",
-          "--slides",
-          "3",
-        ]);
-      }).rejects.toThrow("process.exit called");
+      const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(stdout).toContain("Requested output format: pptx");
+      expect(stdout).toContain(
+        "Author an editable native PPTX directly with the selected package",
+      );
+      expect(stdout).toContain("template:pptx-schoolhouse-runbook");
+      expect(stdout).toContain("--dir ./generated/resources/pptx");
+      expect(stdout).toContain("SKILL.md");
+      expect(stdout).toContain("Deliver the final deck with org visibility");
+      expect(stdout).toContain(
+        "okou web upload-file -f <deck.pptx> --visibility org",
+      );
+      expect(stdout).not.toContain("index.html");
+      expect(stdout).not.toContain("okou host");
+      expect(stdout).not.toContain("conversion instructions");
+      expect(stdout).not.toContain("convert to PPTX");
 
-      const stderr = mockStderrWrite.mock.calls
-        .map(([chunk]) => {
-          return String(chunk);
+      if (templateArgs.length > 0) {
+        expect(stdout).toContain(
+          "okou resource pull template:pptx-schoolhouse-runbook --dir ./generated/resources/pptx",
+        );
+        expect(stdout).toContain(
+          "./generated/resources/pptx/schoolhouse/SKILL.md",
+        );
+      } else {
+        expect(stdout).toContain("template:pptx-bloom-runbook");
+        const packages = [...stdout.matchAll(/^Package: ([^;]+);/gm)].map(
+          (match) => {
+            return match[1];
+          },
+        );
+        expect(packages).toEqual(
+          listPresentationRunbookPackages("pptx").map((template) => {
+            return template.resourceId;
+          }),
+        );
+      }
+    },
+  );
+
+  it.each([
+    {
+      flag: "--slides",
+      value: "3",
+      message: "slides must be between 4 and 20",
+    },
+    {
+      flag: "--format",
+      value: "pdf",
+      message: "Allowed choices are html, pptx",
+    },
+  ])(
+    "rejects invalid $flag with supported choices",
+    async ({ flag, value, message }) => {
+      const mockStderrWrite = vi
+        .spyOn(process.stderr, "write")
+        .mockImplementation((() => {
+          return true;
+        }) as never);
+
+      try {
+        await expect(async () => {
+          await createPresentationGenerateCommand().parseAsync([
+            "node",
+            "okou",
+            "--prompt",
+            "launch plan",
+            flag,
+            value,
+          ]);
+        }).rejects.toThrow("process.exit called");
+
+        const stderr = mockStderrWrite.mock.calls
+          .map(([chunk]) => {
+            return String(chunk);
+          })
+          .join("");
+        expect(stderr).toContain(message);
+      } finally {
+        mockStderrWrite.mockRestore();
+      }
+    },
+  );
+
+  it.each([
+    {
+      format: "html",
+      formatArgs: [],
+      packageId: "template:html-ppt-playful-launch-runbook",
+    },
+    {
+      format: "pptx",
+      formatArgs: ["--format", "pptx"],
+      packageId: "template:pptx-playful-launch-runbook",
+    },
+  ])(
+    "shows format choices and the $format package catalog in help",
+    async ({ format, formatArgs, packageId }) => {
+      let helpOutput = "";
+      const command = createPresentationGenerateCommand()
+        .configureOutput({
+          writeOut: (str: string) => {
+            helpOutput += str;
+          },
         })
-        .join("");
-      expect(stderr).toContain("slides must be between 4 and 20");
-    } finally {
-      mockStderrWrite.mockRestore();
-    }
-  });
+        .exitOverride();
 
-  it("should expose only base artifact flags plus slides in help", () => {
-    let helpOutput = "";
-    presentationCommand.configureOutput({
-      writeOut: (str: string) => {
-        helpOutput += str;
-      },
-    });
+      await expect(
+        command.parseAsync(["node", "okou", ...formatArgs, "--help"]),
+      ).rejects.toMatchObject({
+        code: "commander.helpDisplayed",
+        exitCode: 0,
+      });
 
-    presentationCommand.outputHelp();
-
-    expect(helpOutput).toContain("--prompt <text>");
-    expect(helpOutput).toContain("--site-slug <slug>");
-    expect(helpOutput).toContain("--title <text>");
-
-    expect(helpOutput).toContain("--template <id>");
-    expect(helpOutput).toContain("--slides <count>");
-    expect(helpOutput).toContain("--visibility <visibility>");
-  });
-
-  it("should list presentation templates in help", () => {
-    let helpOutput = "";
-    presentationCommand.configureOutput({
-      writeOut: (str: string) => {
-        helpOutput += str;
-      },
-    });
-
-    presentationCommand.outputHelp();
-
-    expect(helpOutput).toContain("Templates (presentation):");
-    expect(helpOutput).toContain("template:html-ppt-playful-launch");
-    expect(helpOutput).not.toContain("(no presentation templates registered)");
-  });
+      expect(helpOutput).toContain("--format <format>");
+      expect(helpOutput).toContain('choices: "html", "pptx"');
+      expect(helpOutput).toMatch(/default:\s+"html"/);
+      expect(helpOutput).toContain("--template <id>");
+      expect(helpOutput).toContain("--slides <count>");
+      expect(helpOutput).toContain("--visibility <visibility>");
+      expect(helpOutput).toContain(`Templates (presentation, ${format}):`);
+      expect(helpOutput).toContain("template:html-ppt-playful-launch");
+      expect(helpOutput).toContain(`Package: ${packageId}`);
+      expect(helpOutput).toContain(
+        'okou generate presentation --format pptx --prompt "A strategy deck for reducing support volume"',
+      );
+    },
+  );
 
   it("resolves --template to direct-HTML instructions", async () => {
     await generateCommand.parseAsync([
@@ -256,6 +344,7 @@ describe("okou generate presentation command", () => {
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     expect(stdout).toContain("# Presentation Generation (template)");
+    expect(stdout).toContain("Requested output format: html");
     expect(stdout).toContain(
       "Selected presentation template: Playful Launch Presentation (template:html-ppt-playful-launch)",
     );
@@ -294,35 +383,47 @@ describe("okou generate presentation command", () => {
     ).toBeLessThan(imageWorkflow.indexOf("<state-dir>/results.tsv"));
   });
 
-  it("rejects an unknown presentation template id with available templates", async () => {
-    const mockConsoleError = vi
-      .spyOn(console, "error")
-      .mockImplementation(() => {});
+  it.each([
+    {
+      format: "html",
+      packageId: "template:html-ppt-playful-launch-runbook",
+    },
+    { format: "pptx", packageId: "template:pptx-playful-launch-runbook" },
+  ])(
+    "rejects an unknown template with the $format package catalog",
+    async ({ format, packageId }) => {
+      const mockConsoleError = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => {});
 
-    try {
-      await expect(async () => {
-        await generateCommand.parseAsync([
-          "node",
-          "cli",
-          "presentation",
-          "--prompt",
-          "launch plan",
-          "--template",
-          "not-a-real-template",
-        ]);
-      }).rejects.toThrow("process.exit called");
+      try {
+        await expect(async () => {
+          await createPresentationGenerateCommand().parseAsync([
+            "node",
+            "okou",
+            "--format",
+            format,
+            "--prompt",
+            "launch plan",
+            "--template",
+            "not-a-real-template",
+          ]);
+        }).rejects.toThrow("process.exit called");
 
-      const stderr = mockConsoleError.mock.calls.flat().join("\n");
-      expect(stderr).toContain(
-        "Unknown template for presentation: not-a-real-template",
-      );
-      expect(stderr).toContain("Available templates for presentation:");
-      expect(stderr).toContain("template:html-ppt-playful-launch");
-      expect(stderr).toContain(
-        'okou generate presentation --template template:html-ppt-playful-launch --prompt "..."',
-      );
-    } finally {
-      mockConsoleError.mockRestore();
-    }
-  });
+        const stderr = mockConsoleError.mock.calls.flat().join("\n");
+        expect(stderr).toContain(
+          `Unknown template for ${format.toUpperCase()} presentation: not-a-real-template`,
+        );
+        expect(stderr).toContain(
+          `Available templates for ${format.toUpperCase()} presentation:`,
+        );
+        expect(stderr).toContain(`Package: ${packageId}`);
+        expect(stderr).toContain(
+          `okou generate presentation --format ${format} --template template:html-ppt-playful-launch --prompt "..."`,
+        );
+      } finally {
+        mockConsoleError.mockRestore();
+      }
+    },
+  );
 });

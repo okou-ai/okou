@@ -1,0 +1,2 @@
+ALTER TABLE "registry_resource_heads" DROP CONSTRAINT "chk_registry_resource_head_id";--> statement-breakpoint
+ALTER TABLE "registry_resource_heads" ADD CONSTRAINT "chk_registry_resource_head_id" CHECK ("registry_resource_heads"."resource_id" ~ '^template:(html-ppt|pptx)-[a-z0-9]+(-[a-z0-9]+)*-runbook$');
