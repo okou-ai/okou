@@ -172,6 +172,7 @@ struct ChatComposerView: View {
           ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
             .disabled(needsUpgrade)
             .opacity(showsModelPicker ? 1 : 0)
+            .animation(reduceMotion ? nil : OkouMotion.transition, value: showsModelPicker)
             .allowsHitTesting(showsModelPicker)
             .accessibilityHidden(!showsModelPicker)
             .frame(maxWidth: .infinity, alignment: .trailing)
