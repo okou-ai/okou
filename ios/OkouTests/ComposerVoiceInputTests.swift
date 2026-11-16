@@ -22,10 +22,7 @@ final class ComposerVoiceInputTests: XCTestCase {
       let voice = try XCTUnwrap(composer.voice)
       let recordingPresented = expectation(description: "Composer observed recording")
       let host = UIHostingController(
-        rootView: MentionComposerHarness(state: composer)
-          .onChange(of: voice.phase) { _, phase in
-            if phase == .recording { recordingPresented.fulfill() }
-          })
+        rootView: VoiceFocusHarness(composer: composer, recordingPresented: recordingPresented))
       let window = try await mountMentionHost(host)
       defer { unmount(window) }
       let input = try XCTUnwrap(mentionInputs(in: host.view).first)
@@ -655,6 +652,18 @@ final class ComposerVoiceInputTests: XCTestCase {
     defer { reopened.close() }
     XCTAssertEqual(reopened.text, "Original notes")
     XCTAssertEqual(reopened.voice?.phase, .idle)
+  }
+}
+
+private struct VoiceFocusHarness: View {
+  let composer: ComposerDraftStore
+  let recordingPresented: XCTestExpectation
+
+  var body: some View {
+    MentionComposerHarness(state: composer)
+      .onChange(of: composer.voice?.phase) { _, phase in
+        if phase == .recording { recordingPresented.fulfill() }
+      }
   }
 }
 
