@@ -45,9 +45,15 @@ type RunTemplateGuidanceResult =
   | Extract<RunTemplatesResult, { readonly error: unknown }>;
 
 export function createRunTemplates(
-  ...args: Parameters<typeof createRunTemplateGuidance>
+  event$: Parameters<typeof createRunTemplateGuidance>[0],
+  orgId$: Parameters<typeof createRunTemplateGuidance>[1],
+  disabledPaidTools$: Parameters<typeof createRunTemplateGuidance>[2],
 ): Computed<Promise<RunTemplatesResult>> {
-  const guidance$ = createRunTemplateGuidance(...args);
+  const guidance$ = createRunTemplateGuidance(
+    event$,
+    orgId$,
+    disabledPaidTools$,
+  );
   return computed(async (get): Promise<RunTemplatesResult> => {
     const guidance = await get(guidance$);
     if ("error" in guidance) {
@@ -66,9 +72,15 @@ export function createRunTemplates(
 
 /** Current ACLs, selection validation and bundles, without discarded prompt text. */
 export function createRunTemplatePackages(
-  ...args: Parameters<typeof createRunTemplateGuidance>
+  event$: Parameters<typeof createRunTemplateGuidance>[0],
+  orgId$: Parameters<typeof createRunTemplateGuidance>[1],
+  disabledPaidTools$: Parameters<typeof createRunTemplateGuidance>[2],
 ) {
-  const guidance$ = createRunTemplateGuidance(...args);
+  const guidance$ = createRunTemplateGuidance(
+    event$,
+    orgId$,
+    disabledPaidTools$,
+  );
   return computed(async (get) => {
     const guidance = await get(guidance$);
     return "error" in guidance
