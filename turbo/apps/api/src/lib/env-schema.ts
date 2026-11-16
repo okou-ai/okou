@@ -154,6 +154,8 @@ function billingAndMessagingEnvSchema() {
     AXIOM_TOKEN_TELEMETRY: string().min(1),
     AXIOM_DATASET_SUFFIX: zEnum(["dev", "prod"]),
     STRIPE_SECRET_KEY: string().min(1),
+    ATOM_URL: url().optional(),
+    ATOM_GRANT_PRICE: string().min(1).optional(),
     OKOU_PRICE_PRO: priceIdsSchema,
     OKOU_PRICE_TEAM: priceIdsSchema,
     OKOU_PRICE_USAGE_PACK_PLAN_PRO: priceIdsSchema,

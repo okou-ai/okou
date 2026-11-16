@@ -52,6 +52,7 @@ import { claudeCodeDeviceAuthRoutes } from "./routes/claude-code-device-auth";
 import { cliAuthRoutes } from "./routes/cli-auth";
 import { cloudflareAccessRoutes } from "./routes/cloudflare-access";
 import { codexDeviceAuthRoutes } from "./routes/codex-device-auth";
+import { atomSubscriptionGrantRoutes } from "./routes/atom-subscription-grants";
 import { computerUseRoutes } from "./routes/computer-use";
 import { computerUseAuthorizationRoutes } from "./routes/computer-use-authorization";
 import { vncAuthorizationRoutes } from "./routes/vnc-authorization";
@@ -361,6 +362,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...vncAuthorizationRoutes,
   ...computerUseRoutes,
   ...codexDeviceAuthRoutes,
+  ...atomSubscriptionGrantRoutes,
   ...connectorCatalogRoutes,
   ...agentConnectorAccessRoutes,
   ...connectedConnectorsRoutes,

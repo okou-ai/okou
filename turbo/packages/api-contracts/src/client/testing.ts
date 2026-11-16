@@ -37,6 +37,8 @@ import { artifactReferencesContract as OriginalArtifactReferencesContract } from
 import { artifactReferencesContract } from "./artifact-references";
 import { artifactSharesContract as OriginalArtifactSharesContract } from "../contracts/artifact-shares";
 import { artifactSharesContract } from "./artifact-shares";
+import { atomSubscriptionGrantsContract as OriginalAtomSubscriptionGrantsContract } from "../contracts/atom-subscription-grants";
+import { atomSubscriptionGrantsContract } from "./atom-subscription-grants";
 import { authContract as OriginalAuthContract } from "../contracts/auth";
 import { authContract } from "./auth";
 import {
@@ -803,6 +805,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [artifactOgContract, OriginalArtifactOgContract],
   [artifactReferencesContract, OriginalArtifactReferencesContract],
   [artifactSharesContract, OriginalArtifactSharesContract],
+  [atomSubscriptionGrantsContract, OriginalAtomSubscriptionGrantsContract],
   [authContract, OriginalAuthContract],
   [bankingContract, OriginalBankingContract],
   [bankingPublicContract, OriginalBankingPublicContract],
