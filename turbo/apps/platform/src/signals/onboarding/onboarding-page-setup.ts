@@ -10,7 +10,10 @@ import { subscribeBuiltinConnectorChanges$ } from "../external/connectors.ts";
 import { updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { promptHandoffParams } from "./onboarding-actions.ts";
+import {
+  forwardOnboardedVisitor$,
+  promptHandoffParams,
+} from "./onboarding-actions.ts";
 import {
   clearOnboardingPasteState$,
   hydrateOnboardingRoute$,
@@ -31,10 +34,11 @@ export const setupOnboardingPromptPage$ = command(
     signal.throwIfAborted();
     // Legacy prompt links provision a workspace. Hash handoffs also preserve
     // an invited member's task while they complete their personal onboarding.
-    if (
-      !status.needsOnboarding ||
-      (!status.isAdmin && !searchParams.get("handoff"))
-    ) {
+    if (!status.needsOnboarding) {
+      await set(forwardOnboardedVisitor$, status.isAdmin, signal);
+      return;
+    }
+    if (!status.isAdmin && !searchParams.get("handoff")) {
       const prompt =
         searchParams.get("handoff") || searchParams.get("prompt")?.trim();
       set(detachedNavigateTo$, prompt ? ROUTES.prompt : ROUTES.home, {
