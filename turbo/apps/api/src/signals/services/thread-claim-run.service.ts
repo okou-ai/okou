@@ -4850,7 +4850,7 @@ function pendingLaunchCommitResult(
     readonly persisted: ReturnType<typeof pendingAtomicLaunchResult>;
     readonly publicationReturnedAt: number;
   }>,
-  preparedReuse: PromiseSettledResult<RunnerReusePreparation | undefined>,
+  preparedReuse: PromiseSettledResult<RunnerReusePreparation>,
 ): AtomicLaunchCommitAttempt {
   if (published.status === "rejected") {
     throw published.reason;
@@ -4859,7 +4859,7 @@ function pendingLaunchCommitResult(
   if (!("run" in persisted)) {
     return persisted;
   }
-  const reusePreparation: RunnerReusePreparation | undefined =
+  const reusePreparation: RunnerReusePreparation =
     preparedReuse.status === "fulfilled"
       ? preparedReuse.value
       : {
@@ -4882,7 +4882,7 @@ function admittedRunLaunch(
   args: PreparedThreadLaunchCommit,
   admission: AdmittedPreparedLaunch,
   createdAt: Date,
-  reusePreparation: RunnerReusePreparation | undefined,
+  reusePreparation: RunnerReusePreparation,
 ): AdmittedRunLaunch {
   const { rowsArgs: rows, metadata } = args.persistence.rows;
   const payload = args.persistence.payload;

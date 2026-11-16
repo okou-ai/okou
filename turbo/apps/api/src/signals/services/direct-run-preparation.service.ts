@@ -42,7 +42,7 @@ export interface AdmittedRunLaunch {
   readonly profile: string;
   readonly reuseKey: string | null;
   readonly createdAt: Date;
-  readonly reusePreparation: RunnerReusePreparation | undefined;
+  readonly reusePreparation: RunnerReusePreparation;
 }
 
 const packageSelectionSchema = object({
