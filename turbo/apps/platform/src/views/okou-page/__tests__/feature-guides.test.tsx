@@ -524,6 +524,100 @@ test("replays a preview from the home link without acknowledging a real impressi
   expect(seen).toBeFalsy();
 });
 
+test("renders a single before-and-after guide and dismisses its selected preview without recording a view", async () => {
+  let seen = false;
+  const comparisonEdition: FeatureGuideEdition = {
+    ...edition,
+    id: "single-agent-2026-11-16",
+    content: {
+      ...edition.content,
+      items: [
+        {
+          featureId: "my-okou",
+          title: "One Okou. All your work.",
+          description: "Your Instructions and Workflows, with one Okou",
+          media: {
+            type: "comparison",
+            label: "From separate Agents to one personal Okou",
+            before: {
+              label: "Before",
+              title: "Pick an Agent for each task",
+              items: [
+                { title: "Writing agent", description: "Its own Instructions" },
+                { title: "Reports agent", description: "Its own Workflows" },
+              ],
+            },
+            after: {
+              label: "Now",
+              title: "Your personal Okou",
+              items: [
+                {
+                  title: "Personal Instructions",
+                  description: "Settings → Personal → My Okou",
+                },
+                {
+                  title: "Reusable Workflows",
+                  description: "Private or shared in your workspace",
+                },
+              ],
+            },
+            note: "Each person uses their own accounts and permissions.",
+            caption: "Illustrated example",
+          },
+        },
+      ],
+    },
+  };
+  context.mocks.api(featureGuidesContract.current, ({ query, respond }) => {
+    expect(query).toStrictEqual({
+      preview: "1",
+      edition: comparisonEdition.id,
+    });
+    return respond(200, { edition: comparisonEdition, preview: true });
+  });
+  context.mocks.api(featureGuidesContract.seen, ({ respond }) => {
+    seen = true;
+    return respond(200, { seen: true });
+  });
+  await setupPage({
+    context,
+    path: `/?featureGuidePreview=1&featureGuideEdition=${comparisonEdition.id}`,
+    featureSwitches: {
+      [FeatureSwitchKey.FeatureGuides]: true,
+      [FeatureSwitchKey.SingleAgent]: true,
+    },
+  });
+  const dialog = await screen.findByRole("dialog", {
+    name: "One Okou. All your work.",
+  });
+  const comparison = within(dialog).getByRole("figure", {
+    name: "From separate Agents to one personal Okou",
+  });
+  expect(within(comparison).getByText("Writing agent")).toBeInTheDocument();
+  expect(
+    within(comparison).getByText("Personal Instructions"),
+  ).toBeInTheDocument();
+  expect(
+    within(comparison).getByText("Reusable Workflows"),
+  ).toBeInTheDocument();
+  expect(
+    within(comparison).getByText(
+      "Each person uses their own accounts and permissions.",
+    ),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).queryByRole("group", {
+      name: "Features in this update",
+    }),
+  ).not.toBeInTheDocument();
+  expect(queryAllByRoleFast("link", dialog)).toHaveLength(0);
+  click(button("Close feature guide", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(seen).toBeFalsy();
+});
+
 test("starts a newly loaded edition at its first card and walkthrough step", async () => {
   const nextEdition: FeatureGuideEdition = {
     id: "next-monthly-update",

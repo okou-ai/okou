@@ -50,7 +50,28 @@ export type FeatureGuideConversation = zInfer<
   typeof featureGuideConversationSchema
 >;
 
+const comparisonPanelSchema = object({
+  label: string().min(1).max(40),
+  title: string().min(1).max(100),
+  items: array(
+    object({
+      title: string().min(1).max(80),
+      description: string().min(1).max(200),
+    }).strict(),
+  )
+    .min(1)
+    .max(3),
+}).strict();
+
 export const featureGuideMediaSchema = discriminatedUnion("type", [
+  object({
+    type: literal("comparison"),
+    label: string().min(1).max(120),
+    before: comparisonPanelSchema,
+    after: comparisonPanelSchema,
+    note: string().min(1).max(400),
+    caption: string().min(1).max(80),
+  }).strict(),
   object({
     type: literal("image"),
     url: mediaUrlSchema,
@@ -146,7 +167,10 @@ export const featureGuidesContract = c.router({
     method: "GET",
     path: "/api/feature-guides/current",
     headers: authHeadersSchema,
-    query: object({ preview: literal("1").optional() }).optional(),
+    query: object({
+      preview: literal("1").optional(),
+      edition: editionIdSchema.optional(),
+    }).optional(),
     responses: {
       200: object({
         edition: featureGuideEditionSchema.nullable(),

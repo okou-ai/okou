@@ -1,9 +1,13 @@
 import { command, computed } from "ccstate";
-import { featureGuidesContract } from "@okouai/api-contracts/contracts/feature-guides";
+import {
+  featureGuideEditionSchema,
+  featureGuidesContract,
+} from "@okouai/api-contracts/contracts/feature-guides";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { isStaffOrg } from "@okouai/core/staff-org";
 import { optionalEnv } from "../../lib/env";
+import singleAgentGuide from "../../feature-guides/single-agent-2026-11-16.json";
 import { resourceUnavailable, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -52,6 +56,19 @@ const current$ = command(async ({ get, set }, signal: AbortSignal) => {
     return resourceUnavailable(
       "Guide previews are available only in preview deployments",
     );
+  }
+  const previewEdition = get(currentQuery$)?.edition;
+  if (preview && previewEdition) {
+    if (previewEdition !== singleAgentGuide.id) {
+      return notFound("Feature guide preview not found");
+    }
+    return {
+      status: 200 as const,
+      body: {
+        edition: featureGuideEditionSchema.parse(singleAgentGuide),
+        preview: true,
+      },
+    };
   }
   const edition = await get(currentFeatureGuide$);
   signal.throwIfAborted();

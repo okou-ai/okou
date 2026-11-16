@@ -403,3 +403,52 @@ test("rejects guide replay in production deployments", async () => {
   );
   expect(rejected.status).toBe(403);
 });
+
+test("previews the My Okou comparison without publishing or acknowledging an edition", async () => {
+  mockOptionalEnv("ENV", "preview");
+  await identity();
+  const query = { preview: "1", edition: "single-agent-2026-11-16" } as const;
+  await enable(false);
+  const disabled = await accept(
+    clients().guide.current({ headers, query }),
+    [200],
+  );
+  expect(disabled.body.edition).toBeNull();
+  await enable();
+  const preview = await accept(
+    clients().guide.current({ headers, query }),
+    [200],
+  );
+  expect(preview.body).toMatchObject({
+    preview: true,
+    edition: {
+      id: query.edition,
+      content: {
+        items: [
+          {
+            title: "One Okou. All your work.",
+            media: {
+              type: "comparison",
+              before: { label: "Before" },
+              after: { label: "Now" },
+            },
+          },
+        ],
+      },
+    },
+  });
+  const revisionId = preview.body.edition?.revisionId;
+  if (!revisionId) {
+    throw new Error("Expected a preview revision");
+  }
+  await accept(
+    clients().guide.seen({
+      headers,
+      params: { editionId: query.edition },
+      body: { revisionId },
+    }),
+    [404],
+  );
+  mockOptionalEnv("ENV", "production");
+  await accept(clients().guide.current({ headers, query }), [403]);
+});

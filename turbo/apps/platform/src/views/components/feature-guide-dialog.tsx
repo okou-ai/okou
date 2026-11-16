@@ -31,6 +31,7 @@ import { ROUTES } from "../../signals/route-paths.ts";
 import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { FeatureGuideConversationPreview } from "./feature-guide-conversation.tsx";
+import { FeatureGuideComparison } from "./feature-guide-comparison.tsx";
 import { CarouselNavigation } from "./carousel-navigation.tsx";
 
 const FEATURE_GUIDE_ACTION_ROUTES = {
@@ -49,6 +50,9 @@ function GuideMedia({
   const { t } = useTranslation();
   const stepIndex = useGet(selection.stepIndex$);
   const selectStep = useSet(selection.selectStep$);
+  if (media.type === "comparison") {
+    return <FeatureGuideComparison media={media} />;
+  }
   if (media.type === "image") {
     return (
       <img
@@ -280,6 +284,9 @@ function GuideContents({
               ? {
                   searchParams: new URLSearchParams({
                     featureGuidePreview: "1",
+                    ...(snapshot.previewEdition
+                      ? { featureGuideEdition: snapshot.previewEdition }
+                      : {}),
                   }),
                 }
               : undefined
