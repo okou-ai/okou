@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { array, literal, object, string, unknown as zUnknown } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
@@ -9,7 +8,6 @@ import { publicChatActor } from "./helpers/public-chat-actor";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const chat = createChatEventsFixture(context);
@@ -36,22 +34,10 @@ const modalSchema = object({
 });
 
 async function failedSlackConversation(
-  enabled = true,
   failureReason = "account_verification_required",
 ) {
   const owner = await publicChatActor(context);
-  owner.ownsFeatureSwitches();
-  const orgId = owner.actor.orgId;
-  if (!orgId) {
-    throw new Error("Expected an owned workspace");
-  }
-  await owner.run(() => {
-    return updateFeatureSwitchesForUser(
-      context,
-      { ...owner.actor, orgId },
-      { [FeatureSwitchKey.IntegrationModelRecovery]: enabled },
-    );
-  });
+
   const installed = await owner.run(() => {
     return slack.installOrg({ actor: owner.actor, withConnection: true });
   });
@@ -400,52 +386,29 @@ describe("integration model recovery in Slack", () => {
     ).resolves.toMatchObject({ selectedModel: "auto" });
   });
 
-  it("rejects an open selector after recovery is disabled", async () => {
-    const fixture = await failedSlackConversation();
-    const modal = await fixture.open();
-    if (!modal.private_metadata || !fixture.owner.actor.orgId) {
-      throw new Error("Expected an owned recovery selector");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...fixture.owner.actor, orgId: fixture.owner.actor.orgId },
-      { [FeatureSwitchKey.IntegrationModelRecovery]: false },
-    );
-    await fixture.submit(modal.private_metadata, "auto");
-    await expect(
-      chat.chat.readThreadMetadata(fixture.owner.actor, fixture.thread.id),
-    ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
-  });
-
-  it.each([
-    { enabled: false, failure: "account_verification_required" },
-    { enabled: true, failure: "guest_home_filesystem_full" },
-  ])(
-    "keeps the original error without model controls for $failure when enabled=$enabled",
-    async ({ enabled, failure }) => {
-      const fixture = await failedSlackConversation(enabled, failure);
-      expect(fixture.failed.eventType).toBe("run.failed");
-      const messages = context.mocks.slack.chat.postMessage.mock.calls
-        .map(([body]) => {
-          return postedMessageSchema.safeParse(body);
-        })
-        .filter((result) => {
-          return result.success;
-        });
-      expect(
-        messages.some((result) => {
-          return result.data.blocks.some((block) => {
-            return block.elements?.some((element) => {
-              return element.action_id === "switch_model";
-            });
+  it("keeps the original error for a non-model failure", async () => {
+    const fixture = await failedSlackConversation("guest_home_filesystem_full");
+    expect(fixture.failed.eventType).toBe("run.failed");
+    const messages = context.mocks.slack.chat.postMessage.mock.calls
+      .map(([body]) => {
+        return postedMessageSchema.safeParse(body);
+      })
+      .filter((result) => {
+        return result.success;
+      });
+    expect(
+      messages.some((result) => {
+        return result.data.blocks.some((block) => {
+          return block.elements?.some((element) => {
+            return element.action_id === "switch_model";
           });
-        }),
-      ).toBeFalsy();
-      expect(
-        messages.some((result) => {
-          return result.data.text.length > 0;
-        }),
-      ).toBeTruthy();
-    },
-  );
+        });
+      }),
+    ).toBeFalsy();
+    expect(
+      messages.some((result) => {
+        return result.data.text.length > 0;
+      }),
+    ).toBeTruthy();
+  });
 });

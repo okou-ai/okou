@@ -2,8 +2,6 @@ import { command } from "ccstate";
 import { and, eq, gt, inArray, isNull, notExists, or, sql } from "drizzle-orm";
 import { object, string, uuid } from "zod";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -20,7 +18,6 @@ import {
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { memberModelRouteContextFromAccounts } from "./effective-model-route.service";
 import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
 import { catalogDisplayName, loadModelCatalog$ } from "./model-catalog.service";
@@ -64,15 +61,6 @@ interface ModelRecoveryIdentity {
 const loadIntegrationModelRecovery$ = command(
   async ({ get, set }, args: ModelRecoveryIdentity, signal: AbortSignal) => {
     if (!uuid().safeParse(args.eventId).success) {
-      return null;
-    }
-    const feature = await set(
-      loadUserFeatureSwitchContext$,
-      args.orgId,
-      args.userId,
-      signal,
-    );
-    if (!isFeatureEnabled(FeatureSwitchKey.IntegrationModelRecovery, feature)) {
       return null;
     }
     const [event] = await get(db$)

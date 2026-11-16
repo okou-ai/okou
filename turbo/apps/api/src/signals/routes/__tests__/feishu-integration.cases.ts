@@ -4886,7 +4886,6 @@ export function registerFeishuIntegrationTests(
         await own(() => {
           return enableFeishuIntegration(platform, fixture.actor, {
             [FeatureSwitchKey.OkouDebug]: true,
-            [FeatureSwitchKey.IntegrationModelRecovery]: true,
           });
         });
         await connectFixtureUser(fixture);

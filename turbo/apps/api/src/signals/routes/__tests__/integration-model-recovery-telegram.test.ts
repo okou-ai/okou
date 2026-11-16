@@ -2,7 +2,6 @@ import { randomInt } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { array, object, string } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
@@ -15,7 +14,6 @@ import {
 } from "./helpers/api-bdd-integrations";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const BOT_TOKEN = "123456:recovery-bot";
@@ -34,16 +32,7 @@ describe("integration model recovery in Telegram", () => {
     const owner = await publicChatActor(context);
     const integrations = createBddIntegrationApi(context);
     const chat = createChatEventsFixture(context);
-    owner.ownsFeatureSwitches();
-    const orgId = owner.actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected a workspace");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...owner.actor, orgId },
-      { [FeatureSwitchKey.IntegrationModelRecovery]: true },
-    );
+
     mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", BOT_TOKEN);
     mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "model_recovery_bot");
     mockEnv("TELEGRAM_OFFICIAL_WEBHOOK_SECRET", WEBHOOK_SECRET);
