@@ -28,6 +28,7 @@ import androidx.test.uiautomator.Until
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import java.util.regex.Pattern
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -67,12 +68,13 @@ class NativeRealtimeTest {
         val failures = mutableListOf<Throwable>()
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
+            // Markdown paragraphs add line terminators after the unchanged visible body.
+            fun label(value: String) =
+                By.pkg(app.packageName).text(Pattern.compile(Pattern.quote(value) + "\\n*"))
             fun text(value: String) =
-                checkNotNull(
-                    device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
-                )
+                checkNotNull(device.wait(Until.findObject(label(value)), 10_000))
             fun reveal(value: String) {
-                val target = By.pkg(app.packageName).text(value)
+                val target = label(value)
                 if (!device.hasObject(target)) {
                     val container =
                         checkNotNull(
@@ -304,7 +306,7 @@ class NativeRealtimeTest {
             savedOutput.set(true)
             external.invalidate()
             reveal("Saved native answer")
-            assertFalse(device.hasObject(By.pkg(app.packageName).text("Live native answer")))
+            assertFalse(device.hasObject(label("Live native answer")))
             condition { chats?.history?.output?.state?.value?.messages?.isEmpty() == true }
             assertTrue(
                 checkNotNull(
