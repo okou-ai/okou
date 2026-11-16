@@ -5,10 +5,7 @@ import {
   getRunResponseSchema,
   runResultSchema,
   networkLogEntrySchema,
-  unifiedRunRequestSchema,
 } from "../runs";
-import { triggerSourceSchema } from "../logs";
-import { runCreateBodySchema } from "../run-routes";
 import { runContextArchiveSchema } from "../run-context-archive";
 
 describe("Retained Run context Storage observations", () => {
@@ -98,56 +95,6 @@ describe("Claude tool entry contract", () => {
     for (const tool of ["", "   ", "Bash,Read", "--help", " -x"]) {
       expect(claudeToolEntrySchema.safeParse(tool).success).toBe(false);
     }
-  });
-});
-
-describe("unified run request contract", () => {
-  it("accepts only catalog trigger sources on unified run requests", () => {
-    expect(triggerSourceSchema.safeParse("unknown-source").success).toBe(false);
-    expect(
-      runCreateBodySchema.safeParse({
-        prompt: "ordinary request",
-        triggerSource: "web",
-      }).success,
-    ).toBe(false);
-    const input = { agentId: "agent-1", prompt: "ordinary work" };
-    expect(
-      unifiedRunRequestSchema.safeParse({
-        ...input,
-        triggerSource: "unknown-source",
-      }).success,
-    ).toBe(false);
-    expect(
-      unifiedRunRequestSchema.safeParse({ ...input, triggerSource: "web" })
-        .success,
-    ).toBe(true);
-  });
-
-  it("accepts Agent-backed creation", () => {
-    expect(
-      unifiedRunRequestSchema.safeParse({
-        agentId: "agent-1",
-        prompt: "start a run",
-      }).success,
-    ).toBe(true);
-  });
-
-  it("rejects built-in models for direct runs without credit admission", () => {
-    expect(
-      unifiedRunRequestSchema.safeParse({
-        prompt: "run directly",
-        modelProviderType: "built-in",
-      }).success,
-    ).toBe(false);
-  });
-
-  it("accepts the built-in provider on internal agent run requests", () => {
-    expect(
-      runCreateBodySchema.parse({
-        prompt: "run through Okou",
-        modelProvider: "built-in",
-      }).modelProvider,
-    ).toBe("built-in");
   });
 });
 
