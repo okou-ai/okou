@@ -10,6 +10,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.76.1](https://github.com/okou-ai/okou/compare/api-v2.76.0...api-v2.76.1) (2026-11-16)
+
+
+### Refactoring
+
+* **api:** carry pinned model selection through thread launch ([#47920](https://github.com/okou-ai/okou/issues/47920)) ([bce1ee8](https://github.com/okou-ai/okou/commit/bce1ee89e973cd00fec9327392a6c9db21b196b1))
+* **api:** remove workflow storage launch remnants ([#47913](https://github.com/okou-ai/okou/issues/47913)) ([5093a7d](https://github.com/okou-ai/okou/commit/5093a7d563b2290b988726b3ef4bdb5ac1459e08))
+
+
+### Performance Improvements
+
+* **api:** skip unused conditional run preparation reads ([#47919](https://github.com/okou-ai/okou/issues/47919)) ([2e87907](https://github.com/okou-ai/okou/commit/2e879078228fab6f73ace6cd935056aa85a3af62))
+* **api:** trim redundant run preparation projections ([#47903](https://github.com/okou-ai/okou/issues/47903)) ([75554a2](https://github.com/okou-ai/okou/commit/75554a2485cb2a0a4ebab9935be1d211db2610f5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.844.3
+    * @okouai/db bumped to 2.39.3
+    * @okouai/pi-agent-runtime bumped to 1.51.139
+
 ## [2.76.0](https://github.com/okou-ai/okou/compare/api-v2.75.1...api-v2.76.0) (2026-11-16)
 
 

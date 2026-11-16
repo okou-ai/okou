@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/okou-ai/okou/compare/process-launch-v0.1.7...process-launch-v0.1.8) (2026-11-16)
+
+
+### Refactoring
+
+* **rust:** use typed waitid for owned-child observation ([#47916](https://github.com/okou-ai/okou/issues/47916)) ([63c1cb4](https://github.com/okou-ai/okou/commit/63c1cb42b3e5ddec5e783b089540bb315a19fffe))
+
 ## [0.1.7](https://github.com/okou-ai/okou/compare/process-launch-v0.1.6...process-launch-v0.1.7) (2026-11-14)
 
 
