@@ -58,7 +58,7 @@ def check_host():
     stamp(
         "host", image=image, macos=version, build=build, architecture=platform.machine()
     )
-    if (image, version, platform.machine()) != ("20261112.0361.1", "27.2", "arm64"):
+    if (image, version, platform.machine()) != ("20261104.0337.1", "27.0.1", "arm64"):
         raise ValueError("Experiment host image mismatch; exclude this sample")
 
 
