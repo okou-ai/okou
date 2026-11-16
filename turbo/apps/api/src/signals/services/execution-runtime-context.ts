@@ -25,7 +25,7 @@ import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
 import type { ExecutionContextRun } from "./execution-context";
 import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
-import { createConnectorsContext } from "./connectors-context.service";
+import { createConnectorSkillVolumes } from "./connectors-context.service";
 import { dataRouterEnvironment } from "./data-router-environment";
 import { createExecutionSeedSkills } from "./execution-global-model-context.service";
 import { createAcceptedExecutionStorageObjects } from "./execution-storage.service";
@@ -46,10 +46,10 @@ import {
   mergeEnvironments,
 } from "./run-environment";
 import {
-  mergeRunPromptAndSkills,
+  mergeRunSkillVolumes,
   resolveRunSkillVolumes,
 } from "./run-prompt-and-skills";
-import { createRunTemplates } from "./run-templates.service";
+import { createRunTemplatePackages } from "./run-templates.service";
 import { storedMountFromPrepared } from "./run-storage-manifest.service";
 import {
   DEFAULT_DISALLOWED_TOOLS,
@@ -426,7 +426,7 @@ function createExecutionPackages(
     const { templateInput } = (await get(input$)).facts;
     return templateInput.userMessage ? templateInput : null;
   });
-  const templates$ = createRunTemplates(
+  const templates$ = createRunTemplatePackages(
     templateInput$,
     computed(async (get) => {
       return (await get(input$)).run.orgId;
@@ -434,15 +434,8 @@ function createExecutionPackages(
     disabledTools$,
   );
   const seeds$ = createSystemSkillsContext(disabledTools$, seedSkills$);
-  const connectorSkills$ = createConnectorsContext(
+  const connectorSkills$ = createConnectorSkillVolumes(
     sources.signals.authorizedConnectors$,
-    computed(async (get) => {
-      return (
-        (await get(input$)).context.featureFlags?.[
-          FeatureSwitchKey.SingleAgent
-        ] === true
-      );
-    }),
   );
   return computed(async (get) => {
     const { run } = await get(input$);
@@ -464,11 +457,15 @@ function createExecutionPackages(
     if (templates && "error" in templates) {
       throw new Error("Run execution sources are unavailable");
     }
-    const parts = [connectors, seedSkills, templates].filter((part) => {
+    const parts = [
+      connectors,
+      seedSkills?.skillVolumes,
+      templates?.skillVolumes,
+    ].filter((part) => {
       return part !== undefined;
     });
     const volumes = resolveRunSkillVolumes(
-      mergeRunPromptAndSkills(parts).skillVolumes,
+      mergeRunSkillVolumes(parts),
       skillRoot,
     );
     const winners = normalizeMountOverlay([

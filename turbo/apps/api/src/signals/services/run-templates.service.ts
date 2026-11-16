@@ -9,7 +9,7 @@ import { userTemplates } from "@okouai/db/schema/user-template";
 import { computed, type Computed } from "ccstate";
 import { and, eq, inArray, or } from "drizzle-orm";
 import {
-  buildGenerationTemplatesPrompt,
+  resolveGenerationTemplatesGuidance,
   type LiveGenerationTemplate,
 } from "../../lib/generation-template-prompt";
 import {
@@ -37,13 +37,65 @@ export type RunTemplatesResult =
       };
     };
 
+type RunTemplateGuidanceResult =
+  | (Pick<RunPromptAndSkills, "skillVolumes"> & {
+      readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
+      readonly renderPrompt: () => string;
+    })
+  | Extract<RunTemplatesResult, { readonly error: unknown }>;
+
 export function createRunTemplates(
+  event$: Parameters<typeof createRunTemplateGuidance>[0],
+  orgId$: Parameters<typeof createRunTemplateGuidance>[1],
+  disabledPaidTools$: Parameters<typeof createRunTemplateGuidance>[2],
+): Computed<Promise<RunTemplatesResult>> {
+  const guidance$ = createRunTemplateGuidance(
+    event$,
+    orgId$,
+    disabledPaidTools$,
+  );
+  return computed(async (get): Promise<RunTemplatesResult> => {
+    const guidance = await get(guidance$);
+    if ("error" in guidance) {
+      return guidance;
+    }
+    return {
+      templateUsageIdentities: guidance.templateUsageIdentities,
+      skillVolumes: guidance.skillVolumes,
+      systemPromptVariables: {
+        generationTemplatePrompt: guidance.renderPrompt(),
+      },
+      userPromptVariables: {},
+    };
+  });
+}
+
+/** Current ACLs, selection validation and bundles, without discarded prompt text. */
+export function createRunTemplatePackages(
+  event$: Parameters<typeof createRunTemplateGuidance>[0],
+  orgId$: Parameters<typeof createRunTemplateGuidance>[1],
+  disabledPaidTools$: Parameters<typeof createRunTemplateGuidance>[2],
+) {
+  const guidance$ = createRunTemplateGuidance(
+    event$,
+    orgId$,
+    disabledPaidTools$,
+  );
+  return computed(async (get) => {
+    const guidance = await get(guidance$);
+    return "error" in guidance
+      ? guidance
+      : { skillVolumes: guidance.skillVolumes };
+  });
+}
+
+function createRunTemplateGuidance(
   event$: Computed<
     Promise<Pick<PickedThreadInputEvent, "userId" | "userMessage"> | null>
   >,
   orgId$: Computed<Promise<string>>,
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
-): Computed<Promise<RunTemplatesResult>> {
+): Computed<Promise<RunTemplateGuidanceResult>> {
   const selection$ = computed(async (get) => {
     const event = await get(event$);
     if (!event) {
@@ -149,7 +201,7 @@ export function createRunTemplates(
           ];
     });
   });
-  return computed(async (get): Promise<RunTemplatesResult> => {
+  return computed(async (get): Promise<RunTemplateGuidanceResult> => {
     const [selection, presentations, mounted, disabledPaidTools] =
       await Promise.all([
         get(selection$),
@@ -176,9 +228,9 @@ function buildRunTemplateGuidance(args: {
     readonly guidanceBundle: TemplateGuidanceBundle;
   })[];
   readonly disabledPaidTools: readonly string[];
-}): RunTemplatesResult {
+}): RunTemplateGuidanceResult {
   const { templates, presentations, mounted, disabledPaidTools } = args;
-  const guidance = buildGenerationTemplatesPrompt(templates, {
+  const guidance = resolveGenerationTemplatesGuidance(templates, {
     mountedUserPresentationTemplateIds: presentations.map((row) => {
       return row.templateId;
     }),
@@ -209,8 +261,7 @@ function buildRunTemplateGuidance(args: {
   ];
   return {
     templateUsageIdentities: templateUsageIdentities(templates, mounted),
-    systemPromptVariables: { generationTemplatePrompt: guidance.prompt },
-    userPromptVariables: {},
+    renderPrompt: guidance.render,
     skillVolumes: references.map((reference) => {
       return {
         source: "request_additional_volume" as const,
