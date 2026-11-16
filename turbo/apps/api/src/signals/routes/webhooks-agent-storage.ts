@@ -8,8 +8,8 @@ import { authorization$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
-  commitSandboxStorageUpload$,
-  prepareStorageUploadForAuth$,
+  commitMemberMemoryWriteback$,
+  prepareMemberMemoryWriteback$,
 } from "../services/storage-write.service";
 import {
   getSandboxAuthForRun,
@@ -32,7 +32,7 @@ const prepareStorage$ = command(async ({ get, set }, signal: AbortSignal) => {
     return unauthorizedRunMismatch;
   }
   return await set(
-    prepareStorageUploadForAuth$,
+    prepareMemberMemoryWriteback$,
     {
       auth: {
         tokenType: "sandbox",
@@ -58,7 +58,7 @@ const commitStorage$ = command(async ({ get, set }, signal: AbortSignal) => {
     return unauthorizedRunMismatch;
   }
   return await set(
-    commitSandboxStorageUpload$,
+    commitMemberMemoryWriteback$,
     {
       ...body,
       auth: {
