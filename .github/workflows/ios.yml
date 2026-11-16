@@ -255,7 +255,7 @@ jobs:
     timeout-minutes: 30
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
-      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone Duo,OS=27.1
       IOS_BUILD_CACHE_ENABLED: "true"
       IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
     steps:
@@ -305,6 +305,21 @@ jobs:
         uses: ./.github/actions/setup-ios-build-cache
         with:
           toolchain-file: ${{ env.IOS_ARCHIVE_DIR }}/toolchain.json
+      # The SDK/compiler are unchanged; Xcode validates native cache replay inputs.
+      # Reuse the control's caches while comparing only simulator runtime/device.
+      - name: Restore control SwiftPM sources for runtime experiment
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/okou-ios-ci/SourcePackages
+          key: ios-swiftpm-v1-aec6a49679f515c8c94fd60e29460d17e0c33607398230d42b5798724a3ca1c0-ed45727d65a03556184b928f408017ebd48c9ae5cd1068b5768c466c7aa5090b
+          fail-on-cache-miss: true
+      - name: Restore control compiler cache for runtime experiment
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/okou-ios-ci/DerivedData/CompilationCache.noindex
+          key: ios-compilation-v1-aec6a49679f515c8c94fd60e29460d17e0c33607398230d42b5798724a3ca1c0-ed45727d65a03556184b928f408017ebd48c9ae5cd1068b5768c466c7aa5090b-6bc2e11a30f668d4c6992efeced9c35bccc83469
+          restore-keys: ios-compilation-v1-aec6a49679f515c8c94fd60e29460d17e0c33607398230d42b5798724a3ca1c0-
+          fail-on-cache-miss: true
       - name: Receive locked source repositories
         if: github.event_name != 'merge_group' || steps.evidence.outputs.run_tests == 'true'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
