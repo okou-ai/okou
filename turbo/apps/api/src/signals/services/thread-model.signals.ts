@@ -2,7 +2,6 @@ import { performance } from "node:perf_hooks";
 import {
   getFrameworkForType,
   isBuiltInModelProviderType,
-  modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
@@ -10,10 +9,7 @@ import {
   isAutoSelectedModel,
 } from "@okouai/core/auto-run-model";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import {
-  getValidatedFramework,
-  type SupportedFramework,
-} from "@okouai/core/frameworks";
+import type { SupportedFramework } from "@okouai/core/frameworks";
 import { piCatalogModel } from "@okouai/core/pi-execution";
 import { computed, type Computed } from "ccstate";
 import {
@@ -25,10 +21,7 @@ import {
 import { now } from "../../lib/time";
 import { safeSync, settle } from "../utils";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
-import type {
-  AgentRunModelPin,
-  ResolvedModelProviderEnvironment,
-} from "./agent-run-contracts";
+import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import {
   type BuiltInModelRuntimeRoute,
@@ -89,11 +82,7 @@ export type QueuedModelContext =
   | ThreadModelError
   | {
       readonly pin: ModelFirstPin;
-      readonly providerAdmission: {
-        readonly effectiveModelProvider: string | null | undefined;
-        readonly cliAgentType: string | null;
-        readonly error: ThreadModelError | undefined;
-      };
+      readonly admissionError: ThreadModelError | undefined;
       readonly featureSwitchContext: FeatureSwitchContext;
       readonly runCodexServiceTier: "fast" | undefined;
       readonly reasoningEffort: ReasoningEffort | undefined;
@@ -105,16 +94,13 @@ export type QueuedModelContext =
 /** The selected model facts shared by prompt preparation and Run persistence. */
 export interface ThreadModelSelection {
   readonly owner: { readonly userId: string; readonly orgId: string };
-  readonly agentRunModelPin: AgentRunModelPin;
-  readonly modelProviderId: string | undefined;
-  readonly modelProviderType: string | undefined;
-  readonly selectedModel: string;
+  readonly pin: ModelFirstPin;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
   readonly codexServiceTier: "fast" | undefined;
   readonly reasoningEffort: ReasoningEffort | undefined;
   readonly piExecution: boolean;
   /** The CLI runtime the run executes in; Pi when Pi execution applies. */
-  readonly cliAgentType: string | null;
+  readonly cliAgentType: "pi" | ReturnType<typeof getFrameworkForType>;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
 }
 
@@ -279,14 +265,10 @@ function createQueuedModel(
         : undefined;
     return {
       pin,
-      providerAdmission: {
-        effectiveModelProvider: admission.effectiveModelProvider,
-        cliAgentType: admission.cliAgentType,
-        error:
-          admission.error ??
-          unpriced ??
-          (admission.hasSpendableCredits ? undefined : insufficientCredits()),
-      },
+      admissionError:
+        admission.error ??
+        unpriced ??
+        (admission.hasSpendableCredits ? undefined : insufficientCredits()),
       featureSwitchContext,
       runCodexServiceTier: isAutoSelectedModel(pin.selectedModel)
         ? undefined
@@ -355,10 +337,6 @@ function createProviderAdmission(
       get(bootstrap.plan$),
     ]);
     const effectiveModelProvider = pin.modelProviderType;
-    const parsed = modelProviderTypeSchema.safeParse(effectiveModelProvider);
-    const cliAgentType = parsed.success
-      ? getFrameworkForType(parsed.data)
-      : null;
     const error = checkOrgPlanRunAdmission({
       catalog,
       capabilities,
@@ -377,16 +355,12 @@ function createProviderAdmission(
       (await get(creditsWaived$))
     ) {
       return {
-        effectiveModelProvider,
-        cliAgentType,
         error,
         hasSpendableCredits: true,
       };
     }
     const balance = await get(bootstrap.credits$);
     return {
-      effectiveModelProvider,
-      cliAgentType,
       error: balance ? undefined : insufficientCredits(),
       hasSpendableCredits:
         balance !== null &&
@@ -411,10 +385,10 @@ function createModelSelection(
       if ("status" in model) {
         return model;
       }
-      if (model.providerAdmission.error) {
-        return model.providerAdmission.error;
+      if (model.admissionError) {
+        return model.admissionError;
       }
-      const modelProviderType = model.providerAdmission.effectiveModelProvider;
+      const modelProviderType = model.pin.modelProviderType;
       if (
         isBuiltInModelProviderType(modelProviderType) &&
         !model.builtInModelRuntimeRoute
@@ -444,15 +418,7 @@ function createModelSelection(
       });
       return {
         owner: { userId: selected.userId, orgId: selected.orgId },
-        agentRunModelPin: {
-          modelProvider: modelProviderType ?? null,
-          modelProviderId: model.pin.modelProviderId,
-          modelProviderCredentialScope: model.pin.modelProviderCredentialScope,
-          selectedModel: model.pin.selectedModel,
-        },
-        modelProviderId: model.pin.modelProviderId ?? undefined,
-        modelProviderType: modelProviderType ?? undefined,
-        selectedModel: model.pin.selectedModel,
+        pin: model.pin,
         builtInModelRuntimeRoute: model.builtInModelRuntimeRoute ?? undefined,
         codexServiceTier: model.runCodexServiceTier,
         reasoningEffort: resolveReasoningEffortForDispatch({
@@ -465,7 +431,9 @@ function createModelSelection(
           piExecution,
         }),
         piExecution,
-        cliAgentType: piExecution ? "pi" : model.providerAdmission.cliAgentType,
+        cliAgentType: piExecution
+          ? "pi"
+          : getFrameworkForType(modelProviderType),
         queueFirstAssociation: {
           threadId: event.chatThreadId,
           eventId: event.id,
@@ -487,14 +455,11 @@ function createSubscriptionSelection(
       if ("status" in selection) {
         return selection;
       }
-      const pin = selection.agentRunModelPin;
-      if (
-        !pin.modelProvider ||
-        !isPersonalSubscriptionProviderType(pin.modelProvider)
-      ) {
+      const pin = selection.pin;
+      if (!isPersonalSubscriptionProviderType(pin.modelProviderType)) {
         return selection;
       }
-      const providerType = pin.modelProvider;
+      const providerType = pin.modelProviderType;
       const collector = get(dispatchTiming$);
       const startedAt = performance.now();
       return await (async () => {
@@ -514,8 +479,7 @@ function createSubscriptionSelection(
         }
         return {
           ...selection,
-          modelProviderId: account.id,
-          agentRunModelPin: { ...pin, modelProviderId: account.id },
+          pin: { ...pin, modelProviderId: account.id },
         };
       })().finally(() => {
         collector.recordDuration(
@@ -542,28 +506,7 @@ function createProviderContext(
     }
     const timing = get(dispatchTiming$);
     const catalog = await get(bootstrap.modelCatalog$);
-    const parsed = modelProviderTypeSchema.safeParse(
-      selection.modelProviderType,
-    );
-    let framework: SupportedFramework;
-    if (parsed.success) {
-      framework = getFrameworkForType(parsed.data);
-    } else if (selection.modelProviderId) {
-      const member = await get(bootstrap.memberModels$);
-      const provider =
-        member.providers.find((row) => {
-          return row.id === selection.modelProviderId;
-        }) ??
-        member.accounts.find((row) => {
-          return row.id === selection.modelProviderId;
-        });
-      const type = modelProviderTypeSchema.safeParse(provider?.type);
-      framework = type.success
-        ? getFrameworkForType(type.data)
-        : getValidatedFramework(undefined);
-    } else {
-      framework = getValidatedFramework(undefined);
-    }
+    const framework = getFrameworkForType(selection.pin.modelProviderType);
     return { selection, catalog, timing, framework };
   });
   return providerContext$;
@@ -580,11 +523,12 @@ function createModelEnvironment(
         return null;
       }
       const { selection, framework } = context;
-      if (isBuiltInModelProviderType(selection.modelProviderType)) {
+      const pin = selection.pin;
+      if (isBuiltInModelProviderType(pin.modelProviderType)) {
         const route = selection.builtInModelRuntimeRoute;
         if (
           !route ||
-          route.selectedModel !== selection.selectedModel ||
+          route.selectedModel !== pin.selectedModel ||
           !isBuiltInModelRuntimeRoutePermitted(route) ||
           getFrameworkForType(route.providerType) !== framework
         ) {
@@ -598,52 +542,44 @@ function createModelEnvironment(
         return source
           ? prepareManagedModelEnvironment(source, {
               framework,
-              selectedModel: selection.selectedModel,
+              selectedModel: pin.selectedModel,
               builtInModelRuntimeRoute: route,
             })
           : null;
       }
-      if (
-        !selection.modelProviderId ||
-        !selection.modelProviderType ||
-        !isPersonalSubscriptionProviderType(selection.modelProviderType)
-      ) {
+      if (!pin.modelProviderId) {
         return null;
       }
       const source = memberAccountSourceFromSnapshot(
         await get(bootstrap.memberModels$),
-        selection.modelProviderId,
+        pin.modelProviderId,
       );
       if (!source) {
         return null;
       }
       const type = source.configuration.providerType;
       if (
-        !selection.selectedModel ||
+        !pin.selectedModel ||
         !isPersonalSubscriptionProviderType(type) ||
         getFrameworkForType(type) !== framework ||
-        selection.modelProviderType !== type
+        pin.modelProviderType !== type
       ) {
         return null;
       }
       const upstreamModel = catalogSubscriptionUpstreamModel(
         await get(bootstrap.modelCatalog$),
-        selection.selectedModel,
+        pin.selectedModel,
         type,
       );
       if (!upstreamModel) {
         return null;
       }
-      return prepareSubscriptionModelEnvironment(
-        source,
-        selection.selectedModel,
-        {
-          upstreamModel,
-          userId: selection.owner.userId,
-          sourceId: selection.modelProviderId,
-          piExecution: selection.piExecution,
-        },
-      );
+      return prepareSubscriptionModelEnvironment(source, pin.selectedModel, {
+        upstreamModel,
+        userId: selection.owner.userId,
+        sourceId: pin.modelProviderId,
+        piExecution: selection.piExecution,
+      });
     },
   );
   return modelEnvironment$;

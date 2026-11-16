@@ -118,7 +118,7 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
   );
   const model$ = createExecutionModel(input$);
   const modelRoute$ = computed(async (get) => {
-    return (await get(model$))?.provider ?? null;
+    return (await get(model$)).provider;
   });
   const modelEnvironment$ = createModelProviderEnvironmentSignals(
     connectors.runVariables$,
@@ -296,9 +296,6 @@ function createExecutionModel(input$: ExecutionInput$) {
   const memberModels$ = createRunModelSources(memberIdentity$);
   return computed(async (get) => {
     const { run, facts } = await get(input$);
-    if (run.modelProvider === null) {
-      return null;
-    }
     if (
       !run.selectedModel ||
       !run.modelRuntimeModel ||
@@ -480,7 +477,7 @@ function createExecutionPlatform(
         ...paidToolPlatformEnvironment({
           disabledTools,
           framework,
-          modelProviderType: model?.provider.type ?? null,
+          modelProviderType: model.provider.type,
           piExecution: framework === "pi",
         }),
         ...(integration ? { OKOU_CURRENT_INTEGRATION: integration } : {}),
@@ -620,7 +617,7 @@ function createExecutionPreparedContext(
         environment.secretConnectorMetadataMap ?? null,
       connectorRuntimeTargets: [...environment.runtimeTargets],
       billableFirewalls: billableFirewallsForPermissions({
-        modelProvider: model?.provider ?? null,
+        modelProvider: model.provider,
         permissions: environmentPermissionManifest(environment),
       }),
       disallowedTools: [...DEFAULT_DISALLOWED_TOOLS],
@@ -666,13 +663,13 @@ function executionModelConfiguration(
     modelUsageProvider:
       run.modelProvider === "built-in"
         ? (run.modelUsageProvider ?? undefined)
-        : (run.selectedModel ?? undefined),
+        : run.selectedModel,
     modelUsageLongContextMinTotalInputTokens:
       run.modelProvider === "built-in"
         ? (run.modelLongContextMinTotalInputTokens ?? undefined)
         : 0,
-    codexRuntimeConfig: model?.provider.codexRuntimeConfig ?? null,
-    piModelConfig: model?.piModelConfig,
+    codexRuntimeConfig: model.provider.codexRuntimeConfig ?? null,
+    piModelConfig: model.piModelConfig,
     piLaunchConfig: framework === "pi" ? { schemaVersion: 2 } : undefined,
     piSessionId:
       framework === "pi"
