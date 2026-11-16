@@ -251,51 +251,6 @@ impl HomeImageCache {
         lock_dir: PathBuf,
         scope: &str,
     ) -> Self {
-        #[cfg(any(test, feature = "test-support"))]
-        {
-            Self::with_cache_dirs_and_fs_stats(
-                paths,
-                cache_dir,
-                lock_dir,
-                scope,
-                FsStats {
-                    total_bytes: TEST_FS_TOTAL_BYTES,
-                    available_bytes: TEST_FS_AVAILABLE_BYTES,
-                    ..FsStats::default()
-                },
-            )
-        }
-        #[cfg(not(any(test, feature = "test-support")))]
-        {
-            Self {
-                telemetry: None,
-                is_first_run: None,
-                inner: Arc::new(HomeImageCacheInner {
-                    paths,
-                    cache_dir,
-                    lock_dir,
-                    cache_scope: scope.to_owned(),
-                    entry_lock_owners: Mutex::new(HashMap::new()),
-                    publication_admission: Semaphore::new(HOME_PUBLICATION_IO_SLOTS),
-                    checkout_io: TaskTracker::new(),
-                    selection_releases: SelectionReleases::default(),
-                    pressure_reclamation: PressureReclamation::new(),
-                }),
-                idle_home_reclamation: Arc::new(IdleHomeReclamation::new(
-                    MAX_HOME_PROMOTION_CONCURRENCY,
-                )),
-                background_gc: BackgroundGcActivity::default(),
-            }
-        }
-    }
-    #[cfg(any(test, feature = "test-support"))]
-    fn with_cache_dirs_and_fs_stats(
-        paths: RunnerPaths,
-        cache_dir: PathBuf,
-        lock_dir: PathBuf,
-        scope: &str,
-        stats: FsStats,
-    ) -> Self {
         Self {
             telemetry: None,
             is_first_run: None,
@@ -313,10 +268,19 @@ impl HomeImageCache {
                 pressure_demand_accepted: tokio::sync::Notify::new(),
                 #[cfg(test)]
                 publication_admission_entered: Semaphore::new(0),
-                fs_stats_override: Mutex::new(stats),
+                #[cfg(any(test, feature = "test-support"))]
+                fs_stats_override: Mutex::new(FsStats {
+                    total_bytes: TEST_FS_TOTAL_BYTES,
+                    available_bytes: TEST_FS_AVAILABLE_BYTES,
+                    ..FsStats::default()
+                }),
+                #[cfg(any(test, feature = "test-support"))]
                 gc_root_scan_count: AtomicUsize::new(0),
+                #[cfg(any(test, feature = "test-support"))]
                 held_state_root_scan_count: AtomicUsize::new(0),
+                #[cfg(any(test, feature = "test-support"))]
                 inventory_key_probe_count: AtomicUsize::new(0),
+                #[cfg(any(test, feature = "test-support"))]
                 held_state_root_scan_notify: tokio::sync::Notify::new(),
                 #[cfg(test)]
                 publication_fault: AtomicUsize::new(0),
@@ -325,9 +289,13 @@ impl HomeImageCache {
                 MAX_HOME_PROMOTION_CONCURRENCY,
             )),
             background_gc: BackgroundGcActivity::default(),
+            #[cfg(any(test, feature = "test-support"))]
             prepare_lock_test_gate: None,
+            #[cfg(any(test, feature = "test-support"))]
             inventory_test_gate: None,
+            #[cfg(any(test, feature = "test-support"))]
             handoff_test_gate: None,
+            #[cfg(any(test, feature = "test-support"))]
             routine_gc_test_gate: None,
             #[cfg(test)]
             gc_inventory_test_gate: None,
@@ -337,15 +305,29 @@ impl HomeImageCache {
             publication_sync_test_gate: None,
             #[cfg(test)]
             publication_copy_test_gate: None,
+            #[cfg(any(test, feature = "test-support"))]
             use_actual_fs_stats: false,
             #[cfg(test)]
             pressure_reserve_override: None,
+            #[cfg(any(test, feature = "test-support"))]
             pressure_turn_test_gate: None,
             #[cfg(test)]
             pressure_completion_test_gate: None,
             #[cfg(test)]
             pressure_inventory_stopped_test_gate: None,
         }
+    }
+    #[cfg(any(test, feature = "test-support"))]
+    fn with_cache_dirs_and_fs_stats(
+        paths: RunnerPaths,
+        cache_dir: PathBuf,
+        lock_dir: PathBuf,
+        scope: &str,
+        stats: FsStats,
+    ) -> Self {
+        let cache = Self::with_cache_dirs(paths, cache_dir, lock_dir, scope);
+        cache.set_fs_stats_for_test(stats);
+        cache
     }
     pub fn with_telemetry(mut self, telemetry: SandboxOpReporter) -> Self {
         self.telemetry = Some(telemetry);
