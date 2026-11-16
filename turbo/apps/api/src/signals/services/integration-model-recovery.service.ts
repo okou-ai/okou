@@ -65,6 +65,7 @@ const loadIntegrationModelRecovery$ = command(
     }
     const [event] = await get(db$)
       .select({
+        eventType: chatEvents.eventType,
         threadId: chatThreads.id,
         selectedModel: chatThreads.selectedModel,
         updatedAt: sql`${chatThreads.updatedAt}::text`.mapWith(pgTextDecoder),
@@ -111,6 +112,7 @@ const loadIntegrationModelRecovery$ = command(
     }
     const reason = event.runFailureReason ?? event.failureReason;
     const admissionModelError =
+      event.eventType === "output.error" &&
       reason === null &&
       ([
         "NO_MODEL_PROVIDER",
