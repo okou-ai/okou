@@ -33,14 +33,10 @@ describe("Stripe billing purpose isolation", () => {
     "invoice purpose",
     "subscription purpose",
     "archived source",
-    "Atom purpose",
-    "Atom type",
     "Custom purpose",
-    "Atom entitlement",
-    "Atom code",
-    "Atom organization credits",
-    "Atom member credits",
     "Custom type",
+    "Custom tier",
+    "Custom plan id",
   ])(
     "keeps paid Plan benefits unchanged when replaying an invoice identified by %s",
     async (identity) => {
@@ -50,25 +46,15 @@ describe("Stripe billing purpose isolation", () => {
         type: "credit_purchase",
         purpose: "credit_purchase",
         grantType: "credits",
+        ...(identity === "Custom tier" ? { tier: "custom" } : {}),
+        ...(identity === "Custom plan id" ? { planId: "custom" } : {}),
         creditsAmount: "900000",
         ...(identity === "invoice purpose"
           ? { purpose: "usage_allowance" }
           : {}),
-        ...(identity === "Atom purpose" ? { purpose: "atom_grant" } : {}),
-        ...(identity === "Atom entitlement"
-          ? { source: "atom_entitlement" }
-          : {}),
-        ...(identity === "Atom code" ? { source: "atom_redeem_code" } : {}),
-        ...(identity === "Atom organization credits"
-          ? { source: "atom_custom_credits" }
-          : {}),
-        ...(identity === "Atom member credits"
-          ? { source: "atom_usage_pack_credits" }
-          : {}),
         ...(identity === "Custom type"
           ? { type: "custom_plan_subscription" }
           : {}),
-        ...(identity === "Atom type" ? { type: "atom_grant" } : {}),
         ...(identity === "Custom purpose"
           ? { purpose: "custom_plan_subscription" }
           : {}),

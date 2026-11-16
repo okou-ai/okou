@@ -163,4 +163,41 @@ struct AccessibilitySettlePolicyTests {
                 accessibilityElementsFingerprint(withChild)
         )
     }
+
+    @Test(arguments: [
+        Double.infinity, -Double.infinity, Double.nan,
+        Double(Int.max), Double(Int.min).nextDown, Double.greatestFiniteMagnitude,
+    ])
+    func settlesNestedElementsWithUnrepresentableCoordinates(_ value: Double) {
+        for key in ["x", "y", "width", "height"] {
+            var invalidBounds = ["x": 0.0, "y": 0, "width": 100, "height": 50]
+            invalidBounds[key] = value
+            let invalid = [node("w0", children: [node("w0.e0", role: "AXButton", bounds: invalidBounds)])]
+            var captureCount = 0
+
+            let result = settleCapture(
+                policy: policy,
+                now: { 0 },
+                sleep: { _ in },
+                capture: {
+                    captureCount += 1
+                    return invalid
+                },
+                fingerprint: accessibilityElementsFingerprint
+            )
+
+            #expect(captureCount == 3)
+
+            invalidBounds[key] = 0
+            let zero = [node("w0", children: [node("w0.e0", role: "AXButton", bounds: invalidBounds)])]
+            #expect(accessibilityElementsFingerprint(result) != accessibilityElementsFingerprint(zero))
+        }
+    }
+
+    @Test
+    func retainsIntegerPrecisionWhenIgnoringSubpixelMovement() {
+        let fractional = [node("w0", bounds: ["x": -10.9, "y": 20.9, "width": 100.1, "height": 50.1])]
+        let truncated = [node("w0", bounds: ["x": -10, "y": 20, "width": 100, "height": 50])]
+        #expect(accessibilityElementsFingerprint(fractional) == accessibilityElementsFingerprint(truncated))
+    }
 }

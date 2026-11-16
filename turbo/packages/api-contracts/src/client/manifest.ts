@@ -55,6 +55,10 @@ export const clientDescriptorManifest = [
     contracts: ["artifactSharesContract"],
   },
   {
+    module: "atom-subscription-grants",
+    contracts: ["atomSubscriptionGrantsContract"],
+  },
+  {
     module: "auth",
     contracts: ["authContract"],
   },
@@ -623,6 +627,10 @@ export const clientDescriptorManifest = [
   {
     module: "run-models",
     contracts: ["runModelsMainContract"],
+  },
+  {
+    module: "run-phase-timing",
+    contracts: ["runPhaseTimingContract"],
   },
   {
     module: "run-routes",

@@ -44,6 +44,7 @@ interface SlackButtonElement {
 interface SlackSelectOption {
   readonly text: SlackPlainTextObject;
   readonly value: string;
+  readonly description?: SlackPlainTextObject;
 }
 
 interface SlackStaticSelectElement {

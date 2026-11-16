@@ -1,4 +1,15 @@
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
+import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { array, number, object, string } from "zod";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  discordInteractionsContract,
+  type DiscordComponentInteraction,
+} from "@okouai/api-contracts/contracts/discord-interactions";
+import { mockEnv } from "../../../lib/env";
+import { discordInteractionsRoutes } from "../discord-interactions";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -112,11 +123,17 @@ async function completeRun(args: {
   readonly sandboxToken: string;
   readonly text?: string;
   readonly error?: string;
+  readonly failureReason?: string;
 }) {
   const headers = { authorization: `Bearer ${args.sandboxToken}` };
   if (args.error !== undefined) {
     await webhooks.requestAgentComplete(
-      { runId: args.runId, exitCode: 1, error: args.error },
+      {
+        runId: args.runId,
+        exitCode: 1,
+        error: args.error,
+        ...(args.failureReason ? { failureReason: args.failureReason } : {}),
+      },
       headers,
       [200],
     );
@@ -511,6 +528,177 @@ describe("lazy Discord reply threads", () => {
 });
 
 describe("canonical Discord terminal replies", () => {
+  it("recovers a model failure through a private native selector", async () => {
+    const started = await startDiscordRun({
+      channelType: "dm",
+      beforeMessage: async (actor) => {
+        await updateFeatureSwitchesForUser(context, actor, {
+          [FeatureSwitchKey.IntegrationModelRecovery]: true,
+        });
+      },
+    });
+    const execution = await readRunExecution(started.actor, started.runId);
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: execution.sandboxToken,
+      error: "Claude verification required",
+      failureReason: "account_verification_required",
+    });
+    const control =
+      started.provider.sentMessages.at(-1)?.components?.[0]?.components[0];
+    if (!control?.custom_id) {
+      throw new Error("Expected a model recovery control on the Discord error");
+    }
+    const keys = generateKeyPairSync("ed25519");
+    mockEnv(
+      "DISCORD_PUBLIC_KEY",
+      keys.publicKey
+        .export({ format: "der", type: "spki" })
+        .subarray(-32)
+        .toString("hex"),
+    );
+    const acknowledgements: unknown[] = [];
+    const privateMessages: unknown[] = [];
+    server.use(
+      http.post(
+        "https://discord.com/api/v10/interactions/:id/:token/callback",
+        async ({ request }) => {
+          acknowledgements.push(await request.json());
+          return new HttpResponse(null, { status: 204 });
+        },
+      ),
+      http.patch(
+        "https://discord.com/api/v10/webhooks/:applicationId/:token/messages/@original",
+        async ({ request }) => {
+          const message = object({
+            content: string(),
+            components: array(
+              object({
+                type: number(),
+                components: array(
+                  object({
+                    type: number(),
+                    custom_id: string().optional(),
+                    options: array(
+                      object({ label: string(), value: string() }),
+                    ).optional(),
+                  }),
+                ),
+              }),
+            ),
+          }).parse(await request.json());
+          privateMessages.push(message);
+          return HttpResponse.json({
+            id: uniqueDiscordSnowflake(),
+            channel_id: started.channelId,
+            author: {
+              id: started.actor.botUserId,
+              username: "okou",
+              bot: true,
+            },
+            content: message.content,
+            timestamp: new Date(now()).toISOString(),
+            attachments: [],
+          });
+        },
+      ),
+    );
+    async function press(
+      data: DiscordComponentInteraction["data"],
+      sender = started.actor.discordUserId,
+    ) {
+      const payload: DiscordComponentInteraction = {
+        id: uniqueDiscordSnowflake(),
+        application_id: started.actor.botUserId,
+        token: randomUUID(),
+        type: 3,
+        version: 1,
+        channel_id: started.channelId,
+        user: { id: sender },
+        data,
+      };
+      const body = JSON.stringify(payload);
+      const timestamp = String(Math.floor(now() / 1000));
+      const signature = sign(
+        null,
+        Buffer.from(`${timestamp}${body}`),
+        keys.privateKey,
+      ).toString("hex");
+      await accept(
+        setupApp({ context, routes: discordInteractionsRoutes })(
+          discordInteractionsContract,
+        ).post({
+          body,
+          headers: {
+            "content-type": "application/json",
+            "x-signature-timestamp": timestamp,
+            "x-signature-ed25519": signature,
+          },
+        }),
+        [202],
+      );
+      await flushWaitUntilForTest();
+      return privateMessages.at(-1);
+    }
+    const denied = await press(
+      { component_type: 2, custom_id: control.custom_id },
+      uniqueDiscordSnowflake(),
+    );
+    expect(denied).toMatchObject({
+      content: expect.stringContaining("no longer current"),
+    });
+    const opened = await press({
+      component_type: 2,
+      custom_id: control.custom_id,
+    });
+    expect(acknowledgements.at(-1)).toStrictEqual({
+      type: 5,
+      data: { flags: 64 },
+    });
+    const picker = object({
+      components: array(
+        object({
+          components: array(
+            object({
+              custom_id: string().optional(),
+              options: array(object({ value: string() })).optional(),
+            }),
+          ),
+        }),
+      ),
+    }).parse(opened);
+    const menu = picker.components[0]?.components[0];
+    if (!menu?.custom_id) {
+      throw new Error("Expected the private model selector");
+    }
+    expect(menu.options).toContainEqual({ value: "auto" });
+    const saved = await press({
+      component_type: 3,
+      custom_id: menu.custom_id,
+      values: ["auto"],
+    });
+    expect(saved).toMatchObject({
+      content: expect.stringContaining("Switched to Auto"),
+    });
+    expect(
+      (
+        await createChatFilesBddApi(context).readThreadMetadata(
+          started.actor.actor,
+          started.threadId,
+        )
+      ).selectedModel,
+    ).toBe("auto");
+    const replayed = await press({
+      component_type: 3,
+      custom_id: menu.custom_id,
+      values: ["claude-sonnet-5-5"],
+    });
+    expect(replayed).toMatchObject({
+      content: expect.stringContaining("no longer current"),
+    });
+    expect(started.provider.sentMessages).toHaveLength(1);
+  });
+
   it("delivers canonical output after a long task to the native thread exactly once", async () => {
     const started = await startDiscordRun();
     const receivedExecution = await readRunExecution(

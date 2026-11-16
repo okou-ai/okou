@@ -387,11 +387,6 @@ test("A failed dismissal stays visible and can be retried without changing its a
       : respond(204);
   });
   await openDetails();
-  expect(
-    queryAllByRoleFast("button").find((button) => {
-      return button.getAttribute("aria-label") === "Notifications";
-    }),
-  ).toBeUndefined();
   expect(screen.getByText("Platform event")).toBeInTheDocument();
   click(control("button", "Dismiss"));
   await screen.findByRole("alert");

@@ -31,10 +31,12 @@ export interface MemberModelRouteIdentity {
  * Never call account list/capture, decrypt, or probe a provider here. A type is
  * a candidate only while its logical provider has a connected account. */
 export function memberModelRouteContext(
-  identity$: Computed<MemberModelRouteIdentity>,
+  identity$: Computed<
+    MemberModelRouteIdentity | Promise<MemberModelRouteIdentity>
+  >,
 ): Computed<Promise<MemberModelRouteContext>> {
   return computed(async (get): Promise<MemberModelRouteContext> => {
-    const { orgId, userId } = get(identity$);
+    const { orgId, userId } = await get(identity$);
     const db = get(db$);
     const accounts = await db
       .select({

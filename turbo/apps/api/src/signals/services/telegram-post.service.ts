@@ -12,6 +12,7 @@ import {
   type TelegramMessageEntity,
 } from "@okouai/db/schema/telegram-message";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
+import { handleTelegramModelRecovery$ } from "./telegram-model-recovery.service";
 import { command } from "ccstate";
 import { and, desc, eq } from "drizzle-orm";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -1794,6 +1795,11 @@ export const telegramWebhook$ = command(
       signal.throwIfAborted();
       if (!isTelegramUpdate(parsed)) {
         return textResponse("Bad Request", 400);
+      }
+      if (
+        await set(handleTelegramModelRecovery$, parsed, config.botToken, signal)
+      ) {
+        return okText();
       }
       const message = parsed.message;
       if (!message || !hasTelegramMessageContextContent(message)) {

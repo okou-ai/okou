@@ -117,13 +117,6 @@ struct ChatFeedbackComposer: View {
       .onChange(of: state.editorGeneration) { _, _ in
         focusedBlock = isFocused ? state.editorBlocks.last?.id : nil
       }
-      .onChange(of: state.voice?.phase, initial: true) { _, phase in
-        guard phase == state.voice?.phase else { return }
-        if phase == .starting || phase == .recording {
-          focusedBlock = nil
-          isFocused = false
-        }
-      }
       .onAppear {
         if let request = state.focusRequest {
           focusedBlock = request.blockID

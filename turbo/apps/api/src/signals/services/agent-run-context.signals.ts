@@ -29,10 +29,10 @@ import { waitUntil } from "../context/wait-until";
 import { safeSync, settle } from "../utils";
 import type { BootstrapAgent } from "./agent-data.service";
 import {
-  agentStorageReadPlan,
-  captureAgentStorageContext,
-  type AgentStorageContext,
+  captureMemberMemoryContext,
+  type MemberMemoryContext,
 } from "./agent-storage-context.service";
+import { memberMemoryReadPlan } from "./member-memory";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import {
   connectorSourceSnapshotsFromRows,
@@ -69,12 +69,7 @@ import {
   type AgentConnectorScopeSnapshot,
 } from "./agent-connector-scope.service";
 import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
-import {
-  pendingOkouTokenSecrets,
-  resolveRunBodyEnvironment,
-  type RunBodyEnvironment,
-  selectedAgentRunVariables,
-} from "./run-body-environment";
+import { buildAgentRunVariables } from "./agent-run-variables";
 import {
   createAuthorizedConnectors,
   type AuthorizedConnectors,
@@ -157,8 +152,7 @@ export interface AgentRunContextSignals {
   readonly connectorScope$: Computed<Promise<AgentConnectorScopeSnapshot>>;
   /** The Agent's permission grants, expanded into firewall policies. */
   readonly permissionPolicies$: Computed<Promise<FirewallPolicies | null>>;
-  /** The Run body's own variables and placeholder secrets for this Agent. */
-  readonly bodyEnvironment$: Computed<Promise<RunBodyEnvironment>>;
+  readonly runVariables$: Computed<Promise<Record<string, string>>>;
   readonly authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>;
   readonly permissionGrants$: Computed<
     Promise<readonly ConnectorPermissionGrant[]>
@@ -170,7 +164,7 @@ export interface AgentRunContextSignals {
   readonly seedSkills$: ReturnType<
     typeof createGlobalModelContext
   >["seedSkills$"];
-  readonly storage$: Computed<Promise<AgentStorageContext>>;
+  readonly memory$: Computed<Promise<MemberMemoryContext>>;
   readonly featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>;
   readonly disabledPaidTools$: Computed<Promise<readonly string[]>>;
   readonly environment$: Computed<Promise<BootstrapEnvironment>>;
@@ -546,10 +540,10 @@ function createIdentityContext(
     agentId,
     featureSwitchContext$,
   );
-  const storage$ = computed(async (get): Promise<AgentStorageContext> => {
-    const requests = agentStorageReadPlan(scope);
+  const memory$ = computed(async (get): Promise<MemberMemoryContext> => {
+    const requests = memberMemoryReadPlan(scope);
     const db = get(db$);
-    return captureAgentStorageContext(
+    return captureMemberMemoryContext(
       requests,
       await (async () => {
         const readPlan = storageBaseIndexReadPlan(requests);
@@ -593,7 +587,7 @@ function createIdentityContext(
     ...connectorContext.signals,
     officialCatalog$: reusedOfficialCatalog(supplied),
     seedSkills$: globalReferences.seedSkills$,
-    storage$,
+    memory$,
     featureSwitches$: featureSwitchContext$,
     disabledPaidTools$,
     environment$,
@@ -614,7 +608,7 @@ export const preloadAgentRunContext$ = command(
       signals.catalog$,
       signals.authorizedConnectors$,
       signals.connectors$,
-      signals.storage$,
+      signals.memory$,
       signals.agent$,
       signals.orgRows$,
       signals.orgMetadata$,
@@ -1102,14 +1096,12 @@ export function createExecutionConnectorSources(
       observation: snapshot.observation,
     };
   });
-  const bodyEnvironment$ = computed(async (get) => {
+  const runVariables$ = computed(async (get) => {
     const { agentId } = await get(identity$);
     const snapshot = await get(environmentSnapshot$);
-    return resolveRunBodyEnvironment({
-      runVars: selectedAgentRunVariables(agentId),
-      runSecrets: pendingOkouTokenSecrets(undefined),
-      persistedEnvironment: { variables: snapshot.variables },
-      canonicalOkouRuntime: true,
+    return buildAgentRunVariables({
+      agentId,
+      variables: snapshot.variables,
     });
   });
   const permissionPolicies$ = computed(async (get) => {
@@ -1149,7 +1141,7 @@ export function createExecutionConnectorSources(
       customConnectorDefinitions$,
       catalog$,
       connectors$,
-      bodyEnvironment$,
+      runVariables$,
       permissionPolicies$,
     },
   };

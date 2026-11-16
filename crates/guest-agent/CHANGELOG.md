@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.109.88](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.87...guest-agent-v0.109.88) (2026-11-16)
+
+
+### Bug Fixes
+
+* **build:** pin rust 1.100 across toolchain and sandbox images ([#47647](https://github.com/okou-ai/okou/issues/47647)) ([f6fe91d](https://github.com/okou-ai/okou/commit/f6fe91dee7ab33d2aba08cc317fa71487bd815e6))
+
+## [0.109.87](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.86...guest-agent-v0.109.87) (2026-11-16)
+
+
+### Bug Fixes
+
+* **guest-agent:** preserve codex turn results after inactive steering ([#47626](https://github.com/okou-ai/okou/issues/47626)) ([df6ada8](https://github.com/okou-ai/okou/commit/df6ada857ed6df8a927b92ff95e289f92eb7cb25))
+
+## [0.109.86](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.85...guest-agent-v0.109.86) (2026-11-16)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify claude org admin spend limits ([#47621](https://github.com/okou-ai/okou/issues/47621)) ([03e0996](https://github.com/okou-ai/okou/commit/03e0996200afadcabaf6592e54e15d7f84dfcc25))
+
 ## [0.109.85](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.84...guest-agent-v0.109.85) (2026-11-16)
 
 

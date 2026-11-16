@@ -118,6 +118,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "atom-subscription-grants",
+    contracts: ["atomSubscriptionGrantsContract"],
+    bindings: [],
+  },
+  {
     module: "auth",
     contracts: ["authContract"],
     bindings: [],
@@ -1514,6 +1519,11 @@ export const clientContractImportManifest = [
   {
     module: "run-models",
     contracts: ["runModelsMainContract"],
+    bindings: [],
+  },
+  {
+    module: "run-phase-timing",
+    contracts: ["runPhaseTimingContract"],
     bindings: [],
   },
   {

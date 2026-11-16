@@ -7,9 +7,6 @@ struct ComposerVoiceInputButton: View {
 
   var body: some View {
     Button {
-      // The keyboard goes away while recording; the tray above the composer takes over.
-      UIApplication.shared.sendAction(
-        #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
       Task { await voice.start() }
     } label: {
       Group {

@@ -18,7 +18,6 @@ import { cronBrowserReconcileRoutes } from "../cron-browser-reconcile";
 import { mockNow } from "../../../lib/time";
 
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import {
   createBrowserFixtures,
@@ -161,12 +160,20 @@ test("reconciles concurrent thread deletions and cron while retaining sibling re
     installBrowserWindowContentCommands(f.provider.native);
     const s3 = storage();
     const chat = createChatFilesBddApi(context);
-    const callbacks = createWebhookCallbackApi(context);
     const previews = [];
     // More than one observation batch must retain and rotate live parents.
     for (let index = 0; index < 22; index++) {
-      const current = await f.start();
-      const browser = await open(current);
+      // Cleanup needs a thread-owned Browser, without a Run lifecycle.
+      const thread = await chat.createThread(f.owned.actor, {
+        agentId: f.owned.agentId,
+        model: f.owned.model,
+      });
+      const current = { threadId: thread.id };
+      const opened = await accept(
+        client().open({ headers, params: current, body: {} }),
+        [200],
+      );
+      const browser = opened.body.browser;
       const page = [...f.provider.native.targets.values()].find((target) => {
         return target.windowId === browser.window?.primaryWindowId;
       });
@@ -189,11 +196,6 @@ test("reconciles concurrent thread deletions and cron while retaining sibling re
       }
       const key = decodeURIComponent(new URL(screenshotUrl).pathname.slice(1));
       previews.push({ current, key, screenshotUrl, url });
-      await callbacks.requestAgentComplete(
-        { runId: current.runId, exitCode: 0 },
-        { authorization: `Bearer ${current.execution.sandboxToken}` },
-        [200],
-      );
     }
     const [providerId] = f.provider.sessionIds;
     if (!providerId) {

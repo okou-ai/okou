@@ -156,6 +156,7 @@ export function buildFeishuNoticeMessage(args: {
 export function buildFeishuAgentResponseMessage(args: {
   readonly text: string;
   readonly footerText?: string;
+  readonly modelRecoveryEventId?: string;
 }): FeishuOutboundMessage {
   const { assistantName } = BRAND_PRESENTATION;
   const footerElements: Readonly<Record<string, unknown>>[] = args.footerText
@@ -172,6 +173,81 @@ export function buildFeishuAgentResponseMessage(args: {
     title: assistantName,
     template: "blue",
     summary: args.text.slice(0, 200),
-    elements: [...markdownElements(args.text), ...footerElements],
+    elements: [
+      ...markdownElements(args.text),
+      ...(args.modelRecoveryEventId
+        ? [
+            {
+              tag: "button",
+              text: { tag: "plain_text", content: "Switch model" },
+              type: "default",
+              behaviors: [
+                {
+                  type: "callback",
+                  value: {
+                    action: "switch_model",
+                    eventId: args.modelRecoveryEventId,
+                  },
+                },
+              ],
+            },
+          ]
+        : []),
+      ...footerElements,
+    ],
+  });
+}
+
+export function buildFeishuModelPickerMessage(args: {
+  readonly eventId: string;
+  readonly selectedModel: string;
+  readonly currentModelLabel: string;
+  readonly updatedAt: string;
+  readonly url: string;
+  readonly choices: readonly {
+    readonly label: string;
+    readonly value: string;
+    readonly description: string;
+  }[];
+}): FeishuOutboundMessage {
+  return cardMessage({
+    title: "Switch model",
+    template: "orange",
+    summary: "Select a model for this conversation",
+    elements: [
+      ...markdownElements(
+        `Current model: **${args.currentModelLabel}**\nChoose a model to save it for this conversation. Send your previous request again after switching.`,
+      ),
+      {
+        tag: "select_static",
+        placeholder: { tag: "plain_text", content: "Select a model" },
+        options: args.choices.map((choice) => {
+          return {
+            text: {
+              tag: "plain_text",
+              content: `${choice.label} — ${choice.description}`,
+            },
+            value: choice.value,
+          };
+        }),
+        behaviors: [
+          {
+            type: "callback",
+            value: {
+              action: "switch_model",
+              eventId: args.eventId,
+              selectedModel: args.selectedModel,
+              updatedAt: args.updatedAt,
+            },
+          },
+        ],
+      },
+      {
+        tag: "button",
+        text: { tag: "plain_text", content: "Open conversation in Okou" },
+        type: "default",
+        behaviors: [{ type: "open_url", default_url: args.url }],
+      },
+    ],
   });
 }

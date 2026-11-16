@@ -29,8 +29,8 @@ export {
   CHECKOUT_ABANDONED_SURVEY_ANSWERS,
   CREDITS_EXHAUSTED_SURVEY_ANSWERS,
   USAGE_PACKS_USD,
-  usagePackUsdSchema,
   type UsagePackUsd,
+  usagePackUsdSchema,
 } from "../validators/billing";
 
 const c = initContract();
@@ -168,7 +168,7 @@ const checkoutCompleteResponseSchema = object({
 });
 
 const redeemCodeResponseSchema = object({
-  redeemed: literal(true),
+  redeemed: boolean(),
 });
 
 const portalResponseSchema = object({
@@ -1358,8 +1358,9 @@ export type BillingRedeemContract = typeof billingRedeemContract;
 /**
  * Contract for POST /api/billing/redeem-code
  *
- * Retained for open App pages until the replacement App client floor is enforced.
- * Codes are no longer accepted; callers receive a refresh instruction.
+ * Proxies onboarding invite codes to the Atom redeem endpoint. The platform
+ * waits for billing status to update through realtime before completing
+ * onboarding.
  */
 export const billingRedeemCodeContract = c.router({
   create: {
@@ -1375,7 +1376,7 @@ export const billingRedeemCodeContract = c.router({
       500: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Redeem an onboarding billing code",
+    summary: "Redeem a billing code for a free workspace",
   },
 });
 

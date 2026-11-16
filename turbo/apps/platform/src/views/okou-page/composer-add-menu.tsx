@@ -63,6 +63,62 @@ export type ComposerAddMenuGroup = readonly [
   ...ComposerAddMenuItem[],
 ];
 
+function ComposerAddMenuItems({
+  groups,
+  setRestoreFocus,
+}: {
+  readonly groups: readonly ComposerAddMenuGroup[];
+  readonly setRestoreFocus: (restore: boolean) => void;
+}) {
+  return (
+    <>
+      {/* Flat on purpose: Base UI reads its items from the popup's own
+          children, so a wrapper element per group would sit between them and
+          break the menu's keyboard navigation. */}
+      {groups.flatMap((group, index) => {
+        const separator =
+          index > 0
+            ? [<DropdownMenuSeparator key={`separator-${group[0].id}`} />]
+            : [];
+        return [
+          ...separator,
+          ...group.map((item) => {
+            if ("submenu" in item) {
+              return (
+                <DropdownMenuSub key={item.id}>
+                  <DropdownMenuSubTrigger>
+                    <ComposerAddMenuRowLabel item={item} />
+                    <ChevronRight
+                      className="ml-auto text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent
+                    aria-label={item.label}
+                    className="w-64"
+                  >
+                    {item.submenu}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              );
+            }
+            return (
+              <DropdownMenuItem
+                key={item.id}
+                onClick={() => {
+                  setRestoreFocus(item.onSelect() !== false);
+                }}
+              >
+                <ComposerAddMenuRowLabel item={item} />
+              </DropdownMenuItem>
+            );
+          }),
+        ];
+      })}
+    </>
+  );
+}
+
 /**
  * The composer toolbar's `+`: one entry point for what a message can gain,
  * rather than a button per capability. It groups attachments, templates and
@@ -115,49 +171,10 @@ export function ComposerAddMenu({
         className="w-56"
         finalFocus={restoreFocus}
       >
-        {/* Flat on purpose: Base UI reads its items from the popup's own
-            children, so a wrapper element per group would sit between them and
-            break the menu's keyboard navigation. */}
-        {groups.flatMap((group, index) => {
-          const separator =
-            index > 0
-              ? [<DropdownMenuSeparator key={`separator-${group[0].id}`} />]
-              : [];
-          return [
-            ...separator,
-            ...group.map((item) => {
-              if ("submenu" in item) {
-                return (
-                  <DropdownMenuSub key={item.id}>
-                    <DropdownMenuSubTrigger>
-                      <ComposerAddMenuRowLabel item={item} />
-                      <ChevronRight
-                        className="ml-auto text-muted-foreground"
-                        aria-hidden="true"
-                      />
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent
-                      aria-label={item.label}
-                      className="w-64"
-                    >
-                      {item.submenu}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                );
-              }
-              return (
-                <DropdownMenuItem
-                  key={item.id}
-                  onClick={() => {
-                    setRestoreFocus(item.onSelect() !== false);
-                  }}
-                >
-                  <ComposerAddMenuRowLabel item={item} />
-                </DropdownMenuItem>
-              );
-            }),
-          ];
-        })}
+        <ComposerAddMenuItems
+          groups={groups}
+          setRestoreFocus={setRestoreFocus}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   );

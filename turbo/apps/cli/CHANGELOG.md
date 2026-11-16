@@ -1,5 +1,64 @@
 # Changelog
 
+## [10.28.1](https://github.com/okou-ai/okou/compare/cli-v10.28.0...cli-v10.28.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* require phone use opt-in and authorize access from chat ([#47650](https://github.com/okou-ai/okou/issues/47650)) ([d99b85b](https://github.com/okou-ai/okou/commit/d99b85b2a06c635ca25fa93b9f6a0fc66b55b276))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.71.1
+    * @okouai/core bumped to 8.842.1
+    * @okouai/pi-agent-runtime bumped to 1.51.134
+
+## [10.28.0](https://github.com/okou-ai/okou/compare/cli-v10.27.2...cli-v10.28.0) (2026-11-16)
+
+
+### Features
+
+* **run:** add opt-in artifact phase timing ([#47655](https://github.com/okou-ai/okou/issues/47655)) ([3e71f58](https://github.com/okou-ai/okou/commit/3e71f58b819fe638d46df9ecb8596fef07ddf88f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.71.0
+    * @okouai/core bumped to 8.842.0
+    * @okouai/pi-agent-runtime bumped to 1.51.133
+
+## [10.27.2](https://github.com/okou-ai/okou/compare/cli-v10.27.1...cli-v10.27.2) (2026-11-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.70.1
+    * @okouai/core bumped to 8.841.1
+    * @okouai/pi-agent-runtime bumped to 1.51.132
+
+## [10.27.1](https://github.com/okou-ai/okou/compare/cli-v10.27.0...cli-v10.27.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **wallet:** accept saved cards without deprecated expiry ([#47627](https://github.com/okou-ai/okou/issues/47627)) ([7a14ea6](https://github.com/okou-ai/okou/commit/7a14ea67b62610689337040be952f906090dc589))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.70.0
+    * @okouai/core bumped to 8.841.0
+    * @okouai/pi-agent-runtime bumped to 1.51.131
+
 ## [10.27.0](https://github.com/okou-ai/okou/compare/cli-v10.26.10...cli-v10.27.0) (2026-11-16)
 
 

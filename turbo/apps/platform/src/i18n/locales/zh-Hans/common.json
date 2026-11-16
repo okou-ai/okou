@@ -2364,6 +2364,21 @@
       "updated": "权限已更新",
       "updateFailed": "无法更新权限"
     },
+    "phoneUse": {
+      "allowChat": "在当前对话中启用手机",
+      "allowChatDescription": "打开这里的 Connectors 菜单，开启手机旁的开关。关闭开关即可撤销授权。",
+      "connectMyPhone": "连接我的手机",
+      "done": "完成",
+      "loadError": "无法加载手机。",
+      "loading": "正在加载手机…",
+      "noPhones": "暂无在线手机",
+      "openApp": "打开 Okou iOS Use",
+      "openAppDescription": "在 iPhone 上安装开发版，使用相同账号和工作区登录，并开启控制窗口。",
+      "setupDescription": "授权 Okou 在当前对话中使用你的 iPhone。",
+      "startTask": "发送下一个任务",
+      "startTaskDescription": "完成授权后，在这里发送一条新消息。请保持手机上的控制窗口有效。",
+      "yourPhone": "你的手机"
+    },
     "promptDocumentTitle": "提示词",
     "queue": {
       "aboutAutomationEvent": "关于这个自动化事件",

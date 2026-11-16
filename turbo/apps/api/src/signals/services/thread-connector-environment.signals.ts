@@ -1,8 +1,11 @@
 import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
-import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
+import {
+  FirewallBaseUrlResolutionError,
+  type FirewallPolicies,
+} from "@okouai/connectors/firewall-types";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { expandVariablesInString } from "@okouai/core/variable-expander";
-import { computed } from "ccstate";
+import { computed, type Computed } from "ccstate";
 import { badRequestMessage } from "../../lib/error";
 import { safeSync, settle } from "../utils";
 import {
@@ -23,7 +26,6 @@ import {
 import { countBucket } from "./dispatch-count-bucket";
 import { buildPermissionManifest } from "./permission-manifest.service";
 import type { Environment } from "./run-environment";
-import type { RunRequestBody } from "./run-body-environment";
 import {
   type BuiltinConnectorRuntimeContext,
   type ConnectorEnvBindingSet,
@@ -51,15 +53,18 @@ function isConnectorRuntimeError(
   return typeof value === "object" && value !== null && "status" in value;
 }
 
+interface ConnectorEnvironmentSources {
+  readonly runVariables$: Computed<Promise<Record<string, string> | undefined>>;
+  readonly permissionPolicies$: AgentRunContextSignals["permissionPolicies$"];
+  readonly featureSwitches$: AgentRunContextSignals["featureSwitches$"];
+}
+
 /**
  * The connector source of the Run environment: selected accounts become
  * environment entries, decrypted secrets, firewalls and runtime targets.
  */
 export function createConnectorEnvironmentSignals(
-  bootstrap: Pick<
-    AgentRunContextSignals,
-    "bodyEnvironment$" | "permissionPolicies$" | "featureSwitches$"
-  >,
+  bootstrap: ConnectorEnvironmentSources,
   threadContext: Pick<
     ThreadContext,
     | "connectorSelection$"
@@ -117,10 +122,7 @@ export function createConnectorAdmissionSignals(
 }
 
 function createConnectorRuntimeInputSignals(
-  execution: Pick<
-    AgentRunContextSignals,
-    "bodyEnvironment$" | "permissionPolicies$" | "featureSwitches$"
-  >,
+  execution: ConnectorEnvironmentSources,
   threadContext: Pick<
     ThreadContext,
     "connectorSelection$" | "connectorSnapshot$" | "dispatchTiming$"
@@ -132,11 +134,11 @@ function createConnectorRuntimeInputSignals(
     async (
       get,
     ): Promise<RunPreparedConnectorInputs | ConnectorRuntimeError> => {
-      const [selection, snapshot, body, policies, features] = await Promise.all(
+      const [selection, snapshot, vars, policies, features] = await Promise.all(
         [
           get(connectorSelection$),
           get(connectorSnapshot$),
-          get(execution.bodyEnvironment$),
+          get(execution.runVariables$),
           get(execution.permissionPolicies$),
           get(execution.featureSwitches$),
         ],
@@ -151,7 +153,8 @@ function createConnectorRuntimeInputSignals(
         timing: get(dispatchTiming$),
         connectorScope: selection.connectorScope,
         connectorCatalogSelection: selection.connectorCatalogSelection,
-        body: { ...body, permissionPolicies: policies ?? undefined },
+        vars,
+        permissionPolicies: policies ?? undefined,
         ...snapshot,
         featureSwitchContext: features,
       };
@@ -613,10 +616,8 @@ interface PreparedConnectorContext {
 interface RunPreparedConnectorInputs {
   readonly connectorScope: EffectiveConnectorScope;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly body: Pick<
-    RunRequestBody,
-    "permissionPolicies" | "vars" | "secrets"
-  >;
+  readonly vars: Record<string, string> | undefined;
+  readonly permissionPolicies: FirewallPolicies | undefined;
   readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
   readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
@@ -626,10 +627,8 @@ interface RunPreparedConnectorInputs {
 
 async function buildPreparedPermissionManifest(args: {
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly body: Pick<
-    RunRequestBody,
-    "permissionPolicies" | "vars" | "secrets"
-  >;
+  readonly vars: Record<string, string> | undefined;
+  readonly permissionPolicies: FirewallPolicies | undefined;
   readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly timing: ApiDispatchTimingCollector;
@@ -638,8 +637,8 @@ async function buildPreparedPermissionManifest(args: {
     buildPermissionManifest({
       connectorCatalogSelection: args.connectorCatalogSelection,
       modelProvider: null,
-      permissionPolicies: args.body.permissionPolicies,
-      vars: args.body.vars,
+      permissionPolicies: args.permissionPolicies,
+      vars: args.vars,
       connectorVars: args.storedConnectorMetadataContext.vars,
       connectorSlugs: args.storedConnectorMetadataContext.connectorSlugs,
       connectorSourceIdBySlug:

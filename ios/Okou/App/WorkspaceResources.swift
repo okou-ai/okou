@@ -25,7 +25,10 @@ final class WorkspaceResources {
   private let projects: WorkspaceRead<[ChatProject]>
   private let sidebarDrafts: WorkspaceRead<Set<String>>
   private let billing: WorkspaceRead<WorkspaceBilling>
+  private let creditBalance: WorkspaceRead<WorkspaceCreditBalance>
   let billingValue: Computed<Task<WorkspaceBilling, Error>>
+  let billingCreditsEnabled: Computed<Task<Bool, Error>>
+  let billingCreditsValue: Computed<Task<Double?, Error>>
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
   init(
@@ -61,11 +64,40 @@ final class WorkspaceResources {
     self.available = available
     self.catalog = catalog
     self.features = features
+    let billingService = WorkspaceBillingService(client: client)
     let billing = WorkspaceRead(
       "billing", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      read: WorkspaceBillingService(client: client).status)
+      read: billingService.status)
     self.billing = billing
     billingValue = billing.value
+    let creditBalance = WorkspaceRead(
+      "credit balance", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      read: billingService.creditBalance)
+    self.creditBalance = creditBalance
+    let featureValue = features.value
+    let balanceValue = creditBalance.value
+    let statusValue = billing.value
+    billingCreditsEnabled = computedTask { get, options in
+      guard try get(lifetime) else { throw CancellationError() }
+      let switches = try await get(featureValue).value
+      try Task.checkCancellation()
+      try options.signal.checkCancellation()
+      return switches.effectiveSwitches["iosSettingsCredits"] == true
+    }
+    let creditsEnabled = billingCreditsEnabled
+    billingCreditsValue = computedTask { get, options in
+      guard try get(lifetime) else { throw CancellationError() }
+      let enabled = try await get(creditsEnabled).value
+      try Task.checkCancellation()
+      try options.signal.checkCancellation()
+      guard enabled else { return nil }
+      let balance = try get(balanceValue)
+      let status = try get(statusValue)
+      let (credits, billing) = try await (balance.value, status.value)
+      try Task.checkCancellation()
+      try options.signal.checkCancellation()
+      return credits.availableCredits(organizationCredits: billing.credits)
+    }
     let agents = WorkspaceRead<[AgentRecord]>(
       "agents", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks
     ) {
@@ -99,7 +131,6 @@ final class WorkspaceResources {
     let preferenceValue = preference.value
     let availableValue = available.value
     let catalogValue = catalog.value
-    let featureValue = features.value
     invalidateReads = Command { context, changes in
       guard try context.get(lifetime) else { throw CancellationError() }
       var full = changes.contains(.reconnected)
@@ -164,13 +195,18 @@ final class WorkspaceResources {
 
   func prepareSettings() throws {
     try store.set(billing.reload)
+    try store.set(creditBalance.reload)
   }
 
   func loadSettingsBilling() async throws {
     try Task.checkCancellation()
     guard try store.get(lifetime) else { throw CancellationError() }
     try billing.retryFailed(in: store)
-    _ = try await store.get(billingValue).value
+    try features.retryFailed(in: store)
+    try creditBalance.retryFailed(in: store)
+    let status = try store.get(billingValue)
+    let credits = try store.get(billingCreditsValue)
+    _ = try await (status.value, credits.value)
   }
 
   func close() {
@@ -184,6 +220,7 @@ final class WorkspaceResources {
     projects.close()
     sidebarDrafts.close()
     billing.close()
+    creditBalance.close()
     do { try store.set(lifetime, false) } catch {
       Logger(subsystem: "ai.okou.ios", category: "WorkspaceResources")
         .error(

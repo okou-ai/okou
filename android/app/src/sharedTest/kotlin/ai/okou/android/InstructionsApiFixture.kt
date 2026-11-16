@@ -11,13 +11,13 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
-import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 
 /** External canonical HTTP fixture, shared by actual native and host consumers. */
 class InstructionsApiFixture : Closeable {
-    val server = MockWebServer()
+    private val transport = FixtureHttpsServer()
+    val server = transport.server
     val requests = ConcurrentLinkedQueue<RecordedRequest>()
     @Volatile var enabled = true
     @Volatile var denied = false
@@ -81,16 +81,25 @@ class InstructionsApiFixture : Closeable {
                     }
                 }
             }
-        server.start()
-        identity = WorkspaceIdentity(server.url("/").toString(), "user-a", "session-a", "org-a")
-        service = CanonicalWorkspaceSession(identity, WorkspaceTokenProvider { "fixture-token" })
+        try {
+            server.start()
+            identity = WorkspaceIdentity(server.url("/").toString(), "user-a", "session-a", "org-a")
+            service =
+                CanonicalWorkspaceSession(identity, WorkspaceTokenProvider { "fixture-token" })
+        } catch (error: Throwable) {
+            try {
+                transport.close()
+            } catch (cleanup: Throwable) {
+                error.addSuppressed(cleanup)
+            }
+            throw error
+        }
     }
 
     private fun json(body: String) =
         MockResponse().setHeader("Content-Type", "application/json").setBody(body)
 
     override fun close() {
-        service.close()
-        server.close()
+        transport.use { service.close() }
     }
 }

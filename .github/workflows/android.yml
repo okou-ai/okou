@@ -63,10 +63,22 @@ jobs:
         run: bash android/scripts/setup-sdk.sh --accept-licenses
       - name: Test native state and application, lint, and assemble
         run: bash android/scripts/check.sh
+      - name: Assemble optimized release
+        run: |
+          export ANDROID_HOME="${ANDROID_HOME:-$HOME/.local/share/android-sdk}"
+          bash .github/scripts/artifacts/build-okou-android-apk.sh "$(cat android/version.txt)" "$RUNNER_TEMP/android-release"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: okou-android-debug-${{ github.sha }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: okou-android-release-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/android-release/*-unsigned.apk
+            ${{ runner.temp }}/android-release/*-mapping.txt.gz
           if-no-files-found: error
           retention-days: 7
 
@@ -91,16 +103,45 @@ jobs:
           test -c /dev/kvm
           sudo chown "$(id -u):$(id -g)" /dev/kvm
           test -r /dev/kvm && test -w /dev/kvm
-      - name: Test the native shell on Android API 35
+      - name: Test the optimized release on Android API 35
+        id: native-tests
+        timeout-minutes: 20
         shell: bash
         working-directory: android
         run: |
           set -euo pipefail
           mkdir -p build/reports/instrumentation
-          ./gradlew :app:pixel2Api35DebugAndroidTest \
+          bash scripts/test-release.sh \
             -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect \
-            --no-daemon --stacktrace --console=plain \
+            --stacktrace --console=plain \
             2>&1 | tee build/reports/instrumentation/gradle.log
+          python3 scripts/check-native-results.py \
+            app/build/outputs/androidTest-results/managedDevice/release/pixel2Api35 9
+      - name: Restore failed release stack traces
+        if: always() && steps.native-tests.outcome != 'success'
+        shell: bash
+        working-directory: android
+        env:
+          RELEASE_ARTIFACTS: ${{ steps.native-tests.outputs.release-directory }}
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-$HOME/.local/share/android-sdk}"
+          reports=app/build/outputs/androidTest-results/managedDevice/release
+          release=$RELEASE_ARTIFACTS
+          diagnostics=build/reports/instrumentation
+          if test -d "$reports"; then
+            cp -R "$reports" "$diagnostics/managed-device"
+          fi
+          if test -n "$release" && test -s "$release/tested-app-mapping.txt.gz"; then
+            python3 scripts/retrace-release.py \
+              "$release/tested-app.apk" "$release/tested-app-mapping.txt.gz" \
+              "$diagnostics" build/reports/retraced/app
+            if test -s "$release/native-test-mapping.txt.gz"; then
+              python3 scripts/retrace-release.py \
+                "$release/native-test.apk" "$release/native-test-mapping.txt.gz" \
+                "$diagnostics" build/reports/retraced/test-driver
+            fi
+          fi
       - name: Retain Android test reports and diagnostics
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -108,9 +149,12 @@ jobs:
           name: android-instrumentation-api35-${{ github.sha }}
           path: |
             android/build/reports/instrumentation/
+            android/build/reports/release/
+            android/build/reports/retraced/
             android/app/build/reports/androidTests/
             android/app/build/outputs/androidTest-results/
             android/app/build/outputs/managed_device_android_test_additional_output/
+            android/app/build/outputs/apk/androidTest/release/
           if-no-files-found: warn
           retention-days: 7
 

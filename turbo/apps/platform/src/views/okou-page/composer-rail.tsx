@@ -24,7 +24,7 @@ const RAIL = cn(
   "motion-reduce:scroll-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
   // The capability tray scrolls its choices downward in a window of its own,
   // so there the row is not a scroller: it neither clips nor fades, and the
-  // window owns the snapping, the fade and the room a lifted tile needs.
+  // window owns the snapping and the room a focus ring needs.
   "in-data-[slot=capability-tray]:snap-none in-data-[slot=capability-tray]:overflow-visible",
   "in-data-[slot=capability-tray]:[-webkit-mask-image:none] in-data-[slot=capability-tray]:[mask-image:none]",
 );
@@ -41,7 +41,7 @@ const RAIL_ITEM_FRAME = cn(
  * the tray while its window scrolls downward. A column may shrink to 88% of
  * the shelf's item width before the row drops one: four covers then hold down
  * to a ~1200px window with the sidebar open, where one fewer column would make
- * each row so tall that the next one sinks entirely into the window's fade.
+ * each row so tall that the next one sinks under the composer's edge.
  */
 const RAIL_TRACK = cn(
   "flex w-max items-start gap-3",
@@ -63,34 +63,6 @@ const RAIL_ITEM_ENTER_CAP = 7;
 export function railItemEnterDelay(index: number): string {
   return `${String(Math.min(index, RAIL_ITEM_ENTER_CAP) * RAIL_ITEM_ENTER_STEP_MS)}ms`;
 }
-/**
- * Every shelf tile across the types: art in its own box, caption underneath and
- * outside it. `quiet` paints a fill on hover, which on a tile this tall draws a
- * grey slab around the artwork and its caption instead of pointing at either;
- * the art carries the hover itself. The radius is the prompt card's
- * `rounded-xl`, so a cover and the idea card beside it share one corner.
- */
-export const RAIL_TILE = cn(
-  "group/tile block h-auto rounded-xl p-0 text-left font-normal",
-  "hover:bg-transparent active:bg-transparent",
-);
-/** The caption sits under the art and outside it, on every type's shelf. */
-export const RAIL_TILE_CAPTION = "mt-2 block truncate text-[12px] leading-4";
-/**
- * The art box of a shelf tile, beside its own border and fill. On the
- * capability tray's tint a hairline round every cover reads as a grid of
- * frames, so there the box lets go of the line -- its width stays, so nothing
- * moves -- and sits raised off the tray instead, the way a selected segment
- * sits on its track. Under the pointer it lifts 2px and the shadow deepens:
- * the one thing a tile's hover changes on the tray.
- */
-export const RAIL_TILE_ART = cn(
-  "in-data-[slot=capability-tray]:border-transparent",
-  "in-data-[slot=capability-tray]:shadow-segment-selected",
-  "in-data-[slot=capability-tray]:transition-[translate,box-shadow] in-data-[slot=capability-tray]:duration-200 in-data-[slot=capability-tray]:ease-surface",
-  "in-data-[slot=capability-tray]:group-hover/tile:-translate-y-0.5 in-data-[slot=capability-tray]:group-hover/tile:shadow-md",
-  "in-data-[slot=capability-tray]:motion-reduce:transition-none",
-);
 interface RailGeometryStyle extends CSSProperties {
   readonly "--rail-item-width": string;
 }

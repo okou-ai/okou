@@ -241,6 +241,7 @@ export interface ApiTestMocks {
     readonly views: {
       readonly publish: AsyncMock;
       readonly open: AsyncMock;
+      readonly update: AsyncMock;
     };
     readonly users: {
       readonly info: AsyncMock;
@@ -473,6 +474,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
     views: {
       publish: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       open: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+      update: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
     users: {
       info: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -1331,6 +1333,7 @@ vi.mock("@slack/web-api", () => {
         views: {
           publish: apiTestMocks.slack.views.publish,
           open: apiTestMocks.slack.views.open,
+          update: apiTestMocks.slack.views.update,
         },
         users: {
           info: apiTestMocks.slack.users.info,
@@ -1672,6 +1675,7 @@ export function resetApiTestMocks(): void {
   apiTestMocks.slack.oauth.v2.access.mockReset();
   apiTestMocks.slack.views.publish.mockReset();
   apiTestMocks.slack.views.open.mockReset();
+  apiTestMocks.slack.views.update.mockReset();
   apiTestMocks.slack.users.info.mockReset();
   apiTestMocks.slack.users.identities.clear();
   apiTestMocks.slack.fetchFile.mockReset();

@@ -117,6 +117,9 @@ function createAgentSubmitMessage(
         return false;
       }
       const access = get(newThreadComputerAccess$);
+      const initialPhoneUse = get(featureSwitch$)[FeatureSwitchKey.PhoneUse]
+        ? get(connector.phoneAccess.pending$)
+        : null;
       const chatAccessEnabled =
         get(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
       const connectorPreference = chatAccessEnabled
@@ -167,6 +170,7 @@ function createAgentSubmitMessage(
           ...(initialRemoteAccessOverrides.length > 0
             ? { initialRemoteAccessOverrides }
             : {}),
+          ...(initialPhoneUse ? { initialPhoneUse } : {}),
         },
         signal,
       );
@@ -175,6 +179,7 @@ function createAgentSubmitMessage(
         set(resetChatPageModelSelection$);
         set(connector.accounts.resetPendingSelections$);
         set(connector.chatAccess.resetPending$);
+        set(connector.phoneAccess.resetPending$);
         set(pendingRemoteAccess.reset$);
       }
       return sent;

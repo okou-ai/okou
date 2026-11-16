@@ -13,6 +13,82 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1134.0](https://github.com/okou-ai/okou/compare/app-v0.1133.5...app-v0.1134.0) (2026-11-16)
+
+
+### Features
+
+* **platform:** capability art palette pass, desk bell, matte gears and live magnifier ([#47694](https://github.com/okou-ai/okou/issues/47694)) ([c272a2c](https://github.com/okou-ai/okou/commit/c272a2cc6aa5b6a23c374f9d0ea1d939cd0b6f4c))
+
+
+### Bug Fixes
+
+* cap connector rewards at ten per user ([#47699](https://github.com/okou-ai/okou/issues/47699)) ([8093612](https://github.com/okou-ai/okou/commit/8093612f536b8d3e8d5920fa9ed0a7583a29f80b))
+* redeem onboarding codes for existing free workspaces ([#47701](https://github.com/okou-ai/okou/issues/47701)) ([92e7bd7](https://github.com/okou-ai/okou/commit/92e7bd7fdafe3afa458b39b57c148faf66cdebec))
+* require phone use opt-in and authorize access from chat ([#47650](https://github.com/okou-ai/okou/issues/47650)) ([d99b85b](https://github.com/okou-ai/okou/commit/d99b85b2a06c635ca25fa93b9f6a0fc66b55b276))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.71.1
+    * @okouai/core bumped to 8.842.1
+    * @okouai/ui bumped to 1.21.28
+
+## [0.1133.5](https://github.com/okou-ai/okou/compare/app-v0.1133.4...app-v0.1133.5) (2026-11-16)
+
+
+### Performance Improvements
+
+* **app:** defer unopened composer add-menu rows ([#47691](https://github.com/okou-ai/okou/issues/47691)) ([9ac5ddc](https://github.com/okou-ai/okou/commit/9ac5ddcba37efba101d44c02787e751eae740f49))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.71.0
+    * @okouai/core bumped to 8.842.0
+    * @okouai/ui bumped to 1.21.27
+
+## [0.1133.4](https://github.com/okou-ai/okou/compare/app-v0.1133.3...app-v0.1133.4) (2026-11-16)
+
+
+### Bug Fixes
+
+* **platform:** recover detached browser hover without replay ([#47629](https://github.com/okou-ai/okou/issues/47629)) ([41c58f5](https://github.com/okou-ai/okou/commit/41c58f56993d3f45503ca3e0e4bdb2558b3e6970))
+
+
+### Performance Improvements
+
+* **app:** avoid preparing empty browser address hints ([#47658](https://github.com/okou-ai/okou/issues/47658)) ([aadb08e](https://github.com/okou-ai/okou/commit/aadb08ec17f2a01c93cd1644cbf24aa19db00f8b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.70.1
+    * @okouai/core bumped to 8.841.1
+    * @okouai/ui bumped to 1.21.26
+
+## [0.1133.3](https://github.com/okou-ai/okou/compare/app-v0.1133.2...app-v0.1133.3) (2026-11-16)
+
+
+### Bug Fixes
+
+* **wallet:** accept saved cards without deprecated expiry ([#47627](https://github.com/okou-ai/okou/issues/47627)) ([7a14ea6](https://github.com/okou-ai/okou/commit/7a14ea67b62610689337040be952f906090dc589))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.70.0
+    * @okouai/core bumped to 8.841.0
+    * @okouai/ui bumped to 1.21.25
+
 ## [0.1133.2](https://github.com/okou-ai/okou/compare/app-v0.1133.1...app-v0.1133.2) (2026-11-16)
 
 

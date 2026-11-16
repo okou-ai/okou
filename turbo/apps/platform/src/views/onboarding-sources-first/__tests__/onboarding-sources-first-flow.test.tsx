@@ -7,6 +7,8 @@ import {
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
+import { marketingHandoffsContract } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { DEFAULT_AGENT_DISPLAY_NAME } from "@okouai/core/brand-presentation";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
@@ -1116,45 +1118,52 @@ test("A prompt link's template carries into the first request", async () => {
   });
 });
 
-test("Prompt handoffs complete onboarding and open the requested chat", async () => {
-  mockOnboardingNeeded();
-  let runPrompt: string | undefined;
-  mockChatLifecycle(context, {
-    onRunCreate: (body) => {
-      runPrompt = body.prompt;
-    },
-  });
-  const requests: string[] = [];
-  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
-    requests.push("complete");
-    context.mocks.data.onboardingStatus({
-      needsOnboarding: false,
-      onboardingComplete: true,
+test.each([true, false])(
+  "A prompt link attempts redemption before completion (eligible: %s)",
+  async (redeemed) => {
+    mockOnboardingNeeded();
+    let runPrompt: string | undefined;
+    mockChatLifecycle(context, {
+      onRunCreate: (body) => {
+        runPrompt = body.prompt;
+      },
     });
-    return respond(200, {
-      onboardingComplete: true,
-      needsOnboarding: false,
+    const requests: string[] = [];
+    context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
+      requests.push(`redeem:${body.code}`);
+      return respond(200, { redeemed });
     });
-  });
+    context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
+      requests.push("complete");
+      context.mocks.data.onboardingStatus({
+        needsOnboarding: false,
+        onboardingComplete: true,
+      });
+      return respond(200, {
+        onboardingComplete: true,
+        needsOnboarding: false,
+      });
+    });
 
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}&redeemCode=%20LAUNCH50%20`,
-  });
+    await setupPage({
+      context,
+      locale: "en-US",
+      path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}&redeemCode=%20LAUNCH50%20`,
+    });
 
-  await expect(
-    screen.findByRole("heading", { name: PROMPT_TITLE }),
-  ).resolves.toBeInTheDocument();
-  click(getButtonByName("Next"));
+    await expect(
+      screen.findByRole("heading", { name: PROMPT_TITLE }),
+    ).resolves.toBeInTheDocument();
+    click(getButtonByName("Next"));
 
-  await waitFor(() => {
-    expect(runPrompt).toBe(HANDOFF_WITH_FORMAT);
-    expect(pathname()).toMatch(/^\/chats\//u);
-  });
-  expect(requests).toStrictEqual(["complete"]);
-  expect(new URLSearchParams(search()).has("redeemCode")).toBeFalsy();
-});
+    await waitFor(() => {
+      expect(runPrompt).toBe(HANDOFF_WITH_FORMAT);
+      expect(pathname()).toMatch(/^\/chats\//u);
+    });
+    expect(requests).toStrictEqual(["redeem:LAUNCH50", "complete"]);
+    expect(new URLSearchParams(search()).has("redeemCode")).toBeFalsy();
+  },
+);
 
 test("A later source-first step opened with a prompt goes back to the prompt page", async () => {
   mockOnboardingNeeded();
@@ -1223,4 +1232,77 @@ test("An already-onboarded visitor is forwarded with the prompt they brought", a
   await waitFor(() => {
     expect(runPrompt).toBe(HANDOFF_PROMPT);
   });
+});
+
+test.each([
+  ["prompt", true],
+  ["prompt", false],
+  ["handoff", true],
+  ["handoff", false],
+] as const)(
+  "An onboarded visitor redeems before running a linked %s (eligible: %s)",
+  async (source, redeemed) => {
+    let redeemedCode: string | undefined;
+    let runPrompt: string | undefined;
+    let redeemedBeforeRun: boolean | undefined;
+    context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
+      redeemedCode = body.code;
+      return respond(200, { redeemed });
+    });
+    if (source === "handoff") {
+      context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
+        return respond(200, {
+          version: 1,
+          prompt: HANDOFF_PROMPT,
+          files: [],
+          options: {},
+        });
+      });
+      context.mocks.api(marketingHandoffsContract.import, ({ respond }) => {
+        return respond(200, { files: [] });
+      });
+    }
+    mockChatLifecycle(context, {
+      onRunCreate: (body) => {
+        runPrompt = body.prompt;
+        redeemedBeforeRun = redeemedCode === "PRO-CAMPAIGN";
+      },
+    });
+
+    await setupPage({
+      context,
+      locale: "en-US",
+      path: `${ROUTES.onboarding}?${new URLSearchParams({
+        [source]: source === "handoff" ? "a".repeat(12) : HANDOFF_PROMPT,
+        redeemCode: "PRO-CAMPAIGN",
+      }).toString()}`,
+    });
+
+    await waitFor(() => {
+      expect(runPrompt).toBe(HANDOFF_PROMPT);
+      expect(pathname()).toMatch(/^\/chats\//u);
+    });
+    expect(redeemedBeforeRun).toBeTruthy();
+    expect(new URLSearchParams(search()).has("redeemCode")).toBeFalsy();
+  },
+);
+
+test("An onboarded visitor can redeem without bringing a prompt", async () => {
+  let redeemedCode: string | undefined;
+  context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
+    redeemedCode = body.code;
+    return respond(200, { redeemed: true });
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboarding}?redeemCode=PRO-CAMPAIGN`,
+  });
+
+  await waitFor(() => {
+    expect(pathname()).toMatch(/^\/agents\/[^/]+\/chat$/u);
+  });
+  expect(redeemedCode).toBe("PRO-CAMPAIGN");
+  expect(new URLSearchParams(search()).has("redeemCode")).toBeFalsy();
 });

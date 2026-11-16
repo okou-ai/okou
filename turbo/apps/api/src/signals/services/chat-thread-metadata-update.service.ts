@@ -73,6 +73,10 @@ interface EventIds {
 }
 
 interface ChatThreadMetadataUpdateArgs {
+  readonly expectedModelState?: {
+    readonly selectedModel: string;
+    readonly updatedAt: string;
+  };
   readonly principal: Principal;
   readonly threadId: string;
   readonly patch: ChatThreadMetadataPatch;
@@ -160,6 +164,12 @@ function threadCondition(args: ChatThreadMetadataUpdateArgs) {
     eq(chatThreads.userId, args.principal.userId),
     isNotNull(chatThreads.agentId),
     sql`EXISTS (SELECT 1 FROM ${agents} WHERE ${agents.id} = ${chatThreads.agentId} AND ${agents.orgId} = ${args.principal.orgId})`,
+    args.expectedModelState
+      ? and(
+          eq(chatThreads.selectedModel, args.expectedModelState.selectedModel),
+          sql`${chatThreads.updatedAt} = ${args.expectedModelState.updatedAt}::timestamp`,
+        )
+      : undefined,
   );
 }
 

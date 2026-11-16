@@ -218,10 +218,12 @@
      card's own objects through `capability-layer-replay`, both registered in
      the inline block below because they read per-layer values. The clock's
      hands sweep to the time as it enters and then tick while the card is
-     active; the trigger's ring flashes once as it enters; the gears turn only
-     while the card is active and stop where they are. Consumers reach every
-     entry through `motion-safe:animate-*`, so reduced motion drops the class
-     and the objects are simply present. Keyframes stay below. */
+     active; the bell rings once each time its card becomes active; the
+     gears turn only while the card is active and stop where they are; the
+     magnifier's lens shows plain glass while Explore replays the objects.
+     Consumers reach every entry through `motion-safe:animate-*`, so reduced
+     motion drops the class and the objects are simply present. Keyframes
+     stay below. */
   --animate-capability-art-in: capability-art-in 500ms
     cubic-bezier(0.33, 1, 0.68, 1) both;
   --animate-capability-hour-sweep: capability-hour-sweep 1100ms
@@ -230,24 +232,30 @@
     cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
   --animate-capability-minute-tick: capability-hand-tick 90s linear infinite;
   --animate-capability-second-tick: capability-hand-tick 6s linear infinite;
-  --animate-capability-ring-flash: capability-ring-flash 1s ease;
+  --animate-capability-ding: capability-ding 900ms
+    cubic-bezier(0.3, 0.7, 0.3, 1);
+  --animate-capability-lens-replay: capability-lens-replay 900ms ease-out;
   --animate-capability-gear: capability-gear 9s linear infinite paused;
   --animate-capability-gear-fast: capability-gear 7.5s linear infinite paused;
   --animate-capability-gear-reverse: capability-gear 9s linear infinite reverse
     paused;
-  /* The glow the trigger's ring holds while its card is active. */
-  --shadow-capability-ring:
-    0 0 0 2px color-mix(in oklab, var(--color-primary) 90%, transparent),
-    0 0 18px 3px color-mix(in oklab, var(--color-primary) 35%, transparent);
+  /* The light the bell stands in while its card is active: a soft pool with
+     no edge, so it has nothing to line up with in the photograph. */
+  --background-image-capability-glow: radial-gradient(
+    closest-side,
+    color-mix(in oklab, var(--color-primary) 30%, transparent),
+    color-mix(in oklab, var(--color-primary) 10%, transparent) 60%,
+    transparent
+  );
   /* Each card's hue, from the brand palette, for the faint wash behind its
      objects; the four cards differ by this alone. Identical in Light and
-     Dark: the wash's strength carries the theme. The clock hand is the grey
-     the clock face was photographed with. */
+     Dark: the wash's strength carries the theme. The clock hand is the
+     objects' one ink, the Light gray-500, kept in Dark like the hues. */
   --color-capability-people: #ffc6e2;
   --color-capability-research: #b4def5;
   --color-capability-create: #f9e840;
   --color-capability-workflow: #b7de77;
-  --color-capability-clock-hand: #8d8a88;
+  --color-capability-clock-hand: #a5a3a3;
   /* Fine grain laid over a card's wash, so the hue reads as paper rather than
      a screen gradient. */
   --background-image-capability-grain: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxNjAnIGhlaWdodD0nMTYwJz48ZmlsdGVyIGlkPSduJz48ZmVUdXJidWxlbmNlIHR5cGU9J2ZyYWN0YWxOb2lzZScgYmFzZUZyZXF1ZW5jeT0nLjknIG51bU9jdGF2ZXM9JzInIHN0aXRjaFRpbGVzPSdzdGl0Y2gnLz48ZmVDb2xvck1hdHJpeCB2YWx1ZXM9JzAgMCAwIDAgMCAgMCAwIDAgMCAwICAwIDAgMCAwIDAgIDAgMCAwIC41NSAwJy8+PC9maWx0ZXI+PHJlY3Qgd2lkdGg9JzEwMCUnIGhlaWdodD0nMTAwJScgZmlsdGVyPSd1cmwoI24pJy8+PC9zdmc+");
@@ -863,16 +871,31 @@ body {
   }
 }
 
-@keyframes capability-ring-flash {
-  0% {
-    box-shadow:
-      0 0 0 0 transparent,
-      0 0 0 0 transparent;
+/* The bell rocks on its base and settles. */
+@keyframes capability-ding {
+  12% {
+    rotate: -7deg;
   }
-  45% {
-    box-shadow:
-      0 0 0 3px var(--color-primary),
-      0 0 30px 8px color-mix(in oklab, var(--color-primary) 50%, transparent);
+  30% {
+    rotate: 6deg;
+  }
+  48% {
+    rotate: -4deg;
+  }
+  66% {
+    rotate: 2deg;
+  }
+  84% {
+    rotate: -1deg;
+  }
+}
+
+/* The magnified page is placed for the resting and lifted poses only, so it
+   stays hidden while a replay carries the objects in from elsewhere. */
+@keyframes capability-lens-replay {
+  0%,
+  70% {
+    opacity: 0;
   }
 }
 

@@ -31,6 +31,7 @@ pub(super) enum Scenario {
     UnknownResponseBeforeResponse,
     StaleTurn,
     NoActiveTurn,
+    RejectedSteerAfterAck(SteerRejection),
     ExitOnTurnSteer,
     RuntimeTurnComplete,
     RuntimeTurnCompleteBeforeHeartbeat,
@@ -85,6 +86,18 @@ pub(super) enum Scenario {
     UnexpectedThreadOutputItemStarted,
     UnexpectedTurnOutputItemStarted,
     SecondaryThreadNotifications,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SteerRejection {
+    CompletionBeforeResponse,
+    CompletionAfterResponse,
+    Failed,
+    Interrupted,
+    WrongTurn,
+    WrongCode,
+    OtherError,
+    Disconnect,
 }
 
 impl Scenario {
@@ -158,6 +171,30 @@ impl Scenario {
                 "unknown-response-before-response" => Ok(Self::UnknownResponseBeforeResponse),
                 "stale-turn" => Ok(Self::StaleTurn),
                 "no-active-turn" => Ok(Self::NoActiveTurn),
+                "steer-rejected-before-completion" => Ok(Self::RejectedSteerAfterAck(
+                    SteerRejection::CompletionAfterResponse,
+                )),
+                "steer-rejected-after-completion" => Ok(Self::RejectedSteerAfterAck(
+                    SteerRejection::CompletionBeforeResponse,
+                )),
+                "steer-rejected-failed-turn" => {
+                    Ok(Self::RejectedSteerAfterAck(SteerRejection::Failed))
+                }
+                "steer-rejected-interrupted-turn" => {
+                    Ok(Self::RejectedSteerAfterAck(SteerRejection::Interrupted))
+                }
+                "steer-rejected-wrong-turn" => {
+                    Ok(Self::RejectedSteerAfterAck(SteerRejection::WrongTurn))
+                }
+                "steer-rejected-wrong-code" => {
+                    Ok(Self::RejectedSteerAfterAck(SteerRejection::WrongCode))
+                }
+                "steer-rejected-other-error" => {
+                    Ok(Self::RejectedSteerAfterAck(SteerRejection::OtherError))
+                }
+                "steer-disconnected-after-completion" => {
+                    Ok(Self::RejectedSteerAfterAck(SteerRejection::Disconnect))
+                }
                 "exit-on-turn-steer" => Ok(Self::ExitOnTurnSteer),
                 "runtime-turn-complete" => Ok(Self::RuntimeTurnComplete),
                 "runtime-turn-complete-before-heartbeat" => {
@@ -279,6 +316,7 @@ impl Scenario {
             self,
             Self::ExitOnTurnSteer
                 | Self::NoActiveTurn
+                | Self::RejectedSteerAfterAck(_)
                 | Self::RuntimeTurnCompleteBeforeSteerResponse
                 | Self::RuntimeTurnStartedBeforeSteer
                 | Self::WaitOnTurnSteerResponse

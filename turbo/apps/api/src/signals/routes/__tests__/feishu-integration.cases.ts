@@ -20,6 +20,8 @@ import { Buffer } from "node:buffer";
 
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { array, object, string } from "zod";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 
 import {
   chatThreadConnectorSelectionContract,
@@ -4878,6 +4880,157 @@ export function registerFeishuIntegrationTests(
 
     // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
     if (group === "message-delivery") {
+      it("switches a failed conversation's model through its native card callback", async () => {
+        const fixture = await setupFeishuRunFixture();
+        const chat = createChatFilesBddApi(context);
+        await own(() => {
+          return enableFeishuIntegration(platform, fixture.actor, {
+            [FeatureSwitchKey.OkouDebug]: true,
+            [FeatureSwitchKey.IntegrationModelRecovery]: true,
+          });
+        });
+        await connectFixtureUser(fixture);
+        const before = await chat.requestThreadEvents(fixture.actor, {}, [200]);
+        await own(() => {
+          return postEvent(
+            fixture.callbackUrl,
+            directMessage(fixture.appId, "Recover this model"),
+            { encrypted: true },
+          );
+        });
+        await own(flushWaitUntilForTest);
+        const run = await findRun(fixture.actor, "Recover this model");
+        await own(() => {
+          return runsApi.heartbeatRunner(fixture.runnerGroup);
+        });
+        const execution = await readRunExecution(run.id);
+        await own(() => {
+          return webhooksApi.requestAgentComplete(
+            {
+              runId: run.id,
+              exitCode: 1,
+              error: "Claude verification required",
+              failureReason: "account_verification_required",
+            },
+            { authorization: `Bearer ${execution.sandboxToken}` },
+            [200],
+          );
+        });
+        await own(flushWaitUntilForTest);
+        const after = await chat.requestThreadEvents(fixture.actor, {}, [200]);
+        if (before.status !== 200 || after.status !== 200) {
+          throw new Error("Expected the conversation stream");
+        }
+        const thread = requireValue(
+          after.body.events.find((event) => {
+            return (
+              event.kind === "created" &&
+              !before.body.events.some((existing) => {
+                return existing.id === event.id;
+              })
+            );
+          }),
+          "Expected the Feishu conversation",
+        );
+        const failed = requireValue(
+          (
+            await chat.listThreadEvents(fixture.actor, thread.chatThreadId)
+          ).events.find((event) => {
+            return event.eventType === "run.failed";
+          }),
+          "Expected the model error in Web",
+        );
+        expect(
+          fixtureState.outboundMessages.some((message) => {
+            return messageContent(message).includes(`"eventId":"${failed.id}"`);
+          }),
+        ).toBeTruthy();
+        const callback = (
+          value: Record<string, unknown>,
+          option?: string,
+          sender = "ou_feishu_user",
+        ) => {
+          return v2Event(fixture.appId, "card.action.trigger", {
+            operator: { open_id: sender },
+            context: { open_chat_id: "oc_feishu_dm" },
+            action: { value, ...(option ? { option } : {}) },
+          });
+        };
+        const action = { action: "switch_model", eventId: failed.id };
+        const denied = await own(() => {
+          return postEvent(
+            fixture.callbackUrl,
+            callback(action, undefined, "ou_someone_else"),
+            { encrypted: true },
+          );
+        });
+        await expect(denied.json()).resolves.toMatchObject({
+          toast: { type: "error" },
+        });
+        const opened = await own(() => {
+          return postEvent(fixture.callbackUrl, callback(action), {
+            encrypted: true,
+          });
+        });
+        const picker = object({
+          card: object({
+            data: object({
+              body: object({
+                elements: array(
+                  object({
+                    tag: string(),
+                    behaviors: array(
+                      object({
+                        value: object({
+                          eventId: string(),
+                          selectedModel: string(),
+                          updatedAt: string(),
+                        }).optional(),
+                      }),
+                    ).optional(),
+                  }),
+                ),
+              }),
+            }),
+          }),
+        }).parse(await opened.json());
+        const state = requireValue(
+          picker.card.data.body.elements.find((element) => {
+            return element.tag === "select_static";
+          })?.behaviors?.[0]?.value,
+          "Expected the native selector state",
+        );
+        const saved = await own(() => {
+          return postEvent(
+            fixture.callbackUrl,
+            callback({ ...state, action: "switch_model" }, "auto"),
+            { encrypted: true },
+          );
+        });
+        expect(JSON.stringify(await saved.json())).toContain(
+          "Switched to Auto",
+        );
+        expect(
+          (await chat.readThreadMetadata(fixture.actor, thread.chatThreadId))
+            .selectedModel,
+        ).toBe("auto");
+        const stale = await own(() => {
+          return postEvent(
+            fixture.callbackUrl,
+            callback({ ...state, action: "switch_model" }, "claude-sonnet-5-5"),
+            { encrypted: true },
+          );
+        });
+        await expect(stale.json()).resolves.toMatchObject({
+          toast: { type: "error" },
+        });
+        expect(
+          (await chat.readThreadMetadata(fixture.actor, thread.chatThreadId))
+            .selectedModel,
+        ).toBe("auto");
+        await removeFeishuInstallation(fixture);
+      });
+
       it("rejects account rebinding and replaces the connected identity", async () => {
         const fixture = await setupFeishuRunFixture();
         const { actor, appId, callbackUrl, defaultAgentId } = fixture;

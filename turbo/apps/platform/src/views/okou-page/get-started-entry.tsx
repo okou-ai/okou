@@ -18,10 +18,12 @@ import {
 import {
   Button,
   buttonVariants,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  Skeleton,
 } from "@okouai/ui";
 import { assistantName$ } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -55,6 +57,8 @@ import {
 // enforces on its descendants, and its geometry is fixed at that size.
 const RING_RADIUS = 7;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+const ENTRY_CLASS_NAME =
+  "h-8 gap-2 rounded-surface-compact border border-surface-border bg-card px-[11px] text-foreground shadow-surface data-popup-open:bg-state-hover";
 
 function QuestRing({ completed, total }: { completed: number; total: number }) {
   const fraction = completed / total;
@@ -288,7 +292,10 @@ function useQuestState(
         )
       : null;
   }
-  if (quest.key === "invite" && quest.limit !== null) {
+  if (
+    (quest.key === "connector" || quest.key === "invite") &&
+    quest.limit !== null
+  ) {
     const counts = `${formatLocalizedNumber(quest.claimedCount)}/${formatLocalizedNumber(quest.limit)}`;
     return quest.pendingCount > 0
       ? `${counts} · ${t(
@@ -613,10 +620,43 @@ export function GetStartedEntry() {
   });
 
   if (
+    questsLoadable.state === "hasError" ||
+    summaryLoadable.state === "hasError"
+  ) {
+    return null;
+  }
+  if (
     questsLoadable.state !== "hasData" ||
     summaryLoadable.state !== "hasData"
   ) {
-    return null;
+    return (
+      <div
+        aria-busy="true"
+        className={cn(
+          buttonVariants({ variant: "quiet", size: "sm" }),
+          ENTRY_CLASS_NAME,
+          "pointer-events-none",
+        )}
+      >
+        <QuestRing completed={0} total={1} />
+        <span className="text-[13px] font-medium">
+          {t(($) => {
+            return $.chat.agentPage.getStarted.title;
+          })}
+        </span>
+        <span aria-hidden="true" className="h-4 w-px shrink-0 bg-divider" />
+        <Skeleton aria-hidden="true" className="h-3 rounded">
+          <span className="invisible text-xs font-semibold tabular-nums">
+            {t(
+              ($) => {
+                return $.chat.agentPage.getStarted.stepCount;
+              },
+              { completed: 0, total: 0 },
+            )}
+          </span>
+        </Skeleton>
+      </div>
+    );
   }
   const summary = summaryLoadable.data;
   if (summary.total === 0) {
@@ -638,7 +678,7 @@ export function GetStartedEntry() {
               type="button"
               variant="quiet"
               size="sm"
-              className="h-8 gap-2 rounded-surface-compact border border-surface-border bg-card px-[11px] text-foreground shadow-surface data-popup-open:bg-state-hover"
+              className={ENTRY_CLASS_NAME}
               data-testid="get-started-entry"
             />
           }

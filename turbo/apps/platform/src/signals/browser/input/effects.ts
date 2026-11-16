@@ -22,6 +22,23 @@ export type InputReceipt<T = unknown> =
 type EffectPhase = "input" | "cleanup";
 type CompletionPhase = "completion" | "suspension" | "retirement";
 
+function isDetachedHover(
+  operation: InputOperation,
+  phase: EffectPhase,
+  error: unknown,
+): boolean {
+  return (
+    phase === "input" &&
+    operation.method === "Input.dispatchMouseEvent" &&
+    operation.params.type === "mouseMoved" &&
+    operation.params.button === "none" &&
+    operation.params.buttons === 0 &&
+    operation.params.modifiers === 0 &&
+    error instanceof CdpFault &&
+    error.kind === "target-unavailable"
+  );
+}
+
 /** Copy only finite protocol facts, never native error messages or input data. */
 function receiptFault(
   method: Method,
@@ -113,9 +130,13 @@ function createEffectReceipts(graph: EffectState) {
           result.reason instanceof CdpFault &&
           result.reason.code !== undefined;
         // A native navigation error response settles that command, not the
-        // document's outcome. Input failures and unknown native outcomes still
-        // leave original cleanup unconfirmed; no failed receipt is reset.
-        if (!rejectedNavigation) {
+        // document's outcome. A detached neutral hover creates no held-input
+        // cleanup obligation, but its request still rejects below. Independent
+        // release failures and every earlier failed receipt remain sticky.
+        if (
+          !rejectedNavigation &&
+          !isDetachedHover(operation, phase, result.reason)
+        ) {
           set(
             failed$,
             get(failed$) ??

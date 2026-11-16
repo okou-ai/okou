@@ -53,6 +53,7 @@ import { claudeCodeDeviceAuthRoutes } from "./routes/claude-code-device-auth";
 import { cliAuthRoutes } from "./routes/cli-auth";
 import { cloudflareAccessRoutes } from "./routes/cloudflare-access";
 import { codexDeviceAuthRoutes } from "./routes/codex-device-auth";
+import { atomSubscriptionGrantRoutes } from "./routes/atom-subscription-grants";
 import { computerUseRoutes } from "./routes/computer-use";
 import { computerUseAuthorizationRoutes } from "./routes/computer-use-authorization";
 import { vncAuthorizationRoutes } from "./routes/vnc-authorization";
@@ -197,6 +198,7 @@ import { realtimeTokenRoutes } from "./routes/realtime-token";
 import { registryResourceDownloadRoutes } from "./routes/registry-resources-download";
 import { runDetailRoutes } from "./routes/run-detail";
 import { runModelsRoutes } from "./routes/run-models";
+import { runPhaseTimingRoutes } from "./routes/run-phase-timing";
 import { runnerCancellationRoutes } from "./routes/runner-cancellation";
 import { runnerSshRoutes } from "./routes/runner-ssh";
 import { runnerVncRoutes } from "./routes/runner-vnc";
@@ -361,6 +363,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...computerUseRoutes,
   ...phoneUseRoutes,
   ...codexDeviceAuthRoutes,
+  ...atomSubscriptionGrantRoutes,
   ...connectorCatalogRoutes,
   ...agentConnectorAccessRoutes,
   ...connectedConnectorsRoutes,
@@ -406,6 +409,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...browserUserActionRoutes,
   ...modelCatalogRoutes,
   ...runModelsRoutes,
+  ...runPhaseTimingRoutes,
   ...meModelProvidersDeleteRoutes,
   ...meModelProviderAccountRoutes,
   ...meModelProvidersListRoutes,

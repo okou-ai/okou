@@ -338,5 +338,4 @@ test("A valid task restores its text and attachments into the agent composer", a
     expect(screen.getByText("notes.txt")).toBeInTheDocument();
     expect(new URLSearchParams(search()).has("handoff")).toBeFalsy();
   });
-  expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
 });

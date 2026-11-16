@@ -22,6 +22,7 @@ describe("Runner built-in and personal dispatch", () => {
       const input = await owned.executionInput(run.runId);
       expect(input).toMatchObject({
         cliAgentType: "pi",
+        platformEnvironment: { OKOU_CURRENT_INTEGRATION: "web" },
         billableFirewalls: ["model-provider:openrouter-codex"],
         modelUsageProvider: "@preset/okou-1-0",
         modelUsageLongContextMinTotalInputTokens: 100_001,
@@ -91,7 +92,11 @@ describe("Runner built-in and personal dispatch", () => {
         billableFirewalls: [],
         modelUsageProvider: "gpt-6-luna",
         modelUsageLongContextMinTotalInputTokens: 0,
-        piModelConfig: { provider: "openai-codex" },
+        piModelConfig: {
+          provider: "openai-codex",
+          model: "gpt-6-luna",
+          thinkingLevel: "xhigh",
+        },
       });
       await expect(api.readRun(owned.actor, run.runId)).resolves.toMatchObject({
         status: "running",

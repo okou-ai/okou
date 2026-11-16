@@ -140,7 +140,9 @@ export function createFeedCommand() {
           if (options.json) console.log(JSON.stringify(data));
           else if (data.items.length === 0)
             console.log(
-              "No active suggestions. Create one with: okou feed create --file suggestion.json",
+              options.type === "event"
+                ? "No active platform events."
+                : "No active suggestions. Create one with: okou feed create --file suggestion.json",
             );
           else
             for (const item of data.items)

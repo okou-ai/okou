@@ -3,6 +3,7 @@ import {
   marketingHandoff$,
   saveMarketingHandoff$,
 } from "../prompt-page/marketing-handoff.ts";
+import { billingRedeemCodeContract } from "@okouai/api-contracts/client/billing";
 import type {
   MarketingHandoffFile,
   MarketingHandoffManifest,
@@ -70,9 +71,43 @@ export function promptHandoffParams(
   return next;
 }
 
+const redeemOnboardingCode$ = command(
+  async (
+    { get, set },
+    redeemCode: string | null,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const code = redeemCode?.trim();
+    if (!code) {
+      return;
+    }
+    const client = get(apiClient$)(billingRedeemCodeContract);
+    const result = await accept(
+      client.create({ body: { code }, fetchOptions: { signal } }),
+      [200],
+    );
+    signal.throwIfAborted();
+    if (result.body.redeemed) {
+      discardApiBootstrapResponse(orgContract.get.method, orgContract.get.path);
+      discardApiBootstrapResponse(
+        runModelsMainContract.list.method,
+        runModelsMainContract.list.path,
+      );
+      set(refreshOrg$);
+      set(invalidateAvailableRunModels$);
+    }
+  },
+);
+
 export const completeOnboarding$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+  async (
+    { get, set },
+    redeemCode: string | null,
+    signal: AbortSignal,
+  ): Promise<void> => {
     const createClient = get(apiClient$);
+    await set(redeemOnboardingCode$, redeemCode, signal);
+
     const onboardingClient = createClient(onboardingCompleteContract);
     const timezone =
       new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -108,6 +143,28 @@ export const completeOnboarding$ = command(
   },
 );
 
+/** Redeem an eligible owner's code before leaving their completed onboarding. */
+export const forwardOnboardedVisitor$ = command(
+  async (
+    { get, set },
+    isAdmin: boolean,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const searchParams = get(searchParams$);
+    if (isAdmin) {
+      await set(redeemOnboardingCode$, searchParams.get("redeemCode"), signal);
+    }
+    const prompt =
+      searchParams.get("handoff") || searchParams.get("prompt")?.trim();
+    set(detachedNavigateTo$, prompt ? ROUTES.prompt : ROUTES.home, {
+      searchParams: prompt
+        ? promptHandoffParams(searchParams)
+        : new URLSearchParams(),
+      replace: true,
+    });
+  },
+);
+
 /** Preview QA can enter the app without answering the onboarding questions. */
 export const canSkipPreviewOnboarding$ = computed((get) => {
   return (
@@ -121,7 +178,7 @@ export const skipPreviewOnboarding$ = command(
     if (!get(canSkipPreviewOnboarding$)) {
       return;
     }
-    await set(completeOnboarding$, signal);
+    await set(completeOnboarding$, null, signal);
     set(clearSourcesFirstDraft$);
     set(detachedNavigateTo$, ROUTES.home, { replace: true });
   },
@@ -220,7 +277,11 @@ export const runOnboardingRequest$ = command(
         handoffParams.delete("template");
       }
     }
-    await set(completeOnboarding$, signal);
+    await set(
+      completeOnboarding$,
+      searchParams.get("redeemCode")?.trim() || null,
+      signal,
+    );
     set(detachedNavigateTo$, ROUTES.prompt, {
       searchParams: handoffParams,
       replace: true,

@@ -74,7 +74,7 @@ _generation: str | None = None
 _runs: dict[str, _Run] = {}
 _response_count = 0
 _history_discarded = False
-_last_registry: str | None = None
+_last_registry: object | None = None
 
 
 def initialize(generation: str | None) -> None:
@@ -104,10 +104,10 @@ def _prune(now: float) -> None:
             _discard(run_id)
 
 
-def reconcile(sandboxes: dict, registry_identity: str | None) -> None:
-    """Initialize from validated authoritative registrations, never query input."""
+def reconcile(sandboxes: dict, registry_identity: object) -> None:
+    """Initialize from a validated registry publication, never from query input."""
     global _last_registry
-    if _generation is None or registry_identity == _last_registry:
+    if _generation is None or registry_identity is _last_registry:
         return
     # Do not hold the reader lock while projecting a potentially large registry.
     registrations = {
@@ -116,7 +116,7 @@ def reconcile(sandboxes: dict, registry_identity: str | None) -> None:
         if len(entry["runId"].encode()) <= MAX_ID_BYTES
     }
     with _lock:
-        if _generation is None or registry_identity == _last_registry:
+        if _generation is None or registry_identity is _last_registry:
             return
         _last_registry = registry_identity
         now = time.monotonic()

@@ -1,5 +1,62 @@
 # Changelog
 
+## [8.842.1](https://github.com/okou-ai/okou/compare/core-v8.842.0...core-v8.842.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **integrations:** add native model recovery controls ([#47649](https://github.com/okou-ai/okou/issues/47649)) ([89c954e](https://github.com/okou-ai/okou/commit/89c954ec0e6a6408cac0f1ad960074b2d7fbdf24))
+* require phone use opt-in and authorize access from chat ([#47650](https://github.com/okou-ai/okou/issues/47650)) ([d99b85b](https://github.com/okou-ai/okou/commit/d99b85b2a06c635ca25fa93b9f6a0fc66b55b276))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.71.1
+
+## [8.842.0](https://github.com/okou-ai/okou/compare/core-v8.841.1...core-v8.842.0) (2026-11-16)
+
+
+### Features
+
+* **run:** add opt-in artifact phase timing ([#47655](https://github.com/okou-ai/okou/issues/47655)) ([3e71f58](https://github.com/okou-ai/okou/commit/3e71f58b819fe638d46df9ecb8596fef07ddf88f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.71.0
+
+## [8.841.1](https://github.com/okou-ai/okou/compare/core-v8.841.0...core-v8.841.1) (2026-11-16)
+
+
+### Refactoring
+
+* **api:** remove retired run creation contracts ([#47651](https://github.com/okou-ai/okou/issues/47651)) ([80a55d8](https://github.com/okou-ai/okou/commit/80a55d8e2cece736c0b0dafbee86bd520e388222))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.70.1
+
+## [8.841.0](https://github.com/okou-ai/okou/compare/core-v8.840.0...core-v8.841.0) (2026-11-16)
+
+
+### Features
+
+* **ios:** show available credits in billing settings ([#47612](https://github.com/okou-ai/okou/issues/47612)) ([7230a84](https://github.com/okou-ai/okou/commit/7230a84274aa093ba3e10103ad493c9572ec2dda))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.70.0
+
 ## [8.840.0](https://github.com/okou-ai/okou/compare/core-v8.839.7...core-v8.840.0) (2026-11-16)
 
 

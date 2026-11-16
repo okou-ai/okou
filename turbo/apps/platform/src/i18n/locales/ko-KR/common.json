@@ -2364,6 +2364,21 @@
       "updated": "권한이 업데이트되었습니다",
       "updateFailed": "권한을 업데이트할 수 없습니다"
     },
+    "phoneUse": {
+      "allowChat": "이 채팅에서 휴대폰 활성화",
+      "allowChatDescription": "여기의 Connectors 메뉴에서 휴대폰 옆 스위치를 켜세요. 끄면 접근 권한이 해제됩니다.",
+      "connectMyPhone": "내 휴대폰 연결",
+      "done": "완료",
+      "loadError": "휴대폰을 불러오지 못했습니다.",
+      "loading": "휴대폰 불러오는 중…",
+      "noPhones": "온라인 휴대폰 없음",
+      "openApp": "Okou iOS Use 열기",
+      "openAppDescription": "iPhone에 개발 빌드를 설치하고 같은 계정과 워크스페이스로 로그인한 다음 제어 창을 시작하세요.",
+      "setupDescription": "이 채팅에서 Okou가 iPhone을 사용하도록 허용합니다.",
+      "startTask": "다음 작업 보내기",
+      "startTaskDescription": "허용 후 여기에 새 메시지를 보내세요. 휴대폰의 제어 창을 활성 상태로 유지하세요.",
+      "yourPhone": "내 휴대폰"
+    },
     "promptDocumentTitle": "프롬프트",
     "queue": {
       "aboutAutomationEvent": "이 자동화 이벤트에 대해",

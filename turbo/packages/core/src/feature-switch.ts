@@ -46,13 +46,26 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.IntegrationModelRecovery]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Integration model recovery",
+    description:
+      "Switch the current conversation's model from an integration error.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ArtifactGenerationTiming]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Artifact generation phase timing",
+    description:
+      "Record research and generation boundaries for the current Run.",
+    enabled: false,
+  },
   [FeatureSwitchKey.PhoneUse]: {
     maintainer: "lancy@okou.ai",
     displayName: "Phone Use",
     description: "Internal cloud-controlled iOS device automation.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.SshChatApproval]: {
     maintainer: "yuma@okou.ai",
@@ -259,6 +272,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Billing one-question surveys",
     description:
       "Ask one single-choice question where members are closest to paying: under the upgrade action when credits run out (with a one-time credit thank-you), and after leaving a Stripe Checkout without paying.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.IosSettingsCredits]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "iOS settings credit balance",
+    description:
+      "Show the current account's available credits in iOS Settings using the Web account menu balance.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

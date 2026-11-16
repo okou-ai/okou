@@ -1,7 +1,6 @@
 import {
   object,
   uuid,
-  never as zNever,
   undefined as zUndefined,
   type infer as zInfer,
 } from "zod";
@@ -12,11 +11,9 @@ import {
   cancelRunResponseSchema,
   agentEventsResponseSchema,
   queueResponseSchema,
-  unifiedRunRequestSchema,
   networkLogsResponseSchema,
   createLogPaginationQuerySchema,
 } from "./runs";
-import { modelProviderTypeSchema } from "./model-provider-types";
 import {
   runnerHeartbeatGenerationSchema,
   runnerHostnameSchema,
@@ -29,30 +26,6 @@ export {
   runContextStorageMountSchema,
   type RunContextStorageMount,
 } from "../validators/run-routes";
-
-/**
- * Agent run request schema — subset of unified schema.
- * Product-owned disallowedTools restrictions are applied at Claim; callers
- * cannot override them through this request.
- * Fields not used by unattended workflow runs are omitted:
- * triggerSource, vars, secrets, permissionPolicies.
- */
-export const runCreateBodySchema = unifiedRunRequestSchema
-  .omit({
-    triggerSource: true,
-    disallowedTools: true,
-    vars: true,
-    secrets: true,
-    appendSystemPrompt: true,
-    modelProviderType: true,
-    permissionPolicies: true,
-  })
-  .extend({
-    // This endpoint owns the source; never strip an obsolete execution request
-    // into an ordinary launch. Callers must omit source authority entirely.
-    triggerSource: zNever().optional(),
-    modelProvider: modelProviderTypeSchema.optional(),
-  });
 
 const c = initContract();
 

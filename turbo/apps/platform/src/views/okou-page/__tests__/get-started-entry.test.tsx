@@ -535,6 +535,29 @@ test("An admin sees every step and what each one pays", async () => {
   // affordance instead of collapsing to the completion check.
   const connectorRow = screen.getByTestId("get-started-quest-connector");
   expect(normalizedText(connectorRow)).toContain("100");
+  expect(within(connectorRow).getByText("· 3/10")).toBeInTheDocument();
+  expect(within(connectorRow).getByText("Connect")).toBeInTheDocument();
+});
+
+test("A connector reward at its limit shows completion and stops offering more credits", async () => {
+  const data = configureQuestPage(context, "admin");
+  const connector = data.quests.find((quest) => {
+    return quest.key === "connector";
+  });
+  if (!connector) {
+    throw new Error("Missing connector fixture");
+  }
+  connector.claimedCount = 10;
+  connector.earnedCredits = 1000;
+  connector.canEarnMore = false;
+  await setupPage({ context, path: questChatPath() });
+
+  await openQuestPanel();
+  const row = screen.getByTestId("get-started-quest-connector");
+  expect(within(row).getByText("· 10/10")).toBeInTheDocument();
+  expect(within(row).getByText("Connect a connector")).toBeInTheDocument();
+  expect(within(row).queryByText("Connect")).toBeNull();
+  expect(row.getAttribute("role")).not.toBe("menuitem");
 });
 
 test("A member is only offered the steps they can finish themselves", async () => {
