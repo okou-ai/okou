@@ -68,7 +68,7 @@ export function FeatureGuideComparison({
               aria-hidden="true"
               className="my-2 size-4 text-brand-dark-gray sm:my-3 sm:size-5"
             />
-            <ul className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-col sm:gap-3">
+            <ul className="grid w-full grid-cols-1 gap-2 min-[380px]:grid-cols-2 sm:flex sm:flex-col sm:gap-3">
               {media.after.items.map((item) => {
                 return (
                   <li
