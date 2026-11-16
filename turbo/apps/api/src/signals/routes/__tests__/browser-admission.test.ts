@@ -7,6 +7,7 @@ import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
+import { controlBrowserDeadline } from "./helpers/browser-deadline";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import {
@@ -38,6 +39,7 @@ describe("shared Browser public consumers", () => {
       installBrowserWindowContentCommands(f.provider.native);
       const a = await f.start();
       f.provider.native.windowReply = "withhold";
+      f.provider.native.onWithheldReply = controlBrowserDeadline(context);
       await expect(
         client().use({ headers: runHeaders(a), body: {} }),
       ).resolves.toMatchObject({
@@ -69,7 +71,7 @@ describe("shared Browser public consumers", () => {
         { windowId: recovered.browser.window?.primaryWindowId },
       ]);
     });
-  }, 20_000);
+  });
 
   it("waits for the first window before admitting a sibling into a newly published instance", async () => {
     const f = await fixture();
