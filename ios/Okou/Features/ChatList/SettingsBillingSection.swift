@@ -44,6 +44,7 @@ struct SettingsBillingSection: View {
       }
       .frame(minHeight: OkouControl.inlineActionHeight)
       .accessibilityIdentifier("settings-current-plan")
+      SettingsCreditBalanceRow(workspace: workspace)
       Link(destination: workspace.billingURL) {
         OkouRowLabel("Manage billing", okouSymbol: "arrow-up-right")
       }
@@ -60,6 +61,59 @@ struct SettingsBillingSection: View {
     case "team": Text(verbatim: "Team")
     case "custom": Text("Custom")
     default: Text(verbatim: tier)
+    }
+  }
+}
+
+private struct SettingsCreditBalanceRow: View {
+  let workspace: WorkspaceStore
+  @ResolvedValue private var enabled: Bool?
+  @LoadableValue private var credits: Loadable<Double?>
+  @LoadableStatus<Double?> private var status: LoadableState
+
+  init(workspace: WorkspaceStore) {
+    self.workspace = workspace
+    _enabled = ResolvedValue(task: workspace.settingsResources.billingCreditsEnabled)
+    _credits = LoadableValue(task: workspace.settingsResources.billingCreditsValue, keepLast: true)
+    _status = LoadableStatus(task: workspace.settingsResources.billingCreditsValue)
+  }
+
+  var body: some View {
+    if enabled == true {
+      content
+        .frame(minHeight: OkouControl.inlineActionHeight)
+        .accessibilityIdentifier("settings-credit-balance")
+    }
+  }
+
+  @ViewBuilder private var content: some View {
+    switch credits {
+    case .hasData(let value):
+      if let value {
+        HStack(spacing: OkouSpace.sm) {
+          OkouValueRow(value: Text(value, format: .number)) {
+            OkouRowLabel("Credit balance", okouSymbol: "package")
+          }
+          .monospacedDigit()
+          if status == .loading {
+            ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
+          }
+        }
+      }
+    case .loading:
+      HStack {
+        OkouRowLabel("Credit balance", okouSymbol: "package")
+        Spacer(minLength: OkouSpace.sm)
+        OkouSkeletonBlock(width: OkouSpace.xxxl * 2, height: OkouControl.skeletonLine)
+          .okouShimmer()
+          .accessibilityLabel("Loading credits")
+      }
+    case .hasError(let error):
+      OkouLoadErrorRow(
+        message: ChatRequestFailure.message(for: error), isRetrying: status == .loading
+      ) {
+        await workspace.refreshSettingsBilling()
+      }
     }
   }
 }

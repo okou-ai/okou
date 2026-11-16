@@ -254,6 +254,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.IosSettingsCredits]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "iOS settings credit balance",
+    description:
+      "Show the current account's available credits in iOS Settings using the Web account menu balance.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "tongx@okou.ai",
     description:
