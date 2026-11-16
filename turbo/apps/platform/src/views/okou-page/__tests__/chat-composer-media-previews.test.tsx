@@ -1,6 +1,5 @@
 import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -57,7 +56,6 @@ test.each([
     await setupPage({
       context,
       path: `/chats/${ATTACHMENT_THREAD_ID}`,
-      featureSwitches: { [FeatureSwitchKey.ComposerMediaPreviews]: true },
     });
 
     const file = new File(["media"], filename, { type: contentType });
@@ -135,7 +133,6 @@ test("Cancelling a media upload releases its local preview", async () => {
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerMediaPreviews]: true },
   });
 
   selectFile(new File(["media"], "cancel.mp4", { type: "video/mp4" }));
@@ -172,7 +169,6 @@ test("Sending local media uses the uploaded file identity and releases its draft
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerMediaPreviews]: true },
   });
 
   selectFile(new File(["media"], "send.mp4", { type: "video/mp4" }));
@@ -211,7 +207,6 @@ test("A restored private video opens its authenticated player even when its thum
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerMediaPreviews]: true },
   });
 
   const preview = await findNamedButton("Open video preview for restored.mp4");
