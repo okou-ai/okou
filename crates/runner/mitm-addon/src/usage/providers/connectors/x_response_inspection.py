@@ -428,36 +428,35 @@ def create_response_parser(
         return None
 
     status_code = flow.response.status_code
-    if _HTTP_STATUS_OK_MIN <= status_code < _HTTP_STATUS_REDIRECT_MIN:
-        # Use the dispatcher-required original URL so parser registration and
-        # final request metadata cannot diverge.
-        stream_path = runtime_url_path(original_url)
-        if is_stream_path(stream_path):
-            extractor = _NdjsonExtractor(on_row, is_read=flow.request.method.upper() == "GET")
-            # Deliberately NOT "model_provider_usage" — that key routes through
-            # report_model_provider_usage and triggers the model-provider webhook.
-            # x_ndjson_state is only consumed by report_connector_usage.
-            flow.metadata[metadata_keys.X_NDJSON_STATE] = extractor.state
-
-            def finish_ndjson_decode_error(error: str) -> None:
-                flow.metadata.pop(metadata_keys.X_NDJSON_STATE, None)
-                flow.metadata[metadata_keys.X_JSON_STATE] = {
-                    "body_parsed": False,
-                    "body_truncated": False,
-                    "body_format": "ndjson",
-                    "parse_error": error,
-                }
-
-            return ConnectorResponseParser(
-                feed=extractor.feed,
-                feed_steps=extractor.feed_steps,
-                report_on_interruption=True,
-                finish=extractor.finish,
-                finish_decode_error=finish_ndjson_decode_error,
-            )
-
     if not (_HTTP_STATUS_OK_MIN <= status_code < _HTTP_STATUS_REDIRECT_MIN):
         return None
+
+    # Use the dispatcher-required original URL so parser registration and
+    # final request metadata cannot diverge.
+    stream_path = runtime_url_path(original_url)
+    if is_stream_path(stream_path):
+        extractor = _NdjsonExtractor(on_row, is_read=flow.request.method.upper() == "GET")
+        # Deliberately NOT "model_provider_usage" — that key routes through
+        # report_model_provider_usage and triggers the model-provider webhook.
+        # x_ndjson_state is only consumed by report_connector_usage.
+        flow.metadata[metadata_keys.X_NDJSON_STATE] = extractor.state
+
+        def finish_ndjson_decode_error(error: str) -> None:
+            flow.metadata.pop(metadata_keys.X_NDJSON_STATE, None)
+            flow.metadata[metadata_keys.X_JSON_STATE] = {
+                "body_parsed": False,
+                "body_truncated": False,
+                "body_format": "ndjson",
+                "parse_error": error,
+            }
+
+        return ConnectorResponseParser(
+            feed=extractor.feed,
+            feed_steps=extractor.feed_steps,
+            report_on_interruption=True,
+            finish=extractor.finish,
+            finish_decode_error=finish_ndjson_decode_error,
+        )
 
     extractor = _XJsonResponseExtractor()
     buffered_response = not body_decoding.can_stream_decode_usage(flow.response.headers)
