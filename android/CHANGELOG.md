@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/okou-ai/okou/compare/android-v0.14.0...android-v0.14.1) (2026-11-16)
+
+
+### Performance Improvements
+
+* **android:** shrink release apk code and resources ([#47534](https://github.com/okou-ai/okou/issues/47534)) ([9ef8d65](https://github.com/okou-ai/okou/commit/9ef8d652eeadc6e481a86e9f3ae8159c957ed026))
+
 ## [0.14.0](https://github.com/okou-ai/okou/compare/android-v0.13.0...android-v0.14.0) (2026-11-16)
 
 
