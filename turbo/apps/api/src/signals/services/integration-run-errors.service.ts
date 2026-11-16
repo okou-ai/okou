@@ -7,6 +7,7 @@ import { command } from "ccstate";
 import { env } from "../../lib/env";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
+import { integrationModelRecoveryForDelivery$ } from "./integration-model-recovery.service";
 
 export const formatIntegrationRunError$ = command(
   async (
@@ -57,10 +58,21 @@ export const formatIntegrationChatMessage$ = command(
       readonly userId: string;
       readonly content: string;
       readonly error: string | null;
+      readonly chatEventId?: string;
     },
     signal: AbortSignal,
   ): Promise<string> => {
     if (args.error !== "insufficient_credits") {
+      if (args.chatEventId) {
+        const recovery = await set(
+          integrationModelRecoveryForDelivery$,
+          { ...args, eventId: args.chatEventId },
+          signal,
+        );
+        if (recovery) {
+          return `${args.content}\n\nSwitch this conversation's model in Okou: ${recovery.url}\nSend your previous request again after switching.`;
+        }
+      }
       return args.content;
     }
     return await set(

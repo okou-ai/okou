@@ -43,6 +43,40 @@ interface WechatReplyRequest {
   readonly content?: string;
   readonly deliveryCallbackId?: string;
 }
+
+const formatWechatReply$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly agentId: string;
+      readonly runId: string | null;
+      readonly chatEventId: string;
+      readonly content: string;
+      readonly error: string | null;
+    },
+    signal: AbortSignal,
+  ) => {
+    const presentation =
+      args.runId === null
+        ? await set(
+            resolveIntegrationAdmissionFailurePresentation$,
+            args,
+            signal,
+          )
+        : await set(
+            resolveIntegrationAgentResponsePresentation$,
+            { ...args, runId: args.runId },
+            signal,
+          );
+    const message = await set(formatIntegrationChatMessage$, args, signal);
+    return presentation.footerText
+      ? `${message}\n\n${presentation.footerText}`
+      : message;
+  },
+);
+
 export const sendWechatChatReply$ = command(
   async ({ set }, args: WechatReplyRequest, signal: AbortSignal) => {
     const prepareStartedAt = monotonicNow();
@@ -120,30 +154,16 @@ export const sendWechatChatReply$ = command(
     }
     let content = args.content;
     if (content === undefined) {
-      const presentationArgs = {
-        orgId: args.orgId,
-        agentId: reply.agentId,
-      };
-      const presentation =
-        reply.runId === null
-          ? await set(
-              resolveIntegrationAdmissionFailurePresentation$,
-              presentationArgs,
-              signal,
-            )
-          : await set(
-              resolveIntegrationAgentResponsePresentation$,
-              { ...presentationArgs, runId: reply.runId },
-              signal,
-            );
-      const message = await set(
-        formatIntegrationChatMessage$,
-        { ...owner, content: reply.content, error: reply.error },
+      content = await set(
+        formatWechatReply$,
+        {
+          ...owner,
+          ...reply,
+          content: reply.content,
+          chatEventId: args.chatEventId,
+        },
         signal,
       );
-      content = presentation.footerText
-        ? `${message}\n\n${presentation.footerText}`
-        : message;
     }
     if (args.deliveryCallbackId) {
       const snapshot = await set(

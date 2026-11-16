@@ -172,6 +172,48 @@ beforeEach(() => {
   });
 });
 
+describe("email model recovery", () => {
+  it("links a model failure to the original Web conversation", async () => {
+    await setupApp({ context, routes: [], isolatePg: true });
+    mockEnv("OKOU_WEB_URL", "https://app.okou.ai");
+    const { actor, execution, runId } = await startEmailFileExecution();
+    if (!actor.orgId) {
+      throw new Error("Expected an owned workspace");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.IntegrationModelRecovery]: true },
+    );
+    await webhooks.requestAgentComplete(
+      {
+        runId,
+        exitCode: 1,
+        error: "Claude verification required",
+        failureReason: "account_verification_required",
+      },
+      { authorization: `Bearer ${execution.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const snapshot = await createdThreads(actor);
+    const thread = snapshot.chatThreads[0];
+    if (!thread) {
+      throw new Error("Expected the original Email conversation");
+    }
+    expect(sentEmails().at(-1)?.text).toContain(
+      `Switch this conversation's model in Okou: https://app.okou.ai/chats/${thread.id}`,
+    );
+    await expect(
+      files.listThreadEvents(actor, thread.id),
+    ).resolves.toMatchObject({
+      events: expect.arrayContaining([
+        expect.objectContaining({ eventType: "run.failed", runId }),
+      ]),
+    });
+  });
+});
+
 describe("email-native signup", () => {
   async function pendingSignup() {
     const sender = "yuma@vm0.ai";

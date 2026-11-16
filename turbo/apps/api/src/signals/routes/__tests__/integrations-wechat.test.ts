@@ -53,6 +53,7 @@ import {
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
@@ -308,6 +309,50 @@ async function responseFixture() {
 }
 
 describe("WeChat reply presentation and processing status", () => {
+  it("links a model failure to the original Web conversation", async () => {
+    await setupApp({ context, routes: [], isolatePg: true });
+    mockEnv("OKOU_WEB_URL", "https://app.okou.ai");
+    const fixture = await responseFixture();
+    await updateFeatureSwitchesForUser(context, fixture.actor, {
+      [FeatureSwitchKey.WechatIntegration]: true,
+      [FeatureSwitchKey.IntegrationModelRecovery]: true,
+    });
+    await fixture.receive("Review this attachment");
+    const run = await fixture.executionInput();
+    await fixture.webhooks.requestAgentComplete(
+      {
+        runId: run.runId,
+        exitCode: 1,
+        error: "Claude verification required",
+        failureReason: "account_verification_required",
+      },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const chat = createChatFilesBddApi(context);
+    const lifecycle = await chat.requestThreadEvents(fixture.actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected the Web conversation");
+    }
+    const thread = lifecycle.body.events.find((event) => {
+      return event.kind === "created";
+    });
+    if (!thread) {
+      throw new Error("Expected the WeChat conversation");
+    }
+    expect(fixture.sentTexts.at(-1)).toContain(
+      `Switch this conversation's model in Okou: https://app.okou.ai/chats/${thread.chatThreadId}`,
+    );
+    await expect(
+      chat.listThreadEvents(fixture.actor, thread.chatThreadId),
+    ).resolves.toMatchObject({
+      events: expect.arrayContaining([
+        expect.objectContaining({ eventType: "run.failed", runId: run.runId }),
+      ]),
+    });
+  });
+
   it("offers billing recovery when a running WeChat task runs out of credits", async () => {
     const fixture = await responseFixture();
     await fixture.receive("Finish this task");

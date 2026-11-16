@@ -8,6 +8,7 @@ import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contrac
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
 import { integrationsPhoneMessageContract } from "@okouai/api-contracts/contracts/integrations";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
@@ -54,6 +55,7 @@ import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 // INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
 // real run dispatch through the Runner HTTP receiver, and completion replies through
 // typed internal callback dispatch. All state is constructed through public
@@ -317,6 +319,7 @@ async function completeSandboxRun(
   exitCode: number,
   options: {
     readonly error?: string;
+    readonly failureReason?: string;
     readonly resultText?: string;
     readonly cliAgentType?: "claude-code" | "codex";
   } = {},
@@ -353,6 +356,9 @@ async function completeSandboxRun(
           }
         : {}),
       ...(options.error === undefined ? {} : { error: options.error }),
+      ...(options.failureReason === undefined
+        ? {}
+        : { failureReason: options.failureReason }),
       ...(options.resultText === undefined ? {} : { lastEventSequence: 0 }),
     },
     sandboxHeaders,
@@ -545,6 +551,57 @@ const EXPECTED_PLAIN_RUN_OUTPUT = [
 ].join("\n");
 
 describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
+  it.each(["imessage", "sms"] as const)(
+    "links a %s model failure to its original Web conversation",
+    async (channel) => {
+      await setupApp({ context, routes: [], isolatePg: true });
+      mockEnv("OKOU_WEB_URL", "https://app.okou.ai");
+      const { actor, ap, phone, runnerGroup, sends } =
+        await entitledLinkedActor();
+      if (!actor.orgId) {
+        throw new Error("Expected an owned workspace");
+      }
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        { [FeatureSwitchKey.IntegrationModelRecovery]: true },
+      );
+      await ap.postAgentPhoneInboundMessage({
+        channel,
+        from: phone,
+        body: "review this attachment",
+        conversationId: uniqueConversationId(),
+      });
+      const run = await readDispatchedRun(runnerGroup);
+      await completeSandboxRun(run.sandboxToken, run.runId, 1, {
+        error: "Claude account requires verification",
+        failureReason: "account_verification_required",
+      });
+      await flushWaitUntilForTest();
+      const chat = createChatFilesBddApi(context);
+      const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+      if (lifecycle.status !== 200) {
+        throw new Error("Expected the original Web conversation");
+      }
+      const thread = lifecycle.body.events.find((event) => {
+        return event.kind === "created";
+      });
+      if (!thread) {
+        throw new Error("Expected the integration conversation");
+      }
+      const events = await chat.listThreadEvents(actor, thread.chatThreadId);
+      expect(events.events).toContainEqual(
+        expect.objectContaining({ eventType: "run.failed", runId: run.runId }),
+      );
+      expect(lastSend(sends).body).toContain(
+        `Switch this conversation's model in Okou: https://app.okou.ai/chats/${thread.chatThreadId}`,
+      );
+      expect(lastSend(sends).body).toContain(
+        "Send your previous request again after switching.",
+      );
+    },
+  );
+
   it.each([false, true])(
     "adds an iMessage reaction with a run token (group: %s)",
     async (isGroup) => {
