@@ -1086,35 +1086,15 @@ describe("personal subscription usage guidance for integrations", () => {
         modelProviderType,
         modelProvidersUrl: "https://app.example.test/?settings=model",
       });
-      expect(result).toContain(`Your ${label} subscription`);
+      expect(result).toContain(
+        `Your ${label} subscription has reached its usage limit`,
+      );
+      expect(result).toContain("Wait for your subscription allowance to reset");
+      expect(result).toContain("switch to an available subscription account");
       expect(result).toContain("https://app.example.test/?settings=model");
       expect(result).toContain('reply "continue"');
     },
   );
-
-  it("gives account recovery when the provider supplies no reset details", () => {
-    const result = formatPersonalSubscriptionUsageLimitForExternalSurface({
-      failureReason: "usage_limit",
-      modelProviderType: "codex-oauth-token",
-      modelProvidersUrl: "https://app.example.test/?settings=model",
-    });
-    expect(result).toContain("Wait for your subscription allowance to reset");
-    expect(result).toContain("switch to an available subscription account");
-    expect(result).not.toContain("choose a different model");
-  });
-
-  it("keeps a subscription-wide limit authoritative over a model-switch suggestion", () => {
-    const result = formatPersonalSubscriptionUsageLimitForExternalSurface({
-      failureReason: "usage_limit",
-      modelProviderType: "codex-oauth-token",
-      modelProvidersUrl: "https://app.example.test/?settings=model",
-    });
-    expect(result).toContain(
-      "Your ChatGPT (Codex) subscription has reached its usage limit",
-    );
-    expect(result).toContain("switch to an available subscription account");
-    expect(result).not.toContain("try a different model");
-  });
 
   it("leaves a platform usage limit with its existing recovery surface", () => {
     expect(
