@@ -373,7 +373,6 @@ function createExecutionStorageObjects(
 ): ExecutionStorageObjects {
   const requests$ = computed(async (get) => {
     const { mounts, versions } = await get(input$);
-    validateRequests(mounts);
     return signingRequests(
       mounts,
       versions,
@@ -414,9 +413,6 @@ function cacheSnapshot(rows: ExecutionStorageCacheRows): CacheSnapshot {
     Map<string, SelectedStoragePresignedUrlCacheRow>
   >();
   for (const row of rows) {
-    if (row.scope !== "system_storage" && row.scope !== "readonly_storage") {
-      throw new Error("Unexpected execution storage cache scope");
-    }
     let scoped = rowsByScope.get(row.scope);
     if (!scoped) {
       scoped = new Map();
