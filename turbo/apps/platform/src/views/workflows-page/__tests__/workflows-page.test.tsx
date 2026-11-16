@@ -1525,6 +1525,59 @@ function mockConnectedAutomationConnectors(): void {
   ]);
 }
 
+test.each(["automations", "instructions", "info"] as const)(
+  "Return to Workflows with a toast when the %s detail no longer exists",
+  async (tab) => {
+    mockWorkflowApis([opsPlaybook()]);
+
+    await setupWorkflowDetailPage(workflowDetailPath(tab));
+
+    await expect(
+      screen.findByText("Workflow not found."),
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(pathname()).toBe("/workflows");
+      expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
+    });
+  },
+);
+
+test("Return to Workflows with a toast when a legacy detail link is inaccessible", async () => {
+  mockWorkflowApis([opsPlaybook()]);
+  context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Workflow access denied" },
+    });
+  });
+
+  await setupWorkflowDetailPage(`/workflows/${SALES_WORKFLOW_ID}`);
+
+  await expect(
+    screen.findByText("Workflow not found."),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(pathname()).toBe("/workflows");
+    expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
+  });
+});
+
+test("Preserve workflow detail request failures instead of treating them as missing", async () => {
+  mockWorkflowApis([opsPlaybook()]);
+  context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Workflow service unavailable",
+      },
+    });
+  });
+
+  await expect(
+    setupWorkflowDetailPage(workflowDetailPath("automations")),
+  ).rejects.toThrow("Workflow service unavailable");
+  expect(pathname()).toBe(workflowDetailPath("automations"));
+});
+
 test("Redirect a cold Morning Brief detail to its preference", async () => {
   mockWorkflowApis([morningBriefWorkflow()]);
   context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
