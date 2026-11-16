@@ -5115,7 +5115,9 @@ function filesystemFullTitle(): string {
 
 const STRUCTURED_FAILURE_TITLES = Object.freeze({
   unknown: () => {
-    return i18n.t(($) => $.chat.errors.genericTitle);
+    return i18n.t(($) => {
+      return $.chat.errors.genericTitle;
+    });
   },
   session_history_limit: () => {
     return i18n.t(($) => {
@@ -5318,7 +5320,11 @@ const FAILURE_DESCRIPTIONS = Object.freeze({
 });
 
 const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
-  unknown: (t: TFunction<"common">) => t(($) => $.runErrors.transient),
+  unknown: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.runErrors.transient;
+    });
+  },
   session_history_limit: FAILURE_DESCRIPTIONS.newChat,
   guest_root_filesystem_full: FAILURE_DESCRIPTIONS.filesystemFull,
   guest_home_filesystem_full: FAILURE_DESCRIPTIONS.filesystemFull,
