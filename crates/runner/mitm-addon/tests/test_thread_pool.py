@@ -6,6 +6,7 @@ up. Isolate scenarios in processes so a rollback deadlock cannot hang pytest.
 """
 
 import multiprocessing
+import signal
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -81,6 +82,52 @@ def _fail_start_and_recover(error_type: type[BaseException], failed_worker: int)
         _assert_full_capacity(recovered, 4)
 
 
+def _interrupt_release_and_recover() -> None:
+    assert signal.getsignal(signal.SIGINT) is signal.default_int_handler
+    pools: list[ThreadPoolExecutor] = []
+    interruptions: list[KeyboardInterrupt] = []
+    event_set = threading.Event.set
+    main_thread_id = threading.get_ident()
+    interrupted = False
+
+    class ObservedPool(ThreadPoolExecutor):
+        def __init__(self, **kwargs) -> None:
+            super().__init__(**kwargs)
+            pools.append(self)
+
+    def interrupt_release(event: threading.Event) -> None:
+        nonlocal interrupted
+        # Thread.start() signals its own Event in the worker. Interrupt only
+        # the factory's first main-thread release, after worker startup.
+        if threading.get_ident() == main_thread_id and not interrupted:
+            interrupted = True
+            try:
+                signal.raise_signal(signal.SIGINT)
+            except KeyboardInterrupt as error:
+                interruptions.append(error)
+                raise
+        event_set(event)
+
+    with (
+        patch.object(thread_pool, "ThreadPoolExecutor", ObservedPool),
+        patch.object(threading.Event, "set", interrupt_release),
+        pytest.raises(KeyboardInterrupt) as raised,
+    ):
+        thread_pool.start_thread_pool(max_workers=4, thread_name_prefix="thread-pool-release")
+
+    assert raised.value is interruptions[0]
+    [failed_pool] = pools
+    assert len(failed_pool._threads) == 4
+    assert all(not worker.is_alive() for worker in failed_pool._threads)
+    with pytest.raises(RuntimeError, match="shutdown"):
+        failed_pool.submit(lambda: None)
+
+    with thread_pool.start_thread_pool(
+        max_workers=4, thread_name_prefix="thread-pool-release-recovered"
+    ) as recovered:
+        _assert_full_capacity(recovered, 4)
+
+
 def _run_in_process(target: Callable[..., None], *args: object) -> None:
     process = multiprocessing.get_context("spawn").Process(target=target, args=args)
     process.start()
@@ -106,3 +153,7 @@ def test_start_failure_cleans_up_and_allows_recovery(
     error_type: type[BaseException], failed_worker: int
 ) -> None:
     _run_in_process(_fail_start_and_recover, error_type, failed_worker)
+
+
+def test_release_interruption_joins_workers_and_allows_recovery() -> None:
+    _run_in_process(_interrupt_release_and_recover)
