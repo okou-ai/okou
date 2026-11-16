@@ -199,16 +199,18 @@ function createExecutionIdentities(input$: ExecutionInput$) {
   });
   const currentFeatures$ = createUserFeatureSwitchContext(memberIdentity$);
   const features$ = computed(async (get) => {
-    const [current, { run, facts }] = await Promise.all([
-      get(currentFeatures$),
-      get(input$),
-    ]);
+    const { run, facts } = await get(input$);
+    // Only custom connector network bindings consume unpinned overrides.
+    const currentOverrides = facts.connectorRuntimeTargets.some((target) => {
+      return target.kind === "custom";
+    })
+      ? (await get(currentFeatures$)).overrides
+      : undefined;
     return {
-      ...current,
       userId: run.userId,
       orgId: run.orgId,
       overrides: {
-        ...current.overrides,
+        ...currentOverrides,
         [FeatureSwitchKey.SingleAgent]:
           facts.featureFlags[FeatureSwitchKey.SingleAgent],
         [FeatureSwitchKey.ConnectorChatAccountAccess]:
