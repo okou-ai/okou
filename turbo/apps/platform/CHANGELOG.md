@@ -13,6 +13,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1133.1](https://github.com/okou-ai/okou/compare/app-v0.1133.0...app-v0.1133.1) (2026-11-16)
+
+
+### Performance Improvements
+
+* **app:** isolate browser history navigation consumers ([#47538](https://github.com/okou-ai/okou/issues/47538)) ([551df61](https://github.com/okou-ai/okou/commit/551df6159c5e059f1feaa16f3b7cf086bff30071))
+* **app:** isolate vnc form rendering from wizard steps ([#47522](https://github.com/okou-ai/okou/issues/47522)) ([27fb093](https://github.com/okou-ai/okou/commit/27fb093874176ee7b237380d0a1342758a0ff41c))
+* **app:** localize vnc profile subscriptions ([#47548](https://github.com/okou-ai/okou/issues/47548)) ([42d965a](https://github.com/okou-ai/okou/commit/42d965aefbe0b5f4020cd2d27b949a4c0f713647))
+* **app:** narrow capability translation reads ([#47540](https://github.com/okou-ai/okou/issues/47540)) ([88339c4](https://github.com/okou-ai/okou/commit/88339c45d101fc25b97a5fe25f3a408882d12b56))
+* **test:** avoid unrelated browser style proxies ([#47556](https://github.com/okou-ai/okou/issues/47556)) ([ef1d6a1](https://github.com/okou-ai/okou/commit/ef1d6a10a0fcaa744ba004e5b5ab855d5bf2826a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.68.0
+    * @okouai/core bumped to 8.839.7
+    * @okouai/ui bumped to 1.21.23
+
 ## [0.1133.0](https://github.com/okou-ai/okou/compare/app-v0.1132.2...app-v0.1133.0) (2026-11-15)
 
 

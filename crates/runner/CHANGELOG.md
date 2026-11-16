@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.249.14](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.13...runner-rs-v0.249.14) (2026-11-16)
+
+
+### Refactoring
+
+* **python:** derive websocket activation from owned lifecycle state ([#47532](https://github.com/okou-ai/okou/issues/47532)) ([e005ddf](https://github.com/okou-ai/okou/commit/e005ddf5f98a697259f62c07731c90fa3364f464))
+* **python:** unify x response parser success admission ([#47552](https://github.com/okou-ai/okou/issues/47552)) ([2425935](https://github.com/okou-ai/okou/commit/242593530d304c60ab7d66429b3624e0974cc2c3))
+* **runner:** centralize guest permission controller initialization ([#47543](https://github.com/okou-ai/okou/issues/47543)) ([f9e9c45](https://github.com/okou-ai/okou/commit/f9e9c45c626439876c1ed4b066642c93bcfe9ede))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.12...runner-rs-v0.249.13) (2026-11-15)
 
 
