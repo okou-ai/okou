@@ -4,7 +4,7 @@ import { phoneUseOperations } from "@okouai/db/schema/phone-use";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { deleteS3Objects } from "../external/s3";
+import { deleteS3Objects$ } from "../external/s3";
 
 /** Retire private command bodies, observations and images after 72 hours. */
 export const cleanupPhoneUseOperations$ = command(
@@ -28,8 +28,11 @@ export const cleanupPhoneUseOperations$ = command(
       return row.key ? [row.key] : [];
     });
     if (keys.length) {
-      await get(
-        deleteS3Objects(env("R2_USER_STORAGES_BUCKET_NAME"), keys, signal),
+      await set(
+        deleteS3Objects$,
+        env("R2_USER_STORAGES_BUCKET_NAME"),
+        keys,
+        signal,
       );
       signal.throwIfAborted();
     }
