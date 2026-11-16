@@ -95,14 +95,30 @@ unmount and make that input file read-only. Never prepare an active, shared or
 user-data image for this fixture. The rootfs SHA must be independently retained;
 the driver checks it before copying and checks the owned copy before boot.
 
+Build the helper using Cargo-reported library and dependency paths, including
+proc-macro outputs. The commands below require `jq`.
+
 ```bash
+set -euo pipefail
 cargo build --manifest-path crates/Cargo.toml --profile local --locked -j1 \
   -p guest-tool-exec -p guest-task-exec -p guest-storage-apply -p guest-home-mount \
-  -p guest-contracts
+  -p guest-contracts --message-format=json > /owned/experiment/cargo-build.json
+RESOURCE_CONTRACTS_RLIB=$(jq -ers '
+  [.[] | select(.reason == "compiler-artifact" and .target.name == "guest_contracts")
+    | .filenames[] | select(endswith(".rlib"))]
+  | if length == 1 then .[0] else error("expected exactly one guest-contracts library") end
+' /owned/experiment/cargo-build.json)
+RESOURCE_DEPENDENCIES=()
+while IFS= read -r directory; do
+  RESOURCE_DEPENDENCIES+=(-L "dependency=$directory")
+done < <(jq -rs '
+  [.[] | select(.reason == "compiler-artifact") | .filenames[]
+    | sub("/[^/]+$"; "")] | unique[]
+' /owned/experiment/cargo-build.json)
 rustc --edition 2024 \
   crates/runner/tests/caller_isolation_native/packaged_resource_policy.rs \
-  --extern guest_contracts=crates/target/local/libguest_contracts.rlib \
-  -L dependency=crates/target/local/deps -o /owned/experiment/resource-policy
+  --extern "guest_contracts=$RESOURCE_CONTRACTS_RLIB" \
+  "${RESOURCE_DEPENDENCIES[@]}" -o /owned/experiment/resource-policy
 python3 crates/runner/tests/caller_isolation_native/packaged_run.py \
   --kernel /path/to/pinned/vmlinux \
   --firecracker /path/to/pinned/firecracker \
