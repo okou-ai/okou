@@ -33,14 +33,14 @@ import {
   executionWorkflowSelectionSql,
 } from "./execution-workflow-selection";
 
-/** Receipt from this graph's durable Run admission. */
+/** Receipt from durable Thread Run admission, before first-run classification. */
 export interface AdmittedRunLaunch {
-  readonly run: ExecutionPublicationRun;
+  readonly run: Omit<ExecutionPublicationRun, "isFirstRun">;
   readonly executionContext: ExecutionInput;
   readonly executionFacts: AdmittedExecutionFacts;
   readonly runnerGroup: string;
   readonly profile: string;
-  readonly reuseKey: string | null;
+  readonly reuseKey: string;
   readonly createdAt: Date;
   readonly reusePreparation: RunnerReusePreparation;
 }
@@ -81,7 +81,7 @@ export function createDirectRunPreparation(
     SELECT EXISTS(SELECT 1 FROM workflow_admission)
       AND COALESCE((SELECT "bundlesAvailable" FROM workflow_selection),false)
       AND NOT EXISTS(SELECT 1 FROM selected_agent WHERE NOT ${contentBundleAvailableCondition(sql`selected_agent."instructionsBundle"`)}) AS available,
-      NOT EXISTS(SELECT 1 FROM ${chatEvents} WHERE ${input.run.chatThreadId === null ? sql`false` : and(eq(chatEvents.chatThreadId, input.run.chatThreadId), isNotNull(chatEvents.runId), ne(chatEvents.runId, input.run.id))}) AS "isFirstRun",
+      NOT EXISTS(SELECT 1 FROM ${chatEvents} WHERE ${and(eq(chatEvents.chatThreadId, input.run.chatThreadId), isNotNull(chatEvents.runId), ne(chatEvents.runId, input.run.id))}) AS "isFirstRun",
       (SELECT documents FROM workflow_selection) AS workflows,
       (SELECT "instructionsBundle" FROM selected_agent) AS "instructionsBundle",
       ${contentBundleUrlCacheSnapshotSql(cache, executionBundleHashes(prepared.context))} AS "cachedBundleUrls"`);
@@ -118,8 +118,7 @@ export const prepareDirectRun$ = command(
     signal.throwIfAborted();
     const run = {
       ...input.run,
-      isFirstRun:
-        input.run.chatThreadId === null ? null : packages.row.isFirstRun,
+      isFirstRun: packages.row.isFirstRun,
     };
     const context = {
       ...prepared.context,
@@ -132,7 +131,6 @@ export const prepareDirectRun$ = command(
     const response = await set(
       prepareExecutionPublication$,
       {
-        run,
         preparedContext: context,
         networkPolicyInputs: prepared.networkPolicyInputs,
       },

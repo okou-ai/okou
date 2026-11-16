@@ -33,7 +33,7 @@ export interface ExecutionPublicationRun extends ExecutionContextRun {
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
   readonly vars: unknown;
-  readonly isFirstRun: boolean | null;
+  readonly isFirstRun: boolean;
 }
 
 export interface ExecutionPackageSelection {
@@ -245,14 +245,12 @@ const prepareExecutionNetworkPolicyRefreshes$ = command(
   async (
     _context,
     args: {
-      readonly run: ExecutionPublicationRun;
       readonly preparedContext: PreparedExecutionContext;
       readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
     },
   ): Promise<
     Pick<ExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
   > => {
-    assertExecutionConnectorIdentity(args.run, args.preparedContext);
     const builtinConnectorSlugs = [
       ...new Set(
         args.preparedContext.connectorRuntimeTargets.flatMap((target) => {
@@ -266,9 +264,9 @@ const prepareExecutionNetworkPolicyRefreshes$ = command(
         networkPolicyRefreshes: undefined,
       };
     }
-    if (args.run.agentId === null || args.networkPolicyInputs === null) {
+    if (args.networkPolicyInputs === null) {
       throw new Error(
-        "Connector network policy refresh requires execution inputs and an Agent identity",
+        "Connector network policy refresh requires execution inputs",
       );
     }
     const refreshes = await activeNetworkPolicyRefreshesFromGrants(
@@ -288,23 +286,9 @@ const prepareExecutionNetworkPolicyRefreshes$ = command(
   },
 );
 
-function assertExecutionConnectorIdentity(
-  run: ExecutionPublicationRun,
-  preparedContext: PreparedExecutionContext,
-): void {
-  if (
-    run.agentId === null &&
-    preparedContext.connectorRuntimeTargets.length > 0
-  ) {
-    throw new Error(
-      "Runs without an agent cannot use connector runtime targets",
-    );
-  }
-}
-
 export function executionContextBody(args: {
   readonly run: ExecutionPublicationRun;
-  readonly reuseKey: string | null;
+  readonly reuseKey: string;
   readonly preparedContext: PreparedExecutionContext;
   readonly secretValues: ExecutionContext["secretValues"];
   readonly refreshedPolicies: Pick<
@@ -324,9 +308,7 @@ export function executionContextBody(args: {
   } = args.preparedContext;
   return {
     ...runnerContext,
-    ...(args.run.isFirstRun === null
-      ? {}
-      : { isFirstRun: args.run.isFirstRun }),
+    isFirstRun: args.run.isFirstRun,
     runId: args.run.id,
     reuseKey: args.reuseKey,
     prompt: args.run.prompt,
@@ -357,7 +339,6 @@ export const prepareExecutionPublication$ = command(
   async (
     { set },
     args: {
-      readonly run: ExecutionPublicationRun;
       readonly preparedContext: PreparedExecutionContext;
       readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
     },
@@ -375,7 +356,6 @@ export const prepareExecutionPublication$ = command(
     const refreshedPolicies = await set(
       prepareExecutionNetworkPolicyRefreshes$,
       {
-        run: args.run,
         preparedContext: args.preparedContext,
         networkPolicyInputs: args.networkPolicyInputs,
       },
