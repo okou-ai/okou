@@ -14,7 +14,7 @@ import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { computed, type Computed } from "ccstate";
 import { and, eq } from "drizzle-orm";
-import { array, record, string } from "zod";
+import { array } from "zod";
 import { previewAutomationBypassSecret } from "../../lib/preview-automation-bypass";
 import { db$ } from "../external/db";
 import { safeJsonParse } from "../utils";
@@ -79,7 +79,6 @@ type ExecutionInput = {
   readonly facts: AdmittedExecutionFacts;
 };
 
-const variablesSchema = record(string(), string()).nullable();
 type ExecutionInput$ = Computed<Promise<ExecutionInput>>;
 type ExecutionRun$ = Computed<Promise<ExecutionContextRun>>;
 type ExecutionIdentities = ReturnType<typeof createExecutionIdentities>;
@@ -160,11 +159,7 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
 
 function createExecutionStorage(input$: ExecutionInput$) {
   const mounts$ = computed(async (get) => {
-    const { run } = await get(input$);
-    if (run.storageMounts === null) {
-      throw new Error("Admitted Run is missing its accepted Storage mounts");
-    }
-    return run.storageMounts;
+    return (await get(input$)).run.storageMounts;
   });
   const objects = createAcceptedExecutionStorageObjects(mounts$);
   return computed(async (get) => {
@@ -290,8 +285,7 @@ function createExecutionConnectorContext(
     timing$,
   });
   const runVariables$ = computed(async (get) => {
-    const { run } = await get(input$);
-    return variablesSchema.parse(run.vars) ?? undefined;
+    return (await get(input$)).run.vars;
   });
   const connectorEnvironment$ = createConnectorEnvironmentSignals(
     {
@@ -332,7 +326,7 @@ function createExecutionModel(input$: ExecutionInput$) {
     ) {
       throw new Error("Admitted Run is missing its pinned model route");
     }
-    const piExecution = run.launchSnapshot?.framework === "pi";
+    const piExecution = run.framework === "pi";
     let provider: ResolvedModelProviderEnvironment | null;
     if (run.modelProvider === "built-in") {
       if (
@@ -434,7 +428,7 @@ function createExecutionPackages(
   );
   return computed(async (get) => {
     const { run } = await get(input$);
-    const framework = executionFramework(run);
+    const framework = run.framework;
     const skillRoot =
       framework === "pi"
         ? "/home/user/.pi/agent/skills"
@@ -482,14 +476,6 @@ function createExecutionPackages(
   });
 }
 
-function executionFramework(run: ExecutionContextRun) {
-  const framework = run.launchSnapshot?.framework;
-  if (!framework) {
-    throw new Error("Admitted Run is missing its execution framework");
-  }
-  return framework;
-}
-
 function createExecutionPlatform(
   input$: ExecutionInput$,
   model$: ExecutionModel$,
@@ -501,7 +487,7 @@ function createExecutionPlatform(
       get(model$),
       get(disabledTools$),
     ]);
-    const framework = executionFramework(run);
+    const framework = run.framework;
     const integration = facts.integration;
     const bypass = context.previewBypassAuthorized
       ? previewAutomationBypassSecret()
@@ -695,7 +681,7 @@ function executionModelConfiguration(
   | "piLaunchConfig"
   | "piSessionId"
 > {
-  const framework = executionFramework(run);
+  const framework = run.framework;
   return {
     cliAgentType: framework,
     modelUsageProvider:
