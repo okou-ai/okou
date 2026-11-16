@@ -14,7 +14,6 @@ export enum FeatureSwitchKey {
   HomeCapabilities = "homeCapabilities",
   PresentationOutputFormat = "presentationOutputFormat",
   PastedTextAttachments = "pastedTextAttachments",
-  SkipOnboarding = "skipOnboarding",
   ComposerMediaPreviews = "composerMediaPreviews",
   SingleAgent = "singleAgent",
   OkouAnimatedAvatar = "okouAnimatedAvatar",

@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MARKETING_HANDOFF_PROMPT_MAX_CHARS } from "@okouai/api-contracts/validators/marketing-handoffs";
 import { command } from "ccstate";
 import { createElement } from "react";
@@ -6,7 +5,6 @@ import { i18n } from "../../i18n/index.ts";
 import { OnboardingAutomaticPage } from "../../views/onboarding-sources-first/onboarding-automatic-page.tsx";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { sendEvent$ } from "../marketing/events.ts";
 import { loadMarketingHandoff$ } from "../prompt-page/marketing-handoff.ts";
 import { updatePage$ } from "../react-router.ts";
@@ -22,7 +20,6 @@ export const trySkipOnboarding$ = command(
     const params = get(searchParams$);
     if (
       params.get("skipOnboarding") !== "true" ||
-      !get(featureSwitch$)[FeatureSwitchKey.SkipOnboarding] ||
       (params.get("prompt")?.trim().length ?? 0) >
         MARKETING_HANDOFF_PROMPT_MAX_CHARS
     ) {

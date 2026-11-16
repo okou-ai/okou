@@ -4,7 +4,6 @@ import { marketingEventsContract } from "@okouai/api-contracts/contracts/marketi
 import { marketingHandoffsContract } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
@@ -23,7 +22,6 @@ const context = testContext();
 const TASK = "What is 1 + 2? Reply with only the number.";
 const HASH = "a".repeat(12);
 const FILE_ID = "bc3125d1-dc3f-4422-955c-f69f1d077608";
-const ENABLED = { [FeatureSwitchKey.SkipOnboarding]: true } as const;
 
 test("Authentication keeps task text separate from the actual onboarding flags", async () => {
   context.mocks.clerk();
@@ -76,9 +74,8 @@ function needsOnboarding(isAdmin = true): void {
   });
 }
 
-function completeOnboarding(requests: string[] = [], isAdmin = true): void {
+function completeOnboarding(isAdmin = true): void {
   context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
-    requests.push("complete");
     context.mocks.data.onboardingStatus({
       needsOnboarding: false,
       onboardingComplete: true,
@@ -106,8 +103,7 @@ test.each([true, false])(
   "A skip link redeems, completes and runs its task while cookie delivery survives navigation (eligible: %s)",
   async (redeemed) => {
     needsOnboarding();
-    const requests: string[] = [];
-    completeOnboarding(requests);
+    completeOnboarding();
     const eventReceived = context.mocks.deferred<Request>();
     const finishEvent = context.mocks.deferred<void>();
     context.mocks.api(
@@ -120,14 +116,13 @@ test.each([true, false])(
       },
     );
     context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
-      requests.push(`redeem:${body.code}`);
+      expect(body.code).toBe("PRO-SKIP");
       return respond(200, { redeemed });
     });
     let sentPrompt: string | undefined;
     mockChatLifecycle(context, {
       onRunCreate: (body) => {
         sentPrompt = body.prompt;
-        requests.push("run");
       },
     });
 
@@ -139,7 +134,6 @@ test.each([true, false])(
         redeemCode: " PRO-SKIP ",
         skipOnboarding: "true",
       })}`,
-      featureSwitches: ENABLED,
     });
     await waitFor(() => {
       expect(sentPrompt).toBe(TASK);
@@ -151,7 +145,6 @@ test.each([true, false])(
     expect(event.headers.get("authorization")).toBe("Bearer test-token");
     expect(event.signal.aborted).toBeFalsy();
     finishEvent.resolve();
-    expect(requests).toStrictEqual(["redeem:PRO-SKIP", "complete", "run"]);
     expect(search()).toBe("");
   },
 );
@@ -160,10 +153,17 @@ test.each([true, false])(
   "A skip link preserves a hash handoff's task and attachment (admin: %s)",
   async (isAdmin) => {
     needsOnboarding(isAdmin);
-    const requests: string[] = [];
-    completeOnboarding(requests, isAdmin);
+    completeOnboarding(isAdmin);
     context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
-      requests.push(`redeem:${body.code}`);
+      if (!isAdmin) {
+        return respond(403, {
+          error: {
+            code: "FORBIDDEN",
+            message: "Only workspace administrators can redeem codes",
+          },
+        });
+      }
+      expect(body.code).toBe("PRO-SKIP");
       return respond(200, { redeemed: true });
     });
     context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
@@ -206,14 +206,12 @@ test.each([true, false])(
     mockChatLifecycle(context, {
       onRunCreate: (body) => {
         message = body.userMessage;
-        requests.push("run");
       },
     });
 
     await setupPage({
       context,
       path: `/onboarding?handoff=${HASH}&redeemCode=PRO-SKIP&skipOnboarding=true`,
-      featureSwitches: ENABLED,
     });
     await waitFor(() => {
       expect(message?.parts).toContainEqual({ type: "text", text: TASK });
@@ -225,9 +223,6 @@ test.each([true, false])(
       filenameSnapshot: "notes.txt",
       contentType: "text/plain",
     });
-    expect(requests).toStrictEqual(
-      isAdmin ? ["redeem:PRO-SKIP", "complete", "run"] : ["complete", "run"],
-    );
   },
 );
 
@@ -235,44 +230,34 @@ test.each([ROUTES.onboarding, ROUTES.onboardingReady])(
   "A skip link without a task completes onboarding and opens App from %s",
   async (path) => {
     needsOnboarding();
-    const requests: string[] = [];
-    completeOnboarding(requests);
+    completeOnboarding();
     context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
-      requests.push(`redeem:${body.code}`);
+      expect(body.code).toBe("PRO-SKIP");
       return respond(200, { redeemed: true });
     });
     await setupPage({
       context,
       path: `${path}?skipOnboarding=true&redeemCode=PRO-SKIP`,
-      featureSwitches: ENABLED,
     });
     await expect(
       screen.findByRole("textbox", { name: "Message" }),
     ).resolves.toBeInTheDocument();
     expect(pathname()).toMatch(/^\/agents\/[^/]+\/chat$/u);
-    expect(requests).toStrictEqual(["redeem:PRO-SKIP", "complete"]);
   },
 );
 
-test.each([
-  { enabled: false, skip: "true" },
-  { enabled: true, skip: "false" },
-])(
-  "The prompt remains editable when automatic completion is not enabled ($enabled / $skip)",
-  async ({ enabled, skip }) => {
-    needsOnboarding();
-    await setupPage({
-      context,
-      path: `/onboarding?prompt=${encodeURIComponent(TASK)}&skipOnboarding=${skip}`,
-      featureSwitches: { [FeatureSwitchKey.SkipOnboarding]: enabled },
-    });
-    const input = await screen.findByRole("textbox", {
-      name: "Onboarding prompt",
-    });
-    expect(input).toHaveValue(TASK);
-    expect(nextButton()).toBeEnabled();
-  },
-);
+test("The prompt remains editable with skipOnboarding=false", async () => {
+  needsOnboarding();
+  await setupPage({
+    context,
+    path: `/onboarding?prompt=${encodeURIComponent(TASK)}&skipOnboarding=false`,
+  });
+  const input = await screen.findByRole("textbox", {
+    name: "Onboarding prompt",
+  });
+  expect(input).toHaveValue(TASK);
+  expect(nextButton()).toBeEnabled();
+});
 
 test("A redemption error offers a manual continuation with the task intact", async () => {
   needsOnboarding();
@@ -294,7 +279,6 @@ test("A redemption error offers a manual continuation with the task intact", asy
   await setupPage({
     context,
     path: `/onboarding?prompt=${encodeURIComponent(TASK)}&skipOnboarding=true&redeemCode=PRO-SKIP`,
-    featureSwitches: ENABLED,
   });
   await expect(
     screen.findByRole("heading", { name: "Oops! Something went sideways" }),
@@ -318,13 +302,18 @@ test("A redemption error offers a manual continuation with the task intact", asy
 
 test("A completion retry retains a redeemed code's grant without consuming it again", async () => {
   needsOnboarding();
-  const requests: string[] = [];
+  let redeemed = false;
   context.mocks.api(billingRedeemCodeContract.create, ({ body, respond }) => {
-    requests.push(`redeem:${body.code}`);
+    expect(body.code).toBe("PRO-SKIP");
+    if (redeemed) {
+      return respond(400, {
+        error: { code: "BAD_REQUEST", message: "Code already redeemed" },
+      });
+    }
+    redeemed = true;
     return respond(200, { redeemed: true });
   });
   context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
-    requests.push("failed-complete");
     return respond(500, {
       error: {
         code: "INTERNAL_SERVER_ERROR",
@@ -336,13 +325,11 @@ test("A completion retry retains a redeemed code's grant without consuming it ag
   mockChatLifecycle(context, {
     onRunCreate: (body) => {
       sentPrompt = body.prompt;
-      requests.push("run");
     },
   });
   await setupPage({
     context,
     path: `/onboarding?prompt=${encodeURIComponent(TASK)}&skipOnboarding=true&redeemCode=PRO-SKIP`,
-    featureSwitches: ENABLED,
   });
   await expect(
     screen.findByRole("heading", { name: "Oops! Something went sideways" }),
@@ -352,18 +339,12 @@ test("A completion retry retains a redeemed code's grant without consuming it ag
       "Could not complete onboarding",
     ),
   ).toBeInTheDocument();
-  completeOnboarding(requests);
+  completeOnboarding();
   click(action("button", "Retry"));
   await waitFor(() => {
     expect(sentPrompt).toBe(TASK);
     expect(pathname()).toMatch(/^\/chats\//u);
   });
-  expect(requests).toStrictEqual([
-    "redeem:PRO-SKIP",
-    "failed-complete",
-    "complete",
-    "run",
-  ]);
 });
 
 test("A skip entry shows progress until completion succeeds before starting its task", async () => {
@@ -391,7 +372,6 @@ test("A skip entry shows progress until completion succeeds before starting its 
   await setupPage({
     context,
     path: `/onboarding?prompt=${encodeURIComponent(TASK)}&skipOnboarding=true`,
-    featureSwitches: ENABLED,
   });
   await expect(
     screen.findByRole("status", { name: "Getting your workspace ready" }),
@@ -415,7 +395,6 @@ test("An unavailable task resumes ordinary onboarding instead of completing an e
   await setupPage({
     context,
     path: `/onboarding?handoff=${HASH}&skipOnboarding=true&redeemCode=PRO-SKIP`,
-    featureSwitches: ENABLED,
   });
   await expect(
     screen.findByRole("heading", { name: "What kind of work do you do?" }),

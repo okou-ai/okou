@@ -46,14 +46,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.SkipOnboarding]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Skip onboarding from an entry link",
-    description:
-      "Complete onboarding automatically for links carrying skipOnboarding=true.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.IntegrationModelRecovery]: {
     maintainer: "yuma@okou.ai",
     displayName: "Integration model recovery",
