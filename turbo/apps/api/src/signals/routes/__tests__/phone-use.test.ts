@@ -326,6 +326,40 @@ test(
     });
     expect(repeated.body.expiresAt).toBe(pending.body.expiresAt);
     mockNow(new Date(pending.body.expiresAt).getTime() + 1);
+    const uncertain = await scenario.run(() => {
+      return accept(
+        client.get({ headers: agentHeaders, params: { operationId: id } }),
+        [200],
+      );
+    });
+    expect(uncertain.body.status).toBe("unknown");
+    // A native result that arrives after review expiry cannot turn uncertainty
+    // into a failure that invites replay, or overwrite the settled receipt.
+    await scenario.run(async () => {
+      authenticate(actor.userId, staffOrg, sessionId);
+      await accept(
+        client.complete({
+          headers,
+          params,
+          body: {
+            generation,
+            operationId: id,
+            result: {
+              status: "succeeded",
+              data: { nativeAcknowledged: true, outcomeVerified: false },
+            },
+          },
+        }),
+        [200],
+      );
+    });
+    const lateReceipt = await scenario.run(() => {
+      return accept(
+        client.get({ headers: agentHeaders, params: { operationId: id } }),
+        [200],
+      );
+    });
+    expect(lateReceipt.body.status).toBe("unknown");
     await scenario.run(async () => {
       authenticate(actor.userId, staffOrg, sessionId);
       await accept(

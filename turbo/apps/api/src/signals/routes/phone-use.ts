@@ -714,7 +714,9 @@ const get$ = command(async ({ get, set }, signal: AbortSignal) => {
     const [expired] = await set(writeDb$)
       .update(operations)
       .set({
-        status: row.status === "running" ? "unknown" : "failed",
+        // Local approval may already have dispatched input while its result
+        // is still in flight. Only an unclaimed queued operation is not sent.
+        status: row.status === "queued" ? "failed" : "unknown",
         error: "Operation deadline expired; never replay an uncertain effect",
         completedAt: nowDate(),
       })
