@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.71.2](https://github.com/okou-ai/okou/compare/api-v2.71.1...api-v2.71.2) (2026-11-16)
+
+
+### Refactoring
+
+* **api:** consume captured thread model facts directly ([#47521](https://github.com/okou-ai/okou/issues/47521)) ([255d21b](https://github.com/okou-ai/okou/commit/255d21bb235928727f48e778e009bb998b7a9bb1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.68.0
+    * @okouai/core bumped to 8.839.7
+    * @okouai/db bumped to 2.35.11
+    * @okouai/pi-agent-runtime bumped to 1.51.129
+
 ## [2.71.1](https://github.com/okou-ai/okou/compare/api-v2.71.0...api-v2.71.1) (2026-11-15)
 
 
