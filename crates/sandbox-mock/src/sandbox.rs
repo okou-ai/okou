@@ -290,6 +290,14 @@ impl MockSandbox {
         self.storage_manifest_calls.lock_ignoring_poison().clone()
     }
 
+    /// Take this sandbox's recorded fixed storage-manifest calls in order.
+    ///
+    /// Moves the current records without cloning their input buffers. Shared
+    /// override recordings remain independent; later calls start a new history.
+    pub fn take_storage_manifest_calls(&self) -> Vec<StorageManifestCall> {
+        std::mem::take(&mut *self.storage_manifest_calls.lock_ignoring_poison())
+    }
+
     /// Return typed instruction requests, separate from generic exec calls.
     pub fn agent_instructions_calls(&self) -> Vec<AgentInstructionsCall> {
         self.agent_instructions_calls.lock_ignoring_poison().clone()
