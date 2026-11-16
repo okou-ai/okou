@@ -833,7 +833,7 @@ test.each(["running", "failed"] as const)(
     expect(screen.queryByTestId("chat-event-actions")).toBeNull();
     expect(document.querySelector("[data-chat-run-status-tail]")).toBeNull();
     expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
-    expect(screen.queryByText(error)).toBeNull();
+    expect(screen.queryByText("This run couldn't finish")).toBeNull();
     click(answerSelection);
 
     await waitFor(() => {

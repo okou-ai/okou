@@ -10662,8 +10662,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ] as const satisfies readonly KnownRunFailureReason[];
 
         async function completePublicFailure(args: {
-          readonly failureReason?: RunFailureReasonToken;
-          readonly expectedReason?: KnownRunFailureReason;
+          readonly failureReason: RunFailureReasonToken;
           readonly modelProvider?: "claude-code-oauth-token";
         }) {
           const api = createRunsApi(context);
@@ -10679,7 +10678,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           await api.heartbeatRunner(runnerGroup);
           const execution = await api.executionInput(run.runId);
-          const error = `provider failure for ${run.runId}`;
+          const error =
+            args.failureReason === "unknown"
+              ? undefined
+              : `provider failure for ${run.runId}`;
           const completed = await webhooks.requestAgentComplete(
             {
               runId: run.runId,
@@ -10697,7 +10699,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await flushWaitUntilForTest();
           await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
             status: "failed",
-            error,
+            ...(error === undefined ? {} : { error }),
             source: {
               providerType: modelProvider,
               model: selectedModel,
@@ -10712,9 +10714,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               return event.runId === run.runId;
             });
           expect(failures).toHaveLength(1);
-          const expectedReason =
-            args.expectedReason ?? args.failureReason ?? "unknown";
-          expect(failures[0]?.failureReason).toBe(expectedReason);
+          expect(failures[0]?.failureReason).toBe(args.failureReason);
           const raw = await chat.listThreadEventRows(actor, run.threadId);
           const rawFailures = raw.filter((event) => {
             return (
@@ -10722,7 +10722,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             );
           });
           expect(rawFailures).toHaveLength(1);
-          expect(rawFailures[0]?.failureReason).toBe(expectedReason);
+          expect(rawFailures[0]?.failureReason).toBe(args.failureReason);
           return { failures };
         }
 
@@ -10733,17 +10733,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               failureReason,
             });
             expect(failures[0]?.failureReason).toBe(failureReason);
-          },
-        );
-
-        it.each([undefined, "future_reason"])(
-          "publishes unknown for a legacy completion reason %s",
-          async (failureReason) => {
-            const { failures } = await completePublicFailure({
-              failureReason,
-              expectedReason: "unknown",
-            });
-            expect(failures[0]?.failureReason).toBe("unknown");
           },
         );
 

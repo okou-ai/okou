@@ -1,7 +1,4 @@
-import {
-  normalizeRunFailureReason,
-  type RunFailureReasonToken,
-} from "@okouai/api-contracts/contracts/run-failure-reasons";
+import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
   runStatusSchema,
   type RunResult,
@@ -210,7 +207,7 @@ function prepareCompletion(
       status: "failed",
       result,
       error: input.body.error?.trim() || "Run failed without error message",
-      failureReason: normalizeRunFailureReason(input.body.failureReason),
+      failureReason: input.body.failureReason,
       failureKind: "reported",
     };
   }
@@ -218,7 +215,6 @@ function prepareCompletion(
     return {
       status: "failed",
       error: "Run completion outputs were not provided",
-      failureReason: "unknown",
       failureKind: "missing-outputs",
     };
   }
