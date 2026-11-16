@@ -21,8 +21,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Condition
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.UiSelector
+import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicLong
@@ -70,6 +71,27 @@ class NativeRealtimeTest {
                 checkNotNull(
                     device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
                 )
+            fun reveal(value: String) {
+                val target = By.pkg(app.packageName).text(value)
+                if (!device.hasObject(target)) {
+                    val container =
+                        checkNotNull(
+                            device.wait(
+                                Until.findObject(By.pkg(app.packageName).scrollable(true)),
+                                10_000,
+                            )
+                        )
+                    val visible =
+                        object : Condition<UiObject2, Boolean> {
+                            // Compose exposes virtual descendants through the current window.
+                            override fun apply(unused: UiObject2) = device.hasObject(target)
+                        }
+                    if (!container.scrollUntil(Direction.UP, visible)) {
+                        container.scrollUntil(Direction.DOWN, visible)
+                    }
+                }
+                text(value)
+            }
             fun condition(check: () -> Boolean) =
                 assertTrue(
                     device.wait(
@@ -100,13 +122,8 @@ class NativeRealtimeTest {
                 chats = ready.chats
             }
             condition { chats?.uiState?.value?.threads?.any { it.id == CHAT_PERSONAL } == true }
-            androidx.test.uiautomator
-                .UiScrollable(UiSelector().scrollable(true))
-                .scrollIntoView(UiSelector().text("Personal chat"))
-            text("Personal chat")
-            device
-                .findObject(UiSelector().packageName(app.packageName).text("Personal chat"))
-                .click()
+            reveal("Personal chat")
+            text("Personal chat").click()
             assertNotNull(
                 device.wait(
                     Until.findObject(By.pkg(app.packageName).textContains("Native history")),
@@ -183,10 +200,7 @@ class NativeRealtimeTest {
                 RealtimeSnapshot(RealtimePhase.Connected, 1, changes = ChatChanges(resync = true))
             text("Changed on another client")
             // The new confirmed message can be below the current viewport; use native scrolling.
-            androidx.test.uiautomator
-                .UiScrollable(UiSelector().scrollable(true))
-                .scrollIntoView(UiSelector().text("External input"))
-            text("External input")
+            reveal("External input")
             assertTrue(
                 checkNotNull(
                         device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
@@ -195,10 +209,7 @@ class NativeRealtimeTest {
                     .contains("Keep this draft")
             )
 
-            androidx.test.uiautomator
-                .UiScrollable(UiSelector().scrollable(true))
-                .scrollToBeginning(10)
-            text("Changed on another client")
+            reveal("Changed on another client")
             val opened = external.opened.get()
             scenario.moveToState(Lifecycle.State.CREATED)
             condition { external.closed.get() == opened }
@@ -276,10 +287,7 @@ class NativeRealtimeTest {
                     ?.singleOrNull()
                     ?.text == "Live native answer"
             }
-            androidx.test.uiautomator
-                .UiScrollable(UiSelector().scrollable(true))
-                .scrollIntoView(UiSelector().text("Live native answer"))
-            text("Live native answer")
+            reveal("Live native answer")
             external.output(chunk(3, "missing chunk"))
             external.snapshot.value =
                 external.snapshot.value.copy(phase = RealtimePhase.Unavailable)
@@ -295,10 +303,7 @@ class NativeRealtimeTest {
                 )
             savedOutput.set(true)
             external.invalidate()
-            androidx.test.uiautomator
-                .UiScrollable(UiSelector().scrollable(true))
-                .scrollIntoView(UiSelector().text("Saved native answer"))
-            text("Saved native answer")
+            reveal("Saved native answer")
             assertFalse(device.hasObject(By.pkg(app.packageName).text("Live native answer")))
             condition { chats?.history?.output?.state?.value?.messages?.isEmpty() == true }
             assertTrue(
