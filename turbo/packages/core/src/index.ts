@@ -328,7 +328,6 @@ export {
   type ResolvedAttachFile,
   type RunnersHeartbeatContract,
   type ExecutionContext,
-  type ExecutionInput,
   type SecretConnectorMetadata,
   type StorageMountEntry,
   type StorageManifest,
