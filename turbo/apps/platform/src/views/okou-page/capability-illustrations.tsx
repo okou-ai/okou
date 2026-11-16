@@ -14,8 +14,7 @@ import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
  * `capability-active` state (hovered or holding focus) moves it into a
  * lifted pose -- the cards fan out, the magnifier slides onto the page, the
  * papers spread. Swapping a Create or Workflow choice plays the new
- * objects' entrance from a pose of their own; Explore replays the top cards'
- * objects without fading them. Positions are in card pixels, placed by where
+ * objects' entrance from a pose of their own. Positions are in card pixels, placed by where
  * the objects visibly sit, so every composition has the same room above and
  * below it at rest and lifted.
  */
@@ -199,12 +198,11 @@ const BELL_GLOW = (
  * centre and radius are measured from the rim photograph, and both objects
  * only move between their resting and lifted poses on one 700ms curve, so the
  * magnified page moves between the placements computed for those two poses on
- * that curve too. While Explore replays the objects from their entrance
- * poses the lens shows plain glass.
+ * that curve too.
  */
 const MAGNIFIER_LENS = (
   <>
-    <span className="absolute top-[6.36px] left-[6.23px] -z-2 size-[48.15px] overflow-hidden rounded-full motion-safe:group-has-[[data-art=explore]:is(:hover,:focus-visible)]/card:animate-capability-lens-replay">
+    <span className="absolute top-[6.36px] left-[6.23px] -z-2 size-[48.15px] overflow-hidden rounded-full">
       <img
         src={ASSETS.page}
         alt=""
@@ -240,29 +238,29 @@ const CLOCK_HANDS = (
 );
 
 /**
- * A group with several objects gathers them into a small stack at its centre
- * and fans them out; a single object rises into place; the gears roll in; the
- * bell rings. The magnifier enters from its resting spot, so Explore glides it
- * onto the page instead of dropping it in.
+ * Where a Create or Workflow choice's objects enter from: a group with several
+ * objects gathers them into a small stack at its centre and fans them out; a
+ * single object rises into place; the gears roll in; the bell rings. Find
+ * people and Research never swap, so their objects only rest and lift.
  */
 const ARTS = {
   people: [
     {
       src: ASSETS.card,
       width: "w-[66px]",
-      pose: "top-[86px] left-[78px] z-5 -rotate-11 [--capability-from-scale:0.86] [--capability-from-x:40px] [--capability-from-y:6px] capability-active:translate-x-[-20px] capability-active:translate-y-[2px] capability-active:-rotate-17",
+      pose: "top-[86px] left-[78px] z-5 -rotate-11 capability-active:translate-x-[-20px] capability-active:translate-y-[2px] capability-active:-rotate-17",
       detail: <img src={ASSETS.faceBlue} alt="" className={FACE} />,
     },
     {
       src: ASSETS.card,
       width: "w-[66px]",
-      pose: "top-[86px] left-[158px] z-5 rotate-11 [--capability-delay:70ms] [--capability-from-scale:0.86] [--capability-from-x:-40px] [--capability-from-y:6px] capability-active:translate-x-[20px] capability-active:translate-y-[2px] capability-active:rotate-17",
+      pose: "top-[86px] left-[158px] z-5 rotate-11 capability-active:translate-x-[20px] capability-active:translate-y-[2px] capability-active:rotate-17",
       detail: <img src={ASSETS.facePink} alt="" className={FACE} />,
     },
     {
       src: ASSETS.card,
       width: "w-[68px]",
-      pose: "top-[80px] left-[118px] z-10 [--capability-delay:140ms] [--capability-from-scale:0.86] [--capability-from-y:12px] capability-active:translate-y-[-4px] capability-active:-rotate-2 capability-active:scale-105",
+      pose: "top-[80px] left-[118px] z-10 capability-active:translate-y-[-4px] capability-active:-rotate-2 capability-active:scale-105",
       detail: <img src={ASSETS.faceYellow} alt="" className={FACE} />,
     },
   ],
@@ -270,14 +268,14 @@ const ARTS = {
     {
       src: ASSETS.page,
       width: "w-[84px]",
-      pose: "top-[80px] left-[127px] z-4 -rotate-6 [--capability-from-rotate:-14deg] [--capability-from-scale:0.88] [--capability-from-y:14px] capability-active:translate-x-[-2px] capability-active:-rotate-4",
+      pose: "top-[80px] left-[127px] z-4 -rotate-6 capability-active:translate-x-[-2px] capability-active:-rotate-4",
     },
     {
       // Rests on the lines of text and glides up onto the chart; the lens
       // stays inside the page in both poses.
       src: ASSETS.magnifierRim,
       width: "w-[84px]",
-      pose: "top-[101px] left-[154px] z-12 rotate-2 [--capability-duration:900ms] [--capability-from-rotate:2deg] [--capability-from-x:14px] [--capability-from-y:6px] capability-active:translate-x-[-18px] capability-active:translate-y-[-36px] capability-active:-rotate-6",
+      pose: "top-[101px] left-[154px] z-12 rotate-2 capability-active:translate-x-[-18px] capability-active:translate-y-[-36px] capability-active:-rotate-6",
       detail: MAGNIFIER_LENS,
     },
   ],
@@ -381,13 +379,13 @@ const ARTS = {
 } as const satisfies Record<CapabilityArt, readonly CapabilityLayer[]>;
 
 /**
- * Find people and Research show one composition and replay it from Explore;
- * every other drawing is one of a card's choices and enters as it is swapped
- * in.
+ * Find people and Research show one composition, which their stage fades in
+ * as a whole; every other drawing is one of a card's choices and enters as it
+ * is swapped in.
  */
-function entrance(art: CapabilityArt): string {
+function entrance(art: CapabilityArt): string | undefined {
   return art === "people" || art === "research"
-    ? "motion-safe:group-has-[[data-art=explore]:is(:hover,:focus-visible)]/card:animate-capability-layer-replay"
+    ? undefined
     : "motion-safe:animate-capability-layer-in";
 }
 

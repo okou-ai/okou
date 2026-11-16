@@ -481,7 +481,7 @@ test.each([
   },
 );
 
-test("Find people and Research each open from one Explore action instead of the whole card", async () => {
+test("Every capability card opens from anywhere on it, as its first choice does", async () => {
   mockTemplateChat();
   await setupHome();
   for (const label of ["Find people", "Research"]) {
@@ -489,17 +489,35 @@ test("Find people and Research each open from one Explore action instead of the 
     expect(
       within(card).getByRole("heading", { name: label }),
     ).toBeInTheDocument();
-    // The card offers its Explore tray from one button, the way Create and
-    // Workflow offer theirs; it does not surface the tray's options itself.
+    // The card's one control is its Explore button; the cover that opens the
+    // card from anywhere repeats it for the pointer only.
     expect(
       queryAllByRoleFast("button", card).map((item) => {
         return item.textContent?.trim();
       }),
     ).toStrictEqual(["Explore"]);
   }
-  click(capabilityAction("Research"));
+  function openCard(label: string) {
+    const card = within(capabilities()).getByRole("region", { name: label });
+    click(within(card).getByTestId("capability-card-cover"));
+  }
+  openCard("Research");
   const research = await screen.findByRole("region", { name: "Research" });
   expect(research).toHaveTextContent("Compare website traffic");
+  click(button("All capabilities"));
+  openCard("Find people");
+  const search = await screen.findByRole("region", { name: "Find people" });
+  expect(search).toHaveTextContent("Potential customers");
+  click(button("All capabilities"));
+  openCard("Create");
+  await expect(
+    screen.findByRole("group", { name: "Presentation templates" }),
+  ).resolves.toBeInTheDocument();
+  click(button("All capabilities"));
+  openCard("Workflow");
+  await expect(
+    screen.findByRole("region", { name: "Schedule a task" }),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Search and Research open separate suggestions and prepare editable drafts without starting a run", async () => {
