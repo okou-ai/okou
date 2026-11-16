@@ -174,7 +174,6 @@ beforeEach(() => {
 
 describe("email model recovery", () => {
   it("links a model failure to the original Web conversation", async () => {
-    await setupApp({ context, routes: [], isolatePg: true });
     mockEnv("OKOU_WEB_URL", "https://app.okou.ai");
     const { actor, execution, runId } = await startEmailFileExecution();
     if (!actor.orgId) {

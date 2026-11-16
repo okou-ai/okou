@@ -1,10 +1,10 @@
+import { randomInt } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { array, object, string } from "zod";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -20,7 +20,6 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 const context = testContext();
 const BOT_TOKEN = "123456:recovery-bot";
 const WEBHOOK_SECRET = "recovery-webhook";
-const USER_ID = 123_456_789;
 const keyboardSchema = object({
   reply_markup: object({
     inline_keyboard: array(
@@ -31,7 +30,7 @@ const keyboardSchema = object({
 
 describe("integration model recovery in Telegram", () => {
   it("switches from native message buttons and rejects another sender", async () => {
-    await setupApp({ context, routes: [], isolatePg: true });
+    const userId = randomInt(1, 2 ** 48);
     const owner = await publicChatActor(context);
     const integrations = createBddIntegrationApi(context);
     const chat = createChatEventsFixture(context);
@@ -63,7 +62,7 @@ describe("integration model recovery in Telegram", () => {
           messages.push(await request.json());
           return HttpResponse.json({
             ok: true,
-            result: { message_id: messages.length + 1, chat: { id: USER_ID } },
+            result: { message_id: messages.length + 1, chat: { id: userId } },
           });
         },
       ),
@@ -81,7 +80,7 @@ describe("integration model recovery in Telegram", () => {
         {
           telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
           telegramAuth: telegramLoginAuth(BOT_TOKEN, {
-            id: USER_ID,
+            id: userId,
             first_name: "Recovery",
           }),
         },
@@ -95,8 +94,8 @@ describe("integration model recovery in Telegram", () => {
           update_id: 1,
           message: {
             message_id: 1,
-            chat: { id: USER_ID, type: "private" },
-            from: { id: USER_ID },
+            chat: { id: userId, type: "private" },
+            from: { id: userId },
             text: "Recover this model",
           },
         }),
@@ -135,7 +134,7 @@ describe("integration model recovery in Telegram", () => {
       throw new Error("Expected the error's native model button");
     }
     expect(button.text).toBe("Switch model");
-    function press(data: string, sender = USER_ID) {
+    function press(data: string, sender = userId) {
       return integrations.requestTelegramWebhook(
         OFFICIAL_TELEGRAM_BOT_ID,
         JSON.stringify({
@@ -143,14 +142,14 @@ describe("integration model recovery in Telegram", () => {
             id: `callback-${messages.length}-${sender}`,
             data,
             from: { id: sender },
-            message: { message_id: 2, chat: { id: USER_ID } },
+            message: { message_id: 2, chat: { id: userId } },
           },
         }),
         { "x-telegram-bot-api-secret-token": WEBHOOK_SECRET },
         [200],
       );
     }
-    await press(button.callback_data, USER_ID + 1);
+    await press(button.callback_data, userId + 1);
     expect(notices.at(-1)).toContain("no longer current");
     await press(button.callback_data);
     const choices = keyboardSchema

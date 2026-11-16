@@ -554,7 +554,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
   it.each(["imessage", "sms"] as const)(
     "links a %s model failure to its original Web conversation",
     async (channel) => {
-      await setupApp({ context, routes: [], isolatePg: true });
       mockEnv("OKOU_WEB_URL", "https://app.okou.ai");
       const { actor, ap, phone, runnerGroup, sends } =
         await entitledLinkedActor();

@@ -1,4 +1,4 @@
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import { and, eq, gt, inArray, isNull, notExists, or, sql } from "drizzle-orm";
 import { object, string, uuid } from "zod";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
@@ -9,6 +9,7 @@ import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { db$ } from "../external/db";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { webUrl } from "../../lib/web-url";
@@ -20,8 +21,8 @@ import {
 } from "../external/realtime";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
-import { memberModelRouteContext } from "./effective-model-route.service";
-import { memberSubscriptionModels } from "./member-subscription-models.service";
+import { memberModelRouteContextFromAccounts } from "./effective-model-route.service";
+import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
 import { catalogDisplayName, loadModelCatalog$ } from "./model-catalog.service";
 import { updateChatThreadMetadata$ } from "./chat-thread-metadata-update.service";
 
@@ -188,17 +189,29 @@ export const loadIntegrationModelChoices$ = command(
     if (!recovery) {
       return null;
     }
-    const identity$ = computed(() => {
-      return {
-        orgId: args.orgId,
-        userId: args.userId,
-      };
-    });
-    const [subscriptions, catalog] = await Promise.all([
-      get(memberSubscriptionModels(memberModelRouteContext(identity$))),
+    const [accounts, catalog] = await Promise.all([
+      get(db$)
+        .select({
+          type: modelProviderAccounts.type,
+          providerId: modelProviderAccounts.modelProviderId,
+          isActive: modelProviderAccounts.isActive,
+          needsReconnect: modelProviderAccounts.needsReconnect,
+        })
+        .from(modelProviderAccounts)
+        .where(
+          and(
+            eq(modelProviderAccounts.orgId, args.orgId),
+            eq(modelProviderAccounts.userId, args.userId),
+            isNull(modelProviderAccounts.disconnectedAt),
+          ),
+        ),
       set(loadModelCatalog$, signal),
     ]);
     signal.throwIfAborted();
+    const subscriptions = memberSubscriptionModelRoutesFromCatalog(
+      catalog,
+      memberModelRouteContextFromAccounts(accounts),
+    );
     return {
       ...recovery,
       currentModelLabel: catalogDisplayName(catalog, recovery.selectedModel),
@@ -208,20 +221,25 @@ export const loadIntegrationModelChoices$ = command(
           label: "Auto",
           description: "Uses workspace credits",
         },
-        ...subscriptions
-          .filter((model) => {
-            return !model.needsReconnect;
-          })
-          .map((model) => {
-            return {
-              value: model.model,
-              label: model.displayName,
-              description:
-                model.providerType === "codex-oauth-token"
-                  ? "Your ChatGPT subscription"
-                  : "Your Claude subscription",
-            };
-          }),
+        ...catalog.models.flatMap((model) => {
+          return subscriptions
+            .filter((subscription) => {
+              return (
+                subscription.model === model.model &&
+                !subscription.needsReconnect
+              );
+            })
+            .map((subscription) => {
+              return {
+                value: model.model,
+                label: model.displayName,
+                description:
+                  subscription.providerType === "codex-oauth-token"
+                    ? "Your ChatGPT subscription"
+                    : "Your Claude subscription",
+              };
+            });
+        }),
       ],
     };
   },

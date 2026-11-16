@@ -310,7 +310,6 @@ async function responseFixture() {
 
 describe("WeChat reply presentation and processing status", () => {
   it("links a model failure to the original Web conversation", async () => {
-    await setupApp({ context, routes: [], isolatePg: true });
     mockEnv("OKOU_WEB_URL", "https://app.okou.ai");
     const fixture = await responseFixture();
     await updateFeatureSwitchesForUser(context, fixture.actor, {

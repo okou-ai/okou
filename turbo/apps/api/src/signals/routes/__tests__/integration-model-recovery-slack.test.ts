@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { array, literal, object, string, unknown as zUnknown } from "zod";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
@@ -164,7 +163,6 @@ async function failedSlackConversation(
 
 describe("integration model recovery in Slack", () => {
   it("switches the failed DM to GPT without changing the default or replaying the failed request", async () => {
-    await setupApp({ context, routes: [], isolatePg: true });
     const fixture = await failedSlackConversation();
     const posted = context.mocks.slack.chat.postMessage.mock.calls
       .map(([body]) => {
@@ -311,7 +309,6 @@ describe("integration model recovery in Slack", () => {
   });
 
   it("rejects another sender and an old modal after the owner changes the model in Web", async () => {
-    await setupApp({ context, routes: [], isolatePg: true });
     const fixture = await failedSlackConversation();
     const modal = await fixture.open();
     if (!modal.private_metadata) {
@@ -355,7 +352,6 @@ describe("integration model recovery in Slack", () => {
   });
 
   it("recovers when the conversation's subscription becomes unavailable before launch", async () => {
-    await setupApp({ context, routes: [], isolatePg: true });
     const fixture = await failedSlackConversation();
     await createMiscRoutesApi(context).deletePersonalModelProvider(
       fixture.owner.actor,
@@ -405,7 +401,6 @@ describe("integration model recovery in Slack", () => {
   });
 
   it("rejects an open selector after recovery is disabled", async () => {
-    await setupApp({ context, routes: [], isolatePg: true });
     const fixture = await failedSlackConversation();
     const modal = await fixture.open();
     if (!modal.private_metadata || !fixture.owner.actor.orgId) {
@@ -428,7 +423,6 @@ describe("integration model recovery in Slack", () => {
   ])(
     "keeps the original error without model controls for $failure when enabled=$enabled",
     async ({ enabled, failure }) => {
-      await setupApp({ context, routes: [], isolatePg: true });
       const fixture = await failedSlackConversation(enabled, failure);
       expect(fixture.failed.eventType).toBe("run.failed");
       const messages = context.mocks.slack.chat.postMessage.mock.calls
