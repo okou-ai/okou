@@ -25,6 +25,57 @@ from tests.flow_helpers import header_map, response_stream
 from tests.repeated_bytes_helpers import repeat_bytes
 
 
+class _ObservedHeaderName(bytes):
+    def __init__(self, value: bytes) -> None:
+        self.lower_calls = 0
+
+    def lower(self) -> bytes:
+        self.lower_calls += 1
+        return super().lower()
+
+
+@pytest.mark.parametrize("encoding", ["identity", "br"])
+async def test_catalog_skips_unrelated_header_name_in_hook_and_worker(real_flow, encoding: str):
+    owner = catalog_flow(real_flow)
+    if encoding == "br":
+        await prepare_prefetch_miss(owner)
+    else:
+        await prepare_miss(owner)
+    owner.response = catalog_response(encoding=encoding)
+    name = _ObservedHeaderName(b"X" * (1024 * 1024))
+    owner.response.headers.fields = (
+        *((raw_name.swapcase(), value) for raw_name, value in owner.response.headers.fields),
+        (name, b"ignored"),
+    )
+    upstream_response = owner.response
+    fields = upstream_response.headers.fields
+    wire_body = upstream_response.raw_content or b""
+
+    mitm_addon.responseheaders(owner)
+    hook_calls = name.lower_calls
+    stream = response_stream(owner)
+    assert stream(wire_body[:3]) == wire_body[:3]
+    assert stream(wire_body[3:]) == wire_body[3:]
+    finalization = catalog_cache.finalize_response(owner)
+    assert finalization is not None
+    await finalization
+
+    assert (hook_calls, name.lower_calls - hook_calls) == (0, 0)
+    assert owner.response is upstream_response
+    assert owner.response.status_code == 200
+    assert owner.response.headers.fields == fields
+    assert owner.response.raw_content == wire_body
+    telemetry: dict[str, object] = {}
+    catalog_cache.add_network_log_fields(owner, telemetry)
+    assert telemetry["model_catalog_cache_status"] == "model_catalog_cold_stored"
+    hit = catalog_flow(real_flow)
+    await catalog_cache.prepare_request(hit, request_end_stream=True)
+    assert hit.response is not None
+    assert hit.response.content == CATALOG_BODY
+    assert hit.response.headers["Content-Type"] == "application/json"
+    assert hit.response.headers["ETag"] == CATALOG_ETAG
+
+
 async def test_brotli_miss_without_length_is_cached_and_passed_through(real_flow):
     brotli_flow = catalog_flow(real_flow)
     await prepare_prefetch_miss(brotli_flow)
@@ -273,6 +324,11 @@ async def test_set_cookie_is_not_replayed_from_cached_brotli_response(real_flow)
             id="ambiguous-framing",
         ),
         pytest.param(
+            catalog_response(headers={"tRaNsFeR-eNcOdInG": ""}),
+            "response_size",
+            id="empty-mixed-case-transfer-encoding",
+        ),
+        pytest.param(
             catalog_response(headers={"Content-Length": str(len(CATALOG_BODY) + 1)}),
             "response_body",
             id="length-mismatch",
@@ -486,12 +542,17 @@ async def test_catalog_responses_with_trailers_are_never_cached(
     catalog_cache.handle_error(retry)
 
 
-async def test_catalog_response_accepts_long_leading_zero_content_length(real_flow):
+@pytest.mark.parametrize("repeated", [False, True], ids=["single", "repeated-comma-list"])
+async def test_catalog_response_accepts_long_leading_zero_content_length(real_flow, *, repeated):
     flow = catalog_flow(real_flow, version="leading-zero-content-length")
     await prepare_miss(flow)
     flow.response = catalog_response(
         headers={"Content-Length": "0" * 64 + str(len(CATALOG_BODY))},
     )
+    if repeated:
+        flow.response.headers.fields += (
+            (b"cOnTeNt-LeNgTh", f"{len(CATALOG_BODY)}, 0{len(CATALOG_BODY)}".encode()),
+        )
 
     telemetry = await finish_response(flow)
 
