@@ -2000,12 +2000,10 @@ function templateDetailPreviewMatchesItem(
 
 function TemplatePreviewPage({
   item,
-  onBack,
   onSelect,
   signals,
 }: {
   item: PresentationTemplateItem;
-  onBack: () => void;
   onSelect: (item: PresentationTemplateItem, colorSystemId?: string) => void;
   signals: ComposerSignals;
 }) {
@@ -2091,15 +2089,11 @@ function TemplatePreviewPage({
         className="flex h-[68px] shrink-0 justify-center px-6 pr-14 text-left duration-200 motion-reduce:animate-none"
       >
         <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
-          <button
-            type="button"
-            className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={onBack}
-          >
+          <span className="shrink-0 text-muted-foreground">
             {t(($) => {
               return $.artifacts.templates.template;
             })}
-          </button>
+          </span>
           <span className="shrink-0 text-muted-foreground">/</span>
           <span className="block min-w-0 truncate leading-none">
             {item.title}
@@ -3537,7 +3531,6 @@ function TemplatePickerDialogFrame({
         ) : previewItem ? (
           <TemplatePreviewPage
             item={previewItem}
-            onBack={directPreview ? onClose : closeDetailPreview}
             onSelect={handleSelectPresentation}
             signals={signals}
           />

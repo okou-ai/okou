@@ -113,10 +113,15 @@ async function websitePreview() {
   }
   expect(frame).toHaveAttribute("src", website.previewUrl);
   expect(frame).toHaveAttribute("sandbox", "allow-same-origin allow-scripts");
-  expect(within(dialog).getByRole("heading")).toHaveTextContent(
+  const heading = within(dialog).getByRole("heading");
+  expect(heading).toHaveTextContent(
     new RegExp(`Website\\s*/\\s*${website.title}`),
   );
-  return { frame, dialog };
+  const prefix = within(heading).getByText("Website");
+  expect(
+    prefix.closest("button, a, [role='button'], [role='link']"),
+  ).toBeNull();
+  return { frame, dialog, prefix };
 }
 
 async function expectShelfReturn(eye: HTMLElement) {
@@ -135,9 +140,11 @@ test.each([true, false])(
     // Exercise real pointer focus: closing both dialogs must restore the Eye,
     // not the hidden parent gallery or the template selection button.
     const user = userEvent.setup({ delay: null });
-    for (const dismissal of ["Close", "Escape", "Website"]) {
+    for (const dismissal of ["Close", "Escape"]) {
       await user.click(eye);
-      const { dialog } = await websitePreview();
+      const { dialog, frame, prefix } = await websitePreview();
+      await user.click(prefix);
+      expect(frame).toBeInTheDocument();
       expect(composerInlineTemplates()).toHaveLength(0);
       expect(editor).toHaveTextContent(DRAFT);
       expect(capture.sentMessages).toHaveLength(0);
@@ -211,7 +218,7 @@ test("View all resets direct Website preview dismissal to the normal gallery", a
   const direct = await websitePreview();
   const directSrc = direct.frame.getAttribute("src");
   const directSandbox = direct.frame.getAttribute("sandbox");
-  click(control("button", "Website", direct.dialog));
+  click(control("button", "Close", direct.dialog));
   await expectShelfReturn(eye);
   click(browse);
   const picker = await screen.findByRole("dialog");
@@ -220,9 +227,11 @@ test("View all resets direct Website preview dismissal to the normal gallery", a
     "true",
   );
   const galleryEyeLabel = `Preview website template ${website.title}`;
-  for (const dismissal of ["Close", "Escape", "Website"]) {
+  for (const dismissal of ["Close", "Escape"]) {
     await user.click(control("button", galleryEyeLabel, picker));
     const nested = await websitePreview();
+    await user.click(nested.prefix);
+    expect(nested.frame).toBeInTheDocument();
     expect(nested.frame).toHaveAttribute("src", directSrc);
     expect(nested.frame).toHaveAttribute("sandbox", directSandbox);
     if (dismissal === "Escape") {

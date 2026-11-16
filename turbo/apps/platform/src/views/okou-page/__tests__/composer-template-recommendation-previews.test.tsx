@@ -213,16 +213,23 @@ test("Direct presentation dismissal restores the Eye while View all still return
     `Preview template ${presentation.title}`,
     shelf,
   );
-  for (const dismissal of ["Close", "Escape", "Template"]) {
+  for (const dismissal of ["Close", "Escape"]) {
     await user.click(eye);
     const stage = await screen.findByRole("group", {
       name: `${presentation.title} slide preview`,
     });
     await within(stage).findByText("1 / 2");
+    const dialog = dialogAround(stage);
+    const prefix = within(dialog).getByText("Template", { selector: "span" });
+    expect(
+      prefix.closest("button, a, [role='button'], [role='link']"),
+    ).toBeNull();
+    await user.click(prefix);
+    expect(stage).toBeInTheDocument();
     if (dismissal === "Escape") {
       await user.keyboard("{Escape}");
     } else {
-      await user.click(control("button", dismissal, dialogAround(stage)));
+      await user.click(control("button", dismissal, dialog));
     }
     await expectDismissed(eye);
     expect(shelf).toBeInTheDocument();
@@ -240,6 +247,12 @@ test("Direct presentation dismissal restores the Eye while View all still return
     name: `${presentation.title} slide preview`,
   });
   await within(stage).findByText("1 / 2");
+  const prefix = within(picker).getByText("Template", { selector: "span" });
+  expect(
+    prefix.closest("button, a, [role='button'], [role='link']"),
+  ).toBeNull();
+  await user.click(prefix);
+  expect(stage).toBeInTheDocument();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(control("button", previewLabel, picker)).toHaveFocus();
