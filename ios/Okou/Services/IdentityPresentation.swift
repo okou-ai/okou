@@ -107,7 +107,9 @@ final class IdentityPresentation {
 
   fileprivate static func log(_ error: Error) {
     Logger(subsystem: "ai.okou.ios", category: "IdentityPresentation")
-      .error("Identity display cache failed: \(error.localizedDescription, privacy: .public)")
+      .error(
+        "event=identity.presentation.cache.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+      )
   }
 }
 

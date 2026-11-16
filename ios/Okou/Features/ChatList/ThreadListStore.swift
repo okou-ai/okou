@@ -512,7 +512,9 @@ final class ThreadListStore {
             // Unread refresh is best-effort: retain the confirmed presentation
             // without adding a user-facing synchronization warning.
             Logger(subsystem: "ai.okou.ios", category: "ChatSync")
-              .info("Keeping unread indicators: \(error.localizedDescription, privacy: .public)")
+              .info(
+                "event=chat.indicators.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+              )
           }
         }
       } while indicatorsAgain && !closed && !blocked && !Task.isCancelled
