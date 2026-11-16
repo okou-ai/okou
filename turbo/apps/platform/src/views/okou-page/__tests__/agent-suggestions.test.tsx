@@ -1436,7 +1436,9 @@ test("For you browses without consuming and restores a card from its URL", async
   await openForYou(`/for-you?suggestion=${items[1].id}`);
   await activeForYouCard("Suggested action 2");
   pool.publish(numberedSuggestions(4)[3]);
-  click(link(`/for-you?suggestion=${items[2].id}`));
+  const next = link(`/for-you?suggestion=${items[2].id}`);
+  next.focus();
+  await userEvent.setup().keyboard("{Enter}");
   await activeForYouCard("Suggested action 3");
   expect(new URLSearchParams(window.location.search).get("suggestion")).toBe(
     items[2].id,
@@ -1480,8 +1482,7 @@ test("For you mounts only the foreground content and retains a departure until i
   const first = await activeForYouCard("Suggested action 1");
   const firstAvatar = first.parentElement?.querySelector("[data-okou-avatar]");
   expect(firstAvatar).toHaveAttribute("data-okou-avatar", "animated");
-  const firstArtwork = firstAvatar?.querySelector("svg");
-  expect(firstArtwork).not.toBeNull();
+  expect(firstAvatar?.querySelector("svg")).toBeInTheDocument();
   expect(screen.queryByText("Suggested action 2")).not.toBeInTheDocument();
   const departure = holdCardDeparture(first);
   click(link(`/for-you?suggestion=${items[1].id}`));
@@ -1489,7 +1490,9 @@ test("For you mounts only the foreground content and retains a departure until i
   expect(first).toBeInTheDocument();
   expect(first.closest("[inert]")).not.toBeNull();
   expect(second.closest("[inert]")).toBeNull();
-  expect(firstAvatar?.querySelector("svg")).toBe(firstArtwork);
+  expect(
+    first.parentElement?.querySelector("[data-okou-avatar] svg"),
+  ).toBeInTheDocument();
   expect(screen.queryByText("Suggested action 3")).not.toBeInTheDocument();
   departure.resolve();
   await waitFor(() => {

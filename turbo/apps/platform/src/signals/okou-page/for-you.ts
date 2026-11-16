@@ -149,8 +149,7 @@ export const browseForYou$ = command(
 export const finishForYouPaginationOnRef$ = onRef(
   command(async ({ get, set }, card: HTMLElement, signal: AbortSignal) => {
     const pagination = get(forYouPagination$);
-    const animations =
-      typeof card.getAnimations === "function" ? card.getAnimations() : [];
+    const animations = card.getAnimations();
     await waitForToken(
       Promise.allSettled(
         animations.map((animation) => {
