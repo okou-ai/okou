@@ -2,7 +2,7 @@ import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
-/// The chat's feedback under the header: the latest finished action, or a sync problem, in
+/// The chat's feedback above its bottom controls: the latest finished action, or a sync problem, in
 /// the design system's `ChatFeedbackSurface`.
 struct ChatFeedbackBanner: View {
   let store: WorkspaceStore
@@ -36,7 +36,7 @@ private struct ChatFeedbackBannerContent: View {
   }
 
   var body: some View {
-    ZStack(alignment: .top) {
+    ZStack(alignment: .bottom) {
       if let feedback = store.threadFeedback {
         ChatThreadFeedbackView(store: store, feedback: feedback)
           .id(feedback.id)
@@ -55,5 +55,54 @@ private struct ChatFeedbackBannerContent: View {
     }
     .padding(.horizontal, OkouSpace.lg)
     .animation(reduceMotion ? nil : OkouMotion.press, value: store.threadFeedback?.id)
+  }
+}
+
+private struct ChatFeedbackAnchor: PreferenceKey {
+  static var defaultValue: Anchor<CGRect>? { nil }
+
+  static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+    value = nextValue() ?? value
+  }
+}
+
+extension EnvironmentValues {
+  @Entry var chatFeedbackHeight: CGFloat = 0
+}
+
+extension View {
+  /// Anchor to the whole bottom bar, including a growing composer and its accessory controls.
+  func chatFeedbackAnchor() -> some View {
+    anchorPreference(key: ChatFeedbackAnchor.self, value: .bounds) { $0 }
+  }
+
+  func chatFeedbackOverlay(store: WorkspaceStore, isPresented: Bool) -> some View {
+    modifier(ChatFeedbackOverlay(store: store, isPresented: isPresented))
+  }
+}
+
+private struct ChatFeedbackOverlay: ViewModifier {
+  let store: WorkspaceStore
+  let isPresented: Bool
+  @State private var feedbackHeight: CGFloat = 0
+
+  func body(content: Content) -> some View {
+    content
+      .environment(\.chatFeedbackHeight, feedbackHeight)
+      .overlayPreferenceValue(ChatFeedbackAnchor.self) { anchor in
+        GeometryReader { geometry in
+          if isPresented, let anchor {
+            ChatFeedbackBanner(store: store)
+              .onGeometryChange(for: CGFloat.self) {
+                $0.size.height
+              } action: {
+                feedbackHeight = $0
+              }
+              .frame(maxHeight: .infinity, alignment: .bottom)
+              .padding(.bottom, max(0, geometry.size.height - geometry[anchor].minY))
+              .onDisappear { feedbackHeight = 0 }
+          }
+        }
+      }
   }
 }
