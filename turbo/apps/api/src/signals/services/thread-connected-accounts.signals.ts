@@ -1131,40 +1131,40 @@ function createCustomConnectorContextSignals(
         "nested",
         async () => {
           const contexts = await Promise.all(
-            orderByCustomConnectorId(connectors, (connector) => {
-              return connector.id;
-            })
-              .filter((connector) => {
+            orderByCustomConnectorId(
+              connectors.filter((connector) => {
                 return args.allowedCustomConnectorIds.includes(connector.id);
-              })
-              .map(async (connector) => {
-                const rows = customConnectorCandidateRuntimeRows({
-                  connector,
-                  storageRows,
-                  candidateIds:
-                    candidates.get(
-                      connectorAccountTargetKey({
-                        kind: "custom",
-                        customConnectorId: connector.id,
-                      }),
-                    ) ?? [],
-                });
-                for (const row of rows) {
-                  const context =
-                    await buildNewRunCustomConnectorRuntimeContext({
-                      rows: [row],
-                      permissionBundlesByConnectorId,
-                      featureSwitchContext,
-                      connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-                      grants: args.customConnectorGrants,
-                      memberPermissionPolicies,
-                    });
-                  if (context.targets.length > 0) {
-                    return context;
-                  }
-                }
-                return emptyCustomConnectorRuntimeContext();
               }),
+              (connector) => {
+                return connector.id;
+              },
+            ).map(async (connector) => {
+              const rows = customConnectorCandidateRuntimeRows({
+                connector,
+                storageRows,
+                candidateIds:
+                  candidates.get(
+                    connectorAccountTargetKey({
+                      kind: "custom",
+                      customConnectorId: connector.id,
+                    }),
+                  ) ?? [],
+              });
+              for (const row of rows) {
+                const context = await buildNewRunCustomConnectorRuntimeContext({
+                  rows: [row],
+                  permissionBundlesByConnectorId,
+                  featureSwitchContext,
+                  connectorCatalogSnapshot: args.connectorCatalogSnapshot,
+                  grants: args.customConnectorGrants,
+                  memberPermissionPolicies,
+                });
+                if (context.targets.length > 0) {
+                  return context;
+                }
+              }
+              return emptyCustomConnectorRuntimeContext();
+            }),
           );
           return {
             firewalls: contexts.flatMap((context) => {
