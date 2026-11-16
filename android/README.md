@@ -104,8 +104,8 @@ or truncated data never publishes a partial checkpoint. Projection preserves
 revocation/rejection and queued/running/stopped/failure facts. CommonMark 0.24.0
 renders selectable native text/code; references and unsupported structured parts
 remain explicit with their original JSON. HTML remains literal text, and reading
-does not automatically download attachments or open links. Live updates, sending
-and interactive viewers remain later work.
+does not automatically download attachments or open links. Interactive viewers
+remain later work.
 
 An authorized, resumed, visible conversation marks read only after successful
 network confirmation and display. This calls the existing server mark-read POST
