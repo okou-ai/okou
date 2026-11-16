@@ -12,9 +12,7 @@ import type { PermissionManifest } from "./agent-run-contracts";
 /** Process-local admission facts; this receipt itself is never serialized. */
 export interface AdmittedExecutionFacts {
   readonly nativeContinuation: NativeContinuation;
-  readonly customWorkflowSelection: NonNullable<
-    PreparedExecutionContext["customWorkflowSelection"]
-  >;
+  readonly customWorkflowSelection: PreparedExecutionContext["customWorkflowSelection"];
   readonly featureFlags: Readonly<
     Record<
       | FeatureSwitchKey.ArtifactGenerationTiming

@@ -59,11 +59,9 @@ function officialWorkflowSelection(
   context: PreparedExecutionContext,
   skillRoot: string,
 ): ExecutionWorkflowInput["selection"] {
-  const officialPaths = (context.officialWorkflowBundles ?? []).map(
-    (bundle) => {
-      return bundle.mountPath;
-    },
-  );
+  const officialPaths = context.officialWorkflowBundles.map((bundle) => {
+    return bundle.mountPath;
+  });
   if (
     new Set(officialPaths).size !== officialPaths.length ||
     officialPaths.some((path) => {
@@ -77,7 +75,7 @@ function officialWorkflowSelection(
   ) {
     throw new Error("Official Workflow bundle destinations are inconsistent");
   }
-  return context.customWorkflowSelection && officialPaths.length > 0
+  return officialPaths.length > 0
     ? {
         ...context.customWorkflowSelection,
         protectedMountPaths: [
@@ -105,7 +103,7 @@ export function executionWorkflowInput(
 }
 
 function workflowEligibilitySql(input: ExecutionWorkflowInput): SQL {
-  const protectedPaths = input.selection?.protectedMountPaths ?? [];
+  const protectedPaths = input.selection.protectedMountPaths;
   return sql`${eq(workflows.orgId, sql`admitted_run."orgId"`)}
     AND ${eq(workflows.agentId, sql`admitted_run."agentId"`)}
     AND ${eq(agents.orgId, sql`admitted_run."orgId"`)}
@@ -142,7 +140,7 @@ export function executionWorkflowSelectionSql(
   input: ExecutionWorkflowInput,
 ): SQL {
   const selection = input.selection;
-  const automationId = selection?.automationId ?? null;
+  const automationId = selection.automationId ?? null;
   const eligible = workflowEligibilitySql(input);
   return sql`selected_workflows AS MATERIALIZED (
       SELECT DISTINCT ON (${workflows.name}) ${workflows.id} AS id, ${workflows.name} AS name,
@@ -156,7 +154,7 @@ export function executionWorkflowSelectionSql(
       FROM selected_workflows
     ), workflow_admission AS MATERIALIZED (
       SELECT * FROM workflow_selection, admitted_run
-      WHERE admitted_run."agentId" = ${selection?.agentId ?? null}::uuid
+      WHERE admitted_run."agentId" = ${selection.agentId}::uuid
         AND EXISTS (SELECT 1 FROM selected_agent)
         AND (COALESCE(${automationId}::uuid, admitted_run."workflowAutomationId") IS NULL OR EXISTS (
           SELECT 1 FROM ${workflowAutomations} INNER JOIN ${workflows} ON ${eq(workflows.id, workflowAutomations.workflowId)}

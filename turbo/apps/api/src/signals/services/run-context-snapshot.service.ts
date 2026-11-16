@@ -171,7 +171,7 @@ export function recordRunContextSnapshot(args: {
       };
     }),
     featureFlagEntries: featureFlagsRecordToEntries(context.featureFlags),
-    ...(context.templateGuidanceBundles?.length
+    ...(context.templateGuidanceBundles.length
       ? { templateGuidanceBundles: context.templateGuidanceBundles }
       : {}),
   };
@@ -180,7 +180,7 @@ export function recordRunContextSnapshot(args: {
     return ingestToAxiom(getDatasetName("run-context"), [
       {
         ...snapshot,
-        officialWorkflowBundles: (context.officialWorkflowBundles ?? []).map(
+        officialWorkflowBundles: context.officialWorkflowBundles.map(
           (bundle) => {
             return {
               sha256: bundle.sha256,

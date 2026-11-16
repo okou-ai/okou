@@ -368,12 +368,9 @@ export function networkPolicyRefreshesRecord(
 }
 
 export function mergeNetworkPolicyRefreshes(
-  networkPolicies: NetworkPolicies | undefined,
+  networkPolicies: NetworkPolicies,
   refreshes: readonly ActiveNetworkPolicyRefresh[],
-): NetworkPolicies | undefined {
-  if (!networkPolicies && refreshes.length === 0) {
-    return undefined;
-  }
+): NetworkPolicies {
   const merged: NetworkPolicies = { ...networkPolicies };
   for (const refresh of refreshes) {
     // Refreshes are scoped to admitted builtin targets, whose captured policy
