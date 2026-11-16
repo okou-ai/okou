@@ -1,8 +1,10 @@
 import { cn } from "@okouai/ui";
 import type { HTMLAttributes } from "react";
 
+// Width reserves the responsive outer gutters without changing padding on
+// prose ancestors. Its content box remains the same container-query width.
 export const CHAT_THREAD_CONTENT_MAIN_CLASS =
-  "items-center py-4 pl-4 pr-4 sm:pl-6 sm:pr-6 @container";
+  "items-center py-4 w-[calc(100%-2rem)] sm:w-[calc(100%-3rem)] mx-auto @container";
 
 // One gap separates the rows of the transcript. Anything that wraps rows and
 // interrupts this flex column has to reproduce it, so the value has one home.
@@ -41,25 +43,27 @@ export const CHAT_THREAD_WORK_HISTORY_TEXT_CLASS =
   "text-sm leading-5 text-muted-foreground";
 export const CHAT_THREAD_WORK_HISTORY_MARKDOWN_CLASS = "!text-muted-foreground";
 
-// Keep message rows in the same formatting context as sidebars cross the
-// container breakpoint so native scroll anchoring can preserve reading position.
-// Only the columns change: stacked on narrow panes, avatar and reply on wide ones.
-// `transition-none` keeps the responsive margin from animating after resize.
+// Keep each reading column inside the list's width without changing ancestor
+// margins or padding at the container breakpoint. User rows need no inset;
+// their empty desktop avatar track must not consume any of the bubble's width.
 export const CHAT_THREAD_USER_MESSAGE_ROW_CLASS =
-  "grid grid-cols-1 justify-items-end min-w-0 duration-300 transition-none @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start @[900px]:justify-items-stretch";
+  "grid grid-cols-1 justify-items-end min-w-0 duration-300 transition-none *:first:[overflow-anchor:none] @[900px]:grid-cols-[0px_minmax(0,1fr)] @[900px]:items-start @[900px]:justify-items-stretch";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS =
   "relative flex flex-col gap-2 duration-300";
 
+// The first child is the avatar sibling, never an ancestor of the response.
+// Place its actual outer frame (including an avatar button's hit target) in the
+// gutter, and exclude it from anchoring so its responsive translation cannot
+// suppress the browser's compensation for prose reflow.
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS =
-  "grid grid-cols-1 gap-2 @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
+  "grid grid-cols-[6px_minmax(0,1fr)] gap-y-2 *:first:col-span-full *:first:[overflow-anchor:none] @[900px]:grid-cols-[0px_minmax(0,1fr)] @[900px]:items-start @[900px]:*:first:col-span-1 @[900px]:*:first:-translate-x-[46px]";
 
-// In the stacked mobile layout, inset the response by 6px so the centre of its
-// canonical 16px leading icons lines up with the centre of the 28px avatar
-// above it. The desktop grid already owns that alignment, so reset the inset
-// at that breakpoint.
+// The narrow 6px track centres a response's 16px leading icon under the 28px
+// avatar. A zero-width desktop track leaves the response flush with the list.
+// Changing tracks rather than padding keeps native scroll anchoring eligible.
 export const CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS =
-  "pl-1.5 @[900px]:pl-0";
+  "col-start-2 row-start-2 @[900px]:row-start-1";
 
 export const CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS =
   "h-7 w-7 shrink-0 overflow-hidden rounded-xl @[900px]:h-9 @[900px]:w-9";
@@ -102,10 +106,10 @@ export const CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS = cn(
 );
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_ROW_CLASS =
-  "grid grid-cols-1 pl-1.5 @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:pl-0";
+  "grid grid-cols-[6px_minmax(0,1fr)] @[900px]:grid-cols-[0px_minmax(0,1fr)]";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS =
-  "flex items-center justify-between gap-2";
+  "col-start-2 flex items-center justify-between gap-2";
 
 // Consecutive user messages read as one burst. The copy button already sits
 // 4px below its message, so this pull keeps the gap below it equally tight.

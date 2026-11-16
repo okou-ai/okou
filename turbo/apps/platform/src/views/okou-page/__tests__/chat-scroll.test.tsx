@@ -61,7 +61,10 @@ const THREAD_IDS = {
 interface ChatScrollGeometry {
   readonly bottomScrollTop: () => number;
   readonly firstVisibleAnchor: () => HTMLElement;
-  readonly growBeforeMessages: (height: number) => void;
+  readonly growBeforeMessages: (
+    height: number,
+    nativeAdjustment?: number,
+  ) => void;
   readonly growWithinMessage: (
     anchor: HTMLElement,
     height: number | (() => number),
@@ -215,8 +218,9 @@ function installChatScrollGeometry(
       }
       return anchor;
     },
-    growBeforeMessages: (height) => {
+    growBeforeMessages: (height, nativeAdjustment = 0) => {
       heightBeforeMessages += height;
+      scrollTop = clampScrollTop(scrollTop + nativeAdjustment);
     },
     growWithinMessage: (anchor, height) => {
       const id = anchorId(anchor);
@@ -797,10 +801,13 @@ test("Hand the retained primary transcript restore to the new Router page when t
     chatScrollContainer(),
     nextReadingId,
   ).getBoundingClientRect().top;
-  geometry.growBeforeMessages(75);
+  // Happy DOM has no native anchoring; model the browser's adjustment.
+  geometry.growBeforeMessages(75, 75);
+  geometry.writes.length = 0;
   act(() => {
     fireEvent.load(screen.getByAltText("Late history image"));
   });
+  expect(geometry.writes).toStrictEqual([]);
   await waitFor(() => {
     expect(
       anchorById(chatScrollContainer(), nextReadingId).getBoundingClientRect()
@@ -1411,16 +1418,35 @@ async function openSemanticReadingFixture(captureInitially = true) {
   expect(passage.getBoundingClientRect().top).toBe(
     captureInitially ? 34.75 : initialPassageTop,
   );
+  const descriptor = Object.getOwnPropertyDescriptor(container, "scrollTop");
+  if (!descriptor?.get || !descriptor.set) {
+    throw new Error("Expected controlled scroll geometry");
+  }
+  const read = descriptor.get;
+  const write = descriptor.set;
+  const writes: number[] = [];
+  Object.defineProperty(container, "scrollTop", {
+    configurable: true,
+    get: () => {
+      return read.call(container);
+    },
+    set: (top: number) => {
+      writes.push(top);
+      write.call(container, top);
+    },
+  });
   return {
     container,
     geometry,
     passage,
     jumpId,
     scrollToPassage,
+    writes,
     reflow: (delta: number, nativeAdjustment = 0) => {
       reflow += delta;
       geometry.growWithinMessage(body, delta);
-      container.scrollTop += nativeAdjustment;
+      // Browser anchoring does not invoke the application's JS setter.
+      write.call(container, container.scrollTop + nativeAdjustment);
       fireEvent.scroll(container);
     },
     setHeight: (value: number) => {
@@ -1453,11 +1479,39 @@ test("Capture the sole ordinary reading scroll after completed width calibration
   // This is intentionally an ordinary scripted scroll, with no input marker.
   fixture.scrollToPassage();
   await expectHistoryPositionHeld();
-  fixture.reflow(275, 75);
+  fixture.writes.length = 0;
+  fixture.reflow(275, 275);
   await act(() => {
     document.fonts.dispatchEvent(new Event("loadingdone"));
   });
   expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
+  expect(fixture.writes).toStrictEqual([]);
+});
+
+test("A narrow reveal restores the native result rather than an older reflow bookmark", async () => {
+  context.mocks.browser.matchMedia(() => {
+    return false;
+  });
+  const fixture = await openSemanticReadingFixture();
+  fixture.reflow(275, 75);
+  await act(() => {
+    document.fonts.dispatchEvent(new Event("loadingdone"));
+  });
+  expect(fixture.passage.getBoundingClientRect().top).toBe(234.75);
+  expect(fixture.writes).toStrictEqual([]);
+  await openUtilityAutomations();
+  fixture.setHeight(0);
+  fixture.reflow(100, 0);
+  const frames = controlRevealFrames();
+  fixture.setHeight(INITIAL_VIEWPORT_HEIGHT_PX);
+  fixture.container.scrollTop = 0;
+  fireEvent.scroll(fixture.container);
+  click(buttonByLabel("Close automations"));
+  await frames.paint();
+  await frames.paint();
+  await waitFor(() => {
+    expect(fixture.passage.getBoundingClientRect().top).toBe(234.75);
+  });
 });
 
 test("The narrow reveal restores its live pre-hide prose point after hidden reflow", async () => {
@@ -1547,9 +1601,15 @@ test.each(["history", "tail"] as const)(
   },
 );
 
-test.each(["font", "resize", "resource", "commit"] as const)(
-  "Restore the same paragraph after native reflow at a %s completion",
-  async (cause) => {
+test.each(
+  (["font", "resize", "resource", "commit"] as const).flatMap((cause) => {
+    return [75, 275].map((nativeAdjustment) => {
+      return { cause, nativeAdjustment };
+    });
+  }),
+)(
+  "Keep native adjustment $nativeAdjustment at a $cause completion without JS correction",
+  async ({ cause, nativeAdjustment }) => {
     const fixture = await openSemanticReadingFixture();
     const complete =
       cause === "commit"
@@ -1566,24 +1626,21 @@ test.each(["font", "resize", "resource", "commit"] as const)(
             });
           };
     const before = fixture.container.scrollTop;
-    fixture.reflow(275, 75);
-    expect(fixture.passage.getBoundingClientRect().top).toBe(234.75);
-    // Repeated native adjustment while geometry is still pending must not
-    // replace the pre-reflow point, even at the same intermediate dimensions.
-    fixture.container.scrollTop += 15;
-    fireEvent.scroll(fixture.container);
+    fixture.reflow(275, nativeAdjustment);
+    const nativePassageTop = 34.75 + 275 - nativeAdjustment;
+    expect(fixture.passage.getBoundingClientRect().top).toBe(nativePassageTop);
     await complete();
-    await waitFor(() => {
-      expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
-      expect(fixture.container.scrollTop).toBe(before + 275);
-    });
+    expect(fixture.passage.getBoundingClientRect().top).toBe(nativePassageTop);
+    expect(fixture.container.scrollTop).toBe(before + nativeAdjustment);
+    expect(fixture.writes).toStrictEqual([]);
     fireEvent.scroll(fixture.container);
-    fixture.reflow(-275, -50);
+    fixture.reflow(-275, -nativeAdjustment);
     await act(() => {
       fireEvent.resize(window);
     });
     expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
     expect(fixture.container.scrollTop).toBe(before);
+    expect(fixture.writes).toStrictEqual([]);
   },
 );
 
@@ -1628,11 +1685,12 @@ test("Nested scroller input cannot claim the next native reflow as reader moveme
   });
   fireEvent.wheel(nested, { deltaX: 40 });
   fireEvent.scroll(nested);
-  fixture.reflow(275, 75);
+  fixture.reflow(275, 275);
   await act(() => {
     document.fonts.dispatchEvent(new Event("loadingdone"));
   });
   expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
+  expect(fixture.writes).toStrictEqual([]);
 });
 
 test.each(["wide code", "nested boundary", "button"] as const)(
@@ -1694,14 +1752,14 @@ test.each(["consumed", "contained"] as const)(
       scrollHeight: { configurable: true, value: 300 },
       scrollTop: { configurable: true, value: kind === "contained" ? 200 : 0 },
     });
-    fixture.reflow(275, 75);
+    fixture.reflow(275, 275);
     fireEvent.wheel(nested, { deltaY: 60 });
-    fixture.container.scrollTop += 15;
-    fireEvent.scroll(fixture.container);
+    fixture.reflow(15, 15);
     await act(() => {
       document.fonts.dispatchEvent(new Event("loadingdone"));
     });
     expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
+    expect(fixture.writes).toStrictEqual([]);
   },
 );
 
@@ -1744,14 +1802,15 @@ test.each(["wheel", "thumb"] as const)(
   },
 );
 
-test("Motionless visible input retains the paragraph for later reflow", async () => {
+test("Motionless visible input leaves later native anchoring alone", async () => {
   const fixture = await openSemanticReadingFixture();
   fireEvent.wheel(fixture.container, { deltaY: 60 });
-  fixture.reflow(275, 75);
+  fixture.reflow(275, 275);
   await act(() => {
     document.fonts.dispatchEvent(new Event("loadingdone"));
   });
   expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
+  expect(fixture.writes).toStrictEqual([]);
 });
 
 test("An explicit event jump supersedes the old prose bookmark", async () => {
@@ -1787,7 +1846,7 @@ test("An explicit event jump supersedes the old prose bookmark", async () => {
 });
 
 test.each(["height", "width"] as const)(
-  "A zero-%s pane defers block restoration until it has geometry",
+  "A zero-%s pane leaves history to native anchoring when geometry returns",
   async (dimension) => {
     const fixture = await openSemanticReadingFixture();
     if (dimension === "height") {
@@ -1803,10 +1862,14 @@ test.each(["height", "width"] as const)(
     expect(fixture.container.scrollTop).toBe(hiddenScrollTop);
     fixture.setHeight(INITIAL_VIEWPORT_HEIGHT_PX);
     fixture.setWidth(800);
+    // Happy DOM has no native layout engine; supply the reveal adjustment
+    // before notifying the application's layout completion handler.
+    fixture.reflow(0, 200);
     await act(() => {
       fireEvent.resize(window);
     });
     expect(fixture.passage.getBoundingClientRect().top).toBe(34.75);
+    expect(fixture.writes).toStrictEqual([]);
   },
 );
 
@@ -2077,7 +2140,9 @@ test.each([false, true])(
     const readingAnchorId = anchorId(readingAnchor);
     const readingTop = readingAnchor.getBoundingClientRect().top;
 
-    geometry.growBeforeMessages(75);
+    // The native engine is exercised in deployed-browser QA, not Happy DOM.
+    geometry.growBeforeMessages(75, 75);
+    const writeScrollTop = vi.spyOn(container, "scrollTop", "set");
     act(() => {
       fireEvent.load(screen.getByAltText("Late history image"));
     });
@@ -2087,6 +2152,7 @@ test.each([false, true])(
         anchorById(container, readingAnchorId).getBoundingClientRect().top,
       ).toBe(readingTop);
     });
+    expect(writeScrollTop).not.toHaveBeenCalled();
   },
 );
 

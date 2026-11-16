@@ -846,16 +846,18 @@ function createScrollNavigationSignals(
       if (runtime.hiddenLayout) {
         return;
       }
-      if (
-        get(scroll.threadScrollPosition$) !== null &&
-        runtime.hasMeasuredPosition
-      ) {
+      const position = get(scroll.threadScrollPosition$);
+      if (position && runtime.hasMeasuredPosition) {
         if (
           container &&
+          hasScrollViewport(container) &&
           get(pendingScrollAfterRenderRequest$) === null &&
           runtime.programmaticSmoothScrollTop === null
         ) {
-          restoreReadingBookmark(runtime, container);
+          // Native anchoring owns ordinary reflow. Remember its result for a
+          // later explicit restore, without applying a competing correction.
+          captureReadingBookmark(runtime, container, position);
+          runtime.programmaticScrollTop = container.scrollTop;
         }
         return;
       }
@@ -1377,7 +1379,7 @@ function createScrollContentOnRef(
     command(({ set }, content: HTMLElement, signal: AbortSignal) => {
       L.debug("content bound", { threadId });
       const restoreLayout = onDomEventFn(() => {
-        return set(navigation.restoreScrollPosition$, signal);
+        return set(navigation.restoreScrollPositionForLayout$, signal);
       });
       // These events do not bubble; capture them from the actual resource or
       // details element. React-owned changes restore at their commit marker.

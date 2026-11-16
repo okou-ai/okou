@@ -3195,7 +3195,7 @@ function formatCompactDuration(totalSeconds: number): string {
 const RUN_SECTION_LABEL_CLASS =
   "min-w-0 max-w-full shrink-0 break-words font-serif text-sm leading-5 italic text-muted-foreground/50";
 const RUN_SECTION_ROW_CLASS =
-  "grid grid-cols-1 @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
+  "grid grid-cols-1 @[900px]:grid-cols-[0px_minmax(0,1fr)] @[900px]:items-start";
 
 function ChatThreadDateDivider({ divider }: { divider: ChatDateDivider }) {
   if (divider.label === null) {
@@ -3996,7 +3996,13 @@ function ChatEventSkeletonPair({ compact = false }: { compact?: boolean }) {
         ) : (
           <Skeleton className="h-7 w-7 @[900px]:h-9 @[900px]:w-9 shrink-0 @[900px]:mt-0.5 rounded-xl" />
         )}
-        <div className="flex flex-col gap-2">
+        <div
+          className={cn(
+            "flex flex-col gap-2",
+            !nameLine &&
+              "col-span-full row-start-2 @[900px]:col-span-1 @[900px]:col-start-2 @[900px]:row-start-1",
+          )}
+        >
           <Skeleton
             className={cn("h-4 rounded-lg", compact ? "w-[85%]" : "w-[90%]")}
           />
