@@ -73,7 +73,8 @@ private struct SettingsCreditBalanceRow: View {
 
   init(workspace: WorkspaceStore) {
     self.workspace = workspace
-    _enabled = ResolvedValue(task: workspace.settingsResources.billingCreditsEnabled, keepLast: true)
+    _enabled = ResolvedValue(
+      task: workspace.settingsResources.billingCreditsEnabled, keepLast: true)
     _credits = LoadableValue(task: workspace.settingsResources.billingCreditsValue, keepLast: true)
     _status = LoadableStatus(task: workspace.settingsResources.billingCreditsValue)
   }
