@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import {
   useGet,
   useLastLoadable,
@@ -22,8 +22,10 @@ import { openAgentSuggestionComposer$ } from "../../signals/okou-page/agent-sugg
 import {
   browseForYou$,
   finishForYouPaginationOnRef$,
+  forYouCardMinHeight$,
   forYouDeck$,
   forYouPagination$,
+  measureForYouCardOnRef$,
 } from "../../signals/okou-page/for-you.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -99,6 +101,8 @@ function ForYouStack({
 }) {
   const deck = useLastResolved(forYouDeck$);
   const pagination = useGet(forYouPagination$);
+  const minHeight = useGet(forYouCardMinHeight$);
+  const measureCard = useSet(measureForYouCardOnRef$);
   const finishPagination = useSet(finishForYouPaginationOnRef$);
   if (!deck) {
     return null;
@@ -115,7 +119,14 @@ function ForYouStack({
   ];
   return (
     <div className="mx-auto my-auto w-full max-w-160 py-6">
-      <div className="relative isolate mb-6 grid">
+      <div
+        className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
+        style={
+          {
+            "--for-you-card-min-height": `${String(minHeight)}px`,
+          } as CSSProperties
+        }
+      >
         {STACK_LAYERS.slice(0, Math.max(0, cards.length - 1)).map((layer) => {
           return (
             <Card
@@ -135,7 +146,9 @@ function ForYouStack({
             <Card
               key={entry.item.id}
               data-slot="suggestion-stack-card"
-              ref={outgoing ? finishPagination : undefined}
+              ref={
+                outgoing ? finishPagination : active ? measureCard : undefined
+              }
               inert={!active}
               aria-hidden={!active || undefined}
               className={cn(

@@ -79,18 +79,42 @@ interface Pagination {
 }
 
 const paginationState$ = state<Pagination | null>(null);
+const cardMinHeightState$ = state(0);
 
 export const forYouPagination$ = computed((get) => {
   return get(paginationState$);
 });
 
+export const forYouCardMinHeight$ = computed((get) => {
+  return get(cardMinHeightState$);
+});
+
+/** Keep shorter cards from shrinking the stack after a departure unmounts. */
+export const measureForYouCardOnRef$ = onRef<HTMLElement>(
+  command(({ get, set }, card: HTMLElement) => {
+    const height = card.offsetHeight;
+    if (height > get(cardMinHeightState$)) {
+      set(cardMinHeightState$, height);
+    }
+  }),
+);
+
 export const setupForYouPagination$ = command(
   ({ set }, signal: AbortSignal) => {
     set(paginationState$, null);
+    set(cardMinHeightState$, 0);
+    window.addEventListener(
+      "resize",
+      () => {
+        set(cardMinHeightState$, 0);
+      },
+      { signal },
+    );
     signal.addEventListener(
       "abort",
       () => {
         set(paginationState$, null);
+        set(cardMinHeightState$, 0);
       },
       { once: true },
     );
