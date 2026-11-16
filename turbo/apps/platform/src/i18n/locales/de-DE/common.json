@@ -4463,6 +4463,10 @@
     "unsaved": "Ungespeicherte Änderungen"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "Mit der Einrichtung fortfahren",
+      "title": "Dein Arbeitsbereich wird vorbereitet"
+    },
     "common": {
       "next": "Nächste",
       "skip": "Überspringen",
