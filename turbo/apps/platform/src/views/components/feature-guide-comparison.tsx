@@ -1,84 +1,14 @@
 import type { FeatureGuideMedia } from "@okouai/api-contracts/contracts/feature-guides";
 import { OkouAvatar } from "@okouai/ui/components/ui/okou-avatar";
-import { ArrowDown, ArrowRight, Bot, FileText, Workflow } from "lucide-react";
+import { ArrowDown, ArrowRight, Bot } from "lucide-react";
 
 type ComparisonMedia = Extract<FeatureGuideMedia, { type: "comparison" }>;
-
-function SetupPanel({
-  panel,
-  layout,
-}: {
-  readonly panel: ComparisonMedia["before"];
-  readonly layout: ComparisonMedia["layout"];
-}) {
-  const Icon = layout === "instructions" ? FileText : Workflow;
-  return (
-    <section aria-label={panel.label} className="min-w-0">
-      <p className="mb-2 text-sm font-medium text-brand-dark-gray sm:mb-3">
-        {panel.label}
-      </p>
-      <div className="overflow-hidden rounded-xl border border-brand-silver bg-white">
-        <div className="flex items-start gap-2 border-b border-brand-silver p-2 sm:p-3">
-          <Icon
-            aria-hidden="true"
-            className="mt-0.5 size-4 shrink-0 text-brand-dark-gray"
-          />
-          <p className="min-w-0 text-xs font-medium leading-snug sm:text-sm">
-            {panel.title}
-          </p>
-        </div>
-        <ul className="flex flex-col gap-2 p-2 sm:gap-3 sm:p-3">
-          {panel.items.map((item) => {
-            return (
-              <li
-                key={item.title}
-                className="rounded-lg bg-brand-off-white p-2 sm:p-3"
-              >
-                <p className="text-xs font-medium sm:text-sm">{item.title}</p>
-                <p className="mt-1 text-xs leading-relaxed text-brand-dark-gray">
-                  {item.description}
-                </p>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
-function SetupComparison({ media }: { readonly media: ComparisonMedia }) {
-  return (
-    <figure aria-label={media.label} className="flex flex-col gap-3">
-      <div className="grid grid-cols-1 gap-3 rounded-xl bg-brand-off-white p-3 text-brand-charcoal sm:grid-cols-[1fr_auto_1fr] sm:p-5">
-        <SetupPanel panel={media.before} layout={media.layout} />
-        <div
-          aria-hidden="true"
-          className="flex items-center justify-center text-brand-dark-gray"
-        >
-          <ArrowRight className="hidden size-5 sm:block" />
-          <ArrowDown className="size-5 sm:hidden" />
-        </div>
-        <SetupPanel panel={media.after} layout={media.layout} />
-      </div>
-      <p className="text-sm leading-relaxed text-muted-foreground">
-        {media.note}
-      </p>
-      <figcaption className="text-xs text-muted-foreground">
-        {media.caption}
-      </figcaption>
-    </figure>
-  );
-}
 
 export function FeatureGuideComparison({
   media,
 }: {
   readonly media: ComparisonMedia;
 }) {
-  if (media.layout !== "overview") {
-    return <SetupComparison media={media} />;
-  }
   return (
     <figure aria-label={media.label} className="flex flex-col gap-3">
       <div className="grid grid-cols-1 gap-3 rounded-xl bg-brand-off-white p-3 text-brand-charcoal sm:grid-cols-[1fr_auto_1fr] sm:p-5">

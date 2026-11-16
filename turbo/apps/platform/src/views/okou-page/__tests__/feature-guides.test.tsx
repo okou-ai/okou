@@ -620,7 +620,7 @@ test("renders a single before-and-after guide and dismisses its selected preview
   expect(seen).toBeFalsy();
 });
 
-test("cycles the My Okou before-and-after pages with arrows, dots and swipes without acknowledging the preview", async () => {
+test("shows real product screenshot pairs and opens full-size images while cycling the preview", async () => {
   let seen = false;
   const first = comparisonEdition.content.items[0];
   if (!first?.media || first.media.type !== "comparison") {
@@ -637,29 +637,26 @@ test("cycles the My Okou before-and-after pages with arrows, dots and swipes wit
           title: "Personal preferences",
           description: "Keep your preferences separate from task steps",
           media: {
-            ...first.media,
-            layout: "instructions",
+            type: "screenshots",
             label: "Instructions before and now",
             before: {
               label: "Before",
               title: "Reports agent → Instructions",
-              items: [
-                {
-                  title: "Task steps",
-                  description: "Prepare the weekly report",
-                },
-              ],
+              url: "https://example.com/instructions-before.png",
+              alt: "Reports Agent Instructions with preferences and weekly report steps",
+              width: 912,
+              height: 480,
             },
             after: {
               label: "Now",
               title: "Settings → Personal → My Okou",
-              items: [
-                {
-                  title: "Your preferences",
-                  description: "Keep answers concise",
-                },
-              ],
+              url: "https://example.com/instructions-after.png",
+              alt: "My Okou personal Instructions editor",
+              width: 952,
+              height: 408,
             },
+            note: "Your preferences apply to new tasks in this workspace.",
+            caption: "Product screenshots with sample data",
           },
         },
         {
@@ -667,24 +664,26 @@ test("cycles the My Okou before-and-after pages with arrows, dots and swipes wit
           title: "Reusable task setups",
           description: "Reuse a process in your workspace",
           media: {
-            ...first.media,
-            layout: "workflows",
+            type: "screenshots",
             label: "Workflow scope before and now",
             before: {
               label: "Before",
               title: "Agent-scoped Workflows",
-              items: [{ title: "Reports agent", description: "Weekly report" }],
+              url: "https://example.com/workflows-before.png",
+              alt: "Workflows filtered to the Reports Agent",
+              width: 912,
+              height: 316,
             },
             after: {
               label: "Now",
               title: "Workspace Workflows",
-              items: [
-                {
-                  title: "Private or shared",
-                  description: "Use your own access",
-                },
-              ],
+              url: "https://example.com/workflows-after.png",
+              alt: "Unified private and shared Workflows",
+              width: 912,
+              height: 394,
             },
+            note: "Each person uses their own accounts and permissions.",
+            caption: "Product screenshots with sample data",
           },
         },
       ],
@@ -718,6 +717,33 @@ test("cycles the My Okou before-and-after pages with arrows, dots and swipes wit
   expect(
     within(dialog).getByText("Settings → Personal → My Okou"),
   ).toBeInTheDocument();
+  const instructionsImage = within(dialog).getByRole("img", {
+    name: "My Okou personal Instructions editor",
+  });
+  expect(instructionsImage).toHaveAttribute(
+    "src",
+    "https://example.com/instructions-after.png",
+  );
+  expect(instructionsImage).toHaveAttribute("width", "952");
+  expect(instructionsImage).toHaveAttribute("height", "408");
+  const originalImageLink = queryAllByRoleFast("link", dialog).find((link) => {
+    return link.contains(instructionsImage);
+  });
+  expect(originalImageLink).toHaveAttribute(
+    "href",
+    instructionsImage.getAttribute("src"),
+  );
+  expect(originalImageLink).toHaveAttribute("target", "_blank");
+  expect(originalImageLink).toHaveAccessibleName(
+    "Open image preview for Settings → Personal → My Okou",
+  );
+  if (!originalImageLink) {
+    throw new Error("Expected the full-size screenshot link");
+  }
+  swipe(originalImageLink, { x: 240, y: 150 }, { x: 100, y: 155 });
+  expect(
+    within(dialog).getByRole("heading", { name: "Personal preferences" }),
+  ).toBeInTheDocument();
   click(button("Reusable task setups", navigation));
   const workflowComparison = await within(dialog).findByRole("figure", {
     name: "Workflow scope before and now",
@@ -728,6 +754,16 @@ test("cycles the My Okou before-and-after pages with arrows, dots and swipes wit
   expect(
     within(workflowComparison).getByText("Workspace Workflows"),
   ).toBeInTheDocument();
+  expect(
+    within(workflowComparison).getByRole("img", {
+      name: "Workflows filtered to the Reports Agent",
+    }),
+  ).toHaveAttribute("src", "https://example.com/workflows-before.png");
+  expect(
+    within(workflowComparison).getByRole("img", {
+      name: "Unified private and shared Workflows",
+    }),
+  ).toHaveAttribute("src", "https://example.com/workflows-after.png");
   swipe(workflowComparison, { x: 240, y: 150 }, { x: 100, y: 155 });
   await expect(
     within(dialog).findByRole("heading", { name: "One Okou. All your work." }),

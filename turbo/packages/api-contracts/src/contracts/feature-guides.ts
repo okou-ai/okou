@@ -6,6 +6,7 @@ import {
   discriminatedUnion,
   iso,
   literal,
+  number,
   object,
   string,
   url,
@@ -63,13 +64,30 @@ const comparisonPanelSchema = object({
     .max(3),
 }).strict();
 
+const screenshotPanelSchema = object({
+  label: string().min(1).max(40),
+  title: string().min(1).max(100),
+  url: mediaUrlSchema,
+  alt: string().min(1).max(500),
+  width: number().int().positive().max(8192),
+  height: number().int().positive().max(8192),
+}).strict();
+
 export const featureGuideMediaSchema = discriminatedUnion("type", [
   object({
     type: literal("comparison"),
-    layout: literal(["overview", "instructions", "workflows"]),
+    layout: literal("overview"),
     label: string().min(1).max(120),
     before: comparisonPanelSchema,
     after: comparisonPanelSchema,
+    note: string().min(1).max(400),
+    caption: string().min(1).max(80),
+  }).strict(),
+  object({
+    type: literal("screenshots"),
+    label: string().min(1).max(120),
+    before: screenshotPanelSchema,
+    after: screenshotPanelSchema,
     note: string().min(1).max(400),
     caption: string().min(1).max(80),
   }).strict(),

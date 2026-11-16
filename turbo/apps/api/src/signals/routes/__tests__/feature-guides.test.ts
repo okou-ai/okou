@@ -437,19 +437,25 @@ test("previews the My Okou comparison without publishing or acknowledging an edi
           {
             title: "Your preferences, in My Okou",
             media: {
-              type: "comparison",
-              layout: "instructions",
-              before: { title: "Reports agent → Instructions" },
+              type: "screenshots",
+              before: {
+                title: "Reports agent → Instructions",
+                url: expect.stringMatching(/^https:\/\//u),
+                width: 912,
+              },
               after: { title: "Settings → Personal → My Okou" },
             },
           },
           {
             title: "Workflows, ready to reuse",
             media: {
-              type: "comparison",
-              layout: "workflows",
+              type: "screenshots",
               before: { title: "Workflows → Reports agent" },
-              after: { title: "Workflows" },
+              after: {
+                title: "Workspace Workflows",
+                url: expect.stringMatching(/^https:\/\//u),
+                width: 912,
+              },
             },
           },
         ],

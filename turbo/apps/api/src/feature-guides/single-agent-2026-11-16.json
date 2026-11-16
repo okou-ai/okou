@@ -1,6 +1,6 @@
 {
   "id": "single-agent-2026-11-16",
-  "revisionId": "bb8b2f80-2dcc-4ce5-9d49-438b431dc101",
+  "revisionId": "73f739d0-5b32-41e4-8ca8-5f1b2fbbe018",
   "content": {
     "schemaVersion": 1,
     "title": "Meet My Okou",
@@ -55,35 +55,26 @@
         "title": "Your preferences, in My Okou",
         "description": "Set personal preferences in Settings → Personal → My Okou. Save task steps as Workflows.",
         "media": {
-          "type": "comparison",
-          "layout": "instructions",
+          "type": "screenshots",
           "label": "Agent Instructions before, personal Instructions now",
           "before": {
             "label": "Before",
             "title": "Reports agent → Instructions",
-            "items": [
-              {
-                "title": "Personal preferences",
-                "description": "Keep answers concise. End with next steps."
-              },
-              {
-                "title": "Task instructions",
-                "description": "Collect updates and draft the weekly report."
-              }
-            ]
+            "url": "https://single-agent-product-media-47733.okou.app/assets/instructions-before-d7ca8f853bee.png",
+            "width": 912,
+            "height": 480,
+            "alt": "Reports Agent profile with the Instructions tab selected, showing personal preferences and weekly report steps together."
           },
           "after": {
             "label": "Now",
             "title": "Settings → Personal → My Okou",
-            "items": [
-              {
-                "title": "Personal Instructions",
-                "description": "Keep answers concise. End with next steps."
-              }
-            ]
+            "url": "https://single-agent-product-media-47733.okou.app/assets/instructions-after-88c5d12d649c.png",
+            "width": 952,
+            "height": 408,
+            "alt": "Settings → Personal → My Okou, showing personal Instructions and when they apply."
           },
           "note": "Your new tasks in this workspace use these preferences. Teammates keep their own Instructions.",
-          "caption": "Illustrated example"
+          "caption": "Product screenshots with sample data"
         }
       },
       {
@@ -91,35 +82,26 @@
         "title": "Workflows, ready to reuse",
         "description": "Reuse task instructions with your personal Okou. Keep Workflows private or share them in your workspace.",
         "media": {
-          "type": "comparison",
-          "layout": "workflows",
+          "type": "screenshots",
           "label": "Agent-scoped setup before, workspace Workflows now",
           "before": {
             "label": "Before",
             "title": "Workflows → Reports agent",
-            "items": [
-              {
-                "title": "Weekly report",
-                "description": "Collect updates → draft report"
-              }
-            ]
+            "url": "https://single-agent-product-media-47733.okou.app/assets/workflows-before-19b222f1399c.png",
+            "width": 912,
+            "height": 316,
+            "alt": "Workflows filtered to the Reports Agent, with a Weekly report Workflow and the Agent selector visible."
           },
           "after": {
             "label": "Now",
-            "title": "Workflows",
-            "items": [
-              {
-                "title": "Weekly report",
-                "description": "Collect updates → draft report"
-              },
-              {
-                "title": "Private or shared",
-                "description": "Reuse the process with your personal Okou."
-              }
-            ]
+            "title": "Workspace Workflows",
+            "url": "https://single-agent-product-media-47733.okou.app/assets/workflows-after-15bcdcc97225.png",
+            "width": 912,
+            "height": 394,
+            "alt": "The unified Workflows list, with a shared Research brief and private Weekly report, without an Agent selector."
           },
           "note": "Each person runs shared Workflows with their own connected accounts and permissions. Sharing the process does not share account access.",
-          "caption": "Illustrated example"
+          "caption": "Product screenshots with sample data"
         }
       }
     ]
