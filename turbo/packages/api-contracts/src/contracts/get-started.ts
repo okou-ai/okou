@@ -36,7 +36,7 @@ export type GetStartedClaimStatus = zInfer<typeof getStartedClaimStatusSchema>;
 
 export const GET_STARTED_REWARD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const GET_STARTED_REWARDS = {
-  connector: { amount: 100, limit: null, target: "user" },
+  connector: { amount: 100, limit: 10, target: "user" },
   slack: { amount: 2000, limit: 1, target: "org" },
   imessage: { amount: 1000, limit: 1, target: "user" },
   workflow: { amount: 1000, limit: 1, target: "user" },

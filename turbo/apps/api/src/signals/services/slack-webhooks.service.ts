@@ -46,6 +46,7 @@ import { onRejection, safeJsonParse, tapError } from "../utils";
 import { processCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
+import { handleSlackModelRecovery$ } from "./slack-model-recovery.service";
 import {
   admitCanonicalSlackChatEvent$,
   ensureCanonicalSlackChatThreadRoute$,
@@ -1687,6 +1688,15 @@ export const handleSlackInteractive$ = command(
       return jsonResponse({ error: "Invalid payload" }, 400);
     }
     const payload = parsedPayload as SlackInteractivePayload;
+
+    const modelRecovery = await set(
+      handleSlackModelRecovery$,
+      parsedPayload,
+      signal,
+    );
+    if (modelRecovery) {
+      return modelRecovery;
+    }
 
     if (payload.type === "block_actions") {
       const action = payload.actions?.[0];

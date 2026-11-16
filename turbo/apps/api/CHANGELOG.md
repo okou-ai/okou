@@ -10,6 +10,33 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.73.0](https://github.com/okou-ai/okou/compare/api-v2.72.2...api-v2.73.0) (2026-11-16)
+
+
+### Features
+
+* **run:** add opt-in artifact phase timing ([#47655](https://github.com/okou-ai/okou/issues/47655)) ([3e71f58](https://github.com/okou-ai/okou/commit/3e71f58b819fe638d46df9ecb8596fef07ddf88f))
+
+
+### Bug Fixes
+
+* **browser:** retain native phases for health check timeouts ([#47642](https://github.com/okou-ai/okou/issues/47642)) ([e2a51a4](https://github.com/okou-ai/okou/commit/e2a51a46b092bf79711e071b5b6cf0163a0bc1bd))
+
+
+### Refactoring
+
+* **memory:** isolate selection and writeback boundaries ([#47062](https://github.com/okou-ai/okou/issues/47062)) ([596a752](https://github.com/okou-ai/okou/commit/596a752a9a328ec8fe3310e00de6b581e3d95c5e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.71.0
+    * @okouai/core bumped to 8.842.0
+    * @okouai/db bumped to 2.37.0
+    * @okouai/pi-agent-runtime bumped to 1.51.133
+
 ## [2.72.2](https://github.com/okou-ai/okou/compare/api-v2.72.1...api-v2.72.2) (2026-11-16)
 
 

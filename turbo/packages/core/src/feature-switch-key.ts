@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  IntegrationModelRecovery = "integrationModelRecovery",
   ArtifactGenerationTiming = "_artifactGenerationTimingV1",
   PhoneUse = "_phoneUse",
   CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",

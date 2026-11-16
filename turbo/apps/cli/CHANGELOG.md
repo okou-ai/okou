@@ -1,5 +1,21 @@
 # Changelog
 
+## [10.28.0](https://github.com/okou-ai/okou/compare/cli-v10.27.2...cli-v10.28.0) (2026-11-16)
+
+
+### Features
+
+* **run:** add opt-in artifact phase timing ([#47655](https://github.com/okou-ai/okou/issues/47655)) ([3e71f58](https://github.com/okou-ai/okou/commit/3e71f58b819fe638d46df9ecb8596fef07ddf88f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.71.0
+    * @okouai/core bumped to 8.842.0
+    * @okouai/pi-agent-runtime bumped to 1.51.133
+
 ## [10.27.2](https://github.com/okou-ai/okou/compare/cli-v10.27.1...cli-v10.27.2) (2026-11-16)
 
 

@@ -111,7 +111,7 @@ export const getStartedClaims = pgTable(
       ),
       check(
         "get_started_slot_check",
-        sql`(${table.status} <> 'granted' AND ${table.rewardSlot} IS NULL) OR (${table.status} = 'granted' AND ((${table.questKey} = 'invite' AND ${table.rewardSlot} BETWEEN 1 AND 15 AND ${table.rewardSlot} IS NOT NULL) OR (${table.questKey} IN ('imessage', 'workflow', 'share') AND ${table.rewardSlot} = 1 AND ${table.rewardSlot} IS NOT NULL) OR (${table.questKey} IN ('connector', 'slack', 'checkin') AND ${table.rewardSlot} IS NULL)))`,
+        sql`(${table.status} <> 'granted' AND ${table.rewardSlot} IS NULL) OR (${table.status} = 'granted' AND ((${table.questKey} = 'invite' AND ${table.rewardSlot} BETWEEN 1 AND 15 AND ${table.rewardSlot} IS NOT NULL) OR (${table.questKey} IN ('imessage', 'workflow', 'share') AND ${table.rewardSlot} = 1 AND ${table.rewardSlot} IS NOT NULL) OR (${table.questKey} = 'connector' AND (${table.rewardSlot} IS NULL OR ${table.rewardSlot} BETWEEN 1 AND 10)) OR (${table.questKey} IN ('slack', 'checkin') AND ${table.rewardSlot} IS NULL)))`,
       ),
       check(
         "get_started_amount_check",

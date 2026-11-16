@@ -26,6 +26,7 @@ import {
 } from "./thread-connected-accounts.signals";
 import type { RunBodyEnvironment } from "./run-body-environment";
 import { createThreadContext } from "./thread-context.signals";
+import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import {
   createOkouTokenInputSignals,
@@ -3052,6 +3053,36 @@ export function createThreadClaimRunObjects(
         runnerProfile: DEFAULT_PROFILE,
       };
       const { body } = context;
+      const event = await get(pickedEvent$);
+      if (!event) {
+        throw new Error("Run preparation requires its selected input");
+      }
+      let integration: string | undefined;
+      switch (event.contextType) {
+        case "web":
+        case "agent_run": {
+          integration = "web";
+          break;
+        }
+        case "automation": {
+          integration = undefined;
+          break;
+        }
+        case "feishu": {
+          integration = (await get(feishuContext$))?.platform;
+          break;
+        }
+        case "agentphone": {
+          integration =
+            (await get(agentPhoneContext$))?.channel === "whatsapp"
+              ? "whatsapp"
+              : "phone";
+          break;
+        }
+        default: {
+          integration = event.contextType ?? undefined;
+        }
+      }
       const { officialWorkflowRun, officialWorkflowFacts, selectedImageModel } =
         context;
       const modelProvider = context.modelProvider;
@@ -3089,6 +3120,15 @@ export function createThreadClaimRunObjects(
           protectedMountPaths: context.protectedMountPaths,
           featureSwitchContext: context.featureSwitchContext,
           connectorRuntimeTargets: context.connectorRuntimeTargets,
+          executionFacts: {
+            templateInput: {
+              userId: args.userId,
+              userMessage: event.userMessage,
+            },
+            integration,
+            captureNetworkBodies: body.captureNetworkBodies === true,
+            piModelConfig: context.piSandbox,
+          },
           apiStartTime: await get(runnerApiStartTime$),
           chatThreadId: args.chatThreadId,
         },
@@ -3981,6 +4021,10 @@ interface PersistedAtomicLaunchRows {
 
 interface PreparedRunnerLaunch {
   readonly runnerInput: RunnerLaunchInput;
+  readonly executionFacts: Omit<
+    AdmittedExecutionFacts,
+    "connectorRuntimeTargets"
+  >;
   readonly runStorageMounts: readonly PersistedStorageMount[];
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
 }
@@ -4543,6 +4587,10 @@ interface ThreadExecution {
 
 /** The Thread facts needed to prepare one Runner launch. */
 interface ThreadRunnerFacts {
+  readonly executionFacts: Omit<
+    AdmittedExecutionFacts,
+    "connectorRuntimeTargets"
+  >;
   readonly workflowAutomationId: string | null;
   readonly agentId: string;
   readonly nativeContinuation?: ExecutionInput["nativeContinuation"];
@@ -4608,6 +4656,7 @@ function prepareRunnerLaunchInput(input: {
       executionContext: context,
     },
     connectorRuntimeTargets: args.connectorRuntimeTargets,
+    executionFacts: args.executionFacts,
   };
 }
 
@@ -4970,6 +5019,11 @@ function admittedRunLaunch(
       isFirstRun: null,
     },
     executionContext: payload.executionContext,
+    executionFacts: {
+      ...args.launch.executionFacts,
+      connectorRuntimeTargets:
+        args.persistence.diagnosticRegistrationPayload.targets,
+    },
     runnerGroup: payload.runnerGroup,
     profile: payload.profile,
     reuseKey: payload.reuseKey,

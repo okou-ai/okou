@@ -1,4 +1,5 @@
 import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
+import { integrationModelRecoveryForDelivery$ } from "./integration-model-recovery.service";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
@@ -305,8 +306,14 @@ export const deliverFeishuChatAdmissionFailure$ = command(
       args,
       signal,
     );
+    const recovery = await set(
+      integrationModelRecoveryForDelivery$,
+      { ...args, eventId: args.chatEventId, error: "admission_error" },
+      signal,
+    );
     const message = buildFeishuAgentResponseMessage({
       text: messageContent,
+      modelRecoveryEventId: recovery?.eventId,
     });
     if (args.target.replyInThread) {
       await set(
@@ -397,6 +404,41 @@ export const deliverFeishuChatAdmissionFailure$ = command(
   },
 );
 
+const buildFeishuChatReplyMessage$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly eventId: string;
+      readonly content: string;
+      readonly error: string | null;
+      readonly runId: string;
+      readonly agentId: string;
+      readonly defaultAgentId?: string;
+      readonly replyToMention?: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const presentation = await set(
+      resolveIntegrationAgentResponsePresentation$,
+      args,
+      signal,
+    );
+    const content = await set(formatIntegrationChatMessage$, args, signal);
+    const recovery = await set(
+      integrationModelRecoveryForDelivery$,
+      args,
+      signal,
+    );
+    return buildFeishuAgentResponseMessage({
+      text: content,
+      footerText: presentation.footerText,
+      modelRecoveryEventId: recovery?.eventId,
+    });
+  },
+);
+
 const deliverClaimedFeishuChatCallback$ = command(
   async (
     { set },
@@ -421,12 +463,14 @@ const deliverClaimedFeishuChatCallback$ = command(
       threadId: payload.threadId,
     });
     signal.throwIfAborted();
-    const presentation = await set(
-      resolveIntegrationAgentResponsePresentation$,
+    const message = await set(
+      buildFeishuChatReplyMessage$,
       {
-        orgId: run.orgId,
+        ...run,
         runId: args.callback.runId,
-        agentId: run.agentId,
+        eventId: payload.chatEventId,
+        content: messageContent,
+        error: messageError,
         defaultAgentId: binding.defaultAgentId ?? undefined,
         replyToMention:
           payload.replyInThread && mentionerCount > 1
@@ -435,15 +479,6 @@ const deliverClaimedFeishuChatCallback$ = command(
       },
       signal,
     );
-    const content = await set(
-      formatIntegrationChatMessage$,
-      { ...run, content: messageContent, error: messageError },
-      signal,
-    );
-    const message = buildFeishuAgentResponseMessage({
-      text: content,
-      footerText: presentation.footerText,
-    });
     if (payload.replyInThread) {
       await set(
         replyWithFeishuMessage$,

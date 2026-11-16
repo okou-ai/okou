@@ -34,7 +34,7 @@ import { updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
 import { detach, Reason } from "../utils.ts";
-import { promptHandoffParams } from "./onboarding-actions.ts";
+import { forwardOnboardedVisitor$ } from "./onboarding-actions.ts";
 import { setupOnboardingPromptPage$ } from "./onboarding-page-setup.ts";
 import { watchOnboardingSkillImport$ } from "./onboarding-skill-import.ts";
 import { watchOnboardingRecommendation$ } from "./onboarding-recommendation.ts";
@@ -92,22 +92,6 @@ const redirectTo$ = command(({ get, set }, path: RoutePath) => {
   });
 });
 
-/**
- * Nothing is left to onboard, so the visitor goes to their prompt when they
- * brought one, and home otherwise.
- */
-const forwardOnboardedVisitor$ = command(({ get, set }) => {
-  const searchParams = get(searchParams$);
-  const prompt =
-    searchParams.get("handoff") || searchParams.get("prompt")?.trim();
-  set(detachedNavigateTo$, prompt ? ROUTES.prompt : ROUTES.home, {
-    searchParams: prompt
-      ? promptHandoffParams(searchParams)
-      : new URLSearchParams(),
-    replace: true,
-  });
-});
-
 function createSourcesFirstPageSetup(
   config: SourcesFirstPageConfig,
 ): Command<Promise<void>, [AbortSignal]> {
@@ -122,7 +106,7 @@ function createSourcesFirstPageSetup(
     }
     if (!status.needsOnboarding) {
       set(clearSourcesFirstDraft$);
-      set(forwardOnboardedVisitor$);
+      await set(forwardOnboardedVisitor$, status.isAdmin, signal);
       return;
     }
     if (hasPromptHandoff(get(searchParams$), status)) {

@@ -1,5 +1,5 @@
 {
-  "id": "2346fccf-761e-44be-ab6d-6434d3d9dace",
+  "id": "ba6523f8-10cd-4f75-aea8-e721dd0e57c0",
   "prevId": "6dad197b-28ff-4620-a008-c2945020c0fb",
   "version": "7",
   "dialect": "postgresql",
@@ -16688,7 +16688,7 @@
         },
         "get_started_slot_check": {
           "name": "get_started_slot_check",
-          "value": "(\"get_started_claims\".\"status\" <> 'granted' AND \"get_started_claims\".\"reward_slot\" IS NULL) OR (\"get_started_claims\".\"status\" = 'granted' AND ((\"get_started_claims\".\"quest_key\" = 'invite' AND \"get_started_claims\".\"reward_slot\" BETWEEN 1 AND 15 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" IN ('imessage', 'workflow', 'share') AND \"get_started_claims\".\"reward_slot\" = 1 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" IN ('connector', 'slack', 'checkin') AND \"get_started_claims\".\"reward_slot\" IS NULL)))"
+          "value": "(\"get_started_claims\".\"status\" <> 'granted' AND \"get_started_claims\".\"reward_slot\" IS NULL) OR (\"get_started_claims\".\"status\" = 'granted' AND ((\"get_started_claims\".\"quest_key\" = 'invite' AND \"get_started_claims\".\"reward_slot\" BETWEEN 1 AND 15 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" IN ('imessage', 'workflow', 'share') AND \"get_started_claims\".\"reward_slot\" = 1 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" = 'connector' AND (\"get_started_claims\".\"reward_slot\" IS NULL OR \"get_started_claims\".\"reward_slot\" BETWEEN 1 AND 10)) OR (\"get_started_claims\".\"quest_key\" IN ('slack', 'checkin') AND \"get_started_claims\".\"reward_slot\" IS NULL)))"
         },
         "get_started_amount_check": {
           "name": "get_started_amount_check",
@@ -19895,18 +19895,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
-        },
-        "widget_push_token": {
-          "name": "widget_push_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "widget_pushed_at": {
-          "name": "widget_pushed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",

@@ -1,5 +1,5 @@
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
 
 import { optionalEnv } from "../../lib/env";
@@ -10,6 +10,7 @@ import { bodyResultOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import type { RouteEntry } from "../route-entry";
+import { orgPlanCapabilities } from "../services/org-plan-entitlement-read.service";
 import { safeJsonParse, settle } from "../utils";
 
 const adminRequired = Object.freeze({
@@ -156,6 +157,12 @@ async function primaryEmailForUser(
   );
 }
 
+const redeemCodeOrgId$ = computed((get) => {
+  return get(organizationAuthContext$).orgId;
+});
+
+const redeemCodePlan$ = orgPlanCapabilities(redeemCodeOrgId$);
+
 const redeemCodeAuthed$ = command(async ({ get }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   if (auth.orgRole !== "admin") {
@@ -167,6 +174,12 @@ const redeemCodeAuthed$ = command(async ({ get }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (!bodyResult.ok) {
     return bodyResult.response;
+  }
+
+  const plan = await get(redeemCodePlan$);
+  signal.throwIfAborted();
+  if (plan?.planKey !== "limited-free-1") {
+    return { status: 200 as const, body: { redeemed: false } };
   }
 
   const atomUrl = optionalEnv("ATOM_URL");
