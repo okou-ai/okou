@@ -18,6 +18,7 @@ import {
 import {
   Button,
   buttonVariants,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -56,6 +57,8 @@ import {
 // enforces on its descendants, and its geometry is fixed at that size.
 const RING_RADIUS = 7;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+const ENTRY_CLASS_NAME =
+  "h-8 gap-2 rounded-surface-compact border border-surface-border bg-card px-[11px] text-foreground shadow-surface data-popup-open:bg-state-hover";
 
 function QuestRing({ completed, total }: { completed: number; total: number }) {
   const fraction = completed / total;
@@ -624,26 +627,32 @@ export function GetStartedEntry() {
     summaryLoadable.state !== "hasData"
   ) {
     return (
-      <Skeleton
-        aria-hidden="true"
-        className="flex h-8 items-center gap-2 whitespace-nowrap rounded-surface-compact px-3"
+      <div
+        aria-busy="true"
+        className={cn(
+          buttonVariants({ variant: "quiet", size: "sm" }),
+          ENTRY_CLASS_NAME,
+          "pointer-events-none",
+        )}
       >
-        <span className="size-4 shrink-0" />
-        <span className="invisible text-[13px] font-medium">
+        <QuestRing completed={0} total={1} />
+        <span className="text-[13px] font-medium">
           {t(($) => {
             return $.chat.agentPage.getStarted.title;
           })}
         </span>
-        <span className="h-4 w-px shrink-0" />
-        <span className="invisible text-xs font-semibold tabular-nums">
-          {t(
-            ($) => {
-              return $.chat.agentPage.getStarted.stepCount;
-            },
-            { completed: 0, total: 0 },
-          )}
-        </span>
-      </Skeleton>
+        <span aria-hidden="true" className="h-4 w-px shrink-0 bg-divider" />
+        <Skeleton aria-hidden="true" className="h-3 rounded">
+          <span className="invisible text-xs font-semibold tabular-nums">
+            {t(
+              ($) => {
+                return $.chat.agentPage.getStarted.stepCount;
+              },
+              { completed: 0, total: 0 },
+            )}
+          </span>
+        </Skeleton>
+      </div>
     );
   }
   const summary = summaryLoadable.data;
@@ -666,7 +675,7 @@ export function GetStartedEntry() {
               type="button"
               variant="quiet"
               size="sm"
-              className="h-8 gap-2 rounded-surface-compact border border-surface-border bg-card px-[11px] text-foreground shadow-surface data-popup-open:bg-state-hover"
+              className={ENTRY_CLASS_NAME}
               data-testid="get-started-entry"
             />
           }
