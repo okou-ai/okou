@@ -254,6 +254,9 @@ private final class SidebarProjectionFixture: Sendable {
     archivedAt: String? = nil
   ) -> String {
     let archived = archivedAt.map { "\"\($0)\"" } ?? "null"
-    return "{\"id\":\"\(id)\",\"name\":\"\(name)\",\"createdAt\":\"\(createdAt)\",\"updatedAt\":\"\(timestamp)\",\"archivedAt\":\(archived)}"
+    return """
+      {"id":"\(id)","name":"\(name)","createdAt":"\(createdAt)",
+      "updatedAt":"\(timestamp)","archivedAt":\(archived)}
+      """
   }
 }

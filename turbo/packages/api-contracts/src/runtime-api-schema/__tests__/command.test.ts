@@ -182,11 +182,12 @@ describe("runtime API schema CLI lint", () => {
   it.each(["desktop", "ios"] as const)(
     "accepts a newly declared %s response with a published client floor proof",
     async (client) => {
+      // Keep synthetic floors below bounded transforms in the real CLI registries.
       await expect(
         lintAddedStatus(client, "202", [
-          ...(await floors("1.0.1", "1.0.0", client)),
+          ...(await floors("0.0.1", "0.0.0", client)),
           `--${client}-published-version`,
-          "1.0.1",
+          "0.0.1",
         ]),
       ).resolves.toBe(0);
 
@@ -194,7 +195,15 @@ describe("runtime API schema CLI lint", () => {
         JSON.parse(await readFile(join(dir, "report.json"), "utf8")),
       ).toMatchObject({
         passed: true,
-        findings: [{ owner: client, responseStatus: 202, outcome: "proven" }],
+        errors: [],
+        findings: [
+          {
+            owner: client,
+            responseStatus: 202,
+            outcome: "proven",
+            resolution: expect.stringContaining("Proof A:"),
+          },
+        ],
       });
     },
   );
@@ -210,9 +219,15 @@ describe("runtime API schema CLI lint", () => {
         await writeJson("current.json", current),
         "--block-owner",
         "ios",
-        ...(await floors("1.0.0", "1.0.0", "ios")),
+        "--report-out",
+        join(dir, "report.json"),
+        ...(await floors("0.0.0", "0.0.0", "ios")),
       ]),
     ).resolves.toBe(0);
+
+    expect(
+      JSON.parse(await readFile(join(dir, "report.json"), "utf8")),
+    ).toMatchObject({ passed: true, errors: [], findings: [] });
   });
 
   it("keeps service response additions outside native client proof policy", async () => {
