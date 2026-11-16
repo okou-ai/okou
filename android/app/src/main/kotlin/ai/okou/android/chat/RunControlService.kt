@@ -4,8 +4,7 @@ import ai.okou.android.api.generated.AcceptedInput
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.SendRequestVariant2
 import ai.okou.android.api.generated.SendRequestVariant3
-import kotlinx.serialization.EncodeDefault
-import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.Required
 import kotlinx.serialization.Serializable
 
 interface RunControlService : ConversationHistoryService {
@@ -35,9 +34,8 @@ data class RunControlIntent(
 }
 
 @Serializable
-@OptIn(ExperimentalSerializationApi::class)
 data class RunControlJournal(
-    @EncodeDefault val format: Int = 1,
+    @Required val format: Int = 1,
     val pending: List<RunControlIntent> = emptyList(),
 ) {
     fun validate() {

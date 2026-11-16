@@ -574,6 +574,62 @@ class RunControlsModelTest {
     }
 
     @Test
+    fun unversionedJournalCannotRestoreAsEmptyIntentOrEnableAnotherCommand() = runTest {
+        val directory = temporary.newFolder()
+        val intent =
+            RunControlIntent(
+                eventId("unreadable-control"),
+                CHAT_PERSONAL,
+                CHAT_AGENT,
+                RunControlKind.Interrupt,
+                HISTORY_RUN,
+            )
+        withControls(directory = directory, saved = RunControlJournal(pending = listOf(intent))) { f
+            ->
+            f.owners.clear()
+            f.store.close()
+            checkNotNull(directory.listFiles()).single { it.extension == "json" }.writeText("{}")
+            val store =
+                RunControlJournalStore(
+                    ApplicationProvider.getApplicationContext(),
+                    directory,
+                    f.dispatcher,
+                )
+            val owners = ViewModelStore()
+            try {
+                val restored =
+                    ViewModelProvider(
+                        owners,
+                        viewModelFactory {
+                            initializer {
+                                RunControlsModel(
+                                    f.api.service,
+                                    store,
+                                    f.api.identity,
+                                    f.history,
+                                    { true },
+                                    { throw it },
+                                    f.dispatcher,
+                                )
+                            }
+                        },
+                    )[RunControlsModel::class.java]
+                val state =
+                    restored.uiState.first { it.persistence != RunControlPersistence.Loading }
+                assertEquals(RunControlPersistence.Failed, state.persistence)
+                assertNull(state.journal)
+                assertEquals(HistoryPhase.Ready, f.history.uiState.value.phase)
+                restored.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
+                runCurrent()
+                assertTrue(f.remote.posts.isEmpty())
+            } finally {
+                owners.clear()
+                store.close()
+            }
+        }
+    }
+
+    @Test
     fun restoredIntentKeepsItsIdAndQueriesWithoutAutomaticDispatch() = runTest {
         val directory = temporary.newFolder()
         withControls(directory = directory) { f ->
