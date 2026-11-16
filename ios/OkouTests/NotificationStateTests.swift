@@ -269,11 +269,13 @@ final class NotificationStateTests: XCTestCase {
     await gate.hold()
     addTeardownBlock { await gate.releaseAll() }
     let fixture = ChatHTTPFixture { request in
-      if request.httpMethod == "POST", request.url?.path == "/api/ios-push-registrations" {
+      switch (request.httpMethod, request.url?.path) {
+      case ("POST", "/api/ios-push-registrations"), ("DELETE", "/api/ios-push-registrations"):
         return ChatHTTPResponse(body: "{}")
+      case ("POST", "/api/ios-notifications/reconcile"):
+        break
+      default: throw URLError(.unsupportedURL)
       }
-      guard request.httpMethod == "POST", request.url?.path == "/api/ios-notifications/reconcile"
-      else { throw URLError(.unsupportedURL) }
       let body = try JSONDecoder().decode(
         SubmittedNotifications.self, from: chatRequestBody(request))
       XCTAssertNotNil(body.registrationRevision)

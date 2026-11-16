@@ -57,7 +57,7 @@ final class ConversationHistoryFixture: Sendable {
       "/api/connector-catalog/slack": "GET",
       "/api/connector-accounts/connections": "GET",
       "/api/agents/\(Self.agentID)/user-connectors": "GET",
-      path + "/usage": "GET",
+      path + "/usage": "POST",
       "/api/web/file-url": "GET",
       path + "/event-snapshot": "GET",
       path + "/event-rows": "GET",
