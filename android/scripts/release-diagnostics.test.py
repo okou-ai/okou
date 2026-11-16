@@ -62,7 +62,9 @@ class ReleaseDiagnosticsTest(unittest.TestCase):
             for content in (f'<testsuites>{cases.replace("two", "one")}</testsuites>',
                             '<testsuites><testcase classname="Native" name="one"/></testsuites>',
                             f'<testsuites skipped="1">{cases}</testsuites>',
-                            f'<testsuites>{cases}<failure>crashed</failure></testsuites>'):
+                            f'<testsuites>{cases}<failure>crashed</failure></testsuites>',
+                            f'<!DOCTYPE testsuites [<!ENTITY x "expanded">]><testsuites>{cases}</testsuites>',
+                            f'<!DOCTYPE testsuites SYSTEM "file:///etc/passwd"><testsuites>{cases}</testsuites>'):
                 report.write_text(content)
                 self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
 
