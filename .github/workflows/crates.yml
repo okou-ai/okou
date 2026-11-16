@@ -363,10 +363,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     env:
       # Keep the cache environment identity aligned with the dated image.
-      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs: [detect]
     if: needs.detect.outputs.any-changed == 'true'
     steps:
@@ -427,10 +427,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     env:
       # Keep the cache environment identity aligned with the dated image.
-      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs: [detect]
     if: needs.detect.outputs.any-changed == 'true'
     steps:
@@ -469,7 +469,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs: [detect]
     if: |
       needs.detect.outputs.any-changed == 'true' &&
@@ -554,7 +554,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs: [detect]
     if: |
       needs.detect.outputs.any-changed == 'true' &&
@@ -593,9 +593,9 @@ jobs:
       # Merge concurrent cases into a bounded pool per executable build ID.
       LLVM_PROFILE_FILE_NAME: crates-%b-%8m.profraw
       # Share the pinned native dependencies produced by the check job.
-      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs: [detect]
     if: needs.detect.outputs.coverage-needed == 'true'
     steps:
@@ -754,7 +754,7 @@ jobs:
     timeout-minutes: 10
     container:
       # Generation formats Rust output with the same toolchain as native checks.
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs: [detect]
     if: |
       needs.detect.outputs.ci-changed == 'true' ||
@@ -777,7 +777,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs: [detect]
     # Full coverage already runs this assertion; keep only the fixture-only path.
     if: |
@@ -902,11 +902,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
       # Allow namespace bootstrap; retain Docker's seccomp and worker isolation.
       options: --cap-add=SYS_ADMIN --security-opt apparmor=unconfined
     env:
-      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs: [detect]
     if: needs.detect.outputs.native-kerberos-needed == 'true'
     strategy:
@@ -928,13 +928,11 @@ jobs:
       - name: Compile sealed package and run real native containment/lifecycle conformance
         shell: bash
         env:
-          RUSTUP_TOOLCHAIN: stable
           NATIVE_TEST_OWNER: ubuntu
         run: bash crates/kerberos-worker/tests/check-native-kerberos.sh --privileged-synthetic
       - name: Verify VNC starts during real Kerberos contention
         shell: bash
         env:
-          RUSTUP_TOOLCHAIN: stable
           NATIVE_TEST_OWNER: ubuntu
         run: bash crates/runner-remote/tests/check-native-vnc-kerberos.sh
       # The host key's X64 writer remains check; this matrix owns ARM64 only.
@@ -959,11 +957,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
       # Allow namespace bootstrap; retain Docker's seccomp and worker isolation.
       options: --cap-add=SYS_ADMIN --security-opt apparmor=unconfined
     env:
-      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs: [detect]
     if: needs.detect.outputs.native-gssapi-peer-needed == 'true'
     strategy:
@@ -985,7 +983,6 @@ jobs:
       - name: Verify native mutual GSS and RFB controls against signed independent MIT
         shell: bash
         env:
-          RUSTUP_TOOLCHAIN: stable
           NATIVE_TEST_OWNER: ubuntu
         run: bash crates/rfb-client/tests/check-native-gssapi-peer.sh
       - name: Preserve exact-head independent protocol receipts
@@ -1001,7 +998,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
       # Allow private tmpfs/user/mount namespaces for the constrained-home fixture.
       options: --cap-add=SYS_ADMIN --security-opt apparmor=unconfined
     needs: [detect]
@@ -1029,7 +1026,7 @@ jobs:
   nbd-cow-test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs: [detect, runner-host-groups]
     if: |
       needs.detect.outputs.metal-job-ref != '' && (
@@ -1103,7 +1100,7 @@ jobs:
   runner-rootfs-process-test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs: [detect, runner-host-groups]
     if: |
       needs.detect.outputs.metal-job-ref != '' && (
@@ -1119,7 +1116,7 @@ jobs:
       run:
         shell: bash
     env:
-      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
       TARGET_TRIPLE: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1428,7 +1425,7 @@ jobs:
   host-cpu-fairness-build:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs:
       - detect
       - runner-host-groups
@@ -1505,7 +1502,7 @@ jobs:
   host-cpu-fairness-test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs:
       - detect
       - runner-test-prepare
@@ -1565,7 +1562,7 @@ jobs:
   guest-rpc-firecracker-build:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261023
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261116
     needs: [detect, runner-host-groups]
     if: needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true'
     strategy:

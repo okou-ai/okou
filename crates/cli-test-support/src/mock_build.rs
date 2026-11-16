@@ -88,8 +88,6 @@ pub fn build_and_locate_mock_package_in_workspace(
     build_session: Option<&str>,
 ) -> Result<PathBuf, String> {
     let target_profile_dir = match test_executable.parent() {
-        // Cargo through 1.99: <target>/<profile>/deps/<test>.
-        Some(dir) if dir.file_name() == Some(OsStr::new("deps")) => dir.parent(),
         // Cargo 1.100: <target>/<profile>/build/<package>/<hash>/out/<test>.
         Some(dir) if dir.file_name() == Some(OsStr::new("out")) => dir
             .ancestors()
