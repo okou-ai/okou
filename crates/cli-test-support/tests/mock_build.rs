@@ -5,8 +5,7 @@ use std::fs;
 use std::process::Command;
 
 #[test]
-fn mock_build_preserves_target_profile_and_session_across_cargo_layouts()
--> Result<(), Box<dyn std::error::Error>> {
+fn mock_build_preserves_target_profile_and_session() -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let workspace = temp.path();
     let manifest = workspace.join("Cargo.toml");
@@ -36,14 +35,13 @@ debug-assertions = false
     for (profile, debug_assertions) in [("debug", true), ("release", false), ("local", false)] {
         let profile_dir = target_dir.join(profile);
         let test_name = "test-client-0123456789abcdef";
-        let new_exe = profile_dir
+        let test_exe = profile_dir
             .join("build/test-client/0123456789abcdef/out")
             .join(test_name);
-        let old_exe = profile_dir.join("deps").join(test_name);
         let session = "layout-fixture-session";
         let mock = build_and_locate_mock_package_in_workspace(
             workspace,
-            &new_exe,
+            &test_exe,
             "mock-package",
             "mock-package",
             Some(session),
@@ -59,13 +57,13 @@ debug-assertions = false
             session
         );
 
-        // Both layouts in one Cargo/nextest session share the same mock. With
-        // the manifest hidden, an unexpected rebuild cannot succeed.
+        // Calls in one Cargo/nextest session share the same mock. With the
+        // manifest hidden, an unexpected rebuild cannot succeed.
         let hidden_manifest = workspace.join("Cargo.toml.hidden");
         fs::rename(&manifest, &hidden_manifest)?;
         let reuse = build_and_locate_mock_package_in_workspace(
             workspace,
-            &old_exe,
+            &test_exe,
             "mock-package",
             "mock-package",
             Some(session),

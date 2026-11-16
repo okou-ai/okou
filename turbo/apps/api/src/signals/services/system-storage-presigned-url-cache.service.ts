@@ -28,7 +28,6 @@ const L = logger("StoragePresignedUrlCache");
 
 type StoragePresignedUrlCacheScope =
   | "system_storage"
-  | "workflow_skill_storage"
   | "readonly_storage"
   | "presentation_template_preview"
   | "private_artifact_preview"
@@ -46,11 +45,6 @@ export const SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS =
 const SYSTEM_STORAGE_PRESIGNED_URL_CACHE_POLICY = "system-storage-url-v1";
 export const SYSTEM_STORAGE_PRESIGNED_URL_PRUNE_LIMIT = 100;
 
-export const WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_TTL_SECONDS =
-  PRESIGNED_URL_TTL_SECONDS;
-const WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_CACHE_POLICY =
-  "workflow-skill-storage-url-v1";
-export const WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_PRUNE_LIMIT = 100;
 export const READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS =
   PRESIGNED_URL_TTL_SECONDS;
 const READ_ONLY_STORAGE_PRESIGNED_URL_CACHE_POLICY = "readonly-storage-url-v1";
@@ -73,14 +67,6 @@ export interface SystemStoragePresignedUrlRequest {
   readonly bucket: string;
   readonly objectKey: string;
   readonly storageVersionId: string;
-  readonly publicEndpoint: boolean;
-}
-
-export interface WorkflowSkillStoragePresignedUrlRequest {
-  readonly bucket: string;
-  readonly objectKey: string;
-  readonly storageVersionId: string;
-  readonly resolvedOrgId: string;
   readonly publicEndpoint: boolean;
 }
 
@@ -156,15 +142,11 @@ export function storagePresignedUrlCacheKeySql(
   const policy =
     scope === "system_storage"
       ? SYSTEM_STORAGE_PRESIGNED_URL_CACHE_POLICY
-      : scope === "workflow_skill_storage"
-        ? WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_CACHE_POLICY
-        : READ_ONLY_STORAGE_PRESIGNED_URL_CACHE_POLICY;
+      : READ_ONLY_STORAGE_PRESIGNED_URL_CACHE_POLICY;
   const ttl =
     scope === "system_storage"
       ? SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS
-      : scope === "workflow_skill_storage"
-        ? WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_TTL_SECONDS
-        : READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS;
+      : READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS;
   const values = [
     sql`to_json(${policy}::text)::text`,
     sql`to_json(${request.bucket}::text)::text`,
@@ -191,24 +173,6 @@ export function systemStoragePresignedUrlCacheKey(
         request.storageVersionId,
         request.publicEndpoint ? "public" : "private",
         SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS,
-      ]),
-    )
-    .digest("hex");
-}
-
-export function workflowSkillStoragePresignedUrlCacheKey(
-  request: WorkflowSkillStoragePresignedUrlRequest,
-): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify([
-        WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_CACHE_POLICY,
-        request.bucket,
-        request.objectKey,
-        request.storageVersionId,
-        request.resolvedOrgId,
-        request.publicEndpoint ? "public" : "private",
-        WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_TTL_SECONDS,
       ]),
     )
     .digest("hex");
@@ -281,19 +245,6 @@ function systemStorageRequest(
     objectKey: request.objectKey,
     storageVersionId: request.storageVersionId,
     resolvedOrgId: null,
-    publicEndpoint: request.publicEndpoint,
-  };
-}
-
-function workflowSkillStorageRequest(
-  request: WorkflowSkillStoragePresignedUrlRequest,
-): StoragePresignedUrlRequest {
-  return {
-    scope: "workflow_skill_storage",
-    bucket: request.bucket,
-    objectKey: request.objectKey,
-    storageVersionId: request.storageVersionId,
-    resolvedOrgId: request.resolvedOrgId,
     publicEndpoint: request.publicEndpoint,
   };
 }
@@ -531,7 +482,6 @@ export interface StorageManifestPresignedUrlCacheSnapshot {
 
 export interface StorageManifestPresignedUrlCachePrefetchInput {
   readonly systemRequests: readonly SystemStoragePresignedUrlRequest[];
-  readonly workflowSkillRequests: readonly WorkflowSkillStoragePresignedUrlRequest[];
   readonly readOnlyRequests: readonly ReadOnlyStoragePresignedUrlRequest[];
 }
 
@@ -647,13 +597,6 @@ function storageManifestSigningRequests(
         cacheKey: systemStoragePresignedUrlCacheKey(request),
         request: systemStorageRequest(request),
         ttlSeconds: SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS,
-      };
-    }),
-    ...input.workflowSkillRequests.map((request) => {
-      return {
-        cacheKey: workflowSkillStoragePresignedUrlCacheKey(request),
-        request: workflowSkillStorageRequest(request),
-        ttlSeconds: WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_TTL_SECONDS,
       };
     }),
     ...input.readOnlyRequests.map((request) => {
@@ -933,6 +876,7 @@ export const pruneStoragePresignedUrls$ = command(
     input: {
       readonly scope:
         | StoragePresignedUrlCacheScope
+        | "workflow_skill_storage"
         | "hosted_site_preview"
         | "content_bundle";
       readonly limit: number;

@@ -34,7 +34,7 @@ final class QuotedFollowupTests: XCTestCase {
       input.setMarkedText("拼音", selectedRange: NSRange(location: 2, length: 0))
       conversation.composer.removeFeedback(id)
       let expected = "Keep the ordinary draft." + (index == 0 ? "" : " Edited.")
-      try await eventually { input.text == expected }
+      try await eventually(message: mentionInputStatus(input)) { input.text == expected }
       XCTAssertTrue(input.isFirstResponder)
       input.selectedRange = NSRange(location: input.text.utf16.count, length: 0)
       input.insertText(index == 0 ? " Edited." : " Continue.")

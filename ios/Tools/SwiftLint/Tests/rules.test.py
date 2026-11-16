@@ -8,11 +8,13 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from async_helper_failure_cases import ASYNC_HELPER_FAILURE_CASES
 from cancellation_cases import CANCELLATION_CASES
 from collection_publication_cases import COLLECTION_PUBLICATION_CASES
 from global_state_cases import GLOBAL_STATE_CASES
 from graph_factory_cases import GRAPH_FACTORY_CASES
 from import_cases import IMPORT_CASES
+from logging_cases import LOGGING_CASES
 from resource_cancellation_binding_cases import RESOURCE_CANCELLATION_BINDING_CASES
 from resource_failure_cases import RESOURCE_FAILURE_CASES
 from resource_failure_path_cases import RESOURCE_FAILURE_PATH_CASES
@@ -39,6 +41,7 @@ CASES = [
     *RESOURCE_CANCELLATION_BINDING_CASES,
     *RESOURCE_FAILURE_CASES,
     *RESOURCE_FAILURE_PATH_CASES,
+    *ASYNC_HELPER_FAILURE_CASES,
     *SUBSCRIPTION_CASES,
     *SUBSCRIPTION_REPLACEMENT_CASES,
     *TASK_LIFECYCLE_CASES,
@@ -856,6 +859,27 @@ class NativeRuleTests(unittest.TestCase):
                     self.assertEqual(
                         result.returncode, 2 if expected else 0, result.stderr
                     )
+                    self.assertEqual(
+                        sorted((d["rule_id"], d["line"]) for d in diagnostics),
+                        [(rule, line) for line in expected],
+                        result.stdout,
+                    )
+
+    def test_logging_boundaries(self):
+        rule = "okou_logging_boundaries"
+        with tempfile.TemporaryDirectory(prefix="native logging cases ") as directory:
+            for index, (name, filename, source) in enumerate(LOGGING_CASES):
+                with self.subTest(name=name):
+                    source = textwrap.dedent(source).lstrip()
+                    expected = [
+                        i
+                        for i, line in enumerate(source.splitlines(), 1)
+                        if "// violation" in line
+                    ]
+                    root = Path(directory) / str(index)
+                    root.mkdir()
+                    result, diagnostics = self.lint(root, source, rule, filename)
+                    self.assertEqual(result.returncode, 2 if expected else 0, result.stderr)
                     self.assertEqual(
                         sorted((d["rule_id"], d["line"]) for d in diagnostics),
                         [(rule, line) for line in expected],

@@ -45,6 +45,7 @@ fun ConversationRoute(
 ) {
     // Capture this composition's value: a deferred effect must not read a newer State.value.
     val state = model.uiState.collectAsStateWithLifecycle().value
+    val output = model.output.state.collectAsStateWithLifecycle().value
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val actionColors =
         ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
@@ -58,7 +59,7 @@ fun ConversationRoute(
             if (visible && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
                 if (visit == null) visit = model.beginVisit(threadId, state.generation)
             } else {
-                visit?.close()
+                visit?.let(model::endVisit)
                 visit = null
             }
         }
@@ -67,7 +68,7 @@ fun ConversationRoute(
         update()
         onDispose {
             lifecycle.removeObserver(observer)
-            visit?.close()
+            visit?.let(model::endVisit)
             visit = null
         }
     }
@@ -131,15 +132,29 @@ fun ConversationRoute(
                         }
                     }
                 state.transcript?.let { transcript ->
+                    val messages = transcript.withOutput(output, threadId)
                     item {
                         Text(stringResource(transcript.execution.label()))
                         Text(stringResource(R.string.history_work_steps, transcript.workSteps))
                     }
-                    if (transcript.messages.isEmpty() && state.phase == HistoryPhase.Ready)
+                    if (
+                        output.threadId == threadId &&
+                            (transcript.activeRunId != null || output.messages.isNotEmpty())
+                    )
+                        item {
+                            Text(
+                                stringResource(
+                                    when (output.phase) {
+                                        RunOutputPhase.CatchingUp -> R.string.output_catching_up
+                                        RunOutputPhase.Live -> R.string.output_live
+                                        RunOutputPhase.Waiting -> R.string.output_waiting
+                                    }
+                                )
+                            )
+                        }
+                    if (messages.isEmpty() && state.phase == HistoryPhase.Ready)
                         item { Text(stringResource(R.string.history_empty)) }
-                    items(transcript.messages, key = { it.id }) { message ->
-                        HistoryMessageCard(message)
-                    }
+                    items(messages, key = { it.id }) { message -> HistoryMessageCard(message) }
                 }
             }
         }

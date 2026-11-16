@@ -1,5 +1,6 @@
 import { Response } from "miniflare";
 import { describe, expect, it } from "vitest";
+import { boolean, number, object, string } from "zod";
 import {
   BOT_TOKEN,
   BOT_USER_ID,
@@ -7,16 +8,111 @@ import {
   GUILD_ID,
   createRelay,
 } from "./relay-fixture";
+import { createRelayPhases } from "./relay-phases";
+
+const recoveryHealthSchema = object({
+  running: boolean(),
+  connected: boolean(),
+  resumable: boolean(),
+  pending: number(),
+  deliveryFailures: number(),
+  fatal: string().nullable(),
+  connection: object({
+    stage: string(),
+    failures: number(),
+    reconnectAt: number().nullable(),
+  }),
+});
 
 describe("Discord Gateway durable recovery", () => {
-  it("resumes before the overflow event after an acknowledgement frees outbox capacity", async () => {
-    const relay = await createRelay();
-    relay.reply = () => {
-      return new Response(null, { status: 503 });
+  it("resumes before the overflow event after an acknowledgement frees outbox capacity", async ({
+    onTestFailed,
+    signal,
+  }) => {
+    const { elapsedMs, phases, wait } = createRelayPhases(signal);
+    onTestFailed(() => {
+      console.error(
+        "Discord single-ack recovery failure",
+        JSON.stringify({ elapsedMs: elapsedMs(), phases }),
+      );
+    });
+    const relay = await wait("create relay", () => {
+      return createRelay();
+    });
+    let lastHealth:
+      | (ReturnType<typeof recoveryHealthSchema.parse> & {
+          observedAtMs: number;
+        })
+      | null = null;
+    const health = async () => {
+      signal.throwIfAborted();
+      const result = recoveryHealthSchema.parse(await relay.health());
+      signal.throwIfAborted();
+      lastHealth = { ...result, observedAtMs: elapsedMs() };
+      return result;
     };
-    const gateway = await relay.start();
+    const receiver: {
+      unavailable: number;
+      accepted: number;
+      lastResponseAtMs: number | null;
+      recoveryStartedAtMs: number | null;
+      acceptedAtMs: number | null;
+    } = {
+      unavailable: 0,
+      accepted: 0,
+      lastResponseAtMs: null,
+      recoveryStartedAtMs: null,
+      acceptedAtMs: null,
+    };
+    let acknowledgeNext = false;
+    relay.reply = () => {
+      const accepted = acknowledgeNext;
+      acknowledgeNext = false;
+      if (!signal.aborted) {
+        receiver.lastResponseAtMs = elapsedMs();
+        if (accepted) {
+          receiver.accepted++;
+          receiver.acceptedAtMs = receiver.lastResponseAtMs;
+        } else {
+          receiver.unavailable++;
+        }
+      }
+      return accepted
+        ? Response.json({ ok: true, outcome: "accepted" })
+        : new Response(null, { status: 503 });
+    };
+    // Failure hooks use completed public observations, never more Worker I/O.
+    // Receiver response counts do not prove the Worker committed a receipt.
+    onTestFailed(() => {
+      console.error(
+        "Discord single-ack recovery observations",
+        JSON.stringify({
+          observedAtMs: elapsedMs(),
+          receiver,
+          forwarded: relay.forwarded.length,
+          opened: relay.opened.length,
+          connections: relay.opened.slice(-4).map((connection) => {
+            return {
+              packets: connection.packets.length,
+              lastOpcodes: connection.packets.slice(-8).map((packet) => {
+                return packet.op;
+              }),
+            };
+          }),
+          lastHealth,
+        }),
+      );
+    });
+    await wait("initial /start response", async () => {
+      expect((await relay.request("/start")).status).toBe(200);
+    });
+    const gateway = await wait("initial Gateway connection", () => {
+      return relay.connections.next();
+    });
     gateway.hello();
-    await gateway.next(2);
+    await wait("Identify (op 2)", () => {
+      return gateway.next(2);
+    });
     gateway.ready("capacity-session");
 
     const messageId = (sequence: number) => {
@@ -27,57 +123,57 @@ describe("Discord Gateway durable recovery", () => {
     for (let sequence = 2; sequence <= 1002; sequence++) {
       gateway.message(sequence, messageId(sequence));
     }
-    expect((await gateway.closed.promise).code).toBe(4000);
-    expect(await relay.health()).toMatchObject({
-      running: true,
-      connected: false,
-      resumable: true,
-      pending: 1000,
-      fatal: null,
+    await wait("overflow closes Gateway", async () => {
+      expect((await gateway.closed.promise).code).toBe(4000);
+    });
+    await wait("full-capacity health", async () => {
+      expect(await health()).toMatchObject({
+        running: true,
+        connected: false,
+        resumable: true,
+        pending: 1000,
+        fatal: null,
+      });
     });
 
     // Recover only one receiver acknowledgement, leaving the receiver
     // unavailable for the rest of the retained backlog.
-    let acknowledgeNext = true;
-    relay.reply = () => {
-      if (acknowledgeNext) {
-        acknowledgeNext = false;
-        return Response.json({ ok: true, outcome: "accepted" });
-      }
-      return new Response(null, { status: 503 });
-    };
-    await expect
-      .poll(
-        () => {
-          return relay.health();
-        },
-        { timeout: 10_000 },
-      )
-      .toMatchObject({ pending: 999 });
+    receiver.recoveryStartedAtMs = elapsedMs();
+    acknowledgeNext = true;
+    await wait("single receipt frees durable capacity", () => {
+      return expect.poll(health, { timeout: 10_000 }).toMatchObject({
+        pending: 999,
+      });
+    });
+    expect(receiver.accepted).toBe(1);
 
-    const resumed = await relay.connections.next();
+    const resumed = await wait("recovery Gateway connection", () => {
+      return relay.connections.next();
+    });
     resumed.hello();
-    expect(await resumed.next(6)).toEqual({
-      op: 6,
-      d: { token: BOT_TOKEN, session_id: "capacity-session", seq: 1001 },
+    await wait("Resume from retained checkpoint (op 6)", async () => {
+      expect(await resumed.next(6)).toEqual({
+        op: 6,
+        d: { token: BOT_TOKEN, session_id: "capacity-session", seq: 1001 },
+      });
     });
     resumed.message(1002, messageId(1002));
-    await expect
-      .poll(() => {
-        return relay.health();
-      })
-      .toMatchObject({
+    await wait("overflow replay fills durable capacity", () => {
+      return expect.poll(health).toMatchObject({
         running: true,
         connected: true,
         pending: 1000,
         fatal: null,
       });
+    });
     resumed.send({ op: 1, d: null });
-    expect(
-      await resumed.next(1, (packet) => {
-        return packet.d === 1002;
-      }),
-    ).toEqual({ op: 1, d: 1002 });
+    await wait("heartbeat confirms replay checkpoint (op 1)", async () => {
+      expect(
+        await resumed.next(1, (packet) => {
+          return packet.d === 1002;
+        }),
+      ).toEqual({ op: 1, d: 1002 });
+    });
   }, 20_000);
 
   it("sets aside an oversized event past the checkpoint so its replay cannot stall the relay", async () => {

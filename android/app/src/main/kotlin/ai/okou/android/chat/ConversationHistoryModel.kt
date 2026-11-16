@@ -46,6 +46,13 @@ class ConversationHistoryModel(
 ) {
     private val mutable = MutableStateFlow(ConversationUiState())
     val uiState = mutable.asStateFlow()
+    val output = RunOutputModel({ mutable.value }, authorized, ::invalidate)
+
+    private fun publish(next: ConversationUiState) {
+        mutable.value = next
+        output.reconcile()
+    }
+
     private val sync = ConversationHistorySync(service, dispatcher)
     private var generation = 0L
     private var retired = false
@@ -54,8 +61,8 @@ class ConversationHistoryModel(
     private var visit: ConversationReadSession? = null
     private var confirmed: CachedHistory? = null
     private val dirty = mutableMapOf<String, CachedHistory>()
-    private val invalidations = Channel<Unit>(Channel.CONFLATED)
-    private val invalidationJob = scope.launch { for (ignored in invalidations) catchUp() }
+    private val invalidations = Channel<Long>(Channel.CONFLATED)
+    private val invalidationJob = scope.launch { for (ticket in invalidations) catchUp(ticket) }
 
     private fun current(ticket: Long) = !retired && authorized() && ticket == generation
 
@@ -67,15 +74,16 @@ class ConversationHistoryModel(
     fun open(thread: ConfirmedChat) {
         if (retired || !authorized()) return
         if (mutable.value.thread?.id == thread.id) {
-            mutable.value = mutable.value.copy(thread = thread)
+            publish(mutable.value.copy(thread = thread))
             return
         }
         generation++
         job?.cancel()
         visit?.close()
         visit = null
+        output.visible(false)
         confirmed = null
-        mutable.value = ConversationUiState(thread = thread, generation = generation)
+        publish(ConversationUiState(thread = thread, generation = generation))
         refresh()
     }
 
@@ -93,15 +101,24 @@ class ConversationHistoryModel(
             )
             .also {
                 visit = it
+                output.visible(true)
                 refresh()
             }
+    }
+
+    fun endVisit(value: ConversationReadSession) {
+        value.close()
+        if (visit === value) {
+            visit = null
+            output.visible(false)
+        }
     }
 
     fun refresh() {
         val thread = mutable.value.thread ?: return
         if (retired || !authorized() || job?.isActive == true) return
         val ticket = generation
-        mutable.value = mutable.value.copy(phase = HistoryPhase.Loading, confirmation = null)
+        publish(mutable.value.copy(phase = HistoryPhase.Loading, confirmation = null))
         job =
             scope.launch {
                 var saved = confirmed ?: dirty[thread.id]
@@ -112,15 +129,16 @@ class ConversationHistoryModel(
                         throw cancelled
                     } catch (_: Exception) {
                         requireCurrent(ticket)
-                        mutable.value = mutable.value.copy(cacheUnavailable = true)
+                        publish(mutable.value.copy(cacheUnavailable = true))
                     }
                 }
-                if (saved != null) {
+                if (saved != null && confirmed == null) {
                     val transcript = withContext(dispatcher) { projectHistory(saved.checkpoint) }
                     requireCurrent(ticket)
                     confirmed = saved
-                    mutable.value =
+                    publish(
                         mutable.value.copy(transcript = transcript, source = ChatListSource.Cache)
+                    )
                 }
                 try {
                     var next =
@@ -146,7 +164,7 @@ class ConversationHistoryModel(
                     val transcript = withContext(dispatcher) { projectHistory(next.checkpoint) }
                     requireCurrent(ticket)
                     confirmed = next
-                    mutable.value =
+                    publish(
                         mutable.value.copy(
                             transcript = transcript,
                             phase = HistoryPhase.Ready,
@@ -156,6 +174,7 @@ class ConversationHistoryModel(
                             confirmation =
                                 HistoryConfirmation(ticket, ++revision, next.checkpoint.cursor),
                         )
+                    )
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -163,24 +182,25 @@ class ConversationHistoryModel(
                     if (error is ApiFailure.Http && error.status in setOf(403, 404)) {
                         confirmed = null
                         dirty.remove(thread.id)
-                        mutable.value =
+                        publish(
                             mutable.value.copy(
                                 transcript = null,
                                 source = null,
                                 phase = HistoryPhase.Missing,
                             )
+                        )
                         try {
                             cache.deleteHistory(thread.id)
                         } catch (cancelled: CancellationException) {
                             throw cancelled
                         } catch (_: Exception) {
                             requireCurrent(ticket)
-                            mutable.value = mutable.value.copy(cacheUnavailable = true)
+                            publish(mutable.value.copy(cacheUnavailable = true))
                         }
                     } else {
                         reportAuthorization(error)
                         if (current(ticket))
-                            mutable.value = mutable.value.copy(phase = HistoryPhase.Failed)
+                            publish(mutable.value.copy(phase = HistoryPhase.Failed))
                     }
                 }
             }
@@ -194,12 +214,14 @@ class ConversationHistoryModel(
         }
     }
 
-    fun invalidate() {
-        if (!retired && authorized()) invalidations.trySend(Unit)
+    fun invalidate(threadId: String? = null) {
+        val selected = mutable.value.thread ?: return
+        if (!retired && authorized() && (threadId == null || threadId == selected.id))
+            invalidations.trySend(generation)
     }
 
-    private suspend fun catchUp() {
-        val ticket = generation
+    private suspend fun catchUp(ticket: Long) {
+        if (!current(ticket)) return
         job?.join()
         if (current(ticket)) {
             refresh()
@@ -218,6 +240,7 @@ class ConversationHistoryModel(
 
     fun close() {
         retired = true
+        output.close()
         invalidationJob.cancel()
         invalidations.close()
         generation++

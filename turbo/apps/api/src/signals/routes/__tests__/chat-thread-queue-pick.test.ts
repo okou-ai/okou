@@ -259,6 +259,7 @@ describe("CHAT-02: queued chat thread picks", () => {
       runOfInput(actor, first.threadId, second.clientEventId),
     ).resolves.toBeUndefined();
     const resumed = await runExecution(picked.runId);
+    expect(resumed.execution.prompt).toBe("first queued message");
     expect(resumed.execution.nativeContinuation?.sessionId).toBe(
       `bdd-cli-${first.runId}`,
     );
@@ -270,6 +271,7 @@ describe("CHAT-02: queued chat thread picks", () => {
     const next = await second.launchedRun();
     expect(next.runId).not.toBe(picked.runId);
     const nextExecution = await runExecution(next.runId);
+    expect(nextExecution.execution.prompt).toBe("second queued message");
     expect(nextExecution.execution.nativeContinuation?.sessionId).toBe(
       `bdd-cli-${picked.runId}`,
     );
@@ -581,6 +583,9 @@ describe("CHAT-02: queued chat thread picks", () => {
     await finishRun(runnerGroup, blocker.runId);
     const launched = await waiting.launchedRun();
     const execution = await runExecution(launched.runId);
+    expect(execution.execution.prompt).toBe(
+      "retain the model selection from enqueue",
+    );
     expect(execution.execution.modelUsageProvider).toBe("gpt-6-astra");
     expect(execution.execution.platformEnvironment).toMatchObject({
       OKOU_CODEX_SERVICE_TIER: "fast",

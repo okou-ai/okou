@@ -497,7 +497,6 @@ export {
   type RunnersBuiltinFirewallsResolveContract,
   type RunnersHeartbeatContract,
   type ExecutionContext,
-  type ExecutionInput,
   type PreparedExecutionContext,
   type NetworkPolicyRefresh,
   type ConnectorRuntimeTarget,

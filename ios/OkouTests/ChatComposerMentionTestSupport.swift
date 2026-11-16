@@ -197,16 +197,20 @@ func mentionInputs(in view: UIView) -> [ComposerTextView] {
 @MainActor
 func focusMentionInput(_ input: ComposerTextView) async throws {
   input.becomeFirstResponder()
-  try await eventually(
-    message:
-      "Native composer focus: \(input.isFirstResponder); "
-      + "window: \(input.window != nil); current: \(input.isCurrent()); "
-      + "bound focus: \(String(describing: (input.delegate as? ChatComposerTextInput.Coordinator)?.input.isFocused)); "
-      + "key window: \(String(describing: input.window?.isKeyWindow)); "
-      + "scene: \(String(describing: input.window?.windowScene?.activationState))"
-  ) {
+  try await eventually(message: mentionInputStatus(input)) {
     input.isFirstResponder
   }
+}
+
+@MainActor
+func mentionInputStatus(_ input: ComposerTextView) -> String {
+  "Native composer \(input.accessibilityIdentifier ?? "unidentified"): "
+    + "focus: \(input.isFirstResponder); text: \(String(reflecting: input.text)); "
+    + "window: \(input.window != nil); current: \(input.isCurrent()); "
+    + "marked text: \(input.markedTextRange != nil); settling: \(input.isSettlingComposition); "
+    + "bound focus: \(String(describing: (input.delegate as? ChatComposerTextInput.Coordinator)?.input.isFocused)); "
+    + "key window: \(String(describing: input.window?.isKeyWindow)); "
+    + "scene: \(String(describing: input.window?.windowScene?.activationState))"
 }
 
 @MainActor

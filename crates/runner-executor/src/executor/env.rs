@@ -485,24 +485,8 @@ fn validate_pi_execution_context(context: &ExecutionContext) -> Result<(), Strin
 fn validate_user_environment_for_guest(context: &ExecutionContext) -> Result<(), String> {
     let mut entries: Vec<(&str, &str)> = Vec::new();
     for_each_guest_user_env_entry(context, |key, value| entries.push((key, value)));
-    entries.sort_by_key(|(key, _)| *key);
 
-    for (key, value) in entries {
-        if !guest_contracts::env::is_shell_identifier_env_key(key) {
-            return Err(format!(
-                "user environment contains invalid env key {:?}",
-                guest_contracts::env::sanitize_env_key_for_diagnostic(key)
-            ));
-        }
-        if value.contains('\0') {
-            return Err(format!(
-                "user environment contains NUL byte for env key {:?}",
-                guest_contracts::env::sanitize_env_key_for_diagnostic(key)
-            ));
-        }
-    }
-
-    Ok(())
+    guest_contracts::env::validate_sorted_shell_environment(entries, "user environment")
 }
 
 fn validate_run_payload_field(name: &str, value: &str) -> Result<(), String> {
@@ -550,25 +534,10 @@ fn json_value_contains_nul_string(value: &serde_json::Value) -> bool {
 fn validate_bootstrap_environment_for_guest(
     environment: &HashMap<String, String>,
 ) -> Result<(), String> {
-    let mut entries: Vec<(&String, &String)> = environment.iter().collect();
-    entries.sort_by_key(|(key, _)| *key);
-
-    for (key, value) in entries {
-        if !guest_contracts::env::is_shell_identifier_env_key(key) {
-            return Err(format!(
-                "bootstrap environment contains invalid env key {:?}",
-                guest_contracts::env::sanitize_env_key_for_diagnostic(key)
-            ));
-        }
-        if value.contains('\0') {
-            return Err(format!(
-                "bootstrap environment contains NUL byte for env key {:?}",
-                guest_contracts::env::sanitize_env_key_for_diagnostic(key)
-            ));
-        }
-    }
-
-    Ok(())
+    guest_contracts::env::validate_sorted_shell_environment(
+        environment.iter(),
+        "bootstrap environment",
+    )
 }
 
 pub fn validate_resume_session_id(context: &ExecutionContext) -> Result<(), String> {

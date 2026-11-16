@@ -238,6 +238,7 @@ export const clientDescriptorManifest = [
   {
     module: "cron",
     contracts: [
+      "cronAggregateRunPhaseTimingsContract",
       "cronBrowserReconcileContract",
       "cronCleanupSandboxesContract",
       "cronCleanupSuggestionsContract",
@@ -358,6 +359,10 @@ export const clientDescriptorManifest = [
   {
     module: "get-started-history",
     contracts: ["getStartedHistoryContract"],
+  },
+  {
+    module: "get-started-receipt",
+    contracts: ["getStartedReceiptContract"],
   },
   {
     module: "get-started",

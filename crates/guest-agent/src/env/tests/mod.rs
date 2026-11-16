@@ -276,6 +276,35 @@ fn guest_config_from_raw_loads_user_env_and_removes_private_file() {
     assert!(!user_env_dir.exists());
 }
 
+#[test]
+fn guest_config_rejection_preserves_sorted_env_priority_and_private_file_cleanup() {
+    for (environment, expected) in [
+        (
+            serde_json::json!({"Z-BAD":"private-later", "A_GOOD":"private\0value"}),
+            r#"OKOU_USER_ENV_FILE contains NUL byte for env key "A_GOOD""#,
+        ),
+        (
+            serde_json::json!({"Z_GOOD":"later\0value", "A-BAD":"private\0value"}),
+            r#"OKOU_USER_ENV_FILE contains invalid env key "A-BAD""#,
+        ),
+    ] {
+        let (_tmp, mut raw) = raw_config_fixture_with_default_run_payload();
+        let directory = raw
+            .guest_runtime_dir
+            .as_ref()
+            .unwrap()
+            .join(guest_contracts::env::USER_ENV_PRIVATE_DIR_NAME);
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join(guest_contracts::env::USER_ENV_FILENAME);
+        std::fs::write(&path, serde_json::to_vec(&environment).unwrap()).unwrap();
+        raw.user_env_file = path.to_string_lossy().into_owned();
+
+        assert_eq!(GuestConfig::from_raw(raw).err().unwrap(), expected);
+        assert!(!path.exists());
+        assert!(!directory.exists());
+    }
+}
+
 #[cfg(debug_assertions)]
 #[test]
 fn guest_config_from_raw_uses_captured_test_claude_config_dir() {

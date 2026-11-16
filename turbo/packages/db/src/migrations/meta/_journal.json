@@ -3365,8 +3365,15 @@
     {
       "idx": 1559,
       "version": "7",
-      "when": 1794824481391,
-      "tag": "1559_presentation_pptx_resource_heads",
+      "when": 1794826728121,
+      "tag": "1559_system_update_source_preference",
+      "breakpoints": true
+    },
+    {
+      "idx": 1560,
+      "version": "7",
+      "when": 1794845395003,
+      "tag": "1560_presentation_pptx_resource_heads",
       "breakpoints": true
     }
   ]

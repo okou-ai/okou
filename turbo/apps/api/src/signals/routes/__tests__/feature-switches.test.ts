@@ -23,6 +23,44 @@ function client() {
 }
 
 describe("/api/feature-switches", () => {
+  it("keeps presentation format private to its owner despite a peer's stored opt-in", async () => {
+    const clerk = createRouteMocks(context).clerk;
+    const headers = { authorization: "Bearer clerk-session" };
+    const orgId = `org_${randomUUID()}`;
+    const ownerId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
+    const key = FeatureSwitchKey.PresentationOutputFormat;
+
+    clerk.session(ownerId, orgId, "org:member");
+    const owner = await accept(client().get({ headers }), [200]);
+    expect(owner.body.effectiveSwitches).toMatchObject({ [key]: true });
+
+    clerk.session(`user_${randomUUID()}`, orgId, "org:admin");
+    const peerOptIn = await accept(
+      client().update({ headers, body: { switches: { [key]: true } } }),
+      [200],
+    );
+    expect(peerOptIn.body.effectiveSwitches).toMatchObject({ [key]: false });
+    const peer = await accept(client().get({ headers }), [200]);
+    expect(peer.body.switches).toMatchObject({ [key]: true });
+    expect(peer.body.effectiveSwitches).toMatchObject({ [key]: false });
+
+    clerk.session(ownerId, orgId, "org:member");
+    const unchangedOwner = await accept(client().get({ headers }), [200]);
+    expect(unchangedOwner.body.effectiveSwitches).toMatchObject({
+      [key]: true,
+    });
+    const optedOut = await accept(
+      client().update({ headers, body: { switches: { [key]: false } } }),
+      [200],
+    );
+    expect(optedOut.body.effectiveSwitches).toMatchObject({ [key]: false });
+    const optedIn = await accept(
+      client().update({ headers, body: { switches: { [key]: true } } }),
+      [200],
+    );
+    expect(optedIn.body.effectiveSwitches).toMatchObject({ [key]: true });
+  });
+
   it("keeps a personal switch personal within one organization", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };

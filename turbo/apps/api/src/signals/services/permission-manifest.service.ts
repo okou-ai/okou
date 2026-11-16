@@ -7,7 +7,7 @@ import {
   type ApiDispatchTimingCollector,
   measureApiDispatchTiming,
 } from "./api-dispatch-timing.service";
-import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
+import type { ConnectorRuntimeLookup } from "./connector-catalog-runtime.service";
 import {
   allAllowPolicyForPermissions,
   collectPermissionNames,
@@ -64,7 +64,7 @@ function firewallSecretPlaceholdersFromFirewalls(
 }
 
 async function loadRequiredFirewallPermissionIndex(args: {
-  readonly snapshot: ConnectorRuntimeSelection;
+  readonly snapshot: Pick<ConnectorRuntimeLookup, "serverFirewalls">;
   readonly connectorSlug: string;
 }): Promise<ConnectorServerFirewallPermissionIndex> {
   const index = await args.snapshot.serverFirewalls.loadPermissionIndex(
@@ -79,7 +79,7 @@ async function loadRequiredFirewallPermissionIndex(args: {
 }
 
 function getRequiredFirewallExecutionMetadata(
-  snapshot: ConnectorRuntimeSelection,
+  snapshot: Pick<ConnectorRuntimeLookup, "serverFirewalls">,
   connectorSlug: string,
 ): ConnectorServerFirewallExecutionMetadata {
   const metadata = snapshot.serverFirewalls.getExecutionMetadata(connectorSlug);

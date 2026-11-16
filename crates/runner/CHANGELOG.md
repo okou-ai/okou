@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.249.25](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.24...runner-rs-v0.249.25) (2026-11-16)
+
+
+### Bug Fixes
+
+* **python:** retire eagerly completed firewall auth fetches ([#47901](https://github.com/okou-ai/okou/issues/47901)) ([1f7235a](https://github.com/okou-ai/okou/commit/1f7235ad5981a9e5f225a761fbe7852d8a9d181b))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.24](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.23...runner-rs-v0.249.24) (2026-11-16)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.23](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.22...runner-rs-v0.249.23) (2026-11-16)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.22](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.21...runner-rs-v0.249.22) (2026-11-16)
 
 ### Release Dependencies

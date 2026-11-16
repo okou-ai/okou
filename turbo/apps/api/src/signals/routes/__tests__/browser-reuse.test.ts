@@ -192,6 +192,48 @@ test.each(["provider", "native", "connection"] as const)(
   },
 );
 
+test.each(["before-reply", "after-reply"] as const)(
+  "retains the native binding when the provider closes %s without replaying health",
+  async (timing) => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const chat = await f.start();
+      const first = await open(chat);
+      let nativeSocket: Pick<WebSocket, "close"> | undefined;
+      f.provider.native.onSocketConnection = (socket) => {
+        nativeSocket = socket;
+      };
+      const close = () => {
+        if (!nativeSocket) {
+          throw new Error("Expected the external CDP socket");
+        }
+        nativeSocket.close(1013, "private-provider-close-reason");
+      };
+      if (timing === "before-reply") {
+        f.provider.native.beforeNativeWindowReply = close;
+      } else {
+        f.provider.native.afterWindowBoundsReply = close;
+      }
+      const start = f.provider.native.commands.length;
+      const result = await request(chat);
+      expect(result.status).toBe(timing === "before-reply" ? 502 : 200);
+      expect(JSON.stringify(result.body)).not.toContain("private-provider");
+      expect(
+        f.provider.native.commands.slice(start).map(({ method }) => {
+          return method;
+        }),
+      ).toStrictEqual(["Browser.getWindowBounds"]);
+      expect(f.provider.sessionRequests).toHaveLength(1);
+      expect(f.provider.stoppedSessionIds.size).toBe(0);
+      f.provider.native.onSocketConnection = undefined;
+      f.provider.native.beforeNativeWindowReply = undefined;
+      f.provider.native.afterWindowBoundsReply = undefined;
+      expect((await view(chat)).window).toStrictEqual(first.window);
+      expect((await open(chat)).window).toStrictEqual(first.window);
+    });
+  },
+);
+
 test.each(["revoked", "expired"] as const)(
   "rejects renewal when the warm binding is %s during its native check",
   async (change) => {

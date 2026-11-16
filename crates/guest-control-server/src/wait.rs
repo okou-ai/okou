@@ -6,6 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use guest_control_proto::ExecTermination;
+use rustix::process::{Pid, WaitId, WaitIdOptions, waitid};
 
 use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::process::{
@@ -292,26 +293,17 @@ fn apply_final_exit_priority(
 
 fn wait_for_child_exit_without_reap(child_id: u32) -> io::Result<()> {
     let child_id = process_signal_pid(child_id)
+        .and_then(Pid::from_raw)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid child pid"))?;
-    // SAFETY: zeroed siginfo_t is valid for waitid to fill.
-    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
     loop {
-        // SAFETY: child_id belongs to a direct child owned by this process.
-        // WNOWAIT observes its terminal state without releasing its PID.
-        let result = unsafe {
-            libc::waitid(
-                libc::P_PID,
-                child_id as libc::id_t,
-                &mut info,
-                libc::WEXITED | libc::WNOWAIT,
-            )
-        };
-        if result == 0 {
-            return Ok(());
-        }
-        let error = io::Error::last_os_error();
-        if error.kind() != io::ErrorKind::Interrupted {
-            return Err(error);
+        // Keep the owned child unreaped until the caller completes its cleanup.
+        match waitid(
+            WaitId::Pid(child_id),
+            WaitIdOptions::EXITED | WaitIdOptions::NOWAIT,
+        ) {
+            Ok(_) => return Ok(()),
+            Err(rustix::io::Errno::INTR) => continue,
+            Err(error) => return Err(error.into()),
         }
     }
 }
@@ -327,26 +319,16 @@ fn kill_child(child: &mut impl ChildProcess) -> bool {
 /// Probe readiness without releasing the identity owned by the final waiter.
 pub(crate) fn child_has_exited_without_reap(child_id: u32) -> io::Result<bool> {
     let child_id = process_signal_pid(child_id)
+        .and_then(Pid::from_raw)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid child pid"))?;
-    // SAFETY: zero initialization also distinguishes the WNOHANG no-exit case.
-    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
     loop {
-        // SAFETY: this is an owned direct child. WNOWAIT leaves it unreaped.
-        let result = unsafe {
-            libc::waitid(
-                libc::P_PID,
-                child_id as libc::id_t,
-                &mut info,
-                libc::WEXITED | libc::WNOWAIT | libc::WNOHANG,
-            )
-        };
-        if result == 0 {
-            // SAFETY: waitid initialized the SIGCHLD siginfo payload.
-            return Ok(unsafe { info.si_pid() } != 0);
-        }
-        let error = io::Error::last_os_error();
-        if error.kind() != io::ErrorKind::Interrupted {
-            return Err(error);
+        match waitid(
+            WaitId::Pid(child_id),
+            WaitIdOptions::EXITED | WaitIdOptions::NOWAIT | WaitIdOptions::NOHANG,
+        ) {
+            Ok(status) => return Ok(status.is_some()),
+            Err(rustix::io::Errno::INTR) => continue,
+            Err(error) => return Err(error.into()),
         }
     }
 }

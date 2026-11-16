@@ -23,7 +23,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db$ } from "../external/db";
 import { badRequestMessage } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
@@ -44,7 +44,7 @@ import {
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
 import {
   type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSelection,
+  type ConnectorExecutionRuntimeSelection,
   connectorScopeForRuntimeSnapshot,
   getConnectorRuntimeConnector,
 } from "./connector-catalog-runtime.service";
@@ -59,8 +59,10 @@ import {
   type CustomConnectorRuntimeContext,
   type CustomConnectorRuntimeDataRows,
   loadEffectiveCustomConnectorPermissionBundle,
+  mergeRecords,
   resolveCustomConnectorBaseUrlVars,
 } from "./connector-runtime-preparation.service";
+import { orderByCustomConnectorId } from "./custom-connector-order";
 import {
   customConnectorAccountAuthMethodIsCompatible,
   customConnectorCredentialAccesses,
@@ -299,31 +301,50 @@ interface ExecutionConnectedAccountsArgs {
   readonly timing$: DispatchTiming$;
 }
 
-function createExecutionAccountInputs(args: ExecutionConnectedAccountsArgs) {
+function createExecutionAccountInputs(
+  args: ExecutionConnectedAccountsArgs,
+  connectorScope$: Computed<Promise<EffectiveConnectorScope>>,
+) {
   const connectorInput$ = computed(async (get) => {
-    const [identity, targets] = await Promise.all([
+    const [identity, targets, scope] = await Promise.all([
       get(args.identity$),
       get(args.targets$),
+      get(connectorScope$),
     ]);
-    const rows = await get(db$)
-      .select({
-        connectorId: chatThreadConnectorSelections.connectorId,
-        connectorSlug: chatThreadConnectorSelections.connectorSlug,
-        customConnectorId: chatThreadConnectorSelections.customConnectorId,
-      })
-      .from(chatThreadConnectorSelections)
-      .where(
-        eq(chatThreadConnectorSelections.chatThreadId, identity.chatThreadId),
-      );
     const registered = new Set(targets.map(connectorAccountTargetKey));
+    // Only native-only bindings can remain in scope without a registration.
+    const nativeSlugs = scope.allowedConnectorSlugs.filter((connectorSlug) => {
+      return !registered.has(
+        connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
+      );
+    });
+    const rows =
+      nativeSlugs.length === 0
+        ? []
+        : await get(db$)
+            .select({
+              connectorId: chatThreadConnectorSelections.connectorId,
+              connectorSlug: chatThreadConnectorSelections.connectorSlug,
+              customConnectorId:
+                chatThreadConnectorSelections.customConnectorId,
+            })
+            .from(chatThreadConnectorSelections)
+            .where(
+              and(
+                eq(
+                  chatThreadConnectorSelections.chatThreadId,
+                  identity.chatThreadId,
+                ),
+                inArray(
+                  chatThreadConnectorSelections.connectorSlug,
+                  nativeSlugs,
+                ),
+              ),
+            );
     return {
       ...identity,
       threadSelectionRows: [
-        ...rows.filter((row) => {
-          return !registered.has(
-            connectorAccountTargetKey(runConnectorTargetFromRow(row)),
-          );
-        }),
+        ...rows,
         ...targets.flatMap((target) => {
           return target.sourceId
             ? [
@@ -410,8 +431,11 @@ function createExecutionConnectorScope(args: ExecutionConnectedAccountsArgs) {
 export function createExecutionConnectedAccounts(
   args: ExecutionConnectedAccountsArgs,
 ): ConnectedAccounts {
-  const { connectorInput$, chatAccounts } = createExecutionAccountInputs(args);
   const connectorScope$ = createExecutionConnectorScope(args);
+  const { connectorInput$, chatAccounts } = createExecutionAccountInputs(
+    args,
+    connectorScope$,
+  );
   const inputs: ConnectorInputSignals = {
     connectorInput$,
     connectorScope$,
@@ -1122,57 +1146,78 @@ function createCustomConnectorContextSignals(
       const memberPermissionPolicies = await get(
         inputs.memberPermissionPolicies$,
       );
-      const chosenRows = await Promise.all(
-        connectors
-          .filter((connector) => {
-            return args.allowedCustomConnectorIds.includes(connector.id);
-          })
-          .map(async (connector) => {
-            const rows = customConnectorCandidateRuntimeRows({
-              connector,
-              storageRows,
-              candidateIds:
-                candidates.get(
-                  connectorAccountTargetKey({
-                    kind: "custom",
-                    customConnectorId: connector.id,
-                  }),
-                ) ?? [],
-            });
-            for (const row of rows) {
-              const context = await buildNewRunCustomConnectorRuntimeContext({
-                rows: [row],
-                permissionBundlesByConnectorId,
-                featureSwitchContext,
-                connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-                grants: args.customConnectorGrants,
-                memberPermissionPolicies,
-              });
-              if (context.targets.length > 0) {
-                return row;
-              }
-            }
-            return {
-              connector,
-              values: [],
-              credentialAccess: { kind: "absent" as const },
-            };
-          }),
-      );
       return await (
         await get(connectorInput$)
       ).timing.measure(
         "api_dispatch_prepare_context_build_custom_connector_firewalls",
         "nested",
         async () => {
-          return await buildNewRunCustomConnectorRuntimeContext({
-            rows: chosenRows,
-            permissionBundlesByConnectorId,
-            featureSwitchContext,
-            connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-            grants: args.customConnectorGrants,
-            memberPermissionPolicies,
-          });
+          const contexts = await Promise.all(
+            orderByCustomConnectorId(
+              connectors.filter((connector) => {
+                return args.allowedCustomConnectorIds.includes(connector.id);
+              }),
+              (connector) => {
+                return connector.id;
+              },
+            ).map(async (connector) => {
+              const rows = customConnectorCandidateRuntimeRows({
+                connector,
+                storageRows,
+                candidateIds:
+                  candidates.get(
+                    connectorAccountTargetKey({
+                      kind: "custom",
+                      customConnectorId: connector.id,
+                    }),
+                  ) ?? [],
+              });
+              for (const row of rows) {
+                const context = await buildNewRunCustomConnectorRuntimeContext({
+                  rows: [row],
+                  permissionBundlesByConnectorId,
+                  featureSwitchContext,
+                  connectorCatalogSnapshot: args.connectorCatalogSnapshot,
+                  grants: args.customConnectorGrants,
+                  memberPermissionPolicies,
+                });
+                if (context.targets.length > 0) {
+                  return context;
+                }
+              }
+              return emptyCustomConnectorRuntimeContext();
+            }),
+          );
+          return {
+            firewalls: contexts.flatMap((context) => {
+              return context.firewalls;
+            }),
+            reservedSecretAliases: mergeRecords(
+              ...contexts.map((context) => {
+                return context.reservedSecretAliases;
+              }),
+            ),
+            permissionPolicies: mergeRecords(
+              ...contexts.map((context) => {
+                return context.permissionPolicies;
+              }),
+            ),
+            targets: contexts.flatMap((context) => {
+              return context.targets;
+            }),
+            customConnectorIdByFirewallName: Object.fromEntries(
+              contexts.flatMap((context) => {
+                return Object.entries(context.customConnectorIdByFirewallName);
+              }),
+            ),
+            customConnectorSourceIdByFirewallName: Object.fromEntries(
+              contexts.flatMap((context) => {
+                return Object.entries(
+                  context.customConnectorSourceIdByFirewallName,
+                );
+              }),
+            ),
+          };
         },
       );
     },
@@ -1198,7 +1243,7 @@ function runConnectorCatalogSelection(
     AgentConnectorScope,
     "allowedConnectorSlugs" | "allowedCustomConnectorIds"
   >,
-  catalog: ConnectorRuntimeSelection | null,
+  catalog: ConnectorExecutionRuntimeSelection | null,
 ): RunConnectorCatalogSelection {
   if (isEmptyRunConnectorScope(scope)) {
     return { kind: "empty" };
@@ -1411,7 +1456,7 @@ export function emptyBuiltinConnectorRuntimeContext(): BuiltinConnectorRuntimeCo
 function allowedStoredConnectorRows(
   rows: readonly StoredConnectorRuntimeRowCandidate[],
   allowedConnectorSlugs: readonly ConnectorSlug[],
-  snapshot: ConnectorRuntimeSelection,
+  snapshot: ConnectorExecutionRuntimeSelection,
   now: Date,
 ): readonly StoredConnectorRuntimeRow[] {
   const validRows = rows.flatMap((row) => {
@@ -1592,7 +1637,7 @@ export function storedConnectorContextFromSnapshot(
 function buildStoredConnectorMaterializationPlan(args: {
   readonly connectorRows: readonly StoredConnectorRuntimeRowCandidate[];
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
+  readonly connectorCatalogSnapshot: ConnectorExecutionRuntimeSelection;
 }): StoredConnectorMaterializationPlan | null {
   const allowedConnectorRows = allowedStoredConnectorRows(
     args.connectorRows,
@@ -1615,7 +1660,7 @@ function materializeStoredConnectorSnapshotRows(
   args: {
     readonly rows: readonly StoredConnectorMaterializationSnapshotRow[];
     readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-    readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
+    readonly connectorCatalogSnapshot: ConnectorExecutionRuntimeSelection;
     readonly timingDimensions: ApiDispatchTimingDimensions;
   },
   timing?: ApiDispatchTimingCollector,
@@ -1700,7 +1745,7 @@ interface StoredConnectorMaterializationArgs {
   readonly connectorIdCandidatesBySlug:
     ReadonlyMap<ConnectorSlug, readonly string[]> | undefined;
   readonly scopeSource: ConnectorScopeSource;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
+  readonly connectorCatalogSnapshot: ConnectorExecutionRuntimeSelection;
 }
 
 function customConnectorRequiredMemberCredentialsAreComplete(
@@ -1866,7 +1911,7 @@ interface RunConnectorPreparation {
       ReadonlyMap<string, readonly string[]> | undefined;
     readonly customConnectorGrants:
       readonly AgentCustomConnectorGrant[] | undefined;
-    readonly connectorCatalogSnapshot: ConnectorRuntimeSelection;
+    readonly connectorCatalogSnapshot: ConnectorExecutionRuntimeSelection;
   } | null;
 }
 
@@ -2083,5 +2128,5 @@ export type RunConnectorCatalogSelection =
   | { readonly kind: "empty" }
   | {
       readonly kind: "scoped";
-      readonly selection: ConnectorRuntimeSelection;
+      readonly selection: ConnectorExecutionRuntimeSelection;
     };

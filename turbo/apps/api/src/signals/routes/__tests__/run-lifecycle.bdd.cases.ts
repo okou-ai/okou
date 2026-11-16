@@ -9699,11 +9699,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(prompt).toContain(
           "okou vnc diagnose <connection-id> --attempt-id <attempt-id> --json",
         );
-        const sshGuidance = prompt.split("\n").filter((line) => {
-          return line.startsWith("- SSH");
-        });
-        expect(sshGuidance).toHaveLength(1);
-        expect(sshGuidance.join("\n").length).toBeLessThanOrEqual(400);
+        expect(prompt).toContain(
+          "okou ssh request-access <connection-id> --reason <purpose>",
+        );
+        expect(prompt).toContain(
+          "okou vnc request-access <connection-id> --reason <purpose>",
+        );
         await api.heartbeatRunner(runnerGroup);
         const execution = await api.executionInput(run.runId);
         const token = execution.platformEnvironment.OKOU_TOKEN;

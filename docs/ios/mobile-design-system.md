@@ -435,7 +435,12 @@ single floating line, and colour is a small accent for status only.
   actions as footnote-semibold text buttons and an optional ✕. `.status` is muted; `.problem`
   only lifts the text to `foreground`. It is never red and never a tinted fill. The composer
   shows these banners and nothing hand-built.
-- **Chat feedback floats under the header** in `ChatFeedbackSurface`: a finished action
+- **Chat feedback floats above the bottom controls** in `ChatFeedbackSurface`: above the
+  list footer or the chat composer, following its height and the keyboard without moving
+  the content. Anchor to visible controls, not blank space reserved for a hidden model picker;
+  keep the 8 pt gap above the visible surface. A downward swipe dismisses it; the close button
+  and VoiceOver escape do too.
+  The scroll-to-bottom control stays above the feedback. A finished action
   ("Chat archived · Undo") or a sync failure with Retry, one at a time. Liquid Glass at
   card radius, a 16 pt muted Lucide glyph (a small spinner while retrying), one 15 pt
   medium line, an optional semibold `foreground` action (as `OkouBanner`'s) and a ✕; at
@@ -652,7 +657,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 | `OkouLoadErrorRow` / `OkouLoadingRow`    | A failed read (muted sentence + quiet Try again) and a loading line (small muted spinner + label) inside lists, sheets and cards                                                                                                                                   |
 | `OkouChatSkeleton` / `OkouSkeletonBlock` | A chat's first load as the web draws it: placeholder exchanges in `skeleton` grey, shimmering as one (`okouShimmer()`)                                                                                                                                             |
 | `OkouBanner`                             | In-flow status line: hairline card, glyph, footnote sentence, text actions, optional ✕; `.status` / `.problem`, never red                                                                                                                                          |
-| `ChatFeedbackSurface`                    | Chat feedback under the header: glass, Lucide glyph or spinner, one 15 pt medium line, optional action, ✕                                                                                                                                                          |
+| `ChatFeedbackSurface`                    | Chat feedback above the bottom controls: glass, Lucide glyph or spinner, one 15 pt medium line, optional action, ✕ and swipe-down dismissal                                                                                                                        |
 | `OkouEmptyState`                         | Quiet empty, failed or unavailable screen: muted glyph on a soft circle, 17 pt medium title, 15 pt muted description, up to two outline actions; `verbatim:` for a content title                                                                                   |
 | `OkouUsageMeter`                         | Allowance row: label, "% remaining", capacity bar (normal / low / exhausted), reset time                                                                                                                                                                           |
 | `OkouLiveWaveform`                       | Dictation waveform: one bar per level sample, gliding every frame, newest growing in at the trailing edge, baseline dots before audio; static under Reduce Motion                                                                                                  |

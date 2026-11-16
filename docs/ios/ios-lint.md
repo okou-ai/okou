@@ -26,6 +26,7 @@ underlying ownership contracts. Setup commands belong in the
 | `okou_storage_boundaries`      | Keep raw UserDefaults dependencies at existing persistence owners; allow AppStorage only for registered UI preferences and tests to construct explicit suites.                          | `no-direct-local-storage` and `no-direct-session-storage`         |
 | `okou_task_lifecycle`          | Cancel or drain newly created, retained business Tasks at explicit owner teardown; preserve the original single handle or dictionary slot when replacing it.                            | Native extension of async ownership; no identical Web rule        |
 | `okou_discarded_throwing_task` | Do not explicitly discard a newly constructed Task whose visible errors escape its operation; retain a result owner or handle those errors inside the Task.                             | `no-floating-promises` and `no-void-statement`                    |
+| `okou_logging_boundaries`      | Use OSLog.Logger for production diagnostics; keep explicit output streams and native test/tool/Preview diagnostics with their owners.                                                   | `no-console`                                                      |
 
 The existing SwiftLint rules also check discarded throwing Tasks
 (`unhandled_throwing_task`), discarded block-based notification observer handles
@@ -87,12 +88,23 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   shadowed bindings, unrelated subjects and deferred callbacks are separate
   contracts. Rethrowing an immutable alias still preserves the original error
   when cleanup can fail.
+  The same catch checks apply to explicitly `async throws` functions returning
+  data, including helpers without a CCState import. An unfiltered empty catch
+  or direct `nil`/`[]`/`[:]` recovery cannot erase their failure, and recognized
+  cancellation paths cannot return successful data. Typed domain handling and
+  throwing recovery remain valid. Completion-only functions and explicit
+  Task, Result, graph, loadable, stream, or callback return contracts remain
+  separate; UI waiters can leave the original resource Task holding its error.
   Request phases belong to CCStateSwiftUI loadables; drafts, confirmed snapshots,
   and protocol phases follow their own business contracts.
 - Explicit `_ = Task { ... }` assignments and wildcard declarations such as
   `let _ = Task { ... }` cannot discard a Task with a visibly escaping `try` or
   `throw`. The same check covers direct `Task.init`, `Task.immediate`, and
   `Task.detached` construction, qualified spellings, and grouped expressions.
+  Extracting that construction into a same-file helper does not remove the
+  obligation: an explicit discard is also checked when every visible return
+  directly creates such a throwing Task. Returning a shared Task does not
+  transfer its existing owner's obligation to a borrower.
   A complete internal catch handles its `do` body; a filtered catch does not
   establish that all errors are handled. Errors thrown by any catch handler
   still need an owner unless a surrounding internal catch receives them.
@@ -231,6 +243,17 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   Fixtures still own unique suite names and immediate domain cleanup as required
   by [iOS testing](ios-testing.md#external-fixtures-and-isolation).
 
+- App, Push, Widgets, ChatDomain, and ChatData production sources use
+  `OSLog.Logger` for diagnostics under the [logging contract](ios-development.md#diagnostic-logging).
+  Direct `print`, `debugPrint`, `dump`, `NSLog`, and `os_log` references, including
+  known module-qualified forms, cannot bypass that entry point. Visible local
+  declarations and parameters, business member methods, and explicit `to:`
+  output streams retain their own meaning. Inline `#Preview` macros can use
+  diagnostics without exempting the rest of their source file. Test and
+  test-support targets and tools keep their diagnostic scope; an App filename
+  ending in `Tests` or a `DEBUG` block does not change its production owner.
+  The rule does not enforce message wording, event names, severity, or fields.
+
 ## Static Analysis Limits
 
 These are syntax checks, not a whole-program ownership proof. They recognize
@@ -253,11 +276,24 @@ default/fallthrough inference, mixed labels, arbitrary helper predicates, casts
 stored as aliases, switch-expression results and indirect recovery still require
 review. Alias lookup is bounded and does not prove arbitrary mutation or effects.
 Allowing a throwing recovery expression does not prove its cancellation ownership.
-Discarded-Task checks inspect only direct native Task construction with an inline
-operation closure and an explicit discard. They separate nested closures, local
-functions and type/accessor bodies from the operation's error scope. Cross-file
-factories, aliases, helper implementations, and whether a retained/transferred
-Task is eventually observed still require review.
+Async-helper catch checks require an explicit throwing signature and direct data
+return type. Visible local aliases and same-owner qualified aliases preserve
+their completion/result contract. Synchronous/nonthrowing helpers, deferred
+cleanup, nested execution scopes, cross-file aliases, other qualified aliases,
+and generic substitutions keep their own review boundaries. Optional-try checks
+remain scoped to graph callbacks; helper error channels and arbitrary recovery
+effects are not inferred from a function's name.
+Discarded-Task checks inspect explicit discards of direct native Task
+construction with an inline operation closure, including same-file functions
+whose explicit Task return type and every visible return prove that construction
+with escaping errors. Factory lookup follows lexical scope, argument labels,
+same-owner methods with fixed dispatch, and visible static type members; every
+matching overload must establish the same contract. Shared/retained Task returns,
+unknown receivers, default/variadic parameters, trailing-closure calls,
+cross-file factories, aliases, indirect wrappers, and mixed return contracts
+remain review boundaries. Nested closures, local functions and type/accessor
+bodies keep their own error scope. Whether a retained/transferred Task is
+eventually observed still requires review.
 Task lifecycle checks require an explicit class/actor lifetime boundary (or a
 business destructor) and directly visible Task construction and storage types.
 Inferred/cross-file factories, tuple-held handles, indirect dictionary updates,
@@ -296,6 +332,12 @@ App, Push, ChatDomain and ChatData production source paths. They do not prove
 that a `let` reference is deeply immutable, that a computed property is pure,
 or that a singleton has the right identity, cache bound or teardown. Other
 packages, cross-module storage and generated accessors still require review.
+Logging checks recognize direct standard-library/legacy diagnostic spellings
+at the owned production source paths beneath `ios/`. Cross-file overloads,
+indirect wrappers, arbitrary C/file output, and custom macro semantics remain
+review responsibilities. Additional production targets need an explicit scope
+registration; test/support paths are not inferred from a filename. Passing this
+entry check does not prove message privacy or remote delivery.
 In particular, a variable called `isLoading` or `error` is not by itself a
 violation. The rules do not prove cache bounds, complete teardown, mutation
 rollback, or every cancellation path.

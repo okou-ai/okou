@@ -98,15 +98,6 @@ export function executionWorkflowInput(
         ? "/home/user/.codex/skills"
         : "/home/user/.claude/skills";
   const selection = officialWorkflowSelection(context, skillRoot);
-  const ordinaryMount = /^custom-skill@[a-f0-9-]{36}$/u;
-  for (const mount of context.storageMounts) {
-    if (
-      mount.name.startsWith("custom-skill@") &&
-      !ordinaryMount.test(mount.name)
-    ) {
-      throw new Error("Unsupported legacy Workflow identity");
-    }
-  }
   return {
     selection,
     skillRoot,
@@ -165,17 +156,13 @@ export function executionWorkflowSelectionSql(
       FROM selected_workflows
     ), workflow_admission AS MATERIALIZED (
       SELECT * FROM workflow_selection, admitted_run
-      WHERE (
-        admitted_run."agentId" IS NULL OR (
-          admitted_run."agentId" = ${selection?.agentId ?? null}::uuid
-          AND EXISTS (SELECT 1 FROM selected_agent)
-          AND (COALESCE(${automationId}::uuid, admitted_run."workflowAutomationId") IS NULL OR EXISTS (
-            SELECT 1 FROM ${workflowAutomations} INNER JOIN ${workflows} ON ${eq(workflows.id, workflowAutomations.workflowId)}
-            WHERE ${and(eq(workflowAutomations.id, sql`COALESCE(${automationId}::uuid, admitted_run."workflowAutomationId")`), eq(workflowAutomations.orgId, sql`admitted_run."orgId"`), eq(workflowAutomations.ownerUserId, sql`admitted_run."userId"`), eq(workflows.orgId, sql`admitted_run."orgId"`))}
-              AND ((${workflows.agentId} = admitted_run."agentId" AND ((${workflows.officialDefinitionName} IS NOT NULL AND ${workflows.officialInstallationState} = 'installed') OR EXISTS (SELECT 1 FROM selected_workflows WHERE id = ${workflows.id})))
-                OR ${retainedStaffWorkflowAdmission()})
-          ))
-        )
-      )
+      WHERE admitted_run."agentId" = ${selection?.agentId ?? null}::uuid
+        AND EXISTS (SELECT 1 FROM selected_agent)
+        AND (COALESCE(${automationId}::uuid, admitted_run."workflowAutomationId") IS NULL OR EXISTS (
+          SELECT 1 FROM ${workflowAutomations} INNER JOIN ${workflows} ON ${eq(workflows.id, workflowAutomations.workflowId)}
+          WHERE ${and(eq(workflowAutomations.id, sql`COALESCE(${automationId}::uuid, admitted_run."workflowAutomationId")`), eq(workflowAutomations.orgId, sql`admitted_run."orgId"`), eq(workflowAutomations.ownerUserId, sql`admitted_run."userId"`), eq(workflows.orgId, sql`admitted_run."orgId"`))}
+            AND ((${workflows.agentId} = admitted_run."agentId" AND ((${workflows.officialDefinitionName} IS NOT NULL AND ${workflows.officialInstallationState} = 'installed') OR EXISTS (SELECT 1 FROM selected_workflows WHERE id = ${workflows.id})))
+              OR ${retainedStaffWorkflowAdmission()})
+        ))
     )`;
 }

@@ -8,7 +8,6 @@ import { performance } from "node:perf_hooks";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
-  type ExecutionInput,
   type ConnectorRuntimeTargetRegistration,
 } from "@okouai/api-contracts/contracts/runners";
 import {
@@ -28,7 +27,7 @@ import {
 import { createConnectorAdmissionSignals } from "./thread-connector-environment.signals";
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
 import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
-import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
+import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import { previewAutomationBypass$ } from "../context/hono";
 import { createOfficialWorkflowSignals } from "./thread-official-workflow.signals";
 import { proactiveWorkflowKind } from "./proactive-workflow-definitions";
@@ -3075,7 +3074,7 @@ export function createThreadClaimRunObjects(
           protectedMountPaths: context.protectedMountPaths,
           featureSwitchContext: context.featureSwitchContext,
           connectorRuntimeTargets: context.connectorRuntimeTargets,
-          executionFacts: {
+          facts: {
             templateInput: {
               userId: args.userId,
               userMessage: event.userMessage,
@@ -3156,7 +3155,7 @@ export function createThreadClaimRunObjects(
       const okouToken = set(prepareOkouToken$, tokenInput, signal);
       const disabledPaidTools = await get(bootstrap.disabledPaidTools$);
       signal.throwIfAborted();
-      return prepareRunnerLaunchInput({
+      return prepareRunnerLaunch({
         args,
         okouToken,
         disabledPaidTools,
@@ -3679,8 +3678,8 @@ export function createThreadClaimRunObjects(
       const admissionTiming = new AdmissionAttemptTiming({
         poolCapture,
         runId: identity.runId,
-        runnerGroup: launch.runnerInput.runnerGroup,
-        profile: launch.runnerInput.profile,
+        runnerGroup: launch.runnerGroup,
+        profile: launch.profile,
         dimensions: timingDimensionsForCreateArgs(input.args),
         triggerSource: input.context.content.triggerSource,
       });
@@ -3966,11 +3965,10 @@ interface PersistedAtomicLaunchRows {
 }
 
 interface PreparedRunnerLaunch {
-  readonly runnerInput: RunnerLaunchInput;
-  readonly executionFacts: Omit<
-    AdmittedExecutionFacts,
-    "connectorRuntimeTargets"
-  >;
+  readonly runnerGroup: string;
+  readonly profile: string;
+  readonly reuseKey: string;
+  readonly facts: Omit<AdmittedExecutionFacts, "connectorRuntimeTargets">;
   readonly runStorageMounts: readonly PersistedStorageMount[];
   readonly connectorRuntimeTargets: readonly ConnectorRuntimeTargetRegistration[];
 }
@@ -4205,28 +4203,26 @@ function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
   });
 }
 
-function preparedLaunchRowsArgs(args: {
-  readonly commit: ThreadLaunchCommitInput;
-  readonly runnerGroup: string;
-}): LaunchRunRowsArgs {
+function preparedLaunchRowsArgs(
+  commit: ThreadLaunchCommitInput,
+): LaunchRunRowsArgs {
   return {
-    userId: args.commit.createArgs.userId,
-    orgId: args.commit.createArgs.orgId,
-    identity: args.commit.identity,
-    resolved: args.commit.context.resolved,
-    content: args.commit.context.content,
-    runStorageMounts: args.commit.launch.runStorageMounts,
-    modelProvider: args.commit.context.modelProvider,
-    agentRunModelPin: args.commit.createArgs.agentRunModelPin,
-    selectedImageModel: args.commit.context.selectedImageModel,
-    callbackRows: args.commit.callbackRows,
-    chatThreadId: args.commit.createArgs.chatThreadId,
-    agentRunMetadata: args.commit.createArgs.agentRunMetadata,
-    apiStartTime: args.commit.createArgs.apiStartTime,
-    runnerGroup: args.runnerGroup,
-    launchSnapshot: args.commit.context.launchSnapshot,
-    officialWorkflowProvenance:
-      args.commit.context.officialWorkflowRun?.provenance,
+    userId: commit.createArgs.userId,
+    orgId: commit.createArgs.orgId,
+    identity: commit.identity,
+    resolved: commit.context.resolved,
+    content: commit.context.content,
+    runStorageMounts: commit.launch.runStorageMounts,
+    modelProvider: commit.context.modelProvider,
+    agentRunModelPin: commit.createArgs.agentRunModelPin,
+    selectedImageModel: commit.context.selectedImageModel,
+    callbackRows: commit.callbackRows,
+    chatThreadId: commit.createArgs.chatThreadId,
+    agentRunMetadata: commit.createArgs.agentRunMetadata,
+    apiStartTime: commit.createArgs.apiStartTime,
+    runnerGroup: commit.launch.runnerGroup,
+    launchSnapshot: commit.context.launchSnapshot,
+    officialWorkflowProvenance: commit.context.officialWorkflowRun?.provenance,
   };
 }
 
@@ -4236,7 +4232,6 @@ interface PreparedAtomicLaunchRows {
 }
 
 interface PreparedAtomicLaunchPersistence {
-  readonly payload: RunnerLaunchInput;
   readonly rows: PreparedAtomicLaunchRows;
   readonly diagnosticRegistrationPayload: zInfer<
     typeof agentRunConnectorDiagnosticRegistrationPayloadSchema
@@ -4253,16 +4248,8 @@ export interface PreparedThreadLaunchCommit extends ThreadLaunchCommitInput {
 function prepareAtomicLaunchPersistence(
   commit: ThreadLaunchCommitInput,
 ): PreparedAtomicLaunchPersistence {
-  const payload: RunnerLaunchInput = {
-    ...commit.launch.runnerInput,
-    reuseKey: runnerReuseKey(commit.createArgs.chatThreadId),
-  };
-  const rowsArgs = preparedLaunchRowsArgs({
-    commit,
-    runnerGroup: payload.runnerGroup,
-  });
+  const rowsArgs = preparedLaunchRowsArgs(commit);
   return {
-    payload,
     rows: { rowsArgs, metadata: launchRunMetadataValues(rowsArgs) },
     diagnosticRegistrationPayload:
       agentRunConnectorDiagnosticRegistrationPayloadSchema.parse({
@@ -4412,7 +4399,6 @@ type AtomicLaunchCteContext = ReturnType<typeof buildAtomicLaunchCteContext>;
 
 interface AtomicLaunchRowsPlanArgs extends ValidatedPreparedLaunchAdmission {
   readonly commit: PreparedThreadLaunchCommit;
-  readonly payload: RunnerLaunchInput;
   readonly publication: PendingLaunchPublication;
 }
 interface AdmittedPreparedLaunch extends ValidatedPreparedLaunchAdmission {
@@ -4505,9 +4491,13 @@ interface ThreadExecution {
 
 /** The Thread facts needed to prepare one Runner launch. */
 interface ThreadRunnerFacts {
-  readonly executionFacts: Omit<
+  readonly facts: Pick<
     AdmittedExecutionFacts,
-    "connectorRuntimeTargets"
+    | "templateInput"
+    | "integration"
+    | "captureNetworkBodies"
+    | "piModelConfig"
+    | "modelProviderPermissions"
   >;
   readonly workflowAutomationId: string | null;
   readonly agentId: string;
@@ -4522,16 +4512,17 @@ interface ThreadRunnerFacts {
 }
 
 /** Capture selectors and request receipts; admitted preparation assembles runtime input. */
-function prepareRunnerLaunchInput(input: {
+function prepareRunnerLaunch(input: {
   readonly args: ThreadRunnerFacts;
   readonly okouToken: string;
-  readonly disabledPaidTools: readonly string[];
+  readonly disabledPaidTools: readonly PaidToolId[];
   readonly previewBypassAuthorized: boolean;
-}) {
+}): Omit<PreparedRunnerLaunch, "runStorageMounts"> {
   const { args } = input;
-  const context: ExecutionInput = {
+  const facts = {
+    ...args.facts,
     nativeContinuation: args.nativeContinuation,
-    ...(input.previewBypassAuthorized ? { previewBypassAuthorized: true } : {}),
+    previewBypassAuthorized: input.previewBypassAuthorized,
     customWorkflowSelection: {
       agentId: args.agentId,
       ...(args.workflowAutomationId === null
@@ -4539,10 +4530,8 @@ function prepareRunnerLaunchInput(input: {
         : { automationId: args.workflowAutomationId }),
       protectedMountPaths: [...args.protectedMountPaths],
     },
-    platformEnvironment: {
-      OKOU_TOKEN: input.okouToken,
-      [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(input.disabledPaidTools),
-    },
+    okouToken: input.okouToken,
+    disabledPaidTools: input.disabledPaidTools,
     realAgentInPreview: args.realAgentInPreview || undefined,
     apiStartTime: args.apiStartTime,
     featureFlags: {
@@ -4561,14 +4550,11 @@ function prepareRunnerLaunchInput(input: {
     },
   };
   return {
-    runnerInput: {
-      runnerGroup: preparedRunnerGroup(),
-      profile: args.profile,
-      reuseKey: runnerReuseKey(args.chatThreadId),
-      executionContext: context,
-    },
+    runnerGroup: preparedRunnerGroup(),
+    profile: args.profile,
+    reuseKey: runnerReuseKey(args.chatThreadId),
     connectorRuntimeTargets: args.connectorRuntimeTargets,
-    executionFacts: args.executionFacts,
+    facts,
   };
 }
 
@@ -4777,8 +4763,8 @@ function flushQueueFirstClaimLostTiming(args: {
   args.phaseTiming.appendTo(args.timing);
   args.timing.flush({
     runId: args.identity.runId,
-    runnerGroup: args.launch.runnerInput.runnerGroup,
-    profile: args.launch.runnerInput.profile,
+    runnerGroup: args.launch.runnerGroup,
+    profile: args.launch.profile,
     dimensions: {
       ...timingDimensionsForCreateArgs(args.createArgs),
       queue_first_launch_outcome: "claim_lost",
@@ -4788,13 +4774,6 @@ function flushQueueFirstClaimLostTiming(args: {
 }
 
 // --- Private implementation: launch persistence ---
-
-interface RunnerLaunchInput {
-  readonly runnerGroup: string;
-  readonly profile: string;
-  readonly reuseKey: string;
-  readonly executionContext: ExecutionInput;
-}
 
 function isOfficialRunnerGroup(group: string): boolean {
   return group.split("/")[0] === "vm0";
@@ -4888,7 +4867,6 @@ function admittedRunLaunch(
   reusePreparation: RunnerReusePreparation,
 ): AdmittedRunLaunch {
   const { rowsArgs: rows, metadata } = args.persistence.rows;
-  const payload = args.persistence.payload;
   return {
     run: {
       id: args.identity.runId,
@@ -4896,12 +4874,12 @@ function admittedRunLaunch(
       orgId: rows.orgId,
       agentId: rows.resolved.agentId,
       chatThreadId: rows.chatThreadId,
-      launchSnapshot: rows.launchSnapshot,
+      framework: rows.launchSnapshot.framework,
       officialWorkflowProvenance: rows.officialWorkflowProvenance ?? null,
       prompt: rows.content.prompt,
       appendSystemPrompt: rows.content.appendSystemPrompt,
       vars: rows.content.vars,
-      storageMounts: [...args.launch.runStorageMounts],
+      storageMounts: args.launch.runStorageMounts,
       modelProvider: metadata.modelProvider,
       modelProviderId: metadata.modelProviderId,
       modelProviderCredentialScope: metadata.modelProviderCredentialScope,
@@ -4915,17 +4893,15 @@ function admittedRunLaunch(
         metadata.modelLongContextMinTotalInputTokens,
       reasoningEffort: metadata.reasoningEffort,
       codexServiceTier: metadata.codexServiceTier,
-      isFirstRun: null,
     },
-    executionContext: payload.executionContext,
-    executionFacts: {
-      ...args.launch.executionFacts,
+    facts: {
+      ...args.launch.facts,
       connectorRuntimeTargets:
         args.persistence.diagnosticRegistrationPayload.targets,
     },
-    runnerGroup: payload.runnerGroup,
-    profile: payload.profile,
-    reuseKey: payload.reuseKey,
+    runnerGroup: args.launch.runnerGroup,
+    profile: args.launch.profile,
+    reuseKey: args.launch.reuseKey,
     createdAt,
     reusePreparation,
   };
@@ -5062,7 +5038,6 @@ function pendingLaunchRowsPlan(
 ) {
   const rows = {
     commit,
-    payload: commit.persistence.payload,
     ...admission,
     publication,
   };
@@ -5280,12 +5255,12 @@ const commitThreadLaunch$ = command(
       admissionTiming.recordLeafElapsed("persistence", leafStartedAt);
     });
     const thread = accepted.validatedThreadSession;
-    const payload = args.persistence.payload;
+    const { runnerGroup, profile, reuseKey } = args.launch;
     const preparation = set(prepareRunnerReusePreference$, {
       runId: args.identity.runId,
-      runnerGroup: payload.runnerGroup,
-      profile: payload.profile,
-      reuseKey: payload.reuseKey,
+      runnerGroup,
+      profile,
+      reuseKey,
       thread: {
         threadId: thread.chatThreadId,
         userId: args.createArgs.userId,

@@ -1,3 +1,4 @@
+import ChatData
 import ChatDomain
 import SwiftUI
 import UIKit
@@ -6,6 +7,7 @@ struct ChatForkView: View {
   @Bindable var flow: ChatForkStore
   let webURL: URL
   let threads: [ChatThread]
+  let project: ChatProject?
   let needsUpgrade: Bool
   let dismiss: () -> Void
   @State private var confirmsDiscard = false
@@ -43,7 +45,7 @@ struct ChatForkView: View {
           connectorSelection: flow.modelSelection.connectors,
           mentionSource: ComposerMentionSource(agentID: flow.agentID, threads: threads),
           workflowSource: flow.workflowSource, agentID: flow.agentID,
-          showsTrailingFeedbackInput: false
+          showsTrailingFeedbackInput: false, project: project
         )
         // A failed or unknown attempt retries the captured message, never an edited body
         // under the same idempotency key. The error banner owns the explicit retry.

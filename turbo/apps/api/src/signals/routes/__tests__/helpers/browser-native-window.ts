@@ -47,8 +47,9 @@ export function createNativeWindowProvider(context: TestContext) {
     snapshotEventWindowId?: number;
     emptySnapshot: boolean;
     beforeCreateReply?: (target: NativeTarget) => Promise<void> | void;
-    onSocketConnection?: () => void;
+    onSocketConnection?: (socket: Pick<WebSocket, "close">) => void;
     onSocketClose?: () => void;
+    afterWindowBoundsReply?: () => void;
     onWithheldReply?: () => void;
     windowError?: string;
     closeSucceeds: boolean;
@@ -346,6 +347,11 @@ export function createNativeWindowProvider(context: TestContext) {
               }
             : new Error("Browser window not found"),
       );
+      // MSW enqueues send() delivery. Preserve native frame order instead of
+      // letting a subsequent close discard the not-yet-delivered reply.
+      if (state.afterWindowBoundsReply) {
+        queueMicrotask(state.afterWindowBoundsReply);
+      }
       return true;
     };
     const reply = async (event: { readonly data: unknown }) => {
@@ -426,7 +432,7 @@ export function createNativeWindowProvider(context: TestContext) {
         "External native CDP fixture reply",
       );
     });
-    state.onSocketConnection?.();
+    state.onSocketConnection?.(client);
   });
   return Object.assign(state, { handler });
 }

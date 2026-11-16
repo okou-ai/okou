@@ -313,7 +313,12 @@ export const renameProject$ = command(
   },
 );
 export const deleteProject$ = command(
-  async ({ get, set }, id: string, signal: AbortSignal) => {
+  async (
+    { get, set },
+    id: string,
+    onDeleted: () => void,
+    signal: AbortSignal,
+  ) => {
     await set(waitForProjectCreation$, id, signal);
     await accept(
       get(apiClient$)(projectsContract).delete({
@@ -325,6 +330,10 @@ export const deleteProject$ = command(
       signal,
     );
     await set(syncProjects$, signal);
+    // The Project has left the list; chat synchronization must not keep its
+    // confirmation dialog open.
+    signal.throwIfAborted();
+    onDeleted();
     await set(catchUpChatThreadEventSource$, signal);
   },
 );

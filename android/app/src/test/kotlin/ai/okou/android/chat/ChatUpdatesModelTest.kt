@@ -6,6 +6,7 @@ import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -32,6 +33,7 @@ class ChatUpdatesModelTest {
             external.snapshot.value.copy(
                 phase = RealtimePhase.Connected,
                 revision = external.snapshot.value.revision + 1,
+                changes = ChatChanges(resync = true),
             )
         runCurrent()
         assertEquals(RealtimePhase.Connected, owner.phase.value)
@@ -50,7 +52,9 @@ class ChatUpdatesModelTest {
         val service =
             object : RealtimeService {
                 override suspend fun observeRealtime(
-                    observe: suspend (RealtimeSnapshot) -> Unit
+                    target: StateFlow<RunOutputTarget?>,
+                    output: suspend (RunOutputTarget, RunOutputSignal) -> Unit,
+                    observe: suspend (RealtimeSnapshot) -> Unit,
                 ): Nothing {
                     observers += observe
                     try {
@@ -97,7 +101,9 @@ class ChatUpdatesModelTest {
             ChatUpdatesModel(
                 object : RealtimeService {
                     override suspend fun observeRealtime(
-                        observe: suspend (RealtimeSnapshot) -> Unit
+                        target: StateFlow<RunOutputTarget?>,
+                        output: suspend (RunOutputTarget, RunOutputSignal) -> Unit,
+                        observe: suspend (RealtimeSnapshot) -> Unit,
                     ): Nothing = throw ApiFailure.Unauthenticated()
                 },
                 backgroundScope,
@@ -116,13 +122,20 @@ class ChatUpdatesModelTest {
 
     @Test
     fun onlyCanonicalChatTopicsInvalidateConfirmedReads() {
-        assertTrue(isChatInvalidation("threadListChanged"))
-        assertTrue(isChatInvalidation("chatThreadReadCursorUpdated"))
-        assertTrue(
-            isChatInvalidation("chatThreadMessageCreated:11111111-1111-4111-8111-111111111111")
+        assertEquals(ChatChanges(list = true), chatChanges("threadListChanged"))
+        assertEquals(ChatChanges(indicators = true), chatChanges("chatIndicatorsChanged"))
+        assertEquals(ChatChanges(readCursor = true), chatChanges("chatThreadReadCursorUpdated"))
+        val thread = "11111111-1111-4111-8111-111111111111"
+        assertEquals(
+            ChatChanges(threads = setOf(thread)),
+            chatChanges("chatThreadMessageCreated:$thread"),
         )
-        assertFalse(isChatInvalidation("chatThreadMessageCreated:not-a-thread"))
-        assertFalse(isChatInvalidation("connector:changed"))
-        assertFalse(isChatInvalidation(null))
+        assertEquals(
+            ChatChanges(threads = setOf(thread)),
+            chatChanges("chatThreadDetailChanged:$thread"),
+        )
+        assertNull(chatChanges("chatThreadMessageCreated:not-a-thread"))
+        assertNull(chatChanges("connector:changed"))
+        assertNull(chatChanges(null))
     }
 }

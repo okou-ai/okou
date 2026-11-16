@@ -46,6 +46,10 @@ data class HistoryTranscript(
     val messages: List<HistoryMessage>,
     val execution: HistoryExecution,
     val workSteps: Int,
+    val activeRunId: String? = null,
+    val persistedIds: Set<String> = emptySet(),
+    val liveRunIds: List<String> = listOfNotNull(activeRunId),
+    val terminatedRunIds: Set<String> = emptySet(),
 )
 
 internal fun JsonObject.text(key: String): String? = (get(key) as? JsonPrimitive)?.contentOrNull
@@ -178,9 +182,24 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                 else row.type.takeIf { row.terminal || it == "output.error" },
             )
         }
+    val endedRuns = terminals + interrupted
+    val running = historyIsRunning(rows, endedRuns)
+    val streamEndedRuns =
+        checkpoint.rows
+            .filter { it.terminal || it.type == "control.interrupt" }
+            .mapNotNullTo(hashSetOf()) { it.runId }
+    // Web selects the last distinct live run, independently of the overall run indicator.
+    val liveRunIds =
+        rows
+            .asSequence()
+            .filterNot { it.type == "usage.recorded" || it.type == "control.interrupt" }
+            .mapNotNull { it.runId }
+            .filterNot { it in streamEndedRuns }
+            .distinct()
+            .toList()
     val execution =
         when {
-            historyIsRunning(rows, terminals + interrupted) -> HistoryExecution.Running
+            running -> HistoryExecution.Running
             pending.isNotEmpty() -> HistoryExecution.Queued
             else ->
                 // A late event from an older run stays with that turn, including in this summary.
@@ -199,7 +218,15 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                     else -> HistoryExecution.Idle
                 }
         }
-    return HistoryTranscript(messages, execution, rows.count { it.type == "output.message" })
+    return HistoryTranscript(
+        messages,
+        execution,
+        rows.count { it.type == "output.message" },
+        liveRunIds.lastOrNull(),
+        checkpoint.rows.flatMapTo(hashSetOf()) { listOfNotNull(it.id, it.revokesId) },
+        liveRunIds,
+        streamEndedRuns,
+    )
 }
 
 /** Match Web's run indicator: old activity cannot revive a newer terminal's settled state. */

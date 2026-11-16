@@ -59,27 +59,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Internal cloud-controlled iOS device automation.",
     enabled: false,
   },
-  [FeatureSwitchKey.SshChatApproval]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Remote host chat approval",
-    description:
-      "Review SSH and VNC host access in chat and continue after approval.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.CustomConnectorCloudflareAccess]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Custom connector Cloudflare Access",
     description:
       "Use organization Cloudflare Access for custom HTTP API and MCP connectors.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ComposerMediaPreviews]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Composer media previews",
-    description:
-      "Show image and video thumbnails during upload, then enable preview.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -109,6 +93,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Choose HTML or PPTX for presentations and remember the preference on this device. Requires Home capabilities.",
     enabled: false,
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.PastedTextAttachments]: {
     maintainer: "bingjie@okou.ai",
@@ -246,14 +233,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Billing one-question surveys",
     description:
       "Ask one single-choice question where members are closest to paying: under the upgrade action when credits run out (with a one-time credit thank-you), and after leaving a Stripe Checkout without paying.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.IosSettingsCredits]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "iOS settings credit balance",
-    description:
-      "Show the current account's available credits in iOS Settings using the Web account menu balance.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

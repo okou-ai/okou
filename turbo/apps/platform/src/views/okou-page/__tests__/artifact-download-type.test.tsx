@@ -211,7 +211,6 @@ test("A MIME-only draft video download retains its preview type", async () => {
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ComposerMediaPreviews]: true },
   });
   click(await findNamedButton(`Open video preview for ${filename}`));
   const preview = await screen.findByTestId("attachment-lightbox");

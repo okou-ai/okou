@@ -2,6 +2,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { workflows } from "@okouai/db/schema/workflow";
+import { feedPreferences } from "@okouai/db/schema/feed-preference";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { db$ } from "../external/db";
@@ -42,8 +43,18 @@ export const prepareAutomationDisabledFeedEvent$ = command(
       return null;
     }
     const [workflow] = await get(db$)
-      .select({ name: workflows.name })
+      .select({
+        name: workflows.name,
+        systemUpdates: feedPreferences.systemUpdates,
+      })
       .from(workflows)
+      .leftJoin(
+        feedPreferences,
+        and(
+          eq(feedPreferences.orgId, automation.orgId),
+          eq(feedPreferences.userId, automation.ownerUserId),
+        ),
+      )
       .where(
         and(
           eq(workflows.id, automation.workflowId),
@@ -52,7 +63,11 @@ export const prepareAutomationDisabledFeedEvent$ = command(
       )
       .limit(1);
     signal?.throwIfAborted();
-    if (!workflow) {
+    if (
+      !workflow ||
+      (isFeatureEnabled(FeatureSwitchKey.ForYouSources, context) &&
+        workflow.systemUpdates === false)
+    ) {
       return null;
     }
     return {

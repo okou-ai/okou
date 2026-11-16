@@ -51,13 +51,5 @@ struct ChatThreadFeedbackView: View {
         store.dismissThreadFeedback(feedback.id)
       }
     )
-    .task(id: feedback.id) {
-      UIAccessibility.post(notification: .announcement, argument: feedback.message)
-      guard !feedback.persists else { return }
-      do {
-        try await Task.sleep(for: .seconds(UIAccessibility.isVoiceOverRunning ? 20 : 4))
-        store.dismissThreadFeedback(feedback.id)
-      } catch {}
-    }
   }
 }

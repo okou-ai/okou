@@ -27,8 +27,7 @@ final class WorkspaceResources {
   private let billing: WorkspaceRead<WorkspaceBilling>
   private let creditBalance: WorkspaceRead<WorkspaceCreditBalance>
   let billingValue: Computed<Task<WorkspaceBilling, Error>>
-  let billingCreditsEnabled: Computed<Task<Bool, Error>>
-  let billingCreditsValue: Computed<Task<Double?, Error>>
+  let billingCreditsValue: Computed<Task<Double, Error>>
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
   init(
@@ -77,20 +76,8 @@ final class WorkspaceResources {
     let featureValue = features.value
     let balanceValue = creditBalance.value
     let statusValue = billing.value
-    billingCreditsEnabled = computedTask { get, options in
-      guard try get(lifetime) else { throw CancellationError() }
-      let switches = try await get(featureValue).value
-      try Task.checkCancellation()
-      try options.signal.checkCancellation()
-      return switches.effectiveSwitches["iosSettingsCredits"] == true
-    }
-    let creditsEnabled = billingCreditsEnabled
     billingCreditsValue = computedTask { get, options in
       guard try get(lifetime) else { throw CancellationError() }
-      let enabled = try await get(creditsEnabled).value
-      try Task.checkCancellation()
-      try options.signal.checkCancellation()
-      guard enabled else { return nil }
       let balance = try get(balanceValue)
       let status = try get(statusValue)
       let (credits, billing) = try await (balance.value, status.value)
@@ -202,7 +189,6 @@ final class WorkspaceResources {
     try Task.checkCancellation()
     guard try store.get(lifetime) else { throw CancellationError() }
     try billing.retryFailed(in: store)
-    try features.retryFailed(in: store)
     try creditBalance.retryFailed(in: store)
     let status = try store.get(billingValue)
     let credits = try store.get(billingCreditsValue)
@@ -224,7 +210,7 @@ final class WorkspaceResources {
     do { try store.set(lifetime, false) } catch {
       Logger(subsystem: "ai.okou.ios", category: "WorkspaceResources")
         .error(
-          "Cannot notify retired resource observers: \(error.localizedDescription, privacy: .public)"
+          "event=workspace.resources.retired_observers.notify.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
         )
     }
   }

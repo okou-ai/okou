@@ -109,6 +109,10 @@ async fn count_only_routine_collection_stops_at_the_independent_entry_cap_below_
             std::fs::Permissions::from_mode(0o700),
         )
         .unwrap();
+        let mut physical = serde_json::json!({
+            "imageGeneration": "", "currentImage": null,
+            "logicalImageSizeBytes": SIZE, "lastUsedAt": "2026-10-09T09:00:00Z"
+        });
         for i in 0..=4096 {
             let key = format!("{i:064x}");
             let paths = cache.entry_paths(&key);
@@ -124,10 +128,8 @@ async fn count_only_routine_collection_stops_at_the_independent_entry_cap_below_
             drop(create_image(&image, b"home", SIZE));
             let identity =
                 metadata::HomeImageFileIdentity::from_metadata(&std::fs::metadata(image).unwrap());
-            let physical = serde_json::json!({
-                "imageGeneration": generation, "currentImage": identity,
-                "logicalImageSizeBytes": SIZE, "lastUsedAt": "2026-10-09T09:00:00Z"
-            });
+            physical["imageGeneration"] = generation.into();
+            physical["currentImage"] = serde_json::to_value(identity).unwrap();
             std::fs::write(paths.metadata(), serde_json::to_vec(&physical).unwrap()).unwrap();
             std::fs::set_permissions(paths.metadata(), std::fs::Permissions::from_mode(0o600))
                 .unwrap();

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.21.40](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.39...runner-executor-v0.21.40) (2026-11-16)
+
+
+### Refactoring
+
+* **runtime:** share sorted environment entry validation ([#47883](https://github.com/okou-ai/okou/issues/47883)) ([2170f64](https://github.com/okou-ai/okou/commit/2170f647745a06ae5957e4e230ff3701a9b14e1f))
+
+## [0.21.39](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.38...runner-executor-v0.21.39) (2026-11-16)
+
 ## [0.21.38](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.37...runner-executor-v0.21.38) (2026-11-16)
 
 ## [0.21.37](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.36...runner-executor-v0.21.37) (2026-11-16)

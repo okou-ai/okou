@@ -22,6 +22,13 @@ import {
 const context = testContext();
 const reloadedContext = createTestRuntime(context);
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
+const ownerAuth = Object.freeze({
+  user: Object.freeze({
+    id: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
+    fullName: "Bingjie Zang",
+    email: "bingjie@okou.ai",
+  }),
+});
 const enabledFeatures = Object.freeze({
   [FeatureSwitchKey.HomeCapabilities]: true,
   [FeatureSwitchKey.PresentationOutputFormat]: true,
@@ -67,6 +74,7 @@ test.each(["HTML", "PPTX"] as const)(
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
+      auth: ownerAuth,
       featureSwitches: enabledFeatures,
     });
     const editor = await findComposerEditor();
@@ -115,6 +123,7 @@ test("A format changed after choosing a template is frozen at send time", async 
   const capture = mockTemplateChat();
   await setupPage({
     context,
+    auth: ownerAuth,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: enabledFeatures,
   });
@@ -139,6 +148,7 @@ test("A changed format survives a fresh page and is shared by Chart presentation
   mockTemplateChat();
   await setupPage({
     context,
+    auth: ownerAuth,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: enabledFeatures,
   });
@@ -158,6 +168,7 @@ test("A changed format survives a fresh page and is shared by Chart presentation
   const capture = mockTemplateChat();
   await setupPage({
     context: reloadedContext,
+    auth: ownerAuth,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: enabledFeatures,
   });
@@ -201,6 +212,7 @@ test("Chart presentation output uses HTML until the user changes the preference"
   const capture = mockTemplateChat();
   await setupPage({
     context,
+    auth: ownerAuth,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: enabledFeatures,
   });
@@ -230,6 +242,7 @@ test("A presentation format preference does not change another Chart output type
   const capture = mockTemplateChat();
   await setupPage({
     context,
+    auth: ownerAuth,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: enabledFeatures,
   });
@@ -255,6 +268,33 @@ test("A presentation format preference does not change another Chart output type
   expect(instructions?.text).not.toContain("PPTX");
 });
 
+test("Peers cannot enable presentation format through a stored opt-in", async () => {
+  const capture = mockTemplateChat();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: enabledFeatures,
+  });
+  const editor = await findComposerEditor();
+  const discovery = await screen.findByRole("group", {
+    name: "Explore Okou capabilities",
+  });
+  click(button("Presentation", discovery));
+  const shelf = await screen.findByRole("group", {
+    name: "Presentation templates",
+  });
+  expect(screen.queryByRole("group", { name: "Output format" })).toBeNull();
+  await fill(editor, "Prepare our deck");
+  click(button(PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title, shelf));
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(capture.selectedTemplates[0]).not.toHaveProperty(
+    "selection.outputFormat",
+  );
+});
+
 test.each([
   { home: true, format: false },
   { home: false, format: true },
@@ -265,6 +305,7 @@ test.each([
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
+      auth: ownerAuth,
       featureSwitches: {
         [FeatureSwitchKey.HomeCapabilities]: home,
         [FeatureSwitchKey.PresentationOutputFormat]: format,

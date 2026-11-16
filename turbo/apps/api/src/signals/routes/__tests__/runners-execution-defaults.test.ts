@@ -33,6 +33,9 @@ describe("Direct Run launch defaults", () => {
         OKOU_CHAT_THREAD_ID: queued.threadId,
         OKOU_TOKEN: expect.any(String),
       });
+      expect(execution.vars).toMatchObject({
+        OKOU_AGENT_ID: owned.agentId,
+      });
     });
   });
 });

@@ -20,6 +20,17 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 
+@Serializable
+data class SessionOutputDelta(
+    val `threadId`: String,
+    val `runId`: String,
+    val `eventId`: String,
+    val `runEventId`: String,
+    val `createdAt`: String,
+    val `chunkIndex`: Long,
+    val `delta`: String,
+)
+
 @Serializable data object RealtimeTokenRequest
 
 @Serializable

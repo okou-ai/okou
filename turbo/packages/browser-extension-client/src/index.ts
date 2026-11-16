@@ -89,6 +89,48 @@ export interface CdpEvent {
   readonly sessionId?: string;
 }
 
+export interface CdpConnectionObservation {
+  readonly source: "native-close" | "native-error";
+  readonly phase: "opening" | "open";
+  readonly ready_state: number;
+  readonly code?: number;
+  readonly was_clean?: boolean;
+}
+
+function connectionObservation(value: CdpConnectionObservation) {
+  return Object.freeze({
+    source: value.source,
+    phase: value.phase,
+    ready_state: value.ready_state,
+    ...(value.code !== undefined ? { code: value.code } : {}),
+    ...(value.was_clean !== undefined ? { was_clean: value.was_clean } : {}),
+  });
+}
+
+function connectionContext(value: CdpConnectionObservation): string[] {
+  return [
+    `source=${value.source}`,
+    `socketPhase=${value.phase}`,
+    `readyState=${value.ready_state}`,
+    ...(value.code !== undefined ? [`closeCode=${value.code}`] : []),
+    ...(value.was_clean !== undefined ? [`wasClean=${value.was_clean}`] : []),
+  ];
+}
+
+/** Selected transport facts only; never native reason, URL or arbitrary cause. */
+export class CdpConnectionError extends Error {
+  readonly kind = "connection";
+  readonly connection: CdpConnectionObservation;
+
+  constructor(connection: CdpConnectionObservation) {
+    super(
+      `Browser CDP connection failed (${connectionContext(connection).join(", ")})`,
+    );
+    this.name = "CdpConnectionError";
+    this.connection = connectionObservation(connection);
+  }
+}
+
 export interface CdpTransport {
   /**
    * The caller owns request IDs, IO deadlines and the underlying connection.
@@ -161,6 +203,7 @@ type BridgeCdpMethod =
 export interface BridgeDiagnostics {
   readonly stage?: BridgeStage;
   readonly reason: BridgeFailureReason;
+  readonly connection?: CdpConnectionObservation;
   readonly request?: {
     readonly method: BridgeCdpMethod;
     readonly code?: number;
@@ -190,6 +233,9 @@ export class BrowserBridgeError extends Error {
       ...(diagnostics.request?.code !== undefined
         ? [`code=${diagnostics.request.code}`]
         : []),
+      ...(diagnostics.connection
+        ? connectionContext(diagnostics.connection)
+        : []),
     ].join(", ");
     // Linked-error reporters retain Error.message even when custom fields are omitted.
     super(`${message} (${context})`);
@@ -199,6 +245,9 @@ export class BrowserBridgeError extends Error {
       ...diagnostics,
       ...(diagnostics.request
         ? { request: Object.freeze({ ...diagnostics.request }) }
+        : {}),
+      ...(diagnostics.connection
+        ? { connection: connectionObservation(diagnostics.connection) }
         : {}),
     });
   }
@@ -264,7 +313,19 @@ export class OkouBrowserClient {
       return this.event(event);
     });
     const abort = () => {
-      return void this.close();
+      const reason: unknown = ownerSignal?.reason;
+      return void this.close(
+        reason instanceof CdpConnectionError
+          ? this.failure(
+              "unavailable",
+              "cdp-connection-failed",
+              undefined,
+              reason.connection,
+            )
+          : reason instanceof BrowserBridgeError
+            ? reason
+            : undefined,
+      );
     };
     ownerSignal?.addEventListener("abort", abort, { once: true });
     this.releaseOwner = () => {
@@ -327,11 +388,13 @@ export class OkouBrowserClient {
     kind: BrowserBridgeError["kind"],
     reason: BridgeFailureReason,
     request?: BridgeDiagnostics["request"],
+    connection?: CdpConnectionObservation,
   ): BrowserBridgeError {
     return new BrowserBridgeError(kind, {
       stage: this.stage,
       reason,
       ...(request ? { request } : {}),
+      ...(connection ? { connection } : {}),
     });
   }
 
@@ -367,6 +430,7 @@ export class OkouBrowserClient {
             ? { code }
             : {}),
         },
+        error instanceof CdpConnectionError ? error.connection : undefined,
       );
     }
   }

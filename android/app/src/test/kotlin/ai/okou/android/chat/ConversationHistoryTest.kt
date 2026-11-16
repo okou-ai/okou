@@ -5,6 +5,7 @@ import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.HISTORY_LAST_EVENT
+import ai.okou.android.HISTORY_RUN
 import ai.okou.android.TestChatService
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.ApiFailure
@@ -303,6 +304,69 @@ class ConversationHistoryTest {
         assertTrue(failures.isEmpty())
         model.close()
         lease.close()
+    }
+
+    @Test
+    fun cachedRunSubscribesBeforeNetworkAndOldVisitCleanupCannotRetireItsReplacement() = runTest {
+        val held = CompletableDeferred<Unit>()
+        val service = Service()
+        service.rowsRead = { _, cursor ->
+            held.await()
+            HistoryPage(emptyList(), cursor, false)
+        }
+        val lease = cache().open(identity) { true }
+        lease.saveHistory(checkpoint(), 100)
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+            )
+        try {
+            model.open(thread())
+            val first =
+                checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
+            model.uiState.first { it.source == ChatListSource.Cache }
+            assertEquals(HISTORY_RUN, model.output.target.value?.runId)
+            held.complete(Unit)
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            assertEquals(HISTORY_RUN, model.output.target.value?.runId)
+            val second =
+                checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
+            val target = model.output.target.value
+            assertEquals(ChatListSource.Network, model.uiState.value.source)
+            model.endVisit(first)
+            assertEquals(target, model.output.target.value)
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            assertEquals(target, model.output.target.value)
+            service.rowsRead = { id, cursor ->
+                if (cursor.seqId == 0L)
+                    HistoryPage(
+                        listOf(row(thread = id)),
+                        HistoryCursor(HISTORY_LAST_EVENT, 37),
+                        false,
+                    )
+                else HistoryPage(emptyList(), cursor, false)
+            }
+            model.open(thread(CHAT_IN_PROJECT))
+            model.uiState.first { it.phase == HistoryPhase.Ready }
+            assertNull(model.output.target.value)
+            model.endVisit(second)
+            assertNull(model.output.target.value)
+            val third =
+                checkNotNull(model.beginVisit(CHAT_IN_PROJECT, model.uiState.value.generation))
+            assertEquals(CHAT_IN_PROJECT, model.output.target.value?.threadId)
+            model.endVisit(third)
+            assertNull(model.output.target.value)
+        } finally {
+            held.complete(Unit)
+            model.close()
+            lease.close()
+        }
     }
 
     @Test

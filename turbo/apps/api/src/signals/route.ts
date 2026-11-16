@@ -77,6 +77,7 @@ import { builtinConnectorsSlugCallbackRoutes } from "./routes/connectors-slug-ca
 import { cronBrowserReconcileRoutes } from "./routes/cron-browser-reconcile";
 import { cronCleanupSandboxesRoutes } from "./routes/cron-cleanup-sandboxes";
 import { cronCleanupXResourceReadsRoutes } from "./routes/cron-cleanup-x-resource-reads";
+import { cronAggregateRunPhaseTimingsRoutes } from "./routes/cron-aggregate-run-phase-timings";
 import { cronCompactChatThreadSnapshotsRoutes } from "./routes/cron-compact-chat-thread-snapshots";
 import { cronCompactUsageEventsRoutes } from "./routes/cron-compact-usage-events";
 import { cronComputerUseScreenshotCleanupRoutes } from "./routes/cron-computer-use-screenshot-cleanup";
@@ -125,6 +126,7 @@ import { feishuEventsRoutes } from "./routes/feishu-events";
 import { feishuOauthRoutes } from "./routes/feishu-oauth";
 import { getStartedRoutes } from "./routes/get-started";
 import { getStartedHistoryRoutes } from "./routes/get-started-history";
+import { getStartedReceiptRoutes } from "./routes/get-started-receipt";
 import { friendReferralRoutes } from "./routes/friend-referrals";
 import { githubOauthRoutes } from "./routes/github-oauth";
 import { healthRoutes } from "./routes/health";
@@ -265,6 +267,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...runnersStartupRoutes,
   ...getStartedRoutes,
   ...getStartedHistoryRoutes,
+  ...getStartedReceiptRoutes,
   ...friendReferralRoutes,
   ...healthRoutes,
   ...buildInfoRoutes,
@@ -412,6 +415,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...modelCatalogRoutes,
   ...runModelsRoutes,
   ...runPhaseTimingRoutes,
+  ...cronAggregateRunPhaseTimingsRoutes,
   ...meModelProvidersDeleteRoutes,
   ...meModelProviderAccountRoutes,
   ...meModelProvidersListRoutes,

@@ -117,7 +117,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
         : [ComposerAttributedDocument.pasteboardType, UTType.plainText.identifier])
     view.placeholder.isHidden = !view.text.isEmpty
     container.expandsOnTap = isEnabled && !isFocused && !expanded
-    view.setFocused(isFocused)
+    view.prepareFocus(isFocused)
     view.notifyInputReady()
   }
 
@@ -201,6 +201,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
 
     func textViewDidBeginEditing(_ textView: UITextView) {
       guard input.isCurrent() else { return }
+      (textView as? ComposerTextView)?.prepareFocus(true)
       if !input.isFocused { input.isFocused = true }
       if let view = textView as? ComposerTextView {
         input.editor?.updateMention(in: view)
@@ -209,6 +210,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     }
     func textViewDidEndEditing(_ textView: UITextView) {
       guard input.isCurrent() else { return }
+      (textView as? ComposerTextView)?.prepareFocus(false)
       if input.isFocused { input.isFocused = false }
       input.editor?.dismissMentions()
       if let view = textView as? ComposerTextView { input.editor?.workflows.unregister(view) }
@@ -486,10 +488,15 @@ final class ComposerTextView: UITextView {
     reconcileFocus()
   }
 
+  func prepareFocus(_ focused: Bool) {
+    // A responder handoff can synchronously write another editor's focus binding.
+    // Record SwiftUI's intent here; native readiness applies it after the update.
+    wantsFocus = focused
+  }
+
   override func didMoveToWindow() {
     super.didMoveToWindow()
     if window != nil { refreshAppearance() }
-    reconcileFocus()
     notifyInputReady()
   }
 
@@ -497,9 +504,9 @@ final class ComposerTextView: UITextView {
     // UIKit can attach the editor after SwiftUI has prepared it. Recheck the
     // actual native attachment after the current representable update finishes.
     DispatchQueue.main.async { [weak self] in
-      guard let self, window != nil, isEditable, isCurrent(),
-        markedTextRange == nil, !isSettlingComposition
-      else { return }
+      guard let self, window != nil, isCurrent() else { return }
+      reconcileFocus()
+      guard isEditable, markedTextRange == nil, !isSettlingComposition else { return }
       inputReady?()
     }
   }
@@ -523,7 +530,7 @@ final class ComposerTextView: UITextView {
   private func reconcileFocus() {
     // SwiftUI can prepare the replacement editor before it has a window.
     guard window != nil else { return }
-    if wantsFocus && !isFirstResponder { becomeFirstResponder() }
+    if wantsFocus && isCurrent() && !isFirstResponder { becomeFirstResponder() }
     if !wantsFocus && isFirstResponder { resignFirstResponder() }
   }
 

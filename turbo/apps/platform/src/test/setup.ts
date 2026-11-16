@@ -47,14 +47,15 @@ Object.defineProperty(document, "fonts", {
   value: new EventTarget(),
 });
 
-// Scroll Area and explicit sidebar layout commits use Web Animations, which
-// happy-dom does not implement. Keep other dialogs/menus synchronous unless a
-// test supplies its own animations.
+// Scroll Area, sidebar layout commits and suggestion card departures use Web
+// Animations, which happy-dom does not implement. Keep other dialogs/menus
+// synchronous unless a test supplies its own animations.
 Object.defineProperty(HTMLElement.prototype, "getAnimations", {
   configurable: true,
   get(this: HTMLElement): (() => Animation[]) | undefined {
     if (
       this.dataset.slot !== "scroll-area-viewport" &&
+      this.dataset.slot !== "suggestion-stack-card" &&
       this.dataset.sidebarLayoutOwner === undefined
     ) {
       return undefined;

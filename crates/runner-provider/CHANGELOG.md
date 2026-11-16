@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.20.13](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.12...runner-provider-v0.20.13) (2026-11-16)
+
+## [0.20.12](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.11...runner-provider-v0.20.12) (2026-11-16)
+
+
+### Refactoring
+
+* prepare structured run failures and recovery ([#47749](https://github.com/okou-ai/okou/issues/47749)) ([fca7335](https://github.com/okou-ai/okou/commit/fca73354c6b5b0aa4f122e78947565b274323991))
+
 ## [0.20.11](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.10...runner-provider-v0.20.11) (2026-11-16)
 
 ## [0.20.10](https://github.com/okou-ai/okou/compare/runner-provider-v0.20.9...runner-provider-v0.20.10) (2026-11-16)

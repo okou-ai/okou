@@ -1,0 +1,1 @@
+ALTER TABLE "feed_preferences" ADD COLUMN "system_updates" boolean DEFAULT true NOT NULL;

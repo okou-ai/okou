@@ -99,7 +99,9 @@ public struct APIClient: Sendable {
         field = "unknown decoding failure"
       }
       Logger(subsystem: "ai.okou.ios", category: "API")
-        .error("Cannot decode \(path, privacy: .public): \(field, privacy: .public)")
+        .error(
+          "event=api.response.decode.failed path=\(path, privacy: .private) field=\(field, privacy: .private) error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code)"
+        )
       throw APIClientError.incompatibleData
     } catch {
       throw APIClientError.incompatibleData

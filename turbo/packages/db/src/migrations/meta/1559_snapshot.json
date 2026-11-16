@@ -1,5 +1,5 @@
 {
-  "id": "8ae32455-b909-4eb4-b714-3f6817e49368",
+  "id": "fe28666f-5ee9-4528-98e0-c29077077964",
   "prevId": "5ed022fb-4cb5-4129-bab2-f3874da51295",
   "version": "7",
   "dialect": "postgresql",
@@ -15487,6 +15487,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
+        },
+        "system_updates": {
+          "name": "system_updates",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         }
       },
       "indexes": {},
@@ -26356,7 +26363,7 @@
       "checkConstraints": {
         "chk_registry_resource_head_id": {
           "name": "chk_registry_resource_head_id",
-          "value": "\"registry_resource_heads\".\"resource_id\" ~ '^template:(html-ppt|pptx)-[a-z0-9]+(-[a-z0-9]+)*-runbook$'"
+          "value": "\"registry_resource_heads\".\"resource_id\" ~ '^template:html-ppt-[a-z0-9]+(-[a-z0-9]+)*-runbook$'"
         }
       },
       "isRLSEnabled": false

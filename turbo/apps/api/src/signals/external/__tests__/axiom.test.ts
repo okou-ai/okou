@@ -1,6 +1,8 @@
 import { publicChatActor } from "../../routes/__tests__/helpers/public-chat-actor";
 
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
+import { runPhaseTimingContract } from "@okouai/api-contracts/contracts/run-phase-timing";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
@@ -11,6 +13,9 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
+import { runPhaseTimingRoutes } from "../../routes/run-phase-timing";
+import { createAuthDeviceSupportApi } from "../../routes/__tests__/helpers/api-bdd-auth-device-support";
+import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { createDeferredPromise } from "../../utils";
 import {
   recordBillingOperationTimings,
@@ -699,6 +704,82 @@ describe("shared SDK ingestion", () => {
   });
 });
 
+describe("Run phase observation transport", () => {
+  it("writes only the signed identity and allowlisted phase fields to the existing dataset", async () => {
+    // Telemetry-client exception: this optional event has no raw API read route.
+    const owned = await publicChatActor(context);
+    owned.ownsFeatureSwitches();
+    const events: unknown[] = [];
+    context.mocks.axiom.useRealTelemetry.mockReturnValue(true);
+    server.use(
+      http.post(
+        "https://api.axiom.co/v1/datasets/vm0-web-logs-dev/ingest",
+        async ({ request }) => {
+          const body: unknown = await request.json();
+          if (!Array.isArray(body)) {
+            throw new Error("Expected phase observation array");
+          }
+          events.push(...body);
+          return HttpResponse.json({ ingested: body.length, failed: 0 });
+        },
+      ),
+    );
+    await owned.run(async () => {
+      await createAuthDeviceSupportApi(context).updateFeatureSwitches(
+        owned.actor,
+        {
+          [FeatureSwitchKey.ArtifactGenerationTiming]: true,
+        },
+      );
+      const run = await createRunsApi(context).createThreadRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Create the phase transport example",
+        model: owned.model,
+      });
+      const execution = await owned.executionInput(run.runId);
+      const api = setupApp({ context, routes: runPhaseTimingRoutes })(
+        runPhaseTimingContract,
+      );
+      const headers = {
+        authorization: `Bearer ${execution.platformEnvironment.OKOU_TOKEN}`,
+      };
+      await accept(
+        api.mark({ headers, body: { phase: "research-start" } }),
+        [202],
+      );
+      await accept(
+        api.mark({
+          headers,
+          body: { phase: "generation-start", kind: "report" },
+        }),
+        [202],
+      );
+      await vi.waitFor(() => {
+        const identity = {
+          _time: expect.any(String),
+          schema_version: 1,
+          type: "run_phase_mark",
+          run_id: run.runId,
+          user_id: owned.actor.userId,
+          org_id: owned.actor.orgId,
+        };
+        expect(events).toHaveLength(2);
+        expect(events).toStrictEqual(
+          expect.arrayContaining([
+            { ...identity, phase: "research-start" },
+            {
+              ...identity,
+              phase: "generation-start",
+              generation_kind: "report",
+              research_skipped: false,
+            },
+          ]),
+        );
+      });
+    });
+  });
+});
+
 describe("queryAxiom", () => {
   it("keeps the Axiom match timestamp when event data contains _time", async () => {
     const { queryAxiom } =
@@ -726,6 +807,55 @@ describe("queryAxiom", () => {
         host: "api.example.com",
       },
     ]);
+  });
+
+  it("aborts an operator query transport when its caller is cancelled", async () => {
+    const { queryAxiom$ } =
+      await vi.importActual<typeof import("../axiom")>("../axiom");
+    getApiTestMocks().axiom.useRealQuery.mockReturnValue(true);
+    const lifecycle = new AbortController();
+    const caller = new AbortController();
+    onTestFinished(() => {
+      caller.abort();
+      lifecycle.abort();
+    });
+    const started = createDeferredPromise<void>(lifecycle.signal);
+    const aborted = createDeferredPromise<void>(lifecycle.signal);
+    server.use(
+      http.post(
+        "https://api.axiom.co/v1/datasets/_apl",
+        async ({ request }) => {
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              aborted.resolve();
+            },
+            { once: true },
+          );
+          started.resolve();
+          await aborted.promise;
+          return HttpResponse.json({
+            status: { isPartial: false },
+            tables: [],
+          });
+        },
+      ),
+    );
+    const result = createStore().set(
+      queryAxiom$,
+      {
+        apl: "['vm0-web-logs-dev'] | limit 1",
+        options: { format: "tabular", noCache: true },
+      },
+      caller.signal,
+    );
+    const settled = Promise.allSettled([result]);
+    await started.promise;
+    caller.abort(new DOMException("Operator query cancelled", "AbortError"));
+    await expect(settled).resolves.toMatchObject([
+      { status: "rejected", reason: { name: "AbortError" } },
+    ]);
+    await aborted.promise;
   });
 
   it("sends pagination cursor reads without using the Axiom cache", async () => {
