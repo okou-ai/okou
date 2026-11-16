@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.88](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.87...guest-agent-v0.109.88) (2026-11-16)
+
+
+### Bug Fixes
+
+* **build:** pin rust 1.100 across toolchain and sandbox images ([#47647](https://github.com/okou-ai/okou/issues/47647)) ([f6fe91d](https://github.com/okou-ai/okou/commit/f6fe91dee7ab33d2aba08cc317fa71487bd815e6))
+
 ## [0.109.87](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.86...guest-agent-v0.109.87) (2026-11-16)
 
 

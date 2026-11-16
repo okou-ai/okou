@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1133.5](https://github.com/okou-ai/okou/compare/app-v0.1133.4...app-v0.1133.5) (2026-11-16)
+
+
+### Performance Improvements
+
+* **app:** defer unopened composer add-menu rows ([#47691](https://github.com/okou-ai/okou/issues/47691)) ([9ac5ddc](https://github.com/okou-ai/okou/commit/9ac5ddcba37efba101d44c02787e751eae740f49))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.71.0
+    * @okouai/core bumped to 8.842.0
+    * @okouai/ui bumped to 1.21.27
+
 ## [0.1133.4](https://github.com/okou-ai/okou/compare/app-v0.1133.3...app-v0.1133.4) (2026-11-16)
 
 
