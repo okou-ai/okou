@@ -235,14 +235,20 @@ test("An open tray switches capabilities and types without going back to the car
   const people = await screen.findByRole("region", { name: "Find people" });
   expect(capabilityTab("Find people")).toHaveAttribute("aria-selected", "true");
   expect(button("Remove Find people")).toHaveTextContent("Find people");
-  expect(button("Tools")).toBeInTheDocument();
+  expect(
+    button("Remove Find people").compareDocumentPosition(button("Tools")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
   // The tray is the open tab's panel.
   expect(screen.getByRole("tabpanel")).toContainElement(people);
   expect(screen.queryByRole("group", { name: "Image styles" })).toBeNull();
   click(capabilityTab("Research"));
   await screen.findByRole("region", { name: "Research" });
   expect(button("Remove Research")).toHaveTextContent("Research");
-  expect(button("Tools")).toBeInTheDocument();
+  expect(
+    button("Remove Research").compareDocumentPosition(button("Tools")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).not.toBe(0);
   // Create reopens on the type chosen last, with its own footer chip.
   click(capabilityTab("Create"));
   await screen.findByRole("group", { name: "Image styles" });

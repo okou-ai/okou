@@ -6952,9 +6952,9 @@ function ComposerIdleControls({
         <ComposerAddMenuSlot signals={signals} />
         <ComposerTemplatePickerSlot signals={signals} />
         <ComposerConnectorsSlot signals={signals} actions={connectorActions} />
-        <ComposerTools signals={signals} />
         <ComposerProjectControl signals={signals} />
         <ComposerTaskControls signals={signals} />
+        <ComposerTools signals={signals} />
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1 composer-wide:gap-2">
         <ComposerModelPickerSlot signals={signals} />
