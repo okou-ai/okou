@@ -19,8 +19,8 @@ resolved=ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.res
 # With no phase argument, supported manual callers still run every suite.
 ios_test_phase=${1:-all}
 case "$ios_test_phase" in
-  all | build | prepare | compile | run) ;;
-  *) echo "usage: ci-test.sh [all|build|prepare|compile|run]" >&2; exit 2 ;;
+  all | build | prepare | compile | run | combined) ;;
+  *) echo "usage: ci-test.sh [all|build|prepare|compile|run|combined]" >&2; exit 2 ;;
 esac
 
 xcode_args=(
@@ -121,4 +121,18 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
     test-without-building
   cmp "$resolved" "$build_root/Package.resolved.before"
   echo "iOS test-without-building: $((SECONDS - ios_phase_started)) seconds"
+fi
+
+if [[ "$ios_test_phase" == combined ]]; then
+  ios_phase_started=$SECONDS
+  cmp "$resolved" "$build_root/Package.resolved.before"
+  xcodebuild "${xcode_args[@]}" \
+    -showBuildTimingSummary \
+    -parallel-testing-enabled NO \
+    -maximum-concurrent-test-simulator-destinations 1 \
+    -collect-test-diagnostics never \
+    -resultBundlePath "$build_root/Tests.xcresult" \
+    test
+  cmp "$resolved" "$build_root/Package.resolved.before"
+  echo "iOS combined build and test: $((SECONDS - ios_phase_started)) seconds"
 fi

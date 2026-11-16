@@ -29,6 +29,16 @@ wait "$ios_phase_pid"
 ios_phase_pid=""
 ios_dependency_seconds=$((SECONDS - ios_prepare_started))
 
+if [[ "${IOS_CI_SINGLE_XCODE_EXPERIMENT:-false}" == true ]]; then
+  echo "iOS starting single-process build and test experiment"
+  bash ios/scripts/ci-test.sh combined &
+  ios_phase_pid=$!
+  wait "$ios_phase_pid"
+  ios_phase_pid=""
+  echo "iOS experiment total: $((SECONDS - ios_prepare_started)) seconds"
+  exit 0
+fi
+
 echo "iOS starting build-for-testing"
 bash ios/scripts/ci-test.sh compile &
 ios_phase_pid=$!
