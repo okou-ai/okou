@@ -41,17 +41,18 @@ function capabilityAsset(file: string): string {
 
 const ASSETS = {
   card: capabilityAsset("card-c7bc481949c3.webp"),
-  page: capabilityAsset("page-16c6e1eaaecc.webp"),
-  magnifier: capabilityAsset("magnifier-0159010e3fad.webp"),
-  paper: capabilityAsset("paper-bad924907e08.webp"),
-  photo: capabilityAsset("photo-738ff90a6fbd.webp"),
-  photoSmall: capabilityAsset("photo-small-0a3e17ebbbdd.webp"),
-  slide: capabilityAsset("slide-f4f5ddac488b.webp"),
-  tablet: capabilityAsset("tablet-b1f6455a4295.webp"),
-  gearWhite: capabilityAsset("gear-white-df2deef73b56.webp"),
-  gearOrange: capabilityAsset("gear-orange-cda701eeb994.webp"),
-  clock: capabilityAsset("clock-129897bb96d7.webp"),
-  button: capabilityAsset("button-7b2ab1bcc694.webp"),
+  page: capabilityAsset("page-6ea66047359d.webp"),
+  magnifierRim: capabilityAsset("magnifier-rim-267c204e7508.webp"),
+  magnifierGlass: capabilityAsset("magnifier-glass-72c4e8be518a.webp"),
+  paper: capabilityAsset("paper-19aa052331ee.webp"),
+  photo: capabilityAsset("photo-b6f3659f9a28.webp"),
+  photoSmall: capabilityAsset("photo-small-16de9d09f7d4.webp"),
+  slide: capabilityAsset("slide-f5d83b4e2fa1.webp"),
+  tablet: capabilityAsset("tablet-dbd8d91bfe31.webp"),
+  gearWhite: capabilityAsset("gear-white-59cfc0d412fd.webp"),
+  gearOrange: capabilityAsset("gear-orange-49ed92612d51.webp"),
+  clock: capabilityAsset("clock-1b41fed4e5cb.webp"),
+  bell: capabilityAsset("bell-c27a2fc55087.webp"),
   spiralWhite: capabilityAsset("spiral-white-470c2e64094e.svg"),
   spiralBlack: capabilityAsset("spiral-black-38d06102f11e.svg"),
   faceBlue: capabilityAsset("face-blue-17a2f83734d0.svg"),
@@ -171,6 +172,7 @@ interface CapabilityLayer {
   readonly src: string;
   readonly pose: string;
   readonly width: string;
+  /** Motion of the photograph inside its pose: a gear's turn, the bell's ring. */
   readonly turn?: string;
   readonly detail?: ReactNode;
 }
@@ -182,9 +184,39 @@ const BODY =
 const FACE =
   "absolute top-[24.4%] left-[49.6%] aspect-square w-[39%] -translate-1/2 rounded-full";
 
-/** The trigger's ring: dark at rest, lit while its card is active. */
-const TRIGGER_RING = (
-  <span className="absolute top-1/2 left-1/2 aspect-square w-[72%] -translate-1/2 rounded-full transition-shadow duration-500 capability-active:shadow-capability-ring motion-safe:animate-capability-ring-flash motion-reduce:transition-none" />
+/**
+ * The light under the bell: a soft pool of the brand orange, lit while its
+ * card is active. It has no edge of its own, so nothing in the photograph has
+ * to line up with it.
+ */
+const BELL_GLOW = (
+  <span className="absolute top-1/2 left-1/2 -z-1 aspect-square w-[132%] -translate-1/2 rounded-full bg-capability-glow opacity-0 transition-opacity duration-500 capability-active:opacity-100 motion-reduce:transition-none" />
+);
+
+/**
+ * The magnifier's lens, under its rim: the same page at 1.9 times its size,
+ * placed so the glass shows the part of the page beneath it. The lens's
+ * centre and radius are measured from the rim photograph, and both objects
+ * only move between their resting and lifted poses on one 700ms curve, so the
+ * magnified page moves between the placements computed for those two poses on
+ * that curve too. While Explore replays the objects from their entrance
+ * poses the lens shows plain glass.
+ */
+const MAGNIFIER_LENS = (
+  <>
+    <span className="absolute top-[6.06px] left-[5.94px] -z-2 size-[45.86px] overflow-hidden rounded-full motion-safe:group-has-[[data-art=explore]:is(:hover,:focus-visible)]/card:animate-capability-lens-replay">
+      <img
+        src={ASSETS.page}
+        alt=""
+        className="absolute top-0 left-0 w-[80px] max-w-none origin-top-left translate-x-[-97.89px] translate-y-[-81.04px] -rotate-8 scale-190 transition-[translate,rotate] duration-700 ease-[cubic-bezier(0.2,0.8,0.2,1)] capability-active:translate-x-[-53.24px] capability-active:translate-y-[-34.9px] capability-active:rotate-2 motion-reduce:transition-none dark:brightness-93"
+      />
+    </span>
+    <img
+      src={ASSETS.magnifierGlass}
+      alt=""
+      className="absolute inset-0 -z-1 w-full opacity-35"
+    />
+  </>
 );
 
 /**
@@ -210,8 +242,8 @@ const CLOCK_HANDS = (
 /**
  * A group with several objects gathers them into a small stack at its centre
  * and fans them out; a single object rises into place; the gears roll in; the
- * trigger is pressed. The magnifier enters from its resting spot, so Explore
- * glides it onto the page instead of dropping it in.
+ * bell rings. The magnifier enters from its resting spot, so Explore glides it
+ * onto the page instead of dropping it in.
  */
 const ARTS = {
   people: [
@@ -237,13 +269,16 @@ const ARTS = {
   research: [
     {
       src: ASSETS.page,
-      width: "w-[84px]",
-      pose: "top-[84px] left-[102px] z-4 -rotate-6 [--capability-from-rotate:-14deg] [--capability-from-scale:0.88] [--capability-from-y:14px] capability-active:translate-x-[-2px] capability-active:-rotate-4",
+      width: "w-[80px]",
+      pose: "top-[78px] left-[127px] z-4 -rotate-6 [--capability-from-rotate:-14deg] [--capability-from-scale:0.88] [--capability-from-y:14px] capability-active:translate-x-[-2px] capability-active:-rotate-4",
     },
     {
-      src: ASSETS.magnifier,
-      width: "w-[88px]",
-      pose: "top-[80px] left-[180px] z-12 rotate-6 [--capability-duration:900ms] [--capability-from-rotate:6deg] capability-active:translate-x-[-58px] capability-active:translate-y-[2px] capability-active:-rotate-4",
+      // Rests on the lines of text and glides up onto the chart; the lens
+      // stays inside the page in both poses.
+      src: ASSETS.magnifierRim,
+      width: "w-[80px]",
+      pose: "top-[101px] left-[154px] z-12 rotate-2 [--capability-duration:900ms] [--capability-from-rotate:2deg] [--capability-from-x:14px] [--capability-from-y:6px] capability-active:translate-x-[-17px] capability-active:translate-y-[-34px] capability-active:-rotate-6",
+      detail: MAGNIFIER_LENS,
     },
   ],
   presentation: [
@@ -316,10 +351,11 @@ const ARTS = {
   ],
   triggers: [
     {
-      src: ASSETS.button,
-      width: "w-[96px]",
-      pose: "top-[66px] left-[104px] z-8 [--capability-from-scale:0.9] capability-active:translate-y-[-3px] capability-active:scale-102",
-      detail: TRIGGER_RING,
+      src: ASSETS.bell,
+      width: "w-[98px]",
+      pose: "top-[66px] left-[104px] z-8 [--capability-from-scale:0.86] [--capability-from-y:10px] capability-active:translate-y-[-3px]",
+      turn: "origin-[50%_85%] motion-safe:capability-active:animate-capability-ding",
+      detail: BELL_GLOW,
     },
   ],
   advanced: [
@@ -337,8 +373,8 @@ const ARTS = {
     },
     {
       src: ASSETS.gearOrange,
-      width: "w-[52px]",
-      pose: "top-[74px] left-[158px] z-11 rotate-9 [--capability-delay:140ms] [--capability-from-rotate:-111deg] [--capability-from-scale:0.6] capability-active:translate-y-[-2px]",
+      width: "w-[46px]",
+      pose: "top-[76px] left-[156px] z-11 rotate-9 [--capability-delay:140ms] [--capability-from-rotate:-111deg] [--capability-from-scale:0.6] capability-active:translate-y-[-2px]",
       turn: "motion-safe:animate-capability-gear-fast",
     },
   ],
@@ -375,7 +411,8 @@ export function CapabilityObjects({
             <span className={cn(BODY, width)}>
               {turn ? (
                 // The gears turn only while the card is active and keep the
-                // angle they reached when it lets go.
+                // angle they reached when it lets go; the bell rocks once
+                // each time the card becomes active.
                 <span
                   className={cn(
                     "block capability-active:[animation-play-state:running]",
