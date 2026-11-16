@@ -784,7 +784,6 @@ const bootstrapCredentialsDecoder = zodDriverValueDecoder(
     object({
       id: string(),
       name: string(),
-      encryptedValue: string(),
     }),
   ),
 );
@@ -828,8 +827,8 @@ function createAgentEnvironment(
     const connectorVariableSnapshot =
       bootstrapConnectorVariableSnapshot(variableRows);
     const credentialSnapshot = bootstrapCredentialSnapshot(userId, orgId);
-    // A single statement owns the account revision and its credential values.
-    // It also supplies Agent variables, including the empty-account case.
+    // Selection owns account revisions and credential references, not values.
+    // Agent variables still exist in the empty-account case.
     const statement = db
       .with(
         variableRows,
@@ -1009,7 +1008,7 @@ function bootstrapCredentialSnapshot(userId: string, orgId: string) {
       .select({
         connectorId: secrets.connectorId,
         values: sql`jsonb_agg(jsonb_build_object(
-          'id', ${secrets.id}, 'name', ${secrets.name}, 'encryptedValue', ${secrets.encryptedValue}
+          'id', ${secrets.id}, 'name', ${secrets.name}
         ))`
           .mapWith(nullableDriverValueDecoder(bootstrapCredentialsDecoder))
           .as("credential_values"),
