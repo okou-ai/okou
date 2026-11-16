@@ -259,6 +259,37 @@ jobs:
       IOS_BUILD_CACHE_ENABLED: "true"
       IOS_XCODE_STARTUP_SAMPLING: ${{ github.event_name == 'workflow_dispatch' && inputs.sample_xcode_startup && 'true' || 'false' }}
     steps:
+      - name: Require matched image for the startup experiment
+        id: host-image
+        env:
+          IOS_EXPECTED_IMAGE: "20261112.0361.1"
+          IOS_EXPECTED_HOST_OS: "27.2"
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import platform
+          import re
+          import subprocess
+          from pathlib import Path
+
+          metadata = json.loads((Path.home() / "imagedata.json").read_text())
+          image = next(item["detail"] for item in metadata if item["group"] == "Runner Image")
+          version = re.search(r"(?m)^Version: (\S+)$", image).group(1)
+          host = {
+              "imageVersion": version,
+              "osVersion": subprocess.check_output(["sw_vers", "-productVersion"], text=True).strip(),
+              "osBuild": subprocess.check_output(["sw_vers", "-buildVersion"], text=True).strip(),
+              "architecture": platform.machine(),
+          }
+          print("IOS_EXPERIMENT_HOST=" + json.dumps(host, sort_keys=True), flush=True)
+          if (version, host["osVersion"], host["architecture"]) != (
+              os.environ["IOS_EXPECTED_IMAGE"], os.environ["IOS_EXPECTED_HOST_OS"], "arm64"
+          ):
+              print("IOS_EXPERIMENT_REJECT=host-image-mismatch", flush=True)
+              raise SystemExit(78)
+          print("IOS_EXPERIMENT_IMAGE_MATCH=true", flush=True)
+          PY
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Keep the bounded squash-group ancestry, not the entire repository history.
@@ -333,6 +364,36 @@ jobs:
         with:
           name: ios-xcode-startup-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/okou-ios-ci/startup-samples
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Export current native test summary
+        if: always() && steps.host-image.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 2
+        run: |
+          mkdir -p "$RUNNER_TEMP/ios-startup-diagnostics"
+          xcrun xcresulttool get test-results summary \
+            --path "$RUNNER_TEMP/okou-ios-ci/Tests.xcresult" \
+            > "$RUNNER_TEMP/ios-startup-diagnostics/current-summary.json"
+      - name: Decode the earlier focus failure
+        if: always() && steps.host-image.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/ios-startup-diagnostics"
+          gh run download 43865392189 --repo "$GITHUB_REPOSITORY" \
+            --name ios-test-results-1 --dir "$RUNNER_TEMP/prior-focus-result"
+          xcrun xcresulttool get test-results summary \
+            --path "$RUNNER_TEMP/prior-focus-result/Tests.xcresult" \
+            > "$RUNNER_TEMP/ios-startup-diagnostics/prior-focus-summary.json"
+      - name: Retain native startup experiment diagnostics
+        if: always() && steps.host-image.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-startup-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ios-startup-diagnostics
           if-no-files-found: ignore
           retention-days: 7
       - name: Record simulator inputs and test decision
