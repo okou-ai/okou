@@ -489,8 +489,11 @@ async fn unused_release_overflow_requests_full_reconciliation_with_bounded_hints
     let temp = tempfile::tempdir().unwrap();
     let cache = HomeImageCache::new(RunnerPaths::new(temp.path().join("runner")));
     let mut watcher = HomeCacheWatcher::new(cache.clone()).await.unwrap();
-    for key in 0..=MAX_HELD_HOME_STATES {
-        cache.inner.record_selection_release(&format!("{key:064x}"));
+    let oversized: BTreeSet<_> = (0..=MAX_HELD_HOME_STATES)
+        .map(|key| format!("{key:064x}"))
+        .collect();
+    for key in &oversized {
+        cache.inner.record_selection_release(key);
     }
     let change = watcher.next_change().await.unwrap();
     assert!(change.requires_full_reconcile);
@@ -503,9 +506,6 @@ async fn unused_release_overflow_requests_full_reconciliation_with_bounded_hints
         )
         .await;
     assert!(updates.entries.values().all(Option::is_none));
-    let oversized = (0..=MAX_HELD_HOME_STATES)
-        .map(|key| format!("{key:064x}"))
-        .collect();
     let updates = cache
         .revalidate_home_cache_keys(
             &BTreeMap::from([(TEST_PROFILE_NAME, 1024 * 1024)]),
