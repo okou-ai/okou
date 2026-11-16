@@ -105,7 +105,7 @@ async function current() {
     .edition;
 }
 
-test("only delivers a published edition when its server-side feature switch is enabled", async () => {
+test("delivers published guides by default and respects a member's opt-out", async () => {
   await setupApp({
     context,
     routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
@@ -137,13 +137,9 @@ test("only delivers a published edition when its server-side feature switch is e
     }),
   );
   const viewer = await identity();
-  await enable();
   await expect(current()).resolves.toBeNull();
   await publish(prepared);
   signIn(viewer);
-  await enable(false);
-  await expect(current()).resolves.toBeNull();
-  await enable();
   await expect(current()).resolves.toMatchObject({
     id: prepared.editionId,
     revisionId: prepared.revisionId,

@@ -173,7 +173,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     displayName: "Feature guides",
     description: "Show published product updates once per user and edition.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.BatchConnectorPermissions]: {
     maintainer: "ethan@okou.ai",
