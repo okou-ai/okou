@@ -228,6 +228,9 @@
 -keep,allowobfuscation class ai.okou.android.chat.ChatCacheStore {
   public java.lang.Object close(kotlin.coroutines.Continuation);
 }
+-keep,allowobfuscation class ai.okou.android.chat.ChatChanges {
+  public <init>(boolean, boolean, boolean, boolean, java.util.Set, int, kotlin.jvm.internal.DefaultConstructorMarker);
+}
 -keep,allowobfuscation class ai.okou.android.chat.ChatComposerModel {
   public kotlinx.coroutines.flow.StateFlow getUiState();
 }
@@ -293,8 +296,8 @@
   public java.lang.Object observeRealtime(kotlin.jvm.functions.Function2, kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.chat.RealtimeSnapshot {
-  public <init>(ai.okou.android.chat.RealtimePhase, long, java.lang.Exception, int, kotlin.jvm.internal.DefaultConstructorMarker);
-  public static ai.okou.android.chat.RealtimeSnapshot copy$default(ai.okou.android.chat.RealtimeSnapshot, ai.okou.android.chat.RealtimePhase, long, java.lang.Exception, int, java.lang.Object);
+  public <init>(ai.okou.android.chat.RealtimePhase, long, java.lang.Exception, ai.okou.android.chat.ChatChanges, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public static ai.okou.android.chat.RealtimeSnapshot copy$default(ai.okou.android.chat.RealtimeSnapshot, ai.okou.android.chat.RealtimePhase, long, java.lang.Exception, ai.okou.android.chat.ChatChanges, int, java.lang.Object);
   public long getRevision();
 }
 -keep enum ai.okou.android.instructions.InstructionsPhase {
@@ -706,6 +709,8 @@
   boolean element;
 }
 -keep,allowobfuscation class kotlin.jvm.internal.Ref$LongRef {
+  public <init>();
+  long element;
 }
 -keep,allowobfuscation class kotlin.jvm.internal.Ref$ObjectRef {
   public <init>();

@@ -15,7 +15,7 @@ class ChatUpdatesModel(
     private val scope: CoroutineScope,
     private val authorized: () -> Boolean,
     private val onFailure: (Exception) -> Unit,
-    private val invalidate: () -> Unit,
+    private val invalidate: (ChatChanges) -> Unit,
 ) {
     private val mutable = MutableStateFlow(RealtimePhase.Stopped)
     val phase = mutable.asStateFlow()
@@ -43,21 +43,18 @@ class ChatUpdatesModel(
         previous?.cancel()
         val ticket = ++generation
         mutable.value = RealtimePhase.Connecting
-        invalidate()
+        invalidate(ChatChanges(resync = true))
         observation =
             scope.launch {
                 connection.withLock {
                     if (!current(ticket)) return@withLock
-                    var revision = -1L
                     try {
                         source.observeRealtime { next ->
                             if (current(ticket)) {
                                 mutable.value = next.phase
                                 next.failure?.let(onFailure)
-                                if (current(ticket) && next.revision != revision) {
-                                    revision = next.revision
-                                    invalidate()
-                                }
+                                if (current(ticket) && next.changes != ChatChanges())
+                                    invalidate(next.changes)
                             }
                         }
                     } catch (cancelled: CancellationException) {

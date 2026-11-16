@@ -612,10 +612,17 @@ STARTED, including navigation to Settings. STOP and workspace retirement cancel
 token renewal and close subscriptions; foreground restoration connects again and
 catches up through the existing canonical HTTP list, indicators and selected
 history owners. Those reads remain independent of token/attachment readiness and
-of one another. Notifications contain no authoritative rows: recognized chat
-topics, initial attachment, reconnect and continuity loss invalidate HTTP reads.
+of one another. Notifications contain no authoritative rows. List changes wake
+chat/project navigation; message/detail changes wake only the matching selected
+conversation; indicator/read-cursor changes refresh only indicators. Pending SDK
+notifications merge resource flags and thread IDs until the observer drains them,
+so a conflated wake-up cannot discard a different topic. Initial attachment,
+reconnect and continuity loss still request full canonical catch-up.
 Each confirmed resource coalesces its own notifications and retains a trailing
-read, so held history cannot delay subsequent list or indicator updates.
+read, so held history cannot delay subsequent list or indicator updates. Run-state
+indicator refreshes start at least one second apart; read-cursor and local
+mark-read changes wake delayed demand immediately. Manual refresh is unthrottled.
+Queued history invalidations retain the selected conversation's generation.
 Drafts and pending sends retain their existing durable journal ownership.
 
 The native connection notice reports connecting or unavailable with explicit

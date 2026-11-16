@@ -67,6 +67,7 @@ internal class AblyRealtimeConnection(
     val state = mutable.asStateFlow()
     private val closed = AtomicBoolean(false)
     private val lock = Any()
+    private var pending = ChatChanges()
     private var connection = RealtimePhase.Connecting
     private val attachments =
         linkedMapOf(
@@ -75,7 +76,9 @@ internal class AblyRealtimeConnection(
         )
     private val tokens =
         RealtimeTokenBridge(context, token) { error ->
-            mutable.update { it.copy(phase = RealtimePhase.Unavailable, failure = error) }
+            synchronized(lock) {
+                mutable.update { it.copy(phase = RealtimePhase.Unavailable, failure = error) }
+            }
         }
     private val client =
         try {
@@ -117,8 +120,13 @@ internal class AblyRealtimeConnection(
                     }
                 }
                 channel.subscribe { message ->
-                    if (!closed.get() && isChatInvalidation(message.name))
-                        mutable.update { it.copy(revision = it.revision + 1) }
+                    val changes = chatChanges(message.name) ?: return@subscribe
+                    synchronized(lock) {
+                        if (!closed.get()) {
+                            pending += changes
+                            mutable.update { it.copy(revision = it.revision + 1) }
+                        }
+                    }
                 }
             }
             client.connect()
@@ -128,8 +136,15 @@ internal class AblyRealtimeConnection(
         }
     }
 
+    /** The sole observer drains every topic accumulated behind a conflated StateFlow wake-up. */
+    fun takeObservation(): RealtimeSnapshot =
+        synchronized(lock) {
+            mutable.value.copy(changes = pending).also { pending = ChatChanges() }
+        }
+
     private fun publish(invalidate: Boolean) {
         if (closed.get()) return
+        if (invalidate) pending += ChatChanges(resync = true)
         val phase =
             when {
                 connection == RealtimePhase.Unavailable ||

@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
+import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.RealtimePhase
@@ -176,7 +177,8 @@ class NativeRealtimeTest {
                     """{"rows":[$rows],"cursor":{"lastEventId":"$extraId","lastSeqId":41},"hasMore":false}"""
                 )
             }
-            external.snapshot.value = RealtimeSnapshot(RealtimePhase.Connected, 1)
+            external.snapshot.value =
+                RealtimeSnapshot(RealtimePhase.Connected, 1, changes = ChatChanges(resync = true))
             text("Changed on another client")
             // The new confirmed message can be below the current viewport; use native scrolling.
             androidx.test.uiautomator
