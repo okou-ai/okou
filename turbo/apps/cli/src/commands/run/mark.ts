@@ -7,7 +7,7 @@ export function createRunMarkCommand(): Command {
     .description("Record a best-effort phase boundary for the current Run")
     .addHelpText(
       "after",
-      "\nValid marks are quiet by default and never fail the task on an API or transport error. HTTP deadline: 500 ms, no retries. A timeout may have committed. Run completion supplies the final boundary automatically.",
+      "\nValid marks are quiet by default and never fail the task on an API or transport error. HTTP deadline: 500 ms, no retries. Acceptance is not delivery confirmation; a timeout leaves delivery unknown. Run completion supplies the final boundary automatically.",
     )
     .addCommand(
       new Command("research-start")

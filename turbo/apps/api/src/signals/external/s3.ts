@@ -702,6 +702,31 @@ const getS3Object$ = command(
   },
 );
 
+/** Read bytes and their revision together for conditional object replacement. */
+export const readS3ObjectWithEtag$ = command(
+  async (
+    { set },
+    args: {
+      readonly bucket: string;
+      readonly key: string;
+      readonly maxBytes: number;
+    },
+    signal: AbortSignal,
+  ): Promise<{ readonly buffer: Buffer; readonly etag: string }> => {
+    const response = await set(getS3Object$, args, signal);
+    const buffer = await readS3ObjectBody(
+      response,
+      args.key,
+      { maxBytes: args.maxBytes },
+      signal,
+    );
+    if (!response.ETag) {
+      throw new Error("S3 object has no storage revision");
+    }
+    return { buffer, etag: response.ETag };
+  },
+);
+
 /** Fixed reader retaining SDK failure and body validation/cancellation order. */
 export const downloadS3BufferWithMaxBytes$ = command(
   async (
@@ -1387,6 +1412,8 @@ interface PutS3ObjectArgs {
   readonly body: string | Buffer;
   readonly contentType: string;
   readonly metadata?: Readonly<Record<string, string>>;
+  readonly ifMatch?: string;
+  readonly ifNoneMatch?: "*";
 }
 
 function createPutS3ObjectCommand(args: PutS3ObjectArgs): PutObjectCommand {
@@ -1396,6 +1423,10 @@ function createPutS3ObjectCommand(args: PutS3ObjectArgs): PutObjectCommand {
     Body: args.body,
     ContentType: args.contentType,
     Metadata: args.metadata,
+    ...(args.ifMatch === undefined ? {} : { IfMatch: args.ifMatch }),
+    ...(args.ifNoneMatch === undefined
+      ? {}
+      : { IfNoneMatch: args.ifNoneMatch }),
   });
 }
 
