@@ -3361,6 +3361,13 @@
       "when": 1794819499473,
       "tag": "1558_for_you_sources_and_read_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 1559,
+      "version": "7",
+      "when": 1794826728121,
+      "tag": "1559_system_update_source_preference",
+      "breakpoints": true
     }
   ]
 }

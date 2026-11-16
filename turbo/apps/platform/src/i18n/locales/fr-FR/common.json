@@ -1691,7 +1691,6 @@
         "previous": "Suggestion précédente",
         "remaining": "Encore {{total}}",
         "sources": {
-          "alwaysOn": "Toujours activées",
           "description": "Choisissez ce que vous recevrez ensuite. Les cartes déjà reçues restent jusqu’à ce que vous les traitiez. Les alertes de contenus non lus concernent uniquement les sources activées.",
           "offers": "Offres",
           "suggestions": "Suggestions",

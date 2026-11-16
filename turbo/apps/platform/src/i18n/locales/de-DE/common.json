@@ -1667,7 +1667,6 @@
         "previous": "Vorheriger Vorschlag",
         "remaining": "Noch {{total}}",
         "sources": {
-          "alwaysOn": "Immer aktiv",
           "description": "Wähle aus, was du künftig erhältst. Bereits erhaltene Karten bleiben, bis du sie bearbeitest. Hinweise auf ungelesene Inhalte berücksichtigen nur aktivierte Quellen.",
           "offers": "Angebote",
           "suggestions": "Vorschläge",

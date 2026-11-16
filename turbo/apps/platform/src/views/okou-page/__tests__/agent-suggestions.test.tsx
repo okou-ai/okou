@@ -165,6 +165,7 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
     suggestions: true,
     whatsNew: true,
     offers: true,
+    systemUpdates: true,
   };
   const read = new Set<string>();
   context.mocks.api(feedContract.sources, ({ respond }) => {
@@ -1624,15 +1625,16 @@ test("A hidden For you page leaves its card unread until the member sees it", as
   expect(screen.getByText("1 to go")).toBeInTheDocument();
 });
 
-test("A failed For you source change keeps the saved choice and allows an explicit retry", async () => {
+test("A failed system update source change keeps the saved choice and allows an explicit retry", async () => {
   mockPool(numberedSuggestions(2));
   let enabled = true;
   let failed = false;
   context.mocks.api(feedContract.sources, ({ respond }) => {
     return respond(200, {
-      suggestions: enabled,
+      suggestions: true,
       whatsNew: true,
       offers: true,
+      systemUpdates: enabled,
     });
   });
   context.mocks.api(feedContract.updateSources, ({ body, respond }) => {
@@ -1645,8 +1647,13 @@ test("A failed For you source change keeps the saved choice and allows an explic
         },
       });
     }
-    enabled = body.suggestions ?? enabled;
-    return respond(200, { suggestions: enabled, whatsNew: true, offers: true });
+    enabled = body.systemUpdates ?? enabled;
+    return respond(200, {
+      suggestions: true,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: enabled,
+    });
   });
   await setupPage({
     context,
@@ -1657,7 +1664,7 @@ test("A failed For you source change keeps the saved choice and allows an explic
   click(button("For you sources"));
   const dialog = await screen.findByRole("dialog", { name: "For you sources" });
   const toggle = await within(dialog).findByRole("switch", {
-    name: "Suggestions",
+    name: "System updates",
   });
   click(toggle);
   await screen.findByText("Source preference could not be saved");
@@ -1739,7 +1746,17 @@ test("For you source choices persist without removing delivered cards and only e
   await waitFor(() => {
     return expect(suggestions).not.toHaveAttribute("aria-disabled", "true");
   });
-  expect(within(dialog).getByText("Always on")).toBeInTheDocument();
+  const systemUpdates = within(dialog).getByRole("switch", {
+    name: "System updates",
+  });
+  expect(systemUpdates).toHaveAttribute("aria-checked", "true");
+  click(systemUpdates);
+  await waitFor(() => {
+    return expect(systemUpdates).toHaveAttribute("aria-checked", "false");
+  });
+  await waitFor(() => {
+    return expect(systemUpdates).not.toHaveAttribute("aria-disabled", "true");
+  });
   click(button("Close", "button", dialog));
   await activeForYouCard("Suggested action 1");
   click(link("/agents"));
@@ -1761,6 +1778,9 @@ test("For you source choices persist without removing delivered cards and only e
   expect(
     within(reopened).getByRole("switch", { name: "Offers" }),
   ).toHaveAttribute("aria-checked", "false");
+  expect(
+    within(reopened).getByRole("switch", { name: "System updates" }),
+  ).toHaveAttribute("aria-checked", "false");
   click(toggle);
   await waitFor(() => {
     return expect(toggle).toHaveAttribute("aria-checked", "true");
@@ -1773,7 +1793,12 @@ test("System updates remain unread with optional sources off until their card is
   const event = makePlatformEvent();
   let read = false;
   context.mocks.api(feedContract.sources, ({ respond }) => {
-    return respond(200, { suggestions: false, whatsNew: false, offers: false });
+    return respond(200, {
+      suggestions: false,
+      whatsNew: false,
+      offers: false,
+      systemUpdates: true,
+    });
   });
   context.mocks.api(feedContract.list, ({ respond }) => {
     return respond(200, { items: [event] });
@@ -1803,5 +1828,7 @@ test("System updates remain unread with optional sources off until their card is
     name: "Suggestions",
   });
   expect(suggestions).toHaveAttribute("aria-checked", "false");
-  expect(within(dialog).getByText("Always on")).toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("switch", { name: "System updates" }),
+  ).toHaveAttribute("aria-checked", "true");
 });

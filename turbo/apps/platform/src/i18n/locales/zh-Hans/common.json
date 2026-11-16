@@ -1664,7 +1664,6 @@
         "previous": "上一条建议",
         "remaining": "还有 {{total}} 条",
         "sources": {
-          "alwaysOn": "始终开启",
           "description": "选择今后接收的内容。已收到的卡片会保留，直到你处理它们。未读提示只包含已开启的来源。",
           "offers": "优惠",
           "suggestions": "建议",
