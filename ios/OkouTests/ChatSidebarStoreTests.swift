@@ -41,9 +41,9 @@ final class ChatSidebarStoreTests: XCTestCase {
     XCTAssertEqual(
       recent.pinNeighbors(of: SidebarProjectionFixture.id(2)),
       .init(above: nil, below: nil, projectID: SidebarProjectionFixture.project))
-    // The inbox leaves archived chats out; only the Project holding some offers them.
+    // The inbox hides archived chats in Shared (4, 7) and outside Projects (11).
     XCTAssertEqual(recent.projects.map(\.hasHiddenArchivedChats), [true, false])
-    XCTAssertFalse(recent.hasHiddenArchivedChats)
+    XCTAssertTrue(recent.hasHiddenArchivedChats)
 
     workspace.sidebar.select(.unread)
     let unread = try snapshot(workspace)
