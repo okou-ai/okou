@@ -473,6 +473,71 @@ class RunControlsModelTest {
     }
 
     @Test
+    fun olderOutcomeReadCannotReplaceANewerCommandsSendingState() = runTest {
+        for (readFails in listOf(false, true)) {
+            val original =
+                RunControlIntent(
+                    eventId("original-control"),
+                    CHAT_PERSONAL,
+                    CHAT_AGENT,
+                    RunControlKind.Interrupt,
+                    HISTORY_RUN,
+                )
+            withControls(
+                initial = listOf(input("first", 1), input("second", 2, secondRun)),
+                saved = RunControlJournal(pending = listOf(original)),
+            ) { f ->
+                val readEntered = CompletableDeferred<Unit>()
+                val releaseRead = CountDownLatch(1)
+                val firstRead = AtomicBoolean(true)
+                val postEntered = CompletableDeferred<Unit>()
+                val releasePost = CountDownLatch(1)
+                f.api.beforeHistoryResponse = { request ->
+                    if (
+                        request.requestUrl?.pathSegments?.last() == "event-rows" &&
+                            firstRead.getAndSet(false)
+                    ) {
+                        readEntered.complete(Unit)
+                        releaseRead.await()
+                    }
+                }
+                f.remote.write = {
+                    postEntered.complete(Unit)
+                    releasePost.await()
+                    jsonResponse("""{"threadId":"$CHAT_PERSONAL"}""").setResponseCode(201)
+                }
+                try {
+                    f.controls.check(CHAT_PERSONAL)
+                    readEntered.await()
+                    f.controls.stop(CHAT_PERSONAL, listOf(secondRun))
+                    postEntered.await()
+                    val newer =
+                        f.controls.uiState.value.journal!!.pending.single {
+                            it.targetId == secondRun
+                        }
+                    assertEquals(RunControlPhase.Sending, f.controls.uiState.value.phases[newer.id])
+                    f.remote.failRows.set(readFails)
+                    releaseRead.countDown()
+                    val checked =
+                        f.controls.uiState.first {
+                            if (readFails) it.notice?.kind == RunControlNoticeKind.ReadFailed
+                            else it.phases[original.id] == RunControlPhase.Retryable
+                        }
+                    assertEquals(RunControlPhase.Sending, checked.phases[newer.id])
+                    assertEquals(1, f.remote.posts.size)
+                    f.remote.failRows.set(false)
+                    releasePost.countDown()
+                    f.controls.uiState.first { it.phases[newer.id] == RunControlPhase.Accepted }
+                } finally {
+                    f.remote.failRows.set(false)
+                    releaseRead.countDown()
+                    releasePost.countDown()
+                }
+            }
+        }
+    }
+
+    @Test
     fun unauthorizedReadRetiresItsOwnerBeforePublishingAnyFailureState() = runTest {
         val intent =
             RunControlIntent(

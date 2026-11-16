@@ -105,7 +105,7 @@ class RunControlsModel(
             var thread: String? = null
             var confirmedRevision: Long? = null
             history.uiState.collect { state ->
-                state.thread?.id?.let { id -> history.checkpoint(id)?.let { reconcile(it, false) } }
+                state.thread?.id?.let { id -> history.checkpoint(id)?.let { reconcile(it) } }
                 val next = state.thread?.id
                 if (
                     next != thread ||
@@ -153,7 +153,7 @@ class RunControlsModel(
                         )
                     // Restore publishes intent only. Even an interrupted preparation cannot POST.
                     history.uiState.value.thread?.id?.let {
-                        history.checkpoint(it)?.let { checkpoint -> reconcile(checkpoint, false) }
+                        history.checkpoint(it)?.let { checkpoint -> reconcile(checkpoint) }
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -292,7 +292,7 @@ class RunControlsModel(
                         publishRecovery(intent.threadId, read.cancellationRecoveryPending, it)
                     }
                     if (evidence != RunControlEvidence.Eligible) {
-                        reconcile(read.checkpoint, true)
+                        reconcile(read.checkpoint, setOf(intent.id))
                         return@launch
                     }
                 }
@@ -308,7 +308,7 @@ class RunControlsModel(
                         evidence in
                             setOf(RunControlEvidence.Recorded, RunControlEvidence.TargetSettled)
                     ) {
-                        reconcile(checkpoint, false)
+                        reconcile(checkpoint)
                     }
                 }
                 requireCurrent(op)
@@ -341,6 +341,7 @@ class RunControlsModel(
             refreshRecovery(threadId)
             return
         }
+        val checkedIds = pending.mapTo(hashSetOf()) { it.id }
         mutable.value =
             mutable.value.copy(
                 phases =
@@ -354,7 +355,7 @@ class RunControlsModel(
                 val read = sync.read(threadId, history.checkpoint(threadId))
                 currentCoroutineContext().ensureActive()
                 if (!current()) return@launch
-                reconcile(read.checkpoint, true)
+                reconcile(read.checkpoint, checkedIds)
                 ticket?.let { publishRecovery(threadId, read.cancellationRecoveryPending, it) }
                 history.invalidate(threadId)
             } catch (cancelled: CancellationException) {
@@ -364,7 +365,7 @@ class RunControlsModel(
                     report(error)
                     if (!current()) return@launch
                     val remaining =
-                        mutable.value.journal?.pending.orEmpty().filter { it.threadId == threadId }
+                        mutable.value.journal?.pending.orEmpty().filter { it.id in checkedIds }
                     mutable.value =
                         mutable.value.copy(
                             phases =
@@ -379,7 +380,7 @@ class RunControlsModel(
         }
     }
 
-    private fun reconcile(checkpoint: HistoryCheckpoint, allowRetry: Boolean) {
+    private fun reconcile(checkpoint: HistoryCheckpoint, checkedIds: Set<String> = emptySet()) {
         if (!current()) return
         val journal = mutable.value.journal ?: return
         val intents = journal.pending.filter { it.threadId == checkpoint.threadId }
@@ -392,16 +393,16 @@ class RunControlsModel(
             }
         val ids = resolved.keys.mapTo(hashSetOf()) { it.id }
         var phases = mutable.value.phases - ids
-        if (allowRetry)
-            for ((intent, evidence) in results) {
-                if (intent.id !in ids)
-                    phases =
-                        phases +
-                            (intent.id to
-                                if (evidence == RunControlEvidence.Eligible)
-                                    RunControlPhase.Retryable
-                                else RunControlPhase.Unknown)
-            }
+        // Canonical evidence may settle any target. Request phases belong only to commands
+        // that existed when this read began; later writes keep their own sending/outcome state.
+        for ((intent, evidence) in results) {
+            if (intent.id in checkedIds && intent.id !in ids)
+                phases =
+                    phases +
+                        (intent.id to
+                            if (evidence == RunControlEvidence.Eligible) RunControlPhase.Retryable
+                            else RunControlPhase.Unknown)
+        }
         val notice =
             when {
                 resolved.isNotEmpty() ->
