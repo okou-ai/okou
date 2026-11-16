@@ -3,18 +3,20 @@
 use guest_agent_tests as common;
 
 use guest_agent::active_input::{ActiveInputControlOutcome, ActiveInputRuntime};
+use guest_agent::env::{GuestConfig, GuestConfigRaw};
 use guest_agent::http::HttpClient;
 use guest_agent::masker::SecretMasker;
+use guest_agent::paths::GuestPaths;
+use guest_agent::run_context::GuestRuntime;
 use httpmock::prelude::*;
 use serde_json::{Value, json};
+use std::path::Path;
 use std::time::Duration;
-use tokio::process::Command;
 
 const RUN_ID: &str = "codex-inactive-turn-rejection";
 const ACCEPTED_ID: &str = "97a21bf2-78a3-464c-a5ea-1d20abe4fabc";
 const REJECTED_ID: &str = "e9698196-9d75-477a-9fe9-005d17e8f900";
 const QUEUED_ID: &str = "c546fe6e-435d-42dc-b8f4-a975ba7d8347";
-const CHILD_COMPLETE: &str = "Inactive-turn rejection assertions passed";
 
 #[tokio::test]
 async fn inactive_turn_rejection_preserves_terminal_status_and_prior_acknowledgements()
@@ -31,75 +33,50 @@ async fn inactive_turn_rejection_preserves_terminal_status_and_prior_acknowledge
         "steer-rejected-other-error",
         "steer-disconnected-after-completion",
     ] {
-        let home = tempfile::tempdir()?;
-        let runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(home.path(), RUN_ID)?;
-        let payload = common::write_run_payload_file_for_test(
-            &runtime_dir,
-            &guest_contracts::env::RunPayload {
-                prompt: "retain this original turn".to_string(),
-                ..Default::default()
-            },
-        )?;
-        let mut command = Command::new(std::env::current_exe()?);
-        command
-            .args([
-                "--exact",
-                "inactive_turn_rejection_child",
-                "--ignored",
-                "--nocapture",
-            ])
-            .env_clear()
-            .env(guest_contracts::env::CLI_AGENT_TYPE_ENV, "codex")
-            .env(guest_contracts::env::USE_MOCK_CODEX_ENV, "true")
-            .env(guest_contracts::env::CANONICAL_MOCK_CODEX_PATH_ENV, &mock)
-            .env("MOCK_CODEX_APP_SERVER_SCENARIO", scenario)
-            .env(guest_contracts::env::RUN_ID_ENV, RUN_ID)
-            .env(
-                guest_contracts::env::CANONICAL_API_URL_ENV,
-                "http://127.0.0.1:1",
-            )
-            .env(guest_contracts::env::CANONICAL_API_TOKEN_ENV, "")
-            .env(
-                guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
-                "00000000-0000-4000-8000-000000000abc",
-            )
-            .env(
-                guest_contracts::env::CANONICAL_RUN_PAYLOAD_FILE_ENV,
-                payload,
-            )
-            .env("HOME", home.path())
-            .env("OKOU_TEST_CODEX_HOME_DIR", home.path().join("codex-home"))
-            .env("PATH", "/usr/bin:/bin")
-            .current_dir(home.path());
-        if let Some(profile) = std::env::var_os("LLVM_PROFILE_FILE") {
-            command.env("LLVM_PROFILE_FILE", profile);
-        }
-        let output = common::command_output_with_timeout(
-            &mut command,
-            Duration::from_secs(15),
-            "inactive-turn rejection child did not finish",
-        )
-        .await?;
-        assert!(
-            output.status.success(),
-            "{scenario}: {}; stdout:\n{}\nstderr:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(
-            String::from_utf8_lossy(&output.stdout).contains(CHILD_COMPLETE),
-            "{scenario}: child did not complete its assertions"
-        );
+        assert_rejection_scenario(&mock, scenario).await?;
     }
     Ok(())
 }
 
-#[tokio::test]
-#[ignore = "spawned with isolated startup inputs by the scenario parent"]
-async fn inactive_turn_rejection_child() -> Result<(), Box<dyn std::error::Error>> {
-    let scenario = std::env::var("MOCK_CODEX_APP_SERVER_SCENARIO")?;
-    let runtime = common::guest_runtime_from_process_env()?;
+async fn assert_rejection_scenario(
+    mock: &Path,
+    scenario: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let home = tempfile::tempdir()?;
+    let paths = GuestPaths::from_home(home.path(), RUN_ID)?;
+    let payload = common::write_run_payload_file_for_test(
+        paths.runtime_dir(),
+        &guest_contracts::env::RunPayload {
+            prompt: "retain this original turn".to_string(),
+            ..Default::default()
+        },
+    )?;
+    let mut config = GuestConfig::from_raw(GuestConfigRaw {
+        run_id: RUN_ID.to_string(),
+        cli_agent_type: "codex".to_string(),
+        use_mock_codex: "true".to_string(),
+        mock_codex_path: Some(mock.to_string_lossy().into_owned()),
+        home: Some(home.path().to_string_lossy().into_owned()),
+        guest_runtime_dir: Some(paths.runtime_dir().to_path_buf()),
+        run_payload_file: payload.to_string_lossy().into_owned(),
+        ..Default::default()
+    })?;
+    config.codex_home_dir = home
+        .path()
+        .join("codex-home")
+        .to_string_lossy()
+        .into_owned();
+    config.user_env.insert(
+        "MOCK_CODEX_APP_SERVER_SCENARIO".to_string(),
+        scenario.to_string(),
+    );
+    let runtime = GuestRuntime {
+        http: HttpClient::for_config(&config)?,
+        config,
+        paths,
+        workload_containment: None,
+        process_control_endpoint: None,
+    };
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
     let server = MockServer::start();
     let accepted = server.mock(|when, then| {
@@ -141,7 +118,7 @@ async fn inactive_turn_rejection_child() -> Result<(), Box<dyn std::error::Error
         ),
     )
     .await?;
-    let status = match scenario.as_str() {
+    let status = match scenario {
         "steer-rejected-after-completion" | "steer-rejected-before-completion" => Some("completed"),
         "steer-rejected-failed-turn" => Some("failed"),
         "steer-rejected-interrupted-turn" => Some("interrupted"),
@@ -149,26 +126,34 @@ async fn inactive_turn_rejection_child() -> Result<(), Box<dyn std::error::Error
     };
     if let Some(status) = status {
         let result = result?;
-        assert_eq!(result.exit_code, if status == "completed" { 0 } else { 1 });
+        assert_eq!(
+            result.exit_code,
+            if status == "completed" { 0 } else { 1 },
+            "{scenario}"
+        );
         let events = common::json_fixture::parse_json_lines(&std::fs::read_to_string(
             runtime.paths.agent_log_file(),
         )?)?;
         let terminal = events
             .iter()
-            .find(|event| event["type"] == "turn.completed")
+            .find(|event| event.get("type").and_then(Value::as_str) == Some("turn.completed"))
             .ok_or("missing terminal result")?;
-        assert_eq!(terminal["turn"]["status"], status);
+        assert_eq!(
+            terminal.pointer("/turn/status").and_then(Value::as_str),
+            Some(status)
+        );
         assert!(terminal.get("usage").is_some());
     } else {
         let error = result
-            .expect_err("uncorrelated or uncertain rejection must fail")
+            .err()
+            .ok_or("uncorrelated or uncertain rejection must fail")?
             .to_string();
-        let expected = match scenario.as_str() {
+        let expected = match scenario {
             "steer-rejected-wrong-turn" => "turn id",
             "steer-rejected-wrong-code" => "code=-32603",
             "steer-rejected-other-error" => "steering disabled",
             "steer-disconnected-after-completion" => "turn/steer",
-            _ => panic!("unexpected scenario: {scenario}"),
+            _ => return Err(format!("unexpected scenario: {scenario}").into()),
         };
         assert!(error.contains(expected), "unexpected error: {error}");
     }
@@ -178,13 +163,23 @@ async fn inactive_turn_rejection_child() -> Result<(), Box<dyn std::error::Error
         .into_iter()
         .filter(|event| event.get("type").and_then(Value::as_str) == Some("mock.app_server.input"))
         .collect::<Vec<_>>();
-    assert_eq!(inputs.len(), 2);
-    assert_eq!(inputs[0]["kind"], "initial");
-    assert_eq!(inputs[1]["text"], "accepted follow-up");
+    let [initial, accepted_input] = inputs.as_slice() else {
+        return Err(format!(
+            "{scenario}: expected exactly two submitted inputs, got {}",
+            inputs.len()
+        )
+        .into());
+    };
+    assert_eq!(initial.get("kind").and_then(Value::as_str), Some("initial"));
     assert_eq!(
-        inputs[1]["turn_request_client_user_message_id"],
-        ACCEPTED_ID
+        accepted_input.get("text").and_then(Value::as_str),
+        Some("accepted follow-up")
     );
-    println!("{CHILD_COMPLETE}");
+    assert_eq!(
+        accepted_input
+            .get("turn_request_client_user_message_id")
+            .and_then(Value::as_str),
+        Some(ACCEPTED_ID)
+    );
     Ok(())
 }
