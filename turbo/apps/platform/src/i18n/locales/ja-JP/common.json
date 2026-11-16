@@ -4466,6 +4466,10 @@
     "unsaved": "未保存の変更"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "初期設定を続ける",
+      "title": "ワークスペースを準備しています"
+    },
     "common": {
       "next": "次へ",
       "skip": "スキップ",

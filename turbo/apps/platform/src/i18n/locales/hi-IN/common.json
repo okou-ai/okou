@@ -4483,6 +4483,10 @@
     "unsaved": "बिना सहेजे बदलाव"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "सेटअप जारी रखें",
+      "title": "आपका वर्कस्पेस तैयार किया जा रहा है"
+    },
     "common": {
       "next": "अगला",
       "skip": "छोड़ें",

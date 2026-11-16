@@ -4466,6 +4466,10 @@
     "unsaved": "有未保存的更改"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "继续完成引导",
+      "title": "正在准备你的工作区"
+    },
     "common": {
       "next": "下一步",
       "skip": "跳过",

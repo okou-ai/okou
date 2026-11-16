@@ -35,6 +35,7 @@ import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
 import { detach, Reason } from "../utils.ts";
 import { forwardOnboardedVisitor$ } from "./onboarding-actions.ts";
+import { trySkipOnboarding$ } from "./onboarding-entry.ts";
 import { setupOnboardingPromptPage$ } from "./onboarding-page-setup.ts";
 import { watchOnboardingSkillImport$ } from "./onboarding-skill-import.ts";
 import { watchOnboardingRecommendation$ } from "./onboarding-recommendation.ts";
@@ -107,6 +108,9 @@ function createSourcesFirstPageSetup(
     if (!status.needsOnboarding) {
       set(clearSourcesFirstDraft$);
       await set(forwardOnboardedVisitor$, status.isAdmin, signal);
+      return;
+    }
+    if (await set(trySkipOnboarding$, signal)) {
       return;
     }
     if (hasPromptHandoff(get(searchParams$), status)) {

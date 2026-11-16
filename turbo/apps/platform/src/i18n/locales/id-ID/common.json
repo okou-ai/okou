@@ -4466,6 +4466,10 @@
     "unsaved": "Perubahan belum disimpan"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "Lanjutkan penyiapan",
+      "title": "Menyiapkan ruang kerja Anda"
+    },
     "common": {
       "next": "Berikutnya",
       "skip": "Lewati",

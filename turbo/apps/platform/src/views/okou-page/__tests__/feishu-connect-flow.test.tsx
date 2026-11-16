@@ -39,9 +39,7 @@ describe.each(["feishu", "lark"] as const)(
       await waitFor(() => {
         expect(window.location.pathname).toBe("/sign-in");
       });
-      const signInQuery = new URLSearchParams(
-        window.location.hash.split("?")[1],
-      );
+      const signInQuery = new URL(window.location.href).searchParams;
       expect(signInQuery.get("redirect_url")).toBe(returnUrl);
     });
 

@@ -4540,6 +4540,10 @@
     "unsaved": "Modifications non enregistrées"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "Continuer la configuration",
+      "title": "Préparation de votre espace de travail"
+    },
     "common": {
       "next": "Suivant",
       "skip": "Passer",

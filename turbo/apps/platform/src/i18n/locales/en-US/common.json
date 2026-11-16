@@ -4481,6 +4481,10 @@
     "unsaved": "Unsaved changes"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "Continue with onboarding",
+      "title": "Getting your workspace ready"
+    },
     "common": {
       "next": "Next",
       "skip": "Skip",

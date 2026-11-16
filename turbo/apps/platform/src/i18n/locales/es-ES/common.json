@@ -4540,6 +4540,10 @@
     "unsaved": "Cambios sin guardar"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "Continuar con la configuración",
+      "title": "Preparando tu espacio de trabajo"
+    },
     "common": {
       "next": "Siguiente",
       "skip": "Omitir",
