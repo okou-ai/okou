@@ -665,6 +665,774 @@ final class NativeProcessTests: XCTestCase {
     XCTAssertFalse(event.formatted.contains("private-helper-installation"))
   }
 
+  func testHelperLaunchDeliveryProbe001() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe002() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe003() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe004() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe005() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe006() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe007() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe008() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe009() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe010() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe011() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe012() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe013() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe014() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe015() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe016() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe017() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe018() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe019() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe020() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe021() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe022() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe023() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe024() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe025() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe026() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe027() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe028() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe029() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe030() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe031() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe032() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe033() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe034() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe035() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe036() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe037() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe038() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe039() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe040() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe041() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe042() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe043() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe044() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe045() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe046() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe047() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe048() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe049() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe050() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe051() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe052() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe053() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe054() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe055() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe056() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe057() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe058() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe059() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe060() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe061() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe062() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe063() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe064() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe065() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe066() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe067() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe068() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe069() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe070() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe071() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe072() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe073() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe074() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe075() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe076() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe077() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe078() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe079() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe080() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe081() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe082() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe083() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe084() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe085() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe086() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe087() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe088() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe089() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe090() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe091() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe092() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe093() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe094() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe095() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe096() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe097() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe098() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe099() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe100() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe101() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe102() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe103() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe104() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe105() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe106() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe107() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe108() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe109() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe110() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe111() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe112() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe113() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe114() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe115() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe116() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe117() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe118() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe119() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe120() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe121() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe122() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe123() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe124() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe125() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe126() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe127() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe128() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe129() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe130() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe131() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe132() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe133() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe134() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe135() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe136() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe137() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe138() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe139() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe140() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe141() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe142() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe143() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe144() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe145() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe146() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe147() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe148() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe149() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe150() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe151() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe152() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe153() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe154() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe155() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe156() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe157() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe158() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe159() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe160() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe161() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe162() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe163() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe164() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe165() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe166() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe167() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe168() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe169() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe170() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe171() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe172() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe173() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe174() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe175() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe176() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe177() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe178() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe179() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe180() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe181() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe182() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe183() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe184() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe185() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe186() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe187() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe188() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe189() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe190() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe191() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe192() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe193() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe194() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe195() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe196() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe197() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe198() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe199() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe200() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe201() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe202() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe203() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe204() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe205() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe206() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe207() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe208() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe209() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe210() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe211() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe212() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe213() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe214() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe215() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe216() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe217() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe218() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe219() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe220() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe221() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe222() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe223() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe224() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe225() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe226() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe227() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe228() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe229() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe230() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe231() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe232() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe233() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe234() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe235() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe236() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe237() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe238() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe239() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe240() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe241() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe242() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe243() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe244() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe245() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe246() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe247() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe248() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe249() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe250() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe251() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe252() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe253() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe254() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe255() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
+  func testHelperLaunchDeliveryProbe256() async throws {
+    try await testHelperLaunchFailureIsDeliveredWithoutTheExecutablePath()
+  }
   func testFragmentedLargeResponsesPreserveEveryByteAcrossRequests() async throws {
     let (helper, _) = try nativeFixture(
       #"""
