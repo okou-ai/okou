@@ -17,7 +17,7 @@ export const publishProjectSnapshot$ = command(
     const [snapshot] = parseRawRows(
       projectSnapshotArchiveSchema,
       await get(rawSqlReadDb$).execute(sql`
-    SELECT COALESCE((SELECT jsonb_agg(jsonb_build_object('id',p.id,'name',p.name,'createdAt',to_char(p.created_at,'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),'updatedAt',to_char(p.updated_at,'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) ORDER BY p.created_at,p.id) FROM projects p WHERE p.user_id=${owner.userId} AND p.org_id=${owner.orgId}),'[]'::jsonb) AS projects,
+    SELECT COALESCE((SELECT jsonb_agg(jsonb_build_object('id',p.id,'name',p.name,'createdAt',to_char(p.created_at,'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),'updatedAt',to_char(p.updated_at,'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),'archivedAt',to_char(p.archived_at,'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')) ORDER BY p.created_at,p.id) FROM projects p WHERE p.user_id=${owner.userId} AND p.org_id=${owner.orgId}),'[]'::jsonb) AS projects,
     COALESCE((SELECT id FROM project_events WHERE user_id=${owner.userId} AND org_id=${owner.orgId} ORDER BY seq_id DESC LIMIT 1),(SELECT latest_event_id FROM project_snapshots WHERE user_id=${owner.userId} AND org_id=${owner.orgId})) AS "latestEventId",
     COALESCE((SELECT last_seq_id::float8 FROM project_event_sequences WHERE user_id=${owner.userId} AND org_id=${owner.orgId}),0) AS "latestSeqId"`),
     );

@@ -67,6 +67,22 @@ export const projectsContract = c.router({
     body: object({ eventId: uuid(), name: projectSchema.shape.name }).strict(),
     responses: { 200: projectSchema, ...errors },
   },
+  archive: {
+    method: "POST",
+    path: "/api/projects/:id/archive",
+    headers: authHeadersSchema,
+    pathParams: object({ id: uuid() }),
+    body: object({ eventId: uuid() }).strict(),
+    responses: { 200: projectSchema, ...errors },
+  },
+  restore: {
+    method: "POST",
+    path: "/api/projects/:id/restore",
+    headers: authHeadersSchema,
+    pathParams: object({ id: uuid() }),
+    body: object({ eventId: uuid() }).strict(),
+    responses: { 200: projectSchema, ...errors },
+  },
   delete: {
     method: "DELETE",
     path: "/api/projects/:id",

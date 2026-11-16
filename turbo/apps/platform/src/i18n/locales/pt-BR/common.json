@@ -5227,6 +5227,10 @@
     }
   },
   "projects": {
+    "archive": "Arquivar projeto",
+    "archiveBanner": "Este projeto está arquivado. Você ainda pode iniciar conversas aqui.",
+    "archiveError": "Não foi possível arquivar o projeto. Tente novamente.",
+    "archived": "Projeto arquivado",
     "close": "Close",
     "collapse": "Recolher",
     "create": "Create Project",
@@ -5254,12 +5258,16 @@
     "removeFromNewChat": "Remover {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restore": "Restaurar projeto",
+    "restoreError": "Não foi possível restaurar o projeto. Tente novamente.",
+    "restored": "Projeto restaurado",
     "save": "Save",
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
     "toggle": "Show or hide chats in {{name}}",
-    "unavailable": "Project unavailable"
+    "unavailable": "Project unavailable",
+    "viewArchives": "Ver arquivados"
   },
   "queue": {
     "concurrentRuns_one": "{{count}} execução simultânea",

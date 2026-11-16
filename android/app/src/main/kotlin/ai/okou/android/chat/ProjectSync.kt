@@ -46,24 +46,44 @@ data class ProjectCheckpoint(
     }
 }
 
-/** Web's Project projection: a rename cannot fabricate a missing creation. */
+/** Web's Project projection: lifecycle changes require an existing Project. */
 fun replayProjects(checkpoint: ProjectCheckpoint): List<ConfirmedProject> {
     checkpoint.validate()
     val projects = checkpoint.archive.projects.associateByTo(linkedMapOf()) { it.id }
     checkpoint.events.forEach { event ->
-        if (event.kind == ProjectEventsEventsItemKind.DELETED) projects.remove(event.projectId)
-        else {
-            val name = event.name
-            requireChatWire(name != null)
-            val existing = projects[event.projectId]
-            requireChatWire(event.kind != ProjectEventsEventsItemKind.RENAMED || existing != null)
-            projects[event.projectId] =
-                ConfirmedProject(
-                    event.projectId,
-                    checkNotNull(name),
-                    existing?.createdAt ?: event.createdAt,
-                    event.createdAt,
+        when (event.kind) {
+            ProjectEventsEventsItemKind.DELETED -> projects.remove(event.projectId)
+            ProjectEventsEventsItemKind.ARCHIVED,
+            ProjectEventsEventsItemKind.RESTORED -> {
+                val existing = projects[event.projectId]
+                requireChatWire(existing != null && event.name != null)
+                projects[event.projectId] =
+                    checkNotNull(existing)
+                        .copy(
+                            name = checkNotNull(event.name),
+                            archivedAt =
+                                if (event.kind == ProjectEventsEventsItemKind.ARCHIVED)
+                                    event.createdAt
+                                else null,
+                        )
+            }
+            ProjectEventsEventsItemKind.CREATED,
+            ProjectEventsEventsItemKind.RENAMED -> {
+                val name = event.name
+                requireChatWire(name != null)
+                val existing = projects[event.projectId]
+                requireChatWire(
+                    event.kind != ProjectEventsEventsItemKind.RENAMED || existing != null
                 )
+                projects[event.projectId] =
+                    ConfirmedProject(
+                        event.projectId,
+                        checkNotNull(name),
+                        existing?.createdAt ?: event.createdAt,
+                        event.createdAt,
+                        existing?.archivedAt,
+                    )
+            }
         }
     }
     return projects.values.sortedWith(compareBy<ConfirmedProject> { it.createdAt }.thenBy { it.id })
@@ -121,7 +141,13 @@ class ProjectSync(
                 is ProjectSnapshotVariant1 ->
                     ProjectArchive(
                         descriptor.projects.map {
-                            ConfirmedProject(it.id, it.name, it.createdAt, it.updatedAt)
+                            ConfirmedProject(
+                                it.id,
+                                it.name,
+                                it.createdAt,
+                                it.updatedAt,
+                                it.archivedAt,
+                            )
                         },
                         descriptor.latestEventId,
                         descriptor.latestSeqId,

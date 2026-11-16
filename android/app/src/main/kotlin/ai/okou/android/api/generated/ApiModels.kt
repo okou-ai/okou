@@ -2730,6 +2730,7 @@ data class ProjectSnapshotVariant1ProjectsItem(
     val `name`: String,
     val `createdAt`: String,
     val `updatedAt`: String,
+    val `archivedAt`: String? = null,
 )
 
 @Serializable
@@ -2782,6 +2783,8 @@ enum class ProjectEventsEventsItemKind {
     @SerialName("created") CREATED,
     @SerialName("renamed") RENAMED,
     @SerialName("deleted") DELETED,
+    @SerialName("archived") ARCHIVED,
+    @SerialName("restored") RESTORED,
 }
 
 @Serializable
@@ -3502,6 +3505,7 @@ data class ProjectArchiveProjectsItem(
     val `name`: String,
     val `createdAt`: String,
     val `updatedAt`: String,
+    val `archivedAt`: String? = null,
 )
 
 @Serializable

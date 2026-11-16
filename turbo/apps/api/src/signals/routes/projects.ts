@@ -1,6 +1,10 @@
 import { command, computed } from "ccstate";
 import { and, asc, eq, gt } from "drizzle-orm";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
+import {
+  iosProjectEventsTransform,
+  androidProjectEventsTransform,
+} from "@okouai/api-contracts/client-transforms/project-events";
 import { chatThreadSnapshotProjectionSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -122,6 +126,41 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   return { status: 200 as const, body: project };
 });
+function projectArchiveRoute(kind: "archived" | "restored") {
+  const route =
+    kind === "archived" ? projectsContract.archive : projectsContract.restore;
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    if (!(await get(projectAccess$))) {
+      return unavailable;
+    }
+    const body = await get(bodyResultOf(route));
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    const owner = get(organizationAuthContext$);
+    const id = get(pathParamsOf(route)).id;
+    const result = await set(
+      mutateProject$,
+      owner,
+      { kind, id, eventId: body.data.eventId },
+      signal,
+    );
+    if (result !== "written") {
+      return result === "conflict" ? conflict : unavailable;
+    }
+    const project = await get(projectById(owner, id));
+    signal.throwIfAborted();
+    if (!project) {
+      return unavailable;
+    }
+    await publishThreadListChanged(owner);
+    signal.throwIfAborted();
+    return { status: 200 as const, body: project };
+  });
+}
+const archive$ = projectArchiveRoute("archived");
+const restore$ = projectArchiveRoute("restored");
 const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!(await get(projectAccess$))) {
     return unavailable;
@@ -268,6 +307,10 @@ export const projectRoutes: readonly RouteEntry[] = [
   },
   {
     route: projectsContract.events,
+    responseTransforms: [
+      iosProjectEventsTransform,
+      androidProjectEventsTransform,
+    ],
     handler: authRoute(
       { requireOrganization: true, requiredCapability: "project:read" },
       events$,
@@ -306,6 +349,20 @@ export const projectRoutes: readonly RouteEntry[] = [
     handler: authRoute(
       { requireOrganization: true, requiredCapability: "project:write" },
       update$,
+    ),
+  },
+  {
+    route: projectsContract.archive,
+    handler: authRoute(
+      { requireOrganization: true, requiredCapability: "project:write" },
+      archive$,
+    ),
+  },
+  {
+    route: projectsContract.restore,
+    handler: authRoute(
+      { requireOrganization: true, requiredCapability: "project:write" },
+      restore$,
     ),
   },
   {

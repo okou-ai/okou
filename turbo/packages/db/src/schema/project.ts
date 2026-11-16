@@ -17,6 +17,7 @@ export const projects = pgTable(
     name: text("name").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    archivedAt: timestamp("archived_at"),
   },
   (table) => {
     return [

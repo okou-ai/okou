@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 import { describe, it, expect } from "vitest";
-import { projectsContract } from "@okouai/api-contracts/contracts/projects";
+import {
+  projectsContract,
+  projectSnapshotArchiveSchema,
+} from "@okouai/api-contracts/contracts/projects";
 import {
   chatThreadsContract,
   chatThreadByIdContract,
@@ -9,6 +13,7 @@ import {
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
+import { replayProjectEvents } from "@okouai/core/project-event-replay";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
@@ -22,6 +27,8 @@ import {
 } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -252,6 +259,311 @@ describe("private cross-Agent Projects", () => {
       ).status,
     ).toBe(404);
   });
+  it("archives and restores the same Project with idempotent lifecycle events and stable list timestamps", async () => {
+    const actor = await owner();
+    const p = await create(actor, "Launch");
+    expect(p.archivedAt).toBeNull();
+    await accept(
+      client().archive({
+        headers: headers(actor),
+        params: { id: p.id },
+        body: {
+          eventId: createProjectOperationId(
+            now() - 8 * 86_400_000,
+            randomUUID(),
+          ),
+        },
+      }),
+      [409],
+    );
+    const archiveId = operation();
+    const archiveRequest = {
+      headers: headers(actor),
+      params: { id: p.id },
+      body: { eventId: archiveId },
+    };
+    const [first, duplicate] = await Promise.all([
+      accept(client().archive(archiveRequest), [200]),
+      accept(client().archive(archiveRequest), [200]),
+    ]);
+    const archived = first.body;
+    expect(archived).toStrictEqual({ ...p, archivedAt: expect.any(String) });
+    expect(duplicate.body).toStrictEqual(archived);
+    expect(
+      (await accept(client().list({ headers: headers(actor) }), [200])).body
+        .projects,
+    ).toStrictEqual([archived]);
+    const renamed = await accept(
+      client().update({
+        headers: headers(actor),
+        params: { id: p.id },
+        body: { eventId: operation(), name: "Renamed launch" },
+      }),
+      [200],
+    );
+    expect(renamed.body.archivedAt).toBe(archived.archivedAt);
+    expect(
+      (await accept(client().archive(archiveRequest), [200])).body,
+    ).toStrictEqual(renamed.body);
+    const restoreId = operation();
+    const restored = await accept(
+      client().restore({
+        headers: headers(actor),
+        params: { id: p.id },
+        body: { eventId: restoreId },
+      }),
+      [200],
+    );
+    expect(restored.body).toStrictEqual({ ...renamed.body, archivedAt: null });
+    expect(
+      (await accept(client().archive(archiveRequest), [200])).body,
+    ).toStrictEqual(restored.body);
+    await accept(
+      client().restore({
+        headers: headers(actor),
+        params: { id: p.id },
+        body: { eventId: restoreId },
+      }),
+      [200],
+    );
+    expect(
+      (
+        await client().restore({
+          headers: headers(actor),
+          params: { id: p.id },
+          body: { eventId: archiveId },
+        })
+      ).status,
+    ).toBe(409);
+    const current = await accept(
+      client().events({ headers: headers(actor), query: { sinceSeqId: 0 } }),
+      [200],
+    );
+    expect(current.body.events).toMatchObject([
+      { id: p.id, projectId: p.id, kind: "created", name: "Launch", seqId: 1 },
+      {
+        id: archiveId,
+        projectId: p.id,
+        kind: "archived",
+        name: "Launch",
+        seqId: 2,
+      },
+      { projectId: p.id, kind: "renamed", name: "Renamed launch", seqId: 3 },
+      {
+        id: restoreId,
+        projectId: p.id,
+        kind: "restored",
+        name: "Renamed launch",
+        seqId: 4,
+      },
+    ]);
+    expect(current.body.events[1]?.createdAt).toBe(archived.archivedAt);
+    expect(replayProjectEvents([], current.body.events)).toStrictEqual([
+      restored.body,
+    ]);
+    for (const native of [
+      { client: "iOS", oldVersion: "0.45.0", nextVersion: "0.46.0" },
+      { client: "Android", oldVersion: "0.14.0", nextVersion: "0.14.1" },
+    ]) {
+      for (const version of [native.oldVersion, native.nextVersion]) {
+        const response = await accept(
+          client().events({
+            headers: headers(actor),
+            extraHeaders: {
+              "X-Client-Type": native.client,
+              "X-Client-Version": version,
+            },
+            query: { sinceSeqId: 0 },
+          }),
+          [200],
+        );
+        expect(response.body).toStrictEqual({
+          ...current.body,
+          events:
+            version === native.oldVersion
+              ? current.body.events.map((event) => {
+                  return event.kind === "archived" || event.kind === "restored"
+                    ? { ...event, kind: "renamed" }
+                    : event;
+                })
+              : current.body.events,
+        });
+      }
+    }
+    const another = await create(actor, "Another launch");
+    await accept(
+      client().archive({
+        headers: headers(actor),
+        params: { id: another.id },
+        body: { eventId: archiveId },
+      }),
+      [409],
+    );
+    expect(
+      (
+        await accept(
+          client().get({ headers: headers(actor), params: { id: another.id } }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual(another);
+  });
+
+  it("hides archive and restore from other owners, organizations, unauthenticated callers and disabled users", async () => {
+    const actor = await owner();
+    const p = await create(actor);
+    const peer = await owner({ orgId: actor.orgId });
+    const elsewhere = await owner({ userId: actor.userId });
+    const disabled = bdd.user({ orgId: actor.orgId });
+    for (const outsider of [peer, elsewhere, disabled]) {
+      for (const id of [p.id, randomUUID()]) {
+        for (const action of ["archive", "restore"] as const) {
+          const response = await accept(
+            client()[action]({
+              headers: headers(outsider),
+              params: { id },
+              body: { eventId: operation() },
+            }),
+            [404],
+          );
+          expect(response.body).toStrictEqual({
+            error: { code: "NOT_FOUND", message: "Project not found" },
+          });
+        }
+      }
+    }
+    for (const action of ["archive", "restore"] as const) {
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
+      await accept(
+        client()[action]({
+          headers: {},
+          params: { id: p.id },
+          body: { eventId: operation() },
+        }),
+        [401],
+      );
+      await accept(
+        client()[action]({
+          headers: headers(actor),
+          params: { id: randomUUID() },
+          body: { eventId: operation() },
+        }),
+        [404],
+      );
+    }
+    expect(
+      (
+        await accept(
+          client().get({ headers: headers(actor), params: { id: p.id } }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual(p);
+    expect(
+      (
+        await accept(
+          client().events({ headers: headers(actor), query: {} }),
+          [200],
+        )
+      ).body.events,
+    ).toMatchObject([{ id: p.id, kind: "created", seqId: 1 }]);
+  });
+
+  it("preserves each member chat's archive, pin, mute, read cursor and activity state through the Project lifecycle", async () => {
+    const actor = await owner();
+    const a = await agent(actor);
+    const first = await thread(actor, a.agentId);
+    const p = await create(actor, "Launch", first.id);
+    const second = await thread(actor, a.agentId, p.id);
+    const chat = createChatFilesBddApi(context);
+    await chat.pinThread(actor, first.id);
+    await chat.requestSetThreadMuted(actor, first.id, true, [204]);
+    await chat.markThreadUnread(actor, first.id);
+    await chat.requestSetThreadArchived(actor, second.id, true, [204]);
+    const readStateClient = setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadByIdContract,
+    );
+    const readStateBefore = await accept(
+      readStateClient.get({
+        headers: headers(actor),
+        params: { id: first.id },
+      }),
+      [200],
+    );
+    expect(readStateBefore.body.lastReadAt).toBeNull();
+    const before = await accept(
+      client().threads({
+        headers: headers(actor),
+        params: { id: p.id },
+        query: { limit: 100, archived: "all" },
+      }),
+      [200],
+    );
+    expect(before.body.threads).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: first.id,
+          projectId: p.id,
+          archived: false,
+          pinnedAt: expect.any(String),
+          muted: true,
+        }),
+        expect.objectContaining({
+          id: second.id,
+          projectId: p.id,
+          archived: true,
+        }),
+      ]),
+    );
+    const threadEventsBefore = await accept(
+      threads().events({ headers: headers(actor), query: {} }),
+      [200],
+    );
+    for (const action of ["archive", "restore"] as const) {
+      await accept(
+        client()[action]({
+          headers: headers(actor),
+          params: { id: p.id },
+          body: { eventId: operation() },
+        }),
+        [200],
+      );
+      expect(
+        (
+          await accept(
+            client().threads({
+              headers: headers(actor),
+              params: { id: p.id },
+              query: { limit: 100, archived: "all" },
+            }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual(before.body);
+      expect(
+        (
+          await accept(
+            threads().events({ headers: headers(actor), query: {} }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual(threadEventsBefore.body);
+      expect(
+        (
+          await accept(
+            readStateClient.get({
+              headers: headers(actor),
+              params: { id: first.id },
+            }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual(readStateBefore.body);
+    }
+  });
+
   it("keeps Agent identity and activity while moving across Projects and ignores a replayed old move", async () => {
     const actor = await owner();
     const a = await agent(actor);
@@ -492,11 +804,6 @@ test("serializes concurrent moves, duplicate creates and deletion against new me
 });
 
 test("publishes immutable owner-scoped metadata snapshots with an exact event tail fence", async () => {
-  const { installWorkflowVolumeS3Fixture } =
-    await import("./helpers/workflow-volume-s3");
-  const { gunzipSync } = await import("node:zlib");
-  const { projectSnapshotArchiveSchema } =
-    await import("@okouai/api-contracts/validators/projects");
   const actor = await owner();
   const storage = installWorkflowVolumeS3Fixture(context);
   const p = await create(actor, "Original");
@@ -513,11 +820,34 @@ test("publishes immutable owner-scoped metadata snapshots with an exact event ta
   if (!first) {
     throw new Error("Project metadata was not published");
   }
-  const archived = projectSnapshotArchiveSchema.parse(
+  const activeSnapshot = projectSnapshotArchiveSchema.parse(
     JSON.parse(gunzipSync(first[1]).toString("utf8")),
   );
-  expect(archived.projects).toStrictEqual([p]);
-  expect(archived.latestSeqId).toBe(1);
+  expect(activeSnapshot.projects).toStrictEqual([p]);
+  expect(activeSnapshot.latestSeqId).toBe(1);
+  const archivedProject = await accept(
+    client().archive({
+      headers: headers(actor),
+      params: { id: p.id },
+      body: { eventId: operation() },
+    }),
+    [200],
+  );
+  await accept(client().snapshot({ headers: headers(actor) }), [200]);
+  const second = [...storage.objects.entries()].find(([key]) => {
+    return key.startsWith("project-snapshots/v1/") && key !== first[0];
+  });
+  if (!second) {
+    throw new Error("Archived Project snapshot was not published");
+  }
+  const archivedSnapshot = projectSnapshotArchiveSchema.parse(
+    JSON.parse(gunzipSync(second[1]).toString("utf8")),
+  );
+  expect(archivedSnapshot.projects).toStrictEqual([archivedProject.body]);
+  expect(archivedSnapshot.latestSeqId).toBe(2);
+  expect(replayProjectEvents(archivedSnapshot.projects, [])).toStrictEqual([
+    archivedProject.body,
+  ]);
   await accept(
     client().update({
       headers: headers(actor),
@@ -526,20 +856,48 @@ test("publishes immutable owner-scoped metadata snapshots with an exact event ta
     }),
     [200],
   );
+  const restoredProject = await accept(
+    client().restore({
+      headers: headers(actor),
+      params: { id: p.id },
+      body: { eventId: operation() },
+    }),
+    [200],
+  );
   const tail = await accept(
     client().events({
       headers: headers(actor),
-      query: { sinceSeqId: archived.latestSeqId },
+      query: { sinceSeqId: archivedSnapshot.latestSeqId },
     }),
     [200],
   );
   expect(tail.body.events).toMatchObject([
-    { kind: "renamed", projectId: p.id, name: "Renamed", seqId: 2 },
+    { kind: "renamed", projectId: p.id, name: "Renamed", seqId: 3 },
+    { kind: "restored", projectId: p.id, name: "Renamed", seqId: 4 },
   ]);
-  const renamed = await accept(
+  expect(
+    replayProjectEvents(archivedSnapshot.projects, tail.body.events),
+  ).toStrictEqual([restoredProject.body]);
+  const restoredSnapshot = await accept(
     client().snapshot({ headers: headers(actor) }),
     [200],
   );
-  expect(renamed.body.latestSeqId).toBe(2);
+  expect(restoredSnapshot.body.latestSeqId).toBe(4);
+  const third = [...storage.objects.entries()].find(([key]) => {
+    return (
+      key.startsWith("project-snapshots/v1/") &&
+      key !== first[0] &&
+      key !== second[0]
+    );
+  });
+  if (!third) {
+    throw new Error("Restored Project snapshot was not published");
+  }
+  expect(
+    projectSnapshotArchiveSchema.parse(
+      JSON.parse(gunzipSync(third[1]).toString("utf8")),
+    ).projects,
+  ).toStrictEqual([restoredProject.body]);
   expect(storage.objects.get(first[0])).toStrictEqual(first[1]);
+  expect(storage.objects.get(second[0])).toStrictEqual(second[1]);
 });

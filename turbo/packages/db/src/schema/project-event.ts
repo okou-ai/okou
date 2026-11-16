@@ -14,6 +14,8 @@ export const projectEventKind = pgEnum("project_event_kind", [
   "created",
   "renamed",
   "deleted",
+  "archived",
+  "restored",
 ]);
 
 /** Sequence reservation and event publication must share one atomic statement. */

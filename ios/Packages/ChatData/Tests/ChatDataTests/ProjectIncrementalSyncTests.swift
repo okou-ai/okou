@@ -48,6 +48,73 @@ final class ProjectIncrementalSyncTests: XCTestCase {
     XCTAssertEqual(isolated.map(\.name), ["Renamed", "Other"])
   }
 
+  func testProjectArchiveRenameAndRestoreSurviveReopeningWithoutReordering() async throws {
+    let phase = Mutex(0)
+    let archivedAt = "2026-11-13T01:00:00Z"
+    let renamedAt = "2026-11-13T02:00:00Z"
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/projects/snapshot": return projectBaseline()
+      case "/api/projects/events":
+        switch (projectCursor(request), phase.withLock({ $0 })) {
+        case (1, 1):
+          return projectPage([projectEvent(2, kind: "archived", name: "Launch")])
+        case (2, 2):
+          return projectPage([projectEvent(3, name: "Release", createdAt: renamedAt)])
+        case (3, 3):
+          return projectPage([
+            projectEvent(
+              4, kind: "restored", name: "Release", createdAt: "2026-11-13T03:00:00Z")
+          ])
+        default: return projectPage([])
+        }
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let directory = CacheTestDirectory(owner: self)
+    let scope = projectScope(fixture)
+    let cache = directory.cache(scope: scope)
+    let sync = ChatSync(client: fixture.client, cache: cache)
+    let initialProjects = try await sync.projectList()
+    let initial = try XCTUnwrap(initialProjects.first)
+    // Legacy snapshots omit archivedAt and remain active.
+    XCTAssertNil(initial.archivedAt)
+    phase.withLock { $0 = 1 }
+    let archivedProjects = try await sync.projectList()
+    let archived = try XCTUnwrap(archivedProjects.first)
+    XCTAssertEqual(archived.archivedAt, ISO8601DateFormatter().date(from: archivedAt))
+    XCTAssertEqual(archived.createdAt, initial.createdAt)
+    XCTAssertEqual(archived.updatedAt, initial.updatedAt)
+    await cache.close()
+
+    let reopenedCache = directory.cache(scope: scope)
+    let reopened = ChatSync(client: fixture.client, cache: reopenedCache)
+    let retained = try await reopened.projectList()
+    XCTAssertEqual(retained, [archived])
+    phase.withLock { $0 = 2 }
+    let renamedProjects = try await reopened.projectList()
+    let renamed = try XCTUnwrap(renamedProjects.first)
+    XCTAssertEqual(renamed.name, "Release")
+    XCTAssertEqual(renamed.archivedAt, archived.archivedAt)
+    XCTAssertEqual(renamed.updatedAt, ISO8601DateFormatter().date(from: renamedAt))
+    await reopenedCache.close()
+
+    let restoredCache = directory.cache(scope: scope)
+    let restoring = ChatSync(client: fixture.client, cache: restoredCache)
+    phase.withLock { $0 = 3 }
+    let restoredProjects = try await restoring.projectList()
+    let restored = try XCTUnwrap(restoredProjects.first)
+    XCTAssertNil(restored.archivedAt)
+    XCTAssertEqual(restored.id, initial.id)
+    XCTAssertEqual(restored.name, renamed.name)
+    XCTAssertEqual(restored.createdAt, initial.createdAt)
+    XCTAssertEqual(restored.updatedAt, renamed.updatedAt)
+    await restoredCache.close()
+    let last = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
+    let saved = try await last.projectList()
+    XCTAssertEqual(saved, [restored])
+  }
+
   func testSnapshotArchiveUsesCredentialFreeTransportAndChecksItsFrontier() async throws {
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
@@ -60,7 +127,7 @@ final class ProjectIncrementalSyncTests: XCTestCase {
       case "/api/projects/archive.json":
         XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
         XCTAssertNil(request.value(forHTTPHeaderField: "X-Client-Session-Id"))
-        return projectBaseline()
+        return projectBaseline(archivedAt: "2026-11-13T00:30:00Z")
       case "/api/projects/events":
         XCTAssertEqual(projectCursor(request), 1)
         return projectPage([projectEvent(2, name: "Archive catch-up")])
@@ -69,6 +136,8 @@ final class ProjectIncrementalSyncTests: XCTestCase {
     }
     let result = try await ChatSync(client: fixture.client).projectList()
     XCTAssertEqual(result.first?.name, "Archive catch-up")
+    XCTAssertEqual(
+      result.first?.archivedAt, ISO8601DateFormatter().date(from: "2026-11-13T00:30:00Z"))
   }
 
   func testExpiredPersistedCursorRebuildsOnceAndKeepsLaterChanges() async throws {
@@ -223,6 +292,8 @@ final class ProjectIncrementalSyncTests: XCTestCase {
       projectPage([], more: true),
       projectPage([projectEvent(1, name: "Out of order")]),
       projectPage([projectEvent(2, project: 2, name: "Missing baseline")]),
+      projectPage([projectEvent(2, kind: "archived", project: 2, name: "Missing baseline")]),
+      projectPage([projectEvent(2, kind: "restored", project: 2, name: "Missing baseline")]),
       ChatHTTPResponse(status: 410, body: #"{"error":{"message":"Expired"}}"#),
       ChatHTTPResponse(status: 426, body: #"{"error":{"message":"Upgrade required"}}"#),
     ] {
@@ -263,22 +334,24 @@ private func projectCursor(_ request: URLRequest) -> Int {
   return value.flatMap(Int.init) ?? -1
 }
 
-private func projectBaseline(sequence: Int = 1) -> ChatHTTPResponse {
-  ChatHTTPResponse(
+private func projectBaseline(sequence: Int = 1, archivedAt: String? = nil) -> ChatHTTPResponse {
+  let archived = archivedAt.map { ",\"archivedAt\":\"\($0)\"" } ?? ""
+  return ChatHTTPResponse(
     body: """
       {"projects":[{"id":"\(projectID(101))","name":"Launch",
-      "createdAt":"2026-11-13T00:00:00Z","updatedAt":"2026-11-13T00:00:00Z"}],
+      "createdAt":"2026-11-13T00:00:00Z","updatedAt":"2026-11-13T00:00:00Z"\(archived)}],
       "latestEventId":"\(projectID(sequence))","latestSeqId":\(sequence)}
       """)
 }
 
 private func projectEvent(
-  _ sequence: Int, kind: String = "renamed", project: Int = 1, name: String?
+  _ sequence: Int, kind: String = "renamed", project: Int = 1, name: String?,
+  createdAt: String = "2026-11-13T01:00:00Z"
 ) -> String {
   let encodedName = name.map { "\"\($0)\"" } ?? "null"
   return """
     {"id":"\(projectID(sequence))","seqId":\(sequence),"projectId":"\(projectID(100 + project))",
-    "kind":"\(kind)","name":\(encodedName),"createdAt":"2026-11-13T01:00:00Z"}
+    "kind":"\(kind)","name":\(encodedName),"createdAt":"\(createdAt)"}
     """
 }
 

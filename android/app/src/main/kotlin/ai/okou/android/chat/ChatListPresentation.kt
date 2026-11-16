@@ -22,9 +22,14 @@ fun chatListGroups(state: ChatListUiState): List<ChatListGroup> {
     val byProject = visible.groupBy { it.projectId }
     val groups =
         projects.mapNotNull { project ->
-            val rows = byProject[project.id].orEmpty().filter(matches)
-            if (rows.isEmpty() && state.filter != ChatListFilter.Recent) null
-            else ChatListGroup(project, rows)
+            val archived = project.archivedAt != null
+            if (archived && state.filter != ChatListFilter.Archived) null
+            else {
+                val held = byProject[project.id].orEmpty()
+                val rows = if (archived) held else held.filter(matches)
+                if (rows.isEmpty() && state.filter != ChatListFilter.Recent && !archived) null
+                else ChatListGroup(project, rows)
+            }
         }
     val default = state.agents.firstOrNull { it.isDefaultAgent }?.agentId
     val outside = visible.filter { it.agentId == default && it.projectId !in known && matches(it) }

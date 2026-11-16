@@ -5,6 +5,17 @@ public struct ChatProject: Codable, Equatable, Identifiable, Sendable {
   public let name: String
   public let createdAt: Date
   public let updatedAt: Date
+  public let archivedAt: Date?
+
+  public init(
+    id: String, name: String, createdAt: Date, updatedAt: Date, archivedAt: Date? = nil
+  ) {
+    self.id = id
+    self.name = name
+    self.createdAt = createdAt
+    self.updatedAt = updatedAt
+    self.archivedAt = archivedAt
+  }
 }
 
 /// Canonical Project operations share the authenticated workspace transport.

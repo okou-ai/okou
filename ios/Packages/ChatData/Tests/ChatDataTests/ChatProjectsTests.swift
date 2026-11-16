@@ -65,8 +65,11 @@ final class ChatProjectsTests: XCTestCase {
     XCTAssertEqual(uuid.uuidString.split(separator: "-")[2].first, "7")
   }
 
-  func testProjectNamesSurviveReopeningTheWorkspaceCache() async throws {
-    let record = Self.record
+  func testProjectArchiveStateSurvivesReopeningTheWorkspaceCache() async throws {
+    let record = """
+      {"id":"\(Self.project)","name":"Launch","createdAt":"2026-11-09T01:00:00Z",
+      "updatedAt":"2026-11-09T01:00:00Z","archivedAt":"2026-11-13T00:30:00Z"}
+      """
     let fixture = ChatHTTPFixture { request in
       if request.httpMethod == "GET", request.url?.path == "/api/projects/events" {
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
@@ -88,6 +91,8 @@ final class ChatProjectsTests: XCTestCase {
     let restored = try await reopened.loadProjects()
     XCTAssertEqual(restored?.first?.name, "Launch")
     XCTAssertEqual(restored?.first?.id, Self.project)
+    XCTAssertEqual(
+      restored?.first?.archivedAt, ISO8601DateFormatter().date(from: "2026-11-13T00:30:00Z"))
     let other = directory.cache(
       scope: ChatCacheScope(
         apiBaseURL: fixture.baseURL, userID: "another-user", workspaceID: "scope"))

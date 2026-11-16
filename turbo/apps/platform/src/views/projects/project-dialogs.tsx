@@ -320,9 +320,12 @@ function ProjectMembershipPicker({
   const hasSuccessor = useSet(projectDialogHasSuccessor$);
   const pending = moving.state === "loading";
   const matches = projects.filter((project) => {
-    return project.name
-      .toLocaleLowerCase()
-      .includes(search.trim().toLocaleLowerCase());
+    return (
+      !project.archivedAt &&
+      project.name
+        .toLocaleLowerCase()
+        .includes(search.trim().toLocaleLowerCase())
+    );
   });
   async function select(id: string | null) {
     const completion = move(dialog.threadId, id, signal);

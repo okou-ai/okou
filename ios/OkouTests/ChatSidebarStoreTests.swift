@@ -59,13 +59,25 @@ final class ChatSidebarStoreTests: XCTestCase {
     workspace.sidebar.select(.archived)
     let archived = try snapshot(workspace)
     XCTAssertEqual(archived.filter, .archived)
-    XCTAssertTrue(archived.chats.isEmpty)
+    XCTAssertEqual(archived.chats.rows.map(\.id), [SidebarProjectionFixture.id(11)])
+    XCTAssertEqual(
+      archived.projects.map(\.project.name), ["Shared", "Archived project", "Archived empty"])
     XCTAssertEqual(
       archived.projects.first?.section.rows.map(\.id), [7, 4].map(SidebarProjectionFixture.id))
+    // An archived parent keeps every child, even unarchived chats from another Agent.
+    let archivedParent = try XCTUnwrap(
+      archived.projects.first { $0.id == SidebarProjectionFixture.id(202) })
+    XCTAssertEqual(
+      archivedParent.section.rows.map(\.id), [10, 9].map(SidebarProjectionFixture.id))
+    let archivedEmpty = try XCTUnwrap(
+      archived.projects.first { $0.id == SidebarProjectionFixture.id(203) })
+    XCTAssertTrue(archivedEmpty.section.isEmpty)
+    XCTAssertFalse(archived.projects.contains(where: \.hasHiddenArchivedChats))
 
     workspace.sidebar.select(.muted)
     let muted = try snapshot(workspace)
     XCTAssertEqual(muted.filter, .muted)
+    XCTAssertEqual(muted.projects.map(\.project.name), ["Shared"])
     XCTAssertEqual(muted.chats.rows.map(\.id), [SidebarProjectionFixture.id(5)])
     XCTAssertEqual(muted.projects.first?.section.rows.map(\.id), [SidebarProjectionFixture.id(7)])
     XCTAssertFalse(muted.chats.hasUnread)
@@ -180,7 +192,9 @@ private final class SidebarProjectionFixture: Sendable {
         return ChatHTTPResponse(
           body: """
             {"latestEventId":null,"latestSeqId":0,"projects":[\(Self.projectRecord(Self.id(201), name: "Empty", createdAt: Self.timestamp)),
-            \(Self.projectRecord(Self.project, name: server.name))]}
+            \(Self.projectRecord(Self.project, name: server.name)),
+            \(Self.projectRecord(Self.id(202), name: "Archived project", archivedAt: Self.timestamp)),
+            \(Self.projectRecord(Self.id(203), name: "Archived empty", archivedAt: Self.timestamp))]}
             """)
       case "/api/projects/\(Self.project)":
         let name = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))[
@@ -188,17 +202,23 @@ private final class SidebarProjectionFixture: Sendable {
         state.value.withLock { $0.name = name }
         return ChatHTTPResponse(body: Self.projectRecord(Self.project, name: name))
       case "/api/chat-threads/snapshot":
-        let rows = (1...8).map { index in
-          let agent = [2, 6].contains(index) ? Self.otherAgent : Self.agent
-          let project =
-            [2, 4, 7, 8].contains(index) ? Self.project : index == 3 ? Self.id(999) : nil
+        let rows = (1...11).map { index in
+          let agent = [2, 6, 9].contains(index) ? Self.otherAgent : Self.agent
+          let project: String?
+          if [2, 4, 7, 8].contains(index) {
+            project = Self.project
+          } else if [9, 10].contains(index) {
+            project = Self.id(202)
+          } else {
+            project = index == 3 ? Self.id(999) : nil
+          }
           let title = index == 1 ? "✅ Active pinned" : "Chat \(index)"
           let pinOrder = [1: "\"a0\"", 2: "\"a1\""][index]
           return """
             {"id":"\(Self.id(index))","agentId":"\(agent)","title":"\(title)",
             "createdAt":"\(Self.timestamp)","updatedAt":"\(Self.timestamp)",
-            "sortAt":"2026-11-11T00:0\(index):00Z","archived":\([4, 7].contains(index)),
-            "muted":\([5, 7].contains(index)),"projectId":\(project.map { "\"\($0)\"" } ?? "null"),
+            "sortAt":"2026-11-11T00:\(String(format: "%02d", index)):00Z","archived":\([4, 7, 10, 11].contains(index)),
+            "muted":\([5, 7, 10].contains(index)),"projectId":\(project.map { "\"\($0)\"" } ?? "null"),
             "pinnedAt":\(pinOrder == nil ? "null" : "\"\(Self.timestamp)\""),"pinOrder":\(pinOrder ?? "null")}
             """
         }
@@ -209,7 +229,7 @@ private final class SidebarProjectionFixture: Sendable {
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
       case "/api/indicators":
-        let unread = state.value.withLock { $0.unread } ? [2, 3, 4, 5] : []
+        let unread = state.value.withLock { $0.unread } ? [2, 3, 4, 5, 9] : []
         let marks = unread.map { "\"\(Self.id($0))\":\"unread\"" }
         return ChatHTTPResponse(
           body: """
@@ -230,8 +250,10 @@ private final class SidebarProjectionFixture: Sendable {
   }
 
   private static func projectRecord(
-    _ id: String, name: String, createdAt: String = "2026-11-10T00:00:00Z"
+    _ id: String, name: String, createdAt: String = "2026-11-10T00:00:00Z",
+    archivedAt: String? = nil
   ) -> String {
-    "{\"id\":\"\(id)\",\"name\":\"\(name)\",\"createdAt\":\"\(createdAt)\",\"updatedAt\":\"\(timestamp)\"}"
+    let archived = archivedAt.map { "\"\($0)\"" } ?? "null"
+    return "{\"id\":\"\(id)\",\"name\":\"\(name)\",\"createdAt\":\"\(createdAt)\",\"updatedAt\":\"\(timestamp)\",\"archivedAt\":\(archived)}"
   }
 }

@@ -1,4 +1,67 @@
 import { command, computed, state } from "ccstate";
+import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
+import { i18n } from "../../i18n/index.ts";
+import { selectChatThreadFilter$ } from "../okou-page/chat-thread-filter-selection.ts";
+import { rootSignal$ } from "../root-signal.ts";
+import { onDomEventFn } from "../utils.ts";
+import { archiveProject$, restoreProject$ } from "./projects.ts";
+export const setProjectArchivedWithFeedback$ = command(
+  async ({ get, set }, id: string, archived: boolean, signal: AbortSignal) => {
+    const changed = await set(
+      archived ? archiveProject$ : restoreProject$,
+      id,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!changed) {
+      return;
+    }
+    // Toast actions outlive the originating row/page, but never its session.
+    const feedbackSignal = get(rootSignal$);
+    toast.success(
+      i18n.t(($) => {
+        return archived ? $.projects.archived : $.projects.restored;
+      }),
+      {
+        ...TEXT_TOAST_ACTION,
+        cancelButtonStyle: TEXT_TOAST_ACTION.actionButtonStyle,
+        classNames: {
+          ...TEXT_TOAST_ACTION.classNames,
+          cancelButton: TEXT_TOAST_ACTION.classNames.actionButton,
+        },
+        action: {
+          label: i18n.t(($) => {
+            return $.chat.toasts.undo;
+          }),
+          onClick: onDomEventFn(async () => {
+            await set(
+              archived ? restoreProject$ : archiveProject$,
+              id,
+              feedbackSignal,
+            );
+          }),
+        },
+        ...(archived
+          ? {
+              cancel: {
+                label: i18n.t(($) => {
+                  return $.projects.viewArchives;
+                }),
+                onClick: onDomEventFn(async () => {
+                  await set(
+                    selectChatThreadFilter$,
+                    "archived",
+                    feedbackSignal,
+                  );
+                }),
+              },
+            }
+          : {}),
+      },
+    );
+  },
+);
+
 export type ProjectDialog =
   | {
       readonly kind: "editor";

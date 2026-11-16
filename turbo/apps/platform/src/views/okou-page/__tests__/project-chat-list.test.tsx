@@ -393,11 +393,11 @@ test("Clicking an expanded, unselected Project title folds its chats and keeps t
   await openChatList(306, [ordinary, member], `/chats/${ordinary.id}`);
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
 
-  click(button("Launch", projectRows()));
+  click(projectToggle("Launch"));
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
   expect(projectChatTitles()).toStrictEqual(["Launch planning"]);
 
-  click(button("Launch", projectRows()));
+  click(projectToggle("Launch"));
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
   expect(threadLink(ordinary.id)).toHaveAttribute("aria-current", "page");

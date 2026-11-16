@@ -36,9 +36,11 @@ struct ChatListContents {
       ($0.createdAt, $0.id) < ($1.createdAt, $1.id)
     }
     self.projects = ordered.compactMap { project in
+      let archived = project.archivedAt != nil
+      guard !archived || filter == .archived else { return nil }
       let held = threads.filter { $0.projectId == project.id }
-      let members = held.filter(matches)
-      if members.isEmpty && !inbox { return nil }
+      let members = archived ? held : held.filter(matches)
+      if members.isEmpty && !inbox && !archived { return nil }
       return ProjectGroup(
         project: project, threads: members,
         hasHiddenArchivedThreads: inbox && held.contains(where: \.isArchived))

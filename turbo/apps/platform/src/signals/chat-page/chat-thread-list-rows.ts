@@ -157,6 +157,7 @@ export function buildChatThreadListRows({
   projectThreads,
   projectIdsWithHiddenArchivedThreads,
   threadIds,
+  onlyArchived,
   hideEmptyProjects,
 }: {
   projects: readonly Project[];
@@ -167,14 +168,20 @@ export function buildChatThreadListRows({
   projectIdsWithHiddenArchivedThreads: ReadonlySet<string>;
   /** Listed chats outside Projects, already sorted for display. */
   threadIds: readonly string[];
-  /** A filtered list omits Projects without a matching chat. */
+  /** The Archived list includes archived Projects, even without chats. */
+  onlyArchived: boolean;
+  /** A filtered list omits active Projects without a matching chat. */
   hideEmptyProjects: boolean;
 }): readonly ChatThreadListRow[] {
   const projectThreadIds = groupProjectThreadIds(projectThreads);
   const rows: ChatThreadListRow[] = [];
   for (const project of projects) {
+    const archived = Boolean(project.archivedAt);
+    if (archived && !onlyArchived) {
+      continue;
+    }
     const ids = projectThreadIds.get(project.id) ?? [];
-    if (hideEmptyProjects && ids.length === 0) {
+    if (hideEmptyProjects && ids.length === 0 && !archived) {
       continue;
     }
     rows.push(

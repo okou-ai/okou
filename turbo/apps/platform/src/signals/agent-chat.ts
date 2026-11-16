@@ -159,6 +159,18 @@ const projectsListed$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.Projects] === true;
 });
 
+const archivedProjectIds$ = computed((get): ReadonlySet<string> => {
+  return new Set(
+    get(projects$)
+      .filter((project) => {
+        return Boolean(project.archivedAt);
+      })
+      .map((project) => {
+        return project.id;
+      }),
+  );
+});
+
 // Projects collect chats across Agents, so every Agent list shows them.
 const allProjectThreads$ = computed((get): EventDrivenChatThread[] => {
   if (!get(projectsListed$)) {
@@ -177,6 +189,7 @@ function createChatThreadListView({
   projectThreads$,
   allProjectThreads$: allProjectThreadsSource$,
   projectIdsWithHiddenArchivedThreads$,
+  onlyArchived,
   hideEmptyProjects,
   hasHiddenArchivedThreads$,
 }: {
@@ -185,6 +198,7 @@ function createChatThreadListView({
   projectThreads$: Computed<readonly EventDrivenChatThread[]>;
   allProjectThreads$: Computed<readonly EventDrivenChatThread[]>;
   projectIdsWithHiddenArchivedThreads$: Computed<ReadonlySet<string>>;
+  onlyArchived: boolean;
   hideEmptyProjects: boolean;
   hasHiddenArchivedThreads$: Computed<boolean>;
 }): ChatThreadListSignals {
@@ -200,6 +214,7 @@ function createChatThreadListView({
         projectIdsWithHiddenArchivedThreads$,
       ),
       threadIds: get(threadIds$),
+      onlyArchived,
       hideEmptyProjects,
     });
   });
@@ -266,9 +281,16 @@ function createChatThreadListSignals(
     allThreadIds$: computed((get): readonly string[] => {
       return threadIdsOf(get(allThreads$));
     }),
-    // A filter applies to the chats inside Projects as it does to the rest.
     projectThreads$: computed((get): readonly EventDrivenChatThread[] => {
-      return get(allProjectThreads$).filter(listed);
+      const archivedProjectIds = get(archivedProjectIds$);
+      return get(allProjectThreads$).filter((thread) => {
+        const parentArchived =
+          thread.projectId !== null && archivedProjectIds.has(thread.projectId);
+        // Archiving a Project changes list eligibility, not its chats' flags.
+        return filter.onlyArchived
+          ? parentArchived || thread.archived
+          : !parentArchived && listed(thread);
+      });
     }),
     allProjectThreads$,
     projectIdsWithHiddenArchivedThreads$: computed(
@@ -284,13 +306,15 @@ function createChatThreadListSignals(
         return projectIds;
       },
     ),
+    onlyArchived: filter.onlyArchived,
     hideEmptyProjects: !inbox,
     hasHiddenArchivedThreads$: computed((get): boolean => {
       return (
         inbox &&
-        get(allThreads$).some((thread) => {
-          return thread.archived;
-        })
+        (get(archivedProjectIds$).size > 0 ||
+          get(allThreads$).some((thread) => {
+            return thread.archived;
+          }))
       );
     }),
   });
@@ -322,19 +346,16 @@ const noProjectIds$ = computed((): ReadonlySet<string> => {
 
 // Indicators bound the unread list. Keep their asynchronous dependency out of
 // the all-chats projection and its synchronous virtual window.
-// The Unread filter always includes archived threads, so an archived thread
-// never hides an unread message.
+// Independently archived chats remain eligible for Unread. An archived Project
+// hides its whole group in every daily list without changing unread indicators.
 export const unreadChatThreadListSignals$ = computed(
   async (get): Promise<ChatThreadListSignals> => {
     const agentId = await get(currentChatAgentId$);
     const indicators = await get(chatThreadIndicatorsFromWorker$);
     const projectsListed = get(projectsListed$);
-    const unread = get(eventDrivenChatThreads$).filter((thread) => {
-      return indicators.threads[thread.id] === "unread";
-    });
-    const threads = agentId
+    const allAgentThreads = agentId
       ? sortChatThreads(
-          unread.filter((thread) => {
+          get(eventDrivenChatThreads$).filter((thread) => {
             return (
               thread.agentId === agentId &&
               (!projectsListed || thread.projectId === null)
@@ -342,29 +363,38 @@ export const unreadChatThreadListSignals$ = computed(
           }),
         )
       : [];
-    const projectThreads = projectsListed
-      ? sortChatThreads(
-          unread.filter((thread) => {
-            return thread.projectId !== null;
-          }),
-        )
-      : [];
-    const threadIds = threadIdsOf(threads);
+    const threads = allAgentThreads.filter((thread) => {
+      return indicators.threads[thread.id] === "unread";
+    });
+    const archivedProjectIds = get(archivedProjectIds$);
+    const allProjectThreads = get(allProjectThreads$);
+    const projectThreads = allProjectThreads.filter((thread) => {
+      return (
+        indicators.threads[thread.id] === "unread" &&
+        thread.projectId !== null &&
+        !archivedProjectIds.has(thread.projectId)
+      );
+    });
+    const allThreadIds = threadIdsOf(allAgentThreads);
     const projectThreads$ = computed(() => {
       return projectThreads;
     });
 
-    // Unread navigation keeps this snapshot for both ordering and eligibility.
+    // Eligibility is unread-only, but ordering includes hidden chats and groups.
+    // An open, already-read chat still navigates from its original position.
     return createChatThreadListView({
       threads$: computed(() => {
         return threads;
       }),
       allThreadIds$: computed(() => {
-        return threadIds;
+        return allThreadIds;
       }),
       projectThreads$,
-      allProjectThreads$: projectThreads$,
+      allProjectThreads$: computed(() => {
+        return allProjectThreads;
+      }),
       projectIdsWithHiddenArchivedThreads$: noProjectIds$,
+      onlyArchived: false,
       hideEmptyProjects: true,
       hasHiddenArchivedThreads$: notInbox$,
     });

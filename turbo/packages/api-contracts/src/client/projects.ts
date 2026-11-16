@@ -55,6 +55,30 @@ export const projectsContract: ClientDescriptor<
       409: true,
     },
   },
+  archive: {
+    method: "POST",
+    path: "/api/projects/:id/archive",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+    },
+  },
+  restore: {
+    method: "POST",
+    path: "/api/projects/:id/restore",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+    },
+  },
   delete: {
     method: "DELETE",
     path: "/api/projects/:id",

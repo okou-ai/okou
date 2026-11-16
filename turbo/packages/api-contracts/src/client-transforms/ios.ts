@@ -1,4 +1,5 @@
 import type { ClientResponseTransform } from "./types";
+import { iosProjectEventsTransform } from "./project-events";
 import {
   iosEmailChatRowsTransform,
   iosEmailChatCatchUpTransform,
@@ -9,4 +10,5 @@ import {
 export const iosResponseTransforms: readonly ClientResponseTransform[] = [
   iosEmailChatRowsTransform,
   iosEmailChatCatchUpTransform,
+  iosProjectEventsTransform,
 ];

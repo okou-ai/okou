@@ -5152,6 +5152,10 @@
     }
   },
   "projects": {
+    "archive": "프로젝트 보관",
+    "archiveBanner": "이 프로젝트는 보관되었습니다. 여기에서 계속 채팅을 시작할 수 있습니다.",
+    "archiveError": "프로젝트를 보관하지 못했습니다. 다시 시도해 주세요.",
+    "archived": "프로젝트가 보관되었습니다",
     "close": "Close",
     "collapse": "접기",
     "create": "Create Project",
@@ -5179,12 +5183,16 @@
     "removeFromNewChat": "{{name}} 제거",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restore": "프로젝트 복원",
+    "restoreError": "프로젝트를 복원하지 못했습니다. 다시 시도해 주세요.",
+    "restored": "프로젝트가 복원되었습니다",
     "save": "Save",
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
     "toggle": "Show or hide chats in {{name}}",
-    "unavailable": "Project unavailable"
+    "unavailable": "Project unavailable",
+    "viewArchives": "보관함 보기"
   },
   "queue": {
     "concurrentRuns_one": "{{count}}개의 동시 실행",

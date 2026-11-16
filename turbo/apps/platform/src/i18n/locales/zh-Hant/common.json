@@ -5152,6 +5152,10 @@
     }
   },
   "projects": {
+    "archive": "封存專案",
+    "archiveBanner": "此專案已封存。你仍可在此發起聊天。",
+    "archiveError": "無法封存專案，請重試。",
+    "archived": "專案已封存",
     "close": "Close",
     "collapse": "收合",
     "create": "创建 Project",
@@ -5179,12 +5183,16 @@
     "removeFromNewChat": "移除{{name}}",
     "rename": "重命名",
     "renameProject": "重命名 Project",
+    "restore": "還原專案",
+    "restoreError": "無法還原專案，請重試。",
+    "restored": "專案已還原",
     "save": "保存",
     "saveError": "无法保存 Project",
     "saving": "正在保存…",
     "search": "Search projects…",
     "toggle": "Show or hide chats in {{name}}",
-    "unavailable": "Project 不可用"
+    "unavailable": "Project 不可用",
+    "viewArchives": "檢視封存"
   },
   "queue": {
     "concurrentRuns_one": "{{count}} 個併發執行",

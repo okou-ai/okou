@@ -5152,6 +5152,10 @@
     }
   },
   "projects": {
+    "archive": "プロジェクトをアーカイブ",
+    "archiveBanner": "このプロジェクトはアーカイブされています。引き続きここでチャットを開始できます。",
+    "archiveError": "プロジェクトをアーカイブできませんでした。もう一度お試しください。",
+    "archived": "プロジェクトをアーカイブしました",
     "close": "Close",
     "collapse": "折りたたむ",
     "create": "Create Project",
@@ -5179,12 +5183,16 @@
     "removeFromNewChat": "{{name}}を削除",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restore": "プロジェクトを復元",
+    "restoreError": "プロジェクトを復元できませんでした。もう一度お試しください。",
+    "restored": "プロジェクトを復元しました",
     "save": "Save",
     "saveError": "Could not save Project",
     "saving": "Saving…",
     "search": "Search projects…",
     "toggle": "Show or hide chats in {{name}}",
-    "unavailable": "Project unavailable"
+    "unavailable": "Project unavailable",
+    "viewArchives": "アーカイブを表示"
   },
   "queue": {
     "concurrentRuns_one": "{{count}} 同時実行",

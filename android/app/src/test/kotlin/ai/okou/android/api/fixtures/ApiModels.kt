@@ -360,6 +360,7 @@ data class ProjectsProjectsItem(
     val `name`: String,
     val `createdAt`: String,
     val `updatedAt`: String,
+    val `archivedAt`: String? = null,
 )
 
 @Serializable data class Projects(val `projects`: List<ProjectsProjectsItem>)

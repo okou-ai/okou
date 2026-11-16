@@ -6,6 +6,7 @@ import { showChatSidebar$ } from "../okou-page/nav.ts";
 import { command, computed } from "ccstate";
 import { pathParams$ } from "../route.ts";
 import { activeRoute$ } from "../active-route.ts";
+import { setChatThreadArchivedFilter$ } from "../okou-page/chat-thread-filter.ts";
 /** The Project whose page is open. */
 export const selectedProjectId$ = computed((get) => {
   const id =
@@ -14,17 +15,21 @@ export const selectedProjectId$ = computed((get) => {
 });
 
 export const locateProject$ = command(({ get, set }, projectId: string) => {
-  if (
-    !get(projects$).some((project) => {
-      return project.id === projectId;
-    })
-  ) {
+  const project = get(projects$).find((item) => {
+    return item.id === projectId;
+  });
+  if (!project) {
     toast.error(
       i18n.t(($) => {
         return $.projects.unavailable;
       }),
     );
     return;
+  }
+  if (project.archivedAt) {
+    // A mention reveals its archived parent without navigating away from
+    // the conversation that contains it.
+    set(setChatThreadArchivedFilter$);
   }
   set(expandProject$, projectId);
   set(showChatSidebar$);

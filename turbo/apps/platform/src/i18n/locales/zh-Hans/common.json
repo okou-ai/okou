@@ -5152,6 +5152,10 @@
     }
   },
   "projects": {
+    "archive": "归档项目",
+    "archiveBanner": "此项目已归档。你仍可在此发起聊天。",
+    "archiveError": "无法归档项目，请重试。",
+    "archived": "项目已归档",
     "close": "Close",
     "collapse": "收起",
     "create": "创建 Project",
@@ -5179,12 +5183,16 @@
     "removeFromNewChat": "移除{{name}}",
     "rename": "重命名",
     "renameProject": "重命名 Project",
+    "restore": "恢复项目",
+    "restoreError": "无法恢复项目，请重试。",
+    "restored": "项目已恢复",
     "save": "保存",
     "saveError": "无法保存 Project",
     "saving": "正在保存…",
     "search": "Search projects…",
     "toggle": "Show or hide chats in {{name}}",
-    "unavailable": "Project 不可用"
+    "unavailable": "Project 不可用",
+    "viewArchives": "查看归档"
   },
   "queue": {
     "concurrentRuns_one": "{{count}} 个并发运行",

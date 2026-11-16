@@ -12,13 +12,14 @@ export const projectSchema = object({
   name: string().trim().min(1).max(120),
   createdAt: string(),
   updatedAt: string(),
+  archivedAt: string().nullable().optional(),
 });
 export type Project = zInfer<typeof projectSchema>;
 export const projectEventSchema = object({
   id: uuid(),
   seqId: number().int().positive(),
   projectId: uuid(),
-  kind: zEnum(["created", "renamed", "deleted"]),
+  kind: zEnum(["created", "renamed", "deleted", "archived", "restored"]),
   name: string().nullable(),
   createdAt: string(),
 });

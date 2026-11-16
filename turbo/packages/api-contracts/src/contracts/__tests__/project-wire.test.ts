@@ -3,6 +3,11 @@ import {
   chatThreadEventSchema,
   userMessageDocumentSchema,
 } from "../chat-threads";
+import {
+  projectSchema,
+  projectEventSchema,
+  projectSnapshotArchiveSchema,
+} from "../projects";
 
 const projectId = "00000000-0000-4000-8000-000000000071";
 const event = {
@@ -17,6 +22,40 @@ const event = {
 };
 
 describe("Project wire contracts", () => {
+  it("reads archive state while accepting snapshots cached before Project archiving", () => {
+    const project = {
+      id: projectId,
+      name: "Launch",
+      createdAt: event.createdAt,
+      updatedAt: event.createdAt,
+    };
+    const snapshot = {
+      projects: [project],
+      latestEventId: event.id,
+      latestSeqId: event.seqId,
+    };
+    expect(projectSnapshotArchiveSchema.parse(snapshot)).toEqual(snapshot);
+    expect(projectSchema.parse({ ...project, archivedAt: null })).toEqual({
+      ...project,
+      archivedAt: null,
+    });
+    expect(
+      projectSchema.parse({ ...project, archivedAt: event.createdAt }),
+    ).toEqual({ ...project, archivedAt: event.createdAt });
+    for (const kind of ["archived", "restored"]) {
+      expect(
+        projectEventSchema.parse({
+          id: event.id,
+          projectId,
+          seqId: 5,
+          kind,
+          name: "Launch",
+          createdAt: event.createdAt,
+        }),
+      ).toMatchObject({ kind, name: "Launch", projectId });
+    }
+  });
+
   it("reads canonical assignment and unassignment events", () => {
     expect(chatThreadEventSchema.parse(event)).toMatchObject({
       kind: "project_updated",

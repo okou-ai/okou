@@ -24,14 +24,22 @@ struct ProjectSnapshot: Codable, Sendable {
       switch event.kind {
       case .deleted:
         records[event.projectId] = nil
+      case .archived, .restored:
+        guard let existing = records[event.projectId], let name = event.name else {
+          throw ChatError.invalidContract("The Project event has no baseline or name.")
+        }
+        records[event.projectId] = ChatProject(
+          id: existing.id, name: name, createdAt: existing.createdAt, updatedAt: existing.updatedAt,
+          archivedAt: event.kind == .archived ? event.createdAt : nil)
       case .created, .renamed:
-        guard let name = event.name,
-          event.kind != .renamed || records[event.projectId] != nil
-        else { throw ChatError.invalidContract("The Project event has no baseline or name.") }
+        let existing = records[event.projectId]
+        guard let name = event.name, event.kind != .renamed || existing != nil else {
+          throw ChatError.invalidContract("The Project event has no baseline or name.")
+        }
         records[event.projectId] = ChatProject(
           id: event.projectId, name: name,
-          createdAt: records[event.projectId]?.createdAt ?? event.createdAt,
-          updatedAt: event.createdAt)
+          createdAt: existing?.createdAt ?? event.createdAt,
+          updatedAt: event.createdAt, archivedAt: existing?.archivedAt)
       }
       latestEventId = event.id
       latestSeqId = event.seqId
@@ -43,7 +51,7 @@ struct ProjectSnapshot: Codable, Sendable {
 }
 
 struct ProjectEvent: Decodable, Sendable {
-  enum Kind: String, Decodable { case created, renamed, deleted }
+  enum Kind: String, Decodable { case created, renamed, archived, restored, deleted }
   let id: String
   let seqId: Int
   let projectId: String

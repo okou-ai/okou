@@ -23,7 +23,7 @@ class ProjectSyncTest {
             }
             fixture.archive = {
                 jsonResponse(
-                    """{"projects":[{"id":"$CHAT_PROJECT","name":"Before","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":"$CHAT_EVENT","latestSeqId":17}"""
+                    """{"projects":[{"id":"$CHAT_PROJECT","name":"Before","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","archivedAt":"2026-11-13T12:00:00Z"}],"latestEventId":"$CHAT_EVENT","latestSeqId":17}"""
                 )
             }
             fixture.projectEvents = {
@@ -37,6 +37,7 @@ class ProjectSyncTest {
             assertEquals("After", project.name)
             assertEquals(CHAT_DATE, project.createdAt)
             assertEquals("2026-11-14T00:00:00Z", project.updatedAt)
+            assertEquals("2026-11-13T12:00:00Z", project.archivedAt)
             fixture.projectEvents = {
                 jsonResponse(
                     """{"events":[{"id":"88888888-8888-4888-8888-888888888888","seqId":29,"projectId":"$CHAT_PROJECT","kind":"deleted","name":null,"createdAt":"2026-11-15T00:00:00Z"}],"hasMore":false}"""
@@ -46,6 +47,66 @@ class ProjectSyncTest {
                 replayProjects(ProjectSync(fixture.service).synchronize(confirmed).checkpoint)
                     .isEmpty()
             )
+        }
+    }
+
+    @Test
+    fun archiveRenameAndRestorePreserveIdentityAndOrderingTimestamps() = runTest {
+        ChatListApiFixture().use { fixture ->
+            val sync = ProjectSync(fixture.service)
+            val initial = sync.synchronize(null).checkpoint
+            val original = replayProjects(initial).single()
+            assertNull(original.archivedAt)
+            fixture.projectEvents = {
+                jsonResponse(
+                    """{"events":[{"id":"$CHAT_EVENT","seqId":17,"projectId":"$CHAT_PROJECT","kind":"archived","name":"Research","createdAt":"2026-11-14T00:00:00Z"}],"hasMore":false}"""
+                )
+            }
+            val archived = sync.synchronize(initial).checkpoint
+            val archivedProject = replayProjects(archived).single()
+            assertEquals("2026-11-14T00:00:00Z", archivedProject.archivedAt)
+            assertEquals(original.createdAt, archivedProject.createdAt)
+            assertEquals(original.updatedAt, archivedProject.updatedAt)
+            fixture.projectEvents = {
+                jsonResponse(
+                    """{"events":[{"id":"77777777-7777-4777-8777-777777777777","seqId":23,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"Release","createdAt":"2026-11-15T00:00:00Z"}],"hasMore":false}"""
+                )
+            }
+            val renamed = sync.synchronize(archived).checkpoint
+            val renamedProject = replayProjects(renamed).single()
+            assertEquals("Release", renamedProject.name)
+            assertEquals(archivedProject.archivedAt, renamedProject.archivedAt)
+            assertEquals("2026-11-15T00:00:00Z", renamedProject.updatedAt)
+            fixture.projectEvents = {
+                jsonResponse(
+                    """{"events":[{"id":"88888888-8888-4888-8888-888888888888","seqId":29,"projectId":"$CHAT_PROJECT","kind":"restored","name":"Release","createdAt":"2026-11-16T00:00:00Z"}],"hasMore":false}"""
+                )
+            }
+            val restored = replayProjects(sync.synchronize(renamed).checkpoint).single()
+            assertNull(restored.archivedAt)
+            assertEquals(original.id, restored.id)
+            assertEquals(original.createdAt, restored.createdAt)
+            assertEquals(renamedProject.name, restored.name)
+            assertEquals(renamedProject.updatedAt, restored.updatedAt)
+        }
+    }
+
+    @Test
+    fun lifecycleEventsCannotFabricateAProjectWithoutItsBaseline() = runTest {
+        ChatListApiFixture().use { fixture ->
+            fixture.projects = {
+                jsonResponse("""{"projects":[],"latestEventId":null,"latestSeqId":0}""")
+            }
+            for (kind in listOf("archived", "restored")) {
+                fixture.projectEvents = {
+                    jsonResponse(
+                        """{"events":[{"id":"$CHAT_EVENT","seqId":17,"projectId":"$CHAT_PROJECT","kind":"$kind","name":"Research","createdAt":"$CHAT_DATE"}],"hasMore":false}"""
+                    )
+                }
+                val confirmed = ProjectSync(fixture.service).synchronize(null).checkpoint
+                val error = runCatching { replayProjects(confirmed) }.exceptionOrNull()
+                assertTrue(error is ApiFailure.IncompatibleResponse)
+            }
         }
     }
 

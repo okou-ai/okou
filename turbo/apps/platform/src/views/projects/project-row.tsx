@@ -2,11 +2,14 @@ import {
   projectIndicatorStates$,
   type ProjectIndicatorState,
 } from "../../signals/projects/project-threads.ts";
-import { useGet, useSet, useLastResolved } from "ccstate-react";
+import { useGet, useSet, useLastResolved, useLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
+  Archive,
+  ArchiveRestore,
   ChevronDown,
   ChevronRight,
+  CircleAlert,
   Ellipsis,
   Folder,
   FolderOpen,
@@ -30,11 +33,16 @@ import {
   cn,
 } from "@okouai/ui";
 import type { Project } from "@okouai/api-contracts/validators/projects";
-import { projectsEnabled$ } from "../../signals/projects/projects.ts";
+import {
+  projectArchiveOperation$,
+  projectArchiveTargetId$,
+  projectsEnabled$,
+} from "../../signals/projects/projects.ts";
 import {
   openProjectEditor$,
   setProjectDialog$,
   projectDialog$,
+  setProjectArchivedWithFeedback$,
 } from "../../signals/projects/project-ui.ts";
 import {
   setProjectExpandedWithMotion$,
@@ -51,7 +59,7 @@ import { selectChatThreadFilter$ } from "../../signals/okou-page/chat-thread-fil
 import { selectedProjectId$ } from "../../signals/projects/project-navigation.ts";
 import { Link } from "../router/link.tsx";
 import { ProjectFolderIcon, projectNameParts } from "./project-icon.tsx";
-import { detach, Reason } from "../../signals/utils.ts";
+import { detach, isAbortError, Reason } from "../../signals/utils.ts";
 import {
   ChatThreadStateIndicator,
   ChatThreadStateText,
@@ -118,6 +126,20 @@ function ProjectMenu({
   const editor = useSet(openProjectEditor$);
   const open = useSet(setProjectDialog$);
   const dialog = useGet(projectDialog$);
+  const signal = useGet(pageSignal$);
+  const setArchived = useSet(setProjectArchivedWithFeedback$);
+  const operation = useLoadable(projectArchiveOperation$);
+  const targetId = useGet(projectArchiveTargetId$);
+  const pending = operation.state === "loading";
+  const archived = Boolean(project.archivedAt);
+  const error =
+    targetId === project.id &&
+    operation.state === "hasError" &&
+    !isAbortError(operation.error);
+  const errorLabel = t(($) => {
+    return archived ? $.projects.restoreError : $.projects.archiveError;
+  });
+  const ArchiveIcon = archived ? ArchiveRestore : Archive;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -131,6 +153,9 @@ function ProjectMenu({
               "group/project-menu shrink-0",
               touch && "min-h-11 min-w-11",
             )}
+            disabled={pending}
+            aria-busy={pending}
+            aria-description={error ? errorLabel : undefined}
             aria-label={t(
               ($) => {
                 return $.projects.options;
@@ -142,7 +167,9 @@ function ProjectMenu({
           />
         }
       >
-        {indicator !== null ? (
+        {error ? (
+          <CircleAlert className="text-destructive" aria-hidden="true" />
+        ) : indicator !== null ? (
           <>
             <span
               aria-hidden="true"
@@ -162,6 +189,11 @@ function ProjectMenu({
         finalFocus={dialog ? false : undefined}
         data-project-menu-content-id={project.id}
       >
+        {error && (
+          <p role="alert" className="px-2 py-1 text-xs text-destructive">
+            {errorLabel}
+          </p>
+        )}
         <ProjectFoldMenuItem project={project} expanded={expanded} />
         <DropdownMenuItem
           onClick={() => {
@@ -171,6 +203,20 @@ function ProjectMenu({
           <Pencil size={16} />
           {t(($) => {
             return $.projects.rename;
+          })}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={pending}
+          onClick={() => {
+            detach(
+              setArchived(project.id, !archived, signal),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          <ArchiveIcon size={16} />
+          {t(($) => {
+            return archived ? $.projects.restore : $.projects.archive;
           })}
         </DropdownMenuItem>
         <DropdownMenuSeparator />

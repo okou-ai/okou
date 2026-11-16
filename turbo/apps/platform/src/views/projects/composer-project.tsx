@@ -29,7 +29,9 @@ function ComposerProjectMenuItems({
   readonly project: ComposerProjectSignals;
 }) {
   const { t } = useTranslation();
-  const projects = useGet(projects$);
+  const projects = useGet(projects$).filter((item) => {
+    return !item.archivedAt;
+  });
   const select = useSet(project.select$);
   const openEditor = useSet(openProjectEditor$);
   return (

@@ -10,8 +10,6 @@ import ai.okou.android.api.generated.AgentsItem
 import ai.okou.android.api.generated.AgentsItemVisibility
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.ChatEvents
-import ai.okou.android.api.generated.ProjectArchive
-import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chatEventWire
 import ai.okou.android.jsonResponse
@@ -88,23 +86,21 @@ class ChatCacheStoreTest {
     fun projectDatasetReopensWithoutAChatCacheAndRejectsStaleOrUnauthorizedWrites() = runTest {
         val root = temporary.newFolder()
         val store = cache(root)
-        val snapshot =
-            ProjectCheckpoint(
-                ProjectArchive(
-                    listOf(ConfirmedProject(CHAT_PROJECT, "Before", CHAT_DATE, CHAT_DATE)),
-                    null,
-                    0,
-                )
-            )
-        val renamed =
-            snapshot.copy(
-                events =
-                    json
-                        .decodeFromString<ProjectEvents>(
-                            """{"events":[{"id":"77777777-7777-4777-8777-777777777777","seqId":23,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"2026-11-14T00:00:00Z"}],"hasMore":false}"""
-                        )
-                        .events
-            )
+        val (snapshot, renamed) =
+            ChatListApiFixture().use { fixture ->
+                fixture.projects = {
+                    jsonResponse(
+                        """{"projects":[{"id":"$CHAT_PROJECT","name":"Before","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","archivedAt":"2026-11-13T12:00:00Z"}],"latestEventId":null,"latestSeqId":0}"""
+                    )
+                }
+                val baseline = ProjectSync(fixture.service).synchronize(null).checkpoint
+                fixture.projectEvents = {
+                    jsonResponse(
+                        """{"events":[{"id":"77777777-7777-4777-8777-777777777777","seqId":23,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"2026-11-14T00:00:00Z"}],"hasMore":false}"""
+                    )
+                }
+                baseline to ProjectSync(fixture.service).synchronize(baseline).checkpoint
+            }
         store
             .open(identity) { true }
             .use {
@@ -120,7 +116,10 @@ class ChatCacheStoreTest {
                 val saved = checkNotNull(it.loadProjects())
                 assertEquals(renamed, saved.checkpoint)
                 assertEquals(2345L, saved.confirmedAt)
-                assertEquals("After", replayProjects(saved.checkpoint).single().name)
+                val project = replayProjects(saved.checkpoint).single()
+                assertEquals("After", project.name)
+                assertEquals("2026-11-13T12:00:00Z", project.archivedAt)
+                assertEquals("2026-11-14T00:00:00Z", project.updatedAt)
             }
         store
             .open(identity.copy(workspaceId = "other")) { true }

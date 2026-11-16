@@ -50,6 +50,10 @@ const projectState$ = computed((get) => {
       }[]
     >([]),
     optimisticRenames$: state<readonly OptimisticProjectRename[]>([]),
+    archiveRequest$: state<{
+      readonly projectId: string;
+      readonly result: Promise<boolean>;
+    } | null>(null),
   };
 });
 // A persisted rename also settles earlier local renames of its Project. One
@@ -310,6 +314,59 @@ export const renameProject$ = command(
       signal,
     );
     await set(syncProjects$, signal);
+  },
+);
+// One shared operation loadable covers menus, the page banner and toast Undo.
+// Keeping only the latest request bounds retention to the current session.
+export const projectArchiveOperation$ = computed((get) => {
+  return get(get(projectState$).archiveRequest$)?.result;
+});
+export const projectArchiveTargetId$ = computed((get) => {
+  return get(get(projectState$).archiveRequest$)?.projectId ?? null;
+});
+const persistProjectArchived$ = command(
+  async ({ get, set }, id: string, archived: boolean, signal: AbortSignal) => {
+    await set(waitForProjectCreation$, id, signal);
+    const client = get(apiClient$)(projectsContract);
+    const request = {
+      params: { id },
+      body: { eventId: operation() },
+      fetchOptions: { signal },
+    };
+    await accept(
+      archived ? client.archive(request) : client.restore(request),
+      [200],
+      signal,
+    );
+    // Archive is intentionally nonoptimistic: failed requests leave the
+    // Project and its chats intact. The same lifecycle stream reconciles
+    // this tab, the shared database and realtime changes from other tabs.
+    await set(syncProjects$, signal);
+    return true;
+  },
+);
+const setProjectArchived$ = command(
+  ({ get, set }, id: string, archived: boolean, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const project = get(projects$).find((item) => {
+      return item.id === id;
+    });
+    if (!project || Boolean(project.archivedAt) === archived) {
+      return Promise.resolve(false);
+    }
+    const result = set(persistProjectArchived$, id, archived, signal);
+    set(get(projectState$).archiveRequest$, { projectId: id, result });
+    return result;
+  },
+);
+export const archiveProject$ = command(
+  ({ set }, id: string, signal: AbortSignal) => {
+    return set(setProjectArchived$, id, true, signal);
+  },
+);
+export const restoreProject$ = command(
+  ({ set }, id: string, signal: AbortSignal) => {
+    return set(setProjectArchived$, id, false, signal);
   },
 );
 export const deleteProject$ = command(

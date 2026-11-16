@@ -123,6 +123,19 @@ test("prepares queued inputs from current membership while preserving an already
     send.send({ headers: fixture.sessionHeaders(actor), body }),
     [201],
   );
+  for (const action of ["archive", "restore"] as const) {
+    await accept(
+      projects()[action]({
+        headers: fixture.sessionHeaders(actor),
+        params: { id },
+        body: { eventId: operation() },
+      }),
+      [200],
+    );
+    const running = await fixture.api.readRun(actor, first.runId);
+    expect(running.status).toBe(initial.status);
+    expect(running.appendSystemPrompt).toBe(initial.appendSystemPrompt);
+  }
   const latestId = operation();
   await accept(
     projects().create({
