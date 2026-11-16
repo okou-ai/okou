@@ -123,7 +123,8 @@ public struct ChatFailure: Equatable, Sendable {
     case "execution_timeout": kind = .timeout
     case "insufficient_credits": kind = .billing
     case "provider_insufficient_credits", "invalid_api_key", "invalid_credentials",
-      "reconnect_required": kind = .settings
+      "reconnect_required":
+      kind = .settings
     case "terms_acceptance_required": kind = .terms
     case "input_too_large", "provider_image_too_large": kind = .inputTooLarge
     case "output_token_limit": kind = .outputLimit

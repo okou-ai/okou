@@ -59,9 +59,7 @@ final class FailureRecoveryFixture: Sendable {
     reason: String? = "execution_timeout", error: String = "Time limit reached",
     draft: ComposerDraft = ComposerDraft()
   ) {
-    let payload = try! JSONSerialization.data(withJSONObject: [
-      "error": error,
-    ])
+    let payload = try! JSONSerialization.data(withJSONObject: ["error": error])
     let rows = [
       Self.row(
         1, type: "input.prompt",
@@ -319,7 +317,10 @@ final class FailureRecoveryFixture: Sendable {
     _ seq: Int, type: String, payload: String, id: String? = nil, failureReason: String? = nil
   ) -> String {
     let reason = failureReason.map { ",\"failureReason\":\"\($0)\"" } ?? ""
-    return "{\"id\":\"\(id ?? Self.id(seq))\",\"chatThreadId\":\"\(ModelHTTPFixtures.threadID)\",\"runId\":\"\(runID)\",\"seqId\":\(seq),\"createdAt\":\"2026-10-20T00:00:00Z\",\"eventType\":\"\(type)\",\"payload\":\(payload)\(reason)}"
+    return """
+      {"id":"\(id ?? Self.id(seq))","chatThreadId":"\(ModelHTTPFixtures.threadID)","runId":"\(runID)",
+      "seqId":\(seq),"createdAt":"2026-10-20T00:00:00Z","eventType":"\(type)","payload":\(payload)\(reason)}
+      """
   }
 }
 
