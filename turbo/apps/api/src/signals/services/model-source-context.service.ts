@@ -177,25 +177,33 @@ export function memberAccountSourceFromSnapshot(
   };
 }
 
-/** Include an admitted Run's retained account, without default account selection. */
+/** Read only the pinned account, including its admitted Run's retained access. */
 export function createRunModelSources(
   identity$: Computed<
     Promise<{
       readonly orgId: string;
       readonly userId: string;
       readonly runId: string;
+      readonly accountId: string | null;
     }>
   >,
 ) {
   return computed(async (get): Promise<MemberModelBootstrap> => {
-    const { orgId, userId, runId } = await get(identity$);
+    const { orgId, userId, runId, accountId } = await get(identity$);
     const sources = memberModelSourcesAggregate(orgId, userId, runId);
     const [row] = await get(db$)
       .select({ payload: sources.payload })
       .from(modelProviders)
       .leftJoin(modelProviderAccounts, sources.joins.account)
       .leftJoin(modelProviderAccountSecrets, sources.joins.secret)
-      .where(sources.joins.provider);
+      .where(
+        and(
+          sources.joins.provider,
+          accountId === null
+            ? sql`false`
+            : eq(modelProviderAccounts.id, accountId),
+        ),
+      );
     if (!row) {
       throw new Error("Member model source query returned no row");
     }

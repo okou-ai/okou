@@ -5,6 +5,7 @@
     "tsBuildInfoFile": "./.typecheck/admission.tsbuildinfo"
   },
   "include": [
+    "src/signals/services/admitted-execution-facts.ts",
     "src/lib/conversation-guidance.ts",
     "src/lib/discord-ingress-failure.ts",
     "src/lib/discord-message.ts",

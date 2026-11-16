@@ -24,6 +24,17 @@ const seedSkillColumns = Object.freeze({
   contentBundle: skillCatalog.contentBundle,
 });
 
+/** Runtime needs current skill bundles, not a second model/pricing snapshot. */
+export function createExecutionSeedSkills() {
+  return computed(async (get) => {
+    const rows = await get(db$)
+      .select(seedSkillColumns)
+      .from(skillCatalog)
+      .where(inArray(skillCatalog.url, SEED_SKILLS.map(resolveSkillRef)));
+    return array(contextProjectionSchema(seedSkillColumns)).parse(rows);
+  });
+}
+
 /** Every Seed Skill bundle; each run filters and checks its own selection. */
 function seedSkillRows(builder: QueryBuilder) {
   return builder

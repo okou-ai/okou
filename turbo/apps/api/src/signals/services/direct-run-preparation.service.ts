@@ -7,6 +7,7 @@ import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { array, boolean, object } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { rawSqlReadDb$ } from "../external/db";
+import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { agentInstructionsSelectionSql } from "./execution-instructions-selection";
 import { createExecutionContext } from "./execution-context";
 import { contentBundleAvailableCondition } from "./execution-content-bundle";
@@ -36,6 +37,7 @@ import {
 export interface AdmittedRunLaunch {
   readonly run: ExecutionPublicationRun;
   readonly executionContext: ExecutionInput;
+  readonly executionFacts: AdmittedExecutionFacts;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string | null;
@@ -57,7 +59,11 @@ export function createDirectRunPreparation(
 ) {
   const executionInput$ = computed(async (get) => {
     const input = await get(input$);
-    return { run: input.run, context: input.executionContext };
+    return {
+      run: input.run,
+      context: input.executionContext,
+      facts: input.executionFacts,
+    };
   });
   const prepared$ = createExecutionContext(executionInput$);
   const packages$ = computed(async (get) => {
