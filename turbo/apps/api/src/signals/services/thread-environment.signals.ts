@@ -7,7 +7,7 @@ import {
 import { expandVariables } from "@okouai/core/variable-expander";
 import { computed, type Computed } from "ccstate";
 import { compactRecord } from "./connector-runtime-preparation.service";
-import { emptyEnvironment, type Environment } from "./run-environment";
+import type { Environment } from "./run-environment";
 import type {
   PermissionManifest,
   ResolvedModelProviderEnvironment,
@@ -16,7 +16,7 @@ import type {
 /** The selected model provider's environment, secrets and firewall. */
 export function createModelProviderEnvironmentSignals(
   runVariables$: Computed<Promise<Record<string, string> | undefined>>,
-  modelRoute$: Computed<Promise<ResolvedModelProviderEnvironment | null>>,
+  modelRoute$: Computed<Promise<ResolvedModelProviderEnvironment>>,
   modelPermissions$: Computed<Promise<PermissionManifest | undefined>>,
 ) {
   return computed(async (get): Promise<Environment> => {
@@ -25,9 +25,6 @@ export function createModelProviderEnvironmentSignals(
       get(runVariables$),
       get(modelPermissions$),
     ]);
-    if (!modelProvider) {
-      return emptyEnvironment();
-    }
     return {
       vars: undefined,
       environment: compactRecord(
@@ -56,14 +53,12 @@ export function createModelProviderEnvironmentSignals(
 export function paidToolPlatformEnvironment(args: {
   readonly disabledTools: readonly string[];
   readonly framework: string;
-  readonly modelProviderType: string | null;
+  readonly modelProviderType: string;
   readonly piExecution: boolean;
 }): Record<string, string> {
   const { disabledTools, framework, modelProviderType, piExecution } = args;
   const allowFrameworkTools =
-    !piExecution &&
-    (modelProviderType === null ||
-      !isBuiltInModelProviderType(modelProviderType));
+    !piExecution && !isBuiltInModelProviderType(modelProviderType);
   return {
     [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(disabledTools),
     ...(allowFrameworkTools &&

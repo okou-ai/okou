@@ -39,7 +39,6 @@ function isUnavailablePersonalCapture(
 ): boolean {
   return (
     selected.modelProviderCredentialScope === "member" &&
-    selected.selectedModel !== null &&
     resolveCatalogRunModel(catalog, selected.selectedModel) === null
   );
 }

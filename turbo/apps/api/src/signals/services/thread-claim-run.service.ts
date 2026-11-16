@@ -92,7 +92,6 @@ import {
 } from "./runner-reuse-preference";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type {
-  AgentRunModelPin,
   AgentRunPreCreateSource,
   AgentRunRequestAgent,
   ResolvedModelProviderEnvironment,
@@ -209,7 +208,6 @@ import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   getFrameworkForType,
   isBuiltInModelProviderType,
-  type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
@@ -275,7 +273,7 @@ import { chatThreadOrganizationCondition } from "./chat-thread-organization.serv
 import { OFFICIAL_WORKFLOW_THREAD_READ_ONLY_MESSAGE } from "./official-workflow-policy.service";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
-import { modelProviderWriteTypeForLaunch } from "./model-selection.service";
+import type { ModelFirstPin } from "./model-selection.service";
 import type { OfficialWorkflowContextFacts } from "./official-workflow-context.signals";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
@@ -525,8 +523,8 @@ function queuedPromptRunInput(args: {
     prompt: args.prompt,
     threadId: input.threadId,
     queuedMessage: input.queuedMessage,
-    selectedModel: model.selectedModel,
-    effectiveModelProvider: model.modelProviderType,
+    selectedModel: model.pin.selectedModel,
+    effectiveModelProvider: model.pin.modelProviderType,
     piExecution: model.piExecution,
     codexServiceTier: model.codexServiceTier,
     reasoningEffort: model.reasoningEffort,
@@ -544,14 +542,8 @@ function queuedPromptRunInput(args: {
 /** Run command model fields, as selected for the picked event. */
 function threadRunModelFields(model: ThreadModelSelection) {
   return {
-    ...(model.modelProviderType
-      ? {
-          modelProvider: modelProviderWriteTypeForLaunch(
-            model.modelProviderType,
-          ),
-        }
-      : {}),
-    selectedModel: model.selectedModel,
+    modelProvider: model.pin.modelProviderType,
+    selectedModel: model.pin.selectedModel,
     codexServiceTier: model.codexServiceTier,
     piExecution: model.piExecution,
   };
@@ -577,13 +569,7 @@ function promptRunCommand(
     },
     piExecution: input.piExecution,
     agentRunMetadata: { autonomyBudget: input.autonomyBudget },
-    ...(input.effectiveModelProvider
-      ? {
-          modelProvider: modelProviderWriteTypeForLaunch(
-            input.effectiveModelProvider,
-          ),
-        }
-      : {}),
+    modelProvider: input.effectiveModelProvider,
     ...(input.realAgentInPreview ? { realAgentInPreview: true } : {}),
     ...(input.captureNetworkBodies ? { captureNetworkBodies: true } : {}),
   };
@@ -887,7 +873,7 @@ function claimCommitArguments(
     apiStartTime: args.apiStartTime,
     chatThreadId: args.chatThreadId,
     agentRunMetadata: args.agentRunMetadata,
-    agentRunModelPin: args.agentRunModelPin,
+    modelSelection: args.modelSelection,
     codexServiceTier: args.codexServiceTier,
     queueFirstAssociation: args.queueFirstAssociation,
     timingDimensions: args.timingDimensions,
@@ -2418,7 +2404,7 @@ export function createThreadClaimRunObjects(
         throw new Error("Agent disappeared after preparation authorization");
       }
       return {
-        agentRunModelPin: model.agentRunModelPin,
+        modelSelection: model.pin,
       };
     },
   );
@@ -3242,7 +3228,7 @@ export function createThreadClaimRunObjects(
           orgId: claim.orgId,
           userId: input.command.owner.userId,
           modelProviderType: model.type,
-          selectedModel: model.selectedModel ?? input.command.selectedModel,
+          selectedModel: model.selectedModel,
           enforceBuiltInCredits: isBuiltInModelProviderType(model.type),
         },
         signal,
@@ -4015,7 +4001,7 @@ interface ThreadRunPersistenceArgs {
   readonly apiStartTime: number;
   readonly chatThreadId: string;
   readonly agentRunMetadata: AgentRunMetadata;
-  readonly agentRunModelPin: AgentRunModelPin;
+  readonly modelSelection: ModelFirstPin;
   readonly codexServiceTier?: "fast";
   readonly queueFirstAssociation: QueueFirstRunAssociation;
   readonly timingDimensions: ApiDispatchTimingDimensions;
@@ -4078,7 +4064,7 @@ interface LaunchRunRowsArgs {
     | "builtInModelRuntimeRoute"
     | "upstreamModel"
   >;
-  readonly agentRunModelPin: AgentRunModelPin;
+  readonly modelSelection: ModelFirstPin;
   readonly selectedImageModel: ImageModel;
   readonly callbackRows: readonly AgentRunCallbackInsert[];
   readonly chatThreadId: string;
@@ -4137,7 +4123,7 @@ function modelLaunchMetadataValues(
           ? modelProvider.type
           : null,
       modelRuntimeModel: isPersonalSubscriptionProviderType(modelProvider.type)
-        ? (modelProvider.upstreamModel ?? null)
+        ? modelProvider.upstreamModel
         : null,
       builtInModelKeyId: null,
     };
@@ -4167,7 +4153,7 @@ function agentRunLaunchMetadataInput(metadata: AgentRunMetadata): {
 
 function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
   const metadata = args.agentRunMetadata;
-  const modelPin = args.agentRunModelPin;
+  const modelPin = args.modelSelection;
   const exactSubscriptionId = isPersonalSubscriptionProviderType(
     args.modelProvider.type,
   )
@@ -4176,13 +4162,12 @@ function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
   return normalizeRunMetadata({
     triggerSource: args.content.triggerSource,
     ...agentRunLaunchMetadataInput(metadata),
-    modelProvider: modelPin.modelProvider,
+    modelProvider: modelPin.modelProviderType,
     modelProviderId: exactSubscriptionId ?? modelPin.modelProviderId,
     modelProviderCredentialScope: modelPin.modelProviderCredentialScope,
     selectedModel: modelPin.selectedModel,
     ...modelLaunchMetadataValues(args.modelProvider),
     ...(args.modelProvider.builtInModelRuntimeRoute &&
-    modelPin.selectedModel &&
     isAutoSelectedModel(modelPin.selectedModel)
       ? {
           modelUsageProvider: autoRunBillingProvider(
@@ -4214,7 +4199,7 @@ function preparedLaunchRowsArgs(
     content: commit.context.content,
     runStorageMounts: commit.launch.runStorageMounts,
     modelProvider: commit.context.modelProvider,
-    agentRunModelPin: commit.createArgs.agentRunModelPin,
+    modelSelection: commit.createArgs.modelSelection,
     selectedImageModel: commit.context.selectedImageModel,
     callbackRows: commit.callbackRows,
     chatThreadId: commit.createArgs.chatThreadId,
@@ -4451,7 +4436,7 @@ interface ThreadRunOwner {
 /** Captured facts used to prepare one claimed Thread input. */
 interface ThreadRunCommand {
   readonly owner: ThreadRunOwner;
-  readonly modelProvider?: ModelProviderType;
+  readonly modelProvider: ModelFirstPin["modelProviderType"];
   readonly realAgentInPreview?: boolean;
   readonly captureNetworkBodies?: boolean;
   readonly apiStartTime: number;
@@ -4645,14 +4630,14 @@ function agentRunOrigin(args: {
 }
 
 interface ThreadRunPreparation {
-  readonly agentRunModelPin: AgentRunModelPin;
+  readonly modelSelection: ModelFirstPin;
 }
 
 interface ThreadRunArgsInput {
   /** One catalog snapshot per run, loaded by the entry point. */
   readonly catalog: ModelCatalog;
   readonly command: ThreadRunCommand;
-  readonly agentRunModelPin: AgentRunModelPin;
+  readonly modelSelection: ModelFirstPin;
   readonly threadContinuation: ChatThreadContinuation;
 }
 
@@ -4680,7 +4665,7 @@ interface ThreadRunArgs {
   readonly apiStartTime: number;
   readonly chatThreadId: string;
   readonly threadContinuation: ChatThreadContinuation;
-  readonly agentRunModelPin: AgentRunModelPin;
+  readonly modelSelection: ModelFirstPin;
   readonly timingDimensions: ApiDispatchTimingDimensions;
 }
 
@@ -4709,7 +4694,7 @@ function buildThreadRunArgs(
       codexServiceTier: command.codexServiceTier,
       reasoningEffort: command.reasoningEffort,
     },
-    agentRunModelPin: args.agentRunModelPin,
+    modelSelection: args.modelSelection,
     timingDimensions: agentRunTimingDimensions({
       origin: agentRunOrigin({
         command,
@@ -4880,11 +4865,10 @@ function admittedRunLaunch(
       appendSystemPrompt: rows.content.appendSystemPrompt,
       vars: rows.content.vars,
       storageMounts: args.launch.runStorageMounts,
-      modelProvider: metadata.modelProvider,
+      modelProvider: rows.modelSelection.modelProviderType,
       modelProviderId: metadata.modelProviderId,
-      modelProviderCredentialScope: metadata.modelProviderCredentialScope,
       modelProviderAccountIdentity: admission.validatedAccountIdentity,
-      selectedModel: metadata.selectedModel,
+      selectedModel: rows.modelSelection.selectedModel,
       modelRuntimeProvider: metadata.modelRuntimeProvider,
       modelRuntimeModel: metadata.modelRuntimeModel,
       builtInModelKeyId: metadata.builtInModelKeyId,
