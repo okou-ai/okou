@@ -866,25 +866,7 @@ fn validate_private_runtime_file_path_for_runtime(
 }
 
 fn validate_user_env(user_env: &HashMap<String, String>) -> Result<(), String> {
-    let mut entries: Vec<(&String, &String)> = user_env.iter().collect();
-    entries.sort_by_key(|(key, _)| *key);
-
-    for (key, value) in entries {
-        if !guest_contracts::env::is_shell_identifier_env_key(key) {
-            return Err(format!(
-                "{USER_ENV_FILE_ENV_KEY} contains invalid env key {:?}",
-                guest_contracts::env::sanitize_env_key_for_diagnostic(key)
-            ));
-        }
-        if value.contains('\0') {
-            return Err(format!(
-                "{USER_ENV_FILE_ENV_KEY} contains NUL byte for env key {:?}",
-                guest_contracts::env::sanitize_env_key_for_diagnostic(key)
-            ));
-        }
-    }
-
-    Ok(())
+    guest_contracts::env::validate_sorted_shell_environment(user_env.iter(), USER_ENV_FILE_ENV_KEY)
 }
 
 fn resolve_home_dir(
