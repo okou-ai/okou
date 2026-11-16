@@ -2,7 +2,13 @@ import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
-import { pathname$ } from "../route.ts";
+import {
+  detachedNavigateTo$,
+  pathname$,
+  replacePathSilently$,
+} from "../route.ts";
+import { ROUTES } from "../route-paths.ts";
+import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
 import { command, computed, state } from "ccstate";
 import {
   feishuConnectContract,
@@ -21,16 +27,17 @@ import { i18n } from "../../i18n/index.ts";
 
 export const feishuPlatform$ = computed((get): FeishuPlatform => {
   const path = get(pathname$);
-  return path === FEISHU_PLATFORMS.lark.settingsPath ||
+  return path.startsWith(`${FEISHU_PLATFORMS.lark.settingsPath}/`) ||
+    path === FEISHU_PLATFORMS.lark.settingsPath ||
     path === FEISHU_PLATFORMS.lark.callbackPath
     ? "lark"
     : "feishu";
 });
 
 const reload$ = state(0);
-const internalDialogOpen$ = state(false);
-const internalDialogExisting$ = state(false);
-const internalDialogInstallationId$ = state<string | null>(null);
+const internalSetupActive$ = state(false);
+const internalSetupExisting$ = state(false);
+const internalSetupInstallationId$ = state<string | null>(null);
 const internalUninstallInstallationId$ = state<string | null>(null);
 const internalSetupStep$ = state<FeishuSetupStep>("create");
 const internalSetupForm$ = state<FeishuSetupInput>({
@@ -38,6 +45,36 @@ const internalSetupForm$ = state<FeishuSetupInput>({
   appSecret: "",
   verificationToken: "",
   encryptKey: "",
+});
+const internalGuideImageIndex$ = state(0);
+export const feishuGuideCanvas = createZoomableImageCanvasSignals();
+const internalRevealedCredentials$ = state<readonly (keyof FeishuSetupInput)[]>(
+  [],
+);
+
+export const feishuGuideImageIndex$ = computed((get) => {
+  return get(internalGuideImageIndex$);
+});
+export const feishuRevealedCredentials$ = computed((get) => {
+  return get(internalRevealedCredentials$);
+});
+export const setFeishuGuideImageIndex$ = command(({ set }, index: number) => {
+  set(internalGuideImageIndex$, index);
+});
+export const toggleFeishuCredentialVisibility$ = command(
+  ({ set }, field: keyof FeishuSetupInput) => {
+    set(internalRevealedCredentials$, (fields) => {
+      return fields.includes(field)
+        ? fields.filter((item) => {
+            return item !== field;
+          })
+        : [...fields, field];
+    });
+  },
+);
+const resetFeishuSetupPresentation$ = command(({ set }) => {
+  set(internalGuideImageIndex$, 0);
+  set(internalRevealedCredentials$, []);
 });
 const FEISHU_SETUP_STEP_ORDER = [
   "create",
@@ -165,20 +202,20 @@ export type FeishuSetupStep =
   | "events"
   | "publish";
 
-export const feishuDialogOpen$ = computed((get) => {
-  return get(internalDialogOpen$);
+export const feishuSetupActive$ = computed((get) => {
+  return get(internalSetupActive$);
 });
 
 export const feishuSetupStep$ = computed((get) => {
   return get(internalSetupStep$);
 });
 
-export const feishuDialogExisting$ = computed((get) => {
-  return get(internalDialogExisting$);
+export const feishuSetupExisting$ = computed((get) => {
+  return get(internalSetupExisting$);
 });
 
-export const feishuDialogInstallationId$ = computed((get) => {
-  return get(internalDialogInstallationId$);
+export const feishuSetupInstallationId$ = computed((get) => {
+  return get(internalSetupInstallationId$);
 });
 
 export const feishuUninstallInstallationId$ = computed((get) => {
@@ -189,7 +226,7 @@ export const feishuSetupForm$ = computed((get) => {
   return get(internalSetupForm$);
 });
 
-export const openFeishuDialog$ = command(
+export const initializeFeishuSetup$ = command(
   (
     { set },
     initial: Pick<FeishuSetupInput, "appId"> & {
@@ -198,8 +235,9 @@ export const openFeishuDialog$ = command(
     },
   ) => {
     const { step, installationId, ...formDefaults } = initial;
-    set(internalDialogExisting$, installationId !== undefined);
-    set(internalDialogInstallationId$, installationId ?? null);
+    set(resetFeishuSetupPresentation$);
+    set(internalSetupExisting$, installationId !== undefined);
+    set(internalSetupInstallationId$, installationId ?? null);
     set(internalSetupStep$, step);
     set(internalSetupForm$, {
       ...formDefaults,
@@ -207,29 +245,21 @@ export const openFeishuDialog$ = command(
       verificationToken: "",
       encryptKey: "",
     });
-    set(internalDialogOpen$, true);
+    set(internalSetupActive$, true);
   },
 );
 
-export const closeFeishuDialog$ = command(({ set }) => {
-  set(internalDialogOpen$, false);
-});
-
-export const completeFeishuDialogClose$ = command(({ get, set }) => {
-  if (get(internalDialogOpen$)) {
-    return;
-  }
-  set(internalSetupForm$, (previous) => {
-    return {
-      ...previous,
-      appSecret: "",
-      verificationToken: "",
-      encryptKey: "",
-    };
-  });
+export const closeFeishuSetup$ = command(({ get, set }) => {
+  set(
+    detachedNavigateTo$,
+    get(feishuPlatform$) === "lark"
+      ? ROUTES.settingsLark
+      : ROUTES.settingsFeishu,
+  );
 });
 
 export const advanceFeishuSetupStep$ = command(({ set }) => {
+  set(resetFeishuSetupPresentation$);
   set(internalSetupStep$, (step) => {
     const index = FEISHU_SETUP_STEP_ORDER.indexOf(step);
     return FEISHU_SETUP_STEP_ORDER[index + 1] ?? step;
@@ -237,6 +267,7 @@ export const advanceFeishuSetupStep$ = command(({ set }) => {
 });
 
 export const goBackFeishuSetupStep$ = command(({ set }) => {
+  set(resetFeishuSetupPresentation$);
   set(internalSetupStep$, (step) => {
     const index = FEISHU_SETUP_STEP_ORDER.indexOf(step);
     return index > 0 ? (FEISHU_SETUP_STEP_ORDER[index - 1] ?? step) : step;
@@ -274,13 +305,24 @@ export const setupFeishuOrg$ = command(
       [200],
     );
     signal.throwIfAborted();
-    if (get(internalDialogOpen$) && get(internalSetupForm$) === form) {
-      set(internalDialogExisting$, true);
+    if (get(internalSetupActive$) && get(internalSetupForm$) === form) {
+      set(internalSetupExisting$, true);
       set(
-        internalDialogInstallationId$,
+        internalSetupInstallationId$,
         result.body.installationId ?? input.installationId ?? null,
       );
       set(advanceFeishuSetupStep$);
+      const installationId = get(internalSetupInstallationId$);
+      if (installationId) {
+        // Keep the active draft and route lifetime while making setup resumable.
+        set(
+          replacePathSilently$,
+          get(feishuPlatform$) === "lark"
+            ? ROUTES.settingsLarkSetupBot
+            : ROUTES.settingsFeishuSetupBot,
+          { installationId },
+        );
+      }
     }
     set(reload$, (value) => {
       return value + 1;
@@ -305,7 +347,7 @@ export const checkFeishuAppIdAvailable$ = command(
       [200],
     );
     signal.throwIfAborted();
-    if (get(internalDialogOpen$) && get(internalSetupForm$) === form) {
+    if (get(internalSetupActive$) && get(internalSetupForm$) === form) {
       set(advanceFeishuSetupStep$);
     }
   },
@@ -337,15 +379,17 @@ export const completeFeishuInstallationSetup$ = command(
           .botInstalled;
       }),
     );
-    if (!get(internalDialogOpen$) || get(internalSetupForm$) !== form) {
+    if (!get(internalSetupActive$) || get(internalSetupForm$) !== form) {
       return;
     }
-    set(closeFeishuDialog$);
     if (!result.body.isConnected && result.body.connectUrl) {
       const url = new URL(result.body.connectUrl);
       url.searchParams.set("callbackTarget", "app");
+      set(resetFeishuSettingsUi$);
       window.location.assign(url.toString());
+      return;
     }
+    set(closeFeishuSetup$);
   },
 );
 
@@ -454,9 +498,10 @@ export const startFeishuSettingsRealtime$ = command(
 );
 
 export const resetFeishuSettingsUi$ = command(({ set }) => {
-  set(internalDialogOpen$, false);
-  set(internalDialogExisting$, false);
-  set(internalDialogInstallationId$, null);
+  set(resetFeishuSetupPresentation$);
+  set(internalSetupActive$, false);
+  set(internalSetupExisting$, false);
+  set(internalSetupInstallationId$, null);
   set(internalUninstallInstallationId$, null);
   set(internalInstallations$, null);
   set(internalSetupStep$, "create");

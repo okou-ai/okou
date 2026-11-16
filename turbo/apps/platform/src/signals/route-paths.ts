@@ -61,6 +61,10 @@ export const ROUTES = {
   settingsTelegram: INTEGRATION_SETTINGS_PATHS.telegram,
   settingsFeishu: "/settings/feishu",
   settingsLark: "/settings/lark",
+  settingsFeishuSetup: "/settings/feishu/setup",
+  settingsFeishuSetupBot: "/settings/feishu/setup/:installationId",
+  settingsLarkSetup: "/settings/lark/setup",
+  settingsLarkSetupBot: "/settings/lark/setup/:installationId",
   githubConnect: "/github/connect",
   telegramConnect: "/telegram/connect",
   // Stable public handoff from vm0-marketing into App onboarding.

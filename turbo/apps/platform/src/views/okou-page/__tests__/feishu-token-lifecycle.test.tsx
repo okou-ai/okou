@@ -4,12 +4,13 @@ import {
   type FeishuConnectStatus,
   type FeishuInstallationStatus,
 } from "@okouai/api-contracts/contracts/feishu-connect";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getAction,
+  findAction,
   mockFeishu,
   setupFeishuSettingsPage,
 } from "./connector-integrations-test-helpers.ts";
@@ -51,10 +52,10 @@ test.each(["feishu", "lark"] as const)(
     });
     await setupFeishuSettingsPage(context, platform);
     click(await screen.findByText("Add bot"));
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     await fill(await screen.findByLabelText("App ID"), "cli_first_bot");
     await fill(screen.getByLabelText("App Secret"), "test-secret");
-    click(getAction("button", "Next"));
+    click(await findAction("button", "Next"));
     await fill(
       await screen.findByLabelText("Verification Token"),
       "test-token",
@@ -62,16 +63,18 @@ test.each(["feishu", "lark"] as const)(
     await fill(screen.getByLabelText("Encrypt Key"), "test-key");
     click(getAction("button", "Verify and continue"));
     await started.promise;
-    click(getAction("button", "Close", screen.getByRole("dialog")));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    click(getAction("link", `${platform === "lark" ? "Lark" : "Feishu"} bots`));
+    await screen.findByRole("heading", {
+      name: `${platform === "lark" ? "Lark" : "Feishu"} bots`,
     });
-    click(getAction("button", "Add bot"));
-    click(getAction("button", "Next"));
+    click(getAction("link", "Add bot"));
+    click(await findAction("button", "Next"));
     await fill(screen.getByLabelText("App ID"), "cli_second_draft");
     await fill(screen.getByLabelText("App Secret"), "new-test-secret");
-    response.resolve();
-    await screen.findByText("First bot");
+    await act(async () => {
+      response.resolve();
+      await response.promise;
+    });
     expect(screen.getByLabelText("App ID")).toHaveValue("cli_second_draft");
     expect(screen.getByLabelText("App Secret")).toHaveValue("new-test-secret");
   },

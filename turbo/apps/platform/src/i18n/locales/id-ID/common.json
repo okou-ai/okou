@@ -4174,6 +4174,17 @@
       "redirectDescription": "Anda akan melanjutkan ke {{connector}} untuk mengizinkan {{brandName}}.",
       "redirectTitle": "Mengarahkan ke {{connector}}…"
     },
+    "setupGuide": {
+      "backToFields": "Kembali ke kolom",
+      "hideSecret": "Sembunyikan {{label}}",
+      "imageProgress": "Gambar {{current}} dari {{total}}",
+      "images": "Tangkapan layar referensi",
+      "permissionReference": "Tangkapan layar menunjukkan lokasi impor. Gunakan JSON lengkap yang disalin di sebelah kanan.",
+      "permissionsJson": "Lihat JSON izin",
+      "showSecret": "Tampilkan {{label}}",
+      "title": "Panduan penyiapan",
+      "viewReference": "Lihat panduan penyiapan"
+    },
     "toasts": {
       "connected": "{{connector}} terhubung"
     }

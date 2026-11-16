@@ -56,7 +56,7 @@ describe.each(["feishu", "lark"] as const)("%s icon download", (platform) => {
       await expect(download?.blob?.arrayBuffer()).resolves.toStrictEqual(
         iconBytes.buffer,
       );
-      expect(pathname()).toBe(`/settings/${platform}`);
+      expect(pathname()).toBe(`/settings/${platform}/setup`);
       expect(screen.getByText("Create an Agent app")).toBeInTheDocument();
     },
   );
@@ -75,7 +75,7 @@ describe.each(["feishu", "lark"] as const)("%s icon download", (platform) => {
       screen.findByText("Download failed"),
     ).resolves.toBeInTheDocument();
     expect(browser.downloads).toStrictEqual([]);
-    expect(pathname()).toBe(`/settings/${platform}`);
+    expect(pathname()).toBe(`/settings/${platform}/setup`);
     expect(screen.getByText("Create an Agent app")).toBeInTheDocument();
   });
 });
