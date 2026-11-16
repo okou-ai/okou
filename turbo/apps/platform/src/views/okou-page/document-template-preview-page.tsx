@@ -22,6 +22,7 @@ type Props = {
   readonly signals: ComposerSignals;
   readonly item: DocumentTemplateItem;
   readonly onSelect: (item: DocumentTemplateItem) => void;
+  readonly onBack?: () => void;
 };
 
 /**
@@ -36,6 +37,7 @@ export function DocumentTemplatePreviewPage({
   signals,
   item,
   onSelect,
+  onBack,
 }: Props) {
   const { t } = useTranslation();
   const close = useSet(signals.template.closeDocumentPreview$);
@@ -53,9 +55,7 @@ export function DocumentTemplatePreviewPage({
             ref={focusBack}
             type="button"
             className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => {
-              close();
-            }}
+            onClick={onBack ?? close}
           >
             {t(($) => {
               return $.documentTemplates.title;

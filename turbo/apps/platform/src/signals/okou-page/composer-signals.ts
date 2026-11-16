@@ -53,6 +53,7 @@ import {
 } from "./connectors.ts";
 import {
   createComposerUiSignals,
+  createTemplateRecommendationPreviewCommand,
   type ComposerUiSignalGroups,
 } from "./chat-composer.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
@@ -256,6 +257,9 @@ interface ComposerTemplateSignals
   >;
   readonly selectTemplateAndSave$: ReturnType<
     typeof createComposerTemplateSelection
+  >;
+  readonly previewRecommendation$: ReturnType<
+    typeof createTemplateRecommendationPreviewCommand
   >;
 }
 
@@ -656,6 +660,10 @@ export function createComposerSignals(
       removeAutomationEvent$: options.removeAutomationEvent$,
     },
     template: {
+      previewRecommendation$: createTemplateRecommendationPreviewCommand(
+        ui.template,
+        workflowComposer.openTemplatePicker$,
+      ),
       selectTemplateAndSave$: createComposerTemplateSelection(
         taskChips,
         ui.template,

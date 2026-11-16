@@ -1,6 +1,6 @@
 import { Loader2 } from "lucide-react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { LoadErrorRow } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
@@ -238,9 +238,13 @@ function CustomTemplatePreviewBody({
 export function CustomTemplatePreviewDialog({
   onSelect,
   returnFocus,
+  onClose,
+  children,
 }: {
   readonly onSelect: (template: UserTemplateCatalogEntry) => void;
   readonly returnFocus: (interactionType: string) => HTMLElement | null;
+  readonly onClose?: () => void;
+  readonly children?: ReactNode;
 }) {
   const { t } = useTranslation();
   const openKind = useGet(openCustomTemplateKind$);
@@ -250,6 +254,10 @@ export function CustomTemplatePreviewDialog({
   const detailLoadable = useLastLoadable(openCustomTemplateDetail$);
   const projectTemplate = useGet(projectCustomTemplate$);
   const close = useSet(closeCustomTemplate$);
+  const closePreview = () => {
+    close();
+    onClose?.();
+  };
   const detail =
     detailLoadable.state === "hasData" && detailLoadable.data !== null
       ? projectTemplate(detailLoadable.data)
@@ -259,12 +267,14 @@ export function CustomTemplatePreviewDialog({
       open={openKind !== null}
       onOpenChange={(next) => {
         if (!next) {
-          close();
+          closePreview();
         }
       }}
     >
       <DialogContent
-        finalFocus={returnFocus}
+        // Direct previews close their parent too; let its dialog restore the
+        // shelf trigger instead of focusing the disappearing picker category.
+        finalFocus={onClose ? undefined : returnFocus}
         aria-describedby={undefined}
         closeLabel={t(($) => {
           return $.artifacts.actions.close;
@@ -286,9 +296,7 @@ export function CustomTemplatePreviewDialog({
               <button
                 type="button"
                 className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => {
-                  close();
-                }}
+                onClick={closePreview}
               >
                 {t(($) => {
                   return $.templates.detail.back;
@@ -356,6 +364,7 @@ export function CustomTemplatePreviewDialog({
           </div>
         )}
       </DialogContent>
+      {children}
     </Dialog>
   );
 }
