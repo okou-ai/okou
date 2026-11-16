@@ -14,7 +14,6 @@ export enum FeatureSwitchKey {
   ComposerMediaPreviews = "composerMediaPreviews",
   SingleAgent = "singleAgent",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
-  FriendReferrals = "friendReferrals",
   Projects = "projects",
   ConnectorChatAccountAccess = "connectorChatAccountAccess",
   FeatureGuides = "featureGuides",
