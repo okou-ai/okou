@@ -11,6 +11,7 @@ import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-
 import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 import type { MemberMemoryOwner } from "./member-memory";
+import { memberMemoryPreparationCtes } from "./member-memory-preparation";
 
 /** Establish the member's memory before any run can require its mount. */
 export const initializeMemberMemory$ = command(
@@ -55,11 +56,7 @@ export const initializeMemberMemory$ = command(
         },
         setWhere: isNull(storages.headVersionId),
       })
-      .returning({
-        id: storages.id,
-        s3Prefix: storages.s3Prefix,
-        headVersionId: storages.headVersionId,
-      })
+      .returning()
       .getSQL();
     // Drizzle INSERT SELECT requires every table column; these dependent partial
     // inserts keep omitted fields on their database defaults. Index rows
@@ -74,8 +71,17 @@ export const initializeMemberMemory$ = command(
         ${sql.param(0, storageVersions.fileCount)},
         ${sql.param("Initial empty artifact", storageVersions.message)},
         ${sql.param(identity.userId, storageVersions.createdBy)} FROM initialized
-      ON CONFLICT DO NOTHING
-    ) INSERT INTO ${piResourceVersionIndexes}
+      -- Return the incumbent immutable row without changing its provenance.
+      ON CONFLICT (id) DO UPDATE SET id=excluded.id
+      RETURNING *
+    ), ${memberMemoryPreparationCtes(
+      sql`SELECT i.id,i.org_id AS "orgId",i.user_id AS "userId",i.s3_prefix AS "s3Prefix",
+        i.size,i.file_count AS "fileCount",i.head_version_id AS "headVersionId",
+        i.created_at AS "createdAt",i.updated_at AS "updatedAt" FROM initialized AS i`,
+      sql`SELECT v.id,v.storage_id AS "storageId",v.s3_key AS "s3Key",v.size,
+        v.archive_size AS "archiveSize",v.file_count AS "fileCount",v.message,
+        v.created_by AS "createdBy",v.created_at AS "createdAt" FROM registered AS v`,
+    )} INSERT INTO ${piResourceVersionIndexes}
         (storage_version_id, extractor_version, status, projection,
          projection_hash, source_archive_size, lease_id, lease_expires_at, updated_at)
       SELECT initialized.head_version_id,

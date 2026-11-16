@@ -3382,6 +3382,20 @@
       "when": 1794847317568,
       "tag": "1561_presentation_pptx_resource_heads",
       "breakpoints": true
+    },
+    {
+      "idx": 1562,
+      "version": "7",
+      "when": 1794876610732,
+      "tag": "1562_prepare_member_memory_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 1563,
+      "version": "7",
+      "when": 1794876635401,
+      "tag": "1563_backfill_member_memory_preparation",
+      "breakpoints": true
     }
   ]
 }
