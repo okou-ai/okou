@@ -68,6 +68,7 @@ android {
         debug { applicationIdSuffix = ".debug" }
         release { optimization { enable = true } }
     }
+    testBuildType = "release"
     buildFeatures {
         compose = true
         buildConfig = true
@@ -143,6 +144,15 @@ val generateLicenseAssets =
         fonts.set(false)
     }
 
+androidComponents {
+    // Host tests keep Debug-only resource fixtures; instrumentation runs on Release.
+    beforeVariants(selector().withBuildType("debug")) { variant ->
+        variant.hostTests.values
+            .single { it.type == com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE }
+            .enable = true
+    }
+}
+
 androidComponents.onVariants { variant ->
     variant.sources.res?.addGeneratedSourceDirectory(generateBrandFonts) { it.outputDirectory }
     variant.sources.assets?.addGeneratedSourceDirectory(generateLicenseAssets) {
@@ -193,6 +203,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.mockwebserver)
+    testImplementation(libs.okhttp.tls)
     testImplementation(libs.robolectric)
     // The same SQLite release with host-native libraries for Robolectric's JVM.
     testImplementation(libs.sqlite.host)
@@ -205,5 +216,23 @@ dependencies {
     androidTestImplementation(libs.test.uiautomator)
     androidTestImplementation(libs.test.storage)
     androidTestImplementation(libs.mockwebserver)
+    androidTestImplementation(libs.okhttp.tls)
+    androidTestCompileOnly(libs.errorprone.annotations)
+    androidTestCompileOnly(libs.animal.sniffer.annotations)
     androidTestUtil(libs.test.services)
+}
+
+tasks.register("printRetraceClasspath") {
+    doLast {
+        println(
+            File(
+                com.android.tools.r8.retrace.Retrace::class
+                    .java
+                    .protectionDomain
+                    .codeSource
+                    .location
+                    .toURI()
+            )
+        )
+    }
 }

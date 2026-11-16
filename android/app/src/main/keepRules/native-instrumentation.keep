@@ -1,0 +1,83 @@
+# The instrumentation APK loads after the production app has been optimized.
+# Preserve the public fixture/observation ABI used by the existing native suite;
+# private implementations, SDK code and unused application types stay optimized.
+# This is the same Release configuration used for publication, not a test-only
+# change to optimization. Keep names obfuscatable: AGP rewrites the test APK
+# using the tested app's R8 mapping.
+
+-keep,allowobfuscation class ai.okou.android.MainActivity { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.OkouApplication { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.RequiredUpdate { public *; protected *; }
+-keep,allowobfuscation interface ai.okou.android.api.WorkspaceTokenProvider { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.AcceptedInput { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.AgentsItem { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.AndroidUpdates { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.AndroidUpdatesRelease { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.ChatArchive { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.ChatArchiveChatThreadsItem { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.ChatEvents { public *; protected *; }
+-keep,allowobfuscation interface ai.okou.android.api.generated.ChatSnapshot { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.ChatSnapshot$Companion { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.CreateThreadRequest { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.CreatedThread { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.FeatureSwitches { public *; protected *; }
+-keep,allowobfuscation interface ai.okou.android.api.generated.HistorySnapshot { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.Indicators { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.InitializePreferencesRequestLocale { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.Organization { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.OrganizationRole { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.PersonalInstructions { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.PersonalInstructions$Companion { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.ProjectArchive { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.ProjectEvents { public *; protected *; }
+-keep,allowobfuscation interface ai.okou.android.api.generated.ProjectSnapshot { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.ProjectSnapshot$Companion { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.ReadState { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.SendRequestVariant1 { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.ThreadDetail { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.UpdatePreferencesRequest { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.UpdatePreferencesRequestColorTheme { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.UpdatePreferencesRequestLocale { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.UserPreferences { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.UserPreferences$Companion { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.UserPreferencesColorTheme { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.UserPreferencesLocale { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.UserPreferencesSendMode { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.api.generated.UserPreferencesTheme { public *; protected *; }
+-keep,allowobfuscation interface ai.okou.android.auth.Authentication { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.auth.AuthenticationState { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.auth.CanonicalWorkspaceSession { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.auth.NativeSession { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.auth.ReadyWorkspace { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.auth.SessionModel { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.auth.SessionUiState { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.auth.WorkspaceBootstrap { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.auth.WorkspaceIdentity { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.auth.WorkspaceMembership { public *; protected *; }
+-keep,allowobfuscation interface ai.okou.android.auth.WorkspaceSession { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.chat.ChatCacheStore { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.chat.ChatComposerModel { public *; protected *; }
+-keep,allowobfuscation interface ai.okou.android.chat.ChatComposerService { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.chat.ChatListModel { public *; protected *; }
+-keep,allowobfuscation interface ai.okou.android.chat.ChatListService { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.chat.ChatListUiState { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.chat.ComposerJournalStore { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.chat.ComposerState { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.chat.ComposerTarget { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.chat.HistoryCursor { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.chat.HistoryEvent { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.chat.HistoryPage { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.chat.InputObservation { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.chat.RealtimePhase { public *; protected *; }
+-keep,allowobfuscation interface ai.okou.android.chat.RealtimeService { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.chat.RealtimeSnapshot { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.instructions.InstructionsPhase { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.instructions.PersonalInstructionsDraftStore { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.instructions.PersonalInstructionsModel { public *; protected *; }
+-keep,allowobfuscation interface ai.okou.android.instructions.PersonalInstructionsService { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.instructions.PersonalInstructionsState { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.updates.AppUpdates { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.updates.UpdateRecord { public *; protected *; }
+-keep,allowobfuscation interface ai.okou.android.updates.UpdateService { public *; protected *; }
+-keep,allowobfuscation interface ai.okou.android.updates.UpdateStore { public *; protected *; }
+-keep,allowobfuscation class ai.okou.android.updates.UpdateUiState { public *; protected *; }

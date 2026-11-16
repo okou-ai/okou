@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the optimized Release startup test with a fresh, disposable signing key.
+# Run the existing native suite against Release with a disposable signing key.
 # Requires the README's JDK/SDK setup and KVM on Linux. Extra arguments go to Gradle.
 set -euo pipefail
 umask 077
@@ -16,7 +16,15 @@ keytool -genkeypair -keystore "$work/test.p12" -storetype PKCS12 \
 
 cd "$root"
 export ANDROID_HOME=${ANDROID_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/android-sdk}
-./gradlew :release-test:pixel2Api35ReleaseAndroidTest \
+mkdir -p "$root/build/reports/release"
+artifacts=$(mktemp -d "$root/build/reports/release/run.XXXXXX")
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  printf 'release-directory=%s\n' "$artifacts" >> "$GITHUB_OUTPUT"
+fi
+echo "Release test artifacts: $artifacts"
+bash ../.github/scripts/artifacts/build-okou-android-apk.sh \
+  "$(cat version.txt)" "$artifacts"
+./gradlew :app:pixel2Api35ReleaseAndroidTest \
   -Pandroid.injected.signing.store.file="$work/test.p12" \
   -Pandroid.injected.signing.store.type=PKCS12 \
   -Pandroid.injected.signing.store.password=android \

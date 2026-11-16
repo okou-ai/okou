@@ -298,9 +298,8 @@ broader state/error/localization matrix.
 On a Linux x64 host with readable/writable `/dev/kvm`, run from `android/`:
 
 ```bash
-./gradlew :app:pixel2Api35DebugAndroidTest \
-  -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect \
-  --no-daemon
+bash scripts/test-release.sh \
+  -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
 ```
 
 AGP manages one Pixel 2, API 35, 64-bit AOSP device: emulator/image provisioning,
@@ -313,29 +312,32 @@ CI phone cohort, not a measured performance or physical-device matrix.
 Compile/package the suite without starting a device:
 
 ```bash
-./gradlew :app:assembleDebugAndroidTest --no-daemon
+./gradlew :app:assembleReleaseAndroidTest --no-daemon
 ```
 
-The separate `release-test` module launches the optimized, non-debuggable app in
-its own process with the real Application and authentication SDK. It uses UI
-Automator without importing app classes or adding test-only keep rules. Run it with:
-
-```bash
-bash scripts/test-release-startup.sh \
-  -Pandroid.testoptions.manageddevices.emulator.gpu=swiftshader_indirect
-```
+The existing native suite targets the optimized, non-debuggable Release APK.
+It retains its test Application and external-service fixtures; it does not
+establish a real Clerk or Ably provider session. JVM/Robolectric tests continue
+to use Debug resources; they execute JVM classes rather than APK DEX.
 
 The helper creates a fresh PKCS12 test key for each invocation and removes it on
 exit. It owns the signing location independently of the runner's Android home.
-Normal Release builds remain unsigned until the production signing step. This
-fresh-install startup smoke test does not establish an authenticated provider
-session or every optimized business path. Its native reports and failure diagnostics live under
-`release-test/build/` and are retained with the existing instrumentation artifact.
+Normal Release builds remain unsigned until the production signing step. The
+helper first retains an unsigned APK and compressed mapping with the production
+build script, then runs all native cases with the same Release configuration.
+Its artifacts live under `build/reports/release/` and `app/build/` and are retained
+with the instrumentation artifact. The test APK is rewritten with AGP's app
+mapping. Explicit rules in `app/src/main/keepRules/native-instrumentation.keep`
+preserve the public fixture/observation ABI that the separately loaded test APK
+uses; private implementations, SDK code and unused application types remain
+eligible for optimization. Those rules also apply to published Release builds.
+HTTP fixtures use TLS with a test-process trust provider instead of changing the
+Release HTTPS policy. The provider is removed when its last fixture closes.
 
 Use an isolated test emulator. The fixture snapshots/restores app preferences,
 platform night mode, app locale, fixture API preferences and chat-list cache,
 scopes its UI Automation shell permissions, and closes its Activity owners on
-success and failure. Fixtures use a local HTTP server or external-service adapters
+success and failure. Fixtures use a local HTTPS server or external-service adapters
 without contacting a live backend. A new Activity owner is not a process-death
 restoration test.
 
@@ -354,7 +356,6 @@ CI retains these outputs and the Gradle execution log for seven days in
   Plain business logic can stay
   free of Android UI types without needing a separate Gradle module.
 - `scripts`: SDK setup, verification, shared-token synchronization and CI selection.
-- `release-test`: standalone instrumentation for the optimized APK's native startup.
 
 [CCState principles on Android](../docs/android/android-ccstate.md) covers
 single sources of truth, derivation, semantic actions and async ownership using
@@ -389,7 +390,7 @@ and shared font/color-evaluator assets. One native job runs all local tests,
 lints, assembles, and uploads the debug APK plus the optimized unsigned Release
 APK and compressed R8 map for seven days. CI uses the production unsigned-build
 script, including metadata/alignment checks and mapping retention.
-A separate Linux/KVM job runs both instrumented suites on the managed API 35
+A separate Linux/KVM job runs the existing instrumented suite against Release on the managed API 35
 phone. The final `ci-gate-android` check always reports an aggregate result. It
 requires successful detection and both selected JVM/build and instrumentation
 jobs to succeed; only explicit unselected results permit skipped native checks.
@@ -426,7 +427,20 @@ and dependency-provided consumer rules. Debug stays unoptimized. Run
 stack traces; the release job publishes a versioned `.txt.gz` copy alongside the
 APK. Decompress that file with `gzip -d` before retracing a production stack trace.
 Add narrowly scoped rules under `app/src/main/keepRules/*.keep` only when an
-actual reflection/JNI boundary requires them.
+actual reflection/JNI or separately loaded instrumentation boundary requires them.
+
+When native Release tests fail, CI retains their original diagnostics and runs
+the matching AGP Retrace against both app and test-driver logs. It validates the
+APK's R8 marker against the compressed mapping's compiler version and map ID,
+and verifies the mapping hash before restoring frames. Restored logs and byte
+identity receipts live under `build/reports/retraced/`. For a downloaded crash:
+
+```bash
+python3 scripts/retrace-release.py app.apk version-mapping.txt.gz crash.txt retraced
+```
+
+Use the APK and mapping from the same build. The command uses the R8 bundled
+with this checkout's AGP, rejects mismatches and preserves the original input.
 
 When the normal release PR is merged, `release-please.yml` creates the
 `android-vX.Y.Z` release. Its single `publish-android` job checks out the exact
