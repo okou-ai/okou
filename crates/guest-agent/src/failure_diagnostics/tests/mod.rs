@@ -2416,6 +2416,40 @@ fn cli_failure_reason_ignores_codex_monthly_spend_limit_text() {
 }
 
 #[test]
+fn cli_failure_reason_keeps_unowned_org_spend_limit_text_unclassified() {
+    let message = "You've hit your org's monthly spend limit · ask your admin to raise it at claude.ai/admin-settings/usage";
+    for (framework, source, message) in [
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::Stderr,
+            message,
+        ),
+        (
+            AgentFramework::Codex,
+            FailureDetailSource::CodexJsonl,
+            message,
+        ),
+        (AgentFramework::Pi, FailureDetailSource::PiResult, message),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            "You've hit your org's monthly spend limit · ask your admin to raise it at example.invalid/settings/usage",
+        ),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            "Failed to load a local file · see claude.ai/admin-settings/usage",
+        ),
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(framework, source, message),
+            None,
+            "framework={framework:?}, source={source:?}, message={message}"
+        );
+    }
+}
+
+#[test]
 fn cli_failure_reason_ignores_unrelated_failures() {
     let reason = classify_cli_failure_reason(
         AgentFramework::Codex,

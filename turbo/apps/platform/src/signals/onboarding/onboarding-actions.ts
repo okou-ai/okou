@@ -3,6 +3,7 @@ import {
   marketingHandoff$,
   saveMarketingHandoff$,
 } from "../prompt-page/marketing-handoff.ts";
+import { billingRedeemCodeContract } from "@okouai/api-contracts/client/billing";
 import type {
   MarketingHandoffFile,
   MarketingHandoffManifest,
@@ -71,8 +72,24 @@ export function promptHandoffParams(
 }
 
 export const completeOnboarding$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+  async (
+    { get, set },
+    redeemCode: string | null,
+    signal: AbortSignal,
+  ): Promise<void> => {
     const createClient = get(apiClient$);
+    if (redeemCode) {
+      const redeemClient = createClient(billingRedeemCodeContract);
+      await accept(
+        redeemClient.create({
+          body: { code: redeemCode },
+          fetchOptions: { signal },
+        }),
+        [200],
+      );
+      signal.throwIfAborted();
+    }
+
     const onboardingClient = createClient(onboardingCompleteContract);
     const timezone =
       new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -121,7 +138,7 @@ export const skipPreviewOnboarding$ = command(
     if (!get(canSkipPreviewOnboarding$)) {
       return;
     }
-    await set(completeOnboarding$, signal);
+    await set(completeOnboarding$, null, signal);
     set(clearSourcesFirstDraft$);
     set(detachedNavigateTo$, ROUTES.home, { replace: true });
   },
@@ -220,7 +237,11 @@ export const runOnboardingRequest$ = command(
         handoffParams.delete("template");
       }
     }
-    await set(completeOnboarding$, signal);
+    await set(
+      completeOnboarding$,
+      searchParams.get("redeemCode")?.trim() || null,
+      signal,
+    );
     set(detachedNavigateTo$, ROUTES.prompt, {
       searchParams: handoffParams,
       replace: true,

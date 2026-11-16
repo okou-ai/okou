@@ -19,6 +19,7 @@ struct ChatComposerView: View {
   let refresh: (@MainActor () async -> Void)?
 
   var modelSelection: ChatModelSelectionStore? = nil
+  var showsModelSelection = true
   var connectorSelection: ComposerConnectorStore? = nil
   var mentionSource: ComposerMentionSource? = nil
   var workflowSource: ComposerWorkflowSource? = nil
@@ -81,7 +82,8 @@ struct ChatComposerView: View {
   private var replacesSendWithMic: Bool {
     !hasContent && !canStop && draftState?.voice != nil && (!expandsInput || voiceActive)
   }
-  private var showsModelPicker: Bool { expandsInput && !voiceActive }
+  private var reservesModelPickerSpace: Bool { expandsInput && !voiceActive }
+  private var showsModelPicker: Bool { reservesModelPickerSpace && showsModelSelection }
   private var showsVoiceInput: Bool {
     replacesSendWithMic || (expandsInput && !voiceActive)
   }
@@ -164,15 +166,17 @@ struct ChatComposerView: View {
 
       let inputID = attachments.inputID
       VStack(alignment: .trailing, spacing: 0) {
-        // Keep the model note mounted while the editor and keyboard expand or collapse.
+        // Keep the model note mounted and reserve its space while reading history so hiding
+        // it does not change the scroll metrics that control the bottom button.
         if let modelSelection {
           ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
             .disabled(needsUpgrade)
             .opacity(showsModelPicker ? 1 : 0)
+            .animation(reduceMotion ? nil : OkouMotion.transition, value: showsModelPicker)
             .allowsHitTesting(showsModelPicker)
             .accessibilityHidden(!showsModelPicker)
             .frame(maxWidth: .infinity, alignment: .trailing)
-            .frame(height: showsModelPicker ? nil : 0, alignment: .bottom)
+            .frame(height: reservesModelPickerSpace ? nil : 0, alignment: .bottom)
             .clipped()
         }
         // Retired native editors must leave immediately. Fading a first responder

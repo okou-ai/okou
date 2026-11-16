@@ -38,6 +38,7 @@ use guest_telemetry::{log_info, log_warn};
 
 const TURN_NOTIFICATION_LABEL: &str = "turn notification";
 const TURN_INTERRUPT_GRACE: Duration = Duration::from_secs(5);
+const REJECTED_STEER_COMPLETION_GRACE: Duration = Duration::from_secs(5);
 const API_TO_CODEX_OUTPUT_ITEM_STARTED: &str = "api_to_codex_output_item_started";
 const API_TO_CODEX_AGENT_MESSAGE_ITEM_STARTED: &str = "api_to_codex_agent_message_item_started";
 const INVALID_PARAMS_RPC_CODE: i64 = -32602;
@@ -119,6 +120,11 @@ struct CodexTurnScope<'a> {
 enum CodexRunEvent {
     Notification(ServerNotification),
     ActiveInput(Option<ActiveInputFrame>),
+}
+
+enum CodexSteerOutcome {
+    Accepted,
+    RejectedInactiveTurn(AgentError),
 }
 
 enum AppServerRunOutcome {
@@ -514,7 +520,7 @@ async fn run_codex_app_server(
                         thread_id: &thread_identity.wire_id,
                         turn_id: &turn_id,
                     };
-                    steer_active_input(
+                    let steer_outcome = steer_active_input(
                         &mut client,
                         &active_input,
                         frame,
@@ -536,6 +542,24 @@ async fn run_codex_app_server(
                         thread_id: &thread_identity.canonical_id,
                         turn_id: &turn_id,
                     };
+                    if let CodexSteerOutcome::RejectedInactiveTurn(error) = steer_outcome {
+                        // Non-submission does not prove that the turn succeeded.
+                        // Keep the captured turn's real terminal result, with no
+                        // retry or declaration for the rejected/queued inputs.
+                        break tokio::time::timeout(
+                            REJECTED_STEER_COMPLETION_GRACE,
+                            wait_for_rejected_steer_completion(
+                                &mut client,
+                                &mut sink,
+                                &notification_scope,
+                                &mut notification_state,
+                                heartbeat_monitor,
+                                &mut heartbeat_done,
+                            ),
+                        )
+                        .await
+                        .map_err(|_| error)??;
+                    }
                     if let Some(exit_code) = drain_queued_notifications(
                         &mut client,
                         &mut sink,
@@ -1002,7 +1026,7 @@ async fn steer_active_input(
     heartbeat_monitor: &mut HeartbeatMonitor,
     heartbeat_done: &mut bool,
     masker: &SecretMasker,
-) -> Result<(), CodexRunError> {
+) -> Result<CodexSteerOutcome, CodexRunError> {
     let thread_id = target.thread_id;
     let turn_id = target.turn_id;
     let params = turn_steer_params(thread_id, turn_id, &frame);
@@ -1012,22 +1036,40 @@ async fn steer_active_input(
         frame.uuid
     );
     active_input.mark_writing(&frame.uuid);
-    let result = race_with_heartbeat(
-        client.request_value("turn/steer", params),
-        heartbeat_monitor,
-        heartbeat_done,
-        masker,
-    )
-    .await;
+    let request = async {
+        match client.request_value("turn/steer", params).await {
+            Ok(_) => Ok(CodexSteerOutcome::Accepted),
+            Err(error) if is_inactive_turn_steer_rejection(&error) => Ok(
+                CodexSteerOutcome::RejectedInactiveTurn(app_server_error(masker, error)),
+            ),
+            Err(error) => Err(error),
+        }
+    };
+    let result = race_with_heartbeat(request, heartbeat_monitor, heartbeat_done, masker).await;
     match result {
-        Ok(_) => {
+        Ok(CodexSteerOutcome::Accepted) => {
             active_input.mark_backend_accepted_without_replay(&frame)?;
             log_info!(
                 LOG_TAG,
                 "Codex active input steer: target_thread_id={thread_id} captured_active_turn_id={turn_id} expected_turn_id={turn_id} input_uuid={} outcome=active_turn_advanced",
                 frame.uuid
             );
-            Ok(())
+            Ok(CodexSteerOutcome::Accepted)
+        }
+        Ok(CodexSteerOutcome::RejectedInactiveTurn(error)) => {
+            active_input.mark_backend_failed(&frame);
+            active_input.close_terminal();
+            log_info!(
+                LOG_TAG,
+                "Codex active input steer: target_thread_id={thread_id} captured_active_turn_id={turn_id} expected_turn_id={turn_id} input_uuid={} outcome=not_submitted_inactive_turn",
+                frame.uuid
+            );
+            Ok(CodexSteerOutcome::RejectedInactiveTurn(
+                AgentError::Execution(format!(
+                    "codex app-server active input steer failed for input {}: {error}",
+                    frame.uuid
+                )),
+            ))
         }
         Err(error) => {
             active_input.mark_backend_failed(&frame);
@@ -1053,6 +1095,47 @@ async fn steer_active_input(
                 }
                 CodexRunError::Heartbeat(failure) => Err(CodexRunError::Heartbeat(failure)),
             }
+        }
+    }
+}
+
+fn is_inactive_turn_steer_rejection(error: &CodexAppServerError) -> bool {
+    matches!(
+        error,
+        CodexAppServerError::Rpc { method, error, .. }
+            if method == "turn/steer"
+                && error.code == -32600
+                && error.message == "no active turn to steer"
+    )
+}
+
+async fn wait_for_rejected_steer_completion(
+    client: &mut CodexAppServerClient,
+    sink: &mut EventIngestSink<'_, '_>,
+    scope: &CodexTurnScope<'_>,
+    notification_state: &mut CodexNotificationState,
+    heartbeat_monitor: &mut HeartbeatMonitor,
+    heartbeat_done: &mut bool,
+) -> Result<i32, CodexRunError> {
+    loop {
+        let notification = race_with_heartbeat(
+            client.next_notification(TURN_NOTIFICATION_LABEL),
+            heartbeat_monitor,
+            heartbeat_done,
+            sink.masker,
+        )
+        .await?;
+        let result = ingest_notification(
+            notification,
+            sink,
+            scope.thread_id,
+            scope.turn_id,
+            None,
+            notification_state,
+        )
+        .await?;
+        if let Some(exit_code) = result.terminal_exit_code {
+            return Ok(exit_code);
         }
     }
 }

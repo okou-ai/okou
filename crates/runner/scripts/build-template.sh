@@ -114,6 +114,7 @@ CACHE_TMP_TAR=""
 # Pinned versions (changes here invalidate the template cache via script hash)
 NODE_VERSION="26.13.1"
 GO_VERSION="1.27.4"
+RUST_VERSION="1.100.0"
 CLAUDE_CODE_VERSION="2.1.325"
 CODEX_CLI_VERSION="0.169.0"
 GWS_CLI_VERSION="0.22.5"
@@ -484,13 +485,18 @@ install_runtimes() {
     test \"\$(/usr/local/bin/uvx --version)\" = \"uvx ${UV_VERSION} (\${TARGET})\"
   "
 
-  # Rust (stable toolchain via rustup)
-  sudo chroot "$ROOTFS_DIR" bash -c '
+  # Rust (pinned toolchain via rustup, shared with the development/CI image)
+  sudo chroot "$ROOTFS_DIR" env RUST_VERSION="$RUST_VERSION" bash -c '
+    set -euo pipefail
     export RUSTUP_HOME=/usr/local/rustup
     export CARGO_HOME=/usr/local/cargo
     curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
-      | sh -s -- -y --default-toolchain stable --no-modify-path
+      | sh -s -- -y --default-toolchain "$RUST_VERSION" --no-modify-path
     for bin in /usr/local/cargo/bin/*; do ln -s "$bin" /usr/local/bin/; done
+    rustc --version
+    cargo --version
+    test "$(rustc --version | cut -d " " -f 2)" = "$RUST_VERSION"
+    test "$(cargo --version | cut -d " " -f 2)" = "$RUST_VERSION"
     printf "export RUSTUP_HOME=/usr/local/rustup\nexport CARGO_HOME=\$HOME/.cargo\nexport PATH=\$PATH:\$HOME/.cargo/bin\n" \
       > /etc/profile.d/rust.sh
   '

@@ -1965,7 +1965,9 @@ func pointValue(_ value: Any?) -> CGPoint? {
         return nil
     }
     var point = CGPoint.zero
-    AXValueGetValue(axValue, .cgPoint, &point)
+    guard AXValueGetValue(axValue, .cgPoint, &point) else {
+        return nil
+    }
     return point
 }
 
@@ -1974,7 +1976,9 @@ func sizeValue(_ value: Any?) -> CGSize? {
         return nil
     }
     var size = CGSize.zero
-    AXValueGetValue(axValue, .cgSize, &size)
+    guard AXValueGetValue(axValue, .cgSize, &size) else {
+        return nil
+    }
     return size
 }
 
@@ -1988,7 +1992,7 @@ func elementFrame(_ element: AXUIElement) -> CGRect? {
     else {
         return nil
     }
-    return CGRect(origin: position, size: size)
+    return validatedNativeFrame(CGRect(origin: position, size: size))
 }
 
 func boundsRecord(_ frame: CGRect) -> [String: Double] {
@@ -2231,10 +2235,12 @@ func axWindowInfos(root: AXUIElement) -> [AXWindowInfo] {
 }
 
 func cgWindowBounds(_ value: Any?) -> CGRect? {
-    guard let dictionary = value as? [String: Any] else {
+    guard let dictionary = value as? [String: Any],
+          let frame = CGRect(dictionaryRepresentation: dictionary as CFDictionary)
+    else {
         return nil
     }
-    return CGRect(dictionaryRepresentation: dictionary as CFDictionary)
+    return validatedNativeFrame(frame)
 }
 
 func cgWindowIsOnScreen(_ value: Any?) -> Bool {
@@ -5088,9 +5094,9 @@ func handle(_ request: [String: Any], session: ComputerUseRuntimeSession?) throw
 }
 
 func jsonLineData(_ object: [String: Any]) throws -> Data {
-    var data = try JSONSerialization.data(withJSONObject: object, options: [])
-    data.append(10)
-    return data
+    return try helperResponseData(object) { error in
+        captureUnexpectedHelperError(error, stage: "response")
+    }
 }
 
 func writeJSONLine(_ data: Data) throws {

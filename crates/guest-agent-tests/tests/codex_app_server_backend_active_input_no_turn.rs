@@ -61,7 +61,8 @@ async fn codex_app_server_backend_fails_visible_when_no_active_turn()
 
     let masker = SecretMasker::from_raw("");
     let result = tokio::time::timeout(
-        Duration::from_secs(5),
+        // Include the backend's bounded completion-correlation grace.
+        Duration::from_secs(10),
         common::execute_cli_with_active_input_for_runtime(
             &runtime,
             &masker,

@@ -425,18 +425,44 @@ test("cancels silent retirement encryption at its existing deadline and stops th
     );
     await save(a);
     page.url = "https://a.example.test/unsaved";
+    const deadline = new AbortController();
+    const cancelled = createDeferredPromise<void>(context.signal);
+    let awaitingEncryption = true;
+    server.use(
+      http.get(`${PROVIDER_URL}/browsers/:id`, () => {
+        if (awaitingEncryption) {
+          // The provider lookup already owns its deadline. Control retirement
+          // next, then leave nested CDP and subsequent cleanup timers native.
+          context.mocks.abortSignal.timeout.mockImplementation(
+            (milliseconds) => {
+              if (milliseconds !== 15_000) {
+                return undefined;
+              }
+              context.mocks.abortSignal.timeout.mockReset();
+              return deadline.signal;
+            },
+          );
+        }
+        return;
+      }),
+    );
     useSecretKmsProbe((_request, _call, signal) => {
+      awaitingEncryption = false;
+      context.mocks.abortSignal.timeout.mockReset();
       if (!signal) {
         throw new Error("Expected owned capture cancellation");
       }
       return (async () => {
-        await once(signal, "abort", { signal: context.signal });
+        const aborted = once(signal, "abort", { signal: context.signal });
+        deadline.abort(new DOMException("Retirement deadline", "TimeoutError"));
+        await aborted;
+        cancelled.resolve();
         signal.throwIfAborted();
         throw new Error("Expected the capture deadline to cancel KMS");
       })();
     });
     mockNow(START + 11 * MINUTE);
-    const restored = await open(a);
+    const [restored] = await Promise.all([open(a), cancelled.promise]);
     expect(f.provider.stoppedSessionIds.size).toBe(1);
     expect(restored.window?.instanceId).not.toBe(first.window?.instanceId);
     useSecretKmsProbe();
@@ -444,4 +470,4 @@ test("cancels silent retirement encryption at its existing deadline and stops th
       "https://a.example.test/accepted",
     ]);
   });
-}, 20_000);
+});

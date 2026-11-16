@@ -274,7 +274,7 @@ describe("API telemetry exports", () => {
     otelContext.disable();
   });
 
-  it("exports ordinary API telemetry but excludes callback proof with the configured real SDKs", async () => {
+  it("exports ordinary API telemetry but excludes Telegram credentials with the configured real SDKs", async () => {
     const Sentry =
       await vi.importActual<typeof import("@sentry/node")>("@sentry/node");
     const otel =
@@ -294,6 +294,16 @@ describe("API telemetry exports", () => {
     const traces: unknown[] = [];
     const errors: string[] = [];
     const errorEvents: unknown[] = [];
+    const botToken = `123456789:${randomBytes(24).toString("hex")}`;
+    const botRequests = [
+      { path: `bot${botToken}/sendChatAction`, status: 200 },
+      { path: `bot${botToken}/sendMessage`, status: 429 },
+      { path: `bot${botToken}/sendDocument`, status: 502 },
+      { path: `bot${botToken}/deleteMessage`, status: 200 },
+      { path: `bot${botToken}/getFile?file_id=attachment`, status: 200 },
+      { path: `file/bot${botToken}/documents/report.txt`, status: 200 },
+    ];
+    const receivedBotRequests: string[] = [];
     server.use(
       http.all(/^http:\/\/127\.0\.0\.1:\d+\//u, () => {
         return passthrough();
@@ -303,6 +313,19 @@ describe("API telemetry exports", () => {
         expect(request.headers.get("x-axiom-dataset")).toBe("vm0-traces-dev");
         traces.push(await request.json());
         return HttpResponse.json({});
+      }),
+      http.all("https://api.telegram.org/*", ({ request }) => {
+        const expected = botRequests.find(({ path }) => {
+          return request.url === `https://api.telegram.org/${path}`;
+        });
+        if (!expected) {
+          throw new Error("Unexpected Telegram fixture request");
+        }
+        receivedBotRequests.push(request.url);
+        return HttpResponse.json(
+          { ok: expected.status === 200 },
+          { status: expected.status },
+        );
       }),
       http.post(
         "https://sentry.example/api/1/envelope/",
@@ -452,6 +475,47 @@ describe("API telemetry exports", () => {
         Sentry.captureException(new Error("API error regression"));
         span.end();
       });
+    await trace
+      .getTracer("dependency-upgrade")
+      .startActiveSpan("telegram-calls", async (span) => {
+        for (const { path, status } of botRequests) {
+          const url = `https://api.telegram.org/${path}`;
+          const response = await fetch(url, {
+            method:
+              path.startsWith("file/") || path.includes("/getFile?")
+                ? "GET"
+                : "POST",
+            signal: context.signal,
+          });
+          expect(response.status).toBe(status);
+          Sentry.addBreadcrumb({ category: "http", data: { url } });
+          Sentry.captureEvent({
+            message: "Telegram request failure",
+            request: { url },
+          });
+          // A request to our API can fail with the upstream URL in its error
+          // instead of request.url. Protect both exception and extra payloads.
+          Sentry.captureException(new Error(`Telegram failed: ${url}`));
+          Sentry.captureEvent({
+            message: "Telegram request failed with upstream details",
+            request: { url: `${origin}/api/integrations/telegram/message` },
+            extra: { upstream: { url } },
+          });
+          trace
+            .getTracer("dependency-upgrade")
+            .startActiveSpan("telegram-parent-error", (parent) => {
+              parent.recordException(new Error(`Telegram failed: ${url}`));
+              parent.end();
+            });
+          trace
+            .getTracer("dependency-upgrade")
+            .startActiveSpan("telegram-parent-attribute", (parent) => {
+              parent.setAttribute("upstream.url", url);
+              parent.end();
+            });
+        }
+        span.end();
+      });
     // Axiom ingest writes are not traced; other Axiom API calls still are.
     server.use(
       http.post("https://api.axiom.co/v1/datasets/:dataset/ingest", () => {
@@ -526,13 +590,15 @@ describe("API telemetry exports", () => {
     );
     expect(errors.join("\n")).toContain(`${origin}/health`);
     const exportedTraces = JSON.stringify(traces);
+    expect(receivedBotRequests).toHaveLength(botRequests.length);
+    expect(exportedTraces).toContain("telegram-calls");
     expect(exportedTraces).toContain("GET /health");
     expect(exportedTraces).toContain(`${path}-other`);
     expect(exportedTraces).toContain(
       "fetch POST https://api.axiom.co/v1/datasets/_apl",
     );
     expect(exportedTraces).not.toContain("/ingest");
-    for (const secret of [proof, identity]) {
+    for (const secret of [proof, identity, botToken]) {
       expect(exportedTraces).not.toContain(secret);
       expect(errors.join("\n")).not.toContain(secret);
     }

@@ -20,7 +20,7 @@ struct ResourceCancellationRule: NativeRule {
     var positions: [AbsolutePosition] = []
 
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
-      guard nativeTaskCall(node), let body = node.trailingClosure else { return .visitChildren }
+      guard nativeTaskCall(node), let body = nativeTaskBody(node) else { return .visitChildren }
       let facts = CancellationFacts()
       facts.walk(body.statements)
       guard facts.awaits, let scope = scope(node) else { return .visitChildren }
@@ -94,7 +94,7 @@ struct ResourceCancellationRule: NativeRule {
       else { return }
       for binding in variable.bindings {
         if let name = binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text,
-          let original = binding.initializer?.value.as(DeclReferenceExprSyntax.self)?.baseName.text,
+          let original = binding.initializer.flatMap({ aliasName($0.value) }),
           aliases.contains(original)
         {
           aliases.insert(name)
@@ -102,8 +102,30 @@ struct ResourceCancellationRule: NativeRule {
       }
     }
 
+    private func aliasName(_ expression: ExprSyntax) -> String? {
+      if let tuple = expression.as(TupleExprSyntax.self), tuple.elements.count == 1,
+        let element = tuple.elements.first, element.label == nil
+      {
+        return aliasName(element.expression)
+      }
+      return expression.as(DeclReferenceExprSyntax.self)?.baseName.text
+    }
+
     private func cancelsOriginal(_ handler: ClosureExprSyntax, aliases: Set<String>) -> Bool {
-      var names = aliases.subtracting(closureParameters(handler))
+      var names = aliases
+      // Every capture initializer reads the enclosing scope, not earlier captures.
+      for capture in handler.signature?.capture?.items ?? [] {
+        let name = capture.name.text
+        let original: String?
+        if let initializer = capture.initializer {
+          original = aliasName(initializer.value)
+        } else {
+          original = name
+        }
+        names.remove(name)
+        if let original, aliases.contains(original) { names.insert(name) }
+      }
+      names.subtract(closureParameters(handler))
       for statement in handler.statements {
         if statement.item.is(ReturnStmtSyntax.self) || statement.item.is(ThrowStmtSyntax.self) {
           break

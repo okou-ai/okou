@@ -249,12 +249,12 @@ import { PermissionsDialog } from "./components/settings/permissions-dialog.tsx"
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 import type { ComposerPasteEvent } from "./composer-input-types.ts";
 import { ComposerNoticeTray } from "./composer-notice-tray.tsx";
+import { ComposerRail } from "./composer-rail.tsx";
 import {
-  ComposerRail,
-  RAIL_TILE,
-  RAIL_TILE_ART,
-  RAIL_TILE_CAPTION,
-} from "./composer-rail.tsx";
+  TEMPLATE_CARD,
+  TemplateCard,
+  TemplateCardFace,
+} from "./template-card.tsx";
 import {
   defaultPresentationTemplateThemeId,
   presentationTemplateColorSystemId,
@@ -771,9 +771,6 @@ function selectedWebsiteTemplateItem(
 function websiteTemplateCardImageUrl(item: WebsiteTemplateItem): string {
   return r2ImageTransformUrl(item.previewImageUrl, TEMPLATE_CARD_PREVIEW_SIZE);
 }
-
-/** The cover width every type's shelf uses, so the rows line up across tabs. */
-const PRESENTATION_SHELF_COVER = "w-full";
 
 function WebsiteTemplateCard({
   item,
@@ -3163,13 +3160,11 @@ export function TemplateImportCard({
   onImported,
   kind = "presentation",
   compact = false,
-  className,
 }: {
   signals: ComposerSignals;
   onImported: () => void;
   kind?: UserTemplateKind;
   compact?: boolean;
-  className?: string;
 }) {
   const { t } = useTranslation();
   const rootSignal = useGet(rootSignal$);
@@ -3202,102 +3197,99 @@ export function TemplateImportCard({
     illustration: IMAGE_TEMPLATE_IMPORT_ACCEPT,
   };
   const label = labels[kind];
+  const ratio =
+    kind === "illustration"
+      ? "aspect-[4/5]"
+      : kind === "document"
+        ? "aspect-[4/3]"
+        : "aspect-video";
+  const input = (
+    <input
+      type="file"
+      className="sr-only"
+      accept={accepts[kind]}
+      aria-label={label}
+      onChange={(event) => {
+        const file = event.currentTarget.files?.[0];
+        // Clear the input so choosing the same file again still fires.
+        event.currentTarget.value = "";
+        if (!file) {
+          return;
+        }
+        onImported();
+        detach(
+          importTemplate({ signals, file }, rootSignal),
+          Reason.DomCallback,
+        );
+      }}
+    />
+  );
+  if (compact) {
+    // On a shelf the import tile is one template card among the covers: the
+    // same frame and one-line caption, so it never stands taller than its row.
+    // A second caption line made it 32px taller, and on the document shelf --
+    // where it shows under Custom only -- switching filters grew and shrank the
+    // shelf, which moved the whole centred page under the pointer. The
+    // accepted formats sit inside the frame, under the plus, so the member
+    // still sees what the tile takes before choosing a file. It has no picture
+    // to bring closer, so the plus also takes the ink under the pointer.
+    return (
+      <label
+        data-presentation-template-import={
+          kind === "presentation" ? "" : undefined
+        }
+        className={cn(
+          TEMPLATE_CARD,
+          "ring-offset-background has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
+        )}
+      >
+        <TemplateCardFace title={label} ratio={ratio} className="bg-muted/40">
+          <span className="flex flex-col items-center justify-center gap-1.5 px-2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground">
+            <Plus className="size-8" strokeWidth={1.5} aria-hidden />
+            <span className="max-w-full truncate text-xs">{hints[kind]}</span>
+          </span>
+        </TemplateCardFace>
+        {input}
+      </label>
+    );
+  }
   return (
     <label
       data-presentation-template-import={
         kind === "presentation" ? "" : undefined
       }
-      className={cn(TEMPLATE_TILE_WRAPPER, className)}
+      className={TEMPLATE_TILE_WRAPPER}
     >
       <span
         className={cn(
           TEMPLATE_TILE_MEDIA,
           "block bg-muted/40 transition-colors duration-150 group-hover/tile:bg-muted/60 group-active/tile:bg-muted/80 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring",
-          // On the capability tray it is a white slot among the covers; the
-          // lift, not a darker fill, answers the pointer there.
-          compact && [
-            RAIL_TILE_ART,
-            "in-data-[slot=capability-tray]:bg-card in-data-[slot=capability-tray]:group-hover/tile:bg-card in-data-[slot=capability-tray]:group-active/tile:bg-card",
-          ],
-          kind === "illustration"
-            ? "aspect-[4/5]"
-            : kind === "document"
-              ? "aspect-[4/3]"
-              : "aspect-video",
+          ratio,
         )}
       >
-        {compact ? (
-          // On a shelf the accepted formats sit inside the tile, under the
-          // plus, so the caption below stays one line like every cover's --
-          // and the member still sees what the tile takes before choosing a
-          // file.
-          <span className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground">
-            <Plus className="size-8" strokeWidth={1.5} aria-hidden />
-            <span className="max-w-full truncate text-xs">{hints[kind]}</span>
-          </span>
-        ) : (
-          <Plus
-            className="absolute left-1/2 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground"
-            strokeWidth={1.5}
-            aria-hidden
-          />
-        )}
-        <input
-          type="file"
-          className="sr-only"
-          accept={accepts[kind]}
-          aria-label={label}
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0];
-            // Clear the input so choosing the same file again still fires.
-            event.currentTarget.value = "";
-            if (!file) {
-              return;
-            }
-            onImported();
-            detach(
-              importTemplate({ signals, file }, rootSignal),
-              Reason.DomCallback,
-            );
-          }}
+        <Plus
+          className="absolute left-1/2 top-1/2 size-10 -translate-x-1/2 -translate-y-1/2 text-muted-foreground transition-colors duration-150 group-hover/tile:text-foreground"
+          strokeWidth={1.5}
+          aria-hidden
         />
+        {input}
       </span>
-      {compact ? (
-        // On a shelf the import tile is one cover among many, so its caption
-        // is one line in the shelf's metrics and ink, like every cover beside
-        // it. A second line made this tile 32px taller than its row, and on
-        // the document shelf -- where it shows under Custom only -- switching
-        // filters grew and shrank the shelf, which moved the whole centred
-        // page under the pointer.
+      <span
+        className={cn(TEMPLATE_TILE_CAPTION, "flex-col items-stretch gap-0.5")}
+      >
         <span
           className={cn(
-            RAIL_TILE_CAPTION,
-            "text-muted-foreground transition-colors group-hover/tile:text-foreground",
+            TEMPLATE_TILE_NAME,
+            (kind === "illustration" || kind === "document") &&
+              "whitespace-normal",
           )}
         >
           {label}
         </span>
-      ) : (
-        <span
-          className={cn(
-            TEMPLATE_TILE_CAPTION,
-            "flex-col items-stretch gap-0.5",
-          )}
-        >
-          <span
-            className={cn(
-              TEMPLATE_TILE_NAME,
-              (kind === "illustration" || kind === "document") &&
-                "whitespace-normal",
-            )}
-          >
-            {label}
-          </span>
-          <span className="shrink-0 truncate text-xs text-muted-foreground">
-            {hints[kind]}
-          </span>
+        <span className="shrink-0 truncate text-xs text-muted-foreground">
+          {hints[kind]}
         </span>
-      )}
+      </span>
     </label>
   );
 }
@@ -3315,23 +3307,9 @@ function ComposerPresentationSuggestion({
 }) {
   return (
     <ComposerTemplateSuggestion title={title} onPreview={onPreview}>
-      <Button
-        type="button"
-        variant="quiet"
-        className={cn(RAIL_TILE, PRESENTATION_SHELF_COVER)}
-        onClick={onSelect}
-      >
-        <span
-          className={cn(
-            TEMPLATE_TILE_MEDIA,
-            RAIL_TILE_ART,
-            "block aspect-video group-hover/tile:opacity-90 in-data-[slot=capability-tray]:group-hover/tile:opacity-100",
-          )}
-        >
-          {children}
-        </span>
-        <span className={RAIL_TILE_CAPTION}>{title}</span>
-      </Button>
+      <TemplateCard title={title} ratio="aspect-video" onSelect={onSelect}>
+        {children}
+      </TemplateCard>
     </ComposerTemplateSuggestion>
   );
 }
@@ -3386,9 +3364,6 @@ export function ComposerPresentationRecommendations({
             key="import"
             signals={signals}
             compact
-            // A `label` is inline by default, so the shelf width only lands once
-            // the tile is a block.
-            className={cn("group/tile block", PRESENTATION_SHELF_COVER)}
             onImported={() => {
               setMode(null);
             }}

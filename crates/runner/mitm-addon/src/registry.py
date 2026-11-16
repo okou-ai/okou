@@ -81,6 +81,8 @@ class _RegistrySnapshot:
     builtin_firewall_catalog_snapshot: registry_firewalls.BuiltinFirewallCatalogSnapshot | None
     loaded_key: _RegistryFileKey | None
     digest: str | None = None
+    # Identify this complete publication without retaining its credential-bearing data.
+    publication_identity: object = field(default_factory=object, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -507,7 +509,7 @@ def load_registry_state(registry_path: str) -> RegistryState:
     if isinstance(state, RegistryUnavailable):
         registry_observation.publish_unavailable(state)
     else:
-        run_usage.reconcile(state.sandboxes, state.digest)
+        run_usage.reconcile(state.sandboxes, state.publication_identity)
         registry_observation.publish_available(state)
     return state
 

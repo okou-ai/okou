@@ -249,6 +249,17 @@ export class BrowserUseProviderError extends Error {
   }
 }
 
+export class BrowserUseWindowHealthTimeoutError extends BrowserUseProviderError {
+  constructor(
+    readonly phase: BrowserUseWindowHealthError["phase"],
+    cause: BrowserUseProviderError,
+  ) {
+    super(cause.status, cause.code, cause.message);
+    this.name = "BrowserUseWindowHealthTimeoutError";
+    this.cause = cause;
+  }
+}
+
 export interface BrowserUseUserActionFingerprint {
   readonly tagName: "INPUT" | "TEXTAREA" | "SELECT";
   readonly inputType: string;
@@ -1012,8 +1023,13 @@ export async function browserUseWindowExists(
   );
   signal.throwIfAborted();
   if (!health.ok) {
-    // Preserve provider status/codes and exact missing-window semantics. Only
-    // previously unclassified failures receive operation-local context.
+    if (
+      health.error instanceof BrowserUseProviderError &&
+      health.error.code === "BROWSER_USE_TIMEOUT"
+    ) {
+      throw new BrowserUseWindowHealthTimeoutError(phase, health.error);
+    }
+    // Other typed provider/CDP failures retain their existing identity.
     if (
       health.error instanceof BrowserUseProviderError ||
       health.error instanceof BrowserUseCdpCommandError

@@ -18,6 +18,9 @@ OKOU_WEB_URL=https://www.vm7.ai:8443
 APP_URL=https://app.vm7.ai:8443
 
 
+# Optional: Atom redeem service for onboarding codes
+ATOM_URL=https://atom-api.vm7.ai:8442
+OKOU_MACHINE_SECRET_KEY=op://Development/clerk/OKOU_MACHINE_SECRET_KEY
 
 # Required: API deploy stage tag
 ENV=development
@@ -236,6 +239,7 @@ OKOU_PRICE_USAGE_PACK_20=op://Development/stripe/OKOU_PRICE_USAGE_PACK_20
 OKOU_PRICE_USAGE_PACK_50=op://Development/stripe/OKOU_PRICE_USAGE_PACK_50
 OKOU_PRICE_USAGE_PACK_100=op://Development/stripe/OKOU_PRICE_USAGE_PACK_100
 OKOU_PRICE_USAGE_PACK_200=op://Development/stripe/OKOU_PRICE_USAGE_PACK_200
+ATOM_GRANT_PRICE=op://Development/stripe/ATOM_GRANT_PRICE
 OKOU_PRICE_CUSTOM_CREDITS=op://Development/stripe/OKOU_PRICE_CUSTOM_CREDITS
 OKOU_PRICE_CUSTOM_CREDIT_UNIT=op://Development/stripe/OKOU_PRICE_CUSTOM_CREDIT_UNIT
 OKOU_PRICE_CONCURRENCY=op://Development/stripe/OKOU_PRICE_CONCURRENCY

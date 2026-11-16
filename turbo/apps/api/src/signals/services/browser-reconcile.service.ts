@@ -34,6 +34,7 @@ import {
   BrowserUseCdpCommandError,
   BrowserUseProviderError,
   BrowserUseWindowHealthError,
+  BrowserUseWindowHealthTimeoutError,
   browserUseWindowExists,
   browserUseNativeConnection,
   tryCloseBrowserUseWindow,
@@ -127,6 +128,9 @@ function browserWindowFailure(error: unknown) {
     return {
       errorKind: "provider",
       providerStatus: error.status,
+      ...(error instanceof BrowserUseWindowHealthTimeoutError
+        ? { nativePhase: error.phase }
+        : {}),
       ...(RETIREMENT_PROVIDER_ERROR_CODES.includes(error.code)
         ? { errorCode: error.code }
         : {}),

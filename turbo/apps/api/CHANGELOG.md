@@ -10,6 +10,46 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.72.2](https://github.com/okou-ai/okou/compare/api-v2.72.1...api-v2.72.2) (2026-11-16)
+
+
+### Refactoring
+
+* **api:** remove retired run creation contracts ([#47651](https://github.com/okou-ai/okou/issues/47651)) ([80a55d8](https://github.com/okou-ai/okou/commit/80a55d8e2cece736c0b0dafbee86bd520e388222))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.70.1
+    * @okouai/core bumped to 8.841.1
+    * @okouai/db bumped to 2.36.2
+    * @okouai/pi-agent-runtime bumped to 1.51.132
+
+## [2.72.1](https://github.com/okou-ai/okou/compare/api-v2.72.0...api-v2.72.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **api:** exclude credential-bearing telegram telemetry ([#47631](https://github.com/okou-ai/okou/issues/47631)) ([8e7d060](https://github.com/okou-ai/okou/commit/8e7d060ab09a55976b308e2ca2339138d58d2a23))
+* **wallet:** accept saved cards without deprecated expiry ([#47627](https://github.com/okou-ai/okou/issues/47627)) ([7a14ea6](https://github.com/okou-ai/okou/commit/7a14ea67b62610689337040be952f906090dc589))
+
+
+### Refactoring
+
+* **api:** prepare runner launches from captured facts ([#47619](https://github.com/okou-ai/okou/issues/47619)) ([7036d6a](https://github.com/okou-ai/okou/commit/7036d6a979114f3f948273ec7e8512df612c0ee7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.70.0
+    * @okouai/core bumped to 8.841.0
+    * @okouai/db bumped to 2.36.1
+    * @okouai/pi-agent-runtime bumped to 1.51.131
+
 ## [2.72.0](https://github.com/okou-ai/okou/compare/api-v2.71.3...api-v2.72.0) (2026-11-16)
 
 

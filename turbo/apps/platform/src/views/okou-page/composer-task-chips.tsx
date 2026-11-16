@@ -24,12 +24,8 @@ import {
   ComposerPresentationRecommendations,
   TemplateImportCard,
 } from "./chat-composer.tsx";
-import {
-  ComposerRail,
-  RAIL_TILE,
-  RAIL_TILE_ART,
-  RAIL_TILE_CAPTION,
-} from "./composer-rail.tsx";
+import { ComposerRail } from "./composer-rail.tsx";
+import { TemplateCard } from "./template-card.tsx";
 import { ComposerRailPager } from "./rail-pager.tsx";
 import { RAIL_ROOT_CLASS } from "./rail-boundary.ts";
 import { DocumentTemplateCover } from "./document-template-cover.tsx";
@@ -184,45 +180,33 @@ function ComposerTemplateCover({
   const { t } = useTranslation();
   return (
     <ComposerTemplateSuggestion title={title} onPreview={onPreview}>
-      <Button
-        type="button"
-        variant="quiet"
-        className={cn(RAIL_TILE, "w-full")}
-        aria-label={t(
+      <TemplateCard
+        title={title}
+        label={t(
           ($) => {
             return $.chat.composer.slashPanel.useTemplate;
           },
           { title },
         )}
-        onClick={onSelect}
+        ratio={ratio}
+        onSelect={onSelect}
       >
-        <span
-          className={cn(
-            "relative flex items-center justify-center overflow-hidden rounded-xl border border-border bg-muted",
-            RAIL_TILE_ART,
-            ratio,
-          )}
-        >
-          {coverUrl && documentPage ? (
-            <DocumentTemplateCover
-              coverUrl={coverUrl}
-              hasMorePages={documentPage.hasMorePages}
-            />
-          ) : coverUrl ? (
-            <img
-              src={coverUrl}
-              alt=""
-              loading="lazy"
-              // The tray's tiles answer the pointer by lifting, so the zoom
-              // stays off there: one change per hover.
-              className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/tile:scale-[1.04] in-data-[slot=capability-tray]:group-hover/tile:scale-100"
-            />
-          ) : (
-            <Image size={24} aria-hidden />
-          )}
-        </span>
-        <span className={RAIL_TILE_CAPTION}>{title}</span>
-      </Button>
+        {coverUrl && documentPage ? (
+          <DocumentTemplateCover
+            coverUrl={coverUrl}
+            hasMorePages={documentPage.hasMorePages}
+          />
+        ) : coverUrl ? (
+          <img
+            src={coverUrl}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-cover object-center"
+          />
+        ) : (
+          <Image size={24} aria-hidden />
+        )}
+      </TemplateCard>
     </ComposerTemplateSuggestion>
   );
 }
@@ -327,7 +311,6 @@ function ComposerTemplateShelf({
                   signals={signals}
                   kind="illustration"
                   compact
-                  className="block w-full"
                   onImported={() => {
                     setMode(null);
                   }}
@@ -492,7 +475,6 @@ function ComposerDocumentTemplateRail({
                 signals={signals}
                 kind="document"
                 compact
-                className="block w-full"
                 onImported={() => {
                   setMode(null);
                 }}

@@ -157,7 +157,8 @@ final class ComposerVoiceInputStore {
       }
       if generation == owner {
         phase = .recording
-        composer.editor.dismissKeyboard()
+        composer.editor.dismissMentions()
+        composer.editor.workflows.dismiss()
       } else {
         quota.cancel()
         capture.stop()
