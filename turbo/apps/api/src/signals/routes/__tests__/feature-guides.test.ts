@@ -441,7 +441,7 @@ test("previews the My Okou comparison without publishing or acknowledging an edi
               before: {
                 title: "Reports agent → Instructions",
                 url: expect.stringMatching(/^https:\/\//u),
-                width: 912,
+                width: 854,
               },
               after: { title: "Settings → Personal → My Okou" },
             },
@@ -454,7 +454,7 @@ test("previews the My Okou comparison without publishing or acknowledging an edi
               after: {
                 title: "Workspace Workflows",
                 url: expect.stringMatching(/^https:\/\//u),
-                width: 912,
+                width: 854,
               },
             },
           },

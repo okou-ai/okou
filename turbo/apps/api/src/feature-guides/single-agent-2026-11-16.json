@@ -1,6 +1,6 @@
 {
   "id": "single-agent-2026-11-16",
-  "revisionId": "73f739d0-5b32-41e4-8ca8-5f1b2fbbe018",
+  "revisionId": "fc2c1731-2135-42c2-8075-309731e5377c",
   "content": {
     "schemaVersion": 1,
     "title": "Meet My Okou",
@@ -60,10 +60,10 @@
           "before": {
             "label": "Before",
             "title": "Reports agent → Instructions",
-            "url": "https://single-agent-product-media-47733.okou.app/assets/instructions-before-d7ca8f853bee.png",
-            "width": 912,
-            "height": 480,
-            "alt": "Reports Agent profile with the Instructions tab selected, showing personal preferences and weekly report steps together."
+            "url": "https://single-agent-product-media-47733.okou.app/assets/instructions-before-7a2568954489.png",
+            "width": 854,
+            "height": 266,
+            "alt": "The Reports Agent Instructions tab, showing personal preferences and weekly report steps together."
           },
           "after": {
             "label": "Now",
@@ -87,17 +87,17 @@
           "before": {
             "label": "Before",
             "title": "Workflows → Reports agent",
-            "url": "https://single-agent-product-media-47733.okou.app/assets/workflows-before-19b222f1399c.png",
-            "width": 912,
-            "height": 316,
+            "url": "https://single-agent-product-media-47733.okou.app/assets/workflows-before-e1fe64482284.png",
+            "width": 854,
+            "height": 180,
             "alt": "Workflows filtered to the Reports Agent, with a Weekly report Workflow and the Agent selector visible."
           },
           "after": {
             "label": "Now",
             "title": "Workspace Workflows",
-            "url": "https://single-agent-product-media-47733.okou.app/assets/workflows-after-15bcdcc97225.png",
-            "width": 912,
-            "height": 394,
+            "url": "https://single-agent-product-media-47733.okou.app/assets/workflows-after-1f7ce5d78b93.png",
+            "width": 854,
+            "height": 240,
             "alt": "The unified Workflows list, with a shared Research brief and private Weekly report, without an Agent selector."
           },
           "note": "Each person runs shared Workflows with their own connected accounts and permissions. Sharing the process does not share account access.",
