@@ -27,11 +27,15 @@ const seedSkillColumns = Object.freeze({
 /** Runtime needs current skill bundles, not a second model/pricing snapshot. */
 export function createExecutionSeedSkills() {
   return computed(async (get) => {
-    const rows = await get(db$)
-      .select(seedSkillColumns)
-      .from(skillCatalog)
-      .where(inArray(skillCatalog.url, SEED_SKILLS.map(resolveSkillRef)));
-    return array(contextProjectionSchema(seedSkillColumns)).parse(rows);
+    const selection = seedSkillRows(new QueryBuilder()).as(
+      "execution_seed_skills",
+    );
+    const rows = await get(db$).select().from(selection);
+    return array(contextProjectionSchema(seedSkillColumns)).parse(
+      rows.map((row) => {
+        return row.payload;
+      }),
+    );
   });
 }
 
