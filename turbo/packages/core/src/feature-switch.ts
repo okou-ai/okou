@@ -143,15 +143,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.FriendReferrals]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Friend referrals",
-    description:
-      "Earn credits when a referred friend buys a usage pack on Pro or above.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
-  },
   [FeatureSwitchKey.TikTokOAuthConnector]: {
     maintainer: "yuma@okou.ai",
     displayName: "TikTok OAuth connector",
