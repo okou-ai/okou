@@ -1478,9 +1478,10 @@ test("For you mounts only the foreground content and retains a departure until i
     },
   });
   const first = await activeForYouCard("Suggested action 1");
-  expect(
-    first.parentElement?.querySelector("[data-okou-avatar]"),
-  ).toHaveAttribute("data-okou-avatar", "animated");
+  const firstAvatar = first.parentElement?.querySelector("[data-okou-avatar]");
+  expect(firstAvatar).toHaveAttribute("data-okou-avatar", "animated");
+  const firstArtwork = firstAvatar?.querySelector("svg");
+  expect(firstArtwork).not.toBeNull();
   expect(screen.queryByText("Suggested action 2")).not.toBeInTheDocument();
   const departure = holdCardDeparture(first);
   click(link(`/for-you?suggestion=${items[1].id}`));
@@ -1488,9 +1489,7 @@ test("For you mounts only the foreground content and retains a departure until i
   expect(first).toBeInTheDocument();
   expect(first.closest("[inert]")).not.toBeNull();
   expect(second.closest("[inert]")).toBeNull();
-  expect(
-    first.parentElement?.querySelector("[data-okou-avatar]"),
-  ).toHaveAttribute("data-okou-avatar", "static");
+  expect(firstAvatar?.querySelector("svg")).toBe(firstArtwork);
   expect(screen.queryByText("Suggested action 3")).not.toBeInTheDocument();
   departure.resolve();
   await waitFor(() => {

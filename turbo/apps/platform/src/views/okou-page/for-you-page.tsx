@@ -51,7 +51,7 @@ const STACK_LAYERS = [
 const STACK_CARD =
   "@container/suggestion col-start-1 row-start-1 flex min-h-125 origin-[50%_85%] flex-col rounded-3xl p-5 shadow-none sm:p-7";
 
-function SuggestionSource({ active }: { readonly active: boolean }) {
+function SuggestionSource({ animated }: { readonly animated: boolean }) {
   const { t } = useTranslation();
   const agentId = useLastResolved(defaultAgentId$);
   const assistantName = useGet(assistantName$);
@@ -63,7 +63,7 @@ function SuggestionSource({ active }: { readonly active: boolean }) {
           name={agentId}
           alt=""
           className="size-6 rounded-lg object-cover object-top"
-          motion={active ? "animated" : "static"}
+          motion={animated ? "animated" : "static"}
         />
       ) : (
         <Layers aria-hidden className="size-4" />
@@ -170,7 +170,7 @@ function ForYouStack({
                   <PlatformFeedEvent entry={card.entry} active={active} />
                 ) : (
                   <>
-                    <SuggestionSource active={active} />
+                    <SuggestionSource animated={active || outgoing} />
                     <AgentSuggestionCard
                       active={active}
                       item={card.entry.item}
