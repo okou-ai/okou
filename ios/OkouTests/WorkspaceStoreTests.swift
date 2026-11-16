@@ -813,12 +813,22 @@ final class WorkspaceStoreTests: XCTestCase {
     await store.list.refresh()
     store.selectedThreadID = storeThreadID
     let initialRead = Task { await store.conversation(for: storeThreadID)?.refresh() }
+    addTeardownBlock {
+      initialRead.cancel()
+      releaseOldResponse.open()
+      _ = await initialRead.value
+    }
     await fulfillment(of: [oldReadStarted], timeout: 2)
 
     // A final-result invalidation enters refresh while the detail view's old read is pending.
-    // Awaiting the reconciler makes the ordering deterministic without a live Ably connection.
-    await store.refresh()
+    let refresh = Task.immediate { await store.refresh() }
+    addTeardownBlock {
+      refresh.cancel()
+      releaseOldResponse.open()
+      await refresh.value
+    }
     releaseOldResponse.open()
+    await refresh.value
     await initialRead.value
 
     XCTAssertEqual(
