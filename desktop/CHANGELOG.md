@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.5](https://github.com/okou-ai/okou/compare/desktop-v0.56.4...desktop-v0.56.5) (2026-11-16)
+
+
+### Bug Fixes
+
+* **desktop:** reject invalid native geometry and helper responses ([#47633](https://github.com/okou-ai/okou/issues/47633)) ([e3a7ab6](https://github.com/okou-ai/okou/commit/e3a7ab65747088abd2369e0724ca635bb7b6c6ec))
+
 ## [0.56.4](https://github.com/okou-ai/okou/compare/desktop-v0.56.3...desktop-v0.56.4) (2026-11-12)
 
 

@@ -79,14 +79,31 @@ impl PostOpenMockGate {
     }
 }
 
-/// Build a mock package in an explicit workspace and cache it for one Cargo build session.
+/// Build a mock in a Cargo test's output profile and cache it for one build session.
 pub fn build_and_locate_mock_package_in_workspace(
     workspace_dir: &Path,
-    target_profile_dir: &Path,
+    test_executable: &Path,
     package: &str,
     binary: &str,
     build_session: Option<&str>,
 ) -> Result<PathBuf, String> {
+    let target_profile_dir = match test_executable.parent() {
+        // Cargo through 1.99: <target>/<profile>/deps/<test>.
+        Some(dir) if dir.file_name() == Some(OsStr::new("deps")) => dir.parent(),
+        // Cargo 1.100: <target>/<profile>/build/<package>/<hash>/out/<test>.
+        Some(dir) if dir.file_name() == Some(OsStr::new("out")) => dir
+            .ancestors()
+            .nth(3)
+            .filter(|dir| dir.file_name() == Some(OsStr::new("build")))
+            .and_then(Path::parent),
+        _ => None,
+    }
+    .ok_or_else(|| {
+        format!(
+            "unsupported Cargo test executable layout: {}",
+            test_executable.display()
+        )
+    })?;
     let target_dir = target_profile_dir
         .parent()
         .ok_or_else(|| "target dir".to_string())?;
@@ -126,7 +143,7 @@ pub fn build_and_locate_mock_package_in_workspace(
     //   --release            → target_dir/release
     //   --profile <name>     → target_dir/<name>
     //   (default / dev)      → target_dir/debug
-    // So pick the flag that lands the artifact beside our test binary.
+    // Keep the enclosing test's output profile, including custom profiles.
     match profile_dir_name {
         "debug" => {}
         "release" => {

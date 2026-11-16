@@ -62,6 +62,7 @@ export interface AgentToolsPromptInputs {
   readonly batchConnectorPermissionsEnabled: boolean;
   readonly chatConnectorAccountsEnabled: boolean;
   readonly sshChatApprovalEnabled: boolean;
+  readonly artifactGenerationTimingEnabled: boolean;
 }
 
 export function buildAgentToolsPromptInputs(args: {
@@ -73,6 +74,10 @@ export function buildAgentToolsPromptInputs(args: {
   const context = args.featureSwitchContext;
   return {
     singleAgent: args.singleAgent,
+    artifactGenerationTimingEnabled: isFeatureEnabled(
+      FeatureSwitchKey.ArtifactGenerationTiming,
+      context,
+    ),
     disabledPaidTools: args.disabledPaidTools,
     chatConnectorAccountsEnabled: isFeatureEnabled(
       FeatureSwitchKey.ConnectorChatAccountAccess,
@@ -162,6 +167,11 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
       : []),
     "- Remote SSH failures: after a connection failure or unexpected disconnect, prefer the actual failed operation's Attempt ID: `okou ssh diagnose <connection-id> --attempt-id <attempt-id> --json`, adding `--session-id <id>` when known. Use IDs from that failed operation. Without an Attempt ID, a connection/session-only query returns the latest matching retained failure; verify its operation, connection, session, and time before attributing it. If the exact attempt is not retained, report its evidence as unavailable; do not substitute another failure. This is passive history within this Run, not a current-connectivity check; unavailable evidence does not establish a cause. Never automatically replay an uncertain command or check.",
     "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
+    ...(args.artifactGenerationTimingEnabled
+      ? [
+          "- Artifact phase timing: only for artifact creation tasks, the coordinating agent calls `okou run mark research-start` once immediately before the first task-specific source search, reading, or analysis. Call `okou run mark generation-start --kind <kind>` once immediately before the first actual creation of the primary deliverable, including writing a document or submitting a generation request; planning, help, and template discovery are not generation. `--kind` is required: image, presentation, document, spreadsheet, website, report, video, audio, mixed, or other. Use mixed for multiple primary types and other only deliberately, never as a fallback. Add `--skip-research` only if no research occurred; never use it to repair a missing or failed mark. Combine each mark with the next work action in the same tool invocation when possible, isolating its exit status so work continues. Research after generation starts belongs to generation: do not mark again. Run completion supplies the end time; do not call an end marker. Never retry telemetry, wait for telemetry confirmation, or interrupt the user's work for it.",
+        ]
+      : []),
     "- VNC: use `okou vnc host list --json` to find owner-authorized hosts, then `okou vnc session start` with an explicit shared/exclusive mode. Read `okou vnc --help` and the relevant subcommand's `--help` before use. Use fresh `okou vnc screenshot` geometry for coordinate input, never replay uncertain input automatically, and close sessions with `okou vnc session close`.",
     "- Remote VNC failures: after a connection failure or unexpected disconnect, prefer the actual failed operation's Attempt ID: `okou vnc diagnose <connection-id> --attempt-id <attempt-id> --json`, adding `--session-id <id>` when known. Use IDs from that failed operation. Without an Attempt ID, a connection/session-only query returns the latest matching retained failure; verify its operation, connection, session, and time before attributing it. If the exact attempt is not retained, report its evidence as unavailable; do not substitute another failure. This is passive history within this Run, not a current-connectivity check; unavailable evidence does not establish a cause. Never automatically replay uncertain input or checks.",
     "- When an Okou CLI command prints a user-facing action URL, return that exact URL verbatim. Never rewrite, shorten, reconstruct, or omit any query parameters.",

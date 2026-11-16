@@ -69,15 +69,18 @@ RUN ARCH=$(dpkg --print-architecture) \
 
 # Install Rust toolchain with runner Linux musl targets.
 # Used for building runner and guest binaries for Firecracker VMs.
+ARG RUST_VERSION=1.100.0
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal \
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain "${RUST_VERSION}" --profile minimal \
     && rustup target add aarch64-unknown-linux-musl x86_64-unknown-linux-musl \
     && rustup component add rustfmt clippy \
     && rm -rf /usr/local/rustup/toolchains/*/share/doc \
     && rm -rf /usr/local/rustup/toolchains/*/share/man \
-    && rustc --version && cargo --version
+    && rustc --version && cargo --version \
+    && test "$(rustc --version | cut -d ' ' -f 2)" = "${RUST_VERSION}" \
+    && test "$(cargo --version | cut -d ' ' -f 2)" = "${RUST_VERSION}"
 
 # Install musl compilers for runner Linux targets. Using a glibc
 # cross-gcc directly would make cc crate compile C sources with glibc

@@ -47,6 +47,7 @@ export function createNativeWindowProvider(context: TestContext) {
     snapshotEventWindowId?: number;
     emptySnapshot: boolean;
     beforeCreateReply?: (target: NativeTarget) => Promise<void> | void;
+    onSocketConnection?: () => void;
     onSocketClose?: () => void;
     onWithheldReply?: () => void;
     windowError?: string;
@@ -425,6 +426,7 @@ export function createNativeWindowProvider(context: TestContext) {
         "External native CDP fixture reply",
       );
     });
+    state.onSocketConnection?.();
   });
   return Object.assign(state, { handler });
 }

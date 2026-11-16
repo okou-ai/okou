@@ -49,6 +49,13 @@ struct TransportTests {
         #expect(response["id"] as? String == "serve_failure")
         #expect(response["status"] as? String == "failed")
         #expect(error["code"] as? String == "unsupported_command")
+
+        let nextResponse = try helper.request([
+            "id": "after_failure",
+            "kind": "permissions.state",
+        ])
+        #expect(nextResponse["id"] as? String == "after_failure")
+        #expect(nextResponse["status"] as? String == "succeeded")
     }
 
     @Test

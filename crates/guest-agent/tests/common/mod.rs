@@ -265,15 +265,7 @@ pub fn set_soft_file_size_limit(limit: u64) -> Result<SoftFileSizeLimitGuard, St
 }
 
 fn build_and_locate_mock_package(package: &str, binary: &str) -> Result<PathBuf, String> {
-    // Test binary:   <target_dir>/<profile>/deps/<name>-<hash>
-    //   parent():    <target_dir>/<profile>/deps
-    //   parent().parent():  <target_dir>/<profile>   ← target_profile_dir
-    //   parent().parent().parent():  <target_dir>
     let exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
-    let target_profile_dir = exe
-        .parent()
-        .and_then(|p| p.parent())
-        .ok_or_else(|| "target/<profile> dir".to_string())?;
     let workspace_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .ok_or_else(|| "guest-agent workspace directory".to_string())?;
@@ -281,7 +273,7 @@ fn build_and_locate_mock_package(package: &str, binary: &str) -> Result<PathBuf,
     let build_session = test_runner_build_session_id();
     build_and_locate_mock_package_in_workspace(
         workspace_dir,
-        target_profile_dir,
+        &exe,
         package,
         binary,
         build_session.as_deref(),

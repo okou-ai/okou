@@ -1,5 +1,8 @@
 import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
-import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
+import {
+  FirewallBaseUrlResolutionError,
+  type FirewallPolicies,
+} from "@okouai/connectors/firewall-types";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { expandVariablesInString } from "@okouai/core/variable-expander";
 import { computed } from "ccstate";
@@ -23,7 +26,7 @@ import {
 import { countBucket } from "./dispatch-count-bucket";
 import { buildPermissionManifest } from "./permission-manifest.service";
 import type { Environment } from "./run-environment";
-import type { RunRequestBody } from "./run-body-environment";
+import type { RunBodyEnvironment } from "./run-body-environment";
 import {
   type BuiltinConnectorRuntimeContext,
   type ConnectorEnvBindingSet,
@@ -613,10 +616,9 @@ interface PreparedConnectorContext {
 interface RunPreparedConnectorInputs {
   readonly connectorScope: EffectiveConnectorScope;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly body: Pick<
-    RunRequestBody,
-    "permissionPolicies" | "vars" | "secrets"
-  >;
+  readonly body: RunBodyEnvironment & {
+    readonly permissionPolicies?: FirewallPolicies;
+  };
   readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
   readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
@@ -626,10 +628,7 @@ interface RunPreparedConnectorInputs {
 
 async function buildPreparedPermissionManifest(args: {
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly body: Pick<
-    RunRequestBody,
-    "permissionPolicies" | "vars" | "secrets"
-  >;
+  readonly body: RunPreparedConnectorInputs["body"];
   readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
   readonly timing: ApiDispatchTimingCollector;

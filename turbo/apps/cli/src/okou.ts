@@ -57,7 +57,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   mcp: "connector:read",
   ssh: ["ssh:read", "ssh:write", "connector:read", "connector:write"],
   vnc: ["vnc:read", "vnc:write", "connector:read", "connector:write"],
-  run: "run-usage:read",
+  run: ["run-usage:read", "run-timing:write"],
   mail: "connector:read",
   email: "email:write",
   notify: "notify:write",
