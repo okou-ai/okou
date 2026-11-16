@@ -517,7 +517,7 @@ final class WorkspaceStore {
     }
     await indicatorsRefresh
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
-    if full || batch.contains(.readCursor) {
+    if full || batch.contains(.readCursor), selectedThreadID == selectedBeforeRefresh {
       // Either independent read can finish first. Confirm read state with both
       // published results, before waiting on unrelated workspace resources.
       await selectedConversation?.reconcileReadState()

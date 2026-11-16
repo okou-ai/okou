@@ -268,9 +268,9 @@ final class ChatSearchUnreadTests: XCTestCase {
     let recoveryStarted =
       indicatorsFirst ? expectation(description: "Conversation recovery reached HTTP") : nil
     let readStarted =
-      completion == .immediate ? nil : expectation(description: "New delivery mark-read reached HTTP")
+      completion == .immediate ? nil : expectation(description: "New mark-read reached HTTP")
     let readCancelled =
-      completion == .background ? expectation(description: "Background cancelled mark-read HTTP") : nil
+      completion == .background ? expectation(description: "Background cancelled mark-read") : nil
     let readFinished =
       completion == .background ? expectation(description: "Retired HTTP handler finished") : nil
     let gate = SearchResponseGate()
@@ -1073,7 +1073,9 @@ private final class SearchUnreadFixture: Sendable {
           if let gate {
             await withTaskCancellationHandler {
               await gate.wait()
-            } onCancel: { cancelled?() }
+            } onCancel: {
+              cancelled?()
+            }
           }
           let response = state.value.withLock { value in
             if read && value.failNextRead {
