@@ -59,8 +59,10 @@ import {
   type CustomConnectorRuntimeContext,
   type CustomConnectorRuntimeDataRows,
   loadEffectiveCustomConnectorPermissionBundle,
+  mergeRecords,
   resolveCustomConnectorBaseUrlVars,
 } from "./connector-runtime-preparation.service";
+import { orderByCustomConnectorId } from "./custom-connector-order";
 import {
   customConnectorAccountAuthMethodIsCompatible,
   customConnectorCredentialAccesses,
@@ -1122,57 +1124,78 @@ function createCustomConnectorContextSignals(
       const memberPermissionPolicies = await get(
         inputs.memberPermissionPolicies$,
       );
-      const chosenRows = await Promise.all(
-        connectors
-          .filter((connector) => {
-            return args.allowedCustomConnectorIds.includes(connector.id);
-          })
-          .map(async (connector) => {
-            const rows = customConnectorCandidateRuntimeRows({
-              connector,
-              storageRows,
-              candidateIds:
-                candidates.get(
-                  connectorAccountTargetKey({
-                    kind: "custom",
-                    customConnectorId: connector.id,
-                  }),
-                ) ?? [],
-            });
-            for (const row of rows) {
-              const context = await buildNewRunCustomConnectorRuntimeContext({
-                rows: [row],
-                permissionBundlesByConnectorId,
-                featureSwitchContext,
-                connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-                grants: args.customConnectorGrants,
-                memberPermissionPolicies,
-              });
-              if (context.targets.length > 0) {
-                return row;
-              }
-            }
-            return {
-              connector,
-              values: [],
-              credentialAccess: { kind: "absent" as const },
-            };
-          }),
-      );
       return await (
         await get(connectorInput$)
       ).timing.measure(
         "api_dispatch_prepare_context_build_custom_connector_firewalls",
         "nested",
         async () => {
-          return await buildNewRunCustomConnectorRuntimeContext({
-            rows: chosenRows,
-            permissionBundlesByConnectorId,
-            featureSwitchContext,
-            connectorCatalogSnapshot: args.connectorCatalogSnapshot,
-            grants: args.customConnectorGrants,
-            memberPermissionPolicies,
-          });
+          const contexts = await Promise.all(
+            orderByCustomConnectorId(
+              connectors.filter((connector) => {
+                return args.allowedCustomConnectorIds.includes(connector.id);
+              }),
+              (connector) => {
+                return connector.id;
+              },
+            ).map(async (connector) => {
+              const rows = customConnectorCandidateRuntimeRows({
+                connector,
+                storageRows,
+                candidateIds:
+                  candidates.get(
+                    connectorAccountTargetKey({
+                      kind: "custom",
+                      customConnectorId: connector.id,
+                    }),
+                  ) ?? [],
+              });
+              for (const row of rows) {
+                const context = await buildNewRunCustomConnectorRuntimeContext({
+                  rows: [row],
+                  permissionBundlesByConnectorId,
+                  featureSwitchContext,
+                  connectorCatalogSnapshot: args.connectorCatalogSnapshot,
+                  grants: args.customConnectorGrants,
+                  memberPermissionPolicies,
+                });
+                if (context.targets.length > 0) {
+                  return context;
+                }
+              }
+              return emptyCustomConnectorRuntimeContext();
+            }),
+          );
+          return {
+            firewalls: contexts.flatMap((context) => {
+              return context.firewalls;
+            }),
+            reservedSecretAliases: mergeRecords(
+              ...contexts.map((context) => {
+                return context.reservedSecretAliases;
+              }),
+            ),
+            permissionPolicies: mergeRecords(
+              ...contexts.map((context) => {
+                return context.permissionPolicies;
+              }),
+            ),
+            targets: contexts.flatMap((context) => {
+              return context.targets;
+            }),
+            customConnectorIdByFirewallName: Object.fromEntries(
+              contexts.flatMap((context) => {
+                return Object.entries(context.customConnectorIdByFirewallName);
+              }),
+            ),
+            customConnectorSourceIdByFirewallName: Object.fromEntries(
+              contexts.flatMap((context) => {
+                return Object.entries(
+                  context.customConnectorSourceIdByFirewallName,
+                );
+              }),
+            ),
+          };
         },
       );
     },
