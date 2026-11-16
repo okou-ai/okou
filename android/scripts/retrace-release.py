@@ -23,12 +23,17 @@ def sha256(path):
 
 
 def restore(apk, mapping_gz, source, output, r8_jar):
-    with gzip.open(mapping_gz, "rt", encoding="utf-8") as stream:
+    with gzip.open(mapping_gz, "rb") as stream:
         mapping = stream.read()
-    compiler = re.search(r"^# compiler_version: (\S+)$", mapping, re.MULTILINE)
-    map_id = re.search(r"^# pg_map_id: (\S+)$", mapping, re.MULTILINE)
-    if compiler is None or map_id is None:
-        raise ValueError("Mapping must contain an R8 compiler version and pg_map_id")
+    compiler_match = re.search(rb"^# compiler_version: (\S+)\r?$", mapping, re.MULTILINE)
+    map_id_match = re.search(rb"^# pg_map_id: (\S+)\r?$", mapping, re.MULTILINE)
+    map_hash = re.search(rb"^# pg_map_hash: SHA-256 ([0-9a-f]{64})\r?\n", mapping, re.MULTILINE)
+    if compiler_match is None or map_id_match is None or map_hash is None:
+        raise ValueError("Mapping must contain an R8 compiler version, pg_map_id and SHA-256 hash")
+    if hashlib.sha256(mapping[map_hash.end():]).hexdigest() != map_hash[1].decode("ascii"):
+        raise ValueError("R8 mapping content does not match its SHA-256 hash")
+    compiler = compiler_match[1].decode("ascii")
+    map_id = map_id_match[1].decode("ascii")
     with zipfile.ZipFile(apk) as archive:
         markers = [
             json.loads(marker)
@@ -37,7 +42,7 @@ def restore(apk, mapping_gz, source, output, r8_jar):
             for marker in re.findall(rb"~~R8(\{[^\x00]*?\})", archive.read(name))
         ]
     if not markers or any(
-        marker.get("pg-map-id") != map_id[1] or marker.get("version") != compiler[1]
+        marker.get("pg-map-id") != map_id or marker.get("version") != compiler
         for marker in markers
     ):
         raise ValueError("APK and R8 mapping identities do not match")
@@ -51,7 +56,7 @@ def restore(apk, mapping_gz, source, output, r8_jar):
         r8_jar = Path(result.stdout.strip())
     command = ["java", "-cp", str(r8_jar), "com.android.tools.r8.retrace.Retrace"]
     version = subprocess.run(command + ["--version"], check=True, capture_output=True, text=True)
-    if not version.stdout.startswith(f"Retrace {compiler[1]} "):
+    if not version.stdout.startswith(f"Retrace {compiler} "):
         raise ValueError("Retrace must use the same R8 version as the APK")
 
     files = (
@@ -64,8 +69,7 @@ def restore(apk, mapping_gz, source, output, r8_jar):
     restored = []
     with tempfile.TemporaryDirectory(prefix="okou-retrace-") as directory:
         raw_map = Path(directory) / "mapping.txt"
-        raw_map.write_text(mapping, encoding="utf-8")
-        subprocess.run(command + ["--verify-mapping-file-hash", str(raw_map)], check=True)
+        raw_map.write_bytes(mapping)
         for path in files:
             relative = path.relative_to(source) if source.is_dir() else Path(path.name)
             destination = output / relative.with_name(relative.name + ".retraced.txt")
@@ -77,7 +81,7 @@ def restore(apk, mapping_gz, source, output, r8_jar):
     (output / "identity.json").write_text(json.dumps({
         "apk": str(apk), "apkSha256": sha256(apk),
         "mapping": str(mapping_gz), "mappingSha256": sha256(mapping_gz),
-        "r8Version": compiler[1], "mapId": map_id[1], "files": restored,
+        "r8Version": compiler, "mapId": map_id, "files": restored,
     }, indent=2) + "\n", encoding="utf-8")
 
 

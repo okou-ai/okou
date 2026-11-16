@@ -8,6 +8,7 @@ import javax.net.ssl.ManagerFactoryParameters
 import javax.net.ssl.TrustManager
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.TrustManagerFactorySpi
+import okhttp3.Protocol
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
@@ -19,6 +20,8 @@ class FixtureHttpsServer : Closeable {
 
     init {
         try {
+            // Preserve the existing HTTP/1 disconnect/recovery fixture semantics over TLS.
+            server.protocols = listOf(Protocol.HTTP_1_1)
             val certificates =
                 HandshakeCertificates.Builder().heldCertificate(FixtureTrust.certificate).build()
             server.useHttps(certificates.sslSocketFactory(), false)
