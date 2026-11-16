@@ -318,10 +318,12 @@ export function ChatShortcutHelpDialog() {
   const shortcutHelpOpen = useGet(chatShortcutHelpOpen$);
   const setShortcutHelpOpen = useSet(setChatShortcutHelpOpen$);
   const activeRoute = useGet(activeRoute$);
-  const shortcutSections = localizeShortcutSections(
-    shortcutSectionsForRoute(activeRoute),
-    { singleAgent, projects },
-  );
+  const shortcutSections = () => {
+    return localizeShortcutSections(shortcutSectionsForRoute(activeRoute), {
+      singleAgent,
+      projects,
+    });
+  };
 
   return (
     <ShortcutHelpDialog
