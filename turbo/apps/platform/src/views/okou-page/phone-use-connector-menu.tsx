@@ -1,6 +1,6 @@
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Plug, RefreshCw, Smartphone } from "lucide-react";
+import { Plug, Smartphone } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -77,28 +77,13 @@ function PhoneUseDevices({ signals }: { signals: ComposerConnectorSignals }) {
     return device.online;
   });
   const selection = useLoadable(signals.phoneAccess.selection$);
-  const reload = useSet(signals.resources.reloadPhoneUseDevices$);
   const updateUi = useSet(signals.updateConnectorUiState$);
   return (
     <div className="shrink-0 border-t border-border/50 bg-gray-50 p-1 dark:bg-gray-100">
-      <div className="flex items-center justify-between px-2 pt-1 text-xs font-medium text-muted-foreground">
-        <span>
-          {t(($) => {
-            return $.chat.phoneUse.yourPhone;
-          })}
-        </span>
-        <Button
-          variant="quiet"
-          size="icon-sm"
-          aria-label={t(($) => {
-            return $.chat.phoneUse.refresh;
-          })}
-          onClick={() => {
-            reload();
-          }}
-        >
-          <RefreshCw size={14} />
-        </Button>
+      <div className="px-2 pb-1 pt-1 text-xs text-muted-foreground">
+        {t(($) => {
+          return $.chat.phoneUse.yourPhone;
+        })}
       </div>
       {visibleDevices.length > 0 ? (
         <ul

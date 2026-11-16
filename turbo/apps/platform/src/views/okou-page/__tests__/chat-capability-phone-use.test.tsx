@@ -96,12 +96,13 @@ test.each([true, false])(
     expect(within(phones).queryByText("Not ready")).toBeNull();
     expect(within(phones).queryByText("Offline iPhone")).toBeNull();
     devices = [phone(false, false), offline];
-    click(await findButton("Refresh phones"));
+    await userEvent.keyboard("{Escape}");
+    click(await findButton("Connectors"));
     await screen.findByText("No phones online");
   },
 );
 
-test("A phone-list failure can be retried without closing the menu", async () => {
+test("A phone-list failure recovers when reopening the menu", async () => {
   let failed = true;
   context.mocks.api(phoneUseContract.devices, ({ respond }) => {
     return failed
@@ -109,9 +110,10 @@ test("A phone-list failure can be retried without closing the menu", async () =>
       : respond(200, { devices: [phone()] });
   });
   await setup(true);
-  await screen.findByText("Could not load phones. Try refreshing.");
+  await screen.findByText("Could not load phones.");
   failed = false;
-  click(await findButton("Refresh phones"));
+  await userEvent.keyboard("{Escape}");
+  click(await findButton("Connectors"));
   await expect(screen.findByText("Owner iPhone")).resolves.toBeVisible();
 });
 
@@ -129,7 +131,6 @@ test("Connect my phone explains chat-menu consent and native preparation separat
     within(dialog).getByText("Enable your phone in this chat"),
   ).toBeVisible();
   expect(within(dialog).getByText("Send your next task")).toBeVisible();
-  expect(queryButton("Refresh phones")).toBeNull();
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
     expect(queryButton("Connectors")).toHaveFocus();
@@ -233,7 +234,7 @@ test("A new chat saves its selected phone before the first message starts a Run"
   });
 });
 
-test("A failed chat-authorization read disables phone switches until refresh succeeds", async () => {
+test("A failed chat-authorization read recovers when reopening the menu", async () => {
   let failed = true;
   context.mocks.api(phoneUseContract.devices, ({ respond }) => {
     return respond(200, { devices: [phone()] });
@@ -248,9 +249,13 @@ test("A failed chat-authorization read disables phone switches until refresh suc
   await screen.findByRole("alert");
   expect(control).toHaveAttribute("aria-disabled", "true");
   failed = false;
-  click(await findButton("Refresh phones"));
+  await userEvent.keyboard("{Escape}");
+  click(await findButton("Connectors"));
+  const retriedControl = await screen.findByRole("switch", {
+    name: /^Owner iPhone/u,
+  });
   await waitFor(() => {
-    expect(control).not.toHaveAttribute("aria-disabled", "true");
+    expect(retriedControl).not.toHaveAttribute("aria-disabled", "true");
   });
 });
 
