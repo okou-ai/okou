@@ -86,7 +86,7 @@ enum ChatFollowupProjection {
     }
     let ordered = turns.flatMap { $0 }
     guard let last = ordered.last, isAssistant(last.eventType), last.runId != nil,
-      last.eventType != .runCancelled
+      last.eventType != .runCancelled, last.eventType != .runFailed
     else { return nil }
     guard !hasStatusTail(ordered) else { return nil }
     for row in ordered.reversed() {

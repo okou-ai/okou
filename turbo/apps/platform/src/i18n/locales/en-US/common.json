@@ -1666,6 +1666,15 @@
         "next": "Next suggestion",
         "previous": "Previous suggestion",
         "remaining": "{{total}} to go",
+        "sources": {
+          "alwaysOn": "Always on",
+          "description": "Choose what arrives next. Cards already here stay until you handle them. Unread alerts only include sources you have turned on.",
+          "offers": "Offers",
+          "suggestions": "Suggestions",
+          "systemUpdates": "System updates",
+          "title": "For you sources",
+          "whatsNew": "What’s new"
+        },
         "subtitle": "One thing at a time",
         "title": "For you"
       },
@@ -4481,6 +4490,10 @@
     "unsaved": "Unsaved changes"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "Continue with onboarding",
+      "title": "Getting your workspace ready"
+    },
     "common": {
       "next": "Next",
       "skip": "Skip",

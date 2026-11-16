@@ -749,7 +749,7 @@ final class FailureRecoveryTests: XCTestCase {
             #"{"userMessage":{"version":1,"parts":[{"type":"text","text":"Another request"}]}}"#))
       $0.rows.append(
         FailureRecoveryFixture.row(
-          5, type: "run.failed", payload: #"{"error":"Usage limit","failureReason":"usage_limit"}"#)
+          5, type: "run.failed", payload: #"{"error":"Usage limit"}"#, failureReason: "usage_limit")
       )
       $0.lastID = FailureRecoveryFixture.id(5)
     }

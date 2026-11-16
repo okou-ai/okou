@@ -202,6 +202,12 @@ export const platformEventSchema = feedItemBaseSchema.extend({
 });
 export type PlatformEvent = zInfer<typeof platformEventSchema>;
 export type FeedItem = Suggestion | SuggestionReceipt | PlatformEvent;
+export const feedSourcesSchema = object({
+  suggestions: boolean(),
+  whatsNew: boolean(),
+  offers: boolean(),
+});
+export type FeedSources = zInfer<typeof feedSourcesSchema>;
 export const suggestionCreateSchema = object({
   id: suggestionIdSchema,
   type: literal("suggestion"),
@@ -245,6 +251,41 @@ const errors = {
 };
 const params = object({ id: suggestionIdSchema });
 export const feedContract = c.router({
+  sources: {
+    method: "GET",
+    path: "/api/feed/sources",
+    headers: authHeadersSchema,
+    responses: { 200: feedSourcesSchema, ...errors },
+    summary: "Read your For you source preferences",
+  },
+  updateSources: {
+    method: "PATCH",
+    path: "/api/feed/sources",
+    headers: authHeadersSchema,
+    body: feedSourcesSchema
+      .partial()
+      .strict()
+      .refine((body) => {
+        return Object.keys(body).length > 0;
+      }, "Provide at least one source preference"),
+    responses: { 200: feedSourcesSchema, ...errors },
+    summary: "Choose future For you deliveries; keep already delivered cards",
+  },
+  summary: {
+    method: "GET",
+    path: "/api/feed/summary",
+    headers: authHeadersSchema,
+    responses: { 200: object({ hasUnread: boolean() }), ...errors },
+    summary: "Read whether an enabled For you source has unread cards",
+  },
+  markRead: {
+    method: "POST",
+    path: "/api/feed/items/:id/read",
+    headers: authHeadersSchema,
+    pathParams: params,
+    responses: { 200: object({ readAt: iso.datetime() }), ...errors },
+    summary: "Mark a displayed card as read without consuming it",
+  },
   manage: {
     method: "GET",
     path: "/api/feed/items/active",

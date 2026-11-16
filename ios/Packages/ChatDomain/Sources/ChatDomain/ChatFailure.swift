@@ -36,8 +36,9 @@ public struct ChatFailure: Equatable, Sendable {
     public var continues: Bool { [.timeout, .autonomy, .outputLimit].contains(kind) }
   }
 
-  /// Mirrors the PWA classifier, including its narrow legacy text contract.
+  /// Run lifecycle recovery uses structured facts; output errors retain their own contract.
   public func recovery(personalFramework: Framework?) -> Recovery {
+    if isRunFailure { return runRecovery(personalFramework: personalFramework) }
     let normalized = error.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
       .trimmingCharacters(in: .whitespacesAndNewlines)
     func matches(_ pattern: String) -> Bool {
@@ -52,32 +53,9 @@ public struct ChatFailure: Equatable, Sendable {
       #"\bclaude\b.*\b(?:is overloaded|overloaded|at capacity)\b|\b529\b.*\boverload|\boverloaded_error\b"#
     )
     let unsupported = Self.isUnsupportedCodexModel(error)
-    let structured = isRunFailure ? reason : nil
     let kind: Kind
-    if ["insufficient_credits", "pro_required"].contains(normalized.lowercased())
-      || structured == "insufficient_credits"
-    {
+    if ["insufficient_credits", "pro_required"].contains(normalized.lowercased()) {
       kind = .billing
-    } else if let structured {
-      switch structured {
-      case "session_history_limit", "context_window_exceeded": kind = .newChat
-      case "guest_root_filesystem_full", "guest_home_filesystem_full", "provider_rate_limited",
-        "provider_stream_timeout", "provider_queue_timeout", "provider_server_error",
-        "response_connection_lost", "codex_access_program_unavailable":
-        kind = .retryable
-      case "execution_timeout": kind = .timeout
-      case "provider_insufficient_credits", "invalid_api_key", "invalid_credentials",
-        "reconnect_required":
-        kind = .settings
-      case "terms_acceptance_required": kind = .terms
-      case "input_too_large", "provider_image_too_large": kind = .inputTooLarge
-      case "output_token_limit": kind = .outputLimit
-      case "provider_overloaded": kind = .capacity
-      case "safety_policy_refusal": kind = .safety
-      case "unsupported_model": kind = .unavailable
-      case "usage_limit": kind = .usage
-      default: kind = .unknown
-      }
     } else if normalized == "This run reached its execution time limit."
       || normalized.range(
         of: #"^Agent execution timed out after [1-9]\d* seconds$"#, options: .regularExpression)
@@ -95,13 +73,7 @@ public struct ChatFailure: Equatable, Sendable {
     } else {
       kind = .unknown
     }
-    let subscriptionReasons = [
-      "reconnect_required", "invalid_credentials", "provider_rate_limited",
-      "provider_stream_timeout", "provider_server_error", "response_connection_lost",
-    ]
-    let subscriptionFallback =
-      kind == .unknown && personalFramework != nil
-      && (structured.map { subscriptionReasons.contains($0) } ?? true)
+    let subscriptionFallback = kind == .unknown && personalFramework != nil
     let framework: Framework? =
       kind == .usage
       ? (codexUsage ? .codex : (claudeUsage ? .claude : personalFramework))
@@ -138,6 +110,35 @@ public struct ChatFailure: Equatable, Sendable {
       framework: subscriptionFallback ? personalFramework : framework, window: window,
       modelScoped: kind == .capacity || kind == .unavailable || window == .model,
       resetLabel: kind == .usage && (codexUsage || claudeUsage) ? resetLabel : nil)
+  }
+
+  private func runRecovery(personalFramework: Framework?) -> Recovery {
+    let kind: Kind
+    switch reason {
+    case "session_history_limit", "context_window_exceeded": kind = .newChat
+    case "guest_root_filesystem_full", "guest_home_filesystem_full", "provider_rate_limited",
+      "provider_stream_timeout", "provider_queue_timeout", "provider_server_error",
+      "response_connection_lost", "codex_access_program_unavailable", "provider_bad_request":
+      kind = .retryable
+    case "execution_timeout": kind = .timeout
+    case "insufficient_credits": kind = .billing
+    case "provider_insufficient_credits", "invalid_api_key", "invalid_credentials",
+      "reconnect_required":
+      kind = .settings
+    case "terms_acceptance_required": kind = .terms
+    case "input_too_large", "provider_image_too_large": kind = .inputTooLarge
+    case "output_token_limit": kind = .outputLimit
+    case "provider_overloaded": kind = .capacity
+    case "safety_policy_refusal": kind = .safety
+    case "unsupported_model", "provider_model_restricted": kind = .unavailable
+    case "usage_limit": kind = .usage
+    default: kind = .unknown
+    }
+    // This framework describes the next retry's current route, not the failed account.
+    return Recovery(
+      kind: kind, framework: kind == .usage ? personalFramework : nil,
+      window: kind == .usage ? .unknown : nil,
+      modelScoped: kind == .capacity || kind == .unavailable, resetLabel: nil)
   }
 
   /// The legacy Codex diagnostic must contain the structured invalid-request envelope.

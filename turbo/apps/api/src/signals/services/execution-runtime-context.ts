@@ -131,6 +131,9 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
   const modelEnvironment$ = createModelProviderEnvironmentSignals(
     connectors.runVariables$,
     modelRoute$,
+    computed(async (get) => {
+      return (await get(input$)).facts.modelProviderPermissions;
+    }),
   );
   const storage$ = createExecutionStorage(input$);
   const packages$ = createExecutionPackages(input$, disabledTools$, sources, {
@@ -557,7 +560,7 @@ function createExecutionEnvironment(
         get(platform$),
         run.agentId === null ? emptyEnvironment() : get(connectorEnvironment$),
       ]);
-    if ("status" in connectorEnvironment || "status" in modelEnvironment) {
+    if ("status" in connectorEnvironment) {
       throw new Error("Run execution sources are unavailable");
     }
     const data = dataRouterEnvironment();

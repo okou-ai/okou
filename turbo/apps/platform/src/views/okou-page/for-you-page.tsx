@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import {
   useGet,
   useLastLoadable,
@@ -33,6 +34,8 @@ import {
 } from "./agent-suggestions.tsx";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
+import { forYouSourcesEnabled$ } from "../../signals/okou-page/for-you-sources.ts";
+import { ForYouSources } from "./for-you-sources.tsx";
 import { PlatformFeedEvent } from "./platform-feed-event.tsx";
 
 const STACK_LAYERS = [
@@ -122,11 +125,10 @@ function ForYouStack({
                   : STACK_LAYERS[layer],
               )}
             >
-              <div
-                className={cn(
-                  "flex flex-1 flex-col transition-opacity duration-300 motion-reduce:transition-none",
-                  !active && !outcome && "opacity-0",
-                )}
+              <ForYouCardContents
+                entry={entry}
+                active={active}
+                settled={outcome !== null}
               >
                 {card.kind === "event" ? (
                   <PlatformFeedEvent entry={card.entry} active={active} />
@@ -140,12 +142,37 @@ function ForYouStack({
                     />
                   </>
                 )}
-              </div>
+              </ForYouCardContents>
             </Card>
           );
         })}
       </div>
       <ForYouNavigation />
+    </div>
+  );
+}
+
+function ForYouCardContents({
+  entry,
+  active,
+  settled,
+  children,
+}: {
+  readonly entry: Pick<AgentSuggestionEntry, "readOnRef$">;
+  readonly active: boolean;
+  readonly settled: boolean;
+  readonly children: ReactNode;
+}) {
+  const read = useSet(entry.readOnRef$);
+  return (
+    <div
+      ref={active ? read : undefined}
+      className={cn(
+        "flex flex-1 flex-col transition-opacity duration-300 motion-reduce:transition-none",
+        !active && !settled && "opacity-0",
+      )}
+    >
+      {children}
     </div>
   );
 }
@@ -216,6 +243,7 @@ function ForYouNavigation() {
 
 function ForYouHeader({ count }: { readonly count: number | undefined }) {
   const { t } = useTranslation();
+  const sourcesEnabled = useGet(forYouSourcesEnabled$);
   return (
     <header className="flex min-h-20 shrink-0 items-center justify-between gap-4 px-5 py-4 sm:px-8">
       <div>
@@ -230,19 +258,22 @@ function ForYouHeader({ count }: { readonly count: number | undefined }) {
           })}
         </p>
       </div>
-      <span
-        role="status"
-        className="min-w-12 text-right text-xs tabular-nums text-muted-foreground"
-      >
-        {count !== undefined
-          ? t(
-              ($) => {
-                return $.chat.agentSuggestions.forYou.remaining;
-              },
-              { total: count },
-            )
-          : null}
-      </span>
+      <div className="flex shrink-0 items-center gap-3">
+        <span
+          role="status"
+          className="min-w-12 text-right text-xs tabular-nums text-muted-foreground"
+        >
+          {count !== undefined
+            ? t(
+                ($) => {
+                  return $.chat.agentSuggestions.forYou.remaining;
+                },
+                { total: count },
+              )
+            : null}
+        </span>
+        {sourcesEnabled && <ForYouSources />}
+      </div>
     </header>
   );
 }

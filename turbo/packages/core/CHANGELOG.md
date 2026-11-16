@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.843.0](https://github.com/okou-ai/okou/compare/core-v8.842.1...core-v8.843.0) (2026-11-16)
+
+
+### Features
+
+* replace the notification bell with platform feed events ([#47711](https://github.com/okou-ai/okou/issues/47711)) ([b5aac15](https://github.com/okou-ai/okou/commit/b5aac15af841802f580b268f27cfce7539cb9269))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.72.0
+
 ## [8.842.1](https://github.com/okou-ai/okou/compare/core-v8.842.0...core-v8.842.1) (2026-11-16)
 
 

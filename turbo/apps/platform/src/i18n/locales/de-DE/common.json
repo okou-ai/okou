@@ -1666,6 +1666,15 @@
         "next": "Nächster Vorschlag",
         "previous": "Vorheriger Vorschlag",
         "remaining": "Noch {{total}}",
+        "sources": {
+          "alwaysOn": "Immer aktiv",
+          "description": "Wähle aus, was du künftig erhältst. Bereits erhaltene Karten bleiben, bis du sie bearbeitest. Hinweise auf ungelesene Inhalte berücksichtigen nur aktivierte Quellen.",
+          "offers": "Angebote",
+          "suggestions": "Vorschläge",
+          "systemUpdates": "Systemupdates",
+          "title": "Quellen für dich",
+          "whatsNew": "Neuigkeiten"
+        },
         "subtitle": "Eins nach dem anderen",
         "title": "Für dich"
       },
@@ -4483,6 +4492,10 @@
     "unsaved": "Ungespeicherte Änderungen"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "Mit der Einrichtung fortfahren",
+      "title": "Dein Arbeitsbereich wird vorbereitet"
+    },
     "common": {
       "next": "Nächste",
       "skip": "Überspringen",

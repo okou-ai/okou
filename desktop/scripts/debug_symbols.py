@@ -3,10 +3,12 @@
 
 Requires macOS/Xcode tools. Upload additionally requires sentry-cli on PATH and
 SENTRY_AUTH_TOKEN, SENTRY_ORG and SENTRY_PROJECT. Any mismatch or upload/processing
-failure exits nonzero; source files are never included in the upload.
+or readback failure exits nonzero; source files are never included in the upload.
 """
 
 import argparse
+import hashlib
+import json
 import os
 import plistlib
 import re
@@ -14,6 +16,8 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
 
 
@@ -95,27 +99,78 @@ def verify_packages(symbols, app_name, archive=None, dmg=None):
             shutil.rmtree(mount)
 
 
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def verify_uploaded_symbol(identifier, checksum):
+    base = os.environ.get("SENTRY_URL", "https://sentry.io").rstrip("/")
+    org = quote(os.environ["SENTRY_ORG"], safe="")
+    project = quote(os.environ["SENTRY_PROJECT"], safe="")
+    endpoint = f"{base}/api/0/projects/{org}/{project}/files/dsyms/"
+    query = {"debug_id": identifier, "file_formats": "macho", "per_page": 100}
+    opener = build_opener(NoRedirect())
+    for _ in range(10):
+        request = Request(
+            f"{endpoint}?{urlencode(query)}",
+            headers={"Authorization": f"Bearer {os.environ['SENTRY_AUTH_TOKEN']}"},
+        )
+        with opener.open(request, timeout=30) as response:
+            records = json.load(response)
+            links = response.headers.get("Link", "")
+        if any(
+            record["debugId"] == identifier
+            and record["sha1"] == checksum
+            and record["cpuName"] == "arm64"
+            and "debug" in record["data"]["features"]
+            for record in records
+        ):
+            return
+        next_page = next(
+            (
+                link
+                for link in links.split(",")
+                if 'rel="next"' in link and 'results="true"' in link
+            ),
+            None,
+        )
+        if next_page is None:
+            break
+        # Keep authenticated pagination on the configured origin and project.
+        next_url = next_page.split(">", 1)[0].strip(" <")
+        query["cursor"] = parse_qs(urlsplit(next_url).query)["cursor"][0]
+    raise ValueError(f"Cannot verify Sentry dSYM checksum/debug info: {identifier}")
+
+
 def upload_symbols(files):
     for name in ("SENTRY_AUTH_TOKEN", "SENTRY_ORG", "SENTRY_PROJECT"):
         if not os.environ.get(name):
             raise ValueError(f"{name} is required for debug symbol upload")
-    identifiers = set()
+    checksums = {}
     for path in files:
         subprocess.run(["sentry-cli", "debug-files", "check", str(path)], check=True)
-        identifiers.update(uuids(path).values())
+        with path.open("rb") as file:
+            checksum = hashlib.file_digest(file, "sha1").hexdigest()
+        for identifier in uuids(path).values():
+            checksums[identifier] = checksum
     command = [
         "sentry-cli",
         "debug-files",
         "upload",
         "--type",
         "dsym",
-        "--require-all",
         "--wait-for",
         "600",
     ]
-    for identifier in sorted(identifiers):
+    for identifier in sorted(checksums):
         command += ["--id", identifier]
     subprocess.run([*command, *map(str, files)], check=True)
+    # sentry-cli 2.58.5's --require-all omits files already present on the server.
+    # Verify every canonical file after processing, including files reused on reruns.
+    for identifier, checksum in sorted(checksums.items()):
+        verify_uploaded_symbol(identifier, checksum)
+    print(f"Verified {len(checksums)} canonical dSYM UUIDs in Sentry", flush=True)
 
 
 def main():

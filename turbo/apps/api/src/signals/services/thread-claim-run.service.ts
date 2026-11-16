@@ -893,12 +893,10 @@ function claimCommitArguments(
     codexServiceTier: args.codexServiceTier,
     queueFirstAssociation: args.queueFirstAssociation,
     timingDimensions: args.timingDimensions,
-    threadContinuation: args.threadContinuation
-      ? {
-          expected: args.threadContinuation.expected,
-          admission: args.threadContinuation.admission,
-        }
-      : undefined,
+    threadContinuation: {
+      expected: args.threadContinuation.expected,
+      admission: args.threadContinuation.admission,
+    },
   };
 }
 
@@ -2439,6 +2437,11 @@ export function createThreadClaimRunObjects(
     if ("status" in input) {
       return input;
     }
+    if (!resolution) {
+      throw new Error(
+        "Prepared Thread input is missing its captured continuation",
+      );
+    }
     return {
       ...input,
       catalog,
@@ -2498,10 +2501,9 @@ export function createThreadClaimRunObjects(
   });
   const execution$ = computed(
     async (get): Promise<ThreadExecution | CreateRunErrorResult> => {
-      const [{ command }, agent, session] = await Promise.all([
+      const [{ command }, agent] = await Promise.all([
         get(selectedRunInput$),
         get(selectedAgent$),
-        get(threadContinuation$),
       ]);
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
@@ -2512,9 +2514,6 @@ export function createThreadClaimRunObjects(
       return {
         agentId: agent.id,
         orgId: agent.orgId,
-        ...(session
-          ? { nativeContinuation: session.executionSnapshot.nativeContinuation }
-          : {}),
       };
     },
   );
@@ -2600,6 +2599,7 @@ export function createThreadClaimRunObjects(
       framework: modelProviderFramework(modelProvider),
       modelProvider,
       connectorRuntimeTargets: connector.runtimeTargets,
+      modelProviderPermissions: providerPermissions.ok,
     };
   });
   const executionPlan$ = computed(async (get) => {
@@ -2655,6 +2655,7 @@ export function createThreadClaimRunObjects(
       piSandbox,
       modelProvider,
       connectorRuntimeTargets: runtimeContext.connectorRuntimeTargets,
+      modelProviderPermissions: runtimeContext.modelProviderPermissions,
       ...metadata,
       officialWorkflowFacts: await get(officialWorkflowFacts$),
       featureSwitchContext: contentContext.featureSwitchContext,
@@ -2989,9 +2990,6 @@ export function createThreadClaimRunObjects(
       const [selected, context] = await Promise.all([
         get(runArgs$),
         get(preparedRunPlan$),
-        // Start session-based execution alongside connector and prompt
-        // preparation, before the complete launch arguments are available.
-        get(execution$),
       ]);
       if (!selected || isRouteError(selected)) {
         return selected;
@@ -3071,7 +3069,8 @@ export function createThreadClaimRunObjects(
           workflowAutomationId:
             args.agentRunMetadata.workflowAutomationId ?? null,
           agentId: context.resolved.agentId,
-          nativeContinuation: context.resolved.nativeContinuation,
+          nativeContinuation:
+            args.threadContinuation.executionSnapshot.nativeContinuation,
           realAgentInPreview: args.realAgentInPreview,
           profile: launchSnapshot.runnerProfile,
           protectedMountPaths: context.protectedMountPaths,
@@ -3085,6 +3084,7 @@ export function createThreadClaimRunObjects(
             integration,
             captureNetworkBodies: args.captureNetworkBodies === true,
             piModelConfig: context.piSandbox,
+            modelProviderPermissions: context.modelProviderPermissions,
           },
           apiStartTime: await get(runnerApiStartTime$),
           chatThreadId: args.chatThreadId,
@@ -4023,7 +4023,7 @@ interface ThreadRunPersistenceArgs {
   readonly codexServiceTier?: "fast";
   readonly queueFirstAssociation: QueueFirstRunAssociation;
   readonly timingDimensions: ApiDispatchTimingDimensions;
-  readonly threadContinuation?: PendingThreadContinuation;
+  readonly threadContinuation: PendingThreadContinuation;
 }
 
 /** Explicit run facts persisted with the launch rows. */
@@ -4275,7 +4275,7 @@ function prepareAtomicLaunchPersistence(
 }
 
 interface ValidatedPreparedLaunchAdmission {
-  readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
+  readonly validatedThreadSession: ValidatedThreadSessionSnapshot;
   readonly validatedAccountIdentity: string | null;
 }
 
@@ -4285,10 +4285,6 @@ function returnedCteId(cte: ReturnedIdCte): SQL {
   // Child mutations read the returned key so their dependency is explicit;
   // data-modifying CTE declaration order alone does not order execution.
   return sql`(SELECT ${returnedCteColumn(cte, "id")} FROM ${cte})`;
-}
-
-function nullableReturnedCteId(cte: ReturnedIdCte | undefined): SQL {
-  return cte ? returnedCteId(cte) : sql`NULL`;
 }
 
 function appendLaunchCallbackCte(args: {
@@ -4320,12 +4316,9 @@ function launchThreadBindingCte(args: {
   readonly userId: string;
   readonly orgId: string;
   readonly identity: LaunchRunIdentity;
-  readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
+  readonly validatedThreadSession: ValidatedThreadSessionSnapshot;
 }) {
   const expected = args.validatedThreadSession;
-  if (!expected) {
-    return undefined;
-  }
   if (expected.chatThreadId !== args.chatThreadId) {
     throw new Error("Validated thread does not match launch");
   }
@@ -4365,9 +4358,7 @@ function buildAtomicLaunchCteContext(args: AtomicLaunchRowsPlanArgs) {
     identity: rowsArgs.identity,
     validatedThreadSession: args.validatedThreadSession,
   });
-  if (updatedThread) {
-    ctes.push(updatedThread);
-  }
+  ctes.push(updatedThread);
   const insertedRun = new QueryBuilder()
     .$with("inserted_launch_run", {
       id: agentRuns.id,
@@ -4512,7 +4503,6 @@ function piModelPreparationInput(
 interface ThreadExecution {
   readonly agentId: string;
   readonly orgId: string;
-  readonly nativeContinuation?: ExecutionInput["nativeContinuation"];
 }
 
 /** The Thread facts needed to prepare one Runner launch. */
@@ -4523,7 +4513,7 @@ interface ThreadRunnerFacts {
   >;
   readonly workflowAutomationId: string | null;
   readonly agentId: string;
-  readonly nativeContinuation?: ExecutionInput["nativeContinuation"];
+  readonly nativeContinuation: ChatThreadContinuation["executionSnapshot"]["nativeContinuation"];
   readonly realAgentInPreview?: boolean;
   readonly profile: string;
   readonly apiStartTime: number | undefined;
@@ -4541,14 +4531,8 @@ function prepareRunnerLaunchInput(input: {
   readonly previewBypassAuthorized: boolean;
 }) {
   const { args } = input;
-  const nativeContinuation = args.nativeContinuation;
-  if (nativeContinuation === undefined) {
-    throw new Error(
-      "Thread Run is missing captured native continuation intent",
-    );
-  }
   const context: ExecutionInput = {
-    nativeContinuation,
+    nativeContinuation: args.nativeContinuation,
     ...(input.previewBypassAuthorized ? { previewBypassAuthorized: true } : {}),
     customWorkflowSelection: {
       agentId: args.agentId,
@@ -4685,7 +4669,7 @@ interface ThreadRunArgsInput {
   readonly catalog: ModelCatalog;
   readonly command: ThreadRunCommand;
   readonly agentRunModelPin: AgentRunModelPin;
-  readonly threadContinuation?: ChatThreadContinuation;
+  readonly threadContinuation: ChatThreadContinuation;
 }
 
 interface ThreadRunContent {
@@ -4711,7 +4695,7 @@ interface ThreadRunArgs {
   readonly triggerSource: TriggerSource;
   readonly apiStartTime: number;
   readonly chatThreadId: string;
-  readonly threadContinuation?: ChatThreadContinuation;
+  readonly threadContinuation: ChatThreadContinuation;
   readonly agentRunModelPin: AgentRunModelPin;
   readonly timingDimensions: ApiDispatchTimingDimensions;
 }
@@ -4735,9 +4719,7 @@ function buildThreadRunArgs(
     appendSystemPrompt: prompt.appendedSystemPrompt,
     apiStartTime: command.apiStartTime,
     chatThreadId: command.chatThreadId,
-    ...(args.threadContinuation
-      ? { threadContinuation: args.threadContinuation }
-      : {}),
+    threadContinuation: args.threadContinuation,
     agentRunMetadata: {
       ...command.agentRunMetadata,
       codexServiceTier: command.codexServiceTier,
@@ -4873,7 +4855,7 @@ function pendingLaunchCommitResult(
     readonly persisted: ReturnType<typeof pendingAtomicLaunchResult>;
     readonly publicationReturnedAt: number;
   }>,
-  preparedReuse: PromiseSettledResult<RunnerReusePreparation | undefined>,
+  preparedReuse: PromiseSettledResult<RunnerReusePreparation>,
 ): AtomicLaunchCommitAttempt {
   if (published.status === "rejected") {
     throw published.reason;
@@ -4882,7 +4864,7 @@ function pendingLaunchCommitResult(
   if (!("run" in persisted)) {
     return persisted;
   }
-  const reusePreparation: RunnerReusePreparation | undefined =
+  const reusePreparation: RunnerReusePreparation =
     preparedReuse.status === "fulfilled"
       ? preparedReuse.value
       : {
@@ -4905,7 +4887,7 @@ function admittedRunLaunch(
   args: PreparedThreadLaunchCommit,
   admission: AdmittedPreparedLaunch,
   createdAt: Date,
-  reusePreparation: RunnerReusePreparation | undefined,
+  reusePreparation: RunnerReusePreparation,
 ): AdmittedRunLaunch {
   const { rowsArgs: rows, metadata } = args.persistence.rows;
   const payload = args.persistence.payload;
@@ -4986,7 +4968,7 @@ function pendingAtomicLaunchResult(
   if (row.kind === "claim-lost") {
     return { kind: "queue-first-claim-lost" };
   }
-  if (context.updatedThread && !row.boundThreadId) {
+  if (!row.boundThreadId) {
     throw new ChatThreadBindingChanged();
   }
   if (row.billingAttributionId !== row.runId) {
@@ -5067,7 +5049,7 @@ function pendingAtomicLaunchPlan(
       (SELECT ${attribution.runId} FROM ${attribution}) AS "billingAttributionId",
       (SELECT ${returnedCteColumn(context.insertedRun, "id")} FROM ${context.insertedRun}) AS "runId",
       (SELECT ${returnedCteColumn(context.insertedRun, "created_at")} FROM ${context.insertedRun})::text AS "createdAt",
-      ${nullableReturnedCteId(context.updatedThread)} AS "boundThreadId"
+      ${returnedCteId(context.updatedThread)} AS "boundThreadId"
     FROM launch_official_guard WHERE (SELECT ${count()} FROM launch_active) >= 0`;
 }
 
@@ -5143,16 +5125,12 @@ function pendingLaunchPublicationCtes(args: AtomicLaunchRowsPlanArgs): SQL {
 
 function pendingLaunchGuardedRunId(
   args: AtomicLaunchRowsPlanArgs,
-  thread: WithSubquery | undefined,
+  thread: WithSubquery,
 ): SQL {
   const guards: SQL[] = [
     sql`WHEN (SELECT ${count()} FROM released_pending_token) <> 1 THEN '__TX0263_TOKEN__'`,
+    sql`WHEN NOT EXISTS (SELECT 1 FROM ${thread}) THEN '__TX0263_THREAD__'`,
   ];
-  if (thread) {
-    guards.push(
-      sql`WHEN NOT EXISTS (SELECT 1 FROM ${thread}) THEN '__TX0263_THREAD__'`,
-    );
-  }
   const guard = sql`CASE ${sql.join(guards, sql` `)} ELSE '0' END`;
   return sql`CASE WHEN (${guard})::integer = 0
     THEN ${args.commit.identity.runId}::uuid ELSE NULL END`;
@@ -5305,20 +5283,18 @@ const commitThreadLaunch$ = command(
     });
     const thread = accepted.validatedThreadSession;
     const payload = args.persistence.payload;
-    const preparation = thread
-      ? set(prepareRunnerReusePreference$, {
-          runId: args.identity.runId,
-          runnerGroup: payload.runnerGroup,
-          profile: payload.profile,
-          reuseKey: payload.reuseKey,
-          thread: {
-            threadId: thread.chatThreadId,
-            userId: args.createArgs.userId,
-            orgId: args.createArgs.orgId,
-            predecessorRunId: thread.frameworkSessionRunId,
-          },
-        })
-      : Promise.resolve(undefined);
+    const preparation = set(prepareRunnerReusePreference$, {
+      runId: args.identity.runId,
+      runnerGroup: payload.runnerGroup,
+      profile: payload.profile,
+      reuseKey: payload.reuseKey,
+      thread: {
+        threadId: thread.chatThreadId,
+        userId: args.createArgs.userId,
+        orgId: args.createArgs.orgId,
+        predecessorRunId: thread.frameworkSessionRunId,
+      },
+    });
     // Both reads and the guarded write belong to this attempt. Drain either
     // failure before returning; only publication establishes a durable launch.
     return await (async () => {

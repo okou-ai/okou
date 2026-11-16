@@ -262,9 +262,12 @@ enum AssistantFailureCopy {
       return (title, description)
     }
     if recovery.kind == .usage {
-      let title =
-        recovery.framework.map { "\($0 == .codex ? "Codex" : "Claude Code") limit reached" }
-        ?? "Model provider limit reached"
+      let title: String
+      if !state.failure.isRunFailure, let framework = recovery.framework {
+        title = "\(framework == .codex ? "Codex" : "Claude Code") limit reached"
+      } else {
+        title = "Model provider limit reached"
+      }
       return (
         title,
         state.accountLabel != nil || state.disconnected || !state.resetDetails.isEmpty
@@ -272,7 +275,7 @@ enum AssistantFailureCopy {
       )
     }
     if recovery.kind == .subscription { return ("This run couldn't finish", state.failure.error) }
-    if recovery.kind == .unknown,
+    if !state.failure.isRunFailure, recovery.kind == .unknown,
       state.failure.error.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         == "run cancelled"
     {
@@ -282,6 +285,9 @@ enum AssistantFailureCopy {
       let copy = structured[reason]
     {
       return copy
+    }
+    if state.failure.isRunFailure, recovery.kind == .unknown {
+      return ("This run couldn't finish", "Open the chat on the Okou website for details.")
     }
     switch recovery.kind {
     case .timeout: return ("Time limit reached", "You can continue from where this run stopped.")

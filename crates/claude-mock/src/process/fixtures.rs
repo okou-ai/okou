@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use super::bash_tool_command;
 
-mod task_oom;
+mod oom_fixture;
 
 const REAPABLE_HANG_DURATION: Duration = Duration::from_secs(3600);
 const TERMINATION_READY_EVENT: &str = "claude_mock_termination_ready";
@@ -83,24 +83,14 @@ while True:
 '
 "#;
 
-// Publish readiness only after the offender has enough resident memory to be
-// the predictable victim of a Guest-wide SysRq OOM. The extra child proves
-// that memory.oom.group reaps the entire tool, not just its large process.
+// All four private allocations must be resident before global OOM injection.
+// Keep them in one tool leaf, including the TERM-resistant descendant, so
+// memory.oom.group must reclaim the complete offender family.
 const TOOL_OOM_INJECTED_OFFENDER_SCRIPT: &str = r#"
 set -eu
 test "$(cat /proc/self/oom_score_adj)" = 1000
 (trap '' TERM; while :; do sleep 1; done) &
-exec python3 -c '
-import os, pathlib, time
-
-assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"
-memory = bytearray(int(os.environ["VM0_TEST_OOM_ALLOCATOR_BYTES"]))
-memory[::4096] = b"\x01" * ((len(memory) + 4095) // 4096)
-relative = next(line[3:] for line in pathlib.Path("/proc/self/cgroup").read_text().splitlines() if line.startswith("0::"))
-pathlib.Path("/tmp/vm0-tool-oom-offender.cgroup").write_text(relative)
-while True:
-    time.sleep(1)
-'
+exec python3 -u -c "$VM0_TEST_TOOL_OOM_PROGRAM"
 "#;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -712,10 +702,11 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
         TOOL_OOM_SURVIVOR_CGROUP,
         TOOL_OOM_OFFENDER_CGROUP,
         TOOL_OOM_SURVIVOR_RELEASE,
-        task_oom::STARTUP,
-        task_oom::RELEASE,
-        task_oom::READY,
-        task_oom::DIAGNOSTICS,
+        oom_fixture::STARTUP,
+        oom_fixture::RELEASE,
+        oom_fixture::READY,
+        oom_fixture::TOOL_ARMED,
+        oom_fixture::DIAGNOSTICS,
     ] {
         match std::fs::remove_file(marker) {
             Ok(()) => {}
@@ -726,8 +717,8 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
 
     let mut fixture = ParallelToolOomFixture::new(memory_max_path, original_memory_max);
     fixture.managed_tasks = mode.managed_tasks();
-    if mode.managed_tasks() {
-        fixture.task_diagnostics = Some(task_oom::diagnostics_file()?);
+    if mode.managed_tasks() || mode == ToolOomMode::GuestInjected {
+        fixture.child_diagnostics = Some(oom_fixture::diagnostics_file()?);
     }
     // Test-only limit changes, confined to a disposable Guest operation. The
     // guard restores the original value on every returning path.
@@ -769,7 +760,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     )?;
 
     let offender_script = if mode.managed_tasks() {
-        task_oom::OFFENDER_SCRIPT
+        oom_fixture::OFFENDER_SCRIPT
     } else if mode == ToolOomMode::GuestInjected {
         TOOL_OOM_INJECTED_OFFENDER_SCRIPT
     } else {
@@ -789,32 +780,45 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
         .args(["-c", offender_script])
         .env("VM0_TEST_OOM_ALLOCATOR_BYTES", offender_bytes.to_string())
         .stderr(Stdio::null());
+    if let Some(diagnostics) = &fixture.child_diagnostics {
+        offender_command
+            .env("VM0_TEST_TASK_SUPPORT", oom_fixture::LAUNCH_SUPPORT)
+            .env(
+                "VM0_TEST_TASK_DEADLINE",
+                oom_fixture::monotonic_deadline(deadline)?,
+            )
+            .stderr(
+                diagnostics
+                    .try_clone()
+                    .map_err(|error| format!("clone OOM fixture diagnostics: {error}"))?,
+            );
+    }
+    if mode == ToolOomMode::GuestInjected {
+        offender_command
+            .env(
+                "VM0_TEST_TOOL_OOM_PROGRAM",
+                oom_fixture::INJECTED_TOOL_PROGRAM,
+            )
+            .env("VM0_TEST_TOOL_OOM_CGROUP_MARKER", TOOL_OOM_OFFENDER_CGROUP)
+            .env("VM0_TEST_TOOL_OOM_ARMED_MARKER", oom_fixture::TOOL_ARMED);
+    }
     if mode.managed_tasks() {
         offender_command
-            .env("VM0_TEST_TASK_SUPPORT", task_oom::LAUNCH_SUPPORT)
-            .env("VM0_TEST_TASK_CONTROLLER", task_oom::CONTROLLER_PROGRAM)
-            .env("VM0_TEST_TASK_RUNTIME", task_oom::RUNTIME_PROGRAM)
-            .env("VM0_TEST_TASK_ALLOCATOR", task_oom::ALLOCATOR_PROGRAM)
+            .env("VM0_TEST_TASK_CONTROLLER", oom_fixture::CONTROLLER_PROGRAM)
+            .env("VM0_TEST_TASK_RUNTIME", oom_fixture::RUNTIME_PROGRAM)
+            .env("VM0_TEST_TASK_ALLOCATOR", oom_fixture::ALLOCATOR_PROGRAM)
             .env(
                 "VM0_TEST_TASK_INJECTED",
                 if mode.injected() { "1" } else { "0" },
-            )
-            .env(
-                "VM0_TEST_TASK_DEADLINE",
-                task_oom::monotonic_deadline(deadline)?,
-            )
-            .stderr(
-                fixture
-                    .task_diagnostics
-                    .as_ref()
-                    .ok_or("task diagnostics are missing")?
-                    .try_clone()
-                    .map_err(|error| format!("clone task diagnostics: {error}"))?,
             );
     }
     fixture.offender = Some(
         offender_command
-            .stdin(Stdio::null())
+            .stdin(if mode == ToolOomMode::GuestInjected {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::null())
             .spawn()
             .map_err(|error| format!("spawn offender Bash tool: {error}"))?,
@@ -827,12 +831,12 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
             .ok_or_else(|| "offender process is missing".to_string())?,
         deadline,
     )
-    .map_err(|error| fixture.with_task_diagnostics(error))?;
+    .map_err(|error| fixture.with_child_diagnostics(error))?;
 
     validate_tool_cgroup(&survivor_relative, &tools_relative)?;
     if mode.managed_tasks() {
-        task_oom::validate_runtime(&offender_relative, &tools_relative)?;
-        task_oom::validate_controller(
+        oom_fixture::validate_runtime(&offender_relative, &tools_relative)?;
+        oom_fixture::validate_controller(
             fixture
                 .offender
                 .as_ref()
@@ -840,7 +844,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
                 .id(),
             &tools_relative,
         )?;
-        std::fs::write(task_oom::RELEASE, b"release\n")
+        std::fs::write(oom_fixture::RELEASE, b"release\n")
             .map_err(|error| format!("release task pressure: {error}"))?;
     } else {
         validate_tool_cgroup(&offender_relative, &tools_relative)?;
@@ -850,29 +854,47 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     }
 
     let offender_path = Path::new("/sys/fs/cgroup").join(offender_relative.trim_start_matches('/'));
+    if mode == ToolOomMode::GuestInjected {
+        let controller = fixture
+            .offender
+            .as_mut()
+            .ok_or("tool controller is missing")?;
+        let handoff = controller
+            .stdin
+            .as_mut()
+            .ok_or("tool OOM control pipe is missing")?
+            .write_all(b"I")
+            .map_err(|error| format!("arm tool OOM injection: {error}"));
+        let armed = handoff
+            .and_then(|()| wait_for_tool_marker(oom_fixture::TOOL_ARMED, controller, deadline));
+        let armed_relative = armed.map_err(|error| fixture.with_child_diagnostics(error))?;
+        if armed_relative != offender_relative {
+            return Err("armed tool readiness belongs to a different cgroup".into());
+        }
+    }
     if mode == ToolOomMode::TaskGuestInjected {
         let controller = fixture
             .offender
             .as_mut()
             .ok_or("task controller is missing")?;
-        let ready = wait_for_tool_marker(task_oom::READY, controller, deadline);
-        let ready_relative = ready.map_err(|error| fixture.with_task_diagnostics(error))?;
+        let ready = wait_for_tool_marker(oom_fixture::READY, controller, deadline);
+        let ready_relative = ready.map_err(|error| fixture.with_child_diagnostics(error))?;
         if ready_relative != offender_relative {
             return Err("resident task readiness belongs to a different cgroup".into());
         }
+    }
+    if mode.injected() {
         if let Some(status) = fixture
             .offender
             .as_mut()
-            .ok_or("task controller is missing")?
+            .ok_or("OOM controller is missing")?
             .try_wait()
-            .map_err(|error| format!("inspect task controller before OOM injection: {error}"))?
+            .map_err(|error| format!("inspect controller before OOM injection: {error}"))?
         {
-            return Err(fixture.with_task_diagnostics(format!(
-                "task controller exited before Guest OOM injection: {status}"
+            return Err(fixture.with_child_diagnostics(format!(
+                "controller exited before Guest OOM injection: {status}"
             )));
         }
-    }
-    if mode.injected() {
         // The disposable Guest runs the kernel's global OOM victim selection
         // after both tools have reached their readiness markers.
         write_cgroup_value_as_root(Path::new("/proc/sysrq-trigger"), "f")?;
@@ -900,7 +922,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
         } else {
             error
         };
-        fixture.with_task_diagnostics(error)
+        fixture.with_child_diagnostics(error)
     })?;
     fixture.offender = None;
     if !(if mode.managed_tasks() {
@@ -908,12 +930,12 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     } else {
         offender_status.signal() == Some(libc::SIGKILL)
     }) {
-        return Err(fixture.with_task_diagnostics(format!(
+        return Err(fixture.with_child_diagnostics(format!(
             "offender Bash tool was not killed as a group: {offender_status}"
         )));
     }
     while if mode.managed_tasks() {
-        task_oom::root_path(&tools_relative)?
+        oom_fixture::root_path(&tools_relative)?
             .try_exists()
             .map_err(|error| format!("observe task retirement: {error}"))?
     } else {
@@ -987,7 +1009,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     drop(runtime_memory);
     fixture.restore_memory_max()?;
     // Child output is retained for failure diagnostics only.
-    fixture.task_diagnostics = None;
+    fixture.child_diagnostics = None;
     Ok(format!(
         "{} oom_group_kill={oom_group_kills} guest_wide={guest_wide} memcg_ooms={memcg_ooms} trigger={} reclaimed_bytes={reclaimed_bytes} offender={offender_relative} survivor={survivor_relative}",
         if mode.managed_tasks() {
@@ -1044,7 +1066,7 @@ struct ParallelToolOomFixture {
     survivor: Option<Child>,
     offender: Option<Child>,
     managed_tasks: bool,
-    task_diagnostics: Option<std::fs::File>,
+    child_diagnostics: Option<std::fs::File>,
 }
 
 impl ParallelToolOomFixture {
@@ -1056,7 +1078,7 @@ impl ParallelToolOomFixture {
             survivor: None,
             offender: None,
             managed_tasks: false,
-            task_diagnostics: None,
+            child_diagnostics: None,
         }
     }
 
@@ -1066,11 +1088,11 @@ impl ParallelToolOomFixture {
         Ok(())
     }
 
-    fn with_task_diagnostics(&self, error: String) -> String {
-        match &self.task_diagnostics {
+    fn with_child_diagnostics(&self, error: String) -> String {
+        match &self.child_diagnostics {
             Some(file) => format!(
-                "{error}; nested task OOM diagnostics (bounded tail):\n{}",
-                task_oom::diagnostics_tail(file).unwrap_or_else(|error| error)
+                "{error}; OOM fixture diagnostics (bounded tail):\n{}",
+                oom_fixture::diagnostics_tail(file).unwrap_or_else(|error| error)
             ),
             None => error,
         }
@@ -1080,7 +1102,7 @@ impl ParallelToolOomFixture {
 impl Drop for ParallelToolOomFixture {
     fn drop(&mut self) {
         if self.managed_tasks {
-            task_oom::stop_family();
+            oom_fixture::stop_family();
         }
         let tools_relative = unified_cgroup_path(std::process::id())
             .ok()
@@ -1113,10 +1135,10 @@ impl Drop for ParallelToolOomFixture {
         if !self.memory_max_restored {
             let _ = write_cgroup_value_as_root(&self.memory_max_path, &self.original_memory_max);
         }
-        if let Some(file) = &self.task_diagnostics {
+        if let Some(file) = &self.child_diagnostics {
             eprintln!(
-                "nested task OOM diagnostics (bounded tail):\n{}",
-                task_oom::diagnostics_tail(file).unwrap_or_else(|error| error)
+                "OOM fixture diagnostics (bounded tail):\n{}",
+                oom_fixture::diagnostics_tail(file).unwrap_or_else(|error| error)
             );
         }
     }

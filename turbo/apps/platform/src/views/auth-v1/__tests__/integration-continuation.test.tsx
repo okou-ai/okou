@@ -206,9 +206,7 @@ test.each([
         signedIn ? "/sign-in/tasks/choose-organization" : "/sign-in",
       );
     });
-    const params = new URLSearchParams(
-      signedIn ? window.location.search : window.location.hash.split("?")[1],
-    );
+    const params = new URL(window.location.href).searchParams;
     expectContinuation(
       params.get("redirect_url"),
       `https://app.okou.ai${entry}&guild_id=123456789012345678`,

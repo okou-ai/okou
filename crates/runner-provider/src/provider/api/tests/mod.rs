@@ -1,4 +1,5 @@
 use super::*;
+use api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason;
 use httpmock::{HttpMockRequest, HttpMockResponse, Method::POST, MockServer};
 use serde_json::Value;
 use tokio::io::AsyncWriteExt;
@@ -1198,7 +1199,8 @@ async fn api_client_complete_serializes_sandbox_identity() {
                 .header("authorization", "Bearer sandbox-token")
                 .json_body(serde_json::json!({
                     "runId": run_id,
-                    "exitCode": 0,
+                    "exitCode": 1,
+                    "failureReason": "unknown",
                     "sandboxId": sandbox_id,
                 }));
             then.status(200);
@@ -1210,9 +1212,9 @@ async fn api_client_complete_serializes_sandbox_identity() {
         "sandbox-token",
         &CompleteRequest {
             run_id,
-            exit_code: 0,
-            failure_reason: None,
-            error: None,
+            exit_code: 1,
+            failure_reason: Some(RequestFailureReason::Unknown),
+            error: Some("provider diagnostic with private details".to_string()),
             sandbox_id: Some(sandbox_id),
         },
     )

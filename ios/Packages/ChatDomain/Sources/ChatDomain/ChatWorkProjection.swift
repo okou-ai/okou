@@ -59,7 +59,9 @@ enum ChatWorkProjection {
         latestStatusIDs = Set(
           trailing.reversed().filter { row in
             guard let message = byID[row.id] else { return false }
-            return seen.insert("\(message.isError):\(message.text)").inserted
+            // Retained legacy text identifies repeated presentation only; recovery uses the reason.
+            let outcome = row.payload?.error ?? message.text
+            return seen.insert("\(message.isError):\(outcome)").inserted
           }.map(\.id))
         historicalFailureIDs.formUnion(latestStatusIDs.filter { byID[$0]?.failure != nil })
       }

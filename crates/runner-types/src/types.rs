@@ -1801,7 +1801,8 @@ pub struct CompleteRequest {
     pub exit_code: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure_reason: Option<RequestFailureReason>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Diagnostic retained for the Runner-owned local provider, never the API wire.
+    #[serde(skip_serializing)]
     pub error: Option<String>,
     /// Sandbox the run executed against. `None` when the run failed before
     /// sandbox allocation; otherwise set on every completion regardless of

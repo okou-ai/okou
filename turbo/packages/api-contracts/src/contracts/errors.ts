@@ -723,6 +723,7 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   KnownRunFailureReason,
   StructuredRunErrorBehavior
 > = {
+  unknown: "generic",
   session_history_limit: "generic",
   guest_root_filesystem_full: "generic",
   guest_home_filesystem_full: "generic",

@@ -62,6 +62,7 @@ const discardUnavailableHandoff$ = command(
       "template",
       "connector",
       "showcase",
+      "skipOnboarding",
     ]) {
       params.delete(key);
     }

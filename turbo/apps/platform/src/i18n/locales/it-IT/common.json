@@ -1690,6 +1690,15 @@
         "next": "Suggerimento successivo",
         "previous": "Suggerimento precedente",
         "remaining": "{{total}} rimanenti",
+        "sources": {
+          "alwaysOn": "Sempre attivi",
+          "description": "Scegli cosa ricevere in futuro. Le schede già ricevute restano finché non le gestisci. Gli avvisi di contenuti non letti includono solo le fonti attivate.",
+          "offers": "Offerte",
+          "suggestions": "Suggerimenti",
+          "systemUpdates": "Aggiornamenti di sistema",
+          "title": "Fonti per te",
+          "whatsNew": "Novità"
+        },
         "subtitle": "Una cosa alla volta",
         "title": "Per te"
       },
@@ -4540,6 +4549,10 @@
     "unsaved": "Modifiche non salvate"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "Continua con la configurazione",
+      "title": "Preparazione del tuo spazio di lavoro"
+    },
     "common": {
       "next": "Avanti",
       "skip": "Salta",

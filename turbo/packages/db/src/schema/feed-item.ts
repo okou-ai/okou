@@ -31,6 +31,7 @@ export const feedItems = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
+    readAt: timestamp("read_at", { withTimezone: true }),
   },
   (table) => {
     return [

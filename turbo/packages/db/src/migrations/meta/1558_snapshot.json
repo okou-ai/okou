@@ -1,5 +1,5 @@
 {
-  "id": "68449a6a-d5cc-461d-9c96-300d12a36263",
+  "id": "5ed022fb-4cb5-4129-bab2-f3874da51295",
   "prevId": "7b63c140-37bd-4e49-8aae-fbe89769fdd4",
   "version": "7",
   "dialect": "postgresql",
@@ -15219,6 +15219,12 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "read_at": {
+          "name": "read_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -15443,6 +15449,60 @@
           "value": "\"feed_items\".\"type\" <> 'event' OR (\n          jsonb_typeof(\"feed_items\".\"state\") = 'object'\n          AND \"feed_items\".\"state\"->>'status' IN ('active', 'dismissed')\n          AND jsonb_typeof(\"feed_items\".\"content\") = 'object'\n          AND \"feed_items\".\"content\"->>'eventType' = 'automation-disabled'\n          AND jsonb_typeof(\"feed_items\".\"content\"->'automationId') = 'string'\n          AND jsonb_typeof(\"feed_items\".\"content\"->'workflowId') = 'string'\n          AND jsonb_typeof(\"feed_items\".\"content\"->'automationName') = 'string'\n          AND jsonb_typeof(\"feed_items\".\"content\"->'disabledAt') = 'string'\n          AND jsonb_typeof(\"feed_items\".\"content\"->'consecutiveFailures') = 'number'\n          AND jsonb_typeof(\"feed_items\".\"content\"->'recoveryScheduled') = 'boolean'\n        ) IS TRUE"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.feed_preferences": {
+      "name": "feed_preferences",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "suggestions": {
+          "name": "suggestions",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "whats_new": {
+          "name": "whats_new",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "offers": {
+          "name": "offers",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "feed_preferences_org_id_user_id_pk": {
+          "name": "feed_preferences_org_id_user_id_pk",
+          "columns": [
+            "org_id",
+            "user_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.feishu_chat_ingress": {
@@ -19950,18 +20010,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
-        },
-        "widget_push_token": {
-          "name": "widget_push_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "widget_pushed_at": {
-          "name": "widget_pushed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         },
         "updated_at": {
           "name": "updated_at",

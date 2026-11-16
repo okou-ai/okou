@@ -429,6 +429,35 @@ describe("recurring automation auto-disable platform feed events", () => {
         return item.id;
       }),
     ).toStrictEqual([notice.id]);
+    await accept(
+      setupApp({ context, routes: featureSwitchesRoutes })(
+        featureSwitchesContract,
+      ).update({
+        headers: authHeaders(scenario.actor),
+        body: { switches: { [FeatureSwitchKey.ForYouSources]: true } },
+      }),
+      [200],
+    );
+    const headers = authHeaders(scenario.actor);
+    await accept(
+      feedClient().updateSources({
+        headers,
+        body: { suggestions: false, whatsNew: false, offers: false },
+      }),
+      [200],
+    );
+    expect(
+      (await accept(feedClient().summary({ headers }), [200])).body.hasUnread,
+    ).toBeTruthy();
+    await accept(
+      feedClient().markRead({ headers, params: { id: notice.id } }),
+      [200],
+    );
+    expect(
+      (await accept(feedClient().summary({ headers }), [200])).body.hasUnread,
+    ).toBeFalsy();
+    await expect(inbox(scenario.actor)).resolves.toStrictEqual(delivered);
+    expect((await readAutomation(scenario)).enabled).toBeFalsy();
   });
 
   it("notifies once for a journaled Morning Brief after three Runner failures and retains its recovery anchor", async () => {

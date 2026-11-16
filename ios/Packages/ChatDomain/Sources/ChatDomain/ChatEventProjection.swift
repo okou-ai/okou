@@ -78,7 +78,11 @@ public enum ChatEventProjection {
         text = content
         role = .assistant
         isError = false
-      case .outputError, .runFailed:
+      case .runFailed:
+        text = "This task failed. Open the chat on the Okou website for details."
+        role = .system
+        isError = true
+      case .outputError:
         text =
           row.payload?.error ?? "This task failed. Open the chat on the Okou website for details."
         role = .system
@@ -103,7 +107,7 @@ public enum ChatEventProjection {
           failure: (row.eventType == .runFailed || row.eventType == .outputError)
             ? ChatFailure(
               id: row.id, error: row.payload?.error ?? "",
-              reason: row.payload?.failureReason, isRunFailure: row.eventType == .runFailed)
+              reason: row.failureReason, isRunFailure: row.eventType == .runFailed)
             : nil))
     }
 
@@ -181,6 +185,6 @@ public enum ChatEventProjection {
         if let message = visible[row.id] { candidate = message.failure }
       }
     }
-    return candidate.flatMap { $0.error.isEmpty ? nil : $0.id }
+    return candidate.flatMap { $0.isRunFailure || !$0.error.isEmpty ? $0.id : nil }
   }
 }

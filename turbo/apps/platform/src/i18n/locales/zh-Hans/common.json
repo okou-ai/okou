@@ -1663,6 +1663,15 @@
         "next": "下一条建议",
         "previous": "上一条建议",
         "remaining": "还有 {{total}} 条",
+        "sources": {
+          "alwaysOn": "始终开启",
+          "description": "选择今后接收的内容。已收到的卡片会保留，直到你处理它们。未读提示只包含已开启的来源。",
+          "offers": "优惠",
+          "suggestions": "建议",
+          "systemUpdates": "系统更新",
+          "title": "为你推荐的来源",
+          "whatsNew": "新功能"
+        },
         "subtitle": "一次处理一件事",
         "title": "为你推荐"
       },
@@ -4466,6 +4475,10 @@
     "unsaved": "有未保存的更改"
   },
   "onboarding": {
+    "autoComplete": {
+      "continueManually": "继续完成引导",
+      "title": "正在准备你的工作区"
+    },
     "common": {
       "next": "下一步",
       "skip": "跳过",
