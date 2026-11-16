@@ -266,6 +266,17 @@ const s3Client = createS3ClientGetter(defaultS3Credentials);
 const s3Client$ = computed(() => {
   return s3Client();
 });
+const staticS3Client = createS3ClientGetter(() => {
+  const accessKeyId = env("R2_STATIC_ACCESS_KEY_ID");
+  const secretAccessKey = env("R2_STATIC_SECRET_ACCESS_KEY");
+  if (!accessKeyId || !secretAccessKey) {
+    throw new Error("Static storage credentials are not configured");
+  }
+  return { accessKeyId, secretAccessKey };
+});
+const staticS3Client$ = computed(() => {
+  return staticS3Client();
+});
 const publicS3Client = createS3ClientGetter(defaultS3Credentials, true);
 const publicS3Client$ = computed((get): S3Client => {
   return env("S3_PUBLIC_ENDPOINT") ? publicS3Client() : get(s3Client$);
@@ -328,6 +339,9 @@ function s3ClientForBucket(
   bucket: string,
   usePublicEndpoint = false,
 ): Computed<S3Client> {
+  if (bucket === env("R2_STATIC_BUCKET_NAME")) {
+    return staticS3Client$;
+  }
   if (bucket === env("R2_MARKETING_HANDOFF_BUCKET_NAME")) {
     return marketingHandoffS3Client$;
   }

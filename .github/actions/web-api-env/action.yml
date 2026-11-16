@@ -239,6 +239,16 @@ runs:
           add_env OKOU_API_BACKEND_URL "$api_backend_url"
         fi
         if [[ "$INPUT_APP" == "api" ]]; then
+          # Android discovery reads the same release authority as the publisher,
+          # including from previews; public CDN freshness is not authoritative.
+          static_bucket="$(repo_var R2_STATIC_BUCKET_NAME)"
+          if [[ -z "$static_bucket" ]]; then
+            echo "::error::R2_STATIC_BUCKET_NAME is missing from GitHub variables" >&2
+            exit 1
+          fi
+          add_env R2_STATIC_BUCKET_NAME "$static_bucket"
+          add_required_secret R2_STATIC_ACCESS_KEY_ID R2_STATIC_ACCESS_KEY_ID
+          add_required_secret R2_STATIC_SECRET_ACCESS_KEY R2_STATIC_SECRET_ACCESS_KEY
           # Bind the MCP audience to this deployment's API, including PR aliases.
           add_env MCP_RESOURCE_URL "${api_backend_url%/}/mcp"
           # Repository variables configure previews; production overrides the
