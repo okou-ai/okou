@@ -166,6 +166,13 @@ export const suggestionsEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion] === true;
 });
 
+export const suggestionForYouEnabled$ = computed((get) => {
+  return (
+    get(suggestionsEnabled$) &&
+    get(featureSwitch$)[FeatureSwitchKey.SuggestionForYou] === true
+  );
+});
+
 const agentSuggestionsEnabled$ = computed(async (get) => {
   if (!get(suggestionsEnabled$)) {
     return false;
@@ -419,7 +426,7 @@ const loadAgentSuggestionEntries$ = command(
  */
 export const enterHomeSuggestions$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    if (!get(suggestionsEnabled$)) {
+    if (!get(suggestionsEnabled$) || get(suggestionForYouEnabled$)) {
       return;
     }
     const active = await get(defaultAgentChatPageActive$);
@@ -427,6 +434,12 @@ export const enterHomeSuggestions$ = command(
     if (!active) {
       return;
     }
+    await set(enterSuggestionSession$, signal);
+  },
+);
+
+export const enterSuggestionSession$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
     set(visit$, get(visit$) + 1);
     const entries = set(loadAgentSuggestionEntries$, signal);
     set(get(session$).entries$, entries);

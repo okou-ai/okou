@@ -276,6 +276,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.SuggestionForYou]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "For you",
+    description: "Review suggestions on a dedicated page of stacked cards.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ProactiveLearning]: {
     maintainer: "lancy@okou.ai",
     displayName: "Proactive learning",

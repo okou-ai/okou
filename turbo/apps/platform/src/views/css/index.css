@@ -275,6 +275,8 @@
   --animate-suggestion-progress: okou-suggestion-progress 8s linear both;
   --animate-suggestion-title-in: okou-suggestion-title-in 240ms
     cubic-bezier(0, 0, 0.2, 1);
+  --animate-card-fly-out: card-fly-out 520ms cubic-bezier(0.4, 0, 0.2, 1)
+    forwards;
 
   /* Illustration strokes. These are drawn artwork inside a scaled canvas, not
      product chrome, so they are a different decision from `--border-width-surface`
@@ -725,6 +727,21 @@ body {
   }
   to {
     transform: translateY(0);
+  }
+}
+
+@keyframes card-fly-out {
+  from {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 1;
+  }
+  72% {
+    opacity: 1;
+  }
+  to {
+    transform: translate(80%, -110px) rotate(16deg);
+    opacity: 0;
+    visibility: hidden;
   }
 }
 

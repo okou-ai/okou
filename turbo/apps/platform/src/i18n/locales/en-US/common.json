@@ -1661,6 +1661,14 @@
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
       "feedLabel": "Feed",
+      "forYou": {
+        "loading": "Loading suggestions",
+        "next": "Next suggestion",
+        "previous": "Previous suggestion",
+        "remaining": "{{total}} to go",
+        "subtitle": "One thing at a time",
+        "title": "For you"
+      },
       "homeCard": {
         "completeTitle": "All caught up",
         "feedback": "Suggestion actions",

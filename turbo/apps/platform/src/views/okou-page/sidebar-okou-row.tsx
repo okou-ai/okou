@@ -1,12 +1,16 @@
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import { Layers } from "lucide-react";
 import { Badge, cn, getShortcutLabel } from "@okouai/ui";
 import { defaultAgentChatPageActive$ } from "../../signals/agent.ts";
+import { activeRoute$ } from "../../signals/active-route.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 import {
   waitingSuggestionCount$,
   followWaitingSuggestionCountOnRef$,
   suggestionsEnabled$,
+  suggestionForYouEnabled$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
@@ -94,6 +98,7 @@ function OkouRowTrailing({ shortcutLabel }: { shortcutLabel: string | null }) {
  */
 export function OkouChatListRow() {
   const enabled = useGet(suggestionsEnabled$);
+  const forYou = useGet(suggestionForYouEnabled$);
   const singleAgent = useGet(singleAgentEnabled$);
   const active = useLastResolved(defaultAgentChatPageActive$) === true;
   const assistantName = useGet(assistantName$);
@@ -106,7 +111,7 @@ export function OkouChatListRow() {
   const shortcutLabel = singleAgent ? getShortcutLabel(newChat.binding) : null;
   return (
     <Link
-      ref={enabled ? followCount : undefined}
+      ref={enabled && !forYou ? followCount : undefined}
       pathname="/"
       aria-current={active ? "page" : undefined}
       aria-keyshortcuts={singleAgent ? newChat.ariaKeyShortcuts : undefined}
@@ -126,11 +131,62 @@ export function OkouChatListRow() {
             })
           : assistantName}
       </span>
-      {enabled ? (
+      {enabled && !forYou ? (
         <OkouRowTrailing shortcutLabel={shortcutLabel} />
       ) : (
         <RestingShortcutHint label={shortcutLabel} />
       )}
+    </Link>
+  );
+}
+
+export function ForYouChatListRow({
+  touch = false,
+}: {
+  readonly touch?: boolean;
+}) {
+  const { t } = useTranslation();
+  const enabled = useGet(suggestionForYouEnabled$);
+  const active = useGet(activeRoute$) === "forYou";
+  const count = useLastResolved(waitingSuggestionCount$);
+  const followCount = useSet(followWaitingSuggestionCountOnRef$);
+  if (!enabled) {
+    return null;
+  }
+  return (
+    <Link
+      pathname={ROUTES.forYou}
+      ref={followCount}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        ENTRY_ROW,
+        active ? "bg-state-selected font-medium" : "hover:bg-state-hover",
+        touch && "min-h-11 px-3",
+      )}
+    >
+      <span className="flex w-8 shrink-0 items-center justify-center px-2">
+        <Layers aria-hidden className="size-4 shrink-0 text-nav-copy-muted" />
+      </span>
+      <span className="min-w-0 flex-1 truncate">
+        {t(($) => {
+          return $.chat.agentSuggestions.forYou.title;
+        })}
+      </span>
+      <Badge
+        className="min-w-6 justify-center text-xs tabular-nums text-nav-copy-muted"
+        aria-label={
+          count !== undefined
+            ? t(
+                ($) => {
+                  return $.appShell.sidebar.suggestionsWaiting;
+                },
+                { count },
+              )
+            : undefined
+        }
+      >
+        {count === undefined ? "–" : count > 9 ? "9+" : count}
+      </Badge>
     </Link>
   );
 }

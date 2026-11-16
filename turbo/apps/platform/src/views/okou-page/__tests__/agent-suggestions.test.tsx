@@ -1985,3 +1985,148 @@ test("An existing conversation opens before consumption and its remote draft fin
   });
   releaseConsumption.resolve();
 });
+
+const forYouFeatures = {
+  ...features,
+  [FeatureSwitchKey.SuggestionForYou]: true,
+} as const;
+async function openForYou(path = "/for-you"): Promise<void> {
+  await setupPage({ context, path, featureSwitches: forYouFeatures });
+}
+async function activeForYouCard(title: string): Promise<HTMLElement> {
+  return await screen.findByRole("article", { name: title });
+}
+
+test("For you moves suggestions out of the homepage into its own chat-list entry", async () => {
+  mockPool(numberedSuggestions(3));
+  await setupPage({
+    context,
+    path: homePath,
+    featureSwitches: {
+      ...forYouFeatures,
+      [FeatureSwitchKey.HomeCapabilities]: true,
+    },
+  });
+  await screen.findByTestId("chat-tagline");
+  const row = link("/for-you");
+  await within(row).findByLabelText("3 waiting");
+  click(row);
+  const card = await activeForYouCard("Suggested action 1");
+  expect(within(card).getByText("A response is needed")).toBeInTheDocument();
+  expect(pathname()).toBe("/for-you");
+  expect(link("/for-you")).toHaveAttribute("aria-current", "page");
+});
+
+test("For you browses without consuming and restores a card from its URL", async () => {
+  const items = numberedSuggestions(3);
+  const pool = mockPool(items);
+  await openForYou(`/for-you?suggestion=${items[1].id}`);
+  await activeForYouCard("Suggested action 2");
+  pool.publish(numberedSuggestions(4)[3]);
+  click(link(`/for-you?suggestion=${items[2].id}`));
+  await activeForYouCard("Suggested action 3");
+  expect(new URLSearchParams(window.location.search).get("suggestion")).toBe(
+    items[2].id,
+  );
+  click(link(`/for-you?suggestion=${items[1].id}`));
+  await activeForYouCard("Suggested action 2");
+  expect(pool.consumed).toStrictEqual([]);
+  await screen.findByText("3 to go");
+  await within(link("/for-you")).findByLabelText("3 waiting");
+});
+
+test("For you handles cards in order, completes, and restores a dismissed card with Undo", async () => {
+  const pool = mockPool(numberedSuggestions(2));
+  await openForYou();
+  const first = await activeForYouCard("Suggested action 1");
+  click(button("Dismiss", "button", first));
+  const second = await activeForYouCard("Suggested action 2");
+  await screen.findByText("Suggestion dismissed");
+  click(button("Already done", "button", second));
+  await screen.findByRole("heading", { name: "All caught up" });
+  await screen.findByText("Noted — this is already done");
+  expect(pool.consumed).toHaveLength(2);
+  click(button("Undo"));
+  await activeForYouCard("Suggested action 2");
+});
+
+test("For you sends a suggestion in place while retaining the next card and its background", async () => {
+  mockPool(numberedSuggestions(2));
+  const sent = captureSend();
+  await openForYou();
+  const card = await activeForYouCard("Suggested action 1");
+  click(button("Review decision", "button", card));
+  expect((await sent).userMessage?.parts).toContainEqual(REFERENCED_THREAD);
+  await activeForYouCard("Suggested action 2");
+  await screen.findByText(SENT);
+  expect(pathname()).toBe("/for-you");
+});
+
+test("For you keeps custom directions in the existing composer and advances after sending", async () => {
+  mockPool(numberedSuggestions(2));
+  const sent = captureSend();
+  await openForYou();
+  const card = await activeForYouCard("Suggested action 1");
+  const { dialog, note } = await openCustomDirection(card);
+  await writeDirection(note, "Summarize the open budget question first");
+  await waitFor(() => {
+    expect(button("Send", "button", dialog)).toBeEnabled();
+  });
+  click(button("Send", "button", dialog));
+  const message = await sent;
+  expect(JSON.stringify(message.userMessage)).toContain(
+    "Summarize the open budget question first",
+  );
+  expect(JSON.stringify(message.userMessage)).toContain("Launch background");
+  await activeForYouCard("Suggested action 2");
+  expect(pathname()).toBe("/for-you");
+});
+
+test("For you preserves a failed feedback write for an explicit retry", async () => {
+  mockPool(numberedSuggestions(2));
+  const writes: string[] = [];
+  context.mocks.api(feedContract.feedback, ({ body, respond }) => {
+    writes.push(body.id);
+    return writes.length === 1
+      ? respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Feedback could not be saved",
+          },
+        })
+      : respond(200, { restored: false });
+  });
+  await openForYou();
+  const card = await activeForYouCard("Suggested action 1");
+  click(button("Dismiss", "button", card));
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("Feedback could not be saved");
+  click(button("Try again", "button", alert));
+  await waitFor(() => {
+    expect(writes).toHaveLength(2);
+  });
+  expect(writes[1]).toBe(writes[0]);
+  await activeForYouCard("Suggested action 2");
+});
+
+test("An empty For you page stays accessible and reports zero suggestions", async () => {
+  mockPool([]);
+  await openForYou();
+  await screen.findByRole("heading", { name: "All caught up" });
+  const count = await within(link("/for-you")).findByLabelText("0 waiting");
+  expect(count).toBeInTheDocument();
+});
+
+test("A disabled For you rollout returns a direct link to the existing homepage", async () => {
+  mockPool();
+  await setupPage({
+    context,
+    path: "/for-you",
+    featureSwitches: {
+      ...features,
+      [FeatureSwitchKey.SuggestionForYou]: false,
+    },
+  });
+  await screen.findByText(makeSuggestion().content.title);
+  expect(pathname()).toBe(homePath);
+});

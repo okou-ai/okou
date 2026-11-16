@@ -306,7 +306,7 @@ function SuggestionFeedbackNotice({
   );
 }
 
-function SuggestionSentNotice({
+export function SuggestionSentNotice({
   entry,
   threadId,
 }: {
@@ -510,7 +510,7 @@ type ComposerPreparation =
  * The custom direction is written over home, like a forward: the default
  * Agent receives it in a new thread and the member stays on the next card.
  */
-function AgentSuggestionComposerDialog({
+export function AgentSuggestionComposerDialog({
   composer,
 }: {
   readonly composer: ComposerPreparation;
@@ -578,14 +578,18 @@ function AgentSuggestionComposerDialog({
   );
 }
 
-function AgentSuggestionCard({
+export function AgentSuggestionCard({
   item,
   onCustomDirection,
   embedded = false,
+  stacked = false,
+  active = true,
 }: {
   readonly item: Suggestion;
   readonly onCustomDirection: (item: Suggestion) => void;
   readonly embedded?: boolean;
+  readonly stacked?: boolean;
+  readonly active?: boolean;
 }) {
   const start = useSet(startAgentSuggestion$);
   const focusTitle = useSet(focusSuggestionTitleOnRef$);
@@ -598,29 +602,39 @@ function AgentSuggestionCard({
       aria-labelledby={`suggestion-title-${item.id}`}
       className={cn(
         "flex flex-col gap-3",
+        stacked && "flex-1",
         !embedded && "rounded-xl border border-border bg-card px-5 py-4",
       )}
     >
-      <div className="flex flex-col gap-3 motion-safe:animate-composer-panel-in">
+      <div
+        className={cn(
+          "flex flex-col gap-3",
+          stacked ? "flex-1 gap-5" : "motion-safe:animate-composer-panel-in",
+        )}
+      >
         <div className="flex flex-col gap-2">
           <h3
             id={`suggestion-title-${item.id}`}
-            ref={embedded ? focusTitle : undefined}
+            ref={embedded && active ? focusTitle : undefined}
             tabIndex={embedded ? -1 : undefined}
-            className="text-base font-medium leading-6 text-foreground focus:outline-none"
+            className={cn(
+              "text-base font-medium leading-6 text-foreground focus:outline-none",
+              stacked && "text-lg leading-7",
+            )}
           >
             {item.content.title}
           </h3>
           <p
             className={cn(
               "text-sm leading-5 text-muted-foreground",
+              stacked && "leading-6",
               !embedded && "line-clamp-4",
             )}
           >
             {item.content.rationale}
           </p>
         </div>
-        <div className="flex flex-col gap-2 pt-1">
+        <div className={cn("flex flex-col gap-2 pt-1", stacked && "flex-1")}>
           {item.content.options.map((option) => {
             return (
               <AgentSuggestionOption
@@ -637,17 +651,22 @@ function AgentSuggestionCard({
               onCustomDirection(item);
             }}
           />
-          <AgentSuggestionActions
-            onDismiss={() => {
-              detach(
-                submitFeedback(item.id, "dismissed", signal),
-                Reason.DomCallback,
-              );
-            }}
-            onSelect={(kind) => {
-              detach(submitFeedback(item.id, kind, signal), Reason.DomCallback);
-            }}
-          />
+          <div className={cn(stacked && "mt-auto pt-5")}>
+            <AgentSuggestionActions
+              onDismiss={() => {
+                detach(
+                  submitFeedback(item.id, "dismissed", signal),
+                  Reason.DomCallback,
+                );
+              }}
+              onSelect={(kind) => {
+                detach(
+                  submitFeedback(item.id, kind, signal),
+                  Reason.DomCallback,
+                );
+              }}
+            />
+          </div>
         </div>
       </div>
     </article>

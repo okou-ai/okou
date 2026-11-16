@@ -1661,6 +1661,14 @@
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
       "feedLabel": "Feed",
+      "forYou": {
+        "loading": "Vorschläge werden geladen",
+        "next": "Nächster Vorschlag",
+        "previous": "Vorheriger Vorschlag",
+        "remaining": "Noch {{total}}",
+        "subtitle": "Eins nach dem anderen",
+        "title": "Für dich"
+      },
       "homeCard": {
         "completeTitle": "Alles erledigt",
         "feedback": "Vorschlagsaktionen",

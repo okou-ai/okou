@@ -35,7 +35,10 @@ import {
   HomeSuggestionGreeting,
   SuggestionSaveErrors,
 } from "./agent-suggestions.tsx";
-import { suggestionsEnabled$ } from "../../signals/okou-page/agent-suggestion-session.ts";
+import {
+  suggestionsEnabled$,
+  suggestionForYouEnabled$,
+} from "../../signals/okou-page/agent-suggestion-session.ts";
 import { ChatHomeCompliance } from "./chat-home-compliance.tsx";
 import { SCROLL_FADE_Y_END_SM } from "./scroll-fade.ts";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
@@ -465,7 +468,9 @@ export function AgentComposerPage() {
   // new-chat page lists them.
   const suggestionsEnabled = useGet(suggestionsEnabled$);
   const defaultAgentChatPage = useLastResolved(defaultAgentChatPageActive$);
-  const showSuggestions = suggestionsEnabled && defaultAgentChatPage === true;
+  const forYouEnabled = useGet(suggestionForYouEnabled$);
+  const showSuggestions =
+    suggestionsEnabled && !forYouEnabled && defaultAgentChatPage === true;
 
   const switches = useGet(featureSwitch$);
   const capabilityHome = switches[FeatureSwitchKey.HomeCapabilities];
