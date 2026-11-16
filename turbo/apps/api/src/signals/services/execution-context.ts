@@ -7,13 +7,12 @@ import { computed, type Computed } from "ccstate";
 import { createExecutionRuntimeContext } from "./execution-runtime-context";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 
+/** Captured inputs for one admitted Thread Run. */
 export type ExecutionContextRun = Pick<
   typeof agentRuns.$inferSelect,
   | "id"
   | "orgId"
   | "userId"
-  | "agentId"
-  | "chatThreadId"
   | "launchSnapshot"
   | "vars"
   | "storageMounts"
@@ -30,7 +29,10 @@ export type ExecutionContextRun = Pick<
   | "reasoningEffort"
   | "codexServiceTier"
   | "officialWorkflowProvenance"
->;
+> & {
+  readonly agentId: string;
+  readonly chatThreadId: string;
+};
 
 /** Read admitted execution input, then assemble the Run from its authoritative sources. */
 export function createExecutionContext(

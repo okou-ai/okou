@@ -207,9 +207,6 @@ function createExecutionIdentities(input$: ExecutionInput$) {
   });
   const identity$ = computed(async (get) => {
     const run = await get(run$);
-    if (run.agentId === null) {
-      throw new Error("Connector sources require the admitted Agent identity");
-    }
     return { orgId: run.orgId, userId: run.userId, agentId: run.agentId };
   });
   const currentFeatures$ = createUserFeatureSwitchContext(memberIdentity$);
@@ -276,11 +273,6 @@ function createExecutionConnectorContext(
   });
   const connectorIdentity$ = computed(async (get) => {
     const [identity, run] = await Promise.all([get(identity$), get(run$)]);
-    if (run.chatThreadId === null) {
-      throw new Error(
-        "Connector accounts require the admitted Thread identity",
-      );
-    }
     return { ...identity, chatThreadId: run.chatThreadId };
   });
   const timing$ = computed(() => {
@@ -449,14 +441,11 @@ function createExecutionPackages(
         : framework === "codex"
           ? "/home/user/.codex/skills"
           : "/home/user/.claude/skills";
-    const [seedSkills, connectors, templates] =
-      run.agentId === null
-        ? [undefined, undefined, undefined]
-        : await Promise.all([
-            get(seeds$),
-            get(connectorSkills$),
-            get(templates$),
-          ]);
+    const [seedSkills, connectors, templates] = await Promise.all([
+      get(seeds$),
+      get(connectorSkills$),
+      get(templates$),
+    ]);
     if (templates && "error" in templates) {
       throw new Error("Run execution sources are unavailable");
     }
@@ -553,12 +542,12 @@ function createExecutionEnvironment(
   platform$: ReturnType<typeof createExecutionPlatform>,
 ) {
   return computed(async (get) => {
-    const { run, context } = await get(input$);
+    const { context } = await get(input$);
     const [modelEnvironment, platform, connectorEnvironment] =
       await Promise.all([
         get(modelEnvironment$),
         get(platform$),
-        run.agentId === null ? emptyEnvironment() : get(connectorEnvironment$),
+        get(connectorEnvironment$),
       ]);
     if ("status" in connectorEnvironment) {
       throw new Error("Run execution sources are unavailable");
@@ -727,7 +716,7 @@ function executionModelConfiguration(
       framework === "pi"
         ? run.officialWorkflowProvenance
           ? run.id
-          : (run.chatThreadId ?? run.id)
+          : run.chatThreadId
         : undefined,
   };
 }

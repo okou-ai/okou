@@ -4915,7 +4915,6 @@ function admittedRunLaunch(
         metadata.modelLongContextMinTotalInputTokens,
       reasoningEffort: metadata.reasoningEffort,
       codexServiceTier: metadata.codexServiceTier,
-      isFirstRun: null,
     },
     executionContext: payload.executionContext,
     executionFacts: {
