@@ -135,16 +135,18 @@ try:
     pathlib.Path(os.environ["VM0_TEST_TOOL_OOM_CGROUP_MARKER"]).write_text(relative)
     task_stage("all four tool allocators resident; awaiting Guest OOM injection")
     # A prepared worker must remain resident until the kernel kills this leaf.
-    pid, status = os.wait()
+    # Observe without reaping: SIGINT between wait and bookkeeping must not
+    # leave a recycled PID in the cleanup owner.
+    exited = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOWAIT)
     # The shell's TERM-resistant sentinel also becomes our child after exec.
     # Its early exit is a fixture failure, but it is not an owned allocator PID.
-    children.discard(pid)
-    raise RuntimeError("tool child exited before OOM: pid=" + str(pid) + " status=" + str(status))
+    children.add(exited.si_pid)
+    raise RuntimeError("tool child exited before OOM: pid=" + str(exited.si_pid) + " status=" + str(exited.si_status))
 finally:
     if ready_write is not None:
         os.close(ready_write)
-    # Unreaped children pin their PIDs, including an early failed worker. Remove
-    # a reaped PID above before cleanup so no recycled process can be targeted.
+    # Every recorded child is still unreaped, including the observed exit, so
+    # none of these PIDs can refer to a recycled process during group cleanup.
     for pid in children:
         os.kill(pid, signal.SIGKILL)
     for pid in children:
