@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { toast } from "@okouai/ui/components/ui/sonner";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { reloadWorkflowData$ } from "./workflow-reload.ts";
 import { createElement } from "react";
@@ -65,9 +66,18 @@ export const setupWorkflowDetailPage$ = command(
     }
     const detail = await get(currentWorkflowDetail$);
     signal.throwIfAborted();
+    if (!detail) {
+      toast.error(
+        i18n.t(($) => {
+          return $.workflows.detail.notFound;
+        }),
+      );
+      set(detachedNavigateTo$, ROUTES.workflows, { replace: true });
+      return;
+    }
     // Official Workflows are system-managed: Morning Brief is configured in
     // Settings, and no other Official Workflow has a user-facing page.
-    if (detail?.official) {
+    if (detail.official) {
       if (isMorningBriefDefinitionName(detail.official.definitionName)) {
         const searchParams = new URLSearchParams({
           settings: MORNING_BRIEF_PREFERENCES_SECTION,
