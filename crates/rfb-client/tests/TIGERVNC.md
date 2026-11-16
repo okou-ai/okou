@@ -56,7 +56,6 @@ artifact. The example generates the password without printing it; do not run
 these account or mode mutations on a persistent or shared host:
 
 ```bash
-set -euo pipefail
 RFB_ACCEPT_USER=rfb-accept-test
 RFB_ACCEPT_PASSWORD="$(openssl rand -base64 24)"
 if id "$RFB_ACCEPT_USER" >/dev/null 2>&1; then
@@ -74,12 +73,15 @@ cleanup_rfb_accept_user() {
 }
 trap cleanup_rfb_accept_user EXIT
 printf '%s:%s\n' "$RFB_ACCEPT_USER" "$RFB_ACCEPT_PASSWORD" | sudo chpasswd
-RFB_TEST_BINARY="$(cargo test --manifest-path crates/Cargo.toml --profile local --locked \
-  -p rfb-client --lib --no-run --message-format=json-render-diagnostics | jq -ers '
-    [.[] | select(.reason == "compiler-artifact" and .target.name == "rfb_client"
-      and .profile.test == true) | .executable | select(. != null)]
-    | if length == 1 then .[0] else error("expected exactly one RFB test executable") end
-  ')"
+RFB_TEST_BINARY="$(
+  set -o pipefail
+  cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+    -p rfb-client --lib --no-run --message-format=json-render-diagnostics | jq -ers '
+      [.[] | select(.reason == "compiler-artifact" and .target.name == "rfb_client"
+        and .profile.test == true) | .executable | select(. != null)]
+      | if length == 1 then .[0] else error("expected exactly one RFB test executable") end
+    '
+)" || exit 1
 RFB_ACCEPT_DIR="$(mktemp -d /tmp/rfb-client-acceptance.XXXXXX)"
 install -m 755 "$RFB_TEST_BINARY" "$RFB_ACCEPT_DIR/rfb-client-tests"
 install -m 644 crates/rfb-client/tests/fixtures/tigervnc.py "$RFB_ACCEPT_DIR/tigervnc.py"

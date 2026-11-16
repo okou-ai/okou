@@ -109,12 +109,13 @@ RESOURCE_CONTRACTS_RLIB=$(jq -ers '
   | if length == 1 then .[0] else error("expected exactly one guest-contracts library") end
 ' /owned/experiment/cargo-build.json)
 RESOURCE_DEPENDENCIES=()
-while IFS= read -r directory; do
-  RESOURCE_DEPENDENCIES+=(-L "dependency=$directory")
-done < <(jq -rs '
+RESOURCE_DEPENDENCY_DIRS=$(jq -rs '
   [.[] | select(.reason == "compiler-artifact") | .filenames[]
     | sub("/[^/]+$"; "")] | unique[]
 ' /owned/experiment/cargo-build.json)
+while IFS= read -r directory; do
+  RESOURCE_DEPENDENCIES+=(-L "dependency=$directory")
+done <<< "$RESOURCE_DEPENDENCY_DIRS"
 rustc --edition 2024 \
   crates/runner/tests/caller_isolation_native/packaged_resource_policy.rs \
   --extern "guest_contracts=$RESOURCE_CONTRACTS_RLIB" \
