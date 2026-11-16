@@ -1255,6 +1255,179 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
   });
 });
 
+test("Deleting a Project closes its dialog before its chats finish synchronizing", async () => {
+  const chatSync = context.mocks.deferred<void>();
+  const chatSyncStarted = context.mocks.deferred<void>();
+  const ordinary = continuityThread(224, 1, "Ordinary chat");
+  const member = {
+    ...continuityThread(224, 2, "Launch planning"),
+    projectId: id,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 224,
+    threads: [ordinary, member],
+  });
+  metadata();
+  const events: ProjectEvent[] = [];
+  const threadEvents: ChatThreadEvent[] = [];
+  context.mocks.api(projectsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: events.filter((event) => {
+        return event.seqId > query.sinceSeqId;
+      }),
+      hasMore: false,
+    });
+  });
+  context.mocks.api(chatThreadsContract.events, async ({ query, respond }) => {
+    if (threadEvents.length > 0) {
+      if (!chatSyncStarted.settled()) {
+        chatSyncStarted.resolve();
+      }
+      await chatSync.promise;
+    }
+    return respond(200, {
+      events: threadEvents.filter((event) => {
+        return event.seqId > (query.sinceSeqId ?? 0);
+      }),
+      hasMore: false,
+    });
+  });
+  context.mocks.api(projectsContract.delete, ({ params, body, respond }) => {
+    events.push({
+      id: body.eventId,
+      projectId: params.id,
+      seqId: 2,
+      kind: "deleted",
+      name: null,
+      createdAt: at,
+    });
+    threadEvents.push({
+      id: crypto.randomUUID(),
+      seqId: 2,
+      kind: "project_updated",
+      chatThreadId: member.id,
+      agentId: member.agentId,
+      projectId: null,
+      title: member.title,
+      selectedModel: member.selectedModel,
+      serviceTier: null,
+      computerUseHostId: null,
+      createdAt: at,
+    });
+    return respond(204);
+  });
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.click(button("Options for Launch", projectRow()));
+  await user.click(await findMenuItem("Delete"));
+  const dialog = await screen.findByRole("dialog", { name: "Delete Project?" });
+  click(button("Delete Project", dialog));
+  try {
+    await chatSyncStarted.promise;
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "Delete Project?" }),
+      ).not.toBeInTheDocument();
+    });
+    expect(document.querySelector(`[data-project-row-id="${id}"]`)).toBeNull();
+    await waitFor(() => {
+      expect(button("Create Project")).toHaveFocus();
+    });
+    expect(chatSync.settled()).toBeFalsy();
+  } finally {
+    chatSync.resolve();
+  }
+  await waitFor(() => {
+    expect(threadLink(member.id)).toBeInTheDocument();
+  });
+  expect(button("Create Project")).toHaveFocus();
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+  click(threadLink(member.id));
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/chats/${member.id}`);
+  });
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
+});
+
+test("A rejected Project deletion stays open and can be retried", async () => {
+  const confirmation = context.mocks.deferred<void>();
+  const ordinary = continuityThread(225, 1, "Ordinary chat");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 225,
+    threads: [ordinary],
+  });
+  metadata();
+  const events: ProjectEvent[] = [];
+  let canDelete = false;
+  context.mocks.api(projectsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: events.filter((event) => {
+        return event.seqId > query.sinceSeqId;
+      }),
+      hasMore: false,
+    });
+  });
+  context.mocks.api(
+    projectsContract.delete,
+    async ({ params, body, respond }) => {
+      await confirmation.promise;
+      if (!canDelete) {
+        return respond(409, {
+          error: { code: "CONFLICT", message: "Project could not be deleted" },
+        });
+      }
+      events.push({
+        id: body.eventId,
+        projectId: params.id,
+        seqId: 2,
+        kind: "deleted",
+        name: null,
+        createdAt: at,
+      });
+      return respond(204);
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.click(button("Options for Launch", projectRow()));
+  await user.click(await findMenuItem("Delete"));
+  const dialog = await screen.findByRole("dialog", { name: "Delete Project?" });
+  click(button("Delete Project", dialog));
+  await waitFor(() => {
+    expect(button("Delete Project", dialog)).toBeDisabled();
+  });
+  expect(projectRow()).toHaveTextContent("Launch");
+  confirmation.resolve();
+  await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
+    "Could not delete Project",
+  );
+  expect(button("Delete Project", dialog)).toBeEnabled();
+  expect(projectRow()).toHaveTextContent("Launch");
+
+  canDelete = true;
+  click(button("Delete Project", dialog));
+  await waitFor(() => {
+    expect(button("Create Project")).toHaveFocus();
+  });
+  expect(
+    screen.queryByRole("dialog", { name: "Delete Project?" }),
+  ).not.toBeInTheDocument();
+  expect(document.querySelector(`[data-project-row-id="${id}"]`)).toBeNull();
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+});
+
 test("Creating a Project from a chat moves it immediately and survives navigation", async () => {
   const confirmation = context.mocks.deferred<void>();
   const ordinary = continuityThread(113, 1, "Campaign planning");
