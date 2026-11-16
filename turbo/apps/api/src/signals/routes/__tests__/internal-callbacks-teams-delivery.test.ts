@@ -22,6 +22,17 @@ describe("Teams completion delivery", () => {
         withDefaultAgent: true,
         paidNative: true,
       });
+      server.use(
+        http.post(
+          `https://login.microsoftonline.com/${teams.installation.teamsTenantId}/oauth2/v2.0/token`,
+          () => {
+            return HttpResponse.json(
+              { error: "temporarily_unavailable" },
+              { status: 503 },
+            );
+          },
+        ),
+      );
       await fixtures.dispatch(teams, "complete while Teams is unavailable");
       const listed = await reads.requestListLogs(
         teams.actor,
