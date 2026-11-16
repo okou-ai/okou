@@ -44,6 +44,16 @@ budget per stage. Missing readiness still fails without injecting OOM. Nested
 readiness/exit failures include the private bounded diagnostic tail in the JSONL
 failure result so structured-result precedence cannot hide worker progress.
 
+The single-tool `@guest-wide-tool-oom-injected` case prepares its complete
+384 MiB offender payload with four private 96 MiB allocations in one Bash-tool
+cgroup. All four workers report residency through an owned pipe before the
+cgroup marker permits injection. The controller reaps its workers on a returning
+preparation failure; the kernel must kill their complete tool group after
+injection. Its private bounded stderr is included in structured readiness/exit
+errors, including the last completed worker stage. Parallel preparation uses the
+existing workload CPU ceiling and does not renew the shared deadline or change
+the runtime/sibling allocations, OOM policy, recovery or reuse assertions.
+
 The required nested-task global-OOM case uses
 `@guest-wide-task-oom-injected`. Four workers each retain 96 MiB, report readiness
 through an owned pipe after touching their allocation, and remain in the nested
