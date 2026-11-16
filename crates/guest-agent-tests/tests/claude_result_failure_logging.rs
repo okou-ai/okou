@@ -30,6 +30,14 @@ async fn claude_error_result_is_written_to_system_log() -> Result<(), Box<dyn st
             Some(FailureReason::ProviderInsufficientCredits),
         ),
         (
+            "You've hit your org's monthly spend limit · ask your admin to raise it at claude.ai/settings/usage",
+            Some(FailureReason::UsageLimit),
+        ),
+        (
+            "You've hit your org's monthly spend limit · ask your admin to raise it at claude.ai/admin-settings/usage · resets Dec 1 at 12am (UTC). Switch to another model to continue.",
+            Some(FailureReason::UsageLimit),
+        ),
+        (
             "API Error: Your account can't receive replies from Claude right now. You can find the next step in the Anthropic Verification Portal: https://example.invalid/verification?token=private-verification-token",
             Some(FailureReason::AccountVerificationRequired),
         ),

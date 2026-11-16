@@ -755,8 +755,11 @@ fn is_claude_subscription_access_disabled_error(normalized: &str) -> bool {
 }
 
 fn is_claude_monthly_spend_limit_error(source: FailureDetailSource, normalized: &str) -> bool {
+    // Keep legacy stderr matching; admit the new URL only from Claude results.
     (normalized.contains("org's monthly spend limit")
-        && normalized.contains("claude.ai/settings/usage"))
+        && (normalized.contains("claude.ai/settings/usage")
+            || (source == FailureDetailSource::ClaudeResult
+                && normalized.contains("claude.ai/admin-settings/usage"))))
         || (source == FailureDetailSource::ClaudeResult
             && normalized.trim()
                 == "you've hit your monthly spend limit. switch to another model to continue.")
