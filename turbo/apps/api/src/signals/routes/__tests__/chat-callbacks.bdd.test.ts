@@ -41,7 +41,6 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fixture";
-import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
@@ -77,7 +76,6 @@ type LifecycleChatEvent<Event extends LifecycleEvent> = Extract<
   { eventType: `run.${Event}` }
 >;
 type FollowupsEvent = Extract<ChatEvent, { eventType: "output.followups" }>;
-type TestOrgRole = "admin" | "member";
 
 interface EntitledChatActor {
   readonly actor: ApiTestUser;
@@ -113,25 +111,6 @@ async function entitledChatActor(
     visibility: "private",
   });
   return { actor, agentId: agent.agentId, runnerGroup, providerId, storage };
-}
-
-async function entitledChatMemberActor(): Promise<EntitledChatActor> {
-  const adminFixture = await entitledChatActor();
-  if (!adminFixture.actor.orgId) {
-    throw new Error("Expected the admin fixture to be org-scoped");
-  }
-  const actor = bdd.user({
-    orgId: adminFixture.actor.orgId,
-    orgRole: "org:member",
-  });
-  await bdd.completeOnboarding(actor);
-
-  const agent = await bdd.createAgent(actor, {
-    displayName: "BDD member chat callback agent",
-    description: "Exercises member-owned chat callback terminal processing.",
-    visibility: "private",
-  });
-  return { ...adminFixture, actor, agentId: agent.agentId };
 }
 
 async function configureClaudeCodeSubscriptionProvider(
@@ -3681,7 +3660,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       if (source === "slack") {
         for (const [message] of context.mocks.slack.chat.postMessage.mock
           .calls) {
-          expect(message).not.toEqual(
+          expect(message).not.toStrictEqual(
             expect.objectContaining({
               text: expect.stringContaining(nativeMessage),
             }),

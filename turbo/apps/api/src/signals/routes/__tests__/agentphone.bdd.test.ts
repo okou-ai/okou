@@ -2997,7 +2997,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       await waitForSendCount(sends, beforeCompletion + 1);
       const reply = lastSend(sends).body;
       expect(reply).toContain(`Your ${label} subscription`);
-      expect(reply).toContain(nativeMessage);
+      expect(reply).not.toContain(nativeMessage);
+      expect(reply).toContain("Wait for your subscription allowance to reset");
       expect(reply).toContain("?settings=model");
       expect(reply).toContain('reply "continue"');
     },

@@ -10751,12 +10751,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         it("normalizes a future reason and ignores contradictory legacy cancellation diagnostics", async () => {
-          await completePublicFailure({
+          const { failures } = await completePublicFailure({
             failureReason: "future_reason",
             expectedFailureReason: "unknown",
             legacyError:
               "Run cancelled; You've hit your usage limit. https://private.invalid/token",
           });
+          expect(failures[0]?.error).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
         });
 
         it.each(["claude-code-oauth-token"] as const)(

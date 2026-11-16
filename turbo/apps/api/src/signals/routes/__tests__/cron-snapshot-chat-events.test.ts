@@ -174,7 +174,7 @@ describe("cron snapshot chat events", () => {
         [200],
       );
       for (const [key, body] of originalObjects) {
-        expect(objects.get(key)).toEqual(body);
+        expect(objects.get(key)).toStrictEqual(body);
       }
     });
   });

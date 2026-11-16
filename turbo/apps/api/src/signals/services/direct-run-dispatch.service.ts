@@ -281,7 +281,6 @@ const dispatchPreparedRun$ = command(
     const input = args.input;
     let owner: DirectRunTarget | null = null;
     let uncertain = false;
-    let reason = "Run execution preparation failed";
     const outcome = await settleIncludingAbort(async () => {
       const { executionContext, fleet } = args;
       // A queued input's latency marker can originate in an earlier invocation.
@@ -296,13 +295,8 @@ const dispatchPreparedRun$ = command(
         monotonicDeadline: performance.now() + Math.max(0, notAfter - now()),
       };
       const token = `${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`;
-      reason =
-        fleet.candidates.length === 0
-          ? "No eligible serving Runner is available"
-          : "Every eligible Runner refused this Run";
       for (const target of fleet.candidates) {
         if (remainingDelivery(window) <= 0) {
-          reason = "Run delivery window expired before acceptance";
           break;
         }
         const body = JSON.stringify({
@@ -313,7 +307,6 @@ const dispatchPreparedRun$ = command(
           executionContext,
         });
         if (Buffer.byteLength(body, "utf8") > RUNNER_DISPATCH_MAX_BODY_BYTES) {
-          reason = "Run execution input exceeds the 4 MiB Runner intake limit";
           break;
         }
         const selected = await set(
@@ -329,7 +322,6 @@ const dispatchPreparedRun$ = command(
           signal,
         );
         if (!selected) {
-          reason = "Run is no longer available for dispatch";
           break;
         }
         const firstOwner = owner === null;
