@@ -3,6 +3,7 @@ package ai.okou.android
 import android.app.LocaleManager
 import android.app.UiModeManager
 import android.content.res.Configuration
+import android.util.Log
 import android.view.KeyEvent
 import androidx.core.view.WindowCompat
 import androidx.datastore.preferences.core.emptyPreferences
@@ -22,6 +23,7 @@ import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
@@ -86,6 +88,7 @@ class NativeShellTest {
     @Test
     fun paletteAndLanguageChangesRecreateTheListAndReloadMemberPreferences() =
         onIsolatedDevice("member-preferences") {
+            val probe = AtomicInteger()
             fun select(value: String) {
                 val target = By.pkg(app.packageName).text(value)
                 if (device.findObject(target) == null) {
@@ -99,7 +102,21 @@ class NativeShellTest {
                     val visible =
                         object : Condition<UiObject2, Boolean> {
                             // Resolve virtual descendants from the current window after scrolls.
-                            override fun apply(container: UiObject2) = device.hasObject(target)
+                            override fun apply(container: UiObject2): Boolean {
+                                val cached = device.hasObject(target)
+                                if (value != "Default") return cached
+                                val cleared = automation.clearCache()
+                                val fresh = device.hasObject(target)
+                                val step = probe.getAndIncrement()
+                                Log.i(
+                                    "PreferenceProbe",
+                                    "step=$step cached=$cached cleared=$cleared fresh=$fresh",
+                                )
+                                TestStorage().openOutputFile("preference-probe-$step.xml").use {
+                                    device.dumpWindowHierarchy(it)
+                                }
+                                return fresh
+                            }
                         }
                     // Settings and restored pickers can retain a position below the target.
                     if (!container.scrollUntil(Direction.UP, visible)) {
@@ -121,6 +138,7 @@ class NativeShellTest {
             }
             launch()
             click(R.string.settings)
+            awaitSelectable(R.string.appearance_system)
             select("Default")
             select("Blue horizon")
             select("English")
