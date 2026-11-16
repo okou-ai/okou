@@ -361,12 +361,10 @@ private final class LifecycleHTTPFixture: Sendable {
     history = ConversationHistoryFixture(
       count: 2,
       beforeEventRows: beforeEventRows,
-      detail: { request in
-        if request.httpMethod == "PATCH" {
-          let key = try Self.workspace(request) + request.url!.path + "/draft"
-          state.drafts.withLock {
-            $0[key] = String(decoding: chatRequestBody(request), as: UTF8.self)
-          }
+      updateDetail: { request in
+        let key = try Self.workspace(request) + request.url!.path + "/draft"
+        state.drafts.withLock {
+          $0[key] = String(decoding: chatRequestBody(request), as: UTF8.self)
         }
         return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
       },

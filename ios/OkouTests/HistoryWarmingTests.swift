@@ -193,11 +193,11 @@ private final class HistoryWarmingFixture {
       "clientId": userID, "capability": "{\"*\":[\"subscribe\"]}",
     ])
     http = ChatHTTPFixture { request in
-      switch request.url?.path {
-      case "/api/agents": return ChatHTTPResponse(body: "[]")
-      case "/api/realtime/token":
+      switch (request.httpMethod, request.url?.path) {
+      case ("GET", "/api/agents"): return ChatHTTPResponse(body: "[]")
+      case ("POST", "/api/realtime/token"):
         return ChatHTTPResponse(body: String(decoding: token, as: UTF8.self))
-      case "/api/chat-threads/snapshot":
+      case ("GET", "/api/chat-threads/snapshot"):
         let title = state.title.withLock { $0 }
         let sequence = title == "Original chat" ? 1 : 2
         return ChatHTTPResponse(
@@ -207,7 +207,7 @@ private final class HistoryWarmingFixture {
             "updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],\
             "latestEventId":"\(warmingListEventID(sequence))","latestSeqId":\(sequence)}
             """)
-      case "/api/chat-threads/events":
+      case ("GET", "/api/chat-threads/events"):
         let after =
           URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
           .queryItems?.first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
@@ -221,14 +221,14 @@ private final class HistoryWarmingFixture {
         }
         return ChatHTTPResponse(
           body: "{\"events\":[\(events.joined(separator: ","))],\"hasMore\":false}")
-      case "/api/indicators":
+      case ("GET", "/api/indicators"):
         let unread = state.unread.withLock { $0 }
         let agents = unread ? "\"\(warmingAgentID)\":\"unread\"" : ""
         let threads = unread ? "\"\(warmingThreadID)\":\"unread\"" : ""
         let unreadAt = unread ? "\"\(warmingThreadID)\":\"2026-10-20T00:00:00Z\"" : ""
         return ChatHTTPResponse(
           body: "{\"agents\":{\(agents)},\"unreadAt\":{\(unreadAt)},\"threads\":{\(threads)}}")
-      case "/api/chat/events/catch-up": return try await batch(request)
+      case ("POST", "/api/chat/events/catch-up"): return try await batch(request)
       default: throw URLError(.unsupportedURL)
       }
     }

@@ -194,25 +194,25 @@ private final class ProjectSyncFixture {
     http = ChatHTTPFixture(
       onUnhandledRequest: { XCTFail($0) },
       handler: { request in
-        switch request.url?.path {
-        case "/api/realtime/token":
+        switch (request.httpMethod, request.url?.path) {
+        case ("POST", "/api/realtime/token"):
           return ChatHTTPResponse(body: String(decoding: token, as: UTF8.self))
-        case "/api/agents": return ChatHTTPResponse(body: "[]")
-        case "/api/chat-threads/snapshot":
+        case ("GET", "/api/agents"): return ChatHTTPResponse(body: "[]")
+        case ("GET", "/api/chat-threads/snapshot"):
           return ChatHTTPResponse(
             body: #"{"chatThreads":[],"latestEventId":null,"latestSeqId":null}"#)
-        case "/api/chat-threads/events":
+        case ("GET", "/api/chat-threads/events"):
           return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
-        case "/api/indicators":
+        case ("GET", "/api/indicators"):
           return ChatHTTPResponse(body: #"{"threads":{},"agents":{},"unreadAt":{}}"#)
-        case "/api/projects/snapshot":
+        case ("GET", "/api/projects/snapshot"):
           return ChatHTTPResponse(
             body: """
               {"latestEventId":null,"latestSeqId":0,"projects":[{
               "id":"30000000-0000-4000-8000-000000000071","name":"Launch",
               "createdAt":"2026-11-09T01:00:00Z","updatedAt":"2026-11-09T01:00:00Z"}]}
               """)
-        case "/api/projects/events":
+        case ("GET", "/api/projects/events"):
           state.projectReads.withLock { $0 += 1 }
           let components = request.url.flatMap {
             URLComponents(url: $0, resolvingAgainstBaseURL: false)

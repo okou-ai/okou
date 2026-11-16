@@ -273,6 +273,7 @@ private final class RealtimeResourceHarness {
     http = ChatHTTPFixture(
       onUnhandledRequest: { XCTFail($0) },
       handler: { request in
+        guard request.httpMethod == "GET" else { throw URLError(.unsupportedURL) }
         let path = request.url!.path
         metadata.requests.withLock { $0[path, default: 0] += 1 }
         guard var result = ModelHTTPFixtures.response(path) else { throw URLError(.unsupportedURL) }

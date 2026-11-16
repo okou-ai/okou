@@ -11,8 +11,7 @@ import XCTest
 final class ChatForkTests: XCTestCase {
   func testForkPreservesBothDraftsAndSendsQuoteAndSourceWithoutNavigating() async throws {
     let fixture = ForkFixture()
-    let workspace = try await fixture.workspace()
-    defer { workspace.close() }
+    let workspace = try await fixture.workspace(owner: self)
     let source = try XCTUnwrap(workspace.selectedConversation)
     source.draft = "Keep the current chat draft"
     workspace.newChatDraft = "Keep the next chat draft"
@@ -49,8 +48,7 @@ final class ChatForkTests: XCTestCase {
 
   func testFailedSendRetainsSheetAndRetriesTheSameMessageAndThread() async throws {
     let fixture = ForkFixture(firstSendStatus: 503)
-    let workspace = try await fixture.workspace()
-    defer { workspace.close() }
+    let workspace = try await fixture.workspace(owner: self)
     let source = try XCTUnwrap(workspace.selectedConversation)
     let selection = try fixture.selection(in: source)
     workspace.startFork(selection, from: source)
@@ -75,8 +73,7 @@ final class ChatForkTests: XCTestCase {
 
   func testCancelCreatesNothingAndRemovingRejectedQuoteKeepsItsNote() async throws {
     let fixture = ForkFixture(firstSendStatus: 400)
-    let workspace = try await fixture.workspace()
-    defer { workspace.close() }
+    let workspace = try await fixture.workspace(owner: self)
     let source = try XCTUnwrap(workspace.selectedConversation)
     let selection = try fixture.selection(in: source)
     workspace.startFork(selection, from: source)
@@ -138,21 +135,22 @@ private final class ForkFixture: Sendable {
       },
       additional: { request in
         let path = request.url?.path ?? ""
-        switch path {
-        case "/api/agents":
+        let createdThreadID = writes.value.withLock { $0.threadID }
+        switch (request.httpMethod, path) {
+        case ("GET", "/api/agents"):
           return ChatHTTPResponse(
             body:
               "[{\"agentId\":\"\(ConversationHistoryFixture.agentID)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]"
           )
-        case "/api/feature-switches":
+        case ("GET", "/api/feature-switches"):
           return ChatHTTPResponse(body: #"{"effectiveSwitches":{}}"#)
-        case "/api/indicators":
+        case ("GET", "/api/indicators"):
           return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
-        case "/api/user-model-preference":
+        case ("GET", "/api/user-model-preference"):
           return ChatHTTPResponse(body: "{}")
-        case "/api/run-models", "/api/model-catalog":
+        case ("GET", "/api/run-models"), ("GET", "/api/model-catalog"):
           return ChatHTTPResponse(body: #"{"models":[],"routes":[]}"#)
-        case "/api/chat-threads":
+        case ("POST", "/api/chat-threads"):
           let data = chatRequestBody(request)
           let input = try JSONDecoder().decode(Create.self, from: data)
           writes.value.withLock {
@@ -162,7 +160,7 @@ private final class ForkFixture: Sendable {
           return ChatHTTPResponse(
             status: 201,
             body: "{\"id\":\"\(input.clientThreadId)\",\"createdAt\":\"2026-10-20T10:00:00Z\"}")
-        case let path where path.hasSuffix("/metadata"):
+        case ("GET", "/api/chat-threads/\(createdThreadID)/metadata") where !createdThreadID.isEmpty:
           return ChatHTTPResponse(
             body:
               "{\"id\":\"\(writes.value.withLock { $0.threadID })\",\"agentId\":\"\(ConversationHistoryFixture.agentID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
@@ -173,8 +171,9 @@ private final class ForkFixture: Sendable {
   }
 
   @MainActor
-  func workspace() async throws -> WorkspaceStore {
+  func workspace(owner: XCTestCase) async throws -> WorkspaceStore {
     let workspace = WorkspaceStore(client: history.http.client, webURL: history.http.baseURL)
+    owner.addTeardownBlock { @MainActor in await workspace.close().value }
     await workspace.refreshNavigation()
     await workspace.list.refresh()
     workspace.selectChat(ConversationHistoryFixture.threadID)
