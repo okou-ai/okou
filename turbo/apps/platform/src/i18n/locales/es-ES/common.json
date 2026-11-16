@@ -1685,6 +1685,14 @@
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
       "feedLabel": "Actividad",
+      "forYou": {
+        "loading": "Cargando sugerencias",
+        "next": "Siguiente sugerencia",
+        "previous": "Sugerencia anterior",
+        "remaining": "Quedan {{total}}",
+        "subtitle": "Una cosa a la vez",
+        "title": "Para ti"
+      },
       "homeCard": {
         "completeTitle": "Todo al día",
         "feedback": "Acciones de sugerencia",

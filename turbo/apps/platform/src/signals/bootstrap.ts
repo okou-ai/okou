@@ -83,6 +83,7 @@ import {
 } from "./onboarding/onboarding-sources-first-page-setup.ts";
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
+import { setupForYouPage$ } from "./okou-page/for-you-page-setup.ts";
 import { setupComputerUseAuthorizationPage$ } from "./computer-use-authorization/computer-use-authorization-page-setup.ts";
 import {
   setupSshAuthorizationPage$,
@@ -372,6 +373,11 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.connectors,
     setup: setupAuthSidebarPageWrapper(setupConnectorsPage$),
+  },
+  {
+    path: ROUTES.forYou,
+    setup: setupAuthSidebarPageWrapper(setupForYouPage$),
+    inPlaceSearchParams: ["suggestion"],
   },
   {
     path: ROUTES.me,

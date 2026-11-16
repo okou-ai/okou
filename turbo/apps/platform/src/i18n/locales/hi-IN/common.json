@@ -1661,6 +1661,14 @@
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
       "feedLabel": "फ़ीड",
+      "forYou": {
+        "loading": "सुझाव लोड हो रहे हैं",
+        "next": "अगला सुझाव",
+        "previous": "पिछला सुझाव",
+        "remaining": "{{total}} बाकी",
+        "subtitle": "एक बार में एक काम",
+        "title": "आपके लिए"
+      },
       "homeCard": {
         "completeTitle": "सब पूरा हो गया",
         "feedback": "सुझाव के विकल्प",

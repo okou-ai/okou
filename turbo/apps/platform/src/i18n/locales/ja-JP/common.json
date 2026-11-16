@@ -1658,6 +1658,14 @@
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
       "feedLabel": "フィード",
+      "forYou": {
+        "loading": "提案を読み込み中",
+        "next": "次の提案",
+        "previous": "前の提案",
+        "remaining": "残り {{total}} 件",
+        "subtitle": "ひとつずつ進めましょう",
+        "title": "あなたへ"
+      },
       "homeCard": {
         "completeTitle": "すべて確認しました",
         "feedback": "提案への操作",

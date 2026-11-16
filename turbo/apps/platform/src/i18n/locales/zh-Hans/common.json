@@ -1658,6 +1658,14 @@
       "doneRecorded": "已记下，这件事已经处理了",
       "editReason": "修改原因",
       "feedLabel": "动态",
+      "forYou": {
+        "loading": "正在加载建议",
+        "next": "下一条建议",
+        "previous": "上一条建议",
+        "remaining": "还有 {{total}} 条",
+        "subtitle": "一次处理一件事",
+        "title": "为你推荐"
+      },
       "homeCard": {
         "completeTitle": "全部处理完了",
         "feedback": "建议操作",

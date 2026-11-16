@@ -1658,6 +1658,14 @@
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
       "feedLabel": "피드",
+      "forYou": {
+        "loading": "제안 불러오는 중",
+        "next": "다음 제안",
+        "previous": "이전 제안",
+        "remaining": "{{total}}개 남음",
+        "subtitle": "한 번에 하나씩",
+        "title": "추천"
+      },
       "homeCard": {
         "completeTitle": "모두 확인했어요",
         "feedback": "제안 작업",

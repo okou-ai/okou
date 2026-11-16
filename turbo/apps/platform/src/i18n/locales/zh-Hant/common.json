@@ -1658,6 +1658,14 @@
       "doneRecorded": "已記下，這件事已經處理了",
       "editReason": "修改原因",
       "feedLabel": "動態",
+      "forYou": {
+        "loading": "正在載入建議",
+        "next": "下一則建議",
+        "previous": "上一則建議",
+        "remaining": "還有 {{total}} 則",
+        "subtitle": "一次處理一件事",
+        "title": "為你推薦"
+      },
       "homeCard": {
         "completeTitle": "全部處理完了",
         "feedback": "建議操作",
