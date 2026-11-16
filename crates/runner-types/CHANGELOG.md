@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.5](https://github.com/okou-ai/okou/compare/runner-types-v0.18.4...runner-types-v0.18.5) (2026-11-16)
+
+
+### Refactoring
+
+* prepare structured run failures and recovery ([#47749](https://github.com/okou-ai/okou/issues/47749)) ([fca7335](https://github.com/okou-ai/okou/commit/fca73354c6b5b0aa4f122e78947565b274323991))
+
 ## [0.18.4](https://github.com/okou-ai/okou/compare/runner-types-v0.18.3...runner-types-v0.18.4) (2026-11-16)
 
 ## [0.18.3](https://github.com/okou-ai/okou/compare/runner-types-v0.18.2...runner-types-v0.18.3) (2026-11-15)

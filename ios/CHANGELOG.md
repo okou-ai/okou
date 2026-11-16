@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.1](https://github.com/okou-ai/okou/compare/ios-v0.45.0...ios-v0.45.1) (2026-11-16)
+
+
+### Refactoring
+
+* prepare structured run failures and recovery ([#47749](https://github.com/okou-ai/okou/issues/47749)) ([fca7335](https://github.com/okou-ai/okou/commit/fca73354c6b5b0aa4f122e78947565b274323991))
+
 ## [0.45.0](https://github.com/okou-ai/okou/compare/ios-v0.44.0...ios-v0.45.0) (2026-11-16)
 
 

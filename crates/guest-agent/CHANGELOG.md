@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.89](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.88...guest-agent-v0.109.89) (2026-11-16)
+
+
+### Refactoring
+
+* prepare structured run failures and recovery ([#47749](https://github.com/okou-ai/okou/issues/47749)) ([fca7335](https://github.com/okou-ai/okou/commit/fca73354c6b5b0aa4f122e78947565b274323991))
+
 ## [0.109.88](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.87...guest-agent-v0.109.88) (2026-11-16)
 
 
