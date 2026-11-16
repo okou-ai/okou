@@ -80,8 +80,15 @@ public func appendAccessibilityFingerprint(
     out += "|"
     out += (node["role"] as? String) ?? ""
     if let bounds = node["bounds"] as? [String: Double] {
-        out += "|\(Int(bounds["x"] ?? 0)),\(Int(bounds["y"] ?? 0)),"
-        out += "\(Int(bounds["width"] ?? 0)),\(Int(bounds["height"] ?? 0))"
+        let coordinates = ["x", "y", "width", "height"].map { key -> String in
+            guard let value = bounds[key], value.isFinite,
+                  let integer = Int(exactly: value.rounded(.towardZero))
+            else {
+                return "unavailable"
+            }
+            return String(integer)
+        }
+        out += "|" + coordinates.joined(separator: ",")
     }
     out += ";"
     if let children = node["children"] as? [[String: Any]] {
