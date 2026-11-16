@@ -30,6 +30,9 @@ ios_phase_pid=""
 ios_dependency_seconds=$((SECONDS - ios_prepare_started))
 
 if [[ "${IOS_CI_SINGLE_XCODE_EXPERIMENT:-false}" == true ]]; then
+  # Materialize CoreSimulator's runtime inventory before Xcode snapshots it.
+  xcrun simctl list devices available --json
+  xcrun simctl list runtimes --json
   echo "iOS starting single-process build and test experiment"
   bash ios/scripts/ci-test.sh combined &
   ios_phase_pid=$!
