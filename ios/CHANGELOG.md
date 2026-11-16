@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.4](https://github.com/okou-ai/okou/compare/ios-v0.45.3...ios-v0.45.4) (2026-11-16)
+
+
+### Bug Fixes
+
+* **ios:** catch discarded throwing task factory results ([#47904](https://github.com/okou-ai/okou/issues/47904)) ([9cfea8d](https://github.com/okou-ai/okou/commit/9cfea8db96cfeb18dc91e3b810a8d0bcb74220cb))
+
 ## [0.45.3](https://github.com/okou-ai/okou/compare/ios-v0.45.2...ios-v0.45.3) (2026-11-16)
 
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [8.844.3](https://github.com/okou-ai/okou/compare/core-v8.844.2...core-v8.844.3) (2026-11-16)
+
+
+### Bug Fixes
+
+* **app:** refine visualization selection chips ([#47888](https://github.com/okou-ai/okou/issues/47888)) ([c64cef6](https://github.com/okou-ai/okou/commit/c64cef650edd4ad914514bb20f5a87c8431edff2))
+
+
+### Refactoring
+
+* **api:** remove workflow storage launch remnants ([#47913](https://github.com/okou-ai/okou/issues/47913)) ([5093a7d](https://github.com/okou-ai/okou/commit/5093a7d563b2290b988726b3ef4bdb5ac1459e08))
+
 ## [8.844.2](https://github.com/okou-ai/okou/compare/core-v8.844.1...core-v8.844.2) (2026-11-16)
 
 

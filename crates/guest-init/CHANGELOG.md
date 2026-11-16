@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.97](https://github.com/okou-ai/okou/compare/guest-init-v0.20.96...guest-init-v0.20.97) (2026-11-16)
+
+
+### Refactoring
+
+* **rust:** use typed waitid for owned-child observation ([#47916](https://github.com/okou-ai/okou/issues/47916)) ([63c1cb4](https://github.com/okou-ai/okou/commit/63c1cb42b3e5ddec5e783b089540bb315a19fffe))
+
 ## [0.20.96](https://github.com/okou-ai/okou/compare/guest-init-v0.20.95...guest-init-v0.20.96) (2026-11-16)
 
 ## [0.20.95](https://github.com/okou-ai/okou/compare/guest-init-v0.20.94...guest-init-v0.20.95) (2026-11-16)
