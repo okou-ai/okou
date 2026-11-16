@@ -446,18 +446,15 @@ function createExecutionPackages(
       get(connectorSkills$),
       get(templates$),
     ]);
-    if (templates && "error" in templates) {
+    if ("error" in templates) {
       throw new Error("Run execution sources are unavailable");
     }
-    const parts = [
-      connectors,
-      seedSkills?.skillVolumes,
-      templates?.skillVolumes,
-    ].filter((part) => {
-      return part !== undefined;
-    });
     const volumes = resolveRunSkillVolumes(
-      mergeRunSkillVolumes(parts),
+      mergeRunSkillVolumes([
+        connectors,
+        seedSkills.skillVolumes,
+        templates.skillVolumes,
+      ]),
       skillRoot,
     );
     const winners = normalizeMountOverlay([
