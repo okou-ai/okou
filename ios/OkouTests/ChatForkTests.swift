@@ -9,6 +9,23 @@ import XCTest
 
 @MainActor
 final class ChatForkTests: XCTestCase {
+  func testForkKeepsTheSourceProjectOrRemainsUnassigned() async throws {
+    for projectID in ["91000000-0000-4000-8000-000000000002", nil] {
+      let fixture = ForkFixture(projectID: projectID)
+      let workspace = try await fixture.workspace(owner: self)
+      let source = try XCTUnwrap(workspace.selectedConversation)
+      XCTAssertEqual(source.thread.projectId, projectID)
+      workspace.startFork(try fixture.selection(in: source), from: source)
+      let fork = try XCTUnwrap(workspace.fork)
+      let accepted = await fork.send()
+      XCTAssertTrue(accepted)
+      let data = try XCTUnwrap(fixture.writes.value.withLock { $0.creations.first })
+      let created = try JSONDecoder().decode(ForkCreate.self, from: data)
+      XCTAssertEqual(created.projectId, projectID)
+      XCTAssertNotEqual(created.clientThreadId, source.thread.id)
+    }
+  }
+
   func testForkPreservesBothDraftsAndSendsQuoteAndSourceWithoutNavigating() async throws {
     let fixture = ForkFixture()
     let workspace = try await fixture.workspace(owner: self)
@@ -95,6 +112,11 @@ final class ChatForkTests: XCTestCase {
     XCTAssertEqual(sent.userMessage.text, "An independent question")
   }
 
+  private struct ForkCreate: Decodable {
+    let clientThreadId: String
+    let projectId: String?
+  }
+
   private struct ForkSend: Decodable {
     let threadId: String
     let clientEventId: String
@@ -113,7 +135,7 @@ private final class ForkFixture: Sendable {
   let writes = ForkWrites()
   let history: ConversationHistoryFixture
 
-  init(firstSendStatus: Int? = nil) {
+  init(firstSendStatus: Int? = nil, projectID: String? = nil) {
     let writes = writes
     history = ConversationHistoryFixture(
       rows: [
@@ -132,6 +154,13 @@ private final class ForkFixture: Sendable {
         }
         return ChatHTTPResponse(
           status: 201, body: "{\"threadId\":\"\(writes.value.withLock { $0.threadID })\"}")
+      },
+      threadSnapshot: { _ in
+        let project = projectID.map { "\"\($0)\"" } ?? "null"
+        return ChatHTTPResponse(
+          body: """
+            {"chatThreads":[{"id":"\(ConversationHistoryFixture.threadID)","agentId":"\(ConversationHistoryFixture.agentID)","title":"History","projectId":\(project),"createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}],"latestEventId":"60000000-0000-4000-8000-000000000090","latestSeqId":1}
+            """)
       },
       additional: { request in
         let path = request.url?.path ?? ""
