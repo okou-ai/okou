@@ -625,6 +625,10 @@ export const clientDescriptorManifest = [
     contracts: ["runModelsMainContract"],
   },
   {
+    module: "run-phase-timing",
+    contracts: ["runPhaseTimingContract"],
+  },
+  {
     module: "run-routes",
     contracts: [
       "runAgentEventsContract",

@@ -1517,6 +1517,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "run-phase-timing",
+    contracts: ["runPhaseTimingContract"],
+    bindings: [],
+  },
+  {
     module: "run-routes",
     contracts: [
       "runAgentEventsContract",
