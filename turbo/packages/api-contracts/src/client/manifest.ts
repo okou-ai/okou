@@ -360,6 +360,10 @@ export const clientDescriptorManifest = [
     contracts: ["getStartedHistoryContract"],
   },
   {
+    module: "get-started-receipt",
+    contracts: ["getStartedReceiptContract"],
+  },
+  {
     module: "get-started",
     contracts: ["cronGetStartedContract", "getStartedContract"],
   },

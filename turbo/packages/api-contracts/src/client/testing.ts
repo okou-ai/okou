@@ -356,6 +356,8 @@ import { friendReferralsContract as OriginalFriendReferralsContract } from "../c
 import { friendReferralsContract } from "./friend-referrals";
 import { getStartedHistoryContract as OriginalGetStartedHistoryContract } from "../contracts/get-started-history";
 import { getStartedHistoryContract } from "./get-started-history";
+import { getStartedReceiptContract as OriginalGetStartedReceiptContract } from "../contracts/get-started-receipt";
+import { getStartedReceiptContract } from "./get-started-receipt";
 import {
   cronGetStartedContract as OriginalCronGetStartedContract,
   getStartedContract as OriginalGetStartedContract,
@@ -1053,6 +1055,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [feishuOauthContract, OriginalFeishuOauthContract],
   [friendReferralsContract, OriginalFriendReferralsContract],
   [getStartedHistoryContract, OriginalGetStartedHistoryContract],
+  [getStartedReceiptContract, OriginalGetStartedReceiptContract],
   [cronGetStartedContract, OriginalCronGetStartedContract],
   [getStartedContract, OriginalGetStartedContract],
   [githubAppSetupCallbackContract, OriginalGithubAppSetupCallbackContract],
