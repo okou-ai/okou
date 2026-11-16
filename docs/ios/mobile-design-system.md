@@ -759,11 +759,10 @@ feature; the catalog shows each one.
 - **A tap outside the composer puts the keyboard away.** A tap anywhere on the transcript
   (`KeyboardDismissTap`, which never takes the tap from links, cards or selection) or on the
   new-chat page ends editing, so an empty composer folds back to one line.
-- **Dictation** works the way ChatGPT's does. The mic dismisses the keyboard and the
-  composer collapses to its one-line height, whatever it held, into `VoiceRecordingBar`:
-  cancel (✕), `OkouLiveWaveform`, stop (■ — the words go into the draft to read and
-  edit) and send (↑ — the words are sent as heard). There is no red dot or timer: it is
-  typing by voice, not making a recording. The draft comes back unchanged on cancel.
+- **Dictation** preserves the editor's current focus: tapping the mic keeps an open
+  keyboard open and a closed keyboard closed. The recording tray remains above the
+  composer with discard, elapsed time, `OkouLiveWaveform`, and Done, which turns the
+  recording into editable draft text. The draft comes back unchanged on discard.
   Levels are sampled every 50 ms on a decibel scale (−45 dBFS → 0, −8 dBFS → 1) with a
   short release; the waveform draws 3 pt bars with 2 pt gaps that glide one bar per
   sample, the newest growing in at the trailing edge and the oldest fading out at the
