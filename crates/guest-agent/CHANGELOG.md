@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.87](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.86...guest-agent-v0.109.87) (2026-11-16)
+
+
+### Bug Fixes
+
+* **guest-agent:** preserve codex turn results after inactive steering ([#47626](https://github.com/okou-ai/okou/issues/47626)) ([df6ada8](https://github.com/okou-ai/okou/commit/df6ada857ed6df8a927b92ff95e289f92eb7cb25))
+
 ## [0.109.86](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.85...guest-agent-v0.109.86) (2026-11-16)
 
 
