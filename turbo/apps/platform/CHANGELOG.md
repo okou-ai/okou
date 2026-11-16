@@ -13,6 +13,24 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1136.1](https://github.com/okou-ai/okou/compare/app-v0.1136.0...app-v0.1136.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **app:** add spacing between sidebar entry rows ([#47826](https://github.com/okou-ai/okou/issues/47826)) ([69ff7c2](https://github.com/okou-ai/okou/commit/69ff7c2df43b559b3b5a5a29d26b161d948b3cfb))
+* **app:** redirect unavailable workflows with a toast ([#47825](https://github.com/okou-ai/okou/issues/47825)) ([41d40d8](https://github.com/okou-ai/okou/commit/41d40d822060b0c2813c986616727f3da22136cc))
+* **platform:** close project deletion dialog before chat sync ([#47837](https://github.com/okou-ai/okou/issues/47837)) ([614ecba](https://github.com/okou-ai/okou/commit/614ecba0e56b94ac7c0af4e217eba69d28ebb4bb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/browser-extension-client bumped to 0.4.5
+    * @okouai/core bumped to 8.844.1
+    * @okouai/ui bumped to 1.21.31
+
 ## [0.1136.0](https://github.com/okou-ai/okou/compare/app-v0.1135.0...app-v0.1136.0) (2026-11-16)
 
 

@@ -10,6 +10,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.75.1](https://github.com/okou-ai/okou/compare/api-v2.75.0...api-v2.75.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **api:** preserve custom connector execution network bindings ([#47836](https://github.com/okou-ai/okou/issues/47836)) ([627c2f0](https://github.com/okou-ai/okou/commit/627c2f06e0b3cd65b8c12c33827ccd94a2796460))
+* **browser:** retain native cdp connection diagnostics ([#47833](https://github.com/okou-ai/okou/issues/47833)) ([9b6aa42](https://github.com/okou-ai/okou/commit/9b6aa42b138c34b2ccef2044be78443dd4e4b602))
+
+
+### Refactoring
+
+* **api:** make direct execution thread-bound ([#47827](https://github.com/okou-ai/okou/issues/47827)) ([814d333](https://github.com/okou-ai/okou/commit/814d3333573251f72d46132bb58d3606276c845e))
+
+
+### Performance Improvements
+
+* **api:** reuse custom connector runtime builds and narrow execution fields ([#47828](https://github.com/okou-ai/okou/issues/47828)) ([d728e34](https://github.com/okou-ai/okou/commit/d728e349bddd5c4f5e991a7c9403034a4067d8fa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/browser-extension-client bumped to 0.4.5
+    * @okouai/core bumped to 8.844.1
+    * @okouai/db bumped to 2.39.1
+    * @okouai/pi-agent-runtime bumped to 1.51.137
+
 ## [2.75.0](https://github.com/okou-ai/okou/compare/api-v2.74.0...api-v2.75.0) (2026-11-16)
 
 
