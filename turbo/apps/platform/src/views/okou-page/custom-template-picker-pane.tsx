@@ -777,12 +777,14 @@ export function CustomTemplatePickerSection({
   query,
   importCard,
   onSelect,
+  onPreviewClose,
 }: {
   readonly signals: ComposerSignals;
   readonly kind: UserTemplateKind;
   readonly query: string;
   readonly importCard: ReactNode;
   readonly onSelect: (template: UserTemplateCatalogEntry) => void;
+  readonly onPreviewClose?: () => void;
 }) {
   const { t } = useTranslation();
   const catalog = useLastLoadable(customTemplateCatalog$);
@@ -839,6 +841,7 @@ export function CustomTemplatePickerSection({
       <CustomTemplatePreviewDialog
         onSelect={onSelect}
         returnFocus={returnFocus}
+        onClose={onPreviewClose}
       />
       <CustomTemplateDeleteConfirmSlot returnFocus={returnFocus} />
       <CustomTemplateRenameSlot returnFocus={returnFocus} />

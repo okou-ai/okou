@@ -89,6 +89,7 @@ export const resetNewThreadComputerAccess$ = command(({ set }) => {
 export interface OpenTemplatePickerDialogOptions {
   readonly category: string;
   readonly referenceValue: GenerationTemplateRequest | null;
+  readonly directPreview?: boolean;
 }
 
 export type OpenTemplatePickerDialogCommand = Command<
@@ -113,6 +114,20 @@ function createBasicComposerUiSignals() {
 }
 
 function createTemplatePickerDialogSignals() {
+  const returnFocus$ = state<HTMLElement | null>(null);
+  const templatePickerFinalFocus$ = command(({ get }) => {
+    const element = get(returnFocus$);
+    return element?.isConnected ? element : null;
+  });
+  const internalTemplatePickerDirectPreview$ = state(false);
+  const templatePickerDirectPreview$ = computed((get) => {
+    return get(internalTemplatePickerDirectPreview$);
+  });
+  const setTemplatePickerDirectPreview$ = command(
+    ({ set }, direct: boolean) => {
+      set(internalTemplatePickerDirectPreview$, direct);
+    },
+  );
   const internalTemplatePickerMounted$ = state(false);
   const internalTemplatePickerOpen$ = state(false);
   const templatePickerMounted$ = computed((get) => {
@@ -150,6 +165,10 @@ function createTemplatePickerDialogSignals() {
   );
   const setTemplatePickerOpen$ = command(({ set }, open: boolean) => {
     if (open) {
+      // Detail refs focus before the dialog mounts. Remember the originating
+      // shelf control now, so dismissal cannot restore an unmounted breadcrumb.
+      const active = document.activeElement;
+      set(returnFocus$, active instanceof HTMLElement ? active : null);
       set(internalTemplatePickerMounted$, true);
     }
     set(internalTemplatePickerOpen$, open);
@@ -204,6 +223,9 @@ function createTemplatePickerDialogSignals() {
   });
 
   return {
+    templatePickerDirectPreview$,
+    setTemplatePickerDirectPreview$,
+    templatePickerFinalFocus$,
     templatePickerMounted$,
     templatePickerOpen$,
     templatePickerInitialFocus$,
@@ -312,6 +334,7 @@ function createOpenTemplatePickerDialogCommand(
     set(list.signals.setTemplatePickerSearch$, "");
     set(previews.clearPresentationTemplatePreviews$);
     set(dialog.setTemplatePickerReferenceValue$, options.referenceValue);
+    set(dialog.setTemplatePickerDirectPreview$, options.directPreview ?? false);
     set(list.signals.setTemplatePickerCategory$, options.category);
     set(dialog.setTemplatePickerOpen$, true);
   });

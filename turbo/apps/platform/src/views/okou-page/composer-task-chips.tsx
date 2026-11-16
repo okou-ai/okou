@@ -45,6 +45,8 @@ import { ComposerPresentationOutputPicker } from "./composer-presentation-output
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 import { ComposerTaskChipRow } from "./composer-task-chip-row.tsx";
 import { ComposerTemplatePickerButton } from "./composer-template-picker-button.tsx";
+import { ComposerTemplateSuggestion } from "./composer-template-suggestion.tsx";
+import { openCustomTemplate$ } from "../../signals/okou-page/custom-template-library.ts";
 
 /**
  * An idea is a sentence, not a label, so it gets a card rather than the pill
@@ -165,6 +167,7 @@ function ComposerTemplateCover({
   ratio,
   documentPage,
   onSelect,
+  onPreview,
 }: {
   readonly title: string;
   readonly coverUrl: string | null;
@@ -176,48 +179,51 @@ function ComposerTemplateCover({
    */
   readonly documentPage?: { readonly hasMorePages: boolean };
   readonly onSelect: () => void;
+  readonly onPreview?: () => void;
 }) {
   const { t } = useTranslation();
   return (
-    <Button
-      type="button"
-      variant="quiet"
-      className={cn(RAIL_TILE, "w-full")}
-      aria-label={t(
-        ($) => {
-          return $.chat.composer.slashPanel.useTemplate;
-        },
-        { title },
-      )}
-      onClick={onSelect}
-    >
-      <span
-        className={cn(
-          "relative flex items-center justify-center overflow-hidden rounded-xl border border-border bg-muted",
-          RAIL_TILE_ART,
-          ratio,
+    <ComposerTemplateSuggestion title={title} onPreview={onPreview}>
+      <Button
+        type="button"
+        variant="quiet"
+        className={cn(RAIL_TILE, "w-full")}
+        aria-label={t(
+          ($) => {
+            return $.chat.composer.slashPanel.useTemplate;
+          },
+          { title },
         )}
+        onClick={onSelect}
       >
-        {coverUrl && documentPage ? (
-          <DocumentTemplateCover
-            coverUrl={coverUrl}
-            hasMorePages={documentPage.hasMorePages}
-          />
-        ) : coverUrl ? (
-          <img
-            src={coverUrl}
-            alt=""
-            loading="lazy"
-            // The tray's tiles answer the pointer by lifting, so the zoom
-            // stays off there: one change per hover.
-            className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/tile:scale-[1.04] in-data-[slot=capability-tray]:group-hover/tile:scale-100"
-          />
-        ) : (
-          <Image size={24} aria-hidden />
-        )}
-      </span>
-      <span className={RAIL_TILE_CAPTION}>{title}</span>
-    </Button>
+        <span
+          className={cn(
+            "relative flex items-center justify-center overflow-hidden rounded-xl border border-border bg-muted",
+            RAIL_TILE_ART,
+            ratio,
+          )}
+        >
+          {coverUrl && documentPage ? (
+            <DocumentTemplateCover
+              coverUrl={coverUrl}
+              hasMorePages={documentPage.hasMorePages}
+            />
+          ) : coverUrl ? (
+            <img
+              src={coverUrl}
+              alt=""
+              loading="lazy"
+              // The tray's tiles answer the pointer by lifting, so the zoom
+              // stays off there: one change per hover.
+              className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/tile:scale-[1.04] in-data-[slot=capability-tray]:group-hover/tile:scale-100"
+            />
+          ) : (
+            <Image size={24} aria-hidden />
+          )}
+        </span>
+        <span className={RAIL_TILE_CAPTION}>{title}</span>
+      </Button>
+    </ComposerTemplateSuggestion>
   );
 }
 
@@ -447,6 +453,10 @@ function ComposerDocumentTemplateRail({
 }) {
   const setMode = useSet(signals.create.setMode$);
   const selectTemplate = useSet(signals.taskChips.selectTemplate$);
+  const openTemplates = useSet(signals.template.openTemplatePicker$);
+  const openDocumentPreview = useSet(signals.template.openDocumentPreview$);
+  const setPickerCategory = useSet(signals.template.setDocumentCategory$);
+  const openCustomTemplate = useSet(openCustomTemplate$);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
   return (
@@ -476,6 +486,18 @@ function ComposerDocumentTemplateRail({
                     ratio="aspect-[4/3]"
                     documentPage={{
                       hasMorePages: template.coverHasMorePages,
+                    }}
+                    onPreview={() => {
+                      setPickerCategory(category ?? "all");
+                      openTemplates({
+                        kind: "insert",
+                        category: "document",
+                        directPreview: true,
+                      });
+                      openCustomTemplate({
+                        templateId: template.id,
+                        kind: "document",
+                      });
                     }}
                     onSelect={() => {
                       selectTemplate(
@@ -507,6 +529,15 @@ function ComposerDocumentTemplateRail({
               })}
               ratio="aspect-[4/3]"
               documentPage={{ hasMorePages: item.previewPages.length > 1 }}
+              onPreview={() => {
+                setPickerCategory(category ?? "all");
+                openTemplates({
+                  kind: "insert",
+                  category: "document",
+                  directPreview: true,
+                });
+                openDocumentPreview(item.id);
+              }}
               onSelect={() => {
                 selectTemplate(toDocumentGenerationTemplate(item), {
                   type: "document",
