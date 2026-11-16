@@ -240,6 +240,56 @@ fn execution_context_validation_rejects_user_env_nul_value_before_sandbox() {
 }
 
 #[test]
+fn execution_context_validation_preserves_sorted_env_error_priority() {
+    for (environment, expected) in [
+        (
+            HashMap::from([
+                ("Z-BAD".into(), "private-later".into()),
+                ("A_GOOD".into(), "private\0value".into()),
+            ]),
+            r#"user environment contains NUL byte for env key "A_GOOD""#,
+        ),
+        (
+            HashMap::from([
+                ("Z_GOOD".into(), "later\0value".into()),
+                ("A-BAD".into(), "private\0value".into()),
+            ]),
+            r#"user environment contains invalid env key "A-BAD""#,
+        ),
+    ] {
+        assert_eq!(
+            validate_context_for_test(&context_with_env(environment)).unwrap_err(),
+            expected
+        );
+    }
+    let mut context = minimal_context();
+    context.user_timezone = Some("private\0timezone".into());
+    let error = validate_execution_context_before_sandbox(
+        &context,
+        "private\0api-url",
+        &SandboxId::new_v4().to_string(),
+    )
+    .err()
+    .unwrap();
+    assert_eq!(
+        error,
+        r#"user environment contains NUL byte for env key "TZ""#
+    );
+    context.user_timezone = Some("UTC".into());
+    let error = validate_execution_context_before_sandbox(
+        &context,
+        "private\0api-url",
+        "private\0sandbox-id",
+    )
+    .err()
+    .unwrap();
+    assert_eq!(
+        error,
+        r#"bootstrap environment contains NUL byte for env key "OKOU_API_BACKEND_URL""#
+    );
+}
+
+#[test]
 fn execution_context_validation_rejects_user_timezone_nul_before_sandbox() {
     let secret = "Asia\0Shanghai";
     let mut ctx = minimal_context();

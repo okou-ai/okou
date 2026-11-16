@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="output_live">リアルタイムの応答</string>
+    <string name="output_waiting">リアルタイムの応答を待っています</string>
+    <string name="output_catching_up">保存済みメッセージを同期しています。受信したテキストは保持されます。</string>
     <string name="settings">設定</string>
     <string name="back">戻る</string>
     <string name="appearance">外観</string>

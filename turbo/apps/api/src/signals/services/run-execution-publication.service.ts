@@ -8,7 +8,6 @@ import {
   type TemplateGuidanceBundle,
 } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { command } from "ccstate";
-import { record, string } from "zod";
 import { nowDate } from "../../lib/time";
 import { generateSandboxToken } from "../auth/tokens";
 import type { ExecutionContextRun } from "./execution-context";
@@ -32,7 +31,6 @@ import {
 export interface ExecutionPublicationRun extends ExecutionContextRun {
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
-  readonly vars: unknown;
   readonly isFirstRun: boolean;
 }
 
@@ -46,22 +44,12 @@ export interface ExecutionPackageSelection {
   }[];
 }
 
-const runVarsSchema = record(string(), string()).nullable();
-type BaseExecutionContext = Omit<ExecutionContext, "contentBundles">;
-
-function mergeExecutionVars(args: {
-  readonly runVars: Record<string, string> | null;
-  readonly connectorVars: Record<string, string> | null | undefined;
-}): Record<string, string> | null {
-  const merged: Record<string, string> = {};
-  if (args.runVars) {
-    Object.assign(merged, args.runVars);
-  }
-  if (args.connectorVars) {
-    Object.assign(merged, args.connectorVars);
-  }
-  return Object.keys(merged).length > 0 ? merged : null;
-}
+type BaseExecutionContext = Omit<
+  ExecutionContext,
+  "contentBundles" | "storageManifest"
+> & {
+  readonly storageManifest: NonNullable<ExecutionContext["storageManifest"]>;
+};
 
 function withContentBundleMounts(
   executionContext: BaseExecutionContext,
@@ -77,14 +65,11 @@ function withContentBundleMounts(
     ...executionContext,
     contentBundles,
     storageManifest: {
-      storageMounts: (
-        executionContext.storageManifest?.storageMounts ?? []
-      ).filter((mount) => {
-        return (
-          !mount.name.startsWith("custom-skill@") &&
-          !bundledMountPaths.has(mount.mountPath)
-        );
-      }),
+      storageMounts: executionContext.storageManifest.storageMounts.filter(
+        (mount) => {
+          return !bundledMountPaths.has(mount.mountPath);
+        },
+      ),
     },
   };
 }
@@ -313,10 +298,7 @@ export function executionContextBody(args: {
     reuseKey: args.reuseKey,
     prompt: args.run.prompt,
     appendSystemPrompt: args.run.appendSystemPrompt,
-    vars: mergeExecutionVars({
-      runVars: runVarsSchema.parse(args.run.vars),
-      connectorVars: args.preparedContext.vars,
-    }),
+    vars: { ...args.run.vars, ...args.preparedContext.vars },
     storageManifest: {
       storageMounts: args.preparedContext.storageMounts.map((storageMount) => {
         const { orgId: _orgId, userId: _userId, ...mount } = storageMount;

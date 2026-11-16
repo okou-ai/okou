@@ -210,7 +210,7 @@ final class WorkspaceResources {
     do { try store.set(lifetime, false) } catch {
       Logger(subsystem: "ai.okou.ios", category: "WorkspaceResources")
         .error(
-          "Cannot notify retired resource observers: \(error.localizedDescription, privacy: .public)"
+          "event=workspace.resources.retired_observers.notify.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
         )
     }
   }

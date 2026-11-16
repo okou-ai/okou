@@ -1,9 +1,9 @@
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { MODEL_FIRST_SELECTION_PROVIDER_ID } from "@okouai/api-contracts/validators/chat-threads";
 import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  modelProviderTypeSchema,
-  type ModelProviderType,
+import type {
+  BuiltInModelProviderType,
+  PersonalSubscriptionProviderType,
 } from "@okouai/api-contracts/contracts/model-provider-types";
 import { formatReplacementSubscriptionRequiredMessage } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -44,15 +44,11 @@ export interface ModelSelectionBootstrap {
   readonly member: MemberModelBootstrap;
   readonly memberMetadata: ExecutionMemberMetadata;
 }
-export function modelProviderWriteTypeForLaunch(
-  type: string,
-): ModelProviderType {
-  return modelProviderTypeSchema.parse(type);
-}
 export interface ModelFirstPin {
   readonly modelProviderId: string | null;
-  readonly modelProviderType: string | null;
-  readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
+  readonly modelProviderType:
+    BuiltInModelProviderType | PersonalSubscriptionProviderType;
+  readonly modelProviderCredentialScope: ModelProviderCredentialScope;
   readonly selectedModel: string;
 }
 export interface DefaultModelFirstPin extends ModelFirstPin {
@@ -89,23 +85,23 @@ function unavailablePersonalPin(
     resolution && resolution.kind !== "unknown"
       ? resolution.resolvedModel
       : null;
-  const route = catalog.routes.find((candidate) => {
-    return (
-      candidate.model === canonicalModel &&
-      candidate.providerType === candidate.subscriptionType &&
-      candidate.concreteProviderType === candidate.subscriptionType &&
-      (candidate.subscriptionType === "codex-oauth-token" ||
-        candidate.subscriptionType === "claude-code-oauth-token")
-    );
-  });
-  return route
-    ? {
+  for (const route of catalog.routes) {
+    if (
+      route.model === canonicalModel &&
+      route.providerType === route.subscriptionType &&
+      route.concreteProviderType === route.subscriptionType &&
+      (route.subscriptionType === "codex-oauth-token" ||
+        route.subscriptionType === "claude-code-oauth-token")
+    ) {
+      return {
         modelProviderId: null,
-        modelProviderType: route.providerType,
+        modelProviderType: route.subscriptionType,
         modelProviderCredentialScope: "member",
         selectedModel: route.model,
-      }
-    : null;
+      };
+    }
+  }
+  return null;
 }
 interface SelectionParams {
   readonly orgId: string;
@@ -302,15 +298,11 @@ export function replacementSubscriptionRequired(
   readonly response: ReturnType<typeof badRequestMessage>;
 } | null {
   const subscriptionType = pin.modelProviderType;
-  const label = subscriptionType
-    ? SUBSCRIPTION_LABELS[subscriptionType]
-    : undefined;
+  const label = SUBSCRIPTION_LABELS[subscriptionType];
   if (
-    !subscriptionType ||
     label === undefined ||
     pin.modelProviderCredentialScope !== "member" ||
     pin.modelProviderId !== null ||
-    pin.selectedModel === null ||
     !isReplacedModelSelection(catalog, selectedId) ||
     resolveCatalogRunModel(catalog, pin.selectedModel) === null
   ) {

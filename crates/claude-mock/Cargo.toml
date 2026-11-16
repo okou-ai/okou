@@ -1,6 +1,6 @@
 [package]
 name = "claude-mock"
-version = "0.22.109"
+version = "0.22.110"
 edition.workspace = true
 
 [dependencies]
@@ -9,6 +9,9 @@ guest-contracts.workspace = true
 libc = { workspace = true, features = ["std"] }
 serde_json = { workspace = true, features = ["std"] }
 uuid = { workspace = true, features = ["std", "v7"] }
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["process", "std"] }
 
 [dev-dependencies]
 cli-test-support = { workspace = true, features = ["test-support"] }

@@ -29,6 +29,7 @@ import {
   type ComposerConnectorActions,
 } from "./composer-connector-actions.ts";
 import { ComposerTaskControls } from "./composer-create.tsx";
+import { ComposerTools } from "./composer-tools.tsx";
 import { ComposerVisualizationPreferences } from "./composer-visualization-preferences.tsx";
 import { useComposerCapabilities } from "./composer-capabilities.ts";
 import {
@@ -6954,6 +6955,7 @@ function ComposerIdleControls({
         <ComposerConnectorsSlot signals={signals} actions={connectorActions} />
         <ComposerProjectControl signals={signals} />
         <ComposerTaskControls signals={signals} />
+        <ComposerTools signals={signals} />
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1 composer-wide:gap-2">
         <ComposerModelPickerSlot signals={signals} />

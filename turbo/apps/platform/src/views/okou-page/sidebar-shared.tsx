@@ -205,16 +205,19 @@ function OkouAvatarInSlot({
   alt,
   className,
   size,
+  motion,
   "data-testid": testId,
 }: {
   alt: string;
   className: string;
   size?: number;
+  motion?: "animated" | "static";
   "data-testid"?: string;
 }) {
   return (
     <OkouAvatar
       size={size}
+      motion={motion}
       label={alt === "" ? undefined : alt}
       className={cn(className, "rounded-none")}
       data-testid={testId}
@@ -316,6 +319,7 @@ export function AgentAvatarImg({
   alt,
   className,
   size,
+  motion,
   preserveChinBaseline = false,
   textureUrl,
   "data-testid": testId,
@@ -324,6 +328,7 @@ export function AgentAvatarImg({
   alt: string;
   className: string;
   size?: number;
+  motion?: "animated" | "static";
   preserveChinBaseline?: boolean;
   /**
    * Brand texture to draw behind the artwork, from `useAgentAvatarTexture`.
@@ -341,6 +346,7 @@ export function AgentAvatarImg({
         alt={alt}
         className={className}
         size={size}
+        motion={motion}
         data-testid={testId}
       />
     );

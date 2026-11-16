@@ -9,13 +9,21 @@ struct DiscardedThrowingTaskRule: NativeRule {
     kind: .lint)
 
   func validate(file: SwiftLintFile) -> [StyleViolation] {
-    let visitor = Visitor(viewMode: .sourceAccurate)
+    let visitor = Visitor(tree: file.syntaxTree)
     visitor.walk(file.syntaxTree)
     return findings(visitor.positions, in: file)
   }
 
   private final class Visitor: SyntaxVisitor {
     var positions: [AbsolutePosition] = []
+    let factories: NativeFreshFactories
+
+    init(tree: SourceFileSyntax) {
+      factories = NativeFreshFactories(
+        tree: tree, type: DiscardedThrowingTaskRule.taskType,
+        construction: DiscardedThrowingTaskRule.createsThrowingTask)
+      super.init(viewMode: .sourceAccurate)
+    }
 
     override func visit(_ node: SequenceExprSyntax) -> SyntaxVisitorContinueKind {
       let parts = Array(node.elements)
@@ -41,13 +49,37 @@ struct DiscardedThrowingTaskRule: NativeRule {
         inspect(element.expression)
         return
       }
-      guard let call = expression.as(FunctionCallExprSyntax.self), nativeTaskCall(call),
-        let body = nativeTaskBody(call)
+      guard let call = expression.as(FunctionCallExprSyntax.self),
+        DiscardedThrowingTaskRule.createsThrowingTask(expression) || factories.constructs(call)
       else { return }
-      let errors = EscapingErrors(scope: body)
-      errors.walk(body.statements)
-      if errors.found { positions.append(call.positionAfterSkippingLeadingTrivia) }
+      positions.append(call.positionAfterSkippingLeadingTrivia)
     }
+  }
+
+  private static func taskType(_ type: TypeSyntax) -> Bool {
+    if let identifier = type.as(IdentifierTypeSyntax.self) {
+      return identifier.name.text == "Task"
+        && identifier.genericArgumentClause?.arguments.count == 2
+    }
+    if let member = type.as(MemberTypeSyntax.self) {
+      return ["Swift", "_Concurrency"].contains(member.baseType.trimmedDescription)
+        && member.name.text == "Task" && member.genericArgumentClause?.arguments.count == 2
+    }
+    return false
+  }
+
+  private static func createsThrowingTask(_ expression: ExprSyntax) -> Bool {
+    if let tuple = expression.as(TupleExprSyntax.self), tuple.elements.count == 1,
+      let element = tuple.elements.first, element.label == nil
+    {
+      return createsThrowingTask(element.expression)
+    }
+    guard let call = expression.as(FunctionCallExprSyntax.self), nativeTaskCall(call),
+      let body = nativeTaskBody(call)
+    else { return false }
+    let errors = EscapingErrors(scope: body)
+    errors.walk(body.statements)
+    return errors.found
   }
 
   private final class EscapingErrors: SyntaxVisitor {

@@ -1,10 +1,13 @@
 package ai.okou.android
 
+import ai.okou.android.api.generated.SessionOutputDelta
 import ai.okou.android.auth.SessionModel
+import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.RealtimePhase
 import ai.okou.android.chat.RealtimeSnapshot
+import ai.okou.android.chat.RunOutputSignal
 import android.view.KeyEvent
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -18,12 +21,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Condition
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.UiSelector
+import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import java.util.regex.Pattern
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -63,10 +68,32 @@ class NativeRealtimeTest {
         val failures = mutableListOf<Throwable>()
         try {
             scenario = ActivityScenario.launch(MainActivity::class.java)
+            // Markdown paragraphs add line terminators after the unchanged visible body.
+            fun label(value: String) =
+                By.pkg(app.packageName).text(Pattern.compile(Pattern.quote(value) + "\\n*"))
             fun text(value: String) =
-                checkNotNull(
-                    device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
-                )
+                checkNotNull(device.wait(Until.findObject(label(value)), 10_000))
+            fun reveal(value: String) {
+                val target = label(value)
+                if (!device.hasObject(target)) {
+                    val container =
+                        checkNotNull(
+                            device.wait(
+                                Until.findObject(By.pkg(app.packageName).scrollable(true)),
+                                10_000,
+                            )
+                        )
+                    val visible =
+                        object : Condition<UiObject2, Boolean> {
+                            // Compose exposes virtual descendants through the current window.
+                            override fun apply(unused: UiObject2) = device.hasObject(target)
+                        }
+                    if (!container.scrollUntil(Direction.UP, visible)) {
+                        container.scrollUntil(Direction.DOWN, visible)
+                    }
+                }
+                text(value)
+            }
             fun condition(check: () -> Boolean) =
                 assertTrue(
                     device.wait(
@@ -97,13 +124,8 @@ class NativeRealtimeTest {
                 chats = ready.chats
             }
             condition { chats?.uiState?.value?.threads?.any { it.id == CHAT_PERSONAL } == true }
-            androidx.test.uiautomator
-                .UiScrollable(UiSelector().scrollable(true))
-                .scrollIntoView(UiSelector().text("Personal chat"))
-            text("Personal chat")
-            device
-                .findObject(UiSelector().packageName(app.packageName).text("Personal chat"))
-                .click()
+            reveal("Personal chat")
+            text("Personal chat").click()
             assertNotNull(
                 device.wait(
                     Until.findObject(By.pkg(app.packageName).textContains("Native history")),
@@ -176,13 +198,11 @@ class NativeRealtimeTest {
                     """{"rows":[$rows],"cursor":{"lastEventId":"$extraId","lastSeqId":41},"hasMore":false}"""
                 )
             }
-            external.snapshot.value = RealtimeSnapshot(RealtimePhase.Connected, 1)
+            external.snapshot.value =
+                RealtimeSnapshot(RealtimePhase.Connected, 1, changes = ChatChanges(resync = true))
             text("Changed on another client")
             // The new confirmed message can be below the current viewport; use native scrolling.
-            androidx.test.uiautomator
-                .UiScrollable(UiSelector().scrollable(true))
-                .scrollIntoView(UiSelector().text("External input"))
-            text("External input")
+            reveal("External input")
             assertTrue(
                 checkNotNull(
                         device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
@@ -191,10 +211,7 @@ class NativeRealtimeTest {
                     .contains("Keep this draft")
             )
 
-            androidx.test.uiautomator
-                .UiScrollable(UiSelector().scrollable(true))
-                .scrollToBeginning(10)
-            text("Changed on another client")
+            reveal("Changed on another client")
             val opened = external.opened.get()
             scenario.moveToState(Lifecycle.State.CREATED)
             condition { external.closed.get() == opened }
@@ -203,6 +220,108 @@ class NativeRealtimeTest {
             scenario.moveToState(Lifecycle.State.RESUMED)
             condition { external.opened.get() == opened + 1 }
             text("Changed while backgrounded")
+            // Confirmed active-run ownership enables transient output on the same observation.
+            val activeRun = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            val activeInput = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+            val streamedEvent = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+            val savedOutput = AtomicReference(false)
+            fixture.historyRows = { request ->
+                val cursor = request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0
+                val saved = savedOutput.get()
+                val rows =
+                    buildList {
+                            if (cursor < 53)
+                                add(
+                                    historyEventWire(
+                                        activeInput,
+                                        53,
+                                        CHAT_PERSONAL,
+                                        "input.prompt",
+                                        """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Start live output"}]}}""",
+                                        activeRun,
+                                    )
+                                )
+                            if (saved && cursor < 54)
+                                add(
+                                    historyEventWire(
+                                        streamedEvent,
+                                        54,
+                                        CHAT_PERSONAL,
+                                        "output.message",
+                                        """{"content":"Saved native answer"}""",
+                                        activeRun,
+                                    )
+                                )
+                        }
+                        .joinToString(",")
+                val lastId = if (saved) streamedEvent else activeInput
+                val lastSeq = if (saved) 54 else 53
+                jsonResponse(
+                    """{"rows":[$rows],"cursor":{"lastEventId":"$lastId","lastSeqId":$lastSeq},"hasMore":false}"""
+                )
+            }
+            external.invalidate()
+            condition { external.target.value?.runId == activeRun }
+            fun chunk(index: Long, value: String) =
+                RunOutputSignal.Delta(
+                    SessionOutputDelta(
+                        CHAT_PERSONAL,
+                        activeRun,
+                        streamedEvent,
+                        "native-output",
+                        CHAT_DATE,
+                        index,
+                        value,
+                    )
+                )
+            external.output(chunk(0, "Live native "))
+            external.output(chunk(0, "duplicate"))
+            external.output(chunk(1, "answer"))
+            condition {
+                chats
+                    ?.history
+                    ?.output
+                    ?.state
+                    ?.value
+                    ?.messages
+                    ?.singleOrNull()
+                    ?.blocks
+                    ?.singleOrNull()
+                    ?.text == "Live native answer"
+            }
+            reveal("Live native answer")
+            external.output(chunk(3, " after a gap"))
+            condition {
+                chats
+                    ?.history
+                    ?.output
+                    ?.state
+                    ?.value
+                    ?.messages
+                    ?.singleOrNull()
+                    ?.blocks
+                    ?.singleOrNull()
+                    ?.text == "Live native answer after a gap"
+            }
+            external.snapshot.value =
+                external.snapshot.value.copy(phase = RealtimePhase.Unavailable)
+            condition {
+                chats?.history?.output?.state?.value?.phase ==
+                    ai.okou.android.chat.RunOutputPhase.CatchingUp
+            }
+            text("Live native answer after a gap")
+            external.snapshot.value =
+                external.snapshot.value.copy(
+                    phase = RealtimePhase.Connected,
+                    revision = external.snapshot.value.revision + 1,
+                )
+            external.output(chunk(4, " after reconnect"))
+            reveal("Live native answer after a gap after reconnect")
+            savedOutput.set(true)
+            external.invalidate()
+            reveal("Saved native answer")
+            assertFalse(device.hasObject(label("Live native answer after a gap after reconnect")))
+            condition { chats?.history?.output?.state?.value?.messages?.isEmpty() == true }
             assertTrue(
                 checkNotNull(
                         device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))

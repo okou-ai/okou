@@ -87,7 +87,7 @@
     },
     {
       "file": "turbo/apps/api/src/signals/services/execution-storage.service.ts",
-      "uses": 26,
+      "uses": 24,
       "dependency": "module:turbo/packages/db/src/schema/storage"
     },
     {
@@ -132,7 +132,7 @@
     },
     {
       "file": "turbo/apps/api/src/signals/services/storage-index.service.ts",
-      "uses": 19,
+      "uses": 17,
       "dependency": "module:turbo/packages/db/src/schema/storage"
     },
     {

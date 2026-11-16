@@ -332,7 +332,7 @@ function advanceQueueHead(
   if (row.eventType === "input.prompt" && row.contextType === null) {
     throw new Error("Queued user message is missing its context type");
   }
-  const pin = args.createArgs.agentRunModelPin;
+  const pin = args.createArgs.modelSelection;
   const serviceTier = args.createArgs.codexServiceTier
     ? ("priority" as const)
     : undefined;
@@ -344,14 +344,11 @@ function advanceQueueHead(
     ...(row.modelSelection === null
       ? {}
       : { modelSelection: row.modelSelection }),
-    userMessage:
-      pin.selectedModel === null
-        ? row.userMessage
-        : withRunModelAnnotation(
-            row.userMessage,
-            pin.selectedModel,
-            serviceTier,
-          ),
+    userMessage: withRunModelAnnotation(
+      row.userMessage,
+      pin.selectedModel,
+      serviceTier,
+    ),
   });
   return {
     ...facts,

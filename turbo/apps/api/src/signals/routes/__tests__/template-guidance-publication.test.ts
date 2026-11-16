@@ -348,7 +348,7 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
   });
 });
 
-test("mounts both template owner kinds once when selections repeat", async () => {
+test("mounts every user-template kind and presentation guidance once in selection order", async () => {
   const owner = await publicChatActor(context);
   const fixture = await owner.run(() => {
     return Promise.resolve(installS3Fixture(context));
@@ -368,6 +368,71 @@ test("mounts both template owner kinds once when selections repeat", async () =>
     }
     selections.push(selection(kind, published.body.id));
     expected.push({ ownerKind: kind, templateId: published.body.id, files });
+  }
+  for (const kind of ["document", "illustration"] as const) {
+    const files = [
+      { path: "SKILL.md", content: `# Use this ${kind} template\n` },
+      kind === "document"
+        ? { path: "reference.docx", content: "PK reference styles\n" }
+        : { path: "ref-example.png", content: "Approved example\n" },
+    ];
+    const published = await owner.run(async () => {
+      const sourceFileId = await uploadTemplateFile(
+        context,
+        owner.actor,
+        fixture,
+        kind === "document"
+          ? {
+              filename: "source.docx",
+              contentType:
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            }
+          : { filename: "source.png", contentType: "image/png" },
+        Buffer.from(kind === "document" ? "PK source" : "PNG source"),
+      );
+      const packageFileId = await uploadTemplateFile(
+        context,
+        owner.actor,
+        fixture,
+        { filename: "package.tar.gz", contentType: "application/gzip" },
+        tarGz(files),
+      );
+      const kindInputs =
+        kind === "illustration"
+          ? {
+              kind,
+              exampleFileIds: [
+                await uploadTemplateFile(
+                  context,
+                  owner.actor,
+                  fixture,
+                  { filename: "example.png", contentType: "image/png" },
+                  Buffer.from("PNG example"),
+                ),
+              ],
+            }
+          : { kind };
+      return await accept(
+        userClient().publish({
+          headers: authHeaders(),
+          body: {
+            title: `Selected ${kind} template`,
+            sourceFileId,
+            packageFileId,
+            ...kindInputs,
+          },
+        }),
+        [200],
+      );
+    });
+    // Select in the reverse of creation order so database order cannot stand
+    // in for the caller's order.
+    selections.unshift(selection("user-template", published.body.id));
+    expected.unshift({
+      ownerKind: "user-template",
+      templateId: published.body.id,
+      files,
+    });
   }
   const run = await owner.sendChatRun(owner.actor, {
     agentId: owner.agentId,
@@ -389,6 +454,23 @@ test("mounts both template owner kinds once when selections repeat", async () =>
   });
   const { execution } = await owner.runExecution(run.runId);
   expect(execution.contentBundles.templates).toHaveLength(expected.length);
+  expect(
+    execution.contentBundles.templates
+      ?.filter((bundle) => {
+        return bundle.ownerKind === "user-template";
+      })
+      .map((bundle) => {
+        return bundle.templateId;
+      }),
+  ).toStrictEqual(
+    expected
+      .filter((item) => {
+        return item.ownerKind === "user-template";
+      })
+      .map((item) => {
+        return item.templateId;
+      }),
+  );
   for (const item of expected) {
     const bundle = execution.contentBundles.templates?.find((candidate) => {
       return (

@@ -31,6 +31,8 @@ import ai.okou.android.chat.HistoryPage
 import ai.okou.android.chat.InputObservation
 import ai.okou.android.chat.RealtimeService
 import ai.okou.android.chat.RealtimeSnapshot
+import ai.okou.android.chat.RunOutputSignal
+import ai.okou.android.chat.RunOutputTarget
 import ai.okou.android.chat.TextDisposition
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
@@ -39,7 +41,11 @@ import java.io.Closeable
 import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
@@ -94,7 +100,11 @@ class CanonicalWorkspaceSession(
 
     override suspend fun chatSnapshot() = api.chatSnapshot()
 
-    override suspend fun observeRealtime(observe: suspend (RealtimeSnapshot) -> Unit): Nothing =
+    override suspend fun observeRealtime(
+        target: StateFlow<RunOutputTarget?>,
+        output: suspend (RunOutputTarget, RunOutputSignal) -> Unit,
+        observe: suspend (RealtimeSnapshot) -> Unit,
+    ): Nothing =
         withContext(Dispatchers.IO) {
             AblyRealtimeConnection(
                     identity.userId,
@@ -104,9 +114,22 @@ class CanonicalWorkspaceSession(
                     archiveJson.encodeToString(api.realtimeToken())
                 }
                 .use { connection ->
-                    connection.state.collect { next ->
-                        next.failure?.let { throw it }
-                        withContext(Dispatchers.Main.immediate) { observe(next) }
+                    coroutineScope {
+                        launch {
+                            target.collectLatest { selected ->
+                                if (selected != null)
+                                    connection.runOutput(selected).collect { signal ->
+                                        withContext(Dispatchers.Main.immediate) {
+                                            output(selected, signal)
+                                        }
+                                    }
+                            }
+                        }
+                        connection.state.collect {
+                            val next = connection.takeObservation()
+                            next.failure?.let { throw it }
+                            withContext(Dispatchers.Main.immediate) { observe(next) }
+                        }
                     }
                 }
         }

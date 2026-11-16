@@ -1,5 +1,27 @@
 # Changelog
 
+## [10.29.3](https://github.com/okou-ai/okou/compare/cli-v10.29.2...cli-v10.29.3) (2026-11-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.74.0
+    * @okouai/core bumped to 8.844.2
+    * @okouai/pi-agent-runtime bumped to 1.51.138
+
+## [10.29.2](https://github.com/okou-ai/okou/compare/cli-v10.29.1...cli-v10.29.2) (2026-11-16)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/browser-extension-client bumped to 0.4.5
+    * @okouai/core bumped to 8.844.1
+    * @okouai/pi-agent-runtime bumped to 1.51.137
+
 ## [10.29.1](https://github.com/okou-ai/okou/compare/cli-v10.29.0...cli-v10.29.1) (2026-11-16)
 
 

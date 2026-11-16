@@ -640,6 +640,7 @@ export const clientContractImportManifest = [
   {
     module: "cron",
     contracts: [
+      "cronAggregateRunPhaseTimingsContract",
       "cronBrowserReconcileContract",
       "cronCleanupSandboxesContract",
       "cronCleanupSuggestionsContract",
@@ -983,6 +984,11 @@ export const clientContractImportManifest = [
   {
     module: "get-started-history",
     contracts: ["getStartedHistoryContract"],
+    bindings: [],
+  },
+  {
+    module: "get-started-receipt",
+    contracts: ["getStartedReceiptContract"],
     bindings: [],
   },
   {

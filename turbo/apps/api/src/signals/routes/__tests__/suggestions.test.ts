@@ -380,7 +380,7 @@ describe("Agent suggestions", () => {
     const changed = await accept(
       api.updateSources({
         headers: humanHeaders,
-        body: { suggestions: false, offers: false },
+        body: { suggestions: false, offers: false, systemUpdates: false },
       }),
       [200],
     );
@@ -388,6 +388,7 @@ describe("Agent suggestions", () => {
       suggestions: false,
       whatsNew: true,
       offers: false,
+      systemUpdates: false,
     });
     await accept(
       api.updateSources({ headers: humanHeaders, body: { whatsNew: false } }),
@@ -395,7 +396,12 @@ describe("Agent suggestions", () => {
     );
     expect(
       (await accept(client().sources({ headers: humanHeaders }), [200])).body,
-    ).toStrictEqual({ suggestions: false, whatsNew: false, offers: false });
+    ).toStrictEqual({
+      suggestions: false,
+      whatsNew: false,
+      offers: false,
+      systemUpdates: false,
+    });
     expect(
       (await accept(api.summary({ headers: humanHeaders }), [200])).body
         .hasUnread,
@@ -465,7 +471,12 @@ describe("Agent suggestions", () => {
     );
     expect(
       (await accept(client().sources({ headers: humanHeaders }), [200])).body,
-    ).toStrictEqual({ suggestions: true, whatsNew: true, offers: true });
+    ).toStrictEqual({
+      suggestions: true,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: true,
+    });
     expect(
       (await accept(client().summary({ headers: humanHeaders }), [200])).body
         .hasUnread,

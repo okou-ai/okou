@@ -347,6 +347,7 @@ runs:
         add_doppler_config TELEGRAM_OFFICIAL_WEBHOOK_SECRET
         if [[ "$INPUT_APP" == "api" ]]; then
           add_secret MARKETING_REWARDS_EXPORT_SECRET MARKETING_REWARDS_EXPORT_SECRET
+          add_secret MARKETING_REWARDS_RECEIPT_SECRET MARKETING_REWARDS_RECEIPT_SECRET
           if [[ "$INPUT_ENVIRONMENT" == "production" ]]; then
             add_secret APNS_PRIVATE_KEY_BASE64 APNS_PRIVATE_KEY_BASE64
             add_var APNS_KEY_ID APNS_KEY_ID

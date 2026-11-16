@@ -70,7 +70,9 @@ enum OkouWidgetPublishing {
       try store.write(snapshot)
       WidgetCenter.shared.reloadTimelines(ofKind: kind)
     } catch {
-      log.error("Cannot write the widget snapshot: \(error.localizedDescription, privacy: .public)")
+      log.error(
+        "event=widgets.snapshot.write.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+      )
     }
   }
 
@@ -80,7 +82,9 @@ enum OkouWidgetPublishing {
       try store.clear()
       WidgetCenter.shared.reloadTimelines(ofKind: kind)
     } catch {
-      log.error("Cannot clear the widget snapshot: \(error.localizedDescription, privacy: .public)")
+      log.error(
+        "event=widgets.snapshot.clear.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+      )
     }
   }
 }

@@ -5,17 +5,7 @@ import { deferred } from "../../../test-fixtures/ably-realtime";
 import { createRunMarkCommand } from "../mark";
 
 const endpoint = "https://api.okou.ai/api/runs/current/phase-mark";
-const receipt = {
-  schemaVersion: 1,
-  status: "recorded",
-  reason: null,
-  timing: {
-    researchStartedAt: null,
-    generationStartedAt: "2026-11-16T03:00:00.000Z",
-    researchSkipped: true,
-    generationKind: "report",
-  },
-};
+const receipt = { schemaVersion: 2, status: "accepted" };
 function token(capabilities: readonly string[]) {
   return `vm0_sandbox_e30.${Buffer.from(JSON.stringify({ scope: "okou", capabilities, userId: "owner", orgId: "org", runId: "a0000000-0000-4000-8000-000000000001" })).toString("base64url")}.signature`;
 }
@@ -53,7 +43,7 @@ describe("run phase markers", () => {
     "rejects invalid arguments before making a request: %j",
     async (...args) => {
       const requests = vi.fn(() => {
-        return HttpResponse.json(receipt);
+        return HttpResponse.json(receipt, { status: 202 });
       });
       server.use(http.post(endpoint, requests));
       await expect(run(args)).rejects.toThrow();
@@ -68,7 +58,7 @@ describe("run phase markers", () => {
         kind: "report",
         skipResearch: true,
       });
-      return HttpResponse.json(receipt);
+      return HttpResponse.json(receipt, { status: 202 });
     });
     server.use(http.post(endpoint, requests));
     await run(["generation-start", "--kind", "report", "--skip-research"]);
@@ -77,11 +67,11 @@ describe("run phase markers", () => {
     expect(console.error).not.toHaveBeenCalled();
   });
 
-  it("prints the server receipt without substituting the local clock", async () => {
+  it("prints the acceptance receipt without claiming delivery", async () => {
     server.use(
       http.post(endpoint, async ({ request }) => {
         expect(await request.json()).toEqual({ phase: "research-start" });
-        return HttpResponse.json(receipt);
+        return HttpResponse.json(receipt, { status: 202 });
       }),
     );
     await run(["research-start", "--json"]);
@@ -102,7 +92,7 @@ describe("run phase markers", () => {
       expect(requests).toHaveBeenCalledTimes(1);
       expect(console.log).toHaveBeenCalledWith(
         JSON.stringify({
-          schemaVersion: 1,
+          schemaVersion: 2,
           status: "unavailable",
           reason: "http-error",
         }),
@@ -111,7 +101,7 @@ describe("run phase markers", () => {
     },
   );
 
-  it("aborts the request at its deadline and reports an unknown commit without retry", async () => {
+  it("aborts at its deadline and reports unknown delivery without retry", async () => {
     const deadline = new AbortController();
     const timeout = vi
       .spyOn(AbortSignal, "timeout")
@@ -144,9 +134,9 @@ describe("run phase markers", () => {
     }
     expect(console.log).toHaveBeenCalledWith(
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         status: "unavailable",
-        reason: "timeout-commit-unknown",
+        reason: "timeout-delivery-unknown",
       }),
     );
     expect(requests).toHaveBeenCalledTimes(1);
@@ -155,33 +145,50 @@ describe("run phase markers", () => {
   it("does not contact the API when the Run lacks the capability", async () => {
     vi.stubEnv("OKOU_TOKEN", token(["run-usage:read"]));
     const requests = vi.fn(() => {
-      return HttpResponse.json(receipt);
+      return HttpResponse.json(receipt, { status: 202 });
     });
     server.use(http.post(endpoint, requests));
     await run(["research-start", "--json"]);
     expect(requests).not.toHaveBeenCalled();
     expect(console.log).toHaveBeenCalledWith(
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         status: "unavailable",
         reason: "missing-capability",
       }),
     );
   });
 
-  it("does not claim a malformed response was recorded", async () => {
+  it("does not claim a malformed response was accepted", async () => {
     server.use(
       http.post(endpoint, () => {
-        return HttpResponse.json({ status: "recorded" });
+        return HttpResponse.json({ status: "accepted" }, { status: 202 });
       }),
     );
     await run(["research-start", "--json"]);
     expect(console.log).toHaveBeenCalledWith(
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         status: "unavailable",
         reason: "invalid-response",
       }),
     );
+  });
+
+  it("fails open on a transport error without retrying", async () => {
+    const requests = vi.fn(() => {
+      return HttpResponse.error();
+    });
+    server.use(http.post(endpoint, requests));
+    await run(["research-start", "--json"]);
+    expect(requests).toHaveBeenCalledTimes(1);
+    expect(console.log).toHaveBeenCalledWith(
+      JSON.stringify({
+        schemaVersion: 2,
+        status: "unavailable",
+        reason: "transport-error",
+      }),
+    );
+    expect(console.error).not.toHaveBeenCalled();
   });
 });

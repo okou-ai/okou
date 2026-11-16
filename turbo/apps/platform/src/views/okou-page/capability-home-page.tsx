@@ -67,6 +67,36 @@ function CapabilityCopy({
 }
 
 /**
+ * Every card opens from anywhere on it, not only from its buttons: this
+ * button covers the whole card, above its copy and objects and below its row
+ * of choices, which keep their own actions. A click elsewhere on the card
+ * does what the card's first choice does. Those choices stay the card's
+ * keyboard and assistive-technology controls, so the cover repeats one of
+ * them for the pointer only and stays out of the tab order and the
+ * accessibility tree.
+ */
+function CapabilityCardCover({ onClick }: { readonly onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      aria-hidden
+      data-testid="capability-card-cover"
+      className="absolute inset-0 z-[3] rounded-[inherit] outline-none"
+      onClick={onClick}
+    />
+  );
+}
+
+/**
+ * A card's row of choices, above its cover. The row lets the pointer through
+ * everywhere but on the choices themselves, so the gaps between and above
+ * them open the card too.
+ */
+const CHOICE_ROW =
+  "pointer-events-none relative z-[4] mt-auto flex pt-4 *:pointer-events-auto";
+
+/**
  * The home's cards and its tray replace each other through one swap, so the
  * change animates as a whole: see `swap$`.
  */
@@ -86,10 +116,10 @@ function useHomeSwap(signals: ComposerSignals): (change: HomeSwap) => void {
 const GREETING_ROW = "flex min-h-14 [view-transition-name:capability-greeting]";
 
 /**
- * Find people and Research open their Explore tray from one action, so all
- * four cards are acted on the same way: from a button along the bottom. The
- * button takes only the left column, so the objects keep the right column's
- * full height; hovering it replays them.
+ * Find people and Research open their Explore tray from anywhere on the card;
+ * the Explore button along the bottom gives them the same anatomy as Create
+ * and Workflow. It takes only the left column, so the objects keep the right
+ * column's full height.
  */
 function ExploreCapabilityCard({
   signals,
@@ -107,11 +137,15 @@ function ExploreCapabilityCard({
   });
   const swap = useHomeSwap(signals);
   const art = kind === "search" ? "people" : "research";
+  const explore = () => {
+    swap({ kind: "explore", explore: kind });
+  };
   return (
     <section
       className={cn(CAPABILITY_CARD, "min-h-42 @2xl:col-span-9")}
       aria-label={title}
     >
+      <CapabilityCardCover onClick={explore} />
       <CapabilityGround card={art} />
       <CapabilityStage
         card={art}
@@ -124,15 +158,8 @@ function ExploreCapabilityCard({
         description={description}
         className="max-w-36"
       />
-      <div className="relative z-[2] mt-auto flex pt-4">
-        <Button
-          variant="neutral"
-          size="sm"
-          data-art="explore"
-          onClick={() => {
-            swap({ kind: "explore", explore: kind });
-          }}
-        >
+      <div className={CHOICE_ROW}>
+        <Button variant="neutral" size="sm" onClick={explore}>
           {t(($) => {
             return $.chat.capabilityHome.explore;
           })}
@@ -165,6 +192,71 @@ function ExploreLink() {
       })}
       <ArrowUpRight aria-hidden />
     </a>
+  );
+}
+
+/**
+ * Workflow offers its three kinds; a click elsewhere on the card opens the
+ * first, Scheduled.
+ */
+function WorkflowCapabilityCard({
+  signals,
+}: {
+  readonly signals: ComposerSignals;
+}) {
+  const { t } = useTranslation();
+  const title = t(($) => {
+    return $.chat.taskChips.tasks.workflow;
+  });
+  const swap = useHomeSwap(signals);
+  return (
+    <section
+      className={cn(CAPABILITY_CARD, "min-h-46 @2xl:col-span-8")}
+      aria-label={title}
+    >
+      <CapabilityCardCover
+        onClick={() => {
+          swap({ kind: "workflow", workflow: WORKFLOW_KINDS[0].kind });
+        }}
+      />
+      <CapabilityGround card="workflow" />
+      <CapabilityStage card="workflow">
+        {WORKFLOW_KINDS.map(({ art, visibility }) => {
+          return (
+            <CapabilityObjects key={art} art={art} className={visibility} />
+          );
+        })}
+      </CapabilityStage>
+      <CapabilityCopy
+        title={title}
+        description={t(($) => {
+          return $.chat.capabilityHome.workflow.summary;
+        })}
+        className="max-w-33"
+      />
+      <div className={cn(CHOICE_ROW, "flex-wrap gap-1.5")}>
+        {WORKFLOW_KINDS.map(({ kind, art }) => {
+          return (
+            <Button
+              key={kind}
+              variant="neutral"
+              size="sm"
+              data-art={art}
+              aria-label={t(($) => {
+                return $.chat.capabilityHome.workflow[kind].title;
+              })}
+              onClick={() => {
+                swap({ kind: "workflow", workflow: kind });
+              }}
+            >
+              {t(($) => {
+                return $.chat.capabilityHome.workflow[kind].shortTitle;
+              })}
+            </Button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -208,6 +300,11 @@ function CapabilityCards({
         className={cn(CAPABILITY_CARD, "min-h-46 @2xl:col-span-10")}
         aria-label={createTitle}
       >
+        <CapabilityCardCover
+          onClick={() => {
+            swap({ kind: "task", task: CREATE_TASKS[0].task });
+          }}
+        />
         <CapabilityGround card="create" />
         <CapabilityStage card="create">
           {CREATE_TASKS.map(({ art, visibility }) => {
@@ -223,7 +320,7 @@ function CapabilityCards({
           })}
           className="max-w-70"
         />
-        <div className="relative z-[2] mt-auto flex flex-wrap gap-1.5 pt-4">
+        <div className={cn(CHOICE_ROW, "flex-wrap gap-1.5")}>
           {CREATE_TASKS.map(({ task, art }) => {
             const button = (
               <Button
@@ -253,48 +350,7 @@ function CapabilityCards({
           })}
         </div>
       </section>
-      <section
-        className={cn(CAPABILITY_CARD, "min-h-46 @2xl:col-span-8")}
-        aria-label={tasks.workflow}
-      >
-        <CapabilityGround card="workflow" />
-        <CapabilityStage card="workflow">
-          {WORKFLOW_KINDS.map(({ art, visibility }) => {
-            return (
-              <CapabilityObjects key={art} art={art} className={visibility} />
-            );
-          })}
-        </CapabilityStage>
-        <CapabilityCopy
-          title={tasks.workflow}
-          description={t(($) => {
-            return $.chat.capabilityHome.workflow.summary;
-          })}
-          className="max-w-33"
-        />
-        <div className="relative z-[2] mt-auto flex flex-wrap gap-1.5 pt-4">
-          {WORKFLOW_KINDS.map(({ kind, art }) => {
-            return (
-              <Button
-                key={kind}
-                variant="neutral"
-                size="sm"
-                data-art={art}
-                aria-label={t(($) => {
-                  return $.chat.capabilityHome.workflow[kind].title;
-                })}
-                onClick={() => {
-                  swap({ kind: "workflow", workflow: kind });
-                }}
-              >
-                {t(($) => {
-                  return $.chat.capabilityHome.workflow[kind].shortTitle;
-                })}
-              </Button>
-            );
-          })}
-        </div>
-      </section>
+      <WorkflowCapabilityCard signals={signals} />
     </div>
   );
 }

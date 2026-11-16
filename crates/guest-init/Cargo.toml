@@ -1,6 +1,6 @@
 [package]
 name = "guest-init"
-version = "0.20.95"
+version = "0.20.96"
 edition.workspace = true
 description = "Guest init process for Firecracker - filesystem setup, PID 1, and Guest service composition"
 
@@ -12,6 +12,7 @@ nix = { workspace = true, features = ["mount", "signal"] }
 guest-control-server.workspace = true
 
 [dev-dependencies]
+rustix = { workspace = true, features = ["process", "std"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 
 [lints]

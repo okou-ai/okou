@@ -1,5 +1,26 @@
 # Changelog
 
+## [8.844.2](https://github.com/okou-ai/okou/compare/core-v8.844.1...core-v8.844.2) (2026-11-16)
+
+
+### Refactoring
+
+* **api:** consolidate execution admission facts ([#47899](https://github.com/okou-ai/okou/issues/47899)) ([270a932](https://github.com/okou-ai/okou/commit/270a932913e030a8d3628889d04d7a11ff213761))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.74.0
+
+## [8.844.1](https://github.com/okou-ai/okou/compare/core-v8.844.0...core-v8.844.1) (2026-11-16)
+
+
+### Refactoring
+
+* remove ios settings credits feature switch ([#47822](https://github.com/okou-ai/okou/issues/47822)) ([051dbad](https://github.com/okou-ai/okou/commit/051dbad9a13dba24291a9adf76b7665e6208a18f))
+
 ## [8.844.0](https://github.com/okou-ai/okou/compare/core-v8.843.0...core-v8.844.0) (2026-11-16)
 
 

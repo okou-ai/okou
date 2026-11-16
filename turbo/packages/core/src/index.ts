@@ -328,7 +328,6 @@ export {
   type ResolvedAttachFile,
   type RunnersHeartbeatContract,
   type ExecutionContext,
-  type ExecutionInput,
   type SecretConnectorMetadata,
   type StorageMountEntry,
   type StorageManifest,
@@ -508,7 +507,6 @@ export {
 } from "./version-id";
 export {
   getSkillStorageName,
-  getCustomSkillStorageName,
   getCustomConnectorSkillStorageName,
   getCustomConnectorSkillName,
   VOLUME_ORG_USER_ID,

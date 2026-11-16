@@ -24,6 +24,7 @@ only_rules:
   - okou_storage_boundaries
   - okou_task_lifecycle
   - okou_discarded_throwing_task
+  - okou_logging_boundaries
 
 included:
   - Okou

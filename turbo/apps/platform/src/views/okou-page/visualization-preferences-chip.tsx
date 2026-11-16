@@ -18,7 +18,7 @@ export function VisualizationPreferencesChip({
 }: {
   readonly preferences: VisualizationPreferences;
   readonly interactive?: boolean;
-  readonly render?: useRender.ComponentProps<"div">["render"];
+  readonly render?: useRender.ComponentProps<"span">["render"];
 }) {
   const { t } = useTranslation();
   const copy = t(
@@ -49,7 +49,7 @@ export function VisualizationPreferencesChip({
     ].join(", ") || copy.messageCharts;
   const Icon = outputLabel ? File : ChartNoAxesCombined;
   const chip = useRender({
-    defaultTagName: "div",
+    defaultTagName: "span",
     render,
     props: {
       "aria-label": accessibleName,

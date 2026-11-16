@@ -98,6 +98,7 @@ function serviceEnvSchema() {
       email().optional(),
     CRON_SECRET: string().min(1),
     MARKETING_REWARDS_EXPORT_SECRET: string().min(32).optional(),
+    MARKETING_REWARDS_RECEIPT_SECRET: string().min(32).optional(),
     // Enable only after Stage 1 API writers have drained and cannot be rolled back.
     WORKFLOW_ATTACHMENT_CLEANUP_ENABLED: zEnum(["true", "false"]).default(
       "false",
