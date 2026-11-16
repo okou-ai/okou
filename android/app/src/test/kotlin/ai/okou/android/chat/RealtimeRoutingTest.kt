@@ -202,7 +202,7 @@ class RealtimeRoutingTest {
 
             val warmed = model.warming.state.value.revision
             persisted.set(true)
-            realtime.invalidate(ChatChanges(threads = setOf(CHAT_PERSONAL)))
+            realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
             val saved =
                 model.history.uiState.first {
                     it.phase == HistoryPhase.Ready &&
@@ -228,12 +228,54 @@ class RealtimeRoutingTest {
     }
 
     @Test
+    fun detailChangesRefreshSelectedHistoryWithoutWarmingUntilAMessageArrives() = runTest {
+        withReadyModel { api, model, realtime ->
+            val paths = record(api)
+            val confirmation = model.history.uiState.value.confirmation
+            val warmed = model.warming.state.value
+            val selectedDetail = checkNotNull(chatChanges("chatThreadDetailChanged:$CHAT_PERSONAL"))
+            val otherDetail = checkNotNull(chatChanges("chatThreadDetailChanged:$CHAT_IN_PROJECT"))
+            realtime.invalidate(selectedDetail + otherDetail)
+            val refreshed =
+                model.history.uiState.first {
+                    it.phase == HistoryPhase.Ready && it.confirmation != confirmation
+                }
+            advanceTimeBy(1_000)
+            runCurrent()
+            assertEquals(warmed, model.warming.state.value)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals(
+                listOf(
+                    "/api/chat-threads/$CHAT_PERSONAL",
+                    "/api/chat-threads/$CHAT_PERSONAL/event-rows",
+                ),
+                paths.toList(),
+            )
+
+            paths.clear()
+            val message = checkNotNull(chatChanges("chatThreadMessageCreated:$CHAT_IN_PROJECT"))
+            realtime.invalidate(message + selectedDetail + otherDetail)
+            model.history.uiState.first {
+                it.phase == HistoryPhase.Ready && it.confirmation != refreshed.confirmation
+            }
+            model.warming.state.first {
+                it.phase == ChatReadPhase.Ready && it.revision > warmed.revision
+            }
+            runCurrent()
+            assertEquals(1, paths.count { it == "/api/chat/events/catch-up" })
+            assertEquals(1, paths.count { it == "/api/chat-threads/$CHAT_PERSONAL" })
+            assertEquals(1, paths.count { it == "/api/chat-threads/$CHAT_PERSONAL/event-rows" })
+            assertEquals(3, paths.size)
+        }
+    }
+
+    @Test
     fun unrelatedMessagesAndReadCursorsDoNotRefetchUnchangedListOrSelectedHistory() = runTest {
         withReadyModel { api, model, realtime ->
             val paths = record(api)
             val confirmation = model.history.uiState.value.confirmation
             val warmed = model.warming.state.value.revision
-            realtime.invalidate(ChatChanges(threads = setOf(CHAT_IN_PROJECT)))
+            realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_IN_PROJECT)))
             advanceTimeBy(1_000)
             runCurrent()
             model.warming.state.first { it.phase == ChatReadPhase.Ready && it.revision > warmed }
@@ -427,11 +469,13 @@ class RealtimeRoutingTest {
                 )
             }
             try {
-                realtime.invalidate(ChatChanges(threads = setOf(CHAT_PERSONAL)))
+                realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
                 runCurrent()
                 entered.await()
                 sequence.set(52)
-                repeat(50) { realtime.invalidate(ChatChanges(threads = setOf(CHAT_PERSONAL))) }
+                repeat(50) {
+                    realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
+                }
                 runCurrent()
                 release.countDown()
                 model.history.uiState.first {

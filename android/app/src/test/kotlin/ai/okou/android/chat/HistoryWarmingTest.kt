@@ -142,7 +142,7 @@ class HistoryWarmingTest {
 
     private suspend fun TestScope.warm(ready: Ready) {
         val revision = ready.model.warming.state.value.revision
-        ready.realtime.invalidate(ChatChanges(threads = setOf(CHAT_IN_PROJECT)))
+        ready.realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_IN_PROJECT)))
         advanceTimeBy(1_000)
         runCurrent()
         ready.model.warming.state.first {
@@ -214,7 +214,7 @@ class HistoryWarmingTest {
                 batch(41)
             }
             val revision = model.warming.state.value.revision
-            realtime.invalidate(ChatChanges(threads = setOf(CHAT_IN_PROJECT)))
+            realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_IN_PROJECT)))
             advanceTimeBy(1_000)
             runCurrent()
             try {
@@ -300,7 +300,7 @@ class HistoryWarmingTest {
                 )
             }
             val revision = model.warming.state.value.revision
-            realtime.invalidate(ChatChanges(threads = setOf(CHAT_IN_PROJECT)))
+            realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_IN_PROJECT)))
             advanceTimeBy(1_000)
             runCurrent()
             model.warming.state.first { it.revision > revision && it.phase == ChatReadPhase.Failed }
@@ -331,7 +331,7 @@ class HistoryWarmingTest {
                     } else batch(61)
                 }
                 val revision = model.warming.state.value.revision
-                realtime.invalidate(ChatChanges(threads = setOf(CHAT_IN_PROJECT)))
+                realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_IN_PROJECT)))
                 advanceTimeBy(1_000)
                 runCurrent()
                 try {
@@ -409,7 +409,7 @@ class HistoryWarmingTest {
             }
             var revision = model.warming.state.value.revision
             repeat(20) {
-                realtime.invalidate(ChatChanges(threads = setOf(CHAT_IN_PROJECT)))
+                realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_IN_PROJECT)))
                 runCurrent()
             }
             advanceTimeBy(999)
@@ -432,12 +432,14 @@ class HistoryWarmingTest {
                     batch(63)
                 }
             }
-            realtime.invalidate(ChatChanges(threads = setOf(CHAT_IN_PROJECT)))
+            realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_IN_PROJECT)))
             advanceTimeBy(1_000)
             runCurrent()
             try {
                 assertTrue(entered.await(10, TimeUnit.SECONDS))
-                repeat(50) { realtime.invalidate(ChatChanges(threads = setOf(CHAT_IN_PROJECT))) }
+                repeat(50) {
+                    realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_IN_PROJECT)))
+                }
                 runCurrent()
                 release.countDown()
                 model.warming.state.first {
@@ -473,7 +475,7 @@ class HistoryWarmingTest {
                 answered.countDown()
                 batch(71)
             }
-            realtime.invalidate(ChatChanges(threads = setOf(CHAT_IN_PROJECT)))
+            realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_IN_PROJECT)))
             advanceTimeBy(1_000)
             runCurrent()
             try {

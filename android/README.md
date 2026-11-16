@@ -623,7 +623,7 @@ token renewal and close subscriptions; foreground restoration connects again and
 catches up through the existing canonical HTTP list, indicators and selected
 history owners. Those reads remain independent of token/attachment readiness and
 of one another. Notifications contain no authoritative rows. List changes wake
-chat/project navigation; message/detail changes wake only the matching selected
+chat/project navigation; message/detail changes wake the matching selected
 conversation; indicator/read-cursor changes refresh only indicators. Pending SDK
 notifications merge resource flags and thread IDs until the observer drains them,
 so a conflated wake-up cannot discard a different topic. Initial attachment,
@@ -636,7 +636,8 @@ Queued history invalidations retain the selected conversation's generation.
 Drafts and pending sends retain their existing durable journal ownership.
 
 Foreground message/recovery signals also request independent confirmed-history
-warming. Like Web, its cohort combines the 100 most recent non-hidden conversations
+warming. Detail-only notifications do not request warming. Like Web, the
+cohort combines the 100 most recent non-hidden conversations
 with indicator thread IDs. The selected conversation keeps its own reader. A
 one-second serialized trailing worker reads lightweight Room cursors and uses the
 canonical batch catch-up endpoint; missing cursors rebuild through snapshots.

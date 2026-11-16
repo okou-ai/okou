@@ -211,7 +211,9 @@ class AblyRealtimeConnectionTest {
                         val changed = sdk.state.first { it.revision > ready.revision }
                         assertEquals(RealtimePhase.Connected, changed.phase)
                         assertEquals(
-                            ChatChanges(threads = setOf("11111111-1111-4111-8111-111111111111")),
+                            ChatChanges(
+                                messageThreads = setOf("11111111-1111-4111-8111-111111111111")
+                            ),
                             sdk.takeObservation().changes,
                         )
                         remote.attach(
@@ -259,6 +261,7 @@ class AblyRealtimeConnectionTest {
                                 "chatThreadReadCursorUpdated",
                                 "chatThreadMessageCreated:$first",
                                 "chatThreadDetailChanged:$second",
+                                "chatThreadDetailChanged:$first",
                                 "chatThreadMessageCreated:$first",
                             )
                         topics.forEach { remote.message("user-org:user-a:org-a", it) }
@@ -268,7 +271,8 @@ class AblyRealtimeConnectionTest {
                                 list = true,
                                 indicators = true,
                                 readCursor = true,
-                                threads = setOf(first, second),
+                                messageThreads = setOf(first),
+                                detailThreads = setOf(first, second),
                             ),
                             sdk.takeObservation().changes,
                         )
@@ -276,7 +280,7 @@ class AblyRealtimeConnectionTest {
                         remote.message("user-org:user-a:org-a", "chatThreadMessageCreated:$second")
                         sdk.state.first { it.revision > baseline + topics.size }
                         assertEquals(
-                            ChatChanges(threads = setOf(second)),
+                            ChatChanges(messageThreads = setOf(second)),
                             sdk.takeObservation().changes,
                         )
                     }

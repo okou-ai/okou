@@ -233,7 +233,7 @@
   public java.lang.Object close(kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.chat.ChatChanges {
-  public <init>(boolean, boolean, boolean, boolean, java.util.Set, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public <init>(boolean, boolean, boolean, boolean, java.util.Set, java.util.Set, int, kotlin.jvm.internal.DefaultConstructorMarker);
 }
 -keep,allowobfuscation class ai.okou.android.chat.ChatComposerModel {
   public kotlinx.coroutines.flow.StateFlow getUiState();
