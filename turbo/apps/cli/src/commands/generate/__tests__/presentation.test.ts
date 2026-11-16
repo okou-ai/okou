@@ -224,7 +224,7 @@ describe("okou generate presentation command", () => {
           "okou resource pull template:pptx-schoolhouse-runbook --dir ./generated/resources/pptx",
         );
         expect(stdout).toContain(
-          "./generated/resources/pptx/schoolhouse/SKILL.md",
+          "./generated/resources/pptx/schoolhouse-native/SKILL.md",
         );
       } else {
         expect(stdout).toContain("template:pptx-bloom-runbook");

@@ -764,6 +764,11 @@ describe("CHAT-02: generation templates and attachments", () => {
         `Output format: ${native ? "PPTX" : "HTML"}`,
       );
       expect(run.appendSystemPrompt).toContain(
+        native
+          ? "./generated/resources/pptx/schoolhouse-native/SKILL.md"
+          : "./generated/resources/schoolhouse/SKILL.md",
+      );
+      expect(run.appendSystemPrompt).toContain(
         "The message wins over the selected format preference",
       );
       expect(run.appendSystemPrompt).toContain(

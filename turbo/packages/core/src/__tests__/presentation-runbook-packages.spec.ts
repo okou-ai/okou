@@ -44,8 +44,13 @@ describe("presentation runbook packages", () => {
       }),
     );
     for (const pkg of pptxPackages) {
+      const htmlPackage = findPresentationRunbookPackage(pkg.templateId);
+      if (!htmlPackage) {
+        throw new Error(`Missing HTML style for ${pkg.templateId}`);
+      }
       expect(pkg.outputFormat).toBe("pptx");
-      expect(pkg.resourceId).toBe(`template:pptx-${pkg.slug}-runbook`);
+      expect(pkg.slug).toBe(`${htmlPackage.slug}-native`);
+      expect(pkg.resourceId).toBe(`template:pptx-${htmlPackage.slug}-runbook`);
       expect(pkg.source).toEqual({ path: pkg.slug });
       expect(findPresentationRunbookPackage(pkg.templateId, "pptx")).toEqual(
         pkg,
@@ -90,7 +95,11 @@ describe("presentation runbook packages", () => {
       expect(instructions).toContain(
         `okou resource pull ${pkg.resourceId} --dir ${resourceDir}`,
       );
-      expect(instructions).toContain(`${resourceDir}/schoolhouse/SKILL.md`);
+      const packageDirectory =
+        outputFormat === "pptx" ? "schoolhouse-native" : "schoolhouse";
+      expect(instructions).toContain(
+        `${resourceDir}/${packageDirectory}/SKILL.md`,
+      );
       expect(instructions).toContain(
         "If the selected package is unavailable, stop and report it",
       );

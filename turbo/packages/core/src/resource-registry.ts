@@ -3308,8 +3308,10 @@ function presentationRunbookPackages(
   outputFormat: PresentationOutputFormat,
 ): readonly PresentationRunbookPackage[] {
   return PRESENTATION_RUNBOOK_PACKAGE_DEFS.map((def) => {
+    const slug = outputFormat === "pptx" ? `${def.slug}-native` : def.slug;
     return {
       ...def,
+      slug,
       outputFormat,
       resourceId:
         outputFormat === "html"
@@ -3323,7 +3325,7 @@ function presentationRunbookPackages(
               def.slug,
               presentationRunbookArchiveSha256(def.slug),
             )
-          : { path: def.slug },
+          : { path: slug },
     };
   });
 }

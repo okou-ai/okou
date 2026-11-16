@@ -199,16 +199,18 @@ describe("okou resource pull command", () => {
     {
       format: "html",
       id: "template:html-ppt-schoolhouse-runbook",
+      packageDirectory: "schoolhouse",
       useDefaultDir: true,
     },
     {
       format: "pptx",
       id: "template:pptx-schoolhouse-runbook",
+      packageDirectory: "schoolhouse-native",
       useDefaultDir: false,
     },
   ])(
     "extracts the current $format presentation package by concrete id",
-    async ({ format, id, useDefaultDir }) => {
+    async ({ format, id, packageDirectory, useDefaultDir }) => {
       const fixtureDir = path.join(outputDir, "fixture");
       const archivePath = path.join(outputDir, "schoolhouse.tar.gz");
       const extractionDir = useDefaultDir
@@ -216,10 +218,13 @@ describe("okou resource pull command", () => {
         : path.join(outputDir, "resources", format);
       const presentationDownloadUrl = `https://r2.example.com/registry/schoolhouse-${format}.tar.gz`;
       const skill = `# Schoolhouse ${format.toUpperCase()} Presentation\n\nFollow this package's ${format === "pptx" ? "native PowerPoint" : "HTML"} authoring workflow and verify every slide before delivery.\n`;
-      await mkdir(path.join(fixtureDir, "schoolhouse"), { recursive: true });
-      await writeFile(path.join(fixtureDir, "schoolhouse/SKILL.md"), skill);
+      await mkdir(path.join(fixtureDir, packageDirectory), { recursive: true });
+      await writeFile(
+        path.join(fixtureDir, packageDirectory, "SKILL.md"),
+        skill,
+      );
       await tar.create({ file: archivePath, cwd: fixtureDir, gzip: true }, [
-        "schoolhouse",
+        packageDirectory,
       ]);
       const archive = await readFile(archivePath);
 
@@ -261,15 +266,15 @@ describe("okou resource pull command", () => {
 
       expect(
         await readFile(
-          path.join(extractionDir, "schoolhouse/SKILL.md"),
+          path.join(extractionDir, packageDirectory, "SKILL.md"),
           "utf8",
         ),
       ).toBe(skill);
-      expect(await readdir(extractionDir)).toEqual(["schoolhouse"]);
+      expect(await readdir(extractionDir)).toEqual([packageDirectory]);
       const stdout = mockConsoleLog.mock.calls.flat().join("\n");
       expect(stdout).toContain(`✓ Pulled ${id}`);
       expect(stdout).toContain(
-        `Source path:  ${path.join(extractionDir, "schoolhouse")}`,
+        `Source path:  ${path.join(extractionDir, packageDirectory)}`,
       );
     },
   );
