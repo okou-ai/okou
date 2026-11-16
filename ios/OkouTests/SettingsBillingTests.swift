@@ -109,7 +109,8 @@ final class SettingsBillingTests: XCTestCase {
       await workspace.loadSettingsBilling()
       let resources = workspace.settingsResources
       let balance = try await resources.store.get(resources.billingCreditsValue).value
-      XCTAssertEqual(balance, expected, "Role: \(role), organization balance: \(organizationCredits)")
+      XCTAssertEqual(
+        balance, expected, "Role: \(role), organization balance: \(organizationCredits)")
     }
   }
 

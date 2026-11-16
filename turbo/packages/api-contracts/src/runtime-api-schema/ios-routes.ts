@@ -4,7 +4,10 @@ import { agentDraftContract } from "../contracts/agent-draft";
 import { agentsByIdContract, agentsMainContract } from "../contracts/agents";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactReferencesContract } from "../contracts/artifact-references";
-import { billingStatusContract } from "../contracts/billing";
+import {
+  billingStatusContract,
+  billingUsagePackCreditsContract,
+} from "../contracts/billing";
 import { browserAuthorizationRequestsContract } from "../contracts/browser";
 import { chatEventsContract } from "../contracts/chat-event-send";
 import { chatConnectorAccessContract } from "../contracts/chat-connector-access";
@@ -126,6 +129,10 @@ const iosContracts: readonly {
     route: artifactReferencesContract.resolve,
   },
   { id: "ios.billingStatusContract.get", route: billingStatusContract.get },
+  {
+    id: "ios.billingUsagePackCreditsContract.get",
+    route: billingUsagePackCreditsContract.get,
+  },
   {
     id: "ios.browserAuthorizationRequestsContract.get",
     route: browserAuthorizationRequestsContract.get,
