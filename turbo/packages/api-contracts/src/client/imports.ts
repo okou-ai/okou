@@ -987,6 +987,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "get-started-receipt",
+    contracts: ["getStartedReceiptContract"],
+    bindings: [],
+  },
+  {
     module: "github-oauth",
     contracts: ["githubOauthContract"],
     bindings: [],
