@@ -44,7 +44,12 @@ export interface ExecutionPackageSelection {
   }[];
 }
 
-type BaseExecutionContext = Omit<ExecutionContext, "contentBundles">;
+type BaseExecutionContext = Omit<
+  ExecutionContext,
+  "contentBundles" | "storageManifest"
+> & {
+  readonly storageManifest: NonNullable<ExecutionContext["storageManifest"]>;
+};
 
 function withContentBundleMounts(
   executionContext: BaseExecutionContext,
@@ -60,14 +65,11 @@ function withContentBundleMounts(
     ...executionContext,
     contentBundles,
     storageManifest: {
-      storageMounts: (
-        executionContext.storageManifest?.storageMounts ?? []
-      ).filter((mount) => {
-        return (
-          !mount.name.startsWith("custom-skill@") &&
-          !bundledMountPaths.has(mount.mountPath)
-        );
-      }),
+      storageMounts: executionContext.storageManifest.storageMounts.filter(
+        (mount) => {
+          return !bundledMountPaths.has(mount.mountPath);
+        },
+      ),
     },
   };
 }

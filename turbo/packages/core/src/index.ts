@@ -507,7 +507,6 @@ export {
 } from "./version-id";
 export {
   getSkillStorageName,
-  getCustomSkillStorageName,
   getCustomConnectorSkillStorageName,
   getCustomConnectorSkillName,
   VOLUME_ORG_USER_ID,

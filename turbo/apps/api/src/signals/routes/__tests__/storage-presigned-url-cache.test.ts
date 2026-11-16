@@ -1,2 +1,2 @@
 import "./system-storage-presigned-url-cache.suite";
-import "./workflow-skill-storage-presigned-url-cache.suite";
+import "./content-bundle-presigned-url-cache.suite";
