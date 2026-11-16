@@ -159,7 +159,8 @@ with tempfile.TemporaryDirectory() as temporary:
                        INPUT_API_BACKEND_URL='https://staging-api.invalid',
                        INPUT_BROWSER_EXTENSION_RELEASE_CREATED='true',
                        INPUT_BROWSER_EXTENSION_ID='11111111-1111-4111-8111-111111111111',
-                       REPO_VARS_JSON='{}', DOPPLER_SECRETS_JSON=json.dumps(doppler))
+                       REPO_VARS_JSON=json.dumps({'R2_STATIC_BUCKET_NAME': 'static-releases'}),
+                       DOPPLER_SECRETS_JSON=json.dumps(doppler))
 
     def render_preview(secrets):
         result = subprocess.run(['bash', '-c', renderer], cwd=root,
