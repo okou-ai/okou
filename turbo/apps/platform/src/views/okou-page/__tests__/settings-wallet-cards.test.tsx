@@ -138,6 +138,34 @@ test("shows Link CARD methods with the default first and one management action i
   expect(manageCards(region)).toHaveAttribute("rel", "noopener noreferrer");
 });
 
+test("shows card brand and tail digits when Link no longer provides saved-card expiry", async () => {
+  context.mocks.api(walletUserContract.paymentMethods, ({ respond }) => {
+    return respond(200, {
+      data: [
+        {
+          ...everyday,
+          card: undefined,
+          cardSummary: { brand: "visa", last4: "4242" },
+        },
+      ],
+    });
+  });
+  await openWallet();
+  const region = await screen.findByRole("region", {
+    name: "Your cards in Link",
+  });
+  await within(region).findByText("Everyday");
+  expect(within(region).getByText("Default")).toBeInTheDocument();
+  expect(within(region).getByText("visa")).toBeInTheDocument();
+  expect(within(region).getByText(/4242/)).toBeInTheDocument();
+  expect(within(region).getByRole("presentation")).toHaveAttribute(
+    "src",
+    expect.stringMatching(/\/card-brands\/visa-[a-f0-9]+\.svg$/u),
+  );
+  expect(within(region).queryByText(/Expires/)).not.toBeInTheDocument();
+  expect(manageCards(region)).toBeInTheDocument();
+});
+
 test("uses the provider name when card details are absent and does not invent a default", async () => {
   context.mocks.api(walletUserContract.paymentMethods, ({ respond }) => {
     return respond(200, {
