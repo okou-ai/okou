@@ -16,6 +16,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.core.app.ApplicationProvider
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -74,7 +75,12 @@ class RealtimeRoutingTest {
                             }
                         },
                     )[ChatListModel::class.java]
-                model.refresh()
+                model.updates.foreground(true)
+                runCurrent()
+                model.uiState.first {
+                    it.listPhase == ChatReadPhase.Ready && it.indicatorsPhase == ChatReadPhase.Ready
+                }
+                model.refreshMetadata()
                 suspend fun ready() {
                     model.uiState.first {
                         it.listPhase == ChatReadPhase.Ready &&
@@ -86,10 +92,6 @@ class RealtimeRoutingTest {
                 }
                 ready()
                 model.history.open(model.uiState.value.threads.single { it.id == CHAT_PERSONAL })
-                model.history.uiState.first { it.phase == HistoryPhase.Ready }
-                model.updates.foreground(true)
-                runCurrent()
-                ready()
                 model.history.uiState.first { it.phase == HistoryPhase.Ready }
                 runCurrent()
                 block(api, model, realtime)
@@ -248,6 +250,50 @@ class RealtimeRoutingTest {
                 release.countDown()
                 model.observedIndicators(stamp)
                 assertEquals(immediateAt, testScheduler.currentTime)
+            } finally {
+                release.countDown()
+            }
+        }
+    }
+
+    @Test
+    fun readCursorDuringAManualReadRetainsDemandFromTheThrottledWorker() = runTest {
+        withReadyModel { api, model, realtime ->
+            advanceTimeBy(1_000)
+            val first = "2026-11-13T00:00:01Z"
+            indicators(api, first)
+            realtime.invalidate(ChatChanges(indicators = true))
+            runCurrent()
+            model.observedIndicators(first)
+            runCurrent()
+            realtime.invalidate(ChatChanges(indicators = true))
+            runCurrent()
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            api.indicators = {
+                entered.countDown()
+                release.await()
+                jsonResponse("""{"agents":{},"threads":{},"unreadAt":{}}""")
+            }
+            try {
+                model.refreshIndicators()
+                runCurrent()
+                // The HTTP server runs off the test dispatcher. Rendezvous without advancing the
+                // virtual throttle deadline while waiting for that real request to arrive.
+                assertTrue(entered.await(10, TimeUnit.SECONDS))
+                val stamp = "2026-11-13T00:00:05Z"
+                indicators(api, stamp)
+                realtime.invalidate(ChatChanges(readCursor = true))
+                runCurrent()
+                release.countDown()
+                model.uiState.first { it.indicatorsPhase == ChatReadPhase.Ready }
+                runCurrent()
+                assertTrue(
+                    "Read-cursor demand needs a new read after the held manual response",
+                    model.uiState.value.indicatorsPhase == ChatReadPhase.Loading ||
+                        model.uiState.value.indicators?.unreadAt?.get(CHAT_PERSONAL) == stamp,
+                )
+                model.observedIndicators(stamp)
             } finally {
                 release.countDown()
             }

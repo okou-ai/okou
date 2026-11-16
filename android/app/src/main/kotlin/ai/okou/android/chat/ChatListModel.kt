@@ -149,6 +149,9 @@ class ChatListModel(
                         // wakes it immediately and cannot be downgraded by later status demand.
                         while (!immediateIndicators) indicatorInvalidations.receive()
                     }
+                // A manual read can replace the job while this worker waits or throttles.
+                // Drain demand only after the current read finishes, so its guard cannot drop it.
+                while (indicatorsJob?.isCompleted == false) indicatorsJob?.join()
                 while (indicatorInvalidations.tryReceive().isSuccess) {}
                 immediateIndicators = false
                 if (current()) {
