@@ -110,7 +110,7 @@ async fn decoded_storage_batch_memory_child() {
     fixture.shutdown().await;
 
     result.unwrap();
-    let calls = sandbox.storage_manifest_calls();
+    let calls = sandbox.take_storage_manifest_calls();
     assert_complete_delivery(&calls, &expected, b"content");
     drop(calls);
     eprintln!("aggregate: source bytes={source_bytes}, largest allocation={largest}");
@@ -161,7 +161,7 @@ async fn encoded_payloads_follow_the_current_guest_operation() {
     fixture.shutdown().await;
 
     result.unwrap();
-    let calls = sandbox.storage_manifest_calls();
+    let calls = sandbox.take_storage_manifest_calls();
     assert_complete_delivery(&calls, &expected, &content);
     assert_eq!(calls.len(), 3);
     for call in &calls {
