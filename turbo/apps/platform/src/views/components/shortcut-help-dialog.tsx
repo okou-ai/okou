@@ -21,7 +21,7 @@ interface ShortcutSection {
 interface ShortcutHelpDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  sections: readonly ShortcutSection[];
+  sections: () => readonly ShortcutSection[];
   title?: string;
   description?: string;
 }
@@ -51,19 +51,27 @@ export function ShortcutHelpDialog({
           </DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
-        <div className="space-y-4">
-          {sections.map((section) => {
-            return (
-              <ShortcutSectionView
-                key={section.title}
-                title={section.title}
-                shortcuts={section.shortcuts}
-              />
-            );
-          })}
-        </div>
+        <ShortcutSectionsView sections={sections} />
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ShortcutSectionsView({
+  sections,
+}: Pick<ShortcutHelpDialogProps, "sections">) {
+  return (
+    <div className="space-y-4">
+      {sections().map((section) => {
+        return (
+          <ShortcutSectionView
+            key={section.title}
+            title={section.title}
+            shortcuts={section.shortcuts}
+          />
+        );
+      })}
+    </div>
   );
 }
 
