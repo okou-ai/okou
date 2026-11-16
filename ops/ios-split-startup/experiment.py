@@ -3,7 +3,7 @@
 
 Requires the normal iOS CI environment and captured IOS_ARCHIVE_DIR inputs.
 Producer and consumer are bound to this repository, commit, run and attempt.
-GH_TOKEN is read only by gh, never copied into manifests or command arguments.
+GH_TOKEN stays in HTTP headers or gh's environment, never in manifests or argv.
 """
 
 import hashlib
