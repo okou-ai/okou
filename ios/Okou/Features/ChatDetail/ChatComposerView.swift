@@ -82,8 +82,7 @@ struct ChatComposerView: View {
   private var replacesSendWithMic: Bool {
     !hasContent && !canStop && draftState?.voice != nil && (!expandsInput || voiceActive)
   }
-  private var reservesModelPickerSpace: Bool { expandsInput && !voiceActive }
-  private var showsModelPicker: Bool { reservesModelPickerSpace && showsModelSelection }
+  private var showsModelPicker: Bool { expandsInput && !voiceActive && showsModelSelection }
   private var showsVoiceInput: Bool {
     replacesSendWithMic || (expandsInput && !voiceActive)
   }
@@ -166,19 +165,6 @@ struct ChatComposerView: View {
 
       let inputID = attachments.inputID
       VStack(alignment: .trailing, spacing: 0) {
-        // Keep the model note mounted and reserve its space while reading history so hiding
-        // it does not change the scroll metrics that control the bottom button.
-        if let modelSelection {
-          ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
-            .disabled(needsUpgrade)
-            .opacity(showsModelPicker ? 1 : 0)
-            .animation(reduceMotion ? nil : OkouMotion.transition, value: showsModelPicker)
-            .allowsHitTesting(showsModelPicker)
-            .accessibilityHidden(!showsModelPicker)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .frame(height: reservesModelPickerSpace ? nil : 0, alignment: .bottom)
-            .clipped()
-        }
         // Retired native editors must leave immediately. Fading a first responder
         // through a draft reset can restart keyboard avoidance during the send flight.
         OkouComposerSurface(isExpanded: expandsInput) {
@@ -233,7 +219,15 @@ struct ChatComposerView: View {
           }
         } trailing: {
           HStack(spacing: OkouSpace.xs) {
-            // The mic and send are already side by side when the text editor opens.
+            // The model, mic and send are already side by side when the text editor opens,
+            // so none of them moves or falls in on its own as the keyboard raises the surface.
+            if let modelSelection, showsModelSelection {
+              ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
+                .disabled(needsUpgrade)
+                .opacity(showsModelPicker ? 1 : 0)
+                .allowsHitTesting(showsModelPicker)
+                .accessibilityHidden(!showsModelPicker)
+            }
             if let voice = draftState?.voice {
               ComposerVoiceInputButton(voice: voice)
                 .disabled(isBusy || needsUpgrade || voiceActive || draftState?.canEditVoice != true)
@@ -262,11 +256,11 @@ struct ChatComposerView: View {
                     ? OkouColor.interruptForeground
                     : hasContent ? OkouColor.primaryForeground : OkouColor.mutedForeground)
               }
-              .buttonStyle(.glassProminent)
+              // A solid fill: the composer under it is already glass.
+              .buttonStyle(.borderedProminent)
               .buttonBorderShape(.circle)
-              .tint(
-                showsStop ? OkouColor.interrupt : hasContent ? OkouColor.primary : OkouColor.muted
-              )
+              // An empty draft always disables send, so it takes the system's disabled fill.
+              .tint(showsStop ? OkouColor.interrupt : OkouColor.primary)
               .disabled(!canPerformPrimaryAction)
               .accessibilityLabel(showsStop ? "Stop" : "Send message")
               .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")
