@@ -307,6 +307,13 @@ struct ResourceCancellationPaths {
         }
         if closureParameters(closure).contains(name) { return true }
       }
+      if signalAlias, let function = parent.as(FunctionDeclSyntax.self),
+        function.signature.parameterClause.parameters.contains(where: {
+          ($0.secondName ?? $0.firstName).text == name
+        })
+      {
+        return !signals.contains(name)
+      }
       if let branch = parent.as(SwitchCaseSyntax.self),
         let label = branch.label.as(SwitchCaseLabelSyntax.self),
         label.caseItems.contains(where: { binds(Syntax($0.pattern), name: name) })
