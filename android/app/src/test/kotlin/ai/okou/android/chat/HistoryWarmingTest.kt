@@ -31,6 +31,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonArray
@@ -150,6 +151,157 @@ class HistoryWarmingTest {
         }
     }
 
+    private val recoveringThreads = listOf(CHAT_IN_PROJECT, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+
+    private fun recoveryCohort(api: ChatListApiFixture) {
+        api.historyThreadIds = api.historyThreadIds + recoveringThreads
+        api.indicators = {
+            jsonResponse(
+                """{"agents":{},"threads":{${recoveringThreads.joinToString(",") { "\"$it\":\"active\"" }}},"unreadAt":{}}"""
+            )
+        }
+    }
+
+    private fun recoverSnapshots(
+        api: ChatListApiFixture,
+        seq: Long,
+        beforeSnapshot: (String) -> MockResponse? = { null },
+    ) {
+        api.historyCatchUp = {
+            jsonResponse(
+                """{"events":{},"notFoundThreads":[${recoveringThreads.joinToString(",") { "\"$it\"" }}]}"""
+            )
+        }
+        val rows = api.historyRows
+        api.historyRows = { request ->
+            val id = checkNotNull(request.requestUrl).pathSegments[2]
+            if (id in recoveringThreads)
+                jsonResponse(
+                    """{"rows":[],"cursor":{"lastEventId":"$id","lastSeqId":$seq},"hasMore":false}"""
+                )
+            else rows(request)
+        }
+        api.commandResponse = { request ->
+            val path = checkNotNull(request.requestUrl).encodedPath
+            val id = recoveringThreads.firstOrNull { path.contains(it) }
+            when {
+                id == null -> null
+                path.endsWith("/event-snapshot") ->
+                    beforeSnapshot(id)
+                        ?: jsonResponse(
+                            """{"url":"${api.server.url("/recovery-archive/$id")}","expiresInSeconds":60,"lastEventId":"$id","lastSeqId":$seq}"""
+                        )
+                path.startsWith("/recovery-archive/") ->
+                    MockResponse().setBody(historyEventWire(id, seq, id) + "\n")
+                else -> null
+            }
+        }
+    }
+
+    @Test
+    fun snapshotRecoveriesStartTogetherAndRetainSuccessfulSiblingsAfterAFailure() = runTest {
+        withModel(prepare = ::recoveryCohort, expectFailure = true) { ready ->
+            val (api, model, realtime) = ready
+            val entered = CountDownLatch(recoveringThreads.size)
+            val release = CountDownLatch(1)
+            recoverSnapshots(api, 55) {
+                entered.countDown()
+                release.await()
+                null
+            }
+            val revision = model.warming.state.value.revision
+            val selected = model.history.uiState.value.confirmation
+            realtime.invalidate(ChatChanges(messageThreads = recoveringThreads.toSet()))
+            advanceTimeBy(1_000)
+            runCurrent()
+            try {
+                withContext(Dispatchers.IO) { assertTrue(entered.await(10, TimeUnit.SECONDS)) }
+                model.history.refresh()
+                model.history.uiState.first {
+                    it.phase == HistoryPhase.Ready && it.confirmation != selected
+                }
+                release.countDown()
+                model.warming.state.first {
+                    it.phase == ChatReadPhase.Ready && it.revision > revision
+                }
+                recoverSnapshots(api, 66) { id ->
+                    if (id == recoveringThreads.first()) MockResponse().setResponseCode(503)
+                    else null
+                }
+                val next = model.warming.state.value.revision
+                realtime.invalidate(ChatChanges(messageThreads = recoveringThreads.toSet()))
+                advanceTimeBy(1_000)
+                runCurrent()
+                model.warming.state.first { it.phase == ChatReadPhase.Failed && it.revision > next }
+                assertEquals(503, (ready.errors.single() as ApiFailure.Http).status)
+                ready.store.clear()
+                val lease = ready.cache.open(api.identity) { true }
+                assertEquals(55L, lease.loadHistory(recoveringThreads[0])!!.checkpoint.cursor.seqId)
+                assertEquals(66L, lease.loadHistory(recoveringThreads[1])!!.checkpoint.cursor.seqId)
+                assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
+                assertEquals(0, api.readRequests.get())
+            } finally {
+                release.countDown()
+            }
+        }
+    }
+
+    @Test
+    fun stopAndAuthorizationRetirementCancelEverySnapshotRecoveryBeforePublication() = runTest {
+        withModel(prepare = ::recoveryCohort) { ready ->
+            val (api, model, realtime) = ready
+            for (retireAuthorization in listOf(false, true)) {
+                val entered = CountDownLatch(recoveringThreads.size)
+                val release = CountDownLatch(1)
+                val answered = CountDownLatch(recoveringThreads.size)
+                recoverSnapshots(api, 55) {
+                    entered.countDown()
+                    release.await()
+                    answered.countDown()
+                    null
+                }
+                val revision = model.warming.state.value.revision
+                realtime.invalidate(ChatChanges(messageThreads = recoveringThreads.toSet()))
+                advanceTimeBy(1_000)
+                runCurrent()
+                try {
+                    withContext(Dispatchers.IO) { assertTrue(entered.await(10, TimeUnit.SECONDS)) }
+                    model.updates.foreground(false)
+                    assertEquals(ChatReadPhase.Idle, model.warming.state.value.phase)
+                    if (retireAuthorization) {
+                        ready.allowed.set(false)
+                        ready.store.clear()
+                    } else {
+                        api.historyCatchUp = { request ->
+                            assertEquals(recoveringThreads.associateWith { 37L }, cursors(request))
+                            jsonResponse(
+                                """{"events":{${recoveringThreads.joinToString(",") { "\"$it\":[]" }}},"notFoundThreads":[]}"""
+                            )
+                        }
+                        model.updates.foreground(true)
+                        runCurrent()
+                    }
+                    release.countDown()
+                    assertTrue(answered.await(10, TimeUnit.SECONDS))
+                    if (!retireAuthorization)
+                        model.warming.state.first {
+                            it.phase == ChatReadPhase.Ready && it.revision > revision
+                        }
+                } finally {
+                    release.countDown()
+                }
+            }
+            val lease = ready.cache.open(api.identity) { true }
+            for (id in recoveringThreads) assertEquals(
+                37L,
+                lease.loadHistory(id)!!.checkpoint.cursor.seqId,
+            )
+            val other =
+                ready.cache.open(api.identity.copy(workspaceId = "other-workspace")) { true }
+            for (id in recoveringThreads) assertNull(other.loadHistory(id))
+        }
+    }
+
     @Test
     fun batchUsesCachedCursorsAndLargeConfirmedRowsSurviveDiskReopenWithoutMarkingRead() = runTest {
         withModel { ready ->
@@ -185,7 +337,7 @@ class HistoryWarmingTest {
                     StandardTestDispatcher(testScheduler),
                 )
             try {
-                api.historyDetail = { MockResponse().setResponseCode(503) }
+                api.historyRows = { MockResponse().setResponseCode(503) }
                 history.open(thread)
                 val shown =
                     history.uiState.first {
@@ -279,7 +431,12 @@ class HistoryWarmingTest {
             }
             warm(ready)
             expectedCursor = 55L
-            api.historyDetail = { MockResponse().setResponseCode(404) }
+            api.historySnapshot = {
+                jsonResponse(
+                        """{"error":{"code":"CHAT_THREAD_NOT_FOUND","message":"Missing thread"}}"""
+                    )
+                    .setResponseCode(404)
+            }
             warm(ready)
             assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
             ready.store.clear()

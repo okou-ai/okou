@@ -146,11 +146,13 @@ class ChatListModel(
                 }
                 if (changes.resync || changes.indicators || changes.readCursor)
                     requestIndicators(immediate = changes.resync || changes.readCursor)
-                if (changes.resync) history.invalidate()
-                else
-                    (changes.messageThreads + changes.detailThreads).forEach {
-                        history.invalidate(it)
-                    }
+                if (changes.resync) {
+                    history.invalidate()
+                    history.invalidateDetail()
+                } else {
+                    changes.messageThreads.forEach { history.invalidate(it) }
+                    changes.detailThreads.forEach { history.invalidateDetail(it) }
+                }
                 if (changes.resync || changes.messageThreads.isNotEmpty()) warming.invalidate()
             }
         }

@@ -81,7 +81,7 @@ class ConversationHistoryTest {
         val requested = mutableListOf<HistoryCursor>()
         val marked = CompletableDeferred<Unit>()
         var markCount = 0
-        var detailStatus: Int? = null
+        var threadStatus: Int? = null
         var rowsRead: suspend (String, HistoryCursor) -> HistoryPage = { id, cursor ->
             if (cursor.seqId == 0L)
                 HistoryPage(
@@ -93,14 +93,17 @@ class ConversationHistoryTest {
         }
 
         override suspend fun threadDetail(threadId: String): ThreadDetail {
-            detailStatus?.let { throw ApiFailure.Http(it, null, null, null) }
+            threadStatus?.let { throw ApiFailure.Http(it, null, null, null) }
             return ThreadDetail(null, false)
         }
 
-        override suspend fun historySnapshot(threadId: String): HistorySnapshot =
+        override suspend fun historySnapshot(threadId: String): HistorySnapshot {
+            threadStatus?.let { throw ApiFailure.Http(it, "CHAT_THREAD_NOT_FOUND", null, null) }
             throw ApiFailure.Http(404, "CHAT_EVENT_SNAPSHOT_NOT_FOUND", null, null)
+        }
 
         override suspend fun historyRows(threadId: String, cursor: HistoryCursor): HistoryPage {
+            threadStatus?.let { throw ApiFailure.Http(it, "CHAT_THREAD_NOT_FOUND", null, null) }
             requested += cursor
             return rowsRead(threadId, cursor)
         }
@@ -129,7 +132,7 @@ class ConversationHistoryTest {
             val result = ConversationHistorySync(fixture.service).synchronize(CHAT_PERSONAL, null)
             assertEquals(listOf(HISTORY_LAST_EVENT), result.rows.map { it.id })
             assertEquals(HistoryCursor(HISTORY_LAST_EVENT, 37), result.cursor)
-            val requests = List(5) { fixture.server.takeRequest() }
+            val requests = List(4) { fixture.server.takeRequest() }
             val signed = requests.single { it.path == "/history-archive" }
             assertNull(signed.getHeader("Authorization"))
             assertNull(signed.getHeader("X-Client-Type"))
@@ -188,7 +191,7 @@ class ConversationHistoryTest {
         )
         assertEquals(37L, result.cursor.seqId)
         assertEquals(0, service.markCount)
-        service.detailStatus = 404
+        service.threadStatus = 404
         val before = service.requested.size
         try {
             ConversationHistorySync(service).synchronize(CHAT_PERSONAL, null)
@@ -297,7 +300,7 @@ class ConversationHistoryTest {
         assertEquals(1, service.markCount)
         assertEquals(1, indicators)
         visit.close()
-        service.detailStatus = 404
+        service.threadStatus = 404
         model.refresh()
         model.uiState.first { it.phase == HistoryPhase.Missing }
         assertNull(model.uiState.value.transcript)

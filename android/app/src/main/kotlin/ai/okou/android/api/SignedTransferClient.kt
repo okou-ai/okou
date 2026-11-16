@@ -20,6 +20,7 @@ class SignedTransferClient(
     callTimeout: Duration = DEFAULT_CALL_TIMEOUT,
 ) : Closeable {
     private val http = httpClient(callTimeout).build()
+    private val reads = http.forCanonicalReads()
     private val closed = AtomicBoolean(false)
 
     suspend fun download(url: HttpUrl, maximumBytes: Long): ByteArray =
@@ -35,7 +36,7 @@ class SignedTransferClient(
             validateTransportUrl(url)
             currentCoroutineContext().ensureActive()
             try {
-                http.newCall(Request.Builder().url(url).build()).awaitBody { body ->
+                reads.newCall(Request.Builder().url(url).build()).awaitBody { body ->
                     body.byteStream().use(read)
                 }
             } catch (error: IOException) {

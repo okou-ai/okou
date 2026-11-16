@@ -100,6 +100,7 @@ class ApiClient(
     val updateRequired = required.asStateFlow()
     private val http: okhttp3.OkHttpClient
     private val api: CanonicalApi
+    private val reads: CanonicalApi
 
     init {
         validateTransportUrl(origin)
@@ -132,22 +133,28 @@ class ApiClient(
                     )
                 }
                 .build()
-        api =
+        val retrofit =
             Retrofit.Builder()
                 .baseUrl(origin)
                 .client(http)
                 .addConverterFactory(StreamingJsonConverterFactory(json))
                 .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
                 .build()
+        api = retrofit.create(CanonicalApi::class.java)
+        reads =
+            retrofit
+                .newBuilder()
+                .client(http.forCanonicalReads())
+                .build()
                 .create(CanonicalApi::class.java)
     }
 
-    suspend fun organization(): Organization = execute { api.organization(it) }
+    suspend fun organization(): Organization = execute { reads.organization(it) }
 
     suspend fun realtimeToken() = execute { api.realtimeToken(it, RealtimeTokenRequest) }
 
     suspend fun personalInstructions(): PersonalInstructions = execute {
-        api.personalInstructions(it)
+        reads.personalInstructions(it)
     }
 
     suspend fun updatePersonalInstructions(body: UpdateInstructionsRequest): PersonalInstructions =
@@ -155,13 +162,13 @@ class ApiClient(
             api.updatePersonalInstructions(it, body)
         }
 
-    suspend fun chatSnapshot(): ChatSnapshot = execute { api.chatSnapshot(it) }
+    suspend fun chatSnapshot(): ChatSnapshot = execute { reads.chatSnapshot(it) }
 
-    suspend fun chatEvents(since: Long?): ChatEvents = execute { api.chatEvents(it, since) }
+    suspend fun chatEvents(since: Long?): ChatEvents = execute { reads.chatEvents(it, since) }
 
-    suspend fun indicators(): Indicators = execute { api.indicators(it) }
+    suspend fun indicators(): Indicators = execute { reads.indicators(it) }
 
-    suspend fun agents(): Agents = execute { api.agents(it) }
+    suspend fun agents(): Agents = execute { reads.agents(it) }
 
     suspend fun createThread(body: CreateThreadRequest) =
         execute(201) { api.createThread(it, body) }
@@ -169,21 +176,23 @@ class ApiClient(
     suspend fun sendInput(body: SendRequestVariant1) = execute(201) { api.sendInput(it, body) }
 
     suspend fun inputStatus(threadId: String, eventId: String) = execute {
-        api.inputStatus(it, threadId, eventId)
+        reads.inputStatus(it, threadId, eventId)
     }
 
-    suspend fun onboardingStatus() = execute { api.onboardingStatus(it) }
+    suspend fun onboardingStatus() = execute { reads.onboardingStatus(it) }
 
-    suspend fun projectSnapshot(): ProjectSnapshot = execute { api.projectSnapshot(it) }
+    suspend fun projectSnapshot(): ProjectSnapshot = execute { reads.projectSnapshot(it) }
 
-    suspend fun projectEvents(since: Long): ProjectEvents = execute { api.projectEvents(it, since) }
+    suspend fun projectEvents(since: Long): ProjectEvents = execute {
+        reads.projectEvents(it, since)
+    }
 
-    suspend fun featureSwitches(): FeatureSwitches = execute { api.featureSwitches(it) }
+    suspend fun featureSwitches(): FeatureSwitches = execute { reads.featureSwitches(it) }
 
-    suspend fun historySnapshot(threadId: String) = execute { api.historySnapshot(it, threadId) }
+    suspend fun historySnapshot(threadId: String) = execute { reads.historySnapshot(it, threadId) }
 
     suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>) = execute { token ->
-        api.historyCatchUp(
+        reads.historyCatchUp(
             token,
             cursors.map { (threadId, cursor) ->
                 cursor.validate()
@@ -197,14 +206,14 @@ class ApiClient(
         val query =
             if (cursor.eventId == null) HistoryRowsQueryVariant1(CanonicalZero, 50.0)
             else HistoryRowsQueryVariant2(cursor.seqId, cursor.eventId, 50.0)
-        api.historyRows(it, threadId, query)
+        reads.historyRows(it, threadId, query)
     }
 
-    suspend fun threadDetail(threadId: String) = execute { api.threadDetail(it, threadId) }
+    suspend fun threadDetail(threadId: String) = execute { reads.threadDetail(it, threadId) }
 
     suspend fun markRead(threadId: String) = execute { api.markRead(it, threadId) }
 
-    suspend fun preferences(): UserPreferences = execute { api.preferences(it) }
+    suspend fun preferences(): UserPreferences = execute { reads.preferences(it) }
 
     suspend fun initializePreferences(body: InitializePreferencesRequest): UserPreferences =
         execute {

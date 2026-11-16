@@ -6,7 +6,10 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -116,34 +119,42 @@ class ChatHistoryWarming(
         withContext(dispatcher) { batch.validate(cursors) }
         requireCurrent(ticket)
         cache.appendWarmedHistories(cached, batch.events, System.currentTimeMillis(), selected)
-        var failure: Exception? = null
-        for (id in batch.notFoundThreads) {
-            requireCurrent(ticket)
-            if (id == selected()) continue
-            try {
-                val checkpoint = history.synchronize(id, null)
-                requireCurrent(ticket)
-                cache.saveWarmedHistory(
-                    checkpoint,
-                    System.currentTimeMillis(),
-                    cached[id],
-                    selected,
-                )
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                requireCurrent(ticket)
-                when {
-                    error is ApiFailure.Http && error.status in setOf(403, 404) ->
-                        cache.clearWarmedHistory(id, cached[id], selected)
-                    error is ApiFailure.Unauthenticated ||
-                        error is ApiFailure.UpdateRequired ||
-                        error is ApiFailure.Http && error.status == 401 -> throw error
-                    else -> if (failure == null) failure = error
+        val failures = coroutineScope {
+            batch.notFoundThreads
+                .map { id ->
+                    async {
+                        requireCurrent(ticket)
+                        if (id == selected()) return@async null
+                        try {
+                            val checkpoint = history.synchronize(id, null)
+                            requireCurrent(ticket)
+                            cache.saveWarmedHistory(
+                                checkpoint,
+                                System.currentTimeMillis(),
+                                cached[id],
+                                selected,
+                            )
+                            null
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            requireCurrent(ticket)
+                            when {
+                                error is ApiFailure.Http && error.status in setOf(403, 404) -> {
+                                    cache.clearWarmedHistory(id, cached[id], selected)
+                                    null
+                                }
+                                error is ApiFailure.Unauthenticated ||
+                                    error is ApiFailure.UpdateRequired ||
+                                    error is ApiFailure.Http && error.status == 401 -> throw error
+                                else -> error
+                            }
+                        }
+                    }
                 }
-            }
+                .awaitAll()
         }
-        failure?.let { throw it }
+        failures.firstOrNull { it != null }?.let { throw it }
     }
 
     fun close() {
