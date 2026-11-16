@@ -528,6 +528,7 @@ describe("CHAT-02: thread connector account selection", () => {
         slug: `_thread-http-runtime-${randomUUID()}`,
         displayName: "Thread HTTP runtime connector",
         prefixTemplates: ["https://thread-http-runtime.example.test/v1/"],
+        permissionBundleRef: "builtin:slack@1",
       }),
     );
     connectorIds.push(httpConnector.id);
@@ -599,18 +600,75 @@ describe("CHAT-02: thread connector account selection", () => {
     cleanupRun = async () => {
       await cancelChatRun(actor, run.runId, execution.sandboxHeaders);
     };
-    expect(execution.execution.connectorRuntimeTargets).toContainEqual({
-      kind: "custom",
-      customConnectorId: httpConnector.id,
-      baseUrlVars: {},
-      sourceId: httpConnectorId,
+    const targets = [
+      {
+        kind: "custom",
+        customConnectorId: httpConnector.id,
+        baseUrlVars: {},
+        sourceId: httpConnectorId,
+      },
+      {
+        kind: "custom",
+        customConnectorId: mcpConnector.id,
+        baseUrlVars: {},
+        sourceId: mcpConnectorId,
+      },
+    ].sort((left, right) => {
+      return left.customConnectorId.localeCompare(right.customConnectorId);
     });
-    expect(execution.execution.connectorRuntimeTargets).toContainEqual({
-      kind: "custom",
-      customConnectorId: mcpConnector.id,
-      baseUrlVars: {},
-      sourceId: mcpConnectorId,
+    expect(execution.execution.connectorRuntimeTargets).toStrictEqual(targets);
+    const firewalls = execution.execution.firewalls?.filter((entry) => {
+      return entry.kind === "inline" && entry.customConnectorId;
     });
+    expect(firewalls).toMatchObject(
+      targets.map((target) => {
+        return {
+          kind: "inline",
+          customConnectorId: target.customConnectorId,
+          sourceId: target.sourceId,
+        };
+      }),
+    );
+    const firewall = createFirewallApi(context);
+    for (const entry of firewalls ?? []) {
+      if (entry.kind !== "inline") {
+        throw new Error("Expected a custom inline firewall");
+      }
+      const api = entry.firewall.apis[0];
+      if (!api?.id) {
+        throw new Error("Expected the custom firewall API identity");
+      }
+      const auth = await firewall.requestFirewallAuth(
+        execution.sandboxHeaders,
+        {
+          encryptedSecrets:
+            execution.execution.encryptedSecrets ||
+            firewall.encryptedSecretsBody({}),
+          authHeaders: api.auth.headers ?? {},
+          matchedFirewall: {
+            name: entry.firewall.name,
+            apiId: api.id,
+            customConnectorId: entry.customConnectorId,
+            sourceId: entry.sourceId,
+            routingVariables: {},
+          },
+        },
+        [200],
+      );
+      expect(auth.body).toMatchObject({
+        headers: {
+          Authorization:
+            entry.customConnectorId === httpConnector.id
+              ? "Bearer thread-http-runtime-secret"
+              : "Bearer thread-mcp-runtime-secret",
+        },
+      });
+    }
+    expect(
+      execution.execution.networkPolicies?.[
+        `custom_connector_${httpConnector.id.replaceAll("-", "")}`
+      ],
+    ).toMatchObject({ unknownPolicy: "deny" });
     const selections = await accept(
       chatThreadConnectorSelectionsClient().get({
         headers: sessionHeaders(actor),
@@ -620,6 +678,109 @@ describe("CHAT-02: thread connector account selection", () => {
     );
     expect(selections.body.selections).toStrictEqual([]);
     await cleanup();
+  });
+
+  it("uses the default custom account when a preferred account cannot render the updated host template", async () => {
+    const fixture = await publicChatActor(context);
+    const { actor, agentId, run: own } = fixture;
+    fixture.ownsFeatureSwitches();
+    await own(() => {
+      return connectors.updateFeatureSwitches(actor, {
+        connectorChatAccountAccess: false,
+      });
+    });
+    const body = {
+      ...manualHttpCustomConnectorCreateBody({
+        slug: `_host-fallback-${randomUUID()}`,
+        displayName: "Host template fallback",
+        prefixTemplates: ["https://fallback.example.test/"],
+      }),
+      fields: [
+        { key: "secret", label: "Secret", kind: "secret", required: true },
+        { key: "tenant", label: "Tenant", kind: "variable", required: true },
+      ],
+    } satisfies Parameters<typeof connectors.createCustomConnector>[1];
+    const custom = await own(() => {
+      return connectors.createCustomConnector(actor, body);
+    });
+    const fallback = await own(() => {
+      return connectors.setCustomConnectorValues(actor, custom.id, [
+        { key: "secret", kind: "secret", value: "fallback-account-secret" },
+        { key: "tenant", kind: "variable", value: "healthy" },
+      ]);
+    });
+    const preferred = await own(() => {
+      return connectors.setCustomConnectorValues(
+        actor,
+        custom.id,
+        [
+          { key: "secret", kind: "secret", value: "preferred-account-secret" },
+          { key: "tenant", kind: "variable", value: "not/a/hostname" },
+        ],
+        { intent: "add", displayName: "Preferred account" },
+      );
+    });
+    await own(() => {
+      return connectors.updateAgentCustomConnectors(actor, agentId, [
+        custom.id,
+      ]);
+    });
+    const thread = await own(() => {
+      return chat.createThread(actor, { agentId });
+    });
+    await own(() => {
+      return accept(
+        chatThreadConnectorSelectionsClient().update({
+          headers: sessionHeaders(actor),
+          params: { id: thread.id },
+          body: {
+            connectionId: preferred.connectionId,
+            target: { kind: "custom", customConnectorId: custom.id },
+          },
+        }),
+        [200],
+      );
+    });
+    await own(() => {
+      return connectors.updateCustomConnector(actor, custom.id, {
+        ...body,
+        prefixTemplates: [
+          "https://{{variables.tenant}}.fallback.example.test/",
+        ],
+      });
+    });
+    await own(() => {
+      return connectors.updateAgentCustomConnectors(actor, agentId, [
+        custom.id,
+      ]);
+    });
+    const run = await fixture.sendChatRun(actor, {
+      agentId,
+      threadId: thread.id,
+      model: "claude-fable-5-1",
+      prompt: "Use the available custom account after the host template update",
+    });
+    const { execution } = await fixture.runExecution(run.runId);
+    expect(execution.connectorRuntimeTargets).toContainEqual({
+      kind: "custom",
+      customConnectorId: custom.id,
+      sourceId: fallback.connectionId,
+      baseUrlVars: { tenant: "healthy" },
+    });
+    expect(execution.firewalls).toContainEqual(
+      expect.objectContaining({
+        kind: "inline",
+        customConnectorId: custom.id,
+        sourceId: fallback.connectionId,
+        firewall: expect.objectContaining({
+          apis: [
+            expect.objectContaining({
+              base: "https://healthy.fallback.example.test/",
+            }),
+          ],
+        }),
+      }),
+    );
   });
 
   it("starts the run when a selected custom connector becomes unavailable", async () => {
