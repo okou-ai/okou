@@ -1182,7 +1182,7 @@ function createCustomConnectorContextSignals(
 }
 
 /** The Agent's stored connector scope as a Run connector scope. */
-export function runConnectorScope(
+function runConnectorScope(
   scope: AgentConnectorScope,
 ): EffectiveConnectorScope {
   return {
@@ -1194,7 +1194,7 @@ export function runConnectorScope(
 }
 
 /** The bootstrap connector catalog, explicit about an empty scope. */
-export function runConnectorCatalogSelection(
+function runConnectorCatalogSelection(
   scope: Pick<
     AgentConnectorScope,
     "allowedConnectorSlugs" | "allowedCustomConnectorIds"
@@ -1273,7 +1273,7 @@ function customConnectorSourceStorageRows(
       });
 }
 
-export type ConnectorScopeSource = "explicit" | "stored_agent" | "empty";
+type ConnectorScopeSource = "stored_agent" | "empty";
 
 export interface EffectiveConnectorScope {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
@@ -1295,7 +1295,7 @@ interface ThreadConnectorSelectionIds {
   >;
 }
 
-export function isEmptyRunConnectorScope(scope: {
+function isEmptyRunConnectorScope(scope: {
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
 }): boolean {

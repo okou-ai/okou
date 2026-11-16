@@ -12,27 +12,26 @@ import { safeSync } from "../utils";
 import { compactRecord } from "./connector-runtime-preparation.service";
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
 import { emptyEnvironment, type Environment } from "./run-environment";
-import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 
 /** The selected model provider's environment, secrets and firewall. */
 export function createModelProviderEnvironmentSignals(
-  bodyEnvironment$: AgentRunContextSignals["bodyEnvironment$"],
+  runVariables$: Computed<Promise<Record<string, string> | undefined>>,
   modelRoute$: Computed<Promise<ResolvedModelProviderEnvironment | null>>,
 ) {
   return computed(
     async (
       get,
     ): Promise<Environment | ReturnType<typeof badRequestMessage>> => {
-      const [modelProvider, body] = await Promise.all([
+      const [modelProvider, vars] = await Promise.all([
         get(modelRoute$),
-        get(bodyEnvironment$),
+        get(runVariables$),
       ]);
       if (!modelProvider) {
         return emptyEnvironment();
       }
       const manifestResult = safeSync(() => {
-        return modelProviderPermissionManifest(modelProvider, body.vars);
+        return modelProviderPermissionManifest(modelProvider, vars);
       });
       if ("error" in manifestResult) {
         if (manifestResult.error instanceof FirewallBaseUrlResolutionError) {
@@ -45,7 +44,7 @@ export function createModelProviderEnvironmentSignals(
         vars: undefined,
         environment: compactRecord(
           expandVariables(modelProvider.environment, {
-            vars: body.vars,
+            vars,
             secrets: {
               ...modelProvider.secrets,
               ...manifest?.environmentSecretPlaceholders,
