@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ws } from "msw";
+import { http, passthrough, ws } from "msw";
+import { WebSocket as NativeWebSocket } from "ws";
 import { server } from "../../../mocks/server";
 import {
   browserCdpProvider,
@@ -187,17 +188,40 @@ describe("chat-window CDP proxy protocol", () => {
           ? provider.holdReply("Target.attachToBrowserTarget", "BROWSER")
           : undefined;
       const held = provider.holdClose("A", "transport");
+      let pending: NativeWebSocket | undefined;
       try {
-        const peer = await client(proxy.endpoint);
-        clients.push(peer);
-        if (admission) await admission.observed;
-        else await peer.request("Target.getTargets");
+        let peerClosed: Promise<void>;
+        if (admission) {
+          server.use(
+            http.get(proxy.endpoint.replace(/^ws/u, "http"), () => {
+              return passthrough();
+            }),
+          );
+          // Observe the real upgrade lifecycle; the global MSW client opens early.
+          const socket = new NativeWebSocket(proxy.endpoint);
+          pending = socket;
+          peerClosed = new Promise<void>((resolve) => {
+            // An interrupted upgrade reports an error before its close event.
+            socket.on("error", () => {});
+            socket.once("close", () => {
+              resolve();
+            });
+          });
+          await admission.observed;
+          expect(socket.readyState).toBe(NativeWebSocket.CONNECTING);
+        } else {
+          const peer = await client(proxy.endpoint);
+          clients.push(peer);
+          await peer.request("Target.getTargets");
+          peerClosed = peer.closed;
+        }
         await expect(
           connection.request("Target.closeTarget", { targetId: "A" }),
         ).rejects.toThrow("Fixture connection closed");
         await held.observed;
-        await Promise.all([connection.closed, peer.closed, proxy.closed]);
+        await Promise.all([connection.closed, peerClosed, proxy.closed]);
       } finally {
+        pending?.terminate();
         held.resume();
         admission?.resume();
       }
