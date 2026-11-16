@@ -127,7 +127,10 @@ have a real result/cleanup owner; retaining an observer does not prove teardown.
   review boundaries; a method named `append` alone is not proof of publication.
 - A new asynchronous Task constructed directly in a `Computed`/`computedTask` callback, or in
   a Task factory taking `EvaluationSignal`, connects that signal's `onCancel`
-  to the original immutable Task binding or a local alias. Registration and
+  to the original immutable Task binding or a local alias. Trailing and explicit
+  `operation:` closures share this check. Cancellation capture-list initializers
+  resolve in the enclosing scope: a renamed snapshot of the original Task is
+  valid; a same-named capture of another Task is not. Registration and
   cancellation cannot depend on an unrelated condition or occur after an early
   return. Register teardown before the creating scope suspends. Cancelling another
   Task or a shadowed binding does not satisfy ownership. When the callback
