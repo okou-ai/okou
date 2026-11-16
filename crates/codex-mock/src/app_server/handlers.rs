@@ -14,7 +14,7 @@ use super::messages::{
     write_turn_usage_notifications,
 };
 use super::persistence::{InputEventContext, persist_input_events, session_rollout_timestamp};
-use super::scenario::{Scenario, TurnStartRpcError};
+use super::scenario::{Scenario, SteerRejection, TurnFailure, TurnStartRpcError};
 use super::{AppServerState, INVALID_REQUEST, PendingResponse, ServerAction, spawn_stderr_holder};
 use serde_json::{Value, json};
 use std::io::{self, Read, Write};
@@ -506,6 +506,9 @@ impl AppServerState {
                 // this reply. The test then gates client-side arbitration.
                 write_success(output, id, json!({ "turn": turn(&turn_id) }))?;
             }
+            if let Some(current_thread) = &mut self.current_thread {
+                current_thread.active_turn_id = None;
+            }
         } else if matches!(turn_output, MockTurnOutput::Checkpoint { .. }) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -725,7 +728,7 @@ impl AppServerState {
             }
         };
         let Some(active_turn_id) = current_thread.active_turn_id.clone() else {
-            write_error(output, id, INVALID_REQUEST, "no active turn")?;
+            write_error(output, id, INVALID_REQUEST, "no active turn to steer")?;
             return Ok(ServerAction::Continue);
         };
         if self.scenario == Scenario::StaleTurn || expected_turn_id != active_turn_id {
@@ -741,6 +744,59 @@ impl AppServerState {
         let thread_request_model = current_thread.thread_request_model.clone();
         let thread_request_model_provider = current_thread.thread_request_model_provider.clone();
         let rollout_timestamp = current_thread.rollout_timestamp;
+        if let Scenario::RejectedSteerAfterAck(rejection) = self.scenario
+            && !self.steered_inputs.is_empty()
+        {
+            if let Some(current_thread) = &mut self.current_thread {
+                current_thread.active_turn_id = None;
+            }
+            let response_text = mock_response_text(
+                self.initial_inputs
+                    .iter()
+                    .chain(&self.steered_inputs)
+                    .map(String::as_str),
+            )?;
+            let completed_turn_id = if rejection == SteerRejection::WrongTurn {
+                "successor-turn"
+            } else {
+                &active_turn_id
+            };
+            let terminal = match rejection {
+                SteerRejection::Failed => {
+                    turn_failed_notification(&thread_id, completed_turn_id, TurnFailure::Generic)
+                }
+                SteerRejection::Interrupted => {
+                    turn_interrupted_notification(&thread_id, completed_turn_id)
+                }
+                _ => turn_completed_notification(&thread_id, completed_turn_id),
+            };
+            let code = if rejection == SteerRejection::WrongCode {
+                -32603
+            } else {
+                INVALID_REQUEST
+            };
+            let message = if rejection == SteerRejection::OtherError {
+                "steering disabled"
+            } else {
+                "no active turn to steer"
+            };
+            if rejection == SteerRejection::CompletionAfterResponse {
+                write_error(output, id.clone(), code, message)?;
+            }
+            write_json_line(
+                output,
+                &assistant_item_completed_notification(&thread_id, &active_turn_id, &response_text),
+            )?;
+            write_turn_usage_notifications(output, &thread_id, &active_turn_id)?;
+            write_json_line(output, &terminal)?;
+            if rejection == SteerRejection::Disconnect {
+                return Ok(ServerAction::Stop);
+            }
+            if rejection != SteerRejection::CompletionAfterResponse {
+                write_error(output, id, code, message)?;
+            }
+            return Ok(ServerAction::Continue);
+        }
         let inputs = match text_inputs(params) {
             Ok(inputs) => inputs,
             Err(message) => {
