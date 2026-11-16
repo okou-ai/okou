@@ -437,7 +437,9 @@ single floating line, and colour is a small accent for status only.
   shows these banners and nothing hand-built.
 - **Chat feedback floats above the bottom controls** in `ChatFeedbackSurface`: above the
   list footer or the chat composer, following its height and the keyboard without moving
-  the content. A downward swipe dismisses it; the close button and VoiceOver escape do too.
+  the content. Anchor to visible controls, not blank space reserved for a hidden model picker;
+  keep the 8 pt gap above the visible surface. A downward swipe dismisses it; the close button
+  and VoiceOver escape do too.
   The scroll-to-bottom control stays above the feedback. A finished action
   ("Chat archived · Undo") or a sync failure with Retry, one at a time. Liquid Glass at
   card radius, a 16 pt muted Lucide glyph (a small spinner while retrying), one 15 pt

@@ -59,21 +59,36 @@ private struct ChatFeedbackBannerContent: View {
 }
 
 private struct ChatFeedbackAnchor: PreferenceKey {
-  static var defaultValue: Anchor<CGRect>? { nil }
+  struct Placement {
+    var bar: Anchor<CGRect>?
+    var controls: [Anchor<CGRect>] = []
+  }
 
-  static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
-    value = nextValue() ?? value
+  static var defaultValue: Placement { Placement() }
+
+  static func reduce(value: inout Placement, nextValue: () -> Placement) {
+    let next = nextValue()
+    value.bar = next.bar ?? value.bar
+    value.controls.append(contentsOf: next.controls)
   }
 }
 
 extension EnvironmentValues {
-  @Entry var chatFeedbackHeight: CGFloat = 0
+  @Entry var chatFeedbackClearance: CGFloat = 0
 }
 
 extension View {
-  /// Anchor to the whole bottom bar, including a growing composer and its accessory controls.
+  /// Keep the layout boundary separate from controls whose hidden rows still reserve space.
   func chatFeedbackAnchor() -> some View {
-    anchorPreference(key: ChatFeedbackAnchor.self, value: .bounds) { $0 }
+    transformAnchorPreference(key: ChatFeedbackAnchor.self, value: .bounds) { placement, bounds in
+      placement.bar = bounds
+    }
+  }
+
+  func chatFeedbackContentAnchor(isPresented: Bool = true) -> some View {
+    transformAnchorPreference(key: ChatFeedbackAnchor.self, value: .bounds) { placement, bounds in
+      if isPresented { placement.controls.append(bounds) }
+    }
   }
 
   func chatFeedbackOverlay(store: WorkspaceStore, isPresented: Bool) -> some View {
@@ -84,23 +99,28 @@ extension View {
 private struct ChatFeedbackOverlay: ViewModifier {
   let store: WorkspaceStore
   let isPresented: Bool
-  @State private var feedbackHeight: CGFloat = 0
+  @State private var feedbackClearance: CGFloat = 0
 
   func body(content: Content) -> some View {
     content
-      .environment(\.chatFeedbackHeight, feedbackHeight)
-      .overlayPreferenceValue(ChatFeedbackAnchor.self) { anchor in
+      .environment(\.chatFeedbackClearance, feedbackClearance)
+      .overlayPreferenceValue(ChatFeedbackAnchor.self) { anchors in
         GeometryReader { geometry in
-          if isPresented, let anchor {
+          if isPresented, let bar = anchors.bar {
+            let barTop = geometry[bar].minY
+            let visibleTop =
+              anchors.controls.map { geometry[$0] }
+              .filter { !$0.isEmpty }.map(\.minY).min() ?? barTop
+            let hiddenTopSpace = max(0, visibleTop - barTop)
             ChatFeedbackBanner(store: store)
               .onGeometryChange(for: CGFloat.self) {
-                $0.size.height
+                max(0, $0.size.height - hiddenTopSpace)
               } action: {
-                feedbackHeight = $0
+                feedbackClearance = $0
               }
               .frame(maxHeight: .infinity, alignment: .bottom)
-              .padding(.bottom, max(0, geometry.size.height - geometry[anchor].minY))
-              .onDisappear { feedbackHeight = 0 }
+              .padding(.bottom, max(0, geometry.size.height - visibleTop))
+              .onDisappear { feedbackClearance = 0 }
           }
         }
       }
