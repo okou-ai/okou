@@ -81,7 +81,7 @@ interface HeldReply {
   readonly method: string;
   readonly targetId: string;
   requested(): void;
-  respond?: () => void;
+  respond?: (error?: { code: number; message: string }) => void;
 }
 
 /** External Chrome/extension protocol fixture, with real loopback WebSockets. */
@@ -409,9 +409,18 @@ export async function browserCdpProvider() {
       commands.push({ method, params, sessionId });
       const respond = (response: Record<string, unknown>) => {
         const held = heldReply;
-        if (held && held.method === method && held.targetId === selected) {
-          held.respond = () => {
-            send(connection, { id, sessionId, ...response });
+        if (
+          held &&
+          held.method === method &&
+          held.targetId === selected &&
+          !held.respond
+        ) {
+          held.respond = (error) => {
+            send(connection, {
+              id,
+              sessionId,
+              ...(error ? { error } : response),
+            });
           };
           held.requested();
           return;
@@ -848,11 +857,11 @@ export async function browserCdpProvider() {
       heldReply = held;
       return {
         observed,
-        resume() {
+        resume(error?: { code: number; message: string }) {
           heldReply = undefined;
           const respond = held.respond;
           held.respond = undefined;
-          respond?.();
+          respond?.(error);
         },
       };
     },

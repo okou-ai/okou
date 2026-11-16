@@ -28,26 +28,103 @@ interface PeerRequest {
   readonly id: number;
   readonly method: string;
   readonly sessionId: string | undefined;
+  readonly parent: string;
+}
+interface LifetimeRequest {
+  readonly kind: "lifetime";
+  readonly peer: PeerWire;
 }
 interface DetachRequest {
   readonly kind: "detach";
   readonly timer: ReturnType<typeof setTimeout>;
 }
 
-/** A peer owns a browser session, never the shared provider connection. */
+type PeerLifetime =
+  | { readonly kind: "acquiring" }
+  | { readonly kind: "cancelled" }
+  | { readonly kind: "attached"; readonly root: string }
+  | { readonly kind: "releasing"; readonly root: string }
+  | { readonly kind: "retired" };
+
+/** Own the native root from acquisition through confirmed retirement. */
 export class PeerWire {
   private readonly messages = new Set<
     (message: Record<string, unknown>, raw: string) => void
   >();
   private readonly closing = new Set<() => void>();
-  closed = false;
+  private lifetime: PeerLifetime = { kind: "acquiring" };
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private resolveOpened!: () => void;
+  private rejectOpened!: (error: Error) => void;
+  readonly opened: Promise<void>;
 
-  constructor(
-    private readonly owner: ControlWire,
-    readonly root: string,
-  ) {}
+  constructor(private readonly owner: ControlWire) {
+    this.opened = new Promise<void>((resolve, reject) => {
+      this.resolveOpened = resolve;
+      this.rejectOpened = reject;
+    });
+  }
 
-  send(raw: string): void {
+  get closed(): boolean {
+    return (
+      this.lifetime.kind !== "acquiring" && this.lifetime.kind !== "attached"
+    );
+  }
+
+  acquire(): void {
+    this.deadline();
+    this.owner.requestPeer(this, "Target.attachToBrowserTarget", {});
+  }
+
+  private deadline(): void {
+    clearTimeout(this.timer);
+    // An unknown native acquisition/release still belongs to this transport.
+    this.timer = setTimeout(() => {
+      this.owner.close();
+    }, 15_000);
+  }
+
+  ownsRoot(id: string): boolean {
+    return (
+      (this.lifetime.kind === "attached" ||
+        this.lifetime.kind === "releasing") &&
+      this.lifetime.root === id
+    );
+  }
+
+  confirm(message: Record<string, unknown>): void {
+    if (this.lifetime.kind === "releasing") {
+      if (record(message.error)) this.owner.close();
+      else this.retire();
+      return;
+    }
+    const cancelled = this.lifetime.kind === "cancelled";
+    if (record(message.error)) {
+      this.retire(new ProtocolError(message.error));
+      return;
+    }
+    if (
+      !record(message.result) ||
+      typeof message.result.sessionId !== "string" ||
+      !message.result.sessionId
+    ) {
+      this.owner.close();
+      return;
+    }
+    const root = message.result.sessionId;
+    this.lifetime = { kind: cancelled ? "releasing" : "attached", root };
+    this.owner.admitPeer(this, root);
+    if (cancelled) {
+      this.deadline();
+      this.owner.release(this, root);
+    } else {
+      clearTimeout(this.timer);
+      this.resolveOpened();
+    }
+  }
+
+  /** The caller supplies the already-authorized canonical channel. */
+  send(raw: string, channel?: string): void {
     const message: unknown = JSON.parse(raw);
     if (
       !record(message) ||
@@ -55,8 +132,16 @@ export class PeerWire {
       typeof message.method !== "string"
     )
       throw new Error("Invalid Browser peer request");
-    if (this.closed) throw new Error("Browser peer connection closed");
-    this.owner.forward(this, message.id, message.method, message);
+    if (this.lifetime.kind !== "attached")
+      throw new Error("Browser peer connection closed");
+    this.owner.forward(
+      this,
+      this.lifetime.root,
+      message.id,
+      message.method,
+      message,
+      channel,
+    );
   }
 
   onMessage(
@@ -69,6 +154,10 @@ export class PeerWire {
   }
 
   onClose(listener: () => void): () => void {
+    if (this.closed) {
+      listener();
+      return () => {};
+    }
     this.closing.add(listener);
     return () => {
       this.closing.delete(listener);
@@ -87,8 +176,29 @@ export class PeerWire {
 
   close(): void {
     if (this.closed) return;
-    this.closed = true;
-    this.owner.release(this);
+    const lifetime = this.lifetime;
+    if (lifetime.kind === "acquiring") {
+      // Keep the acquisition receipt and deadline after the caller leaves.
+      this.lifetime = { kind: "cancelled" };
+    } else if (lifetime.kind === "attached") {
+      this.lifetime = { kind: "releasing", root: lifetime.root };
+      this.deadline();
+      this.owner.release(this, lifetime.root);
+    }
+    this.end();
+  }
+
+  retire(error = new Error("Browser peer connection closed")): void {
+    if (this.lifetime.kind === "retired") return;
+    this.lifetime = { kind: "retired" };
+    clearTimeout(this.timer);
+    this.owner.retirePeer(this);
+    this.rejectOpened(error);
+    this.end();
+  }
+
+  private end(): void {
+    this.rejectOpened(new Error("Browser peer connection closed"));
     for (const listener of this.closing) listener();
     this.closing.clear();
     this.messages.clear();
@@ -100,7 +210,7 @@ export class ControlWire implements CdpTransport {
   private nextId = 0;
   private readonly pending = new Map<
     number,
-    ControlRequest | PeerRequest | DetachRequest
+    ControlRequest | PeerRequest | LifetimeRequest | DetachRequest
   >();
   private readonly peers = new Set<PeerWire>();
   private readonly sessions = new Map<
@@ -137,7 +247,9 @@ export class ControlWire implements CdpTransport {
     const entry = this.pending.get(id);
     if (!entry) return;
     this.pending.delete(id);
-    if (entry.kind === "detach") {
+    if (entry.kind === "lifetime") {
+      entry.peer.confirm(value);
+    } else if (entry.kind === "detach") {
       clearTimeout(entry.timer);
       // An unconfirmed release can leave native selectors pausing future pages.
       if (record(value.error)) this.close();
@@ -158,7 +270,7 @@ export class ControlWire implements CdpTransport {
       )
         this.sessions.set(value.result.sessionId, {
           peer: entry.peer,
-          parent: entry.sessionId ?? entry.peer.root,
+          parent: entry.parent,
         });
       entry.peer.receive({
         ...value,
@@ -186,7 +298,7 @@ export class ControlWire implements CdpTransport {
           peer: owner.peer,
           parent: channel,
         });
-      if (channel === owner.peer.root)
+      if (channel && owner.peer.ownsRoot(channel))
         owner.peer.receive({ ...value, sessionId: undefined });
       else owner.peer.receive(value, data);
       if (
@@ -201,9 +313,8 @@ export class ControlWire implements CdpTransport {
       typeof params.sessionId === "string"
     ) {
       const detached = this.sessions.get(params.sessionId);
-      if (detached && params.sessionId === detached.peer.root) {
-        this.forget(params.sessionId);
-        detached.peer.close();
+      if (detached?.peer.ownsRoot(params.sessionId)) {
+        detached.peer.retire();
         return;
       }
     }
@@ -298,54 +409,77 @@ export class ControlWire implements CdpTransport {
     });
   }
 
-  async openPeer(): Promise<PeerWire> {
-    const result = await this.request("Target.attachToBrowserTarget", {});
-    if (!record(result) || typeof result.sessionId !== "string")
-      throw new Error("Invalid Browser peer session");
-    if (this.closed) throw new Error("Browser control connection closed");
-    const peer = new PeerWire(this, result.sessionId);
+  openPeer(): PeerWire {
+    const peer = new PeerWire(this);
     this.peers.add(peer);
-    this.sessions.set(peer.root, { peer, parent: undefined });
+    if (this.closed) peer.retire();
+    else peer.acquire();
     return peer;
+  }
+
+  requestPeer(
+    peer: PeerWire,
+    method: "Target.attachToBrowserTarget" | "Target.detachFromTarget",
+    params: Record<string, unknown>,
+  ): void {
+    const id = ++this.nextId;
+    this.pending.set(id, { kind: "lifetime", peer });
+    try {
+      this.socket.send(JSON.stringify({ id, method, params }));
+    } catch {
+      this.close();
+    }
+  }
+
+  admitPeer(peer: PeerWire, root: string): void {
+    this.sessions.set(root, { peer, parent: undefined });
   }
 
   forward(
     peer: PeerWire,
+    root: string,
     originalId: number,
     method: string,
     message: Record<string, unknown>,
+    sessionId?: string,
   ): void {
-    if (this.closed || !this.peers.has(peer))
+    if (this.closed || peer.closed)
       throw new Error("Browser peer connection closed");
     const id = ++this.nextId;
-    const sessionId =
-      typeof message.sessionId === "string" ? message.sessionId : undefined;
+    const parent = sessionId ?? root;
     this.pending.set(id, {
       kind: "peer",
       peer,
       id: originalId,
       method,
       sessionId,
+      parent,
     });
     try {
-      this.socket.send(
-        JSON.stringify({ ...message, id, sessionId: sessionId ?? peer.root }),
-      );
+      this.socket.send(JSON.stringify({ ...message, id, sessionId: parent }));
     } catch (error) {
       this.pending.delete(id);
       throw error;
     }
   }
 
-  release(peer: PeerWire): void {
-    if (!this.peers.delete(peer)) return;
-    const attached = this.sessions.has(peer.root);
+  release(peer: PeerWire, root: string): void {
     for (const [id, request] of this.pending)
       if (request.kind === "peer" && request.peer === peer)
         this.pending.delete(id);
+    this.requestPeer(peer, "Target.detachFromTarget", { sessionId: root });
+  }
+
+  retirePeer(peer: PeerWire): void {
+    this.peers.delete(peer);
+    for (const [id, request] of this.pending)
+      if (
+        (request.kind === "peer" || request.kind === "lifetime") &&
+        request.peer === peer
+      )
+        this.pending.delete(id);
     for (const [id, owner] of this.sessions)
       if (owner.peer === peer) this.sessions.delete(id);
-    if (attached) this.detach(peer.root);
   }
 
   private detach(sessionId: string, parent?: string): void {
@@ -397,13 +531,14 @@ export class ControlWire implements CdpTransport {
     this.releaseOwner?.();
     this.releaseOwner = undefined;
     for (const entry of this.pending.values()) {
-      if (entry.kind !== "peer") clearTimeout(entry.timer);
+      if (entry.kind === "control" || entry.kind === "detach")
+        clearTimeout(entry.timer);
       if (entry.kind === "control") {
         entry.reject(new Error("Browser control connection closed"));
       }
     }
     this.pending.clear();
-    for (const peer of this.peers) peer.close();
+    for (const peer of this.peers) peer.retire();
     this.listeners.clear();
   }
 }

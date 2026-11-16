@@ -303,42 +303,61 @@ describe("chat-window CDP proxy protocol", () => {
     expect(provider.hasWindow(1)).toBe(true);
   });
 
-  it("releases the native peer when a client cancels pending admission", async () => {
-    await connection.request("Target.getTargets");
-    const admission = provider.holdReply(
-      "Target.attachToBrowserTarget",
-      "BROWSER",
-    );
-    server.use(
-      http.get(proxy.endpoint.replace(/^ws/u, "http"), () => {
-        return passthrough();
-      }),
-    );
-    const socket = new NativeWebSocket(proxy.endpoint);
-    const closed = new Promise<void>((resolve) => {
-      socket.on("error", () => {});
-      socket.once("close", () => {
-        resolve();
+  it.each(["close", "reset"])(
+    "releases native admission after a client %s",
+    async (mode) => {
+      await connection.request("Target.getTargets");
+      const admission = provider.holdReply(
+        "Target.attachToBrowserTarget",
+        "BROWSER",
+      );
+      server.use(
+        http.get(proxy.endpoint.replace(/^ws/u, "http"), () => {
+          return passthrough();
+        }),
+      );
+      const endpoint = new URL(proxy.endpoint);
+      const socket =
+        mode === "close"
+          ? new NativeWebSocket(proxy.endpoint)
+          : createConnection({
+              host: endpoint.hostname,
+              port: Number(endpoint.port),
+            });
+      const closed = new Promise<void>((resolve) => {
+        socket.on("error", () => {});
+        socket.once("close", () => {
+          resolve();
+        });
       });
-    });
-    let release: ReturnType<typeof provider.holdReply> | undefined;
-    try {
-      await admission.observed;
-      expect(socket.readyState).toBe(NativeWebSocket.CONNECTING);
-      socket.terminate();
-      await closed;
-      admission.resume();
-      release = provider.holdReply("Target.detachFromTarget", "BROWSER");
-      await release.observed;
-      await expect(
-        connection.request("Future.echo", { stillUsable: true }),
-      ).resolves.toStrictEqual({ opaque: { stillUsable: true } });
-    } finally {
-      socket.terminate();
-      admission.resume();
-      release?.resume();
-    }
-  });
+      if (!(socket instanceof NativeWebSocket))
+        socket.once("connect", () => {
+          socket.write(
+            `GET ${endpoint.pathname} HTTP/1.1\r\nHost: ${endpoint.host}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`,
+          );
+        });
+      let release: ReturnType<typeof provider.holdReply> | undefined;
+      try {
+        await admission.observed;
+        if (socket instanceof NativeWebSocket) {
+          expect(socket.readyState).toBe(NativeWebSocket.CONNECTING);
+          socket.terminate();
+        } else socket.resetAndDestroy();
+        await closed;
+        admission.resume();
+        release = provider.holdReply("Target.detachFromTarget", "BROWSER");
+        await release.observed;
+        await expect(
+          connection.request("Future.echo", { stillUsable: true }),
+        ).resolves.toStrictEqual({ opaque: { stillUsable: true } });
+      } finally {
+        if (socket instanceof NativeWebSocket) socket.terminate();
+        else socket.destroy();
+        admission.resume();
+        release?.resume();
+      }
+    },
+  );
 
   it("releases a rejected upgrade's native peer and retires the transport if cleanup fails", async () => {
     await connection.request("Target.getTargets");
@@ -370,6 +389,87 @@ describe("chat-window CDP proxy protocol", () => {
       expect(provider.hasWindow(1)).toBe(true);
     } finally {
       socket.destroy();
+    }
+  });
+
+  it("reclaims a cancelled admission's late root while a later client remains attached", async () => {
+    await connection.request("Target.getTargets");
+    const admission = provider.holdReply(
+      "Target.attachToBrowserTarget",
+      "BROWSER",
+    );
+    server.use(
+      http.get(proxy.endpoint.replace(/^ws/u, "http"), () => {
+        return passthrough();
+      }),
+    );
+    const socket = new NativeWebSocket(proxy.endpoint);
+    const closed = new Promise<void>((resolve) => {
+      socket.on("error", () => {});
+      socket.once("close", () => {
+        resolve();
+      });
+    });
+    let release: ReturnType<typeof provider.holdReply> | undefined;
+    try {
+      await admission.observed;
+      socket.terminate();
+      await closed;
+      const later = await client(proxy.endpoint);
+      clients.push(later);
+      const { sessionId } = await later.request("Target.attachToTarget", {
+        targetId: "A",
+        flatten: true,
+      });
+      admission.resume();
+      release = provider.holdReply("Target.detachFromTarget", "BROWSER");
+      await release.observed;
+      await expect(
+        later.request(
+          "Future.echo",
+          { ownedByLaterClient: true },
+          String(sessionId),
+        ),
+      ).resolves.toStrictEqual({ opaque: { ownedByLaterClient: true } });
+      await expect(
+        connection.request("Target.getTargets"),
+      ).resolves.toMatchObject({
+        targetInfos: expect.arrayContaining([
+          expect.objectContaining({ targetId: "A", attached: true }),
+        ]),
+      });
+    } finally {
+      socket.terminate();
+      admission.resume();
+      release?.resume();
+    }
+  });
+
+  it("keeps a sibling usable after native root retirement precedes a failed detach receipt", async () => {
+    const peer = await client(proxy.endpoint);
+    clients.push(peer);
+    await peer.request("Target.attachToTarget", {
+      targetId: "A",
+      flatten: true,
+    });
+    const release = provider.holdReply("Target.detachFromTarget", "BROWSER");
+    try {
+      peer.close();
+      await Promise.all([peer.closed, release.observed]);
+      await connection.request("Future.echo", { beforeReceipt: true });
+      release.resume({ code: -32602, message: "Native session not found" });
+      await expect(
+        connection.request("Future.echo", { afterReceipt: true }),
+      ).resolves.toStrictEqual({ opaque: { afterReceipt: true } });
+      await expect(
+        connection.request("Target.getTargets"),
+      ).resolves.toMatchObject({
+        targetInfos: expect.arrayContaining([
+          expect.objectContaining({ targetId: "A", attached: false }),
+        ]),
+      });
+    } finally {
+      release.resume();
     }
   });
 

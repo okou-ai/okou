@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { OkouBrowserClient } from "@okouai/browser-extension-client";
 import { WebSocketServer } from "ws";
-import { ControlWire, record, type PeerWire } from "./wire";
+import { ControlWire, record } from "./wire";
 import { WindowScope } from "./scope";
 import { ProxyPeer } from "./peer";
 
@@ -38,7 +38,6 @@ export async function startWindowProxy(
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 0 });
   const peers = new Set<ProxyPeer>();
   const path = "/devtools/browser";
-  const handshakes = new Set<() => void>();
   let finished!: () => void;
   const closed = new Promise<void>((resolve) => {
     finished = resolve;
@@ -61,13 +60,10 @@ export async function startWindowProxy(
       clearTimeout(unclaimed);
       signal.removeEventListener("abort", abort);
       scope?.close();
-      for (const cancel of handshakes) cancel();
-      handshakes.clear();
-      for (const peer of peers) peer.close();
+      control?.close();
       sockets.close();
       server.close();
       server.closeAllConnections();
-      control?.close();
       try {
         await native?.close();
       } catch (error) {
@@ -106,33 +102,23 @@ export async function startWindowProxy(
         socket.destroy();
         return;
       }
-      let upstream: PeerWire | undefined;
-      let cancelled = false;
-      const cancel = () => {
-        cancelled = true;
-        clearTimeout(timer);
-        socket.destroy();
-        upstream?.close();
-        handshakes.delete(cancel);
+      const channel = activeControl.openPeer();
+      const disconnect = () => {
+        channel.close();
       };
-      const timer = setTimeout(() => {
-        cancel();
-      }, 15_000);
-      handshakes.add(cancel);
-      socket.once("close", cancel);
-      activeControl
-        .openPeer()
-        .then((channel) => {
-          upstream = channel;
-          if (cancelled || closing || socket.destroyed || channel.closed) {
-            cancel();
+      socket.once("close", disconnect);
+      socket.once("error", disconnect);
+      channel.onClose(() => {
+        socket.destroy();
+      });
+      channel.opened
+        .then(() => {
+          if (closing) {
+            channel.close();
             return;
           }
-          // A rejected upgrade never transfers ownership to a ProxyPeer.
+          if (channel.closed) return;
           sockets.handleUpgrade(request, socket, head, (downstream) => {
-            clearTimeout(timer);
-            handshakes.delete(cancel);
-            socket.removeListener("close", cancel);
             claimed = true;
             clearTimeout(unclaimed);
             const peer = new ProxyPeer(downstream, channel, activeScope, () => {
@@ -142,7 +128,9 @@ export async function startWindowProxy(
             peers.add(peer);
           });
         })
-        .catch(cancel);
+        .catch(() => {
+          channel.close();
+        });
     });
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);

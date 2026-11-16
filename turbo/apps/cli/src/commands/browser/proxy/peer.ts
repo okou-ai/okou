@@ -658,13 +658,8 @@ export class ProxyPeer {
       }
       if (await this.controlCommand(method, params, channel, respond)) return;
       raw = await this.rewrite(message, raw, channel);
-      if (inherited && message.sessionId === undefined)
-        raw = JSON.stringify({
-          ...(JSON.parse(raw) as Message),
-          sessionId: channel,
-        });
       this.requests.set(key(channel, message.id), accepted);
-      this.upstream.send(raw);
+      this.upstream.send(raw, channel);
     } catch (error) {
       const failure = {
         id: message.id,
@@ -939,7 +934,7 @@ export class ProxyPeer {
     }, 15_000);
     this.internal.set(key(sessionId, id), { promise, resolve, reject, timer });
     try {
-      this.upstream.send(JSON.stringify({ id, method, params, sessionId }));
+      this.upstream.send(JSON.stringify({ id, method, params }), sessionId);
     } catch {
       clearTimeout(timer);
       this.internal.delete(key(sessionId, id));
