@@ -37,6 +37,7 @@ import {
   triggerAblyReauth,
   triggerAblyReconnect,
   triggerAblyResume,
+  triggerSharedWorkerAblyChannelGap,
   triggerSharedWorkerAblyConnectionState,
   triggerSharedWorkerAblyFailure,
   triggerSharedWorkerAblyReconnect,
@@ -765,6 +766,7 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       triggerFailure: triggerAblyFailure,
       triggerReconnect: triggerAblyReconnect,
       triggerResume: triggerAblyResume,
+      triggerSharedWorkerChannelGap: triggerSharedWorkerAblyChannelGap,
       triggerSharedWorkerConnectionState:
         triggerSharedWorkerAblyConnectionState,
       triggerSharedWorkerFailure: triggerSharedWorkerAblyFailure,

@@ -178,6 +178,10 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
         this.events.workerUnavailable(event.reason);
         return;
       }
+      if (event.type === "realtime-gap") {
+        await this.events.realtimeResynced?.();
+        return;
+      }
     },
   );
 
