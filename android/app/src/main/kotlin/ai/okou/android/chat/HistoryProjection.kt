@@ -46,6 +46,8 @@ data class HistoryTranscript(
     val messages: List<HistoryMessage>,
     val execution: HistoryExecution,
     val workSteps: Int,
+    val activeRunId: String? = null,
+    val persistedIds: Set<String> = emptySet(),
 )
 
 internal fun JsonObject.text(key: String): String? = (get(key) as? JsonPrimitive)?.contentOrNull
@@ -178,9 +180,20 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                 else row.type.takeIf { row.terminal || it == "output.error" },
             )
         }
+    val endedRuns = terminals + interrupted
+    val running = historyIsRunning(rows, endedRuns)
+    // First occurrence orders runs: a late event cannot make an older run the newest owner.
+    val activeRun =
+        rows
+            .asSequence()
+            .filterNot { it.type == "usage.recorded" || it.type == "control.interrupt" }
+            .mapNotNull { it.runId }
+            .distinct()
+            .lastOrNull()
+            ?.takeIf { running && it !in endedRuns }
     val execution =
         when {
-            historyIsRunning(rows, terminals + interrupted) -> HistoryExecution.Running
+            running -> HistoryExecution.Running
             pending.isNotEmpty() -> HistoryExecution.Queued
             else ->
                 // A late event from an older run stays with that turn, including in this summary.
@@ -199,7 +212,13 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                     else -> HistoryExecution.Idle
                 }
         }
-    return HistoryTranscript(messages, execution, rows.count { it.type == "output.message" })
+    return HistoryTranscript(
+        messages,
+        execution,
+        rows.count { it.type == "output.message" },
+        activeRun,
+        checkpoint.rows.flatMapTo(hashSetOf()) { listOfNotNull(it.id, it.revokesId) },
+    )
 }
 
 /** Match Web's run indicator: old activity cannot revive a newer terminal's settled state. */

@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="output_live">实时回复</string>
+    <string name="output_waiting">等待实时回复</string>
+    <string name="output_catching_up">正在同步已保存的消息。已收到的文本会保留。</string>
     <string name="settings">设置</string>
     <string name="back">返回</string>
     <string name="appearance">外观</string>

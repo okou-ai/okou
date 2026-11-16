@@ -1,5 +1,16 @@
 package ai.okou.android.chat
 
+import ai.okou.android.api.generated.SessionOutputDelta
+import kotlinx.coroutines.flow.StateFlow
+
+data class RunOutputTarget(val threadId: String, val runId: String, val generation: Long)
+
+sealed interface RunOutputSignal {
+    data class Delta(val value: SessionOutputDelta) : RunOutputSignal
+
+    data object Discontinuity : RunOutputSignal
+}
+
 enum class RealtimePhase {
     Stopped,
     Connecting,
@@ -35,7 +46,11 @@ data class ChatChanges(
 
 interface RealtimeService {
     /** The observing coroutine owns the SDK, subscriptions and cancellable token renewal. */
-    suspend fun observeRealtime(observe: suspend (RealtimeSnapshot) -> Unit): Nothing
+    suspend fun observeRealtime(
+        target: StateFlow<RunOutputTarget?>,
+        output: suspend (RunOutputTarget, RunOutputSignal) -> Unit,
+        observe: suspend (RealtimeSnapshot) -> Unit,
+    ): Nothing
 }
 
 internal fun chatChanges(topic: String?): ChatChanges? {

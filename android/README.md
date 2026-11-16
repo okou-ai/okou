@@ -215,6 +215,13 @@ failed authentication. `RealtimeCatchUpTest` keeps canonical history held while
 list changes and status failures remain independent. `NativeRealtimeTest` covers
 the real native route's connecting first display, cross-client confirmed changes,
 disconnect/reconnect and foreground restoration while retaining a typed draft.
+The same foreground SDK connection carries the visible conversation's confirmed active-run
+output channel. `RunOutputModelTest` covers ordered transient prefixes, ownership, bounded
+retention and persisted-ID replacement; real-SDK protocol tests cover decoding and run-channel
+cleanup. The native realtime journey displays streamed text, preserves it through a gap and
+reconnect, then replaces it with canonical saved text while retaining the draft. Chunks never
+enter the durable cache. Missing prefixes or exhausted transient memory wait for canonical
+history; already received text remains visible until persistence or conversation replacement.
 Its external SDK observations are controlled; this is not provider-live evidence.
 
 Meaningful drafts and pending text operations live in `noBackupFilesDir/chat-input`,

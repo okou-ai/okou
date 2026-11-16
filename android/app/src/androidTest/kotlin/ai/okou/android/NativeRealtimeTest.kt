@@ -1,11 +1,13 @@
 package ai.okou.android
 
+import ai.okou.android.api.generated.SessionOutputDelta
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.RealtimePhase
 import ai.okou.android.chat.RealtimeSnapshot
+import ai.okou.android.chat.RunOutputSignal
 import android.view.KeyEvent
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -205,6 +207,100 @@ class NativeRealtimeTest {
             scenario.moveToState(Lifecycle.State.RESUMED)
             condition { external.opened.get() == opened + 1 }
             text("Changed while backgrounded")
+            // Confirmed active-run ownership enables transient output on the same observation.
+            val activeRun = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            val activeInput = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+            val streamedEvent = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+            val savedOutput = AtomicReference(false)
+            fixture.historyRows = { request ->
+                val cursor = request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0
+                val saved = savedOutput.get()
+                val rows =
+                    buildList {
+                            if (cursor < 53)
+                                add(
+                                    historyEventWire(
+                                        activeInput,
+                                        53,
+                                        CHAT_PERSONAL,
+                                        "input.prompt",
+                                        """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Start live output"}]}}""",
+                                        activeRun,
+                                    )
+                                )
+                            if (saved && cursor < 54)
+                                add(
+                                    historyEventWire(
+                                        streamedEvent,
+                                        54,
+                                        CHAT_PERSONAL,
+                                        "output.message",
+                                        """{"content":"Saved native answer"}""",
+                                        activeRun,
+                                    )
+                                )
+                        }
+                        .joinToString(",")
+                val lastId = if (saved) streamedEvent else activeInput
+                val lastSeq = if (saved) 54 else 53
+                jsonResponse(
+                    """{"rows":[$rows],"cursor":{"lastEventId":"$lastId","lastSeqId":$lastSeq},"hasMore":false}"""
+                )
+            }
+            external.invalidate()
+            condition { external.target.value?.runId == activeRun }
+            fun chunk(index: Long, value: String) =
+                RunOutputSignal.Delta(
+                    SessionOutputDelta(
+                        CHAT_PERSONAL,
+                        activeRun,
+                        streamedEvent,
+                        "native-output",
+                        CHAT_DATE,
+                        index,
+                        value,
+                    )
+                )
+            external.output(chunk(0, "Live native "))
+            external.output(chunk(0, "duplicate"))
+            external.output(chunk(1, "answer"))
+            condition {
+                chats
+                    ?.history
+                    ?.output
+                    ?.state
+                    ?.value
+                    ?.messages
+                    ?.singleOrNull()
+                    ?.blocks
+                    ?.singleOrNull()
+                    ?.text == "Live native answer"
+            }
+            androidx.test.uiautomator
+                .UiScrollable(UiSelector().scrollable(true))
+                .scrollIntoView(UiSelector().text("Live native answer"))
+            text("Live native answer")
+            external.output(chunk(3, "missing chunk"))
+            external.snapshot.value =
+                external.snapshot.value.copy(phase = RealtimePhase.Unavailable)
+            condition {
+                chats?.history?.output?.state?.value?.phase ==
+                    ai.okou.android.chat.RunOutputPhase.CatchingUp
+            }
+            text("Live native answer")
+            external.snapshot.value =
+                external.snapshot.value.copy(
+                    phase = RealtimePhase.Connected,
+                    revision = external.snapshot.value.revision + 1,
+                )
+            savedOutput.set(true)
+            external.invalidate()
+            androidx.test.uiautomator
+                .UiScrollable(UiSelector().scrollable(true))
+                .scrollIntoView(UiSelector().text("Saved native answer"))
+            text("Saved native answer")
+            assertFalse(device.hasObject(By.pkg(app.packageName).text("Live native answer")))
+            condition { chats?.history?.output?.state?.value?.messages?.isEmpty() == true }
             assertTrue(
                 checkNotNull(
                         device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))

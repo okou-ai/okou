@@ -22,6 +22,7 @@ import { chatEventsContract } from "../contracts/chat-event-send";
 import { chatInputStatusContract } from "../contracts/chat-input-status";
 import { onboardingStatusContract } from "../contracts/onboarding";
 import { platformRealtimeTokenContract } from "../contracts/realtime";
+import { sessionOutputDeltaSchema } from "../validators/realtime";
 
 export interface KotlinRouteBinding {
   readonly authenticated?: boolean;
@@ -171,6 +172,11 @@ export interface KotlinTypeBinding {
 }
 
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
+  {
+    name: "SessionOutputDelta",
+    schema: sessionOutputDeltaSchema,
+    direction: "output",
+  },
   {
     name: "RealtimeTokenRequest",
     schema: platformRealtimeTokenContract.create.body,
