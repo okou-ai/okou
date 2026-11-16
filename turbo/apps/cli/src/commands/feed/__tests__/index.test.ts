@@ -420,3 +420,34 @@ it("requires an explicit neutral background for convenient text input", async ()
     ),
   );
 });
+
+it("lists platform events without treating their content as suggestion text", async () => {
+  const event = {
+    id,
+    type: "event",
+    sourceType: "platform-event",
+    priority: 0,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    expiresAt: null,
+    state: { status: "active" },
+    content: {
+      eventType: "automation-disabled",
+      automationId: id,
+      workflowId: id,
+      workspaceId: "org_example",
+      automationName: "Daily summary",
+      disabledAt: item.createdAt,
+      consecutiveFailures: 3,
+      recoveryScheduled: false,
+    },
+  };
+  server.use(
+    http.get("http://localhost:3000/api/feed/items", ({ request }) => {
+      expect(new URL(request.url).searchParams.get("type")).toBe("event");
+      return HttpResponse.json({ items: [event], receipts: [] });
+    }),
+  );
+  await run("list", "--type", "event");
+  expect(log).toHaveBeenCalledWith(`${id}  priority=0  Daily summary`);
+});

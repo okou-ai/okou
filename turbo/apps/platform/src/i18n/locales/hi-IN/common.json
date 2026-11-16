@@ -4324,6 +4324,26 @@
     "previousFeature": "पिछली सुविधा",
     "tryPrompt": "यह काम आज़माएँ"
   },
+  "feedEvents": {
+    "automationDisabled": {
+      "backToWorkflows": "वर्कफ़्लो पर वापस जाएँ",
+      "disabledAt": "{{time}} पर बंद किया गया",
+      "loadFailed": "यह ऑटोमेशन लोड नहीं हो सका",
+      "loadingAutomation": "ऑटोमेशन लोड हो रहा है",
+      "otherWorkspace": "यह ऑटोमेशन {{workspace}} में है। इसे देखने के लिए वर्कस्पेस बदलें।",
+      "reason_one": "{{count}} रन विफल हुआ। दोबारा चालू करने से पहले ऑटोमेशन की समीक्षा करें।",
+      "reason_other": "लगातार {{count}} रन विफल हुए। दोबारा चालू करने से पहले ऑटोमेशन की समीक्षा करें।",
+      "switchFailed": "वर्कस्पेस बदला नहीं जा सका। फिर से कोशिश करें या वर्कस्पेस चयन मेनू का उपयोग करें।",
+      "switchWorkspace": "वर्कस्पेस बदलें",
+      "systemManaged": "यह ऑटोमेशन सिस्टम द्वारा प्रबंधित है। इसकी वर्तमान स्थिति नीचे दिखाई गई है।",
+      "systemSource": "प्लेटफ़ॉर्म इवेंट",
+      "title": "ऑटोमेशन बंद है",
+      "unavailable": "ऑटोमेशन नहीं मिला या आपको एक्सेस नहीं है",
+      "viewAutomation": "ऑटोमेशन देखें",
+      "workspaceFallback": "मूल वर्कस्पेस"
+    },
+    "retry": "फिर कोशिश करें"
+  },
   "friendReferrals": {
     "copied": "कॉपी किया गया",
     "copyFailed": "कॉपी नहीं हो सका। फिर कोशिश करें।",
@@ -6609,49 +6629,6 @@
       "thread_one": "{{value}} थ्रेड",
       "thread_other": "{{value}} थ्रेड"
     }
-  },
-  "userNotifications": {
-    "automationDisabled": {
-      "backToWorkflows": "वर्कफ़्लो पर वापस जाएँ",
-      "disabled": "बंद",
-      "disabledAt": "{{time}} पर बंद किया गया",
-      "loadFailed": "यह ऑटोमेशन लोड नहीं हो सका",
-      "loadingAutomation": "ऑटोमेशन लोड हो रहा है",
-      "notNow": "अभी नहीं",
-      "otherWorkspace": "यह ऑटोमेशन {{workspace}} में है। इसे देखने के लिए वर्कस्पेस बदलें।",
-      "reason_one": "{{count}} रन विफल हुआ। दोबारा चालू करने से पहले ऑटोमेशन की समीक्षा करें।",
-      "reason_other": "लगातार {{count}} रन विफल हुए। दोबारा चालू करने से पहले ऑटोमेशन की समीक्षा करें।",
-      "switchFailed": "वर्कस्पेस बदला नहीं जा सका। फिर से कोशिश करें या वर्कस्पेस चयन मेनू का उपयोग करें।",
-      "switchWorkspace": "वर्कस्पेस बदलें",
-      "systemManaged": "यह ऑटोमेशन सिस्टम द्वारा प्रबंधित है। इसकी वर्तमान स्थिति नीचे दिखाई गई है।",
-      "systemSource": "सिस्टम सूचना",
-      "title": "ऑटोमेशन बंद है",
-      "unavailable": "ऑटोमेशन नहीं मिला या आपको एक्सेस नहीं है",
-      "viewAutomation": "ऑटोमेशन देखें",
-      "workspace": "वर्कस्पेस",
-      "workspaceFallback": "मूल वर्कस्पेस"
-    },
-    "close": "बंद करें",
-    "countUnavailable": "अपठित सूचनाओं की संख्या उपलब्ध नहीं",
-    "detailFailed": "यह सूचना लोड नहीं हो सकी",
-    "empty": "अभी कोई सूचना नहीं",
-    "emptyDescription": "Okou के अपडेट यहाँ दिखाई देंगे।",
-    "loadFailed": "सूचनाएँ लोड नहीं हो सकीं",
-    "loading": "सूचनाएँ लोड हो रही हैं",
-    "loadMore": "पुरानी सूचनाएँ दिखाएँ",
-    "nextPage": "अगला पेज",
-    "pageNavigation": "इस संदेश के पृष्ठ",
-    "pageOf": "पेज {{current}} / {{total}}",
-    "previousPage": "पिछला पेज",
-    "readAll": "सभी को पढ़ा हुआ चिह्नित करें",
-    "readFailed": "पढ़ा हुआ चिह्नित नहीं हो सका",
-    "retry": "फिर कोशिश करें",
-    "sender": "Okou टीम",
-    "title": "सूचनाएँ",
-    "unread": "अपठित",
-    "unreadCount_one": "{{count}} अपठित सूचना",
-    "unreadCount_many": "{{count}} अपठित सूचनाएँ",
-    "unreadCount_other": "{{count}} अपठित सूचनाएँ"
   },
   "vnc": {
     "add": "होस्ट जोड़ें",

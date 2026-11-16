@@ -12,9 +12,9 @@ import {
 import { i18n } from "../../i18n/index.ts";
 import {
   WorkflowDetailPage,
-  WorkflowAutomationNotificationPage,
+  WorkflowAutomationEventPage,
 } from "../../views/workflows-page/workflow-detail-page.tsx";
-import { automationNotificationTarget$ } from "./workflow-automation-notification.ts";
+import { automationEventTarget$ } from "./workflow-automation-event.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
@@ -48,20 +48,16 @@ export const setupWorkflowDetailPage$ = command(
       },
       signal,
     );
-    if (get(automationNotificationTarget$)) {
-      // Notification links recheck live access, including after an org switch.
+    if (get(automationEventTarget$)) {
+      // Event links recheck live access, including after an org switch.
       // The destination page also permits read-only inspection of an exact
       // system-managed automation without exposing Workflow editing.
       set(reloadWorkflowData$);
-      set(
-        updatePage$,
-        createElement(WorkflowAutomationNotificationPage),
-        "sidebar",
-      );
+      set(updatePage$, createElement(WorkflowAutomationEventPage), "sidebar");
       set(
         updateDocumentTitle$,
         i18n.t(($) => {
-          return $.userNotifications.automationDisabled.viewAutomation;
+          return $.feedEvents.automationDisabled.viewAutomation;
         }),
       );
       await set(hideAppSkeleton$, signal);

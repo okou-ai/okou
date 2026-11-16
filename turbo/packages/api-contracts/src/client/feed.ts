@@ -29,6 +29,18 @@ export const feedContract: ClientDescriptor<typeof OriginalFeedContract> = {
       409: true,
     },
   },
+  dismiss: {
+    method: "POST",
+    path: "/api/feed/items/:id/dismiss",
+    statuses: {
+      204: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+      409: true,
+    },
+  },
   create: {
     method: "POST",
     path: "/api/feed/items",

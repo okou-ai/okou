@@ -775,10 +775,6 @@ export const clientDescriptorManifest = [
     contracts: ["userModelPreferenceContract"],
   },
   {
-    module: "user-notifications",
-    contracts: ["userNotificationsContract"],
-  },
-  {
     module: "user-permission-grants",
     contracts: ["userPermissionGrantsContract"],
   },

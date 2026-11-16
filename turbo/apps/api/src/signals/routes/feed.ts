@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { feedContract } from "@okouai/api-contracts/contracts/feed";
 import {
   readSuggestionManagement$,
-  readSuggestions$,
+  readFeedItems$,
 } from "../services/agent-suggestion-read.service";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
@@ -16,11 +16,19 @@ import {
   consumeSuggestion$,
   recordSuggestionFeedback$,
 } from "../services/agent-suggestions.service";
+import { dismissFeedEvent$ } from "../services/feed-events.service";
 
-const list$ = command(async ({ set }, signal: AbortSignal) => {
+const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const owner = await set(suggestionAccess$, signal);
-  return "status" in owner ? owner : await set(readSuggestions$, owner, signal);
+  return "status" in owner
+    ? owner
+    : await set(
+        readFeedItems$,
+        owner,
+        get(queryOf(feedContract.list)).type,
+        signal,
+      );
 });
 const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   const owner = await set(suggestionAccess$, signal);
@@ -89,6 +97,23 @@ const writeAuth = {
   requiredCapability: "suggestion:write",
 } as const;
 export const feedRoutes: readonly RouteEntry[] = [
+  {
+    route: feedContract.dismiss,
+    handler: authRoute(
+      { accept: ["session"], requireOrganization: true },
+      command(async ({ get, set }, signal: AbortSignal) => {
+        const owner = await set(suggestionAccess$, signal);
+        return "status" in owner
+          ? owner
+          : await set(
+              dismissFeedEvent$,
+              owner,
+              get(pathParamsOf(feedContract.dismiss)).id,
+              signal,
+            );
+      }),
+    ),
+  },
   {
     route: feedContract.manage,
     handler: authRoute(

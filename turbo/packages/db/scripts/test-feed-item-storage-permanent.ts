@@ -81,10 +81,49 @@ export async function validateFeedItemStorage(databaseUrl: string) {
       ]),
       { code: "23514", constraint: "feed_items_suggestion_state" },
     );
+    const eventOrgId = `${orgId}-event`;
+    await client.query(
+      `INSERT INTO feed_items (org_id, user_id, id, type, source_type, content, state, created_at, updated_at)
+       VALUES ($1, $2, $3, 'event', 'platform-event', $4, '{"status":"active"}', now(), now())`,
+      [
+        eventOrgId,
+        userId,
+        id,
+        {
+          eventType: "automation-disabled",
+          automationId: randomUUID(),
+          workflowId: randomUUID(),
+          workspaceId: eventOrgId,
+          automationName: "Daily summary",
+          disabledAt: "2026-11-13T00:00:00.000Z",
+          consecutiveFailures: 3,
+          recoveryScheduled: false,
+        },
+      ],
+    );
+    await assert.rejects(
+      client.query(
+        "UPDATE feed_items SET source_type = 'agent' WHERE org_id = $1",
+        [eventOrgId],
+      ),
+      { code: "23514", constraint: "feed_items_source_type" },
+    );
+    await assert.rejects(
+      client.query(
+        'UPDATE feed_items SET state = \'{"status":"consumed"}\' WHERE org_id = $1',
+        [eventOrgId],
+      ),
+      { code: "23514", constraint: "feed_items_event" },
+    );
+    await client.query(
+      'UPDATE feed_items SET state = \'{"status":"dismissed"}\' WHERE org_id = $1',
+      [eventOrgId],
+    );
   } finally {
-    await client.query("DELETE FROM feed_items WHERE org_id IN ($1, $2)", [
+    await client.query("DELETE FROM feed_items WHERE org_id IN ($1, $2, $3)", [
       orgId,
       `${orgId}-other`,
+      `${orgId}-event`,
     ]);
     await client.end();
   }
