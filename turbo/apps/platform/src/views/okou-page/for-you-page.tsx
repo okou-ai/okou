@@ -93,13 +93,7 @@ function ForYouStack({
   const { cards, settled } = deck;
   const complete = cards.length === 0;
   return (
-    <div
-      className={cn(
-        "mx-auto my-auto w-full max-w-160 py-6",
-        complete &&
-          "pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2",
-      )}
-    >
+    <div className="mx-auto my-auto w-full max-w-160 py-6">
       <div className="relative isolate grid pb-6">
         {[...cards.slice(0, STACK_LAYERS.length), ...settled].map(
           ({ entry, outcome }) => {
@@ -116,7 +110,14 @@ function ForYouStack({
                 className={cn(
                   "@container/suggestion col-start-1 row-start-1 flex min-h-125 origin-[50%_85%] flex-col rounded-3xl p-5 shadow-none transition-transform duration-500 ease-out sm:p-7 motion-reduce:transition-none",
                   outcome
-                    ? "pointer-events-none absolute inset-0 z-5 motion-safe:animate-card-fly-out motion-reduce:hidden"
+                    ? cn(
+                        "pointer-events-none inset-0 z-5 motion-safe:animate-card-fly-out motion-reduce:invisible",
+                        // The last card keeps its layout footprint while it
+                        // flies away, so completion does not move its origin.
+                        complete && entry === settled.at(-1)?.entry
+                          ? "relative"
+                          : "absolute",
+                      )
                     : STACK_LAYERS[layer],
                 )}
               >
