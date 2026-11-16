@@ -1014,8 +1014,9 @@ const retainScreenshot$ = command(
     if (
       image.length > 6_000_000 ||
       image.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a"
-    )
-      {throw new PhoneUseError(400, "A bounded PNG screenshot is required");}
+    ) {
+      throw new PhoneUseError(400, "A bounded PNG screenshot is required");
+    }
     const key = `phone-use/${upload.orgId}/${upload.userId}/${upload.operationId}/screenshot.png`;
     // Link retention before the external upload. Cancellation may retire the
     // result while upload is in flight; its private image must remain collectible.
@@ -1030,7 +1031,9 @@ const retainScreenshot$ = command(
       )
       .returning({ id: operations.id });
     signal.throwIfAborted();
-    if (!linked) {missing();}
+    if (!linked) {
+      missing();
+    }
     await set(putS3Object$, {
       bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
       key,
