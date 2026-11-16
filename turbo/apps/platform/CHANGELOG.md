@@ -13,6 +13,14 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1134.1](https://github.com/okou-ai/okou/compare/app-v0.1134.0...app-v0.1134.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **app:** show a skeleton only for credits progress ([#47706](https://github.com/okou-ai/okou/issues/47706)) ([769be8b](https://github.com/okou-ai/okou/commit/769be8b4f7533f76abcd2724cf6a8481d6df1e2e))
+* **platform:** forward worker credential continuity gaps to tabs ([#47697](https://github.com/okou-ai/okou/issues/47697)) ([c514dae](https://github.com/okou-ai/okou/commit/c514dae7e111b29e03b14af579f73c9096b4475f))
+
 ## [0.1134.0](https://github.com/okou-ai/okou/compare/app-v0.1133.5...app-v0.1134.0) (2026-11-16)
 
 
