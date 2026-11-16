@@ -339,7 +339,7 @@ function createIncompleteRounds(
       .select({
         runId: selectedEvents.runId,
         eventType: selectedEvents.eventType,
-        content: canonicalChatEventContent(selectedEvents.payload),
+        content: canonicalChatEventContent(),
         agentPrompt: agentRuns.prompt,
       })
       .from(selectedEvents)

@@ -1,7 +1,7 @@
 import { userMessageDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { chatInputModelSelectionSchema } from "@okouai/api-contracts/contracts/chat-input-model";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
-import { formatRunFailureForExternalSurface } from "@okouai/api-contracts/contracts/errors";
+import { formatChatRunFailure } from "@okouai/api-contracts/contracts/errors";
 import { knownRunFailureReasonSchema } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { projectRunFailureRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -53,14 +53,22 @@ export function canonicalChatEventError() {
 
 function canonicalChatEventText(ordinaryText: SQLWrapper) {
   const reasons = knownRunFailureReasonSchema.options.map((failureReason) => {
-    return sql`WHEN ${failureReason} THEN ${formatRunFailureForExternalSurface({ failureReason })}`;
+    return sql`WHEN ${failureReason} THEN ${formatChatRunFailure(failureReason)}`;
   });
   return sql`CASE
     WHEN ${chatEvents.eventType} = 'run.failed' THEN
       CASE ${chatEvents.failureReason} ${sql.join(reasons, sql` `)}
-        ELSE ${formatRunFailureForExternalSurface({})} END
+        ELSE ${formatChatRunFailure(undefined)} END
     WHEN ${chatEvents.eventType} = 'run.cancelled' THEN 'Run cancelled'
     ELSE ${ordinaryText} END`.mapWith(
+    nullableDriverValueDecoder(pgTextDecoder),
+  );
+}
+
+/** Carry identity, rather than stored text, into contextual notification copy. */
+export function canonicalChatEventRunFailureId() {
+  return sql`CASE WHEN ${chatEvents.eventType} IN ('run.failed', 'run.cancelled')
+    THEN ${chatEvents.runId} ELSE NULL END`.mapWith(
     nullableDriverValueDecoder(pgTextDecoder),
   );
 }

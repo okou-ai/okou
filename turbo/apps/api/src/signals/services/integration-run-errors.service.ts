@@ -8,6 +8,7 @@ import { env } from "../../lib/env";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 import { integrationModelRecoveryForDelivery$ } from "./integration-model-recovery.service";
+import { formatRunErrorForRunOwner$ } from "./run-error-format.service";
 
 export const formatIntegrationRunError$ = command(
   async (
@@ -59,21 +60,30 @@ export const formatIntegrationChatMessage$ = command(
       readonly content: string;
       readonly error: string | null;
       readonly chatEventId?: string;
+      readonly runFailureId?: string | null;
     },
     signal: AbortSignal,
   ): Promise<string> => {
-    if (args.error !== "insufficient_credits") {
+    const content = args.runFailureId
+      ? await set(
+          formatRunErrorForRunOwner$,
+          { runId: args.runFailureId, externalSurface: true },
+          signal,
+        )
+      : args.content;
+    const error = args.runFailureId ? content : args.error;
+    if (error !== "insufficient_credits") {
       if (args.chatEventId) {
         const recovery = await set(
           integrationModelRecoveryForDelivery$,
-          { ...args, eventId: args.chatEventId },
+          { ...args, error, eventId: args.chatEventId },
           signal,
         );
         if (recovery) {
-          return `${args.content}\n\nSwitch this conversation's model in Okou: ${recovery.url}\nSend your previous request again after switching.`;
+          return `${content}\n\nSwitch this conversation's model in Okou: ${recovery.url}\nSend your previous request again after switching.`;
         }
       }
-      return args.content;
+      return content;
     }
     return await set(
       formatIntegrationRunError$,
@@ -81,7 +91,7 @@ export const formatIntegrationChatMessage$ = command(
         orgId: args.orgId,
         userId: args.userId,
         code: "INSUFFICIENT_CREDITS",
-        message: args.content,
+        message: content,
       },
       signal,
     );

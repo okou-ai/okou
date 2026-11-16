@@ -663,19 +663,19 @@ describe("chat-run-finished workflow automations", () => {
       name: "redacted platform provider balance",
       builtIn: true,
       failureReason: "provider_insufficient_credits",
-      expectedReason: null,
+      expectedReason: "unknown",
     },
     {
       name: "future failure reason",
       builtIn: false,
       failureReason: "future_reason",
-      expectedReason: "future_reason",
+      expectedReason: "unknown",
     },
     {
       name: "unclassified failure",
       builtIn: false,
       failureReason: undefined,
-      expectedReason: null,
+      expectedReason: "unknown",
     },
   ])(
     "passes the recorded $name to the recovery Agent",

@@ -2,6 +2,7 @@ import { literal, object, string, tuple } from "zod";
 import {
   formatRunBalanceError,
   MODEL_UNAVAILABLE_MESSAGE,
+  PROVIDER_INSUFFICIENT_CREDITS_MESSAGE,
 } from "./run-balance-errors";
 import type { ModelProviderType } from "./model-providers";
 import type { ModelProviderFramework } from "./model-provider-types";
@@ -875,6 +876,15 @@ export function formatRunFailureForExternalSurface(params: {
     ...params,
     failureReason: normalizeRunFailureReason(params.failureReason),
   });
+}
+
+/** Public event reasons already omit platform-owned provider balance failures. */
+export function formatChatRunFailure(
+  failureReason: RunFailureReasonToken | null | undefined,
+): string {
+  return failureReason === "provider_insufficient_credits"
+    ? PROVIDER_INSUFFICIENT_CREDITS_MESSAGE
+    : formatRunFailureForExternalSurface({ failureReason });
 }
 
 /**

@@ -216,6 +216,23 @@ describe("Chat Event versioned read contract", () => {
 });
 
 describe("canonical row projection preserves the public ChatEvent contract", () => {
+  it("preserves a public personal-account balance reason without reintroducing diagnostics", () => {
+    const row = canonicalRow({
+      eventType: "run.failed",
+      runId: "00000000-0000-4000-8000-000000000013",
+      failureReason: "provider_insufficient_credits",
+      payload: {
+        content: "Private balance details",
+        error: "Private balance details",
+      },
+    });
+    expect(chatEventFromRow(row)).toMatchObject({
+      failureReason: "provider_insufficient_credits",
+      content: "Your connected subscription account has insufficient balance.",
+      error: "Your connected subscription account has insufficient balance.",
+    });
+  });
+
   it("projects retained failure text without mutating archived rows or unrelated output", () => {
     const diagnostic =
       "Private provider response https://private.invalid/token";

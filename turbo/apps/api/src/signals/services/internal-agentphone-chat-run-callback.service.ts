@@ -40,6 +40,7 @@ import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
+  canonicalChatEventRunFailureId,
 } from "./canonical-chat-event-read.service";
 
 const L = logger("InternalCallbacksAgentPhoneChat");
@@ -58,6 +59,7 @@ const formatAgentPhoneMessageContent$ = command(
       readonly content: string;
       readonly error: string | null;
       readonly chatEventId: string;
+      readonly runFailureId?: string | null;
     },
     signal: AbortSignal,
   ): Promise<string> => {
@@ -246,6 +248,7 @@ const loadAgentPhoneChatDeliveryContext$ = command(
       .select({
         content: canonicalChatEventContent(),
         error: canonicalChatEventError(),
+        runFailureId: canonicalChatEventRunFailureId(),
       })
       .from(chatEvents)
       .where(
@@ -281,6 +284,7 @@ const loadAgentPhoneChatDeliveryContext$ = command(
       run: runContext,
       messageContent: event.content,
       messageError: event.error,
+      runFailureId: event.runFailureId,
       binding,
     };
   },
@@ -443,11 +447,14 @@ const deliverClaimedAgentPhoneChatCallback$ = command(
     },
     signal: AbortSignal,
   ): Promise<"delivered" | "skipped_revoked"> => {
-    const { payload, run, messageContent, messageError, binding } = await set(
-      loadAgentPhoneChatDeliveryContext$,
-      args,
-      signal,
-    );
+    const {
+      payload,
+      run,
+      messageContent,
+      messageError,
+      runFailureId,
+      binding,
+    } = await set(loadAgentPhoneChatDeliveryContext$, args, signal);
     if (!binding) {
       return "skipped_revoked";
     }
@@ -459,6 +466,7 @@ const deliverClaimedAgentPhoneChatCallback$ = command(
         isGroup: payload.isGroup,
         content: messageContent,
         error: messageError,
+        runFailureId,
         chatEventId: payload.chatEventId,
       },
       signal,

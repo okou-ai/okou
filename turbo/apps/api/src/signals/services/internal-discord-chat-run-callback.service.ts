@@ -21,6 +21,7 @@ import { settle } from "../utils";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
+  canonicalChatEventRunFailureId,
 } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { requireDiscordOutputAccess$ } from "./discord-output-destination.service";
@@ -262,6 +263,7 @@ export const sendDiscordChatReply$ = command(
           .select({
             content: canonicalChatEventContent(),
             error: canonicalChatEventError(),
+            runFailureId: canonicalChatEventRunFailureId(),
             runId: chatEvents.runId,
             agentId: agents.id,
           })
@@ -342,6 +344,7 @@ export const sendDiscordChatReply$ = command(
             userId: request.userId,
             content: event.content,
             error: event.error,
+            runFailureId: event.runFailureId,
           },
           signal,
         );

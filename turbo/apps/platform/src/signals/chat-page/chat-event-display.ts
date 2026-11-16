@@ -5,13 +5,11 @@ import {
 import { hasChatEventBodyContent } from "./chat-event-body-blocks.ts";
 import type { EnrichedChatEvent } from "./chat-event.ts";
 import type { ChatEvent, ChatInputEvent } from "./chat-event-types.ts";
-import { formatRunFailureForExternalSurface } from "@okouai/api-contracts/contracts/errors";
+import { formatChatRunFailure } from "@okouai/api-contracts/contracts/errors";
 
 export function chatEventDisplayError(event: ChatEvent): string | undefined {
   if (event.eventType === "run.failed") {
-    return formatRunFailureForExternalSurface({
-      failureReason: event.failureReason,
-    });
+    return formatChatRunFailure(event.failureReason);
   }
   if (
     event.eventType === "input.rejected" ||

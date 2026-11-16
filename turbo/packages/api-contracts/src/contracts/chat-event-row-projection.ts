@@ -1,5 +1,5 @@
 import type { ChatEventRow } from "./chat-event-rows";
-import { formatRunFailureForExternalSurface } from "./errors";
+import { formatChatRunFailure } from "./errors";
 import { normalizeRunFailureReason } from "./run-failure-reasons";
 import type { ChatEventType } from "./chat-events";
 import type {
@@ -23,7 +23,7 @@ function requiredRowField<T>(
 export function projectRunFailureRow(row: ChatEventRow): ChatEventRow {
   if (row.eventType === "run.failed") {
     const failureReason = normalizeRunFailureReason(row.failureReason);
-    const message = formatRunFailureForExternalSurface({ failureReason });
+    const message = formatChatRunFailure(failureReason);
     return {
       ...row,
       failureReason,

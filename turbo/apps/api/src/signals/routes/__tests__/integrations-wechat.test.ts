@@ -370,6 +370,54 @@ describe("WeChat reply presentation and processing status", () => {
     expect(fixture.sentTexts.at(-1)).toContain("/?settings=billing");
   });
 
+  it("recovers generated failure copy without trusting repeated Runner diagnostics", async () => {
+    const fixture = await responseFixture();
+    await fixture.receive("Recover a subscription failure");
+    const run = await fixture.executionInput();
+    await flushWaitUntilForTest();
+    const memberships =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    const available = await memberships({
+      organizationId: fixture.actor.orgId,
+      userId: [fixture.actor.userId],
+      limit: 1,
+    });
+    const before = fixture.sentTexts.length;
+    memberships.mockRejectedValue(new Error("Clerk temporarily unavailable"));
+    const callbackHeaders = { authorization: `Bearer ${run.sandboxToken}` };
+    await fixture.webhooks.requestAgentComplete(
+      {
+        runId: run.runId,
+        exitCode: 1,
+        failureReason: "usage_limit",
+        error: "Private subscription diagnostic https://private.invalid/token",
+      },
+      callbackHeaders,
+      [500],
+    );
+    memberships.mockResolvedValue(available);
+    const retry = {
+      runId: run.runId,
+      exitCode: 1,
+      failureReason: "future_reason",
+      error: "Run cancelled",
+    };
+    await fixture.webhooks.requestAgentComplete(retry, callbackHeaders, [200]);
+    await flushWaitUntilForTest();
+    await fixture.webhooks.requestAgentComplete(retry, callbackHeaders, [200]);
+    await flushWaitUntilForTest();
+    expect(fixture.sentTexts.slice(before)).toStrictEqual([
+      expect.stringContaining(
+        "Your Claude subscription has reached its usage limit.",
+      ),
+    ]);
+    expect(fixture.sentTexts.at(-1)).toContain("?settings=model");
+    expect(fixture.sentTexts.at(-1)).not.toContain(
+      "Private subscription diagnostic",
+    );
+    expect(fixture.sentTexts.at(-1)).not.toContain("Run cancelled");
+  });
+
   it.each(["membership", "feature"] as const)(
     "stops a multi-part reply when %s access is revoked after the first part",
     async (revoked) => {

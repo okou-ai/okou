@@ -39,6 +39,7 @@ import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
+  canonicalChatEventRunFailureId,
 } from "./canonical-chat-event-read.service";
 import { storeTelegramBotMessage$ } from "./telegram-callback-persistence.service";
 
@@ -155,6 +156,7 @@ const loadTelegramChatDeliveryContext$ = command(
       .select({
         content: canonicalChatEventContent(),
         error: canonicalChatEventError(),
+        runFailureId: canonicalChatEventRunFailureId(),
       })
       .from(chatEvents)
       .where(
@@ -221,6 +223,7 @@ const loadTelegramChatDeliveryContext$ = command(
             run: runContext,
             messageContent: event.content,
             messageError: event.error,
+            runFailureId: event.runFailureId,
           };
         }
       }
@@ -230,6 +233,7 @@ const loadTelegramChatDeliveryContext$ = command(
       run: runContext,
       messageContent: event.content,
       messageError: event.error,
+      runFailureId: event.runFailureId,
       binding,
     };
   },
@@ -426,11 +430,14 @@ const deliverClaimedTelegramChatCallback$ = command(
     },
     signal: AbortSignal,
   ): Promise<"delivered" | "skipped_revoked"> => {
-    const { payload, run, messageContent, messageError, binding } = await set(
-      loadTelegramChatDeliveryContext$,
-      args,
-      signal,
-    );
+    const {
+      payload,
+      run,
+      messageContent,
+      messageError,
+      runFailureId,
+      binding,
+    } = await set(loadTelegramChatDeliveryContext$, args, signal);
     if (!binding) {
       return "skipped_revoked";
     }
@@ -451,6 +458,7 @@ const deliverClaimedTelegramChatCallback$ = command(
         userId: run.userId,
         content: messageContent,
         error: messageError,
+        runFailureId,
       },
       signal,
     );

@@ -30,6 +30,9 @@ import { cronSnapshotChatEventsRoutes } from "../cron-snapshot-chat-events";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { CHAT_RUN_USAGE_LIMIT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 
 const context = testContext();
 
@@ -87,6 +90,95 @@ function mockSnapshotStorage(
 }
 
 describe("cron snapshot chat events", () => {
+  it("preserves canonical failed-run rows and event identity across SQL and immutable snapshots", async () => {
+    const app = await setupApp({
+      context,
+      routes: [
+        ...cronProjectChatEventSearchRoutes,
+        ...cronSnapshotChatEventsRoutes,
+        ...chatThreadRoutes,
+      ],
+      isolatePg: true,
+    });
+    const owned = await publicChatActor(context);
+    await owned.run(async () => {
+      const run = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Archive a provider usage-limit failure",
+      });
+      const execution = await owned.executionInput(run.runId);
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        {
+          runId: run.runId,
+          exitCode: 1,
+          failureReason: "usage_limit",
+          error: "Private quota details https://private.invalid/token",
+        },
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const rows = await createChatFilesBddApi(context).listThreadEventRows(
+        owned.actor,
+        run.threadId,
+      );
+      expect(rows).toContainEqual(
+        expect.objectContaining({
+          runId: run.runId,
+          eventType: "run.failed",
+          failureReason: "usage_limit",
+          payload: {
+            content: CHAT_RUN_USAGE_LIMIT_MESSAGE,
+            error: CHAT_RUN_USAGE_LIMIT_MESSAGE,
+          },
+        }),
+      );
+      const objects = mockSnapshotStorage();
+      const headers = { authorization: "Bearer test-cron-secret" };
+      await accept(
+        app(cronProjectChatEventSearchContract).project({ headers }),
+        [200],
+      );
+      await accept(
+        app(cronSnapshotChatEventsContract).snapshot({ headers }),
+        [200],
+      );
+      createRouteMocks(context).clerk.session(
+        owned.actor.userId,
+        owned.actor.orgId,
+        owned.actor.orgRole,
+      );
+      const snapshot = await accept(
+        app(chatThreadEventsContract).snapshot({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: run.threadId },
+        }),
+        [200],
+      );
+      const downloaded = await fetch(snapshot.body.url);
+      expect(downloaded.status).toBe(200);
+      const archived = (await downloaded.text())
+        .trimEnd()
+        .split("\n")
+        .map((line) => {
+          return chatEventRowSchema.parse(JSON.parse(line));
+        });
+      expect(archived).toStrictEqual(rows);
+      const originalObjects = new Map(
+        [...objects].map(([key, body]) => {
+          return [key, Buffer.from(body)];
+        }),
+      );
+      await accept(
+        app(cronSnapshotChatEventsContract).snapshot({ headers }),
+        [200],
+      );
+      for (const [key, body] of originalObjects) {
+        expect(objects.get(key)).toEqual(body);
+      }
+    });
+  });
+
   it("requires the cron secret", async () => {
     const response = await accept(
       snapshotCronClient().snapshot({ headers: {} }),

@@ -14,7 +14,10 @@ import {
 } from "./helpers/public-runner-memory";
 
 import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
-import { formatRunFailureForExternalSurface } from "@okouai/api-contracts/contracts/errors";
+import {
+  CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+  formatRunFailureForExternalSurface,
+} from "@okouai/api-contracts/contracts/errors";
 import { usageMembersRoutes } from "../usage-members";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { VERTEX_VOICE_URL, vertexVoiceResponse } from "./helpers/google-voice";
@@ -10706,6 +10709,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             error: formatRunFailureForExternalSurface({
               failureReason: expectedFailureReason,
               modelProviderType: modelProvider,
+              claudeCodeCredentialRecovery: {
+                modelProviderType: modelProvider,
+                modelProvidersUrl: undefined,
+              },
             }),
             source: {
               providerType: modelProvider,
@@ -11131,7 +11138,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const failed = await api.readRun(actor, run.runId);
         expect(failed.status).toBe("failed");
-        expect(failed.error).toBe("runner job timed out");
+        expect(failed.error).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
         const runner = await api.requestRunRunner(actor, run.runId, [200]);
         expect(runner.body).toStrictEqual({
           sandboxStartupPath: null,
@@ -11218,9 +11225,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const failed = await api.readRun(actor, source.runId);
           expect(failed.status).toBe("failed");
-          expect(failed.error).toBe(
-            "Agent execution timed out after 7200 seconds",
-          );
+          expect(failed.error).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
 
           await webhooks.requestAgentRunOutputs(
             {
@@ -11301,7 +11306,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           const failed = await api.readRun(actor, run.runId);
           expect(failed.status).toBe("failed");
-          expect(failed.error).toBe("Run completion outputs were not provided");
+          expect(failed.error).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
           const runner = await api.requestRunRunner(actor, run.runId, [200]);
           expect(runner.body).toStrictEqual(selected);
         });

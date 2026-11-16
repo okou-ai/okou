@@ -22,7 +22,6 @@ export const recoverWechatChatDeliveries$ = command(
       .select({
         id: agentRunCallbacks.id,
         runId: agentRuns.id,
-        status: agentRuns.status,
       })
       .from(wechatChatThreadRoutes)
       .innerJoin(

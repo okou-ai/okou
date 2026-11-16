@@ -17,9 +17,14 @@ export function runFailureMessage(
   if (status !== "failed") {
     return undefined;
   }
+  const providerType =
+    modelProviderTypeSchema.safeParse(modelProviderType).data;
   return formatRunFailureForExternalSurface({
     failureReason,
-    modelProviderType:
-      modelProviderTypeSchema.safeParse(modelProviderType).data,
+    modelProviderType: providerType,
+    claudeCodeCredentialRecovery: {
+      modelProviderType: providerType,
+      modelProvidersUrl: undefined,
+    },
   });
 }

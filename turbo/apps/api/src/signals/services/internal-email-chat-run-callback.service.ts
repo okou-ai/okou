@@ -22,6 +22,7 @@ import { enqueueEmailText$ } from "./email-channel-delivery.service";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
+  canonicalChatEventRunFailureId,
 } from "./canonical-chat-event-read.service";
 import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
 
@@ -49,6 +50,7 @@ export const deliverEmailChatAdmissionFailure$ = command(
         routeId: emailChatThreadRoutes.id,
         content: canonicalChatEventContent(),
         error: canonicalChatEventError(),
+        runFailureId: canonicalChatEventRunFailureId(),
       })
       .from(emailChannelMessages)
       .innerJoin(
@@ -112,6 +114,7 @@ export const deliverEmailChatAdmissionFailure$ = command(
         userId: args.userId,
         content: source.content,
         error: source.error,
+        runFailureId: source.runFailureId,
         chatEventId: args.chatEventId,
       },
       signal,
