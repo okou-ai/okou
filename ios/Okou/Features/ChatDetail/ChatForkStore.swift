@@ -8,6 +8,7 @@ import Observation
 final class ChatForkStore: Identifiable {
   let id = UUID()
   let agentID: String
+  let projectID: String?
   let composer: ComposerDraftStore
   private(set) var modelSelection: ChatModelSelectionStore
   let workflowSource: ComposerWorkflowSource
@@ -17,7 +18,6 @@ final class ChatForkStore: Identifiable {
   private(set) var deliveryUnconfirmed = false
   private let sourceRunID: String
   private let sourceEventID: String
-  private let projectID: String?
   private let commands: ChatCommands
   private let models: ChatModelStore
   private let lifecycleTasks: LifecycleTasks
