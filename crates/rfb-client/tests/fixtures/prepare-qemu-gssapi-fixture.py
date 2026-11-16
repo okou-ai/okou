@@ -809,10 +809,13 @@ def decode_package_payload(archive, payload, limit, *, descriptor=None, control_
     # a successfully returned old-mask value from the mutating call.
     previous = signal.pthread_sigmask(signal.SIG_BLOCK, set())
     with tempfile.TemporaryDirectory(prefix="package-decode-", dir=archive.parent) as temporary:
-        process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=payload, stderr=subprocess.DEVNULL, start_new_session=True,
-                                   pass_fds=() if descriptor is None else (descriptor,),
-                                   env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8", "TMPDIR": temporary})
+        process = None
         try:
+            # Acquisition belongs to the same owner as the first observation,
+            # including interruptions immediately after Popen returns.
+            process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=payload, stderr=subprocess.DEVNULL, start_new_session=True,
+                                       pass_fds=() if descriptor is None else (descriptor,),
+                                       env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8", "TMPDIR": temporary})
             deadline = time.monotonic() + 30
             # WNOWAIT observes completion WITHOUT releasing the leader PID. Do not
             # use Popen.wait/poll here: wait's KeyboardInterrupt path can reap before
@@ -823,9 +826,13 @@ def decode_package_payload(archive, payload, limit, *, descriptor=None, control_
                     raise subprocess.TimeoutExpired(argv, 30)
                 time.sleep(min(0.01, remaining))
         except ChildProcessError as error:
+            if process is None:
+                raise
             # A lost child reservation is not permission to signal the numeric PGID.
             raise RuntimeError("package decoder ownership unavailable") from error
         except BaseException:
+            if process is None:
+                raise
             # Defer caller interruption until the retained leader is reaped;
             # a pending raising SIGTERM must not interrupt this owned cleanup.
             try:
