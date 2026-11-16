@@ -159,7 +159,7 @@ export function createPublicRunnerMemory(
   ) {
     return await readExecution(await enqueue(agentId, prompt, model));
   }
-  async function publish(
+  async function prepare(
     execution: Awaited<ReturnType<typeof startExecution>>,
     files: readonly { path: string; content: string }[],
   ) {
@@ -190,13 +190,20 @@ export function createPublicRunnerMemory(
         }),
       ),
     );
+    return { versionId: prepared.body.versionId, files: entries };
+  }
+  async function publish(
+    execution: Awaited<ReturnType<typeof startExecution>>,
+    files: readonly { path: string; content: string }[],
+  ) {
+    const prepared = await prepare(execution, files);
     await webhooks.requestAgentStorageCommit(
       {
         runId: execution.run.runId,
         storageId: execution.memory.storageId,
         parentVersionId: execution.memory.versionId,
-        versionId: prepared.body.versionId,
-        files: entries,
+        versionId: prepared.versionId,
+        files: prepared.files,
       },
       execution.headers,
       [200],
@@ -213,7 +220,7 @@ export function createPublicRunnerMemory(
             {
               name: execution.memory.name,
               mountPath: execution.memory.mountPath,
-              version: prepared.body.versionId,
+              version: prepared.versionId,
               ...(execution.memory.missingRootPolicy === undefined
                 ? {}
                 : { missingRootPolicy: execution.memory.missingRootPolicy }),
@@ -224,7 +231,7 @@ export function createPublicRunnerMemory(
       execution.headers,
       [200],
     );
-    return prepared.body.versionId;
+    return prepared.versionId;
   }
   async function cancel(execution: Awaited<ReturnType<typeof startExecution>>) {
     await api.requestCancelRun(fixture.actor, execution.run.runId, [200]);
@@ -243,6 +250,7 @@ export function createPublicRunnerMemory(
     startExecution,
     enqueue,
     readExecution,
+    prepare,
     publish,
     cancel,
     objects,

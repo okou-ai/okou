@@ -23,7 +23,7 @@ import {
   type EffectiveConnectorScope,
   isEmptyRunConnectorScope,
 } from "./thread-connected-accounts.signals";
-import { pendingOkouTokenSecrets } from "./run-body-environment";
+import type { RunBodyEnvironment } from "./run-body-environment";
 import { createThreadContext } from "./thread-context.signals";
 import { revokeDeletedWorkflowAutomationInputs$ } from "./workflow-automation-queue-revocation.service";
 import {
@@ -32,10 +32,7 @@ import {
 } from "./thread-okou-token.signals";
 import { createConnectorAdmissionSignals } from "./thread-connector-environment.signals";
 import { modelProviderPermissionManifest } from "./permission-manifest.service";
-import {
-  FirewallBaseUrlResolutionError,
-  type FirewallPolicies,
-} from "@okouai/connectors/firewall-types";
+import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-types";
 import { DISABLED_PAID_TOOLS_ENV_VAR } from "@okouai/api-contracts/contracts/paid-tools";
 import { previewAutomationBypass$ } from "../context/hono";
 import { createOfficialWorkflowSignals } from "./thread-official-workflow.signals";
@@ -224,7 +221,6 @@ import {
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { unifiedRunRequestSchema } from "@okouai/api-contracts/contracts/runs";
 import {
   type FeatureSwitchContext,
   isFeatureEnabled,
@@ -2418,42 +2414,23 @@ export function createThreadClaimRunObjects(
       });
     },
   );
-  const permissionPolicies$ = computed(async (get) => {
-    const timing = get(threadContext.dispatchTiming$);
-    const startedAt = performance.now();
-    return await (async () => {
-      return await get(bootstrap.permissionPolicies$);
-    })().finally(() => {
-      timing.recordDuration(
-        "api_dispatch_pre_create_agent_resolve_firewall_metadata",
-        "nested",
-        performance.now() - startedAt,
-        now(),
-      );
-    });
-  });
   const runPreparation$ = computed(
     async (get): Promise<ThreadRunPreparation | CreateRunErrorResult> => {
-      const [connectorScope, agentResult, model, policiesResult] =
-        await Promise.all([
-          get(bootstrap.connectorScope$),
-          get(selectedAgent$),
-          get(threadContext.subscriptionSelection$),
-          get(permissionPolicies$),
-        ]);
+      const [connectorScope, agentResult, model] = await Promise.all([
+        get(bootstrap.connectorScope$),
+        get(selectedAgent$),
+        get(threadContext.subscriptionSelection$),
+      ]);
       const agent = agentResult;
       if ("status" in model) {
         return model;
       }
-      const policies = policiesResult;
       if (!agent) {
         throw new Error("Agent disappeared after preparation authorization");
       }
       return {
         ...connectorScope,
-        agent,
         agentRunModelPin: model.agentRunModelPin,
-        runPermissionPolicies: policies,
       };
     },
   );
@@ -2563,7 +2540,7 @@ export function createThreadClaimRunObjects(
     if (resolved.orgId !== args.orgId) {
       return notFound("Resource not found");
     }
-    return { ...withPendingOkouTokenSecret(args.body), ...bodyEnvironment };
+    return { ...args.body, ...bodyEnvironment };
   });
   const bodyContext$ = computed(async (get) => {
     const [args, resolved, body, requestedFramework, featureSwitchContext] =
@@ -4044,7 +4021,7 @@ type PendingThreadContinuation = Pick<
 interface ThreadRunPersistenceArgs {
   readonly userId: string;
   readonly orgId: string;
-  readonly body: CreateRunBody;
+  readonly body: ThreadRunBody;
   readonly apiStartTime: number;
   readonly chatThreadId: string;
   readonly agentRunMetadata: AgentRunMetadata;
@@ -4057,7 +4034,7 @@ interface ThreadRunPersistenceArgs {
 
 /** Explicit run facts persisted with the launch rows. */
 interface ThreadRunPersistenceContext {
-  readonly body: CreateRunBody;
+  readonly body: ThreadRunBody;
   readonly selectedImageModel: ImageModel;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
@@ -4100,7 +4077,7 @@ interface LaunchRunRowsArgs {
   readonly orgId: string;
   readonly identity: LaunchRunIdentity;
   readonly resolved: ThreadRunPersistenceContext["resolved"];
-  readonly body: CreateRunBody;
+  readonly body: ThreadRunBody;
   readonly runStorageMounts: readonly PersistedStorageMount[];
   readonly modelProvider: Pick<
     ResolvedModelProviderEnvironment,
@@ -4607,6 +4584,10 @@ function prepareRunnerLaunchInput(input: {
     realAgentInPreview: args.realAgentInPreview || undefined,
     apiStartTime: args.apiStartTime,
     featureFlags: {
+      [FeatureSwitchKey.ArtifactGenerationTiming]: isFeatureEnabled(
+        FeatureSwitchKey.ArtifactGenerationTiming,
+        args.featureSwitchContext,
+      ),
       [FeatureSwitchKey.SingleAgent]: isFeatureEnabled(
         FeatureSwitchKey.SingleAgent,
         args.featureSwitchContext,
@@ -4630,10 +4611,6 @@ function prepareRunnerLaunchInput(input: {
 
 function preparedRunnerGroup(): string {
   return officialRunnerGroup(optionalEnv("RUNNER_DEFAULT_GROUP"));
-}
-
-function withPendingOkouTokenSecret(body: CreateRunBody): CreateRunBody {
-  return { ...body, secrets: pendingOkouTokenSecrets(body.secrets) };
 }
 
 function forbidden(message: string): ApiErrorResponse<403, "FORBIDDEN"> {
@@ -4719,22 +4696,26 @@ function agentRunOrigin(args: {
 }
 
 interface ThreadRunPreparation extends AgentConnectorScopeSnapshot {
-  readonly agent: AgentRunRecord;
   readonly agentRunModelPin: AgentRunModelPin;
-  readonly runPermissionPolicies: FirewallPolicies | null | undefined;
 }
 
 interface ThreadRunArgsInput {
   /** One catalog snapshot per run, loaded by the entry point. */
   readonly catalog: ModelCatalog;
   readonly command: ThreadRunCommand;
-  readonly agent: AgentRunRecord;
   readonly agentRunModelPin: AgentRunModelPin;
-  readonly runPermissionPolicies: FirewallPolicies | null | undefined;
   readonly allowedConnectorSlugs: readonly ConnectorSlug[];
   readonly allowedCustomConnectorIds: readonly string[];
   readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
   readonly threadContinuation?: ChatThreadContinuation;
+}
+
+interface ThreadRunBody extends RunBodyEnvironment {
+  readonly prompt: string;
+  readonly appendSystemPrompt?: string;
+  readonly realAgentInPreview?: boolean;
+  readonly captureNetworkBodies?: boolean;
+  readonly triggerSource: TriggerSource;
 }
 
 /** The facts Thread uses to prepare and commit one claimed input. */
@@ -4746,7 +4727,7 @@ interface ThreadRunArgs {
   readonly codexServiceTier?: "fast";
   readonly agentRunMetadata: AgentRunMetadata;
   readonly queueFirstAssociation: QueueFirstRunAssociation;
-  readonly body: CreateRunBody;
+  readonly body: ThreadRunBody;
   readonly apiStartTime: number;
   readonly chatThreadId: string;
   readonly threadContinuation?: ChatThreadContinuation;
@@ -4769,10 +4750,8 @@ function buildThreadRunArgs(
     catalog: args.catalog,
     body: {
       prompt: prompt.userPrompt,
-      agentId: args.agent.id,
       realAgentInPreview: command.realAgentInPreview,
       captureNetworkBodies: command.captureNetworkBodies,
-      permissionPolicies: args.runPermissionPolicies ?? undefined,
       triggerSource: command.triggerSource ?? "web",
       appendSystemPrompt: prompt.appendedSystemPrompt,
     },
@@ -4859,13 +4838,6 @@ function flushQueueFirstClaimLostTiming(args: {
 }
 
 // --- Private implementation: launch persistence ---
-
-type CreateRunBody = Omit<
-  zInfer<typeof unifiedRunRequestSchema>,
-  "triggerSource"
-> & {
-  readonly triggerSource: TriggerSource;
-};
 
 interface RunnerLaunchInput {
   readonly runnerGroup: string;

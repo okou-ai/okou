@@ -54,6 +54,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ArtifactGenerationTiming]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Artifact generation phase timing",
+    description:
+      "Record research and generation boundaries for the current Run.",
+    enabled: false,
+  },
   [FeatureSwitchKey.PhoneUse]: {
     maintainer: "lancy@okou.ai",
     displayName: "Phone Use",

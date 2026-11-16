@@ -1,3 +1,5 @@
+import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
@@ -5810,4 +5812,465 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     const stopped = await runs.readRunQueue(banned);
     expect(stopped.body.concurrency.active).toBe(0);
   });
+});
+
+describe("Atom billing grants", () => {
+  it("grants and renews Atom invoice-backed Team entitlements", async () => {
+    const bdd = createBddApi(context);
+    const billing = createBillingMediaApi(context);
+    const actor = bdd.user();
+    const orgId = orgOf(actor);
+    const grantExpiresAtUnix = epochSeconds(7);
+    const renewedGrantExpiresAtUnix = epochSeconds(14);
+    const suffix = randomUUID().slice(0, 8);
+    api.configureStripeBillingEnv();
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({ data: [] });
+    await completeOnboardingWithoutCredits(actor);
+
+    await api.postStripeEvent(
+      stripeEvent({
+        type: "invoice.paid",
+        object: {
+          id: `in_bdd_atom_grant_${suffix}`,
+          customer: `cus_bdd_atom_${suffix}`,
+          metadata: {
+            type: "atom_grant",
+            purpose: "atom_grant",
+            source: "atom_entitlement",
+            orgId,
+            tier: "team",
+            duration: "7d",
+            atomGrantExpiresAt: isoOf(grantExpiresAtUnix),
+          },
+          parent: null,
+          lines: {
+            has_more: false,
+            data: [
+              {
+                id: `il_bdd_atom_grant_${suffix}`,
+                quantity: 1,
+                price: { id: "price_bdd_atom_grant" },
+                period: {
+                  start: epochSeconds(0),
+                  end: grantExpiresAtUnix,
+                },
+                parent: { type: "invoice_item_details" },
+              },
+            ],
+          },
+        },
+      }),
+      [200],
+    );
+
+    const granted = await billing.readBillingStatus(actor);
+    expect(granted.tier).toBe("team");
+    expect(granted.credits).toBe(120_000);
+    expect(granted.hasSubscription).toBeFalsy();
+    expect(granted.currentPeriodEnd).toBe(isoOf(grantExpiresAtUnix));
+    expect(granted.creditGrants).toStrictEqual([
+      expect.objectContaining({
+        amount: 120_000,
+        expiresAt: isoOf(grantExpiresAtUnix),
+        source: "subscription_renewal",
+      }),
+    ]);
+    expect(granted).toMatchObject(TEAM_BILLING_CAPABILITIES);
+    await expect(billing.readVoiceQuota(actor)).resolves.toMatchObject({
+      body: { allowed: true, count: 0, limit: null },
+    });
+
+    await api.postStripeEvent(
+      stripeEvent({
+        type: "invoice.paid",
+        object: {
+          id: `in_bdd_atom_grant_renewed_${suffix}`,
+          customer: `cus_bdd_atom_${suffix}`,
+          metadata: {
+            type: "atom_grant",
+            purpose: "atom_grant",
+            source: "atom_entitlement",
+            orgId,
+            tier: "team",
+            duration: "7d",
+            atomGrantExpiresAt: isoOf(renewedGrantExpiresAtUnix),
+          },
+          parent: null,
+          lines: {
+            has_more: false,
+            data: [
+              {
+                id: `il_bdd_atom_grant_renewed_${suffix}`,
+                quantity: 1,
+                price: { id: "price_bdd_atom_grant" },
+                period: {
+                  start: grantExpiresAtUnix,
+                  end: renewedGrantExpiresAtUnix,
+                },
+                parent: { type: "invoice_item_details" },
+              },
+            ],
+          },
+        },
+      }),
+      [200],
+    );
+
+    const renewed = await billing.readBillingStatus(actor);
+    expect(renewed.tier).toBe("team");
+    expect(renewed.credits).toBe(240_000);
+    expect(renewed.hasSubscription).toBeFalsy();
+    expect(renewed.currentPeriodEnd).toBe(isoOf(renewedGrantExpiresAtUnix));
+    expect(renewed.creditGrants).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          amount: 120_000,
+          expiresAt: isoOf(grantExpiresAtUnix),
+          source: "subscription_renewal",
+        }),
+        expect.objectContaining({
+          amount: 120_000,
+          expiresAt: isoOf(renewedGrantExpiresAtUnix),
+          source: "subscription_renewal",
+        }),
+      ]),
+    );
+    expect(renewed).toMatchObject(TEAM_BILLING_CAPABILITIES);
+  });
+
+  it("expires Atom day-grant subscription credits at the Atom grant end", async () => {
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const billing = createBillingMediaApi(context);
+    const actor = bdd.user();
+    const grantExpiresAtUnix = epochSeconds(7);
+
+    await runs.grantProEntitlement(actor, {
+      periodEndUnix: epochSeconds(30),
+      cancelAtUnix: grantExpiresAtUnix,
+      subscriptionMetadata: {
+        source: "atom_entitlement",
+        duration: "7d",
+        atomGrantExpiresAt: isoOf(grantExpiresAtUnix),
+      },
+    });
+
+    const status = await billing.readBillingStatus(actor);
+    expect(status.tier).toBe("pro");
+    expect(status.currentPeriodEnd).toBe(isoOf(grantExpiresAtUnix));
+    expect(status.creditGrants).toStrictEqual([
+      expect.objectContaining({
+        amount: 20_000,
+        expiresAt: isoOf(grantExpiresAtUnix),
+        source: "subscription_renewal",
+      }),
+    ]);
+  });
+
+  it("expires Atom redeem-code day-grant subscription credits at the grant end", async () => {
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const billing = createBillingMediaApi(context);
+    const actor = bdd.user();
+    const grantExpiresAtUnix = epochSeconds(7);
+
+    await runs.grantProEntitlement(actor, {
+      periodEndUnix: epochSeconds(30),
+      cancelAtUnix: grantExpiresAtUnix,
+      subscriptionMetadata: {
+        source: "atom_redeem_code",
+        duration: "7d",
+        atomGrantExpiresAt: isoOf(grantExpiresAtUnix),
+      },
+    });
+
+    const status = await billing.readBillingStatus(actor);
+    expect(status.tier).toBe("pro");
+    expect(status.currentPeriodEnd).toBe(isoOf(grantExpiresAtUnix));
+    expect(status.creditGrants).toStrictEqual([
+      expect.objectContaining({
+        amount: 20_000,
+        expiresAt: isoOf(grantExpiresAtUnix),
+        source: "subscription_renewal",
+      }),
+    ]);
+  });
+
+  it("uses the normal renewal credit window when an Atom day-grant cancel_at is cleared", async () => {
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const billing = createBillingMediaApi(context);
+    const actor = bdd.user();
+    const grantExpiresAtUnix = epochSeconds(7);
+    const periodEndUnix = epochSeconds(30);
+    const renewalExpiresAt = new Date(periodEndUnix * 1000);
+    renewalExpiresAt.setMonth(renewalExpiresAt.getMonth() + 1);
+
+    await runs.grantProEntitlement(actor, {
+      periodEndUnix,
+      cancelAtUnix: null,
+      subscriptionMetadata: {
+        source: "atom_entitlement",
+        duration: "7d",
+        atomGrantExpiresAt: isoOf(grantExpiresAtUnix),
+      },
+    });
+
+    const status = await billing.readBillingStatus(actor);
+    expect(status.tier).toBe("pro");
+    expect(status.currentPeriodEnd).toBe(isoOf(periodEndUnix));
+    expect(status.creditGrants).toStrictEqual([
+      expect.objectContaining({
+        amount: 20_000,
+        expiresAt: renewalExpiresAt.toISOString(),
+        source: "subscription_renewal",
+      }),
+    ]);
+  });
+
+  it("grants Atom organization credits once and rejects an untrusted grant price", async () => {
+    const bdd = createBddApi(context);
+    const billing = createBillingMediaApi(context);
+    const actor = bdd.user();
+    const orgId = orgOf(actor);
+    api.configureStripeBillingEnv();
+    await completeOnboardingWithoutCredits(actor);
+    const baselineCredits = (await billing.readBillingStatus(actor)).credits;
+    const suffix = randomUUID().slice(0, 8);
+    const invoiceCreditExpiresAt = Math.floor((now() + 90 * 86_400_000) / 1000);
+    // Atom grants use the configured zero-price line and declare the credit
+    // amount in trusted invoice metadata instead of encoding it in subtotal.
+    const metadataCreditInvoiceId = `in_bdd_metadata_credit_${suffix}`;
+    await api.postStripeEvent(
+      stripeEvent({
+        type: "invoice.paid",
+        object: {
+          id: metadataCreditInvoiceId,
+          customer: null,
+          subtotal: 0,
+          metadata: {
+            type: "atom_grant",
+            purpose: "atom_grant",
+            source: "atom_custom_credits",
+            grantType: "credits",
+            orgId,
+            creditsAmount: "2500",
+            creditsExpiresAt: String(invoiceCreditExpiresAt),
+          },
+          parent: null,
+          lines: {
+            has_more: false,
+            data: [
+              {
+                id: `il_bdd_metadata_credit_${suffix}`,
+                quantity: 1,
+                price: { id: "price_bdd_atom_grant" },
+                period: {
+                  start: epochSeconds(0),
+                  end: invoiceCreditExpiresAt,
+                },
+                parent: { type: "invoice_item_details" },
+              },
+            ],
+          },
+        },
+      }),
+      [200],
+    );
+    const afterMetadataCredit = await billing.readBillingStatus(actor);
+    expect(afterMetadataCredit.credits).toBe(baselineCredits + 2500);
+    expect(afterMetadataCredit.creditGrants).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "credit_purchase",
+          amount: 2500,
+          expiresAt: new Date(invoiceCreditExpiresAt * 1000).toISOString(),
+        }),
+      ]),
+    );
+
+    // Metadata credit amounts are ignored outside the configured Atom grant
+    // price path.
+    await api.postStripeEvent(
+      stripeEvent({
+        type: "invoice.paid",
+        object: {
+          id: `in_bdd_untrusted_metadata_credit_${suffix}`,
+          customer: null,
+          subtotal: 0,
+          metadata: {
+            type: "atom_grant",
+            purpose: "atom_grant",
+            source: "atom_custom_credits",
+            grantType: "credits",
+            orgId,
+            creditsAmount: "9000",
+          },
+          parent: null,
+          lines: {
+            has_more: false,
+            data: [
+              {
+                id: `il_bdd_untrusted_metadata_credit_${suffix}`,
+                quantity: 1,
+                price: { id: "price_bdd_other" },
+                period: {
+                  start: epochSeconds(0),
+                  end: invoiceCreditExpiresAt,
+                },
+                parent: { type: "invoice_item_details" },
+              },
+            ],
+          },
+        },
+      }),
+      [200],
+    );
+    expect((await billing.readBillingStatus(actor)).credits).toBe(
+      baselineCredits + 2500,
+    );
+  });
+});
+
+describe("Atom member credit grants", () => {
+  it("delivers member credits once without changing a purchased Pro plan", async () => {
+    const actor = createBddApi(context).user();
+    const plan = await createRunsApi(context).grantProEntitlement(actor);
+    const billing = createBillingMediaApi(context);
+    const before = await billing.readBillingStatus(actor);
+    api.configureStripeBillingEnv();
+    const expiresAt = epochSeconds(7);
+    const invoice = stripeEvent({
+      type: "invoice.paid",
+      object: {
+        id: `in_atom_member_${randomUUID()}`,
+        customer: plan.customerId,
+        subtotal: 0,
+        metadata: {
+          type: "atom_grant",
+          purpose: "atom_grant",
+          source: "atom_usage_pack_credits",
+          grantType: "usage_pack_credits",
+          orgId: orgOf(actor),
+          userId: actor.userId,
+          creditsAmount: "6000",
+          creditsExpiresAt: isoOf(expiresAt),
+        },
+        parent: null,
+        lines: {
+          has_more: false,
+          data: [
+            {
+              id: `il_atom_${randomUUID()}`,
+              quantity: 1,
+              price: { id: "price_bdd_atom_grant" },
+              period: { start: epochSeconds(0), end: expiresAt },
+              parent: { type: "invoice_item_details" },
+            },
+          ],
+        },
+      },
+    });
+    await api.postStripeEvent(invoice, [200]);
+    await api.postStripeEvent(invoice, [200]);
+    const result = await accept(
+      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+        billingUsagePackCreditsContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(result.body).toMatchObject({
+      totalCredits: 6000,
+      bonusCredits: 6000,
+      purchasedCredits: 0,
+      creditGrants: [
+        expect.objectContaining({
+          amount: 6000,
+          remaining: 6000,
+          expiresAt: isoOf(expiresAt),
+          grantType: "bonus",
+        }),
+      ],
+    });
+    await expect(billing.readBillingStatus(actor)).resolves.toStrictEqual(
+      before,
+    );
+  });
+});
+
+describe("Atom usage-pack redemption", () => {
+  it.each(["pro", "team"] as const)(
+    "publishes %s plan and member credits exactly once",
+    async (tier) => {
+      const actor = createBddApi(context).user();
+      await completeOnboardingWithoutCredits(actor);
+      api.configureStripeBillingEnv();
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({ data: [] });
+      const amount = tier === "team" ? 120_000 : 20_000;
+      const expiresAt = epochSeconds(7);
+      const invoice = stripeEvent({
+        type: "invoice.paid",
+        object: {
+          id: `in_atom_code_${randomUUID()}`,
+          customer: `cus_atom_code_${randomUUID()}`,
+          metadata: {
+            type: "atom_grant",
+            purpose: "atom_grant",
+            source: "atom_redeem_code",
+            planVersion: "usagePack",
+            orgId: orgOf(actor),
+            tier,
+            planId: tier,
+            duration: "7d",
+            atomGrantExpiresAt: isoOf(expiresAt),
+            userId: actor.userId,
+            creditsAmount: String(amount),
+            creditsExpiresAt: isoOf(expiresAt),
+          },
+          parent: null,
+          lines: {
+            has_more: false,
+            data: [
+              {
+                id: `il_atom_code_${randomUUID()}`,
+                quantity: 1,
+                price: { id: "price_bdd_atom_grant" },
+                period: { start: epochSeconds(0), end: expiresAt },
+                parent: { type: "invoice_item_details" },
+              },
+            ],
+          },
+        },
+      });
+      await api.postStripeEvent(invoice, [200]);
+      await api.postStripeEvent(invoice, [200]);
+      await expect(
+        createBillingMediaApi(context).readBillingStatus(actor),
+      ).resolves.toMatchObject({
+        tier,
+        credits: 0,
+        hasSubscription: false,
+        subscriptionStatus: "atom_grant",
+        currentPeriodEnd: isoOf(expiresAt),
+        showUsagePack: true,
+      });
+      const credits = await accept(
+        setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+          billingUsagePackCreditsContract,
+        ).get({ headers: { authorization: "Bearer clerk-session" } }),
+        [200],
+      );
+      expect(credits.body).toMatchObject({
+        totalCredits: amount,
+        bonusCredits: amount,
+        creditGrants: [
+          expect.objectContaining({
+            amount,
+            remaining: amount,
+            expiresAt: isoOf(expiresAt),
+          }),
+        ],
+      });
+    },
+  );
 });

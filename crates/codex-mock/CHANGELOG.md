@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.67](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.66...codex-mock-v0.12.67) (2026-11-16)
+
+
+### Bug Fixes
+
+* **guest-agent:** preserve codex turn results after inactive steering ([#47626](https://github.com/okou-ai/okou/issues/47626)) ([df6ada8](https://github.com/okou-ai/okou/commit/df6ada857ed6df8a927b92ff95e289f92eb7cb25))
+
 ## [0.12.66](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.65...codex-mock-v0.12.66) (2026-11-15)
 
 ## [0.12.65](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.64...codex-mock-v0.12.65) (2026-11-14)

@@ -232,7 +232,7 @@ export function createBrowserFixtures(context: TestContext) {
     return result.body.browser;
   }
 
-  async function view(chat: Chat) {
+  async function view(chat: Pick<Chat, "threadId">) {
     const result = await accept(
       client().get({
         headers: { authorization: "Bearer clerk-session" },

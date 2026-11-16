@@ -17,13 +17,10 @@ import {
 } from "zod";
 
 import { timestampQueryNumberSchema } from "./base";
-import { firewallPoliciesSchema } from "@okouai/connectors/firewall-contracts";
 import {
   modelProviderCredentialScopeSchema,
   modelProviderTypeSchema,
-  type ModelProviderType,
 } from "./model-providers";
-import { triggerSourceSchema } from "./logs";
 import {
   networkLogActionSchema,
   modelCatalogCacheStatusSchema,
@@ -38,15 +35,6 @@ import {
   concurrencyInfoSchema,
   queueResponseSchema,
 } from "../validators/runs";
-
-export type DirectRunModelProviderType = Exclude<ModelProviderType, "built-in">;
-
-const directRunModelProviderTypeSchema = modelProviderTypeSchema.refine(
-  (type) => {
-    return type !== "built-in";
-  },
-  { message: "built-in model provider is only supported by agent runs" },
-);
 
 export const claudeToolEntrySchema = string()
   .refine(
@@ -99,55 +87,6 @@ export const ALL_RUN_STATUSES = [
  * Run status enum
  */
 const runStatusSchema = zEnum(ALL_RUN_STATUSES);
-
-/**
- * Unified run request schema - supports all run modes via optional parameters
- */
-const unifiedRunRequestSchema = object({
-  agentId: string().optional(),
-  vars: record(string(), string()).optional(),
-  secrets: record(string(), string()).optional(),
-
-  // Preview evaluation escape hatch: bypass preview mock CLIs and use the
-  // real agent runtime.
-  realAgentInPreview: boolean().optional(),
-
-  // Capture HTTP header names, selected safe header values, request bodies, and response bodies
-  // in network logs
-  captureNetworkBodies: boolean().optional(),
-
-  // Required
-  prompt: string().min(1, "Missing prompt"),
-
-  // Optional system prompt to append to the agent's system prompt
-  appendSystemPrompt: string().optional(),
-
-  // Optional list of tools to disable in Claude CLI (passed as --disallowed-tools)
-  disallowedTools: array(claudeToolEntrySchema).optional(),
-
-  triggerSource: triggerSourceSchema.optional(),
-
-  // Per-permission policies (e.g., { "github": { "actions:read": "allow" } })
-  permissionPolicies: firewallPoliciesSchema.optional(),
-
-  // Internal: pin provider type for direct CLI runs used by E2E.
-  // The built-in provider is intentionally excluded here because direct CLI
-  // runs do not enforce built-in-provider credits.
-  modelProviderType: directRunModelProviderTypeSchema.optional(),
-}).strict();
-
-/**
- * Create run response schema
- */
-const createRunResponseSchema = object({
-  runId: string(),
-  status: runStatusSchema,
-  sandboxId: string().optional(),
-  output: string().optional(),
-  error: string().optional(),
-  executionTimeMs: number().optional(),
-  createdAt: string().optional(),
-});
 
 /**
  * Get run response schema
@@ -517,9 +456,6 @@ const networkLogsResponseSchema = object({
 // Export schemas for reuse
 export {
   runStatusSchema,
-  directRunModelProviderTypeSchema,
-  unifiedRunRequestSchema,
-  createRunResponseSchema,
   getRunResponseSchema,
   runListItemSchema,
   runsListResponseSchema,
@@ -548,7 +484,6 @@ export type RunStatus = zInfer<typeof runStatusSchema>;
 export type RunResult = zInfer<typeof runResultSchema>;
 export type RunState = zInfer<typeof runStateSchema>;
 export type RunEvent = zInfer<typeof runEventSchema>;
-export type CreateRunResponse = zInfer<typeof createRunResponseSchema>;
 export type GetRunResponse = zInfer<typeof getRunResponseSchema>;
 export type RunListItem = zInfer<typeof runListItemSchema>;
 export type RunsListResponse = zInfer<typeof runsListResponseSchema>;

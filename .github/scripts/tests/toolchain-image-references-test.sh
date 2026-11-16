@@ -12,6 +12,19 @@ import re
 import sys
 
 root = Path(sys.argv[1])
+
+# CI and local development inherit the same Docker Rust stage. Sandbox
+# templates must select that exact release too; floating channels can drift
+# even when every image reference below is pinned to one published release.
+dockerfile = (root / "docker/toolchain/Dockerfile").read_text()
+template = (root / "crates/runner/scripts/build-template.sh").read_text()
+docker_rust = re.search(r"^ARG RUST_VERSION=([0-9]+\.[0-9]+\.[0-9]+)$", dockerfile, re.M)
+template_rust = re.search(r'^RUST_VERSION="([0-9]+\.[0-9]+\.[0-9]+)"$', template, re.M)
+assert docker_rust, "Docker toolchain must pin an exact Rust release"
+assert template_rust, "sandbox template must pin an exact Rust release"
+assert docker_rust[1] == template_rust[1], \
+    f"sandbox Rust {template_rust[1]} differs from CI/development Rust {docker_rust[1]}"
+
 dev = json.loads((root / ".devcontainer/devcontainer.json").read_text())
 release = re.fullmatch(r"ghcr\.io/okou-ai/vm0-dev:([0-9]{8})", dev["image"])
 assert release, "devcontainer must use a fixed published development release"
