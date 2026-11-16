@@ -1,4 +1,7 @@
 import { permissionGrantsToFirewallPolicies } from "@okouai/connectors/firewall-metadata/policy";
+import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import type { ConnectorRuntimeTargetRegistration } from "@okouai/api-contracts/contracts/runners";
 import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -40,6 +43,10 @@ import {
   type ConnectorSourceResult,
   type ConnectorSourceRow,
 } from "./execution-connector-sources.service";
+import {
+  createExecutionConnectorScope,
+  type EffectiveConnectorScope,
+} from "./execution-connector-scope.service";
 import type { MemberModelRouteContext } from "./effective-model-route.service";
 import type { ModelCatalog } from "./model-catalog.service";
 import {
@@ -59,7 +66,7 @@ import {
   storageBaseIndexReadPlan,
 } from "./storage-index.service";
 import { variables } from "@okouai/db/schema/variable";
-import { and, eq, isNull, isNotNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, isNotNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 
@@ -817,28 +824,67 @@ type BootstrapEnvironmentSnapshot =
     ? T
     : never;
 
-function createAgentEnvironment(
+interface ExecutionAccountDemand {
+  readonly sourceIds: readonly string[];
+  readonly nativeSlugs: readonly ConnectorSlug[];
+}
+
+type AgentEnvironmentProjection =
+  | { readonly kind: "admission" }
+  | {
+      readonly kind: "execution";
+      readonly accounts$: Computed<Promise<ExecutionAccountDemand>>;
+    };
+
+function createBootstrapEnvironmentRows(
   identity$: Computed<
     Promise<{ readonly userId: string; readonly orgId: string }>
   >,
-  projection: "admission" | "execution",
+  projection: AgentEnvironmentProjection,
 ) {
   return computed(async (get) => {
+    const demand =
+      projection.kind === "execution" ? await get(projection.accounts$) : null;
+    if (
+      demand &&
+      demand.sourceIds.length === 0 &&
+      demand.nativeSlugs.length === 0
+    ) {
+      return null;
+    }
     const { userId, orgId } = await get(identity$);
     const db = get(db$);
-    const variableRows = bootstrapVariableRows(userId, orgId, projection);
+    const executionAccounts = demand
+      ? bootstrapExecutionAccounts(userId, orgId, demand)
+      : undefined;
+    const accountIds = executionAccounts
+      ? new QueryBuilder()
+          .select({ id: executionAccounts.id })
+          .from(executionAccounts)
+      : undefined;
+    const variableRows = bootstrapVariableRows(
+      userId,
+      orgId,
+      projection.kind,
+      executionAccounts,
+    );
     const variableSnapshot =
-      projection === "admission"
+      projection.kind === "admission"
         ? bootstrapVariableSnapshot(variableRows)
         : undefined;
     const connectorVariableSnapshot =
       bootstrapConnectorVariableSnapshot(variableRows);
-    const credentialSnapshot = bootstrapCredentialSnapshot(userId, orgId);
+    const credentialSnapshot = bootstrapCredentialSnapshot(
+      userId,
+      orgId,
+      executionAccounts,
+    );
     // Selection owns account revisions and credential references, not values.
     // Admission needs Agent variables even without accounts. Execution only
     // needs the same one-row envelope, not another user/workspace aggregate.
     const statement = db
       .with(
+        ...(executionAccounts ? [executionAccounts] : []),
         variableRows,
         ...(variableSnapshot ? [variableSnapshot] : []),
         connectorVariableSnapshot,
@@ -857,7 +903,11 @@ function createAgentEnvironment(
       .from(variableSnapshot ?? sql`(values (1)) as environment_seed(value)`)
       .leftJoin(
         connectors,
-        and(eq(connectors.orgId, orgId), eq(connectors.userId, userId)),
+        and(
+          eq(connectors.orgId, orgId),
+          eq(connectors.userId, userId),
+          accountIds ? inArray(connectors.id, accountIds) : undefined,
+        ),
       )
       .leftJoin(
         connectorVariableSnapshot,
@@ -889,6 +939,28 @@ function createAgentEnvironment(
       },
     );
     const query = connectorContextDuration(queryStartedAt);
+    return { rows, query, acquisitions: acquisitionCapture.acquisitions };
+  });
+}
+
+function createAgentEnvironment(
+  identity$: Computed<
+    Promise<{ readonly userId: string; readonly orgId: string }>
+  >,
+  projection: AgentEnvironmentProjection,
+) {
+  const rows$ = createBootstrapEnvironmentRows(identity$, projection);
+  return computed(async (get) => {
+    const acquired = await get(rows$);
+    if (!acquired) {
+      return {
+        variables: [],
+        accounts: [],
+        values: { variables: [], credentials: [] },
+        observation: undefined,
+      };
+    }
+    const { rows, query, acquisitions } = acquired;
     const materializeStartedAt = performance.now();
     const [first] = rows;
     if (!first) {
@@ -933,7 +1005,7 @@ function createAgentEnvironment(
       observation: bootstrapEnvironmentObservation({
         query,
         materialize,
-        acquisitions: acquisitionCapture.acquisitions,
+        acquisitions,
         returnedRowCount: rows.length,
         accounts: snapshot.accounts,
         storedValueCount:
@@ -943,10 +1015,34 @@ function createAgentEnvironment(
   });
 }
 
+function bootstrapExecutionAccounts(
+  userId: string,
+  orgId: string,
+  demand: ExecutionAccountDemand,
+) {
+  const db = new QueryBuilder();
+  return db.$with("bootstrap_execution_accounts").as(
+    db
+      .select({ id: connectors.id })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.orgId, orgId),
+          eq(connectors.userId, userId),
+          or(
+            inArray(connectors.id, demand.sourceIds),
+            inArray(connectors.connectorSlug, demand.nativeSlugs),
+          ),
+        ),
+      ),
+  );
+}
+
 function bootstrapVariableRows(
   userId: string,
   orgId: string,
   projection: "admission" | "execution",
+  executionAccounts: ReturnType<typeof bootstrapExecutionAccounts> | undefined,
 ) {
   const db = new QueryBuilder();
   return db.$with("bootstrap_variables").as(
@@ -961,6 +1057,12 @@ function bootstrapVariableRows(
       .where(
         and(
           eq(variables.orgId, orgId),
+          executionAccounts
+            ? inArray(
+                variables.connectorId,
+                db.select({ id: executionAccounts.id }).from(executionAccounts),
+              )
+            : undefined,
           projection === "admission"
             ? or(
                 and(
@@ -1023,7 +1125,11 @@ function bootstrapConnectorVariableSnapshot(
   );
 }
 
-function bootstrapCredentialSnapshot(userId: string, orgId: string) {
+function bootstrapCredentialSnapshot(
+  userId: string,
+  orgId: string,
+  executionAccounts: ReturnType<typeof bootstrapExecutionAccounts> | undefined,
+) {
   const db = new QueryBuilder();
   return db.$with("bootstrap_credentials").as(
     db
@@ -1041,6 +1147,12 @@ function bootstrapCredentialSnapshot(userId: string, orgId: string) {
           eq(secrets.orgId, orgId),
           eq(secrets.userId, userId),
           eq(secrets.type, "connector"),
+          executionAccounts
+            ? inArray(
+                secrets.connectorId,
+                db.select({ id: executionAccounts.id }).from(executionAccounts),
+              )
+            : undefined,
         ),
       )
       .groupBy(secrets.connectorId),
@@ -1057,19 +1169,25 @@ function createConnectorContextGroups(
   const identity$ = computed(() => {
     return Promise.resolve({ userId, orgId, agentId });
   });
-  const sources = createConnectorSources(
+  const sources = createConnectorSelectionSources(
     identity$,
     featureSwitches$,
     "admission",
   );
+  const accounts = createConnectorAccountSources(
+    identity$,
+    sources.signals.customConnectorDefinitions$,
+    { kind: "admission" },
+  );
   const runVariables$ = computed(async (get) => {
-    const snapshot = await get(sources.environmentSnapshot$);
+    const snapshot = await get(accounts.environmentSnapshot$);
     return buildAgentRunVariables({ agentId, variables: snapshot.variables });
   });
   return {
-    environmentSnapshot$: sources.environmentSnapshot$,
+    environmentSnapshot$: accounts.environmentSnapshot$,
     signals: {
       ...sources.signals,
+      connectors$: accounts.connectors$,
       workflows$: sources.workflows$,
       runVariables$,
     },
@@ -1080,33 +1198,93 @@ function createConnectorContextGroups(
 export function createExecutionConnectorSources(
   identity$: Computed<Promise<AgentConnectorSelectionScope>>,
   featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
+  targets$: Computed<Promise<readonly ConnectorRuntimeTargetRegistration[]>>,
 ) {
-  const { signals } = createConnectorSources(
+  const { signals } = createConnectorSelectionSources(
     identity$,
     featureSwitches$,
     "execution",
   );
-  return { signals };
+  const executionScope$ = createExecutionConnectorScope({
+    scope$: signals.connectorScope$,
+    targets$,
+    catalog$: signals.catalog$,
+    features$: featureSwitches$,
+  });
+  const accounts$ = createExecutionAccountDemand(executionScope$, targets$);
+  const accounts = createConnectorAccountSources(
+    identity$,
+    signals.customConnectorDefinitions$,
+    { kind: "execution", accounts$ },
+  );
+  return {
+    signals: { ...signals, connectors$: accounts.connectors$ },
+    executionScope$,
+  };
 }
 
-function createConnectorSources(
+function createExecutionAccountDemand(
+  scope$: Computed<Promise<EffectiveConnectorScope>>,
+  targets$: Computed<Promise<readonly ConnectorRuntimeTargetRegistration[]>>,
+) {
+  return computed(async (get): Promise<ExecutionAccountDemand> => {
+    const [scope, targets] = await Promise.all([get(scope$), get(targets$)]);
+    const registered = new Set(targets.map(connectorAccountTargetKey));
+    return {
+      sourceIds: targets.flatMap((target) => {
+        const allowed =
+          target.kind === "builtin"
+            ? scope.allowedConnectorSlugs.includes(target.connectorSlug)
+            : scope.allowedCustomConnectorIds.includes(
+                target.customConnectorId,
+              );
+        return allowed && target.sourceId ? [target.sourceId] : [];
+      }),
+      nativeSlugs: scope.allowedConnectorSlugs.filter((connectorSlug) => {
+        return !registered.has(
+          connectorAccountTargetKey({ kind: "builtin", connectorSlug }),
+        );
+      }),
+    };
+  });
+}
+
+function createConnectorAccountSources(
+  identity$: Computed<Promise<AgentConnectorSelectionScope>>,
+  definitions$: AgentRunContextSignals["customConnectorDefinitions$"],
+  projection: AgentEnvironmentProjection,
+) {
+  const environmentSnapshot$ = createAgentEnvironment(identity$, projection);
+  const connectors$ = computed(async (get): Promise<BootstrapConnectorData> => {
+    const { userId, orgId } = await get(identity$);
+    const [snapshot, definitions] = await Promise.all([
+      get(environmentSnapshot$),
+      get(definitions$),
+    ]);
+    const result = bootstrapConnectorSnapshot(
+      userId,
+      orgId,
+      snapshot,
+      definitions,
+    );
+    return {
+      connectorAccounts: result.accounts,
+      connectorSources: result.sources,
+      observation: result.observation,
+    };
+  });
+  return { environmentSnapshot$, connectors$ };
+}
+
+function createConnectorSelectionSources(
   identity$: Computed<Promise<AgentConnectorSelectionScope>>,
   featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
   projection: "admission" | "execution",
 ) {
   const { connectorSelection$, permissionGrants$, workflows$ } =
     createAgentSelectionContext(identity$, featureSwitches$, projection);
-  const environmentSnapshot$ = createAgentEnvironment(identity$, projection);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;
-  });
-  const connectorSnapshot$ = computed(async (get) => {
-    const { userId, orgId } = await get(identity$);
-    const [snapshot, definitions] = await Promise.all([
-      get(environmentSnapshot$),
-      get(customConnectorDefinitions$),
-    ]);
-    return bootstrapConnectorSnapshot(userId, orgId, snapshot, definitions);
   });
   const connectorScope$ = computed(async (get) => {
     const selection = await get(connectorSelection$);
@@ -1138,14 +1316,6 @@ function createConnectorSources(
     connectorSelection$,
     catalog$,
   );
-  const connectors$ = computed(async (get): Promise<BootstrapConnectorData> => {
-    const snapshot = await get(connectorSnapshot$);
-    return {
-      connectorAccounts: snapshot.accounts,
-      connectorSources: snapshot.sources,
-      observation: snapshot.observation,
-    };
-  });
   const permissionPolicies$ = computed(async (get) => {
     const [grants, scope, catalog] = await Promise.all([
       get(permissionGrants$),
@@ -1173,7 +1343,6 @@ function createConnectorSources(
     });
   });
   return {
-    environmentSnapshot$,
     workflows$,
     signals: {
       connectorSelection$,
@@ -1182,7 +1351,6 @@ function createConnectorSources(
       permissionGrants$,
       customConnectorDefinitions$,
       catalog$,
-      connectors$,
       permissionPolicies$,
     },
   };

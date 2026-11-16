@@ -138,54 +138,64 @@ async function current(
 }
 
 describe("Chat connector execution", () => {
-  it("delivers the Chat's selected native credentials alongside a registered MCP account", async () => {
-    const value = await owner();
-    const nativeTarget = {
-      kind: "builtin",
-      connectorSlug: "runtime",
-    } as const;
-    await connectors.connectManualGrant(value.actor, "runtime", "api-token", {
-      apiKey: "default-native-key",
-    });
-    const native = await connectors.connectManualGrant(
-      value.actor,
-      "runtime",
-      "api-token",
-      { apiKey: "selected-native-key" },
-      undefined,
-      { intent: "add", displayName: "Selected native account" },
-    );
-    const registered = await addAccount(value.actor, "Registered MCP");
-    for (const [target, connectionId] of [
-      [nativeTarget, native.id],
-      [builtin, registered.id],
-    ] as const) {
-      session(value.actor);
-      await accept(
-        access().setThreadCurrent({
-          headers: sessionHeaders,
-          params: { threadId: value.threadId },
-          body: { target, connectionId },
-        }),
-        [200],
-      );
-    }
-
-    const run = await start(value);
-    expect(run.execution.environment).toMatchObject({
-      RUNTIME_API_KEY: "selected-native-key",
-    });
-    expect(
-      run.execution.secretConnectorMetadataMap?.RUNTIME_API_KEY,
-    ).toMatchObject({ sourceId: native.id });
-    expect(run.execution.connectorRuntimeTargets).toContainEqual(
-      expect.objectContaining({
+  it.each(["selection", "default"] as const)(
+    "delivers native credentials from the Chat's %s alongside a registered MCP account",
+    async (choice) => {
+      const value = await owner();
+      const nativeTarget = {
         kind: "builtin",
-        connectorSlug: "manual-mcp",
-        sourceId: registered.id,
-      }),
-    );
-  });
+        connectorSlug: "runtime",
+      } as const;
+      await connectors.connectManualGrant(value.actor, "runtime", "api-token", {
+        apiKey: "default-native-key",
+      });
+      const native = await connectors.connectManualGrant(
+        value.actor,
+        "runtime",
+        "api-token",
+        { apiKey: "selected-native-key" },
+        undefined,
+        { intent: "add", displayName: "Selected native account" },
+      );
+      const registered = await addAccount(value.actor, "Registered MCP");
+      if (choice === "default") {
+        await connectors.setDefaultBuiltinConnectorAccount(
+          value.actor,
+          "runtime",
+          native.id,
+        );
+      }
+      for (const [target, connectionId] of [
+        ...(choice === "selection" ? [[nativeTarget, native.id] as const] : []),
+        [builtin, registered.id],
+      ] as const) {
+        session(value.actor);
+        await accept(
+          access().setThreadCurrent({
+            headers: sessionHeaders,
+            params: { threadId: value.threadId },
+            body: { target, connectionId },
+          }),
+          [200],
+        );
+      }
+
+      const run = await start(value);
+      expect(run.execution.environment).toMatchObject({
+        RUNTIME_API_KEY: "selected-native-key",
+      });
+      expect(
+        run.execution.secretConnectorMetadataMap?.RUNTIME_API_KEY,
+      ).toMatchObject({ sourceId: native.id });
+      expect(run.execution.connectorRuntimeTargets).toContainEqual(
+        expect.objectContaining({
+          kind: "builtin",
+          connectorSlug: "manual-mcp",
+          sourceId: registered.id,
+        }),
+      );
+    },
+  );
 
   it("retains Agent-gated startup and hides the new approval and switch APIs when disabled", async () => {
     const value = await owner(false);

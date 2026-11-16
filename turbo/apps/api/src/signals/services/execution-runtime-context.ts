@@ -83,7 +83,14 @@ type DisabledTools$ = Computed<Promise<readonly PaidToolId[]>>;
 export function createExecutionRuntimeContext(input$: ExecutionInput$) {
   const identities = createExecutionIdentities(input$);
   const { run$, identity$, features$ } = identities;
-  const sources = createExecutionConnectorSources(identity$, features$);
+  const targets$ = computed(async (get) => {
+    return (await get(input$)).facts.connectorRuntimeTargets;
+  });
+  const sources = createExecutionConnectorSources(
+    identity$,
+    features$,
+    targets$,
+  );
   const networkPolicyInputs$ = computed(
     async (get): Promise<ExecutionNetworkPolicyInputs> => {
       const [catalog, grants, features] = await Promise.all([
@@ -115,6 +122,7 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
     input$,
     identities,
     sources,
+    targets$,
   );
   const model$ = createExecutionModel(input$);
   const modelRoute$ = computed(async (get) => {
@@ -241,11 +249,11 @@ function createExecutionConnectorContext(
   input$: ExecutionInput$,
   identities: ExecutionIdentities,
   sources: ExecutionSources,
+  targets$: Computed<
+    Promise<AdmittedExecutionFacts["connectorRuntimeTargets"]>
+  >,
 ) {
   const { run$, identity$, features$ } = identities;
-  const targets$ = computed(async (get) => {
-    return (await get(input$)).facts.connectorRuntimeTargets;
-  });
   const connectorIdentity$ = computed(async (get) => {
     const [identity, run] = await Promise.all([get(identity$), get(run$)]);
     return { ...identity, chatThreadId: run.chatThreadId };
@@ -256,7 +264,7 @@ function createExecutionConnectorContext(
   const connected = createExecutionConnectedAccounts({
     identity$: connectorIdentity$,
     targets$,
-    scope$: sources.signals.connectorScope$,
+    scope$: sources.executionScope$,
     catalog$: sources.signals.catalog$,
     definitions$: sources.signals.customConnectorDefinitions$,
     connectors$: sources.signals.connectors$,

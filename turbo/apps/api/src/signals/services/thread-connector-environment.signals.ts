@@ -34,7 +34,6 @@ import {
   type BuiltinConnectorRuntimeContext,
   type ConnectorEnvBindingSet,
   type ConnectedAccountsError,
-  type EffectiveConnectorScope,
   emptyBuiltinConnectorRuntimeContext,
   storedConnectorContextFromSnapshot,
   type RunConnectorCatalogSelection,
@@ -43,6 +42,7 @@ import {
   type StoredConnectorSecretRow,
   storedConnectorTimingDimensions,
 } from "./thread-connected-accounts.signals";
+import type { EffectiveConnectorScope } from "./execution-connector-scope.service";
 import type { ThreadContext } from "./thread-context.signals";
 import type { ThreadModelError } from "./thread-model.signals";
 

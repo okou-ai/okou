@@ -222,6 +222,7 @@
     "src/signals/services/execution-agent-workflows.service.ts",
     "src/signals/services/execution-connector-permissions.service.ts",
     "src/signals/services/execution-connector-sources.service.ts",
+    "src/signals/services/execution-connector-scope.service.ts",
     "src/signals/services/execution-credit-balance.service.ts",
     "src/signals/services/execution-global-model-context.service.ts",
     "src/signals/services/execution-member-context.service.ts",

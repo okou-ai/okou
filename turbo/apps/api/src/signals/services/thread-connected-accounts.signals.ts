@@ -80,6 +80,12 @@ import type {
   ConnectorSourceResult,
   ConnectorSourceSnapshot,
 } from "./execution-connector-sources.service";
+import {
+  type EffectiveConnectorScope,
+  type ConnectorScopeSource,
+  isEmptyRunConnectorScope,
+  runConnectorScope,
+} from "./execution-connector-scope.service";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 /** The integration account that delivered the picked input, if any. */
@@ -245,7 +251,7 @@ function createChatAccountInputSignals(
   });
   const effectiveAccounts$ = computed(async (get) => {
     const accounts = (await get(execution.connectors$)).connectorAccounts;
-    if (!(await get(chatAccountsEnabled$))) {
+    if (accounts.length === 0 || !(await get(chatAccountsEnabled$))) {
       return accounts;
     }
     const input = await get(connectorInput$);
@@ -256,7 +262,18 @@ function createChatAccountInputSignals(
       })
       .from(chatThreadConnectorAccessOverrides)
       .where(
-        eq(chatThreadConnectorAccessOverrides.chatThreadId, input.chatThreadId),
+        and(
+          eq(
+            chatThreadConnectorAccessOverrides.chatThreadId,
+            input.chatThreadId,
+          ),
+          inArray(
+            chatThreadConnectorAccessOverrides.connectorId,
+            accounts.map((account) => {
+              return account.connectorId;
+            }),
+          ),
+        ),
       );
     const enabledById = new Map(
       overrides.map((row) => {
@@ -292,7 +309,7 @@ interface ExecutionConnectedAccountsArgs {
   readonly targets$: Computed<
     Promise<readonly ConnectorRuntimeTargetRegistration[]>
   >;
-  readonly scope$: AgentRunContextSignals["connectorScope$"];
+  readonly scope$: Computed<Promise<EffectiveConnectorScope>>;
   readonly catalog$: AgentRunContextSignals["catalog$"];
   readonly definitions$: AgentRunContextSignals["customConnectorDefinitions$"];
   readonly connectors$: AgentRunContextSignals["connectors$"];
@@ -387,51 +404,10 @@ function createExecutionAccountInputs(
   };
 }
 
-function createExecutionConnectorScope(args: ExecutionConnectedAccountsArgs) {
-  return computed(async (get): Promise<EffectiveConnectorScope> => {
-    const [scope, targets, catalog] = await Promise.all([
-      get(args.scope$),
-      get(args.targets$),
-      get(args.catalog$),
-    ]);
-    const allowed = runConnectorScope(scope);
-    if (allowed.allowedConnectorSlugs.length > 0 && !catalog) {
-      throw new Error("Scoped connector catalog is missing from Claim");
-    }
-    return {
-      ...allowed,
-      customConnectorGrants: isFeatureEnabled(
-        FeatureSwitchKey.ConnectorChatAccountAccess,
-        await get(args.features$),
-      )
-        ? []
-        : allowed.customConnectorGrants,
-      allowedConnectorSlugs: allowed.allowedConnectorSlugs.filter((slug) => {
-        // Native-only environment bindings have no firewall registration.
-        return (
-          (catalog !== null &&
-            !catalog.serverFirewalls.has(slug) &&
-            !catalog.serverFirewalls.isMcp(slug)) ||
-          targets.some((target) => {
-            return target.kind === "builtin" && target.connectorSlug === slug;
-          })
-        );
-      }),
-      allowedCustomConnectorIds: allowed.allowedCustomConnectorIds.filter(
-        (id) => {
-          return targets.some((target) => {
-            return target.kind === "custom" && target.customConnectorId === id;
-          });
-        },
-      ),
-    };
-  });
-}
-
 export function createExecutionConnectedAccounts(
   args: ExecutionConnectedAccountsArgs,
 ): ConnectedAccounts {
-  const connectorScope$ = createExecutionConnectorScope(args);
+  const connectorScope$ = args.scope$;
   const { connectorInput$, chatAccounts } = createExecutionAccountInputs(
     args,
     connectorScope$,
@@ -1225,18 +1201,6 @@ function createCustomConnectorContextSignals(
   return { customConnectorContext$ };
 }
 
-/** The Agent's stored connector scope as a Run connector scope. */
-function runConnectorScope(
-  scope: AgentConnectorScope,
-): EffectiveConnectorScope {
-  return {
-    allowedConnectorSlugs: scope.allowedConnectorSlugs,
-    allowedCustomConnectorIds: scope.allowedCustomConnectorIds,
-    customConnectorGrants: scope.customConnectorGrants,
-    source: isEmptyRunConnectorScope(scope) ? "empty" : "stored_agent",
-  };
-}
-
 /** The bootstrap connector catalog, explicit about an empty scope. */
 function runConnectorCatalogSelection(
   scope: Pick<
@@ -1325,16 +1289,6 @@ function customConnectorSourceSelectionRows(
   return [{ connection: base, values }];
 }
 
-type ConnectorScopeSource = "stored_agent" | "empty";
-
-export interface EffectiveConnectorScope {
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly allowedCustomConnectorIds: readonly string[];
-  readonly customConnectorGrants:
-    readonly AgentCustomConnectorGrant[] | undefined;
-  readonly source: ConnectorScopeSource;
-}
-
 interface ThreadConnectorSelectionIds {
   /** Candidates are ordered from run-scoped source to persisted preference. */
   readonly connectorIdCandidatesBySlug: ReadonlyMap<
@@ -1345,16 +1299,6 @@ interface ThreadConnectorSelectionIds {
     string,
     readonly string[]
   >;
-}
-
-function isEmptyRunConnectorScope(scope: {
-  readonly allowedConnectorSlugs: readonly ConnectorSlug[];
-  readonly allowedCustomConnectorIds: readonly string[];
-}): boolean {
-  return (
-    scope.allowedConnectorSlugs.length === 0 &&
-    scope.allowedCustomConnectorIds.length === 0
-  );
 }
 
 function emptyCustomConnectorRuntimeContext(): CustomConnectorRuntimeContext {
