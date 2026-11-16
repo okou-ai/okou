@@ -12,6 +12,7 @@ export const CAPABILITIES = [
   "agent:delete",
   "agent-run:read",
   "run-usage:read",
+  "run-timing:write",
   "subscription:read",
   "subscription:switch",
   "github:read",

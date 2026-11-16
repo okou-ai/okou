@@ -198,6 +198,7 @@ import { realtimeTokenRoutes } from "./routes/realtime-token";
 import { registryResourceDownloadRoutes } from "./routes/registry-resources-download";
 import { runDetailRoutes } from "./routes/run-detail";
 import { runModelsRoutes } from "./routes/run-models";
+import { runPhaseTimingRoutes } from "./routes/run-phase-timing";
 import { runnerCancellationRoutes } from "./routes/runner-cancellation";
 import { runnerSshRoutes } from "./routes/runner-ssh";
 import { runnerVncRoutes } from "./routes/runner-vnc";
@@ -408,6 +409,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...browserUserActionRoutes,
   ...modelCatalogRoutes,
   ...runModelsRoutes,
+  ...runPhaseTimingRoutes,
   ...meModelProvidersDeleteRoutes,
   ...meModelProviderAccountRoutes,
   ...meModelProvidersListRoutes,
