@@ -818,33 +818,40 @@ function createAgentEnvironment(
   identity$: Computed<
     Promise<{ readonly userId: string; readonly orgId: string }>
   >,
+  projection: "admission" | "execution",
 ) {
   return computed(async (get) => {
     const { userId, orgId } = await get(identity$);
     const db = get(db$);
-    const variableRows = bootstrapVariableRows(userId, orgId);
-    const variableSnapshot = bootstrapVariableSnapshot(variableRows);
+    const variableRows = bootstrapVariableRows(userId, orgId, projection);
+    const variableSnapshot =
+      projection === "admission"
+        ? bootstrapVariableSnapshot(variableRows)
+        : undefined;
     const connectorVariableSnapshot =
       bootstrapConnectorVariableSnapshot(variableRows);
     const credentialSnapshot = bootstrapCredentialSnapshot(userId, orgId);
     // Selection owns account revisions and credential references, not values.
-    // Agent variables still exist in the empty-account case.
+    // Admission needs Agent variables even without accounts. Execution only
+    // needs the same one-row envelope, not another user/workspace aggregate.
     const statement = db
       .with(
         variableRows,
-        variableSnapshot,
+        ...(variableSnapshot ? [variableSnapshot] : []),
         connectorVariableSnapshot,
         credentialSnapshot,
       )
       .select({
         account: bootstrapConnectorAccountColumns,
-        variableValues: variableSnapshot.values,
+        ...(variableSnapshot
+          ? { variableValues: variableSnapshot.values }
+          : {}),
         connectorVariables: connectorVariableSnapshot.values,
         credentials: credentialSnapshot.values,
         automaticOAuthBindingId:
           customConnectorAccountOauthBindings.connectorAccountId,
       })
-      .from(variableSnapshot)
+      .from(variableSnapshot ?? sql`(values (1)) as environment_seed(value)`)
       .leftJoin(
         connectors,
         and(eq(connectors.orgId, orgId), eq(connectors.userId, userId)),
@@ -933,7 +940,11 @@ function createAgentEnvironment(
   });
 }
 
-function bootstrapVariableRows(userId: string, orgId: string) {
+function bootstrapVariableRows(
+  userId: string,
+  orgId: string,
+  projection: "admission" | "execution",
+) {
   const db = new QueryBuilder();
   return db.$with("bootstrap_variables").as(
     db
@@ -947,16 +958,24 @@ function bootstrapVariableRows(userId: string, orgId: string) {
       .where(
         and(
           eq(variables.orgId, orgId),
-          or(
-            and(
-              eq(variables.type, "user"),
-              or(
-                eq(variables.userId, ORG_SENTINEL_USER_ID),
+          projection === "admission"
+            ? or(
+                and(
+                  eq(variables.type, "user"),
+                  or(
+                    eq(variables.userId, ORG_SENTINEL_USER_ID),
+                    eq(variables.userId, userId),
+                  ),
+                ),
+                and(
+                  eq(variables.type, "connector"),
+                  eq(variables.userId, userId),
+                ),
+              )
+            : and(
+                eq(variables.type, "connector"),
                 eq(variables.userId, userId),
               ),
-            ),
-            and(eq(variables.type, "connector"), eq(variables.userId, userId)),
-          ),
         ),
       ),
   );
@@ -1035,7 +1054,23 @@ function createConnectorContextGroups(
   const identity$ = computed(() => {
     return Promise.resolve({ userId, orgId, agentId });
   });
-  return createExecutionConnectorSources(identity$, featureSwitches$);
+  const sources = createConnectorSources(
+    identity$,
+    featureSwitches$,
+    "admission",
+  );
+  const runVariables$ = computed(async (get) => {
+    const snapshot = await get(sources.environmentSnapshot$);
+    return buildAgentRunVariables({ agentId, variables: snapshot.variables });
+  });
+  return {
+    environmentSnapshot$: sources.environmentSnapshot$,
+    signals: {
+      ...sources.signals,
+      workflows$: sources.workflows$,
+      runVariables$,
+    },
+  };
 }
 
 /** Connect current connector sources to an already-authorized execution identity. */
@@ -1043,9 +1078,22 @@ export function createExecutionConnectorSources(
   identity$: Computed<Promise<AgentConnectorSelectionScope>>,
   featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
 ) {
+  const { signals } = createConnectorSources(
+    identity$,
+    featureSwitches$,
+    "execution",
+  );
+  return { signals };
+}
+
+function createConnectorSources(
+  identity$: Computed<Promise<AgentConnectorSelectionScope>>,
+  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
+  projection: "admission" | "execution",
+) {
   const { connectorSelection$, permissionGrants$, workflows$ } =
-    createAgentSelectionContext(identity$, featureSwitches$);
-  const environmentSnapshot$ = createAgentEnvironment(identity$);
+    createAgentSelectionContext(identity$, featureSwitches$, projection);
+  const environmentSnapshot$ = createAgentEnvironment(identity$, projection);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;
   });
@@ -1095,14 +1143,6 @@ export function createExecutionConnectorSources(
       observation: snapshot.observation,
     };
   });
-  const runVariables$ = computed(async (get) => {
-    const { agentId } = await get(identity$);
-    const snapshot = await get(environmentSnapshot$);
-    return buildAgentRunVariables({
-      agentId,
-      variables: snapshot.variables,
-    });
-  });
   const permissionPolicies$ = computed(async (get) => {
     const [grants, scope, catalog] = await Promise.all([
       get(permissionGrants$),
@@ -1131,16 +1171,15 @@ export function createExecutionConnectorSources(
   });
   return {
     environmentSnapshot$,
+    workflows$,
     signals: {
       connectorSelection$,
       connectorScope$,
       authorizedConnectors$,
       permissionGrants$,
-      workflows$,
       customConnectorDefinitions$,
       catalog$,
       connectors$,
-      runVariables$,
       permissionPolicies$,
     },
   };

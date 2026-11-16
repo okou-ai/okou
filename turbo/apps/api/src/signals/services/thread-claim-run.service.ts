@@ -2598,6 +2598,7 @@ export function createThreadClaimRunObjects(
       framework: modelProviderFramework(modelProvider),
       modelProvider,
       connectorRuntimeTargets: connector.runtimeTargets,
+      modelProviderPermissions: providerPermissions.ok,
     };
   });
   const executionPlan$ = computed(async (get) => {
@@ -2653,6 +2654,7 @@ export function createThreadClaimRunObjects(
       piSandbox,
       modelProvider,
       connectorRuntimeTargets: runtimeContext.connectorRuntimeTargets,
+      modelProviderPermissions: runtimeContext.modelProviderPermissions,
       ...metadata,
       officialWorkflowFacts: await get(officialWorkflowFacts$),
       featureSwitchContext: contentContext.featureSwitchContext,
@@ -3081,6 +3083,7 @@ export function createThreadClaimRunObjects(
             integration,
             captureNetworkBodies: args.captureNetworkBodies === true,
             piModelConfig: context.piSandbox,
+            modelProviderPermissions: context.modelProviderPermissions,
           },
           apiStartTime: await get(runnerApiStartTime$),
           chatThreadId: args.chatThreadId,
