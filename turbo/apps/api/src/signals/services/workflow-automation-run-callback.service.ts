@@ -1,3 +1,4 @@
+import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
 import {
   inFlightScheduleAdvanceCondition,
   inFlightScheduleAdvanceValues,
@@ -12,11 +13,11 @@ import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { prepareAutomationDisabledNotification$ } from "./automation-disabled-notification.service";
+import { prepareAutomationDisabledFeedEvent$ } from "./automation-disabled-feed-event.service";
 import {
-  automationDisabledNotificationInsertSql,
+  automationDisabledFeedEventInsertSql,
   automationDisableTransitionColumns,
-} from "./automation-disabled-notification-sql";
+} from "./automation-disabled-feed-event-sql";
 import type {
   InternalRunCallbackDispatchResult,
   InternalRunCallbackEnvelope,
@@ -250,10 +251,10 @@ const attemptUnjournaledWorkflowAutomationCallbackSettlement$ = command(
     // from an older recurrence must leave that publication and failure count
     // unchanged instead of correcting the new schedule after writing it.
     signal?.throwIfAborted();
-    const notification =
+    const feedEvent =
       args.callback.status === "failed" && !isCreditError
         ? await set(
-            prepareAutomationDisabledNotification$,
+            prepareAutomationDisabledFeedEvent$,
             automation,
             completedAt,
             signal,
@@ -279,18 +280,21 @@ const attemptUnjournaledWorkflowAutomationCallbackSettlement$ = command(
         .returning(automationDisableTransitionColumns()),
     );
     const notice = db
-      .$with("automation_disable_notification", {})
+      .$with("automation_disable_feed_event", {})
       .as(
-        automationDisabledNotificationInsertSql(
-          notification,
+        automationDisabledFeedEventInsertSql(
+          feedEvent,
           sql.identifier("automation_disable_transition"),
         ),
       );
     const [committed] = await db
       .with(transition, notice)
-      .select({ id: transition.id })
+      .select({ id: transition.id, enabled: transition.enabled })
       .from(transition);
     signal?.throwIfAborted();
+    if (committed && !committed.enabled && feedEvent) {
+      await publishAgentSuggestionsChangedSafely(feedEvent);
+    }
     return committed !== undefined
       ? { kind: "settled", result: { success: true } }
       : skippedUnjournaledCallbackSettlement();

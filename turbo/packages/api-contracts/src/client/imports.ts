@@ -1921,11 +1921,6 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
-    module: "user-notifications",
-    contracts: ["userNotificationsContract"],
-    bindings: [],
-  },
-  {
     module: "user-permission-grants",
     contracts: ["userPermissionGrantsContract"],
     bindings: [

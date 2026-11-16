@@ -7,14 +7,19 @@ import {
 import { getClientConfig, handleError } from "../core/client-factory";
 export async function listSuggestions(options?: {
   readonly all?: boolean;
-  readonly type?: "suggestion";
+  readonly type?: "suggestion" | "event";
   readonly after?: string;
 }) {
+  if (options?.all && options.type === "event") {
+    throw new Error(
+      "--all is only available for suggestion curation. Use --type event without --all.",
+    );
+  }
   const client = initClient(feedContract, await getClientConfig());
   const result = options?.all
     ? await client.manage({
         headers: {},
-        query: { after: options.after, type: options.type },
+        query: { after: options.after, type: "suggestion" },
       })
     : await client.list({ headers: {}, query: { type: options?.type } });
   if (result.status === 200) return result.body;

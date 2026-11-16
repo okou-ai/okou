@@ -226,7 +226,6 @@ test("The corner's icon buttons lead into the labelled Get started entry", async
     path: questChatPath(),
     featureSwitches: {
       [FeatureSwitchKey.FriendReferrals]: true,
-      [FeatureSwitchKey.UserNotifications]: true,
       [FeatureSwitchKey.SingleAgent]: false,
     },
     auth: {
@@ -244,16 +243,10 @@ test("The corner's icon buttons lead into the labelled Get started entry", async
   const gift = await waitFor(() => {
     return buttonNamed("Invite your friends", document.body);
   });
-  const bell = await waitFor(() => {
-    return buttonNamed("Notifications", document.body);
-  });
-
-  // Reading order, and with it keyboard order, runs gift, bell, then the
-  // labelled entry, which closes the row in the page's corner.
+  // Reading and keyboard order run from the gift to the labelled entry.
   const buttons = queryAllByRoleFast("button");
   expect(buttons).toContain(entry);
-  expect(buttons.indexOf(gift)).toBeLessThan(buttons.indexOf(bell));
-  expect(buttons.indexOf(bell)).toBeLessThan(buttons.indexOf(entry));
+  expect(buttons.indexOf(gift)).toBeLessThan(buttons.indexOf(entry));
 });
 
 function normalizedText(element: Element): string {

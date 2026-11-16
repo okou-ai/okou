@@ -91,7 +91,7 @@ export function createFeedCommand() {
           readonly type: string;
           readonly json?: boolean;
         }) => {
-          feedItemTypeSchema.parse(options.type);
+          suggestionCreateSchema.shape.type.parse(options.type);
           const key = string().trim().min(1).max(2048).parse(options.key);
           // UUID v5 with a fixed Okou suggestion namespace; this never publishes an item.
           const bytes = createHash("sha1")
@@ -110,9 +110,9 @@ export function createFeedCommand() {
     );
   feedCommand
     .command("list")
-    .option("--type <type>", "Filter by feed item type (suggestion)")
+    .option("--type <type>", "Filter by feed item type (suggestion, event)")
     .description(
-      "Read active suggestions and recent consumed/removed identities",
+      "Read active feed items and recent consumed/removed suggestion identities",
     )
     .option(
       "--all",
@@ -145,7 +145,7 @@ export function createFeedCommand() {
           else
             for (const item of data.items)
               console.log(
-                `${item.id}  priority=${item.priority}  ${item.content.title}`,
+                `${item.id}  priority=${item.priority}  ${item.type === "event" ? item.content.automationName : item.content.title}`,
               );
           if (!options.json && "nextAfter" in data && data.nextAfter) {
             console.log(

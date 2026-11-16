@@ -4363,6 +4363,27 @@
     "previousFeature": "Fonctionnalité précédente",
     "tryPrompt": "Essayer cette tâche"
   },
+  "feedEvents": {
+    "automationDisabled": {
+      "backToWorkflows": "Retour aux workflows",
+      "disabledAt": "Désactivée le {{time}}",
+      "loadFailed": "Impossible de charger cette automatisation",
+      "loadingAutomation": "Chargement de l’automatisation",
+      "otherWorkspace": "Cette automatisation se trouve dans {{workspace}}. Changez d’espace de travail pour la consulter.",
+      "reason_one": "{{count}} exécution a échoué. Vérifiez l’automatisation avant de la réactiver.",
+      "reason_many": "{{count}} exécutions consécutives ont échoué. Vérifiez l’automatisation avant de la réactiver.",
+      "reason_other": "{{count}} exécutions consécutives ont échoué. Vérifiez l’automatisation avant de la réactiver.",
+      "switchFailed": "Impossible de changer d’espace de travail. Réessayez ou utilisez le sélecteur d’espace de travail.",
+      "switchWorkspace": "Changer d’espace de travail",
+      "systemManaged": "Cette automatisation est gérée par le système. Son état actuel est indiqué ci-dessous.",
+      "systemSource": "Événement de la plateforme",
+      "title": "Automatisation désactivée",
+      "unavailable": "Automatisation introuvable ou accès non autorisé",
+      "viewAutomation": "Voir l’automatisation",
+      "workspaceFallback": "Espace de travail d’origine"
+    },
+    "retry": "Réessayer"
+  },
   "friendReferrals": {
     "copied": "Copié",
     "copyFailed": "Échec de la copie. Réessayez.",
@@ -6663,50 +6684,6 @@
       "thread_many": "{{value}} fils",
       "thread_other": "{{value}} fils"
     }
-  },
-  "userNotifications": {
-    "automationDisabled": {
-      "backToWorkflows": "Retour aux workflows",
-      "disabled": "Désactivée",
-      "disabledAt": "Désactivée le {{time}}",
-      "loadFailed": "Impossible de charger cette automatisation",
-      "loadingAutomation": "Chargement de l’automatisation",
-      "notNow": "Pas maintenant",
-      "otherWorkspace": "Cette automatisation se trouve dans {{workspace}}. Changez d’espace de travail pour la consulter.",
-      "reason_one": "{{count}} exécution a échoué. Vérifiez l’automatisation avant de la réactiver.",
-      "reason_many": "{{count}} exécutions consécutives ont échoué. Vérifiez l’automatisation avant de la réactiver.",
-      "reason_other": "{{count}} exécutions consécutives ont échoué. Vérifiez l’automatisation avant de la réactiver.",
-      "switchFailed": "Impossible de changer d’espace de travail. Réessayez ou utilisez le sélecteur d’espace de travail.",
-      "switchWorkspace": "Changer d’espace de travail",
-      "systemManaged": "Cette automatisation est gérée par le système. Son état actuel est indiqué ci-dessous.",
-      "systemSource": "Notification système",
-      "title": "Automatisation désactivée",
-      "unavailable": "Automatisation introuvable ou accès non autorisé",
-      "viewAutomation": "Voir l’automatisation",
-      "workspace": "Espace de travail",
-      "workspaceFallback": "Espace de travail d’origine"
-    },
-    "close": "Fermer",
-    "countUnavailable": "Nombre de notifications non lues indisponible",
-    "detailFailed": "Impossible de charger cette notification",
-    "empty": "Aucune notification pour le moment",
-    "emptyDescription": "Les nouveautés d’Okou apparaîtront ici.",
-    "loadFailed": "Impossible de charger les notifications",
-    "loading": "Chargement des notifications",
-    "loadMore": "Afficher les précédentes",
-    "nextPage": "Page suivante",
-    "pageNavigation": "Pages de ce message",
-    "pageOf": "Page {{current}} sur {{total}}",
-    "previousPage": "Page précédente",
-    "readAll": "Tout marquer comme lu",
-    "readFailed": "Impossible de marquer comme lu",
-    "retry": "Réessayer",
-    "sender": "L’équipe Okou",
-    "title": "Notifications",
-    "unread": "Non lu",
-    "unreadCount_one": "{{count}} notification non lue",
-    "unreadCount_many": "{{count}} notifications non lues",
-    "unreadCount_other": "{{count}} notifications non lues"
   },
   "vnc": {
     "add": "Ajouter un hôte",

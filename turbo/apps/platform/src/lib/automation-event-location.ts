@@ -1,17 +1,17 @@
 const UUID_PATH_SEGMENT =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
-export interface AutomationNotificationDestination {
+export interface AutomationEventDestination {
   readonly workflowId: string;
   readonly automationId: string;
   readonly workspaceId: string;
 }
 
-/** A notification can continue only to this exact, controlled management route. */
-export function automationNotificationDestination(
+/** A event can continue only to this exact, controlled management route. */
+export function automationEventDestination(
   pathname: string,
   search: string,
-): AutomationNotificationDestination | null {
+): AutomationEventDestination | null {
   const match = /^\/workflows\/([^/]+)\/automations$/u.exec(pathname);
   const params = new URLSearchParams(search);
   const workflowId = match?.[1];
@@ -29,8 +29,8 @@ export function automationNotificationDestination(
   return { workflowId, automationId, workspaceId };
 }
 
-export function automationNotificationLocation(
-  destination: AutomationNotificationDestination,
+export function automationEventLocation(
+  destination: AutomationEventDestination,
 ): string {
   const params = new URLSearchParams({
     automationId: destination.automationId,

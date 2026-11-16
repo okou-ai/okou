@@ -4363,6 +4363,27 @@
     "previousFeature": "Función anterior",
     "tryPrompt": "Probar esta tarea"
   },
+  "feedEvents": {
+    "automationDisabled": {
+      "backToWorkflows": "Volver a los flujos de trabajo",
+      "disabledAt": "Desactivada el {{time}}",
+      "loadFailed": "No se pudo cargar esta automatización",
+      "loadingAutomation": "Cargando automatización",
+      "otherWorkspace": "Esta automatización está en {{workspace}}. Cambia de espacio de trabajo para verla.",
+      "reason_one": "Ha fallado {{count}} ejecución. Revisa la automatización antes de volver a activarla.",
+      "reason_many": "Han fallado {{count}} ejecuciones consecutivas. Revisa la automatización antes de volver a activarla.",
+      "reason_other": "Han fallado {{count}} ejecuciones consecutivas. Revisa la automatización antes de volver a activarla.",
+      "switchFailed": "No se pudo cambiar de espacio de trabajo. Inténtalo de nuevo o usa el selector de espacios de trabajo.",
+      "switchWorkspace": "Cambiar de espacio de trabajo",
+      "systemManaged": "El sistema gestiona esta automatización. Su estado actual se muestra a continuación.",
+      "systemSource": "Evento de plataforma",
+      "title": "Automatización desactivada",
+      "unavailable": "No se encontró la automatización o no tienes acceso",
+      "viewAutomation": "Ver automatización",
+      "workspaceFallback": "Espacio de trabajo original"
+    },
+    "retry": "Reintentar"
+  },
   "friendReferrals": {
     "copied": "Copiado",
     "copyFailed": "No se pudo copiar. Inténtalo de nuevo.",
@@ -6663,50 +6684,6 @@
       "thread_many": "{{value}} hilos",
       "thread_other": "{{value}} hilos"
     }
-  },
-  "userNotifications": {
-    "automationDisabled": {
-      "backToWorkflows": "Volver a los flujos de trabajo",
-      "disabled": "Desactivada",
-      "disabledAt": "Desactivada el {{time}}",
-      "loadFailed": "No se pudo cargar esta automatización",
-      "loadingAutomation": "Cargando automatización",
-      "notNow": "Ahora no",
-      "otherWorkspace": "Esta automatización está en {{workspace}}. Cambia de espacio de trabajo para verla.",
-      "reason_one": "Ha fallado {{count}} ejecución. Revisa la automatización antes de volver a activarla.",
-      "reason_many": "Han fallado {{count}} ejecuciones consecutivas. Revisa la automatización antes de volver a activarla.",
-      "reason_other": "Han fallado {{count}} ejecuciones consecutivas. Revisa la automatización antes de volver a activarla.",
-      "switchFailed": "No se pudo cambiar de espacio de trabajo. Inténtalo de nuevo o usa el selector de espacios de trabajo.",
-      "switchWorkspace": "Cambiar de espacio de trabajo",
-      "systemManaged": "El sistema gestiona esta automatización. Su estado actual se muestra a continuación.",
-      "systemSource": "Notificación del sistema",
-      "title": "Automatización desactivada",
-      "unavailable": "No se encontró la automatización o no tienes acceso",
-      "viewAutomation": "Ver automatización",
-      "workspace": "Espacio de trabajo",
-      "workspaceFallback": "Espacio de trabajo original"
-    },
-    "close": "Cerrar",
-    "countUnavailable": "Recuento de notificaciones sin leer no disponible",
-    "detailFailed": "No se pudo cargar esta notificación",
-    "empty": "Aún no hay notificaciones",
-    "emptyDescription": "Las novedades de Okou aparecerán aquí.",
-    "loadFailed": "No se pudieron cargar las notificaciones",
-    "loading": "Cargando notificaciones",
-    "loadMore": "Mostrar anteriores",
-    "nextPage": "Página siguiente",
-    "pageNavigation": "Páginas de este mensaje",
-    "pageOf": "Página {{current}} de {{total}}",
-    "previousPage": "Página anterior",
-    "readAll": "Marcar todas como leídas",
-    "readFailed": "No se pudo marcar como leído",
-    "retry": "Reintentar",
-    "sender": "Equipo de Okou",
-    "title": "Notificaciones",
-    "unread": "Sin leer",
-    "unreadCount_one": "{{count}} notificación sin leer",
-    "unreadCount_many": "",
-    "unreadCount_other": "{{count}} notificaciones sin leer"
   },
   "vnc": {
     "add": "Añadir host",

@@ -7,24 +7,24 @@ import { and, eq } from "drizzle-orm";
 import { db$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
-export interface PreparedAutomationDisabledNotification {
+export interface PreparedAutomationDisabledFeedEvent {
   readonly automationId: string;
   readonly workflowId: string;
   readonly orgId: string;
   readonly userId: string;
   readonly automationName: string;
   readonly disabledAt: string;
-  readonly deliveryKey: string;
+  readonly id: string;
 }
 
 /** Prepare the owner's audience before the owning atomic disable statement. */
-export const prepareAutomationDisabledNotification$ = command(
+export const prepareAutomationDisabledFeedEvent$ = command(
   async (
     { get, set },
     automation: typeof workflowAutomations.$inferSelect,
     disabledAt: Date,
     signal?: AbortSignal,
-  ): Promise<PreparedAutomationDisabledNotification | null> => {
+  ): Promise<PreparedAutomationDisabledFeedEvent | null> => {
     if (
       !automation.enabled ||
       automation.kind !== "schedule" ||
@@ -38,13 +38,7 @@ export const prepareAutomationDisabledNotification$ = command(
       automation.ownerUserId,
       signal,
     );
-    if (
-      !isFeatureEnabled(
-        FeatureSwitchKey.AutomationDisableNotifications,
-        context,
-      ) ||
-      !isFeatureEnabled(FeatureSwitchKey.UserNotifications, context)
-    ) {
+    if (!isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, context)) {
       return null;
     }
     const [workflow] = await get(db$)
@@ -69,7 +63,7 @@ export const prepareAutomationDisabledNotification$ = command(
       automationName: workflow.name,
       disabledAt: disabledAt.toISOString(),
       // This identity belongs to this attempted transition, not the automation's lifetime.
-      deliveryKey: `automation-disabled:${automation.id}:${crypto.randomUUID()}`,
+      id: crypto.randomUUID(),
     };
   },
 );
