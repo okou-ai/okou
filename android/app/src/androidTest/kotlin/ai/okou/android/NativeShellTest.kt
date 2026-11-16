@@ -167,6 +167,9 @@ class NativeShellTest {
             click(R.string.settings)
             button(R.string.palette_blue_horizon).click()
             dismissPicker(R.string.palette_default, R.string.palette_blue_horizon)
+            await("Restored palette label is Traditional Chinese") {
+                findCurrent(By.pkg(app.packageName).text("藍色地平線")) != null
+            }
             button(R.string.language_zh_hant).click()
             dismissPicker(R.string.language_en_us, R.string.language_zh_hant)
         }
