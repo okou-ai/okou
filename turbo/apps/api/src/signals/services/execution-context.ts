@@ -1,7 +1,4 @@
-import {
-  preparedExecutionContextSchema,
-  type ExecutionInput,
-} from "@okouai/api-contracts/contracts/runners";
+import { preparedExecutionContextSchema } from "@okouai/api-contracts/contracts/runners";
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { computed, type Computed } from "ccstate";
@@ -40,7 +37,6 @@ export function createExecutionContext(
   input$: Computed<
     Promise<{
       readonly run: ExecutionContextRun;
-      readonly context: ExecutionInput;
       readonly facts: AdmittedExecutionFacts;
     }>
   >,

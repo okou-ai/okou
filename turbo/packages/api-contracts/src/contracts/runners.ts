@@ -23,7 +23,6 @@ import {
   type infer as zInfer,
 } from "zod";
 import { MIN_EPOCH_MS_TIMESTAMP } from "./api-start-time";
-import type { DISABLED_PAID_TOOLS_ENV_VAR } from "./paid-tools";
 import {
   executionFirewallInlineEntrySchema,
   executionFirewallsSchema,
@@ -819,7 +818,6 @@ const storedSkillBundleSchema = contentBundleSchema
 
 /**
  * Complete API-owned runtime preparation, assembled before direct dispatch.
- * The admission input below captures only irrecoverable decisions.
  */
 const preparedExecutionContextBaseSchema = object({
   // Exact Official content is frozen at admission.
@@ -1277,22 +1275,6 @@ export type ExecutionContext = zInfer<typeof executionContextSchema>;
 export type PreparedExecutionContext = zInfer<
   typeof preparedExecutionContextSchema
 >;
-/** In-memory admission input; current Run sources are reconstructed before dispatch. */
-export type ExecutionInput = Pick<
-  PreparedExecutionContext,
-  | "nativeContinuation"
-  | "customWorkflowSelection"
-  | "featureFlags"
-  | "realAgentInPreview"
-  | "apiStartTime"
-> & {
-  // Preview-only admission authorization; absence grants no bypass.
-  previewBypassAuthorized?: boolean;
-  platformEnvironment: {
-    OKOU_TOKEN?: string;
-    [DISABLED_PAID_TOOLS_ENV_VAR]: string;
-  };
-};
 export type PiModelConfig = zInfer<typeof piModelConfigSchema>;
 export type PiModelConfigV2 = zInfer<typeof piModelConfigV2Schema>;
 export type PiModelConfigV3 = zInfer<typeof piModelConfigV3Schema>;

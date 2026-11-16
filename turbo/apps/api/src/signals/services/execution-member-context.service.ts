@@ -9,6 +9,7 @@ import {
   unknown as zUnknown,
 } from "zod";
 import { modelSettingsSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { paidToolIdSchema } from "@okouai/api-contracts/contracts/paid-tools";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
@@ -49,7 +50,7 @@ const preferencesSchema = object({
 const switchSchema = array(
   object({ userId: string(), switches: record(string(), boolean()) }),
 );
-const toolSchema = array(object({ toolId: string() }));
+const toolSchema = array(object({ toolId: paidToolIdSchema }));
 
 /**
  * Composable member UNION; consumers decode only their own payload while

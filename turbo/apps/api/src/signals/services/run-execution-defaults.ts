@@ -13,19 +13,13 @@ export const DEFAULT_DISALLOWED_TOOLS = [
 
 /** Only platform values with a verified Run/configuration source. */
 export function runPlatformEnvironment(run: {
-  readonly agentId: string | null;
-  readonly chatThreadId: string | null;
+  readonly agentId: string;
+  readonly chatThreadId: string;
 }): Record<string, string> {
-  const values: Record<string, string> = {};
-  if (run.agentId !== null && run.chatThreadId !== null) {
-    values.OKOU_APP_URL = env("APP_URL");
-  }
-  if (run.agentId !== null) {
-    values.OKOU_AGENT_ID = run.agentId;
-  }
-  if (run.chatThreadId !== null) {
+  return {
+    OKOU_APP_URL: env("APP_URL"),
+    OKOU_AGENT_ID: run.agentId,
     // The in-sandbox CLI binds new automations to this admitted Thread.
-    values.OKOU_CHAT_THREAD_ID = run.chatThreadId;
-  }
-  return values;
+    OKOU_CHAT_THREAD_ID: run.chatThreadId,
+  };
 }
