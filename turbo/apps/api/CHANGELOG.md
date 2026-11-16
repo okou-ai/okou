@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.73.2](https://github.com/okou-ai/okou/compare/api-v2.73.1...api-v2.73.2) (2026-11-16)
+
+
+### Refactoring
+
+* **api:** remove thread launch request scaffolding ([#47688](https://github.com/okou-ai/okou/issues/47688)) ([073f49e](https://github.com/okou-ai/okou/commit/073f49ed8937a60f9b840bbf30e71cf1e406a0cf))
+
 ## [2.73.1](https://github.com/okou-ai/okou/compare/api-v2.73.0...api-v2.73.1) (2026-11-16)
 
 

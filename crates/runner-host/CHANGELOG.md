@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.10](https://github.com/okou-ai/okou/compare/runner-host-v0.11.9...runner-host-v0.11.10) (2026-11-16)
+
+
+### Bug Fixes
+
+* **runner:** observe ingress processes without querying systemd ([#47660](https://github.com/okou-ai/okou/issues/47660)) ([1a6bd09](https://github.com/okou-ai/okou/commit/1a6bd09c167b5490f632bd513b11c14378edeba8))
+
 ## [0.11.9](https://github.com/okou-ai/okou/compare/runner-host-v0.11.8...runner-host-v0.11.9) (2026-11-16)
 
 ## [0.11.8](https://github.com/okou-ai/okou/compare/runner-host-v0.11.7...runner-host-v0.11.8) (2026-11-15)
