@@ -124,6 +124,10 @@ Use the Worker URL returned by the authorized deployment. Do not put the
 control secret into a URL or share health responses publicly. An outbound
 Gateway WebSocket does not use Cloudflare's inbound WebSocket hibernation model.
 
+Discovery, metadata reads and pending handshakes allow health requests and
+receipt commits to proceed. `/stop` cancels the current connection attempt;
+its late result cannot reopen the relay or replace a subsequent `/start`.
+
 `/health.connection` separates connection recovery from API delivery failures:
 
 - `stage` and `stageStartedAt` identify discovery (`gateway-discovery` or

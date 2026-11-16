@@ -159,9 +159,9 @@ export class RelayFixture {
     return Response.json({ ok: true, outcome: "accepted" });
   };
   // Overrides Discord's /gateway/bot response when set.
-  gatewayReply: (() => Response) | null = null;
-  applicationReply: (() => Response) | null = null;
-  handshakeReply: (() => Response) | null = null;
+  gatewayReply: (() => Response | Promise<Response>) | null = null;
+  applicationReply: (() => Response | Promise<Response>) | null = null;
+  handshakeReply: (() => Response | Promise<Response>) | null = null;
   applicationMetadata: { id: string; flags?: number; flags_new?: string } = {
     id: APPLICATION_ID,
     flags: 0,

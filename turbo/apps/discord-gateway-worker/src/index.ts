@@ -54,6 +54,10 @@ interface DeadLetter {
   readonly reason: string;
   readonly bytes: number;
 }
+interface ConnectionAttempt {
+  readonly generation: number;
+  readonly controller: AbortController;
+}
 const outboxKey = (index: number) => {
   return `outbox:${index.toString().padStart(16, "0")}`;
 };
@@ -78,6 +82,7 @@ export class DiscordGateway {
   private state: RelayState = initialState();
   private serial: Promise<void> = Promise.resolve();
   private socket: WebSocket | null = null;
+  private connectionAttempt: ConnectionAttempt | null = null;
   private generation = 0;
   private heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   private helloTimer: ReturnType<typeof setTimeout> | null = null;
@@ -110,7 +115,7 @@ export class DiscordGateway {
     });
   }
 
-  private ordered<T>(task: () => Promise<T>): Promise<T> {
+  private ordered<T>(task: () => T | Promise<T>): Promise<T> {
     const result = this.serial.then(task);
     this.serial = result.then(
       () => {
@@ -138,6 +143,8 @@ export class DiscordGateway {
 
   private closeSocket(): void {
     this.generation++;
+    this.connectionAttempt?.controller.abort();
+    this.connectionAttempt = null;
     if (this.heartbeatTimer !== null) clearTimeout(this.heartbeatTimer);
     if (this.helloTimer !== null) clearTimeout(this.helloTimer);
     this.heartbeatTimer = null;
@@ -184,7 +191,7 @@ export class DiscordGateway {
     // The durable alarm recovers isolate loss; timers only maintain the live socket.
     const recovery = Date.now() + 30_000;
     const connect =
-      this.socket || this.state.pending >= MAX_OUTBOX
+      this.socket || this.connectionAttempt || this.state.pending >= MAX_OUTBOX
         ? recovery
         : Math.max(Date.now() + 100, this.state.reconnectAt);
     const delivery =
@@ -283,160 +290,242 @@ export class DiscordGateway {
   }
 
   async alarm(): Promise<void> {
-    await this.ordered(async () => {
+    const attempt = await this.ordered(async () => {
       if (this.env.DISCORD_GATEWAY_ENABLED !== "true") {
         this.closeSocket();
         this.connectionDiagnostics.transition("stopped");
         await this.save({ ...this.state, running: false });
         await this.ctx.storage.deleteAlarm();
-        return;
+        return null;
       }
-      if (!this.state.running) return;
+      if (!this.state.running) return null;
       if (!configured(this.env)) {
         await this.halt("configuration");
-        return;
+        return null;
       }
-      // Arm before external I/O. A process crash cannot strand a committed outbox.
-      await this.arm();
+      let nextAttempt: ConnectionAttempt | null = null;
       if (
         !this.socket &&
+        !this.connectionAttempt &&
         Date.now() >= this.state.reconnectAt &&
         this.state.pending < MAX_OUTBOX
       ) {
-        try {
-          await this.connect();
-        } catch (error) {
-          await this.retry({ reason: "connection-error", error });
-        }
+        nextAttempt = {
+          generation: ++this.generation,
+          controller: new AbortController(),
+        };
+        this.connectionAttempt = nextAttempt;
       }
+      // Arm before external I/O. A process crash cannot strand a committed outbox.
+      try {
+        await this.arm();
+      } catch (error) {
+        // The attempt has not started and must not block a retried alarm.
+        if (nextAttempt) this.connectionAttempt = null;
+        throw error;
+      }
+      return nextAttempt;
     });
+    if (attempt) this.ctx.waitUntil(this.connect(attempt));
     this.startFlush();
+  }
+
+  private isCurrentAttempt(attempt: ConnectionAttempt): boolean {
+    return (
+      this.connectionAttempt === attempt && this.active(attempt.generation)
+    );
   }
 
   private async discover(
     path: "/gateway/bot" | "/applications/@me",
+    attempt: ConnectionAttempt,
   ): Promise<Response | null> {
-    this.connectionDiagnostics.transition(
-      path === "/gateway/bot" ? "gateway-discovery" : "application-discovery",
-    );
+    const started = await this.ordered(() => {
+      if (!this.isCurrentAttempt(attempt)) return false;
+      this.connectionDiagnostics.transition(
+        path === "/gateway/bot" ? "gateway-discovery" : "application-discovery",
+      );
+      return true;
+    });
+    if (!started) return null;
     const response = await fetch(`https://discord.com/api/v10${path}`, {
       headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.any([
+        attempt.controller.signal,
+        AbortSignal.timeout(10_000),
+      ]),
       redirect: "manual",
     });
-    this.connectionDiagnostics.response(response.status);
-    if (response.status === 401 || response.status === 403) {
-      this.connectionDiagnostics.failure(
-        { reason: "authentication" },
-        this.state.failures,
-      );
-      await this.halt("gateway-authentication");
-      return null;
-    }
-    if (response.status === 429) {
-      const retryAfter = Number(response.headers.get("Retry-After"));
-      await response.body?.cancel();
-      await this.retry(
-        { reason: "rate-limit" },
-        false,
-        Math.max(
-          backoff(this.state.failures),
-          Number.isFinite(retryAfter)
-            ? Math.min(3_600_000, retryAfter * 1000)
-            : 0,
-        ),
-      );
-      return null;
-    }
-    if (!response.ok) throw new Error("Discord discovery failed");
-    return response;
+    if (response.status === 429) await response.body?.cancel();
+    return this.ordered(async () => {
+      if (!this.isCurrentAttempt(attempt)) return null;
+      this.connectionDiagnostics.response(response.status);
+      if (response.status === 401 || response.status === 403) {
+        this.connectionDiagnostics.failure(
+          { reason: "authentication" },
+          this.state.failures,
+        );
+        await this.halt("gateway-authentication");
+        return null;
+      }
+      if (response.status === 429) {
+        const retryAfter = Number(response.headers.get("Retry-After"));
+        await this.retry(
+          { reason: "rate-limit" },
+          false,
+          Math.max(
+            backoff(this.state.failures),
+            Number.isFinite(retryAfter)
+              ? Math.min(3_600_000, retryAfter * 1000)
+              : 0,
+          ),
+        );
+        return null;
+      }
+      if (!response.ok) throw new Error("Discord discovery failed");
+      return response;
+    });
   }
 
-  private async identifyGateway(): Promise<string | null> {
-    if (Date.now() < this.state.identifyAt) {
-      this.connectionDiagnostics.transition("identify-wait");
-      await this.save({ ...this.state, reconnectAt: this.state.identifyAt });
-      return null;
-    }
-    const response = await this.discover("/gateway/bot");
+  private async identifyGateway(
+    attempt: ConnectionAttempt,
+  ): Promise<string | null> {
+    const allowed = await this.ordered(async () => {
+      if (!this.isCurrentAttempt(attempt)) return false;
+      if (Date.now() < this.state.identifyAt) {
+        this.connectionDiagnostics.transition("identify-wait");
+        await this.save({ ...this.state, reconnectAt: this.state.identifyAt });
+        return false;
+      }
+      return true;
+    });
+    if (!allowed) return null;
+    const response = await this.discover("/gateway/bot", attempt);
     if (!response) return null;
     // `shards` is only Discord's recommendation. When sharding is actually
     // required, Discord closes the connection with fatal code 4011.
     const metadata = gatewayBotSchema.parse(await response.json());
     const limit = metadata.session_start_limit;
-    const activeBudget = Date.now() < this.state.identifyResetAt;
-    const remaining = activeBudget
-      ? Math.min(this.state.identifyRemaining, limit.remaining)
-      : limit.remaining;
-    const resetAt = Math.max(
-      this.state.identifyResetAt,
-      Date.now() + limit.reset_after,
+    const budget = await this.ordered(async () => {
+      if (!this.isCurrentAttempt(attempt)) return null;
+      const activeBudget = Date.now() < this.state.identifyResetAt;
+      const remaining = activeBudget
+        ? Math.min(this.state.identifyRemaining, limit.remaining)
+        : limit.remaining;
+      const resetAt = Math.max(
+        this.state.identifyResetAt,
+        Date.now() + limit.reset_after,
+      );
+      if (remaining === 0) {
+        this.connectionDiagnostics.transition("session-limit-wait");
+        await this.save({
+          ...this.state,
+          identifyRemaining: 0,
+          identifyResetAt: resetAt,
+          reconnectAt: resetAt,
+        });
+        return null;
+      }
+      return { remaining, resetAt };
+    });
+    if (!budget) return null;
+    const applicationResponse = await this.discover(
+      "/applications/@me",
+      attempt,
     );
-    if (remaining === 0) {
-      this.connectionDiagnostics.transition("session-limit-wait");
-      await this.save({
-        ...this.state,
-        identifyRemaining: 0,
-        identifyResetAt: resetAt,
-        reconnectAt: resetAt,
-      });
-      return null;
-    }
-    const applicationResponse = await this.discover("/applications/@me");
     if (!applicationResponse) return null;
     const application = discordApplicationSchema.parse(
       await applicationResponse.json(),
     );
-    if (application.id !== this.env.DISCORD_APPLICATION_ID) {
-      this.connectionDiagnostics.failure(
-        { reason: "application-mismatch" },
-        this.state.failures,
-      );
-      await this.halt("application-mismatch");
-      return null;
-    }
-    this.messageContentEnabled = application.messageContentEnabled;
-    // Reserve before any Identify reaches Discord, including response-loss/restart.
-    await this.save({
-      ...this.state,
-      identifyRemaining: remaining - 1,
-      identifyResetAt: resetAt,
-      identifyAt: Date.now() + 5000,
+    return this.ordered(async () => {
+      if (!this.isCurrentAttempt(attempt)) return null;
+      if (application.id !== this.env.DISCORD_APPLICATION_ID) {
+        this.connectionDiagnostics.failure(
+          { reason: "application-mismatch" },
+          this.state.failures,
+        );
+        await this.halt("application-mismatch");
+        return null;
+      }
+      this.messageContentEnabled = application.messageContentEnabled;
+      // Reserve before any Identify reaches Discord, including response-loss/restart.
+      await this.save({
+        ...this.state,
+        identifyRemaining: budget.remaining - 1,
+        identifyResetAt: budget.resetAt,
+        identifyAt: Date.now() + 5000,
+      });
+      return metadata.url;
     });
-    return metadata.url;
   }
 
-  private async connect(): Promise<void> {
-    const url = this.state.session
-      ? this.state.session.url
-      : await this.identifyGateway();
-    if (!url || !this.state.running) {
-      await this.arm();
-      return;
-    }
-    this.connectionDiagnostics.transition("websocket-handshake");
-    const handshakeAbort = new AbortController();
-    const handshakeTimeout = setTimeout(() => {
-      handshakeAbort.abort(
-        new DOMException("Gateway handshake timed out", "TimeoutError"),
-      );
-    }, 10_000);
-    let response: Response;
+  private async connect(attempt: ConnectionAttempt): Promise<void> {
     try {
-      response = await fetch(gatewayUrl(url), {
-        headers: { Upgrade: "websocket" },
-        signal: handshakeAbort.signal,
-        redirect: "manual",
+      const resumeUrl = await this.ordered(() => {
+        return this.isCurrentAttempt(attempt) ? this.state.session?.url : null;
+      });
+      const url = resumeUrl ?? (await this.identifyGateway(attempt));
+      if (!url) return;
+      const started = await this.ordered(() => {
+        if (!this.isCurrentAttempt(attempt)) return false;
+        this.connectionDiagnostics.transition("websocket-handshake");
+        return true;
+      });
+      if (!started) return;
+      const handshakeAbort = new AbortController();
+      const handshakeTimeout = setTimeout(() => {
+        handshakeAbort.abort(
+          new DOMException("Gateway handshake timed out", "TimeoutError"),
+        );
+      }, 10_000);
+      let response: Response;
+      try {
+        response = await fetch(gatewayUrl(url), {
+          headers: { Upgrade: "websocket" },
+          signal: AbortSignal.any([
+            attempt.controller.signal,
+            handshakeAbort.signal,
+          ]),
+          redirect: "manual",
+        });
+      } finally {
+        // An upgrade keeps its fetch signal: aborting it closes the live socket.
+        clearTimeout(handshakeTimeout);
+      }
+      await this.ordered(() => {
+        return this.acceptConnection(response, attempt);
+      });
+    } catch (error) {
+      await this.ordered(async () => {
+        if (this.isCurrentAttempt(attempt))
+          await this.retry({ reason: "connection-error", error });
       });
     } finally {
-      // An upgrade keeps its fetch signal: aborting it closes the live socket.
-      clearTimeout(handshakeTimeout);
+      await this.ordered(async () => {
+        if (this.connectionAttempt === attempt) {
+          this.connectionAttempt = null;
+          await this.arm();
+        }
+      });
+    }
+  }
+
+  private async acceptConnection(
+    response: Response,
+    attempt: ConnectionAttempt,
+  ): Promise<void> {
+    const socket = response.webSocket;
+    if (!this.isCurrentAttempt(attempt)) {
+      if (socket) {
+        socket.accept();
+        socket.close(4000, "Connection attempt cancelled");
+      }
+      return;
     }
     this.connectionDiagnostics.response(response.status);
-    const socket = response.webSocket;
     if (response.status !== 101 || !socket)
       throw new Error("Gateway upgrade failed");
-    const generation = ++this.generation;
+    const generation = attempt.generation;
     this.socket = socket;
     this.heartbeatDeadline = null;
     socket.accept();
@@ -520,6 +609,7 @@ export class DiscordGateway {
       );
     }, 15_000);
     await this.arm();
+    this.connectionAttempt = null;
   }
 
   private sendHeartbeat(generation: number): void {
