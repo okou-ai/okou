@@ -2401,6 +2401,21 @@
       "updated": "Permissões atualizadas",
       "updateFailed": "Não foi possível atualizar as permissões"
     },
+    "phoneUse": {
+      "allowChat": "Ativar seu telefone nesta conversa",
+      "allowChatDescription": "Abra Connectors aqui e ative o botão ao lado do telefone. Desative-o para revogar o acesso.",
+      "connectMyPhone": "Conectar meu telefone",
+      "done": "Concluído",
+      "loadError": "Não foi possível carregar os telefones.",
+      "loading": "Carregando telefones…",
+      "noPhones": "Nenhum telefone online",
+      "openApp": "Abrir Okou iOS Use",
+      "openAppDescription": "Instale a versão de desenvolvimento no iPhone, entre com a mesma conta e espaço de trabalho e inicie uma janela de controle.",
+      "setupDescription": "Permita que o Okou use seu iPhone nesta conversa.",
+      "startTask": "Enviar sua próxima tarefa",
+      "startTaskDescription": "Após autorizar o acesso, envie uma nova mensagem aqui. Mantenha a janela de controle ativa no telefone.",
+      "yourPhone": "Seu telefone"
+    },
     "promptDocumentTitle": "Prompt",
     "queue": {
       "aboutAutomationEvent": "Sobre este evento de automação",

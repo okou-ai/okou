@@ -95,9 +95,16 @@ export const phoneDeviceSchema = object({
   osVersion: string(),
   appVersion: string(),
   generation: number().int(),
+  online: boolean(),
   ready: boolean(),
   lastSeenAt: string(),
 });
+export type PhoneDevice = zInfer<typeof phoneDeviceSchema>;
+export const phoneUseSelectionSchema = object({
+  deviceId: uuid(),
+  generation: number().int().positive(),
+});
+export type PhoneUseSelection = zInfer<typeof phoneUseSelectionSchema>;
 const errors = {
   400: apiErrorSchema,
   401: apiErrorSchema,
@@ -187,6 +194,16 @@ export const phoneUseContract = c.router({
     }),
     responses: { ...errors, 200: object({ ok: literal(true) }) },
   },
+  chatGrant: {
+    ...base,
+    method: "GET",
+    path: "/api/phone-use/grants/:threadId",
+    pathParams: object({ threadId: uuid() }),
+    responses: {
+      ...errors,
+      200: object({ selection: phoneUseSelectionSchema.nullable() }),
+    },
+  },
   create: {
     ...base,
     method: "POST",
@@ -214,7 +231,7 @@ export const phoneUseContract = c.router({
     path: "/api/phone-use/devices/:deviceId/next",
     pathParams: devicePath,
     body: authority.extend({
-      threadId: uuid(),
+      threadId: uuid().optional(),
       activeRunId: uuid().optional(),
       activeGrantId: uuid().optional(),
     }),

@@ -58,8 +58,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Phone Use",
     description: "Internal cloud-controlled iOS device automation.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.SshChatApproval]: {
     maintainer: "yuma@okou.ai",

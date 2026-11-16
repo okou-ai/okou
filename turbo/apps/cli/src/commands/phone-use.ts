@@ -103,7 +103,7 @@ export const phoneUseCommand = new Command("phone-use")
   .description("Internal iPhone automation through Okou iOS Use")
   .addHelpText(
     "after",
-    `\nOpen Okou iOS Use, sign in, allow this chat and start a control window. Start a new Run after granting access.\nObserve before every input. Preserve operation IDs. Never replay unknown effects. Secrets and device unlock require the owner.\nFor send/publish/pay/order/delete and other sensitive commits, use --confirm with the exact consequence. Only the owner can confirm in Use. On approval_required, tell the owner to review in Use, then wait <operationId> without ending the Run or resubmitting. Ordinary navigation and scrolling run automatically.\n`,
+    `\nOpen Okou iOS Use, sign in and start a control window. Turn on your phone in this chat's Connectors menu. Start a new Run after granting access.\nObserve before every input. Preserve operation IDs. Never replay unknown effects. Secrets and device unlock require the owner.\nFor send/publish/pay/order/delete and other sensitive commits, use --confirm with the exact consequence. Only the owner can confirm in Use. On approval_required, tell the owner to review in Use, then wait <operationId> without ending the Run or resubmitting. Ordinary navigation and scrolling run automatically.\n`,
   );
 phoneUseCommand
   .command("devices")

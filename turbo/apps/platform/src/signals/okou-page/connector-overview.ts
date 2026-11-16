@@ -1,16 +1,40 @@
 import { command, computed, state } from "ccstate";
 import { connectedConnectorsContract } from "@okouai/api-contracts/client/connected-connectors";
 import { remotesContract } from "@okouai/api-contracts/client/remotes";
+import { phoneUseContract } from "@okouai/api-contracts/client/phone-use";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept } from "../../lib/accept.ts";
 import { sortRemoteHosts } from "../../lib/remote-resource-order.ts";
 import { locale$ } from "../locale.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
-import { resetSignal } from "../utils.ts";
+import { resetSignal, setLoop } from "../utils.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 
 function resourceRequests(signal?: AbortSignal) {
   return {
+    phones: async (createClient: ApiClientFactory) => {
+      const result = await accept(
+        createClient(phoneUseContract).devices({ fetchOptions: { signal } }),
+        [200],
+        signal,
+        { showErrorToast: false },
+      );
+      return result.body.devices;
+    },
+    phoneGrant: async (createClient: ApiClientFactory, threadId: string) => {
+      const result = await accept(
+        createClient(phoneUseContract).chatGrant({
+          params: { threadId },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+        { showErrorToast: false },
+      );
+      return result.body.selection;
+    },
     connected: async (createClient: ApiClientFactory) => {
       const result = await accept(
         createClient(connectedConnectorsContract).list({
@@ -35,9 +59,10 @@ function resourceRequests(signal?: AbortSignal) {
 }
 
 /** Resource snapshots belong to their visible consumer, never to an Ably loop. */
-export function createConnectorResourceSignals() {
+export function createConnectorResourceSignals(threadId?: string) {
   const connectedVersion$ = state(0);
   const remotesVersion$ = state(0);
+  const phonesVersion$ = state(0);
   const requests$ = state(resourceRequests());
   const openedVersion$ = state(0);
   const resetRequests$ = resetSignal();
@@ -49,10 +74,40 @@ export function createConnectorResourceSignals() {
     get(remotesVersion$);
     return await get(requests$).remotes(get(apiClient$));
   });
+  const phoneUseDevices$ = computed(async (get) => {
+    if (!get(featureSwitch$)[FeatureSwitchKey.PhoneUse]) {
+      return [];
+    }
+    get(phonesVersion$);
+    return await get(requests$).phones(get(apiClient$));
+  });
+  const reloadPhoneUseDevices$ = command(({ set }) => {
+    set(phonesVersion$, (version) => {
+      return version + 1;
+    });
+  });
+  const phoneUseGrant$ = computed(async (get) => {
+    if (!threadId || !get(featureSwitch$)[FeatureSwitchKey.PhoneUse]) {
+      return null;
+    }
+    get(phonesVersion$);
+    return await get(requests$).phoneGrant(get(apiClient$), threadId);
+  });
   const open$ = command(
-    ({ set }, watchConnectors: boolean, signal: AbortSignal) => {
+    ({ get, set }, watchConnectors: boolean, signal: AbortSignal) => {
       const ownerSignal = set(resetRequests$, signal);
       set(requests$, resourceRequests(ownerSignal));
+      if (get(featureSwitch$)[FeatureSwitchKey.PhoneUse]) {
+        setLoop(
+          () => {
+            set(reloadPhoneUseDevices$);
+            return false;
+          },
+          10_000,
+          ownerSignal,
+          { testIntervalMs: 10_000 },
+        );
+      }
       if (watchConnectors) {
         set(
           setAblyInvalidationLoop$,
@@ -93,6 +148,9 @@ export function createConnectorResourceSignals() {
   return {
     connected$,
     remotes$,
+    phoneUseDevices$,
+    phoneUseGrant$,
+    reloadPhoneUseDevices$,
     open$,
     close$,
     openedVersion$: computed((get) => {
