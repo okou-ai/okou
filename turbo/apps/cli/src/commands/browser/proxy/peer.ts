@@ -1,5 +1,5 @@
 import type { WebSocket as ClientSocket } from "ws";
-import { ProtocolError, record, scopedError } from "./wire";
+import { ProtocolError, record, scopedError, type PeerWire } from "./wire";
 import {
   WindowScope,
   targetInfo,
@@ -112,7 +112,7 @@ export class ProxyPeer {
 
   constructor(
     private readonly downstream: ClientSocket,
-    private readonly upstream: WebSocket,
+    private readonly upstream: PeerWire,
     private readonly scope: WindowScope,
     private readonly finished: () => void,
   ) {
@@ -137,21 +137,10 @@ export class ProxyPeer {
     downstream.on("close", () => {
       return this.close();
     });
-    upstream.addEventListener("error", () => {
+    upstream.onClose(() => {
       return this.close();
     });
-    upstream.addEventListener("close", () => {
-      return this.close();
-    });
-    upstream.addEventListener("message", ({ data }: { data: unknown }) => {
-      if (typeof data !== "string") return this.close();
-      let value: unknown;
-      try {
-        value = JSON.parse(data);
-      } catch {
-        return this.close();
-      }
-      if (!record(value)) return this.close();
+    upstream.onMessage((value, data) => {
       const channel =
         typeof value.sessionId === "string" ? value.sessionId : undefined;
       const internal = this.internal.get(key(channel, value.id));
@@ -618,6 +607,11 @@ export class ProxyPeer {
     raw: string,
     inherited?: string,
   ): Promise<void> {
+    // CDP's empty session ID denotes the current root, including nested messages.
+    if (message.sessionId === "") {
+      message = { ...message, sessionId: undefined };
+      raw = JSON.stringify(message);
+    }
     const channel =
       typeof message.sessionId === "string" ? message.sessionId : inherited;
     const params = record(message.params) ? message.params : {};
@@ -664,13 +658,8 @@ export class ProxyPeer {
       }
       if (await this.controlCommand(method, params, channel, respond)) return;
       raw = await this.rewrite(message, raw, channel);
-      if (inherited && message.sessionId === undefined)
-        raw = JSON.stringify({
-          ...(JSON.parse(raw) as Message),
-          sessionId: channel,
-        });
       this.requests.set(key(channel, message.id), accepted);
-      this.upstream.send(raw);
+      this.upstream.send(raw, channel);
     } catch (error) {
       const failure = {
         id: message.id,
@@ -945,7 +934,7 @@ export class ProxyPeer {
     }, 15_000);
     this.internal.set(key(sessionId, id), { promise, resolve, reject, timer });
     try {
-      this.upstream.send(JSON.stringify({ id, method, params, sessionId }));
+      this.upstream.send(JSON.stringify({ id, method, params }), sessionId);
     } catch {
       clearTimeout(timer);
       this.internal.delete(key(sessionId, id));

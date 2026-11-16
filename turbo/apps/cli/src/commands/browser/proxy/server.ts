@@ -38,7 +38,6 @@ export async function startWindowProxy(
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 0 });
   const peers = new Set<ProxyPeer>();
   const path = "/devtools/browser";
-  const handshakes = new Set<() => void>();
   let finished!: () => void;
   const closed = new Promise<void>((resolve) => {
     finished = resolve;
@@ -61,13 +60,10 @@ export async function startWindowProxy(
       clearTimeout(unclaimed);
       signal.removeEventListener("abort", abort);
       scope?.close();
-      for (const cancel of handshakes) cancel();
-      handshakes.clear();
-      for (const peer of peers) peer.close();
+      control?.close();
       sockets.close();
       server.close();
       server.closeAllConnections();
-      control?.close();
       try {
         await native?.close();
       } catch (error) {
@@ -100,61 +96,41 @@ export async function startWindowProxy(
     signal.throwIfAborted();
     if (closing) throw new Error("Scoped Browser setup was retired");
     const activeScope = scope;
+    const activeControl = control;
     server.on("upgrade", (request, socket, head) => {
       if (request.url !== path || closing) {
         socket.destroy();
         return;
       }
-      const upstream = new WebSocket(endpoint);
-      const cancel = () => {
-        clearTimeout(timer);
-        socket.destroy();
-        upstream.close();
-        handshakes.delete(cancel);
+      const channel = activeControl.openPeer();
+      const disconnect = () => {
+        channel.close();
       };
-      const timer = setTimeout(() => {
-        cancel();
-      }, 15_000);
-      handshakes.add(cancel);
-      const lost = () => {
-        upstream.close();
-      };
-      socket.once("close", lost);
-      upstream.addEventListener("error", () => {
+      socket.once("close", disconnect);
+      socket.once("error", disconnect);
+      channel.onClose(() => {
         socket.destroy();
       });
-      upstream.addEventListener("close", () => {
-        clearTimeout(timer);
-        socket.destroy();
-        handshakes.delete(cancel);
-      });
-      upstream.addEventListener(
-        "open",
-        () => {
-          clearTimeout(timer);
-          handshakes.delete(cancel);
-          socket.removeListener("close", lost);
-          if (closing || socket.destroyed) {
-            upstream.close();
+      channel.opened
+        .then(() => {
+          if (closing) {
+            channel.close();
             return;
           }
+          if (channel.closed) return;
           sockets.handleUpgrade(request, socket, head, (downstream) => {
             claimed = true;
             clearTimeout(unclaimed);
-            const peer = new ProxyPeer(
-              downstream,
-              upstream,
-              activeScope,
-              () => {
-                peers.delete(peer);
-                if (claimed && !peers.size) abort();
-              },
-            );
+            const peer = new ProxyPeer(downstream, channel, activeScope, () => {
+              peers.delete(peer);
+              if (claimed && !peers.size) abort();
+            });
             peers.add(peer);
           });
-        },
-        { once: true },
-      );
+        })
+        .catch(() => {
+          channel.close();
+        });
     });
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
