@@ -2988,8 +2988,8 @@ export function createThreadClaimRunObjects(
       const [selected, context] = await Promise.all([
         get(runArgs$),
         get(preparedRunPlan$),
-        // Start session-based execution alongside firewall/body assembly,
-        // rather than only after the completed create arguments are available.
+        // Start session-based execution alongside connector and prompt
+        // preparation, before the complete launch arguments are available.
         get(execution$),
       ]);
       if (!selected || isRouteError(selected)) {
