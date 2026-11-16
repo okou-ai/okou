@@ -998,6 +998,49 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
     body: { operation: row ? operationView(row) : null },
   };
 });
+const retainScreenshot$ = command(
+  async (
+    { set },
+    upload: {
+      operationId: string;
+      generation: number;
+      orgId: string;
+      userId: string;
+      base64: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const image = Buffer.from(upload.base64, "base64");
+    if (
+      image.length > 6_000_000 ||
+      image.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a"
+    )
+      {throw new PhoneUseError(400, "A bounded PNG screenshot is required");}
+    const key = `phone-use/${upload.orgId}/${upload.userId}/${upload.operationId}/screenshot.png`;
+    // Link retention before the external upload. Cancellation may retire the
+    // result while upload is in flight; its private image must remain collectible.
+    const [linked] = await set(writeDb$)
+      .update(operations)
+      .set({ screenshotKey: key })
+      .where(
+        and(
+          eq(operations.id, upload.operationId),
+          eq(operations.claimedGeneration, upload.generation),
+        ),
+      )
+      .returning({ id: operations.id });
+    signal.throwIfAborted();
+    if (!linked) {missing();}
+    await set(putS3Object$, {
+      bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+      key,
+      body: image,
+      contentType: "image/png",
+    });
+    signal.throwIfAborted();
+    return key;
+  },
+);
 const completeBody$ = bodyResultOf(contract.complete),
   completePath$ = pathParamsOf(contract.complete);
 const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -1039,21 +1082,17 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   let screenshotKey: string | undefined;
   if (result.screenshotBase64) {
-    const image = Buffer.from(result.screenshotBase64, "base64");
-    if (
-      image.length > 6_000_000 ||
-      image.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a"
-    ) {
-      throw new PhoneUseError(400, "A bounded PNG screenshot is required");
-    }
-    screenshotKey = `phone-use/${device.orgId}/${device.userId}/${row.id}/screenshot.png`;
-    await set(putS3Object$, {
-      bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-      key: screenshotKey,
-      body: image,
-      contentType: "image/png",
-    });
-    signal.throwIfAborted();
+    screenshotKey = await set(
+      retainScreenshot$,
+      {
+        operationId: row.id,
+        generation: device.generation,
+        orgId: device.orgId,
+        userId: device.userId,
+        base64: result.screenshotBase64,
+      },
+      signal,
+    );
   }
   await set(writeDb$)
     .update(operations)

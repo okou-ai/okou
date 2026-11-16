@@ -272,7 +272,11 @@ test(
           body: {
             generation,
             operationId: id,
-            result: { status: "approval_required", data: { target: "Send" } },
+            result: {
+              status: "approval_required",
+              data: { target: "Send" },
+              screenshotBase64: "iVBORw0KGgo=",
+            },
           },
         }),
         [200],
@@ -285,6 +289,10 @@ test(
       );
     });
     expect(pending.body.status).toBe("approval_required");
+    expect(pending.body.result).toMatchObject({
+      target: "Send",
+      screenshotPhase: "before_input",
+    });
     // Review remains possible after the ordinary 45-second dispatch deadline.
     mockNow(new Date(submitted.body.expiresAt).getTime() + 15_000);
     await scenario.run(async () => {
