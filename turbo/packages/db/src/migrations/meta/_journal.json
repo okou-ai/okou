@@ -3340,6 +3340,13 @@
       "when": 1794802317364,
       "tag": "1555_dear_sway",
       "breakpoints": true
+    },
+    {
+      "idx": 1556,
+      "version": "7",
+      "when": 1794810429438,
+      "tag": "1556_cap_connector_rewards",
+      "breakpoints": true
     }
   ]
 }

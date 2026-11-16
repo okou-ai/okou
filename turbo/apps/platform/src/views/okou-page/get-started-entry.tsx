@@ -288,7 +288,10 @@ function useQuestState(
         )
       : null;
   }
-  if (quest.key === "invite" && quest.limit !== null) {
+  if (
+    (quest.key === "connector" || quest.key === "invite") &&
+    quest.limit !== null
+  ) {
     const counts = `${formatLocalizedNumber(quest.claimedCount)}/${formatLocalizedNumber(quest.limit)}`;
     return quest.pendingCount > 0
       ? `${counts} · ${t(
