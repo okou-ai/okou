@@ -1,10 +1,11 @@
 import { command, computed, state } from "ccstate";
 import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
-import { selectChatThreadFilter$ } from "../okou-page/chat-thread-filter-selection.ts";
+import { setChatThreadArchivedFilter$ } from "../okou-page/chat-thread-filter.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { onDomEventFn } from "../utils.ts";
 import { archiveProject$, restoreProject$ } from "./projects.ts";
+import { locateProject$ } from "./project-navigation.ts";
 export const setProjectArchivedWithFeedback$ = command(
   async ({ get, set }, id: string, archived: boolean, signal: AbortSignal) => {
     const changed = await set(
@@ -47,12 +48,12 @@ export const setProjectArchivedWithFeedback$ = command(
                 label: i18n.t(($) => {
                   return $.projects.viewArchives;
                 }),
-                onClick: onDomEventFn(async () => {
-                  await set(
-                    selectChatThreadFilter$,
-                    "archived",
-                    feedbackSignal,
-                  );
+                onClick: onDomEventFn(() => {
+                  if (feedbackSignal.aborted) {
+                    return;
+                  }
+                  set(setChatThreadArchivedFilter$);
+                  set(locateProject$, id);
                 }),
               },
             }

@@ -308,6 +308,78 @@ test("Archive feedback opens the existing Archived filter and its original Resto
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
+test("View archives locates the archived Project without leaving its page or replacing its draft", async () => {
+  const unrelatedArchive = {
+    ...continuityThread(350, 1, "Unrelated archived conversation"),
+    archived: true,
+  };
+  const member = {
+    ...continuityThread(350, 2, "Launch conversation"),
+    projectId,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 350,
+    threads: [unrelatedArchive, member],
+  });
+  context.mocks.data.onboardingStatus({
+    defaultAgentId: unrelatedArchive.agentId,
+  });
+  installProjectApi();
+  await setupPage({
+    context,
+    path: `/projects/${projectId}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  await screen.findByRole("textbox", { name: "Message" });
+  await fill(composer(), "Keep my unsent launch plan while viewing archives");
+  expect(button("Show or hide chats in Launch", projectRow())).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  click(menuItem("Archive project", await openProjectMenu()));
+  await expect(
+    screen.findByText("Project archived"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByText(bannerText)).toBeInTheDocument();
+  expect(composer()).toHaveTextContent(
+    "Keep my unsent launch plan while viewing archives",
+  );
+  expect(location.pathname).toBe(`/projects/${projectId}`);
+
+  click(button("View archives", archiveToast()));
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/projects/${projectId}`);
+    expect(
+      button("Show or hide chats in Launch", projectRow()),
+    ).toHaveAttribute("aria-expanded", "true");
+    expect(
+      document.querySelector(
+        `[data-project-row-id="${projectId}"] [data-sidebar-chat-thread-id="${member.id}"]`,
+      ),
+    ).toHaveTextContent("Launch conversation");
+    expect(
+      document.querySelector(
+        `[data-sidebar-chat-thread-id="${unrelatedArchive.id}"]`,
+      ),
+    ).toHaveTextContent("Unrelated archived conversation");
+  });
+  expect(
+    document
+      .querySelector(`[data-sidebar-chat-thread-id="${unrelatedArchive.id}"]`)
+      ?.closest("[data-project-row-id]"),
+  ).toBeNull();
+  expect(
+    menuItem("Restore project", await openProjectMenu()),
+  ).toBeInTheDocument();
+  expect(screen.getByText(bannerText)).toBeInTheDocument();
+  expect(composer()).toHaveTextContent(
+    "Keep my unsent launch plan while viewing archives",
+  );
+  expect(button("Remove Launch")).toBeInTheDocument();
+  expect(button("Send")).toBeEnabled();
+});
+
 test("A rejected archive leaves the Project visible with its draft and can be retried", async () => {
   const ordinary = continuityThread(343, 1, "Ordinary conversation");
   const workspace = installContinuityWorkspace(context, {
