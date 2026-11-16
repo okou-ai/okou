@@ -8,6 +8,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { browserRoutes } from "../browser";
+import { controlBrowserDeadline } from "./helpers/browser-deadline";
 import { installBrowserWindowContentCommands } from "./helpers/browser-native-window";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
@@ -65,17 +66,22 @@ describe("server-owned shared Browser recovery", () => {
     });
   });
 
-  it("cancels a losing profile cleanup at its real deadline without deleting the winner", async () => {
+  it("cancels a losing profile cleanup at its deadline without deleting the winner", async () => {
     const both = createDeferredPromise<void>(context.signal);
+    const releaseLosingProfile = createDeferredPromise<void>(context.signal);
     const deleting = createDeferredPromise<string>(context.signal);
     const cancelled = createDeferredPromise<void>(context.signal);
     let arrivals = 0;
     const f = await fixture(
       profileProvider(async () => {
-        if (++arrivals === 2) {
+        const arrival = ++arrivals;
+        if (arrival === 2) {
           both.resolve();
         }
         await both.promise;
+        if (arrival === 2) {
+          await releaseLosingProfile.promise;
+        }
       }),
     );
     await f.owned.run(async () => {
@@ -95,8 +101,15 @@ describe("server-owned shared Browser recovery", () => {
           },
         ),
       );
-      const opening = settleIncludingAbort(Promise.all([use(a), use(b)]));
+      const requests = [use(a), use(b)] as const;
+      const opening = settleIncludingAbort(Promise.all(requests));
       const checks = await settleIncludingAbort(async () => {
+        expect((await Promise.race(requests)).status).toBe(200);
+        // Arm only after the winner has finished its own native operations.
+        const expireDeadline = controlBrowserDeadline(context);
+        releaseLosingProfile.resolve();
+        await deleting.promise;
+        expireDeadline();
         const [result, deletedProfileId] = await Promise.all([
           opening,
           deleting.promise,
@@ -143,12 +156,15 @@ describe("server-owned shared Browser recovery", () => {
           window: winner.body.browser.window,
         });
       });
+      if (!releaseLosingProfile.settled()) {
+        releaseLosingProfile.resolve();
+      }
       await opening;
       if (!checks.ok) {
         throw checks.error;
       }
     });
-  }, 20_000);
+  });
 
   it("cleans an unadopted profile after the Run ends during preparation", async () => {
     const created = createDeferredPromise<void>(context.signal);
