@@ -3,8 +3,13 @@ import {
   HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
+  CreateMultipartUploadCommand,
+  ListPartsCommand,
+  CompleteMultipartUploadCommand,
+  UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import { gzipSync } from "node:zlib";
+import { createHash } from "node:crypto";
 
 import type { TestContext } from "../../../../__tests__/test-context";
 import { nowDate } from "../../../../lib/time";
@@ -39,9 +44,9 @@ function objectId(bucket: string, key: string): string {
   return `${bucket}\0${key}`;
 }
 
-function notFoundError(key: string): Error {
+function notFoundError(key: string, name = "NotFound"): Error {
   return Object.assign(new Error(`Missing S3 object: ${key}`), {
-    name: "NotFound",
+    name,
     $metadata: { httpStatusCode: 404 },
   });
 }
@@ -102,12 +107,25 @@ export function storedTarGz(
 
 export function installS3Fixture(context: TestContext) {
   const objects = new Map<string, StoredObject>();
+  const multipartUploads = new Map<
+    string,
+    {
+      bucket: string;
+      key: string;
+      contentType: string | undefined;
+      metadata: Readonly<Record<string, string>>;
+      parts: Map<number, Buffer>;
+    }
+  >();
   const signedPuts = new Map<
     string,
     {
       bucket: string;
       key: string;
       metadata: Readonly<Record<string, string>>;
+      contentLength: number | undefined;
+      uploadId?: string;
+      partNumber?: number;
     }
   >();
   let signature = 0;
@@ -118,11 +136,66 @@ export function installS3Fixture(context: TestContext) {
       : {};
   }
 
+  function multipartResponse(command: unknown, input: Record<string, unknown>) {
+    const bucket = typeof input.Bucket === "string" ? input.Bucket : "";
+    const key = typeof input.Key === "string" ? input.Key : "";
+    if (command instanceof CreateMultipartUploadCommand) {
+      const uploadId = `multipart-${signature++}`;
+      multipartUploads.set(uploadId, {
+        bucket,
+        key,
+        contentType: command.input.ContentType,
+        metadata: readMetadata(input),
+        parts: new Map(),
+      });
+      return Promise.resolve({ UploadId: uploadId });
+    }
+    if (
+      command instanceof ListPartsCommand ||
+      command instanceof CompleteMultipartUploadCommand
+    ) {
+      const upload = multipartUploads.get(command.input.UploadId ?? "");
+      if (!upload || upload.bucket !== bucket || upload.key !== key) {
+        return Promise.reject(notFoundError(key, "NoSuchUpload"));
+      }
+      const parts = [...upload.parts.entries()].sort(([a], [b]) => {
+        return a - b;
+      });
+      if (command instanceof ListPartsCommand) {
+        return Promise.resolve({
+          Parts: parts.map(([partNumber, body]) => {
+            return {
+              PartNumber: partNumber,
+              ETag: `"${partNumber}"`,
+              Size: body.length,
+            };
+          }),
+        });
+      }
+      objects.set(objectId(bucket, key), {
+        body: Buffer.concat(
+          parts.map(([, body]) => {
+            return body;
+          }),
+        ),
+        contentType: upload.contentType,
+        metadata: upload.metadata,
+      });
+      multipartUploads.delete(command.input.UploadId!);
+      return Promise.resolve({});
+    }
+    return null;
+  }
+
   context.mocks.s3.send.mockImplementation((command: unknown) => {
     const input = commandInput(command);
     const bucket = typeof input.Bucket === "string" ? input.Bucket : "";
     const key = typeof input.Key === "string" ? input.Key : "";
     const id = objectId(bucket, key);
+    const multipart = multipartResponse(command, input);
+    if (multipart) {
+      return multipart;
+    }
 
     if (command instanceof PutObjectCommand) {
       if (input.IfNoneMatch === "*" && objects.has(id)) {
@@ -182,8 +255,9 @@ export function installS3Fixture(context: TestContext) {
             Body: byteStream(object.body),
             ContentLength: object.body.length,
             ContentType: object.contentType,
+            ETag: `"${createHash("md5").update(object.body).digest("hex")}"`,
           })
-        : Promise.reject(notFoundError(key));
+        : Promise.reject(notFoundError(key, "NoSuchKey"));
     }
     return Promise.resolve({});
   });
@@ -197,11 +271,24 @@ export function installS3Fixture(context: TestContext) {
       const url = `https://r2.example.test/signed/${signature.toString()}?bucket=${encodeURIComponent(bucket)}&object=${encodeURIComponent(key)}`;
       // Include the immutable object identity so a URL retained in the shared
       // presign cache remains readable by the next fixture instance.
-      if (command instanceof PutObjectCommand) {
+      if (
+        command instanceof PutObjectCommand ||
+        command instanceof UploadPartCommand
+      ) {
         signedPuts.set(url, {
           bucket: typeof input.Bucket === "string" ? input.Bucket : "",
           key,
           metadata: readMetadata(input),
+          contentLength:
+            typeof input.ContentLength === "number"
+              ? input.ContentLength
+              : undefined,
+          ...(command instanceof UploadPartCommand
+            ? {
+                uploadId: command.input.UploadId,
+                partNumber: command.input.PartNumber,
+              }
+            : {}),
         });
       }
       return Promise.resolve(url);
@@ -213,6 +300,20 @@ export function installS3Fixture(context: TestContext) {
       const target = signedPuts.get(uploadUrl);
       if (!target) {
         throw new Error(`Unknown presigned PUT: ${uploadUrl}`);
+      }
+      if (
+        target.contentLength !== undefined &&
+        body.length !== target.contentLength
+      ) {
+        throw new Error("SignatureDoesNotMatch: content-length");
+      }
+      if (target.uploadId !== undefined) {
+        const upload = multipartUploads.get(target.uploadId);
+        if (!upload || target.partNumber === undefined) {
+          throw new Error("NoSuchUpload");
+        }
+        upload.parts.set(target.partNumber, body);
+        return;
       }
       objects.set(objectId(target.bucket, target.key), {
         body,
