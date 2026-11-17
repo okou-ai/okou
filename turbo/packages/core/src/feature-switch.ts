@@ -46,6 +46,12 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.OnboardingMultipleOutputs]: {
+    maintainer: "scarlettx@okou.ai",
+    description:
+      "Honor multiple output formats selected by onboarding task links.",
+    enabled: true,
+  },
   [FeatureSwitchKey.ArtifactGenerationTiming]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Artifact generation phase timing",

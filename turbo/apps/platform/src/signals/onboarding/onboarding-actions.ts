@@ -40,7 +40,7 @@ import {
 import {
   hasUnresolvedOnboardingPastedFiles$,
   onboardingDraft$,
-  onboardingPromptOutput$,
+  onboardingPromptOutputs$,
 } from "./onboarding-state.ts";
 import {
   onboardingOutputSuffix,
@@ -58,6 +58,7 @@ const ONBOARDING_TRANSIENT_PARAMS = [
   "onboarding_template",
   "redeemCode",
   "skipOnboarding",
+  "outputFormats",
 ] as const;
 
 /**
@@ -287,11 +288,11 @@ export const runOnboardingRequest$ = command(
     { get, set },
     request: string,
     template: string | null,
-    output: StartingPromptOutput | null,
+    outputs: readonly StartingPromptOutput[],
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
-    const prompt = request + onboardingOutputSuffix(output);
+    const prompt = request + outputs.map(onboardingOutputSuffix).join("");
     // Guard the command as well as the controls, before resolving, saving or
     // completing anything. Output instructions count toward the wire limit.
     if (prompt.length > MARKETING_HANDOFF_PROMPT_MAX_CHARS) {
@@ -353,7 +354,7 @@ export const runOnboardingRequest$ = command(
 export const runPromptOnboarding$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     const { prompt } = get(onboardingDraft$);
-    const output = get(onboardingPromptOutput$);
+    const output = get(onboardingPromptOutputs$);
     const template = get(searchParams$).get("handoff")
       ? (get(marketingHandoff$)?.manifest.options.template ?? null)
       : get(searchParams$).get("template")?.trim() || null;
