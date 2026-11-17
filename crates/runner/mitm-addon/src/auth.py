@@ -1,10 +1,10 @@
-"""Firewall auth flow orchestration and request mutation.
+"""Firewall auth flow orchestration, request mutation and response recovery.
 
 This module owns header/query injection, auth.base forwarding, local failure
-policy and credential resolution. Flow-local SigV4 request preparation and
-signing writeback live in aws_sigv4_flow. Cache state and platform API calls
-live in dedicated owner modules. auth_base_transport owns raw forwarded-response
-materialization and representation metadata.
+policy, credential resolution and response-auth failure recovery. Flow-local
+SigV4 request preparation and signing writeback live in aws_sigv4_flow. Cache
+state and platform API calls live in dedicated owner modules. auth_base_transport
+owns raw forwarded-response materialization and representation metadata.
 """
 
 import asyncio
@@ -105,6 +105,7 @@ class _FirewallAuthPlanFailure(Enum):
 type CurrentFirewallAuthorizationGuard = Callable[[], bool]
 
 
+_HTTP_STATUS_UNAUTHORIZED = 401
 _HTTP_STATUS_CLIENT_ERROR_MIN = 400
 _HTTP_STATUS_SERVER_ERROR_MIN = 500
 _HTTP_STATUS_BAD_GATEWAY = 502
@@ -197,11 +198,51 @@ class _NetworkAdmission:
     cache_entry_identity: FirewallAuthCacheEntryIdentity
 
 
-def invalidate_network_admission(flow: http.HTTPFlow) -> None:
+def _invalidate_network_admission(flow: http.HTTPFlow) -> None:
     """A rejected physical flow can invalidate only the network cache entry it consumed."""
     retained = flow.metadata.get(metadata_keys.CUSTOM_NETWORK_ADMISSION)
     if isinstance(retained, _NetworkAdmission):
         invalidate_cached_firewall_headers(retained.cache_key, retained.cache_entry_identity)
+
+
+def handle_response_auth_failure(flow: http.HTTPFlow, *, proxy_log_path: str) -> None:
+    """Apply response rejection policy to the credentials consumed by this flow."""
+    # Invalidate firewall header cache on 401 so next request gets fresh headers.
+    # Also request a force-refresh so the next /firewall/auth fetch refreshes
+    # the access token regardless of DB tokenExpiresAt — the provider just told
+    # us the token is no longer valid, overriding whatever the DB believes.
+    # request_force_refresh enforces a cooldown so a persistent non-token 401
+    # can't amplify into a loop of provider refresh calls (#9860).
+    # Both reverse-proxied auth layers can send the same challenges and OAuth
+    # error bodies. A bound rejection cannot authorize app credential refresh.
+    authentication_unattributed = bool(
+        flow.response
+        and flow.metadata.get(metadata_keys.CUSTOM_NETWORK_BOUND)
+        and flow.response.status_code in (401, 403)
+    )
+    if flow.response and flow.response.status_code in (401, 403):
+        _invalidate_network_admission(flow)
+    if authentication_unattributed:
+        log_proxy_entry(
+            proxy_log_path,
+            "warn",
+            "The Access-protected request failed authentication; its source is unknown. "
+            "Check network access and application authentication, then retry explicitly",
+            type="cloudflare_access",
+            status=flow.response.status_code if flow.response else 0,
+        )
+    if (
+        flow.response
+        and flow.response.status_code == _HTTP_STATUS_UNAUTHORIZED
+        and flow_metadata.firewall_base(flow.metadata)
+        and not authentication_unattributed
+    ):
+        cache_key = flow.metadata.get(metadata_keys.FIREWALL_AUTH_CACHE_KEY)
+        cache_entry_identity = flow.metadata.get(metadata_keys.FIREWALL_AUTH_CACHE_ENTRY_IDENTITY)
+        if isinstance(cache_key, FirewallAuthCacheKey) and isinstance(
+            cache_entry_identity, FirewallAuthCacheEntryIdentity
+        ):
+            invalidate_cached_firewall_headers(cache_key, cache_entry_identity)
 
 
 def release_network_admission_from_flow(flow: http.HTTPFlow) -> None:
