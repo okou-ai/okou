@@ -159,11 +159,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ArtifactPreviewToolbar]: {
+  [FeatureSwitchKey.ArtifactPreviewActionGroup]: {
     maintainer: "bingjie@okou.ai",
-    displayName: "Artifact preview toolbar",
+    displayName: "Artifact preview action group",
     description:
-      "Keep sharing and view controls visible while grouping downloads, Google Drive, and deletion in a stable More menu.",
+      "Reveal preview actions together after loading, keep the original download menu visible, and place only deletion in More.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

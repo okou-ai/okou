@@ -530,7 +530,13 @@ export function ThreadSidebarSlot({
       return <ThreadArtifactsPanel thread={thread} />;
     }
     case "artifact": {
-      return <ThreadArtifactDetail thread={thread} source={target.source} />;
+      return (
+        <ThreadArtifactDetail
+          key={thread.threadId}
+          thread={thread}
+          source={target.source}
+        />
+      );
     }
     case "automations": {
       // Rendered by ChatThreadSidebarPane: the automations body lives in
