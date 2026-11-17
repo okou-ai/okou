@@ -12,6 +12,7 @@ import { mockEnv } from "../lib/env";
 import webClientCompatibility from "../lib/web-client-compatibility.json";
 import { healthRoutes } from "../signals/routes/health";
 import { mailRoutes } from "../signals/routes/mail";
+import { mcpOAuthClientMetadataRoutes } from "../signals/routes/mcp-oauth-client-metadata";
 import { iosClientCompatibility, testContext } from "./test-context";
 
 const TEST_APP_ROUTES = Object.freeze([...healthRoutes, ...mailRoutes]);
@@ -296,6 +297,61 @@ describe("createApp", () => {
       expect(webhook.status).toBe(404);
       await expect(webhook.json()).resolves.toStrictEqual({
         error: "Not found",
+      });
+    });
+
+    it.each(["GET", "HEAD"])(
+      "serves the public MCP client metadata to OAuth servers using %s without a bypass",
+      async (method) => {
+        mockEnv("ENV", "preview");
+        mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
+        mockEnv("OKOU_API_BACKEND_URL", "https://staging-api.vm6.ai");
+        mockEnv("APP_URL", "https://staging-app.omby.ai");
+        const app = createApp({
+          signal: context.signal,
+          routes: mcpOAuthClientMetadataRoutes,
+        });
+
+        const response = await app.request(
+          "https://staging-api.vm6.ai/api/oauth/mcp/client-metadata/okou.json",
+          { method },
+        );
+
+        expect(response.status).toBe(200);
+        if (method === "HEAD") {
+          await expect(response.text()).resolves.toBe("");
+          return;
+        }
+        await expect(response.json()).resolves.toMatchObject({
+          client_id:
+            "https://staging-api.vm6.ai/api/oauth/mcp/client-metadata/okou.json",
+          client_name: "Okou",
+          redirect_uris: [
+            "https://staging-app.omby.ai/connectors/custom/callback",
+            "https://staging-api.vm6.ai/api/connectors/automatic/callback",
+          ],
+          token_endpoint_auth_method: "none",
+        });
+      },
+    );
+
+    it.each([
+      ["POST", "/api/oauth/mcp/client-metadata/okou.json"],
+      ["GET", "/api/oauth/mcp/client-metadata/okou.json/extra"],
+      ["GET", "/api/connectors/automatic/callback"],
+    ])("keeps %s %s behind the preview guard", async (method, path) => {
+      mockEnv("ENV", "preview");
+      mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret");
+      const app = createApp({
+        signal: context.signal,
+        routes: mcpOAuthClientMetadataRoutes,
+      });
+
+      const response = await app.request(path, { method });
+
+      expect(response.status).toBe(403);
+      await expect(response.json()).resolves.toMatchObject({
+        error: "Preview automation bypass required",
       });
     });
   });

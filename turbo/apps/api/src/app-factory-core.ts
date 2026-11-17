@@ -14,6 +14,7 @@ import {
   CLIENT_TYPE_ANDROID,
   CLIENT_VERSION_HEADER,
 } from "@okouai/api-contracts/contracts/client-headers";
+import { mcpOAuthContract } from "@okouai/api-contracts/contracts/mcp-oauth";
 import { serializeError } from "@okouai/core/log-utils";
 import { command } from "ccstate";
 // oxlint-disable-next-line no-restricted-imports -- app factory owns the Hono instance
@@ -356,10 +357,15 @@ function isCorsPreflightRequest(context: Context): boolean {
 // runner webhook (Stripe/Clerk/GitHub/... and `/api/webhooks/agent/*`). Each of
 // these endpoints authenticates its own requests (webhook signatures, runner
 // auth tokens), so exempting them from the preview guard does not widen access.
-// Browser-driven OAuth callbacks are intentionally excluded: they carry the
-// bypass cookie and stay behind the guard.
+// OAuth servers must also fetch the public CIMD document without a bypass
+// cookie. Only reads of this exact document are exempt; browser-driven OAuth
+// callbacks carry the bypass cookie and stay behind the guard.
 function isPreviewAutomationBypassExemptPath(context: Context): boolean {
-  return context.req.path.startsWith("/api/webhooks/");
+  return (
+    context.req.path.startsWith("/api/webhooks/") ||
+    ((context.req.method === "GET" || context.req.method === "HEAD") &&
+      context.req.path === mcpOAuthContract.okouClientMetadata.path)
+  );
 }
 
 function bypassFingerprint(value: string | undefined): string | undefined {
