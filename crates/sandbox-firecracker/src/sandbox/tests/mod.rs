@@ -21,6 +21,7 @@ use tracing_test_support::{
 mod backing_process;
 mod guest_connection_timing;
 mod guest_rpc;
+mod local_drain;
 mod managed_exit;
 mod park_native;
 mod private_write_diagnostics;
@@ -5466,6 +5467,7 @@ async fn wait_for_balloon_extends_low_free_progress_with_fresh_guest_memory() {
         "fresh-progress-grace",
         Some(&guest),
         None,
+        None,
     );
     tokio::pin!(wait);
 
@@ -5536,6 +5538,7 @@ async fn fresh_guest_memory_probe_time_is_charged_to_the_fixed_settle_schedule()
         target_mib,
         "fresh-progress-fixed-deadline",
         Some(&guest),
+        None,
         None,
     );
     tokio::pin!(wait);
@@ -5631,6 +5634,7 @@ async fn wait_for_balloon_refreshes_guest_memory_at_each_low_free_boundary() {
         "fresh-progress-each-boundary",
         Some(&guest),
         None,
+        None,
     );
     tokio::pin!(wait);
 
@@ -5695,6 +5699,7 @@ async fn wait_for_balloon_rejects_insufficient_fresh_guest_memory_without_retry(
         target_mib,
         "fresh-reserve-insufficient",
         Some(&guest),
+        None,
         None,
     );
     tokio::pin!(wait);
@@ -5835,6 +5840,7 @@ async fn exact_handoff_interrupts_balloon_settle_during_fresh_guest_memory_snaps
         "fresh-guest-handoff-during-settle",
         Some(&guest),
         Some(&handoff),
+        None,
     );
     tokio::pin!(wait);
 
@@ -6442,6 +6448,7 @@ async fn park_pauses_when_balloon_stats_are_unavailable() {
                 pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -6500,6 +6507,7 @@ async fn exact_handoff_before_balloon_reverses_target_without_pausing() {
                 pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: Some(&handoff),
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -6576,6 +6584,7 @@ async fn exact_handoff_interrupts_in_flight_balloon_settle() {
                 pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: Some(&handoff),
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -6670,6 +6679,7 @@ async fn exact_handoff_interrupts_balloon_settle_after_multiple_progress_extensi
         "handoff-after-progress-extensions",
         None,
         Some(&handoff),
+        None,
     );
     tokio::pin!(wait);
 
@@ -6924,6 +6934,7 @@ async fn park_small_vm_skips_balloon_but_pauses_vcpus() {
                 pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -7252,6 +7263,7 @@ async fn park_balloon_failure_leaves_flag_false() {
                 pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -7753,6 +7765,7 @@ async fn severe_park_retries_terminal_snapshot_after_failed_progress_probe() {
                 pause_custody: None,
                 guest,
                 handoff: None,
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -7834,6 +7847,7 @@ async fn severe_park_collects_terminal_guest_memory_before_pause() {
                 pause_custody: None,
                 guest,
                 handoff: None,
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -7907,6 +7921,7 @@ async fn reusable_park_does_not_request_terminal_guest_memory() {
                 pause_custody: None,
                 guest,
                 handoff: None,
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },
@@ -7964,6 +7979,7 @@ async fn park_small_vm_pause_failure_leaves_flag_false() {
                 pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: None,
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx: state_rx.clone(),
             },

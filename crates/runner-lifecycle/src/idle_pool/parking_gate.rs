@@ -78,3 +78,9 @@ impl Default for ParkingGate {
         Self::new_open()
     }
 }
+
+impl sandbox::SandboxIdleAdmission for ParkingGate {
+    fn is_open(&self) -> bool {
+        self.is_open()
+    }
+}

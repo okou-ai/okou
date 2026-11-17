@@ -1,4 +1,108 @@
 use super::*;
+#[tokio::test]
+async fn local_drain_during_final_exec_retires_guest_rpc_without_pausing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut sandbox, mut peer) = running_rpc_sandbox(dir.path()).await;
+    sandbox.config.resources.memory_mb = balloon::MIN_GUEST_MIB;
+    let path = sandbox.sock_paths.guest_rpc();
+    let mut api = MockFirecrackerApi::with_handler(|request| async move {
+        panic!("terminal park must not pause or resume the VM: {request:?}")
+    });
+    std::os::unix::fs::symlink(api.socket_path(), sandbox.sock_paths.api_sock()).unwrap();
+    let stale = sandbox.guest_rpc("run-a").unwrap();
+    let mut pending = Box::pin(stale.accept());
+    assert!(futures_util::poll!(pending.as_mut()).is_pending());
+    let _backlog = UnixStream::connect(&path).await.unwrap();
+    let admission = super::local_drain::LocalAdmission::open();
+    let request = ExecRequest {
+        cmd: "true",
+        timeout: Duration::from_secs(1),
+        env: &[],
+        sudo: false,
+        expected_exit_codes: &[],
+        stdin_bytes: None,
+        output_limits: sandbox::ExecOutputLimits::same(1024),
+    };
+    let mut observer = RecordingFinalExecParkObserver::default();
+    let park = sandbox.final_exec_and_park_with_admission(
+        &request,
+        "rpc-local-drain",
+        None,
+        &admission,
+        &mut observer,
+    );
+    let guest = async {
+        let request = read_vsock_message(&mut peer).await;
+        assert_eq!(request.msg_type, guest_control_proto::MSG_EXEC_START);
+        admission.close();
+        let output = guest_control_proto::ExecCapturedOutput::Captured {
+            bytes: b"",
+            truncated: false,
+        };
+        let payload = guest_control_proto::encode_exec_result(
+            guest_control_proto::ExecTermination::Exited { exit_code: 0 },
+            1,
+            output,
+            output,
+            "",
+        )
+        .unwrap();
+        peer.write_all(
+            &guest_control_proto::encode(
+                guest_control_proto::MSG_EXEC_RESULT,
+                request.seq,
+                &payload,
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        acknowledge_lifecycle(
+            &mut peer,
+            guest_control_proto::MSG_QUIESCE_OPERATIONS,
+            guest_control_proto::MSG_OPERATIONS_QUIESCED,
+        )
+        .await;
+    };
+    let (outcome, ()) = tokio::join!(park, guest);
+    assert!(matches!(
+        outcome.unwrap(),
+        SandboxFinalExecParkTransitionOutcome::Terminal { .. }
+    ));
+    assert!(!sandbox.is_parked);
+    assert_eq!(
+        sandbox.park_coordinator.state(),
+        CoordinatorState::FencedRunning
+    );
+    assert!(sandbox.park_fence.is_some());
+    assert!(!path.exists());
+    assert!(sandbox.guest_rpc("run-a").is_none());
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), pending)
+            .await
+            .unwrap()
+            .is_err()
+    );
+    assert!(api.drain_requests().is_empty());
+    let (ready, ()) = tokio::join!(
+        sandbox.unpark_for_terminal_operations(),
+        acknowledge_lifecycle(
+            &mut peer,
+            guest_control_proto::MSG_RESUME_OPERATIONS,
+            guest_control_proto::MSG_OPERATIONS_RESUMED,
+        ),
+    );
+    ready.unwrap();
+    assert!(sandbox.park_fence.is_none());
+    let stale_run = sandbox.guest_rpc("run-a").unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), stale_run.accept())
+            .await
+            .unwrap()
+            .is_err()
+    );
+    assert!(api.drain_requests().is_empty());
+}
 use std::path::PathBuf;
 
 #[cfg(feature = "test-support")]
@@ -272,7 +376,7 @@ async fn successful_park_variants_replace_guest_rpc_endpoint_epochs_before_resum
                         .unwrap();
                     assert!(matches!(
                         outcome,
-                        SandboxFinalExecParkHandoffOutcome::Handoff { .. }
+                        SandboxFinalExecParkTransitionOutcome::Handoff { .. }
                     ));
                 } else {
                     let outcome = sandbox
@@ -329,7 +433,7 @@ async fn successful_park_variants_replace_guest_rpc_endpoint_epochs_before_resum
         assert_eq!(
             sandbox.park_coordinator.state(),
             if handoff {
-                CoordinatorState::RunningHandoff
+                CoordinatorState::FencedRunning
             } else {
                 CoordinatorState::Parked
             }

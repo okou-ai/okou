@@ -32,7 +32,9 @@ use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_lifecycle::home_image_cache::{
     HomeCacheTerminalStatus, HomeImageLease, HomeImagePromotionContext, HomeImagePromotionRequest,
 };
-use runner_lifecycle::home_promotion::prepare_home_image_from_active_sandbox;
+use runner_lifecycle::home_promotion::{
+    abandon_unpublished_home_promotion, prepare_home_image_from_active_sandbox,
+};
 use runner_lifecycle::idle_pool::{
     DestroyOutcome, IdleDestroyPayload, IdleParkActiveParts, IdleParkCandidate,
     IdleParkFailureParts, IdleParkRequest, IdleParkRequestParts, ParkResult, ParkedIdleCandidate,
@@ -690,11 +692,76 @@ async fn finalize_sandbox_for_completion_inner(
             handoff: Some(active_run_reuse.handoff_signal()),
         });
         let park_outcome = match park_request
-            .park_for_idle_with_observer(&mut telemetry)
+            .park_for_idle_while_admitted(&parking_gate, &mut telemetry)
             .await
         {
             Ok(outcome) => outcome,
             Err(failure) => match failure.into_parts() {
+                IdleParkFailureParts::RunningTerminal { active } => {
+                    let IdleParkActiveParts {
+                        mut sandbox,
+                        factory: failure_factory,
+                        budget_lease,
+                        mut home_promotion,
+                    } = active;
+                    telemetry.record_idle_publication(false, Some("idle_admission_closed"));
+                    info!(%run_id, "local idle admission closed; retaining running sandbox for terminal cleanup");
+                    // This VM has never paused. It still holds the original
+                    // full active lease, so no additional vCPU admission occurs.
+                    // A physically paused VM always takes the existing bounded
+                    // parked cleanup path instead.
+                    if home_promotion.is_some() {
+                        let ready = match AssertUnwindSafe(sandbox.unpark_for_terminal_operations())
+                            .catch_unwind()
+                            .await
+                        {
+                            Ok(Ok(())) => true,
+                            Ok(Err(error)) => {
+                                warn!(%run_id, %error, "running terminal readiness failed; skipping Home promotion");
+                                false
+                            }
+                            Err(_) => {
+                                warn!(%run_id, "running terminal readiness panicked; skipping Home promotion");
+                                false
+                            }
+                        };
+                        if !ready {
+                            reuse_state_changed |= abandon_unpublished_home_promotion(
+                                home_promotion.take(),
+                                "running_terminal_readiness_failed",
+                            )
+                            .await;
+                        }
+                    }
+                    let destroy_result = stop_and_destroy_sandbox(
+                        sandbox,
+                        &**failure_factory,
+                        home_promotion,
+                        ActiveCleanupContext {
+                            run_id,
+                            sandbox_id,
+                            profile_name: &profile_name,
+                            cli_agent_session_id: resolved_cli_agent_session_id,
+                            reason: "idle_admission_closed",
+                            network_log_session: network_log_session.take(),
+                            network_log_drain: network_log_drain.clone(),
+                        },
+                    )
+                    .await;
+                    reuse_state_changed |= mark_home_cache_snapshot_promoted(
+                        run_id,
+                        &home_cache_snapshot,
+                        home_cache_key.as_deref(),
+                        Some(&reuse_key),
+                        &profile_name,
+                        &completed_at,
+                        destroy_result.home_cache_promoted,
+                    );
+                    record_destroy_result(destroy_result.outcome, destroy_bookkeeping);
+                    break 'finalization BudgetOwnership::active(
+                        ActiveBudgetLease::from_idle_park_lease(budget_lease),
+                    );
+                }
                 IdleParkFailureParts::Active {
                     active,
                     reason,

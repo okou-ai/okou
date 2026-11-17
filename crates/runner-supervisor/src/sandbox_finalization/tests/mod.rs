@@ -1621,6 +1621,104 @@ async fn finalizer_promotes_failed_first_run_home_without_session() {
 }
 
 #[tokio::test]
+async fn finalizer_local_drain_during_preparation_keeps_active_budget_until_terminal_cleanup() {
+    for readiness in ["ready", "error", "panic"] {
+        let (budget, lease) = test_budget_lease();
+        let fixture = FinalizeTestFixture::new().await;
+        let network_log_session = fixture.network_log_session().await;
+        let dir = tempfile::tempdir().unwrap();
+        let paths = RunnerPaths::new(dir.path().join("runner"));
+        tokio::fs::create_dir_all(paths.base_dir()).await.unwrap();
+        let cache = HomeImageCache::new(paths.clone());
+        let run_id = RunId::new_v4();
+        let sandbox_id = SandboxId::new_v4();
+        let reuse_key = format!("thread:local-drain-{readiness}");
+        let home_image =
+            prepare_test_home_image_lease(&paths, &cache, run_id, sandbox_id, &reuse_key).await;
+        let exec_gate = MockLifecycleGate::new();
+        let stop_gate = MockLifecycleGate::new();
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        add_healthy_reuse_preparation_matcher(&overrides);
+        overrides.set_exec_lifecycle_gate(exec_gate.clone());
+        overrides.set_stop_lifecycle_gate(stop_gate.clone());
+        match readiness {
+            "error" => overrides.push_unpark_result(Err(sandbox::SandboxError::IdleTransition {
+                transition: sandbox::SandboxIdleTransition::Unpark,
+                message: "terminal readiness failed".into(),
+            })),
+            "panic" => overrides.push_unpark_panic("terminal readiness panic"),
+            _ => {}
+        }
+        let (factory, sandbox) = sandbox_with_overrides(sandbox_id, Arc::clone(&overrides)).await;
+        let mut context = fixture.finalize_context(
+            run_id,
+            sandbox_id,
+            &reuse_key,
+            network_log_session,
+            RunCancellationHandle::new(),
+        );
+        let gate = context.parking_gate.clone();
+        context.factory = factory;
+        context.home_image = Some(home_image);
+        context.home_image_size_bytes = TEST_HOME_IMAGE_SIZE as u64;
+        let finalization = tokio::spawn(finalize_sandbox_for_completion(
+            Some(sandbox),
+            ActiveBudgetLease::new(lease),
+            context,
+        ));
+        exec_gate
+            .wait_entered(1, Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert!(gate.soft_drain());
+        // Preparation, cache helper, and freeze each retain their own exec.
+        exec_gate.release_many(3);
+        stop_gate
+            .wait_entered(1, Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert_eq!(overrides.park_call_count(), 0);
+        assert_eq!(overrides.terminal_unpark_call_count(), 1);
+        assert_eq!(overrides.destroy_call_count(), 0);
+        assert_eq!(budget.allocated(), (2, 4096, 1));
+        assert!(
+            cache.held_home_states().await.is_empty(),
+            "stop has not acknowledged"
+        );
+        assert!(
+            fixture
+                .idle_pool
+                .lock()
+                .await
+                .held_sandbox_states()
+                .is_empty()
+        );
+        assert!(gate.open_after_soft_drain());
+        stop_gate.release_one();
+        let ready = finalization.await.unwrap();
+        assert_eq!(overrides.stop_call_count(), 1);
+        assert_eq!(overrides.destroy_call_count(), 1);
+        assert_eq!(
+            overrides.park_call_count(),
+            0,
+            "resume must not resurrect terminal work"
+        );
+        assert_eq!(
+            cache.held_home_states().await.len(),
+            usize::from(readiness == "ready")
+        );
+        let calls = overrides.exec_calls();
+        assert_eq!(calls.len(), if readiness == "ready" { 3 } else { 1 });
+        if readiness == "ready" {
+            assert!(calls[1].cmd.contains("prepare-for-cache"));
+            assert!(calls[2].cmd.contains("\"$home_fsfreeze_path\" --freeze"));
+        }
+        drop(ready);
+        assert_eq!(budget.allocated(), (0, 0, 0));
+    }
+}
+
+#[tokio::test]
 async fn finalizer_waits_for_successful_stop_before_home_generation_publication() {
     let (budget, lease) = test_budget_lease();
     let fixture = FinalizeTestFixture::new().await;

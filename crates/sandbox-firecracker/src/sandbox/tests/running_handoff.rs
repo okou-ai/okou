@@ -24,6 +24,7 @@ async fn coordinated_park(
                     pause_custody: None,
                     guest: Arc::new(tokio::sync::Mutex::new(None)),
                     handoff,
+                    admission: None,
                     memory_policy: ParkMemoryPolicy::Reclaim,
                     state_rx,
                 },
@@ -98,7 +99,7 @@ async fn running_handoff_waits_for_in_flight_target_write_before_transfer() {
             park.await.unwrap()
         };
         assert!(matches!(outcome, PhysicalParkOutcome::Handoff(_)));
-        assert_eq!(coordinator.state(), CoordinatorState::RunningHandoff);
+        assert_eq!(coordinator.state(), CoordinatorState::FencedRunning);
         assert!(!is_parked);
         let requests = api.drain_requests();
         let writes = patches(&requests);
@@ -109,93 +110,104 @@ async fn running_handoff_waits_for_in_flight_target_write_before_transfer() {
 }
 
 #[tokio::test]
-async fn public_running_handoff_activation_keeps_guest_fenced_until_zero_and_resume_ack() {
-    let entered = Arc::new(Notify::new());
-    let release = Arc::new(Notify::new());
-    let mut api = MockLifecycleApi::with_stats(
-        std::collections::VecDeque::new(),
-        std::collections::VecDeque::from([
-            MockBalloonStatsReply::GatedOk {
-                entered: Arc::clone(&entered),
-                release: Arc::clone(&release),
-                stats: MockBalloonStats::new(0, 512),
-            },
-            MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
-        ]),
-    );
-    let dir = tempfile::tempdir().unwrap();
-    let (guest, mut guest_stream) = connected_mock_guest().await;
-    let host = guest.lock().await.as_ref().unwrap().clone();
-    let mut sandbox = test_sandbox_with_state(SandboxState::Running);
-    sandbox.config.resources.memory_mb = 2048;
-    sandbox.sock_paths = SockPaths::new(dir.path().to_path_buf());
-    std::fs::create_dir(sandbox.sock_paths.vsock_dir()).unwrap();
-    std::os::unix::fs::symlink(api.socket_path(), sandbox.sock_paths.api_sock()).unwrap();
-    sandbox.guest = guest;
-    sandbox.park_fence = Some(host.try_fence_normal_operations().unwrap());
-    let coordinator = sandbox.park_coordinator.clone();
-    let attempt = coordinator.begin_prepare_park().unwrap();
-    coordinator
-        .complete_prepare_park(&attempt, PrepareParkEvidence::AgentQuiesced)
-        .unwrap();
-    coordinator.mark_running_handoff(&attempt).unwrap();
-    sandbox.bind_run_control("successor").unwrap();
-    let activation = tokio::spawn(async move {
-        sandbox.unpark().await.unwrap();
-        sandbox
-    });
-    entered.notified().await;
-    assert!(!activation.is_finished());
-    assert_eq!(coordinator.state(), CoordinatorState::RunningHandoff);
-    assert!(coordinator.ensure_operation_start_allowed().is_err());
-    assert!(matches!(
-        host.try_fence_normal_operations(),
-        Err(NormalOperationFenceRejection::AlreadyFenced)
-    ));
-    let mut buffer = [0; HEADER_SIZE];
-    assert_eq!(
-        guest_stream.try_read(&mut buffer).unwrap_err().kind(),
-        io::ErrorKind::WouldBlock,
-        "Guest resume must wait for exact-zero balloon convergence"
-    );
-    release.notify_one();
-
-    let resume = read_vsock_message(&mut guest_stream).await;
-    assert_eq!(resume.msg_type, guest_control_proto::MSG_RESUME_OPERATIONS);
-    assert!(coordinator.ensure_operation_start_allowed().is_err());
-    assert!(matches!(
-        host.try_fence_normal_operations(),
-        Err(NormalOperationFenceRejection::AlreadyFenced)
-    ));
-    let response =
-        guest_control_proto::encode(guest_control_proto::MSG_OPERATIONS_RESUMED, resume.seq, &[])
+async fn public_fenced_running_readiness_keeps_guest_fenced_until_zero_and_resume_ack() {
+    for terminal in [false, true] {
+        let entered = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let mut api = MockLifecycleApi::with_stats(
+            std::collections::VecDeque::new(),
+            std::collections::VecDeque::from([
+                MockBalloonStatsReply::GatedOk {
+                    entered: Arc::clone(&entered),
+                    release: Arc::clone(&release),
+                    stats: MockBalloonStats::new(0, 512),
+                },
+                MockBalloonStatsReply::Ok(MockBalloonStats::new(0, 0)),
+            ]),
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let (guest, mut guest_stream) = connected_mock_guest().await;
+        let host = guest.lock().await.as_ref().unwrap().clone();
+        let mut sandbox = test_sandbox_with_state(SandboxState::Running);
+        sandbox.config.resources.memory_mb = 2048;
+        sandbox.sock_paths = SockPaths::new(dir.path().to_path_buf());
+        std::fs::create_dir(sandbox.sock_paths.vsock_dir()).unwrap();
+        std::os::unix::fs::symlink(api.socket_path(), sandbox.sock_paths.api_sock()).unwrap();
+        sandbox.guest = guest;
+        sandbox.park_fence = Some(host.try_fence_normal_operations().unwrap());
+        let coordinator = sandbox.park_coordinator.clone();
+        let attempt = coordinator.begin_prepare_park().unwrap();
+        coordinator
+            .complete_prepare_park(&attempt, PrepareParkEvidence::AgentQuiesced)
             .unwrap();
-    guest_stream.write_all(&response).await.unwrap();
-    let mut sandbox = activation.await.unwrap();
-    assert!(!sandbox.is_parked);
-    assert!(sandbox.park_fence.is_none());
-    assert_eq!(coordinator.state(), CoordinatorState::Open);
-    coordinator.ensure_operation_start_allowed().unwrap();
-    drop(host.try_fence_normal_operations().unwrap());
+        coordinator.mark_fenced_running(&attempt).unwrap();
+        if !terminal {
+            sandbox.bind_run_control("successor").unwrap();
+        }
+        let activation = tokio::spawn(async move {
+            if terminal {
+                sandbox.unpark_for_terminal_operations().await.unwrap();
+            } else {
+                sandbox.unpark().await.unwrap();
+            }
+            sandbox
+        });
+        entered.notified().await;
+        assert!(!activation.is_finished());
+        assert_eq!(coordinator.state(), CoordinatorState::FencedRunning);
+        assert!(coordinator.ensure_operation_start_allowed().is_err());
+        assert!(matches!(
+            host.try_fence_normal_operations(),
+            Err(NormalOperationFenceRejection::AlreadyFenced)
+        ));
+        let mut buffer = [0; HEADER_SIZE];
+        assert_eq!(
+            guest_stream.try_read(&mut buffer).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock,
+            "Guest resume must wait for exact-zero balloon convergence"
+        );
+        release.notify_one();
 
-    // Repeating the public Open entrypoint performs no new lifecycle I/O.
-    sandbox.unpark().await.unwrap();
-    let requests = api.drain_requests();
-    let writes = patches(&requests);
-    assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].path, "/balloon");
-    assert_eq!(mock_request_body_json(writes[0])["amount_mib"], 0);
-    assert_eq!(
-        requests
-            .iter()
-            .filter(|request| request.method == "GET")
-            .count(),
-        2
-    );
-    assert_eq!(
-        guest_stream.try_read(&mut buffer).unwrap_err().kind(),
-        io::ErrorKind::WouldBlock
-    );
+        let resume = read_vsock_message(&mut guest_stream).await;
+        assert_eq!(resume.msg_type, guest_control_proto::MSG_RESUME_OPERATIONS);
+        assert!(coordinator.ensure_operation_start_allowed().is_err());
+        assert!(matches!(
+            host.try_fence_normal_operations(),
+            Err(NormalOperationFenceRejection::AlreadyFenced)
+        ));
+        let response = guest_control_proto::encode(
+            guest_control_proto::MSG_OPERATIONS_RESUMED,
+            resume.seq,
+            &[],
+        )
+        .unwrap();
+        guest_stream.write_all(&response).await.unwrap();
+        let mut sandbox = activation.await.unwrap();
+        assert!(!sandbox.is_parked);
+        assert!(sandbox.park_fence.is_none());
+        assert_eq!(coordinator.state(), CoordinatorState::Open);
+        coordinator.ensure_operation_start_allowed().unwrap();
+        drop(host.try_fence_normal_operations().unwrap());
+
+        // Repeating the public Open entrypoint performs no new lifecycle I/O.
+        sandbox.unpark().await.unwrap();
+        let requests = api.drain_requests();
+        let writes = patches(&requests);
+        assert_eq!(writes.len(), 1);
+        assert_eq!(writes[0].path, "/balloon");
+        assert_eq!(mock_request_body_json(writes[0])["amount_mib"], 0);
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request.method == "GET")
+                .count(),
+            2
+        );
+        assert_eq!(
+            guest_stream.try_read(&mut buffer).unwrap_err().kind(),
+            io::ErrorKind::WouldBlock
+        );
+    }
 }
 
 #[tokio::test]
@@ -481,6 +493,7 @@ async fn exact_handoff_interrupts_deflation_after_foreground_deadline_without_pa
                 pause_custody: None,
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 handoff: Some(&handoff),
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
                 state_rx,
             },

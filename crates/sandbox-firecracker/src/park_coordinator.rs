@@ -71,9 +71,7 @@ impl ParkCoordinator {
         }
 
         match inner.state.clone() {
-            CoordinatorState::Open
-            | CoordinatorState::Parked
-            | CoordinatorState::RunningHandoff => {
+            CoordinatorState::Open | CoordinatorState::Parked | CoordinatorState::FencedRunning => {
                 inner.active_run_id = Some(run_id.to_owned());
                 inner.assignment_cancel = CancellationToken::new();
                 Ok(())
@@ -175,11 +173,11 @@ impl ParkCoordinator {
     }
 
     /// Transfer a quiesced, still-running sandbox without reopening operations.
-    pub(crate) fn mark_running_handoff(
+    pub(crate) fn mark_fenced_running(
         &self,
         attempt: &ParkAttempt,
     ) -> Result<(), PrepareParkError> {
-        self.complete_transfer(attempt, CoordinatorState::RunningHandoff)
+        self.complete_transfer(attempt, CoordinatorState::FencedRunning)
     }
 
     fn complete_transfer(
@@ -203,7 +201,7 @@ impl ParkCoordinator {
     pub(crate) fn reopen_after_unpark(&self) -> Result<(), PrepareParkError> {
         let mut inner = self.inner();
         match inner.state.clone() {
-            CoordinatorState::Parked | CoordinatorState::RunningHandoff => {
+            CoordinatorState::Parked | CoordinatorState::FencedRunning => {
                 inner.state = CoordinatorState::Open;
                 Ok(())
             }
@@ -224,7 +222,7 @@ impl ParkCoordinator {
         }
 
         match inner.state {
-            CoordinatorState::Parked | CoordinatorState::RunningHandoff => {
+            CoordinatorState::Parked | CoordinatorState::FencedRunning => {
                 TerminateAdmission::RefusedIdle
             }
             CoordinatorState::Terminating => TerminateAdmission::Accepted,
@@ -255,8 +253,9 @@ pub(crate) enum CoordinatorState {
         attempt_id: ParkAttemptId,
     },
     Parked,
-    /// An exact successor owns a running VM with Guest operations still fenced.
-    RunningHandoff,
+    /// A running VM remains quiesced and fenced for accepted successor delivery
+    /// or lifecycle-owned terminal cleanup.
+    FencedRunning,
     Terminating,
     Dirty {
         reason: DirtyReason,

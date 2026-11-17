@@ -161,6 +161,7 @@ async fn physical_park_reclaims_before_pause_and_hands_off_without_pause() -> Na
                 guest: Arc::new(tokio::sync::Mutex::new(None)),
                 state_rx: state_rx.clone(),
                 handoff: (scenario != Scenario::Normal).then_some(&handoff),
+                admission: None,
                 memory_policy: ParkMemoryPolicy::Reclaim,
             },
             SandboxFinalExecParkSubstageEvents::new(Some(&mut observer)),
@@ -213,7 +214,7 @@ async fn physical_park_reclaims_before_pause_and_hands_off_without_pause() -> Na
         MEMORY_MIB,
         match &result {
             PhysicalParkOutcome::Idle(outcome) => Some(outcome),
-            PhysicalParkOutcome::Handoff(_) => None,
+            PhysicalParkOutcome::Handoff(_) | PhysicalParkOutcome::Terminal => None,
         },
         &socket,
         state_rx,

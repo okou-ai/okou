@@ -47,9 +47,19 @@ pub enum SandboxFinalExecParkHandoffPoint {
     DuringDeflation,
 }
 
-/// Completed final guest exec and either physical park or fenced running
-/// ownership for an already-claimed exact successor.
-pub enum SandboxFinalExecParkHandoffOutcome {
+/// Read-only process-local permission to continue idle-only parking work.
+/// Closing admission does not cancel owned mutations or revoke accepted handoffs.
+pub trait SandboxIdleAdmission: Send + Sync {
+    fn is_open(&self) -> bool;
+}
+
+/// Completed final guest exec and physical park, accepted successor handoff,
+/// or explicitly owned fenced-running terminal cleanup.
+pub enum SandboxFinalExecParkTransitionOutcome {
+    /// Local idle admission closed before pause. This is not a reuse candidate.
+    /// The lifecycle owner retains the full active lease and must finish terminal
+    /// readiness with `unpark_for_terminal_operations` before Home cleanup.
+    Terminal { exec_result: ExecResult },
     /// No handoff request interrupted provider compaction.
     Parked(SandboxFinalExecParkOutcome),
     /// The sandbox is still running with Guest operations quiesced and fenced.
@@ -482,6 +492,8 @@ pub enum SandboxFinalExecParkSubstageOutcome {
     StatsUnavailable,
     /// Exact-successor demand shortened idle-only memory compaction.
     HandoffRequested,
+    /// Local idle admission closed before physical pause.
+    AdmissionClosed,
     /// The provider operation failed.
     Failed,
 }
@@ -497,6 +509,7 @@ impl SandboxFinalExecParkSubstageOutcome {
             Self::Deadline => "deadline",
             Self::StatsUnavailable => "stats_unavailable",
             Self::HandoffRequested => "handoff_requested",
+            Self::AdmissionClosed => "admission_closed",
             Self::Failed => "failed",
         }
     }
@@ -769,10 +782,33 @@ pub trait Sandbox: Send + Sync + Any {
         diagnostic_label: &'static str,
         _handoff: &SandboxFinalExecParkHandoff,
         observer: &mut dyn SandboxFinalExecParkObserver,
-    ) -> Result<SandboxFinalExecParkHandoffOutcome> {
+    ) -> Result<SandboxFinalExecParkTransitionOutcome> {
         self.final_exec_and_park_with_observer(request, diagnostic_label, observer)
             .await
-            .map(SandboxFinalExecParkHandoffOutcome::Parked)
+            .map(SandboxFinalExecParkTransitionOutcome::Parked)
+    }
+
+    /// Observe local idle admission without cancelling any owned transition.
+    /// Providers may return `Terminal` only while still running and fenced.
+    /// Once pause is submitted, complete the ordinary parked ownership path.
+    async fn final_exec_and_park_with_admission(
+        &mut self,
+        request: &ExecRequest<'_>,
+        diagnostic_label: &'static str,
+        handoff: Option<&SandboxFinalExecParkHandoff>,
+        _admission: &dyn SandboxIdleAdmission,
+        observer: &mut dyn SandboxFinalExecParkObserver,
+    ) -> Result<SandboxFinalExecParkTransitionOutcome> {
+        match handoff {
+            Some(handoff) => {
+                self.final_exec_and_park_for_handoff(request, diagnostic_label, handoff, observer)
+                    .await
+            }
+            None => self
+                .final_exec_and_park_with_observer(request, diagnostic_label, observer)
+                .await
+                .map(SandboxFinalExecParkTransitionOutcome::Parked),
+        }
     }
 
     /// Transition the sandbox back to the active state.

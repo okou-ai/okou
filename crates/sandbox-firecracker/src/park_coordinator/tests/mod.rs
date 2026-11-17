@@ -206,7 +206,7 @@ fn running_handoff_retires_predecessor_but_keeps_operations_closed() {
         .unwrap();
     let attempt = begin_attempt(&coordinator);
     complete_attempt(&coordinator, &attempt);
-    coordinator.mark_running_handoff(&attempt).unwrap();
+    coordinator.mark_fenced_running(&attempt).unwrap();
 
     assert!(old_controls.is_cancelled());
     assert!(
@@ -214,7 +214,7 @@ fn running_handoff_retires_predecessor_but_keeps_operations_closed() {
             .ensure_run_control_matches("predecessor")
             .is_err()
     );
-    assert_eq!(coordinator.state(), CoordinatorState::RunningHandoff);
+    assert_eq!(coordinator.state(), CoordinatorState::FencedRunning);
     assert!(coordinator.ensure_operation_start_allowed().is_err());
     assert!(coordinator.mark_parked(&attempt).is_err());
     coordinator.bind_run_control("successor").unwrap();
@@ -241,7 +241,7 @@ fn failed_running_handoff_cannot_reopen_or_bind_another_owner() {
     let coordinator = ParkCoordinator::new();
     let attempt = begin_attempt(&coordinator);
     complete_attempt(&coordinator, &attempt);
-    coordinator.mark_running_handoff(&attempt).unwrap();
+    coordinator.mark_fenced_running(&attempt).unwrap();
     coordinator.mark_dirty(DirtyReason::new("deflation failed"));
     assert!(coordinator.bind_run_control("successor").is_err());
     assert!(coordinator.reopen_after_unpark().is_err());
