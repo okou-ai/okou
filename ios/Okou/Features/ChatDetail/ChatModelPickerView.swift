@@ -2,9 +2,8 @@ import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
-/// A quiet model note above the open composer. Fast uses a small lightning mark; effort
-/// stays in the model sheet. The composer presents that sheet so it stays open while the
-/// keyboard goes down under it.
+/// The composer's model control. The composer presents the model sheet so it stays open
+/// while the keyboard goes down under it.
 struct ChatModelPickerButton: View {
   let selection: ChatModelSelectionStore
   let action: () -> Void

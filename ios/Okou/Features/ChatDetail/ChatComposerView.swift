@@ -81,7 +81,7 @@ struct ChatComposerView: View {
   private var replacesSendWithMic: Bool {
     !hasContent && !canStop && draftState?.voice != nil && (!expandsInput || voiceActive)
   }
-  private var showsModelPicker: Bool { expandsInput && !voiceActive }
+  private var showsModelPicker: Bool { !voiceActive }
   private var showsVoiceInput: Bool {
     replacesSendWithMic || (expandsInput && !voiceActive)
   }
@@ -329,7 +329,7 @@ struct ChatComposerView: View {
       }
     }
     // Model settings decide whether the draft can be sent, so a mounted composer loads them
-    // while the reader types; the open composer's model control shows what they resolve to.
+    // while the reader types; the composer's model control shows what they resolve to.
     .task(id: modelSelection.map { ObjectIdentifier($0) }) {
       await modelSelection?.open()
     }

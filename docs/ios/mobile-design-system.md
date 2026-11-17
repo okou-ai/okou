@@ -619,7 +619,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `OkouTextFieldStyle`                        | First-party standalone native text fields; resting, focused, disabled; the caller supplies `isFocused` from the native field binding and owns labels/validation                                                        |
 | `okouValuePicker()`                         | Menu picker whose trailing value and chevron are `trailingValue` (gray-700), a step lighter than the label                                                                                                             |
-| `OkouComposerModelMark`                     | The open composer's model control: Okou's or the model company's mark at `toolbarMark` (18 pt) artwork size, or Lucide `cpu`, on the 44 pt toolbar target                                                              |
+| `OkouComposerModelMark`                     | The composer's model control: Okou's or the model company's mark at `toolbarMark` (18 pt) artwork size, or Lucide `cpu`, on the 44 pt toolbar target                                                                   |
 | `OkouChip` / `OkouChipRail`                 | Filter capsules in the web's colours, in a sideways-scrolling row starting on the content edge; selected takes `state-selected`                                                                                        |
 | `OkouSegmentControl`                        | Large segmented shape in the web's segment colours: grey track, white raised selection                                                                                                                                 |
 | `OkouAddIndicator`                          | A catalog card's trailing "+" (add now) or chevron (added; the card opens it), 32 pt in a 44 pt target                                                                                                                 |
@@ -710,7 +710,7 @@ feature; the catalog shows each one.
 - **Chat header** has no title: the menu glass circle on the left, the chat's "…" menu on
   the right, over a soft blur. The selected row in the sidebar says which chat
   is open. The "…" menu is titled with the chat and starts with Pin chat.
-- **The model control is an icon in the open composer**, before the mic, as ChatGPT
+- **The model control is an icon in the composer**, before the mic, as ChatGPT
   places its own and Web's narrow composer draws it. `ChatModelPickerButton` draws an
   `OkouComposerModelMark` with Web's mapping: Okou's mark for Auto and built-in models, the
   Anthropic or OpenAI mark for a model with an enabled route through that subscription, and
@@ -718,9 +718,10 @@ feature; the catalog shows each one.
   Fast are its VoiceOver value and live in the sheet; a `circle-alert` badge marks settings
   that need attention. It is laid out with the mic and send, so nothing above the composer
   overlaps the conversation or moves on its own with the keyboard, and loading or refreshing
-  its configuration does not replace the editor. It shows only while the composer is open
-  and is gone from the one-line composer and while dictating. On the home screen it is the next new chat's model; in a chat, that
-  chat's. The composer presents the model sheet, and keeps itself open under it,
+  its configuration does not replace the editor. It stays visible in the one-line composer
+  after scrolling dismisses the keyboard, and is hidden only while dictating. On the home
+  screen it is the next new chat's model; in a chat, that chat's. The composer presents the
+  model sheet, and keeps itself open under it,
   so the sheet survives the keyboard going down and the keyboard comes back after it. The
   composer's only leading control is `+`, which opens **Add to
   chat** (`ComposerAddSheet`, after Manus and Claude): a sideways strip of 88 pt tiles —
@@ -752,15 +753,16 @@ feature; the catalog shows each one.
 - **Send / stop / mic** share the composer's trailing slot: the mic alone on an empty
   draft, mic then send (a solid `.borderedProminent` circle, `primary`; the surface under it is
   already glass; disabled, it takes the system's gray) once there is content, and stop
-  (`interrupt`) alone while a run is active and the draft is empty. In the open composer
-  the model control comes first.
+  (`interrupt`) alone while a run is active and the draft is empty. The model control
+  comes first.
 - **The composer never truncates a draft.** With text in it the editor keeps its
   open height (up to six lines, then it scrolls), focused or not.
 - **Composer geometry** belongs to `OkouComposerSurface`, shared by the chat and
   component catalog. Its empty, unfocused surface is at least 44 pt tall
   (`composerCompactHeight`), with 6 pt vertical text padding and separate 44 pt
-  action targets. Larger text can grow the surface. Expansion retains the same
-  mounted editor and reserves a bottom row for the actions. Leading and trailing
+  action targets. Compact text reserves the measured trailing toolbar width so it cannot
+  overlap the model control or primary action. Larger text can grow the surface. Expansion
+  retains the same mounted editor and reserves a bottom row for the actions. Leading and trailing
   action targets keep the same horizontal anchors through expansion. The composer
   uses the 24 pt page inset; its resting actions share the sidebar footer's vertical
   center with 6 pt below the surface. Focused editing keeps 8 pt above the keyboard.
