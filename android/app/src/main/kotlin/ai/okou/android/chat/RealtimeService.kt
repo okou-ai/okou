@@ -32,7 +32,8 @@ data class ChatChanges(
     val list: Boolean = false,
     val indicators: Boolean = false,
     val readCursor: Boolean = false,
-    val threads: Set<String> = emptySet(),
+    val messageThreads: Set<String> = emptySet(),
+    val detailThreads: Set<String> = emptySet(),
 ) {
     operator fun plus(other: ChatChanges) =
         ChatChanges(
@@ -40,7 +41,8 @@ data class ChatChanges(
             list || other.list,
             indicators || other.indicators,
             readCursor || other.readCursor,
-            threads + other.threads,
+            messageThreads + other.messageThreads,
+            detailThreads + other.detailThreads,
         )
 }
 
@@ -59,12 +61,12 @@ internal fun chatChanges(topic: String?): ChatChanges? {
         "chatIndicatorsChanged" -> return ChatChanges(indicators = true)
         "chatThreadReadCursorUpdated" -> return ChatChanges(readCursor = true)
     }
-    val prefix =
-        listOf("chatThreadMessageCreated:", "chatThreadDetailChanged:").firstOrNull {
-            topic?.startsWith(it) == true
-        } ?: return null
-    val id = checkNotNull(topic).removePrefix(prefix)
-    return if (Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}").matches(id))
-        ChatChanges(threads = setOf(id))
-    else null
+    val name = topic?.substringBefore(':') ?: return null
+    val id = topic.substringAfter(':', "")
+    if (!Regex("[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}").matches(id)) return null
+    return when (name) {
+        "chatThreadMessageCreated" -> ChatChanges(messageThreads = setOf(id))
+        "chatThreadDetailChanged" -> ChatChanges(detailThreads = setOf(id))
+        else -> null
+    }
 }

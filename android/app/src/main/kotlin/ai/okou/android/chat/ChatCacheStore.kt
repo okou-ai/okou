@@ -158,15 +158,135 @@ internal constructor(
             }
 
         suspend fun saveHistory(checkpoint: HistoryCheckpoint, confirmedAt: Long) =
+            writeHistory(checkpoint, confirmedAt) { true }
+
+        suspend fun saveWarmedHistory(
+            checkpoint: HistoryCheckpoint,
+            confirmedAt: Long,
+            expected: HistoryCursor?,
+            selected: () -> String?,
+        ) =
+            writeHistory(checkpoint, confirmedAt) { stored ->
+                selected() != checkpoint.threadId && usableHistoryCursor(stored) == expected
+            }
+
+        private fun usableHistoryCursor(stored: HistoryScopeRecord?): HistoryCursor? {
+            if (
+                stored == null ||
+                    stored.authorization != authorization ||
+                    stored.eventVersion != ApiHeaders.CHAT_EVENT_SCHEMA_VERSION ||
+                    stored.threadId in rebuildHistories
+            )
+                return null
+            return HistoryCursor(stored.eventId, stored.seqId).also { it.validate() }
+        }
+
+        /** Read only cursor metadata; warming must not decode 100 complete histories per signal. */
+        suspend fun historyCursors(threadIds: List<String>): Map<String, HistoryCursor> =
+            withContext(dispatcher) {
+                lock.withLock {
+                    checkCurrent()
+                    if (database == null && !file.exists()) return@withLock emptyMap()
+                    database().useReaderConnection { connection ->
+                        connection.deferredTransaction {
+                            buildMap {
+                                    for (id in threadIds) usableHistoryCursor(
+                                            database().chats().historyScope(key, id)
+                                        )
+                                        ?.let { put(id, it) }
+                                }
+                                .also { checkCurrent() }
+                        }
+                    }
+                }
+            }
+
+        /** Compare the request baseline under the same transaction as the append. */
+        suspend fun appendWarmedHistories(
+            expected: Map<String, HistoryCursor>,
+            events: Map<String, List<HistoryEvent>>,
+            confirmedAt: Long,
+            selected: () -> String?,
+        ) =
+            withContext(dispatcher) {
+                require(confirmedAt > 0)
+                val written = hashSetOf<String>()
+                persist(
+                    clear = { dao -> written.forEach { dao.deleteHistory(key, it) } },
+                    saved = { rebuildHistories.removeAll(written) },
+                ) { dao ->
+                    for ((threadId, rows) in events) {
+                        if (rows.isEmpty() || selected() == threadId) continue
+                        val stored = dao.historyScope(key, threadId)
+                        if (usableHistoryCursor(stored) != expected[threadId]) continue
+                        if (expected[threadId] == null) dao.clearHistoryEvents(key, threadId)
+                        val last = rows.last()
+                        dao.putHistoryScope(
+                            HistoryScopeRecord(
+                                key,
+                                threadId,
+                                authorization,
+                                ApiHeaders.CHAT_EVENT_SCHEMA_VERSION,
+                                confirmedAt,
+                                last.id,
+                                last.seqId,
+                            )
+                        )
+                        dao.putHistoryEvents(
+                            rows.map {
+                                HistoryEventRecord(
+                                    key,
+                                    threadId,
+                                    it.id,
+                                    it.seqId,
+                                    it.wire.toString(),
+                                )
+                            }
+                        )
+                        written.add(threadId)
+                    }
+                    written.isNotEmpty()
+                }
+            }
+
+        suspend fun clearWarmedHistory(
+            threadId: String,
+            expected: HistoryCursor?,
+            selected: () -> String?,
+        ) =
+            withContext(dispatcher) {
+                var removed = false
+                persist(
+                    clear = { it.deleteHistory(key, threadId) },
+                    saved = { if (removed) rebuildHistories.remove(threadId) },
+                ) { dao ->
+                    if (
+                        selected() == threadId ||
+                            usableHistoryCursor(dao.historyScope(key, threadId)) != expected
+                    )
+                        return@persist false
+                    dao.deleteHistory(key, threadId)
+                    removed = true
+                    true
+                }
+            }
+
+        private suspend fun writeHistory(
+            checkpoint: HistoryCheckpoint,
+            confirmedAt: Long,
+            accepts: (HistoryScopeRecord?) -> Boolean,
+        ) =
             withContext(dispatcher) {
                 checkpoint.validate()
                 require(confirmedAt > 0)
+                var written = false
                 persist(
                     clear = { it.deleteHistory(key, checkpoint.threadId) },
-                    saved = { rebuildHistories.remove(checkpoint.threadId) },
+                    saved = { if (written) rebuildHistories.remove(checkpoint.threadId) },
                 ) { dao ->
                     val threadId = checkpoint.threadId
                     val stored = dao.historyScope(key, threadId)
+                    if (!accepts(stored)) return@persist false
                     val replacement =
                         checkpoint.replaced ||
                             threadId in rebuildHistories ||
@@ -200,6 +320,7 @@ internal constructor(
                                 )
                             }
                     )
+                    written = true
                     true
                 }
             }

@@ -626,8 +626,9 @@ token renewal and close subscriptions; foreground restoration connects again and
 catches up through the existing canonical HTTP list, indicators and selected
 history owners. Those reads remain independent of token/attachment readiness and
 of one another. Notifications contain no authoritative rows. List changes wake
-chat/project navigation; message/detail changes wake only the matching selected
-conversation; indicator/read-cursor changes refresh only indicators. Pending SDK
+chat/project navigation; message changes wake the matching selected history;
+detail changes refresh only that conversation's detail. Indicator/read-cursor
+changes refresh only indicators. Pending SDK
 notifications merge resource flags and thread IDs until the observer drains them,
 so a conflated wake-up cannot discard a different topic. Initial attachment,
 reconnect and continuity loss still request full canonical catch-up.
@@ -635,8 +636,31 @@ Each confirmed resource coalesces its own notifications and retains a trailing
 read, so held history cannot delay subsequent list or indicator updates. Run-state
 indicator refreshes start at least one second apart; read-cursor and local
 mark-read changes wake delayed demand immediately. Manual refresh is unthrottled.
-Queued history invalidations retain the selected conversation's generation.
+Queued history and detail invalidations retain the selected conversation's
+generation. Their requests and failure states are independent: a held or failed
+detail read cannot delay history or erase its confirmation. Manual refresh and
+full resynchronization request both resources.
 Drafts and pending sends retain their existing durable journal ownership.
+
+Foreground message/recovery signals also request independent confirmed-history
+warming. Detail-only notifications do not request warming. Like Web, the
+cohort combines the 100 most recent non-hidden conversations
+with indicator thread IDs. The selected conversation keeps its own reader. A
+one-second serialized trailing worker reads lightweight Room cursors and uses the
+canonical batch catch-up endpoint; missing cursors rebuild through concurrent
+snapshot reads, matching Web. A recoverable failure in one snapshot does not
+discard successful siblings; authorization/update failures cancel the batch.
+Warming never marks content read or drives list loading. Conditional transactions
+reject an obsolete baseline or a now-selected target, preserving newer foreground
+history. STOP/retirement cancels the worker, and failures remain owned separately
+from visible reads. Every conversation remains fully readable on demand regardless
+of warming eligibility; the cohort is not a row, content or history-size limit.
+
+`HistoryWarmingTest` exercises actual batch HTTPS/tuple codecs, cursor reuse,
+large Unicode rows and disk reopen, concurrent snapshot/missing-thread recovery,
+held-background independence, stale foreground/background publication and
+stop/restart/retirement. Parallel recovery can increase concurrent network and
+memory use; its resource owner still cancels every child on STOP or retirement.
 
 The native connection notice reports connecting or unavailable with explicit
 retry; transport attachment is not a claim of confirmed-data freshness. Ordinary
@@ -672,7 +696,9 @@ joint selectors require every variant pair to be provably disjoint.
 Union selection rejects unknown or ambiguous variants and preserves the original
 wire object without inserting a discriminator wrapper. Nullable/optional fields,
 combined string-enum vocabularies, explicit nulls and empty tuples retain their
-wire representation. Unsupported mixed/ambiguous unions, arbitrary tuples and
+wire representation. Fixed-length tuples retain typed positions and serialize as
+exact-length JSON arrays, including the installed `historyCatchUp` request.
+Unsupported mixed/ambiguous unions, variable-length tuples and
 unrepresented values still fail generation. Canonical safe-integer literals have
 an exact singleton wire representation, including history's literal zero and
 structured messages' version one. Optional nullable outbound request fields preserve omitted,
@@ -788,10 +814,19 @@ Zod's complete validation runtime. Decode failures expose a typed incompatible
 response error without serializer messages/input snippets that could disclose
 response data through exception reporting.
 
-Both clients accept a finite `callTimeout` for the owner's HTTP budget, with a
-30-second default. A deadline while consuming an incomplete error body preserves
-the already received HTTP status, including the blocking 426 state; the absent
-envelope metadata remains unknown. Coroutine cancellation still propagates.
+Both clients accept a finite `callTimeout`, with a 30-second default for ordinary
+control/mutation calls and explicitly bounded byte transfers. Canonical API reads
+(including batch history catch-up) and streamed signed archives have no overall
+call deadline, so a progressing read can complete as it does on Web. These read
+clients share the owner's dispatcher/pool and retain connect/read-idle timeouts
+and coroutine cancellation. Every error body retains both the 64 KiB limit and
+the ordinary time budget. A deadline while consuming an incomplete error body
+preserves the already received HTTP status, including the blocking 426 state;
+the absent envelope metadata remains unknown.
+
+`CanonicalReadTransportTest` exercises progressing history/archive responses past
+the control budget, stalled successful bodies, bounded progressing error bodies,
+and cancellation during streaming.
 
 HTTP 426 retains a read-only `updateRequired` state and blocks further calls
 from that client; a malformed envelope keeps the minimum version unknown.

@@ -16,6 +16,7 @@ class ChatUpdatesModel(
     private val authorized: () -> Boolean,
     private val onFailure: (Exception) -> Unit,
     private val output: RunOutputModel? = null,
+    private val foregroundChanged: (Boolean) -> Unit = {},
     private val invalidate: (ChatChanges) -> Unit,
 ) {
     private val mutable = MutableStateFlow(RealtimePhase.Stopped)
@@ -30,6 +31,7 @@ class ChatUpdatesModel(
     fun foreground(value: Boolean) {
         if (closed || foreground == value) return
         foreground = value
+        foregroundChanged(value)
         if (value) retry()
         else {
             generation++
@@ -87,6 +89,7 @@ class ChatUpdatesModel(
         closed = true
         generation++
         observation?.cancel()
+        foregroundChanged(false)
         mutable.value = RealtimePhase.Stopped
     }
 }

@@ -105,6 +105,12 @@ internal interface CanonicalApi {
     @GET("/api/feature-switches")
     suspend fun `featureSwitches`(@Header("Authorization") token: String): Response<FeatureSwitches>
 
+    @POST("/api/chat/events/catch-up")
+    suspend fun `historyCatchUp`(
+        @Header("Authorization") token: String,
+        @Body body: HistoryCatchUpRequest,
+    ): Response<HistoryCatchUp>
+
     @GET("/api/chat-threads/{threadId}/event-snapshot")
     suspend fun `historySnapshot`(
         @Header("Authorization") token: String,

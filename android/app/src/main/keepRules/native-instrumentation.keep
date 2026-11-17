@@ -210,6 +210,7 @@
   public java.lang.Object createThread(ai.okou.android.api.generated.CreateThreadRequest, kotlin.coroutines.Continuation);
   public java.lang.Object featureSwitches(kotlin.coroutines.Continuation);
   public java.lang.Object historyArchive(java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object historyCatchUp(java.util.Map, kotlin.coroutines.Continuation);
   public java.lang.Object historyRows(java.lang.String, ai.okou.android.chat.HistoryCursor, kotlin.coroutines.Continuation);
   public java.lang.Object historySnapshot(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object indicators(kotlin.coroutines.Continuation);
@@ -232,7 +233,7 @@
   public java.lang.Object close(kotlin.coroutines.Continuation);
 }
 -keep,allowobfuscation class ai.okou.android.chat.ChatChanges {
-  public <init>(boolean, boolean, boolean, boolean, java.util.Set, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public <init>(boolean, boolean, boolean, boolean, java.util.Set, java.util.Set, int, kotlin.jvm.internal.DefaultConstructorMarker);
 }
 -keep,allowobfuscation class ai.okou.android.chat.ChatComposerModel {
   public kotlinx.coroutines.flow.StateFlow getUiState();
@@ -254,6 +255,7 @@
   public java.lang.Object chatSnapshot(kotlin.coroutines.Continuation);
   public java.lang.Object featureSwitches(kotlin.coroutines.Continuation);
   public java.lang.Object historyArchive(java.lang.String, kotlin.coroutines.Continuation);
+  public java.lang.Object historyCatchUp(java.util.Map, kotlin.coroutines.Continuation);
   public java.lang.Object historyRows(java.lang.String, ai.okou.android.chat.HistoryCursor, kotlin.coroutines.Continuation);
   public java.lang.Object historySnapshot(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object indicators(kotlin.coroutines.Continuation);
@@ -285,6 +287,9 @@
   public java.lang.Object historySnapshot(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object markRead(java.lang.String, kotlin.coroutines.Continuation);
   public java.lang.Object threadDetail(java.lang.String, kotlin.coroutines.Continuation);
+}
+-keep,allowobfuscation class ai.okou.android.chat.HistoryBatch {
+  public <init>(java.util.Map, java.util.List);
 }
 -keep,allowobfuscation class ai.okou.android.chat.HistoryBlock {
   public java.lang.String getText();
@@ -593,9 +598,13 @@
 }
 -keep,allowobfuscation class kotlin.collections.MapsKt {
 }
+-keep,allowobfuscation class kotlin.collections.MapsKt__MapsJVMKt {
+  public static int mapCapacity(int);
+}
 -keep,allowobfuscation class kotlin.collections.MapsKt__MapsKt {
   public static java.util.Map emptyMap();
   public static java.lang.Object getValue(java.util.Map, java.lang.Object);
+  public static java.util.Map mapOf(kotlin.Pair[]);
   public static java.util.Map toMap(java.util.Map);
 }
 -keep,allowobfuscation class kotlin.collections.SetsKt {
@@ -772,6 +781,7 @@
 -keep,allowobfuscation class kotlin.ranges.RangesKt {
 }
 -keep,allowobfuscation class kotlin.ranges.RangesKt___RangesKt {
+  public static int coerceAtLeast(int, int);
   public static kotlin.ranges.IntProgression step(kotlin.ranges.IntProgression, int);
   public static kotlin.ranges.IntRange until(int, int);
 }
@@ -958,18 +968,22 @@
 }
 -keep,allowobfuscation class kotlinx.serialization.json.JsonArray {
   public <init>(java.util.List);
+  public kotlinx.serialization.json.JsonElement get(int);
 }
 -keep,allowobfuscation class kotlinx.serialization.json.JsonElement {
 }
 -keep,allowobfuscation class kotlinx.serialization.json.JsonElementKt {
   public static kotlinx.serialization.json.JsonPrimitive JsonPrimitive(java.lang.String);
+  public static kotlinx.serialization.json.JsonArray getJsonArray(kotlinx.serialization.json.JsonElement);
   public static kotlinx.serialization.json.JsonObject getJsonObject(kotlinx.serialization.json.JsonElement);
   public static kotlinx.serialization.json.JsonPrimitive getJsonPrimitive(kotlinx.serialization.json.JsonElement);
+  public static long getLong(kotlinx.serialization.json.JsonPrimitive);
 }
 -keep,allowobfuscation class kotlinx.serialization.json.JsonNull {
   kotlinx.serialization.json.JsonNull INSTANCE;
 }
 -keep,allowobfuscation class kotlinx.serialization.json.JsonObject {
+  public <init>(java.util.Map);
   public java.lang.Object get(java.lang.Object);
   public java.lang.String toString();
 }

@@ -63,6 +63,62 @@ class ChatListRootTest {
     }
 
     @Test
+    fun heldHistoryWarmingFailureKeepsFirstDisplayAndSelectedConversationUsable() {
+        val app = compose.activity.application as ChatListApplication
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        app.fixture.historyCatchUp = {
+            entered.countDown()
+            release.await()
+            okhttp3.mockwebserver.MockResponse().setResponseCode(503)
+        }
+        try {
+            app.responseGate.countDown()
+            awaitListAndNames()
+            compose.waitUntil(10_000) { compose.runOnIdle { entered.count == 0L } }
+            compose.onNodeWithText("Chats").assertExists()
+            org.junit.Assert.assertEquals(0, app.fixture.readRequests.get())
+            val chats =
+                compose.runOnIdle {
+                    checkNotNull(
+                            ViewModelProvider(compose.activity)[SessionModel::class.java]
+                                .uiState
+                                .value
+                                .ready
+                        )
+                        .chats
+                }
+            compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Personal chat"))
+            compose.onNodeWithText("Personal chat").performClick()
+            compose.waitUntil(10_000) {
+                compose.runOnIdle {
+                    chats.history.uiState.value.phase == ai.okou.android.chat.HistoryPhase.Ready
+                }
+            }
+            compose
+                .onNodeWithTag("conversation")
+                .performScrollToNode(hasText("Native history", substring = true))
+            compose.onNodeWithText("Native history", substring = true).assertExists()
+            compose.onNodeWithContentDescription("Settings").performClick()
+            compose.onNodeWithText("Appearance").assertExists()
+            release.countDown()
+            compose.waitUntil(10_000) {
+                compose.runOnIdle {
+                    chats.warming.state.value.phase == ai.okou.android.chat.ChatReadPhase.Failed
+                }
+            }
+            compose.onNodeWithText("Appearance").assertExists()
+            compose.onNodeWithContentDescription("Back").performClick()
+            compose
+                .onNodeWithTag("conversation")
+                .performScrollToNode(hasText("Native history", substring = true))
+            compose.onNodeWithText("Native history", substring = true).assertExists()
+        } finally {
+            release.countDown()
+        }
+    }
+
+    @Test
     fun selectedConversationKeepsNavigationUsableAndOnlyVisibleConfirmedContentMarksRead() {
         val app = compose.activity.application as ChatListApplication
         val gate = CountDownLatch(1)

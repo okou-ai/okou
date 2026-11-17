@@ -18,7 +18,9 @@ import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.encodeToJsonElement
 
 @Serializable
 data class SessionOutputDelta(
@@ -30,6 +32,39 @@ data class SessionOutputDelta(
     val `chunkIndex`: Long,
     val `delta`: String,
 )
+
+@Serializable(with = HistoryCatchUpRequestItemSerializer::class)
+data class HistoryCatchUpRequestItem(val item1: String, val item2: Long)
+
+object HistoryCatchUpRequestItemSerializer : KSerializer<HistoryCatchUpRequestItem> {
+    override val descriptor = ListSerializer(JsonElement.serializer()).descriptor
+
+    override fun deserialize(decoder: Decoder): HistoryCatchUpRequestItem {
+        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON tuple")
+        val values =
+            input.decodeJsonElement() as? JsonArray
+                ?: throw SerializationException("Expected JSON tuple")
+        if (values.size != 2) throw SerializationException("Unexpected tuple length")
+        return HistoryCatchUpRequestItem(
+            input.json.decodeFromJsonElement<String>(values[0]),
+            input.json.decodeFromJsonElement<Long>(values[1]),
+        )
+    }
+
+    override fun serialize(encoder: Encoder, value: HistoryCatchUpRequestItem) {
+        val output = encoder as? JsonEncoder ?: throw SerializationException("Expected JSON tuple")
+        output.encodeJsonElement(
+            JsonArray(
+                listOf(
+                    output.json.encodeToJsonElement(value.item1),
+                    output.json.encodeToJsonElement(value.item2),
+                )
+            )
+        )
+    }
+}
+
+typealias HistoryCatchUpRequest = List<HistoryCatchUpRequestItem>
 
 @Serializable data object RealtimeTokenRequest
 
@@ -2832,6 +2867,270 @@ data class FeatureSwitches(
     val `effectiveSwitches`: Map<String, Boolean>,
 )
 
+@Serializable(with = HistoryCatchUpEventsValueItemSerializer::class)
+sealed interface HistoryCatchUpEventsValueItem
+
+@Serializable
+enum class HistoryCatchUpEventsValueItemVariant1ContextType {
+    @SerialName("web") WEB,
+    @SerialName("slack") SLACK,
+    @SerialName("discord") DISCORD,
+    @SerialName("wechat") WECHAT,
+    @SerialName("feishu") FEISHU,
+    @SerialName("teams") TEAMS,
+    @SerialName("telegram") TELEGRAM,
+    @SerialName("agentphone") AGENTPHONE,
+    @SerialName("email") EMAIL,
+    @SerialName("automation") AUTOMATION,
+    @SerialName("agent_run") AGENT_RUN,
+}
+
+@Serializable(with = CanonicalOptionalJsonSerializer::class)
+sealed interface CanonicalOptionalJson {
+    data object Absent : CanonicalOptionalJson
+
+    data class Present(val value: JsonElement) : CanonicalOptionalJson
+}
+
+object CanonicalOptionalJsonSerializer : KSerializer<CanonicalOptionalJson> {
+    // A non-nullable property lets explicit JSON null reach this serializer.
+    override val descriptor = JsonElement.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): CanonicalOptionalJson {
+        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON value")
+        return CanonicalOptionalJson.Present(input.decodeJsonElement())
+    }
+
+    override fun serialize(encoder: Encoder, value: CanonicalOptionalJson) {
+        val output = encoder as? JsonEncoder ?: throw SerializationException("Expected JSON value")
+        if (value !is CanonicalOptionalJson.Present)
+            throw SerializationException("Absent JSON field must be omitted")
+        output.encodeJsonElement(value.value)
+    }
+}
+
+@Serializable
+data class HistoryCatchUpEventsValueItemVariant1Payload(
+    val `content`: String? = null,
+    val `userMessage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
+    val `error`: String? = null,
+    val `usage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
+)
+
+@Serializable
+enum class HistoryCatchUpEventsValueItemVariant1EventType {
+    @SerialName("run.failed") RUN_FAILED
+}
+
+@Serializable
+data class HistoryCatchUpEventsValueItemVariant1(
+    val `id`: String,
+    val `chatThreadId`: String,
+    val `runId`: String?,
+    val `revokesEventId`: String?,
+    val `contextType`: HistoryCatchUpEventsValueItemVariant1ContextType?,
+    val `contextId`: String?,
+    val `runEventSequenceNumber`: Long?,
+    val `runEventId`: String?,
+    val `seqId`: Long,
+    val `createdAt`: String,
+    val `payload`: HistoryCatchUpEventsValueItemVariant1Payload?,
+    val `eventType`: HistoryCatchUpEventsValueItemVariant1EventType,
+    val `failureReason`: String? = null,
+) : HistoryCatchUpEventsValueItem
+
+@Serializable
+enum class HistoryCatchUpEventsValueItemVariant2ContextType {
+    @SerialName("web") WEB,
+    @SerialName("slack") SLACK,
+    @SerialName("discord") DISCORD,
+    @SerialName("wechat") WECHAT,
+    @SerialName("feishu") FEISHU,
+    @SerialName("teams") TEAMS,
+    @SerialName("telegram") TELEGRAM,
+    @SerialName("agentphone") AGENTPHONE,
+    @SerialName("email") EMAIL,
+    @SerialName("automation") AUTOMATION,
+    @SerialName("agent_run") AGENT_RUN,
+}
+
+@Serializable
+data class HistoryCatchUpEventsValueItemVariant2Payload(
+    val `content`: String? = null,
+    val `userMessage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
+    val `error`: String? = null,
+    val `usage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
+)
+
+@Serializable
+enum class HistoryCatchUpEventsValueItemVariant2EventType {
+    @SerialName("input.prompt") INPUT_PROMPT,
+    @SerialName("input.automation") INPUT_AUTOMATION,
+    @SerialName("input.budget") INPUT_BUDGET,
+    @SerialName("input.rejected") INPUT_REJECTED,
+}
+
+@Serializable
+data class HistoryCatchUpEventsValueItemVariant2(
+    val `id`: String,
+    val `chatThreadId`: String,
+    val `runId`: String?,
+    val `revokesEventId`: String?,
+    val `contextType`: HistoryCatchUpEventsValueItemVariant2ContextType,
+    val `contextId`: String?,
+    val `runEventSequenceNumber`: Long?,
+    val `runEventId`: String?,
+    val `seqId`: Long,
+    val `createdAt`: String,
+    val `payload`: HistoryCatchUpEventsValueItemVariant2Payload?,
+    val `eventType`: HistoryCatchUpEventsValueItemVariant2EventType,
+) : HistoryCatchUpEventsValueItem
+
+@Serializable
+enum class HistoryCatchUpEventsValueItemVariant3ContextType {
+    @SerialName("web") WEB,
+    @SerialName("slack") SLACK,
+    @SerialName("discord") DISCORD,
+    @SerialName("wechat") WECHAT,
+    @SerialName("feishu") FEISHU,
+    @SerialName("teams") TEAMS,
+    @SerialName("telegram") TELEGRAM,
+    @SerialName("agentphone") AGENTPHONE,
+    @SerialName("email") EMAIL,
+    @SerialName("automation") AUTOMATION,
+    @SerialName("agent_run") AGENT_RUN,
+}
+
+@Serializable
+data class HistoryCatchUpEventsValueItemVariant3Payload(
+    val `content`: String? = null,
+    val `userMessage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
+    val `error`: String? = null,
+    val `usage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
+)
+
+@Serializable
+enum class HistoryCatchUpEventsValueItemVariant3EventType {
+    @SerialName("output.message") OUTPUT_MESSAGE,
+    @SerialName("output.error") OUTPUT_ERROR,
+    @SerialName("output.followups") OUTPUT_FOLLOWUPS,
+    @SerialName("run.completed") RUN_COMPLETED,
+    @SerialName("run.cancelled") RUN_CANCELLED,
+    @SerialName("control.interrupt") CONTROL_INTERRUPT,
+    @SerialName("control.revoke") CONTROL_REVOKE,
+    @SerialName("usage.recorded") USAGE_RECORDED,
+}
+
+@Serializable
+data class HistoryCatchUpEventsValueItemVariant3(
+    val `id`: String,
+    val `chatThreadId`: String,
+    val `runId`: String?,
+    val `revokesEventId`: String?,
+    val `contextType`: HistoryCatchUpEventsValueItemVariant3ContextType?,
+    val `contextId`: String?,
+    val `runEventSequenceNumber`: Long?,
+    val `runEventId`: String?,
+    val `seqId`: Long,
+    val `createdAt`: String,
+    val `payload`: HistoryCatchUpEventsValueItemVariant3Payload?,
+    val `eventType`: HistoryCatchUpEventsValueItemVariant3EventType,
+) : HistoryCatchUpEventsValueItem
+
+object HistoryCatchUpEventsValueItemSerializer : KSerializer<HistoryCatchUpEventsValueItem> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.HistoryCatchUpEventsValueItem")
+
+    override fun deserialize(decoder: Decoder): HistoryCatchUpEventsValueItem {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for HistoryCatchUpEventsValueItem"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for HistoryCatchUpEventsValueItem")
+        val matches =
+            listOf(
+                (value["eventType"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("run.failed")
+                } == true,
+                ((value["eventType"] as? JsonPrimitive)?.let {
+                    it.isString &&
+                        it.content in
+                            setOf(
+                                "input.prompt",
+                                "input.automation",
+                                "input.budget",
+                                "input.rejected",
+                            )
+                } == true) && (!value.containsKey("failureReason")),
+                ((value["eventType"] as? JsonPrimitive)?.let {
+                    it.isString &&
+                        it.content in
+                            setOf(
+                                "output.message",
+                                "output.error",
+                                "output.followups",
+                                "run.completed",
+                                "run.cancelled",
+                                "control.interrupt",
+                                "control.revoke",
+                                "usage.recorded",
+                            )
+                } == true) && (!value.containsKey("failureReason")),
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous HistoryCatchUpEventsValueItem variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    HistoryCatchUpEventsValueItemVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    HistoryCatchUpEventsValueItemVariant2.serializer(),
+                    value,
+                )
+            2 ->
+                input.json.decodeFromJsonElement(
+                    HistoryCatchUpEventsValueItemVariant3.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown HistoryCatchUpEventsValueItem variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: HistoryCatchUpEventsValueItem) {
+        when (value) {
+            is HistoryCatchUpEventsValueItemVariant1 ->
+                encoder.encodeSerializableValue(
+                    HistoryCatchUpEventsValueItemVariant1.serializer(),
+                    value,
+                )
+            is HistoryCatchUpEventsValueItemVariant2 ->
+                encoder.encodeSerializableValue(
+                    HistoryCatchUpEventsValueItemVariant2.serializer(),
+                    value,
+                )
+            is HistoryCatchUpEventsValueItemVariant3 ->
+                encoder.encodeSerializableValue(
+                    HistoryCatchUpEventsValueItemVariant3.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class HistoryCatchUp(
+    val `events`: Map<String, List<HistoryCatchUpEventsValueItem>>,
+    val `notFoundThreads`: List<String>,
+)
+
 @Serializable(with = HistorySnapshotSerializer::class) sealed interface HistorySnapshot
 
 @Serializable(with = CanonicalZeroSerializer::class) data object CanonicalZero
@@ -2961,30 +3260,6 @@ enum class HistoryRowsRowsItemVariant1ContextType {
     @SerialName("email") EMAIL,
     @SerialName("automation") AUTOMATION,
     @SerialName("agent_run") AGENT_RUN,
-}
-
-@Serializable(with = CanonicalOptionalJsonSerializer::class)
-sealed interface CanonicalOptionalJson {
-    data object Absent : CanonicalOptionalJson
-
-    data class Present(val value: JsonElement) : CanonicalOptionalJson
-}
-
-object CanonicalOptionalJsonSerializer : KSerializer<CanonicalOptionalJson> {
-    // A non-nullable property lets explicit JSON null reach this serializer.
-    override val descriptor = JsonElement.serializer().descriptor
-
-    override fun deserialize(decoder: Decoder): CanonicalOptionalJson {
-        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON value")
-        return CanonicalOptionalJson.Present(input.decodeJsonElement())
-    }
-
-    override fun serialize(encoder: Encoder, value: CanonicalOptionalJson) {
-        val output = encoder as? JsonEncoder ?: throw SerializationException("Expected JSON value")
-        if (value !is CanonicalOptionalJson.Present)
-            throw SerializationException("Absent JSON field must be omitted")
-        output.encodeJsonElement(value.value)
-    }
 }
 
 @Serializable

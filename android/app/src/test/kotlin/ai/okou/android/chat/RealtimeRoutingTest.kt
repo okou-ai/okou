@@ -7,6 +7,7 @@ import ai.okou.android.CHAT_PROJECT
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.TestRealtimeService
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.SessionOutputDelta
 import ai.okou.android.chatEventWire
 import ai.okou.android.historyEventWire
@@ -31,6 +32,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import okhttp3.mockwebserver.MockResponse
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -95,7 +97,10 @@ class RealtimeRoutingTest {
                 }
                 ready()
                 model.history.open(model.uiState.value.threads.single { it.id == CHAT_PERSONAL })
-                model.history.uiState.first { it.phase == HistoryPhase.Ready }
+                model.history.uiState.first {
+                    it.phase == HistoryPhase.Ready && it.detailPhase == ChatReadPhase.Ready
+                }
+                model.warming.state.first { it.phase == ChatReadPhase.Ready }
                 runCurrent()
                 block(api, model, realtime)
             }
@@ -130,7 +135,7 @@ class RealtimeRoutingTest {
     }
 
     @Test
-    fun streamedOutputStaysTransientAndPersistenceRefreshesOnlyItsHistory() = runTest {
+    fun streamedOutputStaysTransientWhilePersistenceRefreshesHistoryAndWarming() = runTest {
         withReadyModel { api, model, realtime ->
             val runId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
             val inputId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
@@ -172,7 +177,9 @@ class RealtimeRoutingTest {
             checkNotNull(
                 model.history.beginVisit(CHAT_PERSONAL, model.history.uiState.value.generation)
             )
-            model.history.uiState.first { it.phase == HistoryPhase.Ready }
+            model.history.uiState.first {
+                it.phase == HistoryPhase.Ready && it.detailPhase == ChatReadPhase.Ready
+            }
             val target = checkNotNull(realtime.target.first { it?.runId == runId })
             runCurrent()
             val confirmation = model.history.uiState.value.confirmation
@@ -199,13 +206,26 @@ class RealtimeRoutingTest {
             assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
             assertTrue(paths.isEmpty())
 
+            api.historyDetail = { MockResponse().setResponseCode(503) }
+            realtime.invalidate(ChatChanges(detailThreads = setOf(CHAT_PERSONAL)))
+            model.history.uiState.first { it.detailPhase == ChatReadPhase.Failed }
+            assertEquals(confirmation, model.history.uiState.value.confirmation)
+            assertEquals(
+                "Live routed answer",
+                model.history.output.state.value.messages.single().blocks.single().text,
+            )
+            assertEquals(listOf("/api/chat-threads/$CHAT_PERSONAL"), paths.toList())
+            paths.clear()
+
+            val warmed = model.warming.state.value.revision
             persisted.set(true)
-            realtime.invalidate(ChatChanges(threads = setOf(CHAT_PERSONAL)))
+            realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
             val saved =
                 model.history.uiState.first {
                     it.phase == HistoryPhase.Ready &&
                         it.transcript?.messages?.any { message -> message.id == eventId } == true
                 }
+            model.warming.state.first { it.phase == ChatReadPhase.Ready && it.revision > warmed }
             runCurrent()
             val messages =
                 checkNotNull(saved.transcript)
@@ -214,7 +234,178 @@ class RealtimeRoutingTest {
             assertEquals("Saved routed answer", messages.single().blocks.single().text)
             assertTrue(model.history.output.state.value.messages.isEmpty())
             assertEquals(1, paths.count { it.endsWith("/event-rows") })
-            assertTrue(paths.all { it.startsWith("/api/chat-threads/$CHAT_PERSONAL") })
+            assertEquals(1, paths.count { it == "/api/chat/events/catch-up" })
+            assertTrue(
+                paths.all {
+                    it == "/api/chat/events/catch-up" ||
+                        it.startsWith("/api/chat-threads/$CHAT_PERSONAL")
+                }
+            )
+        }
+    }
+
+    @Test
+    fun detailChangesRefreshOnlySelectedDetailAndMessagesCatchUpHistory() = runTest {
+        withReadyModel { api, model, realtime ->
+            val paths = record(api)
+            val confirmation = model.history.uiState.value.confirmation
+            val warmed = model.warming.state.value
+            val selectedDetail = checkNotNull(chatChanges("chatThreadDetailChanged:$CHAT_PERSONAL"))
+            val otherDetail = checkNotNull(chatChanges("chatThreadDetailChanged:$CHAT_IN_PROJECT"))
+            api.historyDetail = {
+                jsonResponse("""{"lastReadAt":"$CHAT_DATE","cancellationRecoveryPending":true}""")
+            }
+            realtime.invalidate(selectedDetail + otherDetail)
+            model.history.uiState.first {
+                it.detailPhase == ChatReadPhase.Ready &&
+                    it.detail?.cancellationRecoveryPending == true
+            }
+            advanceTimeBy(1_000)
+            runCurrent()
+            assertEquals(warmed, model.warming.state.value)
+            assertEquals(confirmation, model.history.uiState.value.confirmation)
+            assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals(listOf("/api/chat-threads/$CHAT_PERSONAL"), paths.toList())
+
+            paths.clear()
+            api.historyDetail = {
+                jsonResponse("""{"lastReadAt":"$CHAT_DATE","cancellationRecoveryPending":false}""")
+            }
+            val message = checkNotNull(chatChanges("chatThreadMessageCreated:$CHAT_PERSONAL"))
+            realtime.invalidate(message + selectedDetail + otherDetail)
+            model.history.uiState.first {
+                it.phase == HistoryPhase.Ready &&
+                    it.confirmation != confirmation &&
+                    it.detailPhase == ChatReadPhase.Ready &&
+                    it.detail?.cancellationRecoveryPending == false
+            }
+            model.warming.state.first {
+                it.phase == ChatReadPhase.Ready && it.revision > warmed.revision
+            }
+            runCurrent()
+            assertEquals(1, paths.count { it == "/api/chat/events/catch-up" })
+            assertEquals(1, paths.count { it == "/api/chat-threads/$CHAT_PERSONAL" })
+            assertEquals(1, paths.count { it == "/api/chat-threads/$CHAT_PERSONAL/event-rows" })
+            assertEquals(3, paths.size)
+        }
+    }
+
+    @Test
+    fun heldDetailFailureDoesNotDelayMessageHistoryOrEraseItsConfirmation() = runTest {
+        withReadyModel { api, model, realtime ->
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val paths = record(api)
+            val previous = model.history.uiState.value.confirmation
+            api.historyDetail = {
+                entered.countDown()
+                release.await()
+                MockResponse().setResponseCode(503)
+            }
+            realtime.invalidate(ChatChanges(detailThreads = setOf(CHAT_PERSONAL)))
+            runCurrent()
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS))
+                realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
+                val confirmed =
+                    model.history.uiState.first {
+                        it.phase == HistoryPhase.Ready && it.confirmation != previous
+                    }
+                assertEquals(ChatReadPhase.Loading, confirmed.detailPhase)
+                release.countDown()
+                val failed = model.history.uiState.first { it.detailPhase == ChatReadPhase.Failed }
+                assertEquals(503, (failed.detailFailure as ApiFailure.Http).status)
+                assertEquals(confirmed.confirmation, failed.confirmation)
+                assertEquals(confirmed.transcript, failed.transcript)
+                assertEquals(HistoryPhase.Ready, failed.phase)
+                assertEquals(1, paths.count { it == "/api/chat-threads/$CHAT_PERSONAL" })
+                assertEquals(1, paths.count { it.endsWith("/event-rows") })
+            } finally {
+                release.countDown()
+            }
+        }
+    }
+
+    @Test
+    fun heldHistoryDoesNotDelayDetailOrReplaceItsFreshResult() = runTest {
+        withReadyModel { api, model, realtime ->
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val rows = api.historyRows
+            val paths = record(api)
+            api.historyRows = { request ->
+                entered.countDown()
+                release.await()
+                rows(request)
+            }
+            api.historyDetail = {
+                jsonResponse("""{"lastReadAt":"$CHAT_DATE","cancellationRecoveryPending":true}""")
+            }
+            realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
+            runCurrent()
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS))
+                realtime.invalidate(ChatChanges(detailThreads = setOf(CHAT_PERSONAL)))
+                val detail =
+                    model.history.uiState.first {
+                        it.detailPhase == ChatReadPhase.Ready &&
+                            it.detail?.cancellationRecoveryPending == true
+                    }
+                assertEquals(HistoryPhase.Loading, detail.phase)
+                release.countDown()
+                val confirmed = model.history.uiState.first { it.phase == HistoryPhase.Ready }
+                assertEquals(detail.detail, confirmed.detail)
+                assertEquals(1, paths.count { it == "/api/chat-threads/$CHAT_PERSONAL" })
+                assertEquals(1, paths.count { it.endsWith("/event-rows") })
+            } finally {
+                release.countDown()
+            }
+        }
+    }
+
+    @Test
+    fun heldDetailCannotPublishIntoANewlySelectedConversation() = runTest {
+        withReadyModel { api, model, realtime ->
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val answered = CountDownLatch(1)
+            api.commandResponse = { request ->
+                if (request.requestUrl?.encodedPath == "/api/chat-threads/$CHAT_PERSONAL") {
+                    entered.countDown()
+                    release.await()
+                    answered.countDown()
+                    jsonResponse(
+                        """{"lastReadAt":"$CHAT_DATE","cancellationRecoveryPending":true}"""
+                    )
+                } else null
+            }
+            realtime.invalidate(ChatChanges(detailThreads = setOf(CHAT_PERSONAL)))
+            runCurrent()
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS))
+                model.history.open(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT })
+                model.history.uiState.first {
+                    it.phase == HistoryPhase.Ready && it.detailPhase == ChatReadPhase.Ready
+                }
+                release.countDown()
+                assertTrue(answered.await(10, TimeUnit.SECONDS))
+                api.historyDetail = {
+                    jsonResponse(
+                        """{"lastReadAt":"$CHAT_DATE","cancellationRecoveryPending":false}"""
+                    )
+                }
+                realtime.invalidate(ChatChanges(detailThreads = setOf(CHAT_IN_PROJECT)))
+                val current =
+                    model.history.uiState.first {
+                        it.detailPhase == ChatReadPhase.Ready && it.detail?.lastReadAt == CHAT_DATE
+                    }
+                assertEquals(CHAT_IN_PROJECT, current.thread?.id)
+                assertEquals(false, current.detail?.cancellationRecoveryPending)
+                assertEquals(HistoryPhase.Ready, current.phase)
+            } finally {
+                release.countDown()
+            }
         }
     }
 
@@ -223,11 +414,15 @@ class RealtimeRoutingTest {
         withReadyModel { api, model, realtime ->
             val paths = record(api)
             val confirmation = model.history.uiState.value.confirmation
-            realtime.invalidate(ChatChanges(threads = setOf(CHAT_IN_PROJECT)))
+            val warmed = model.warming.state.value.revision
+            realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_IN_PROJECT)))
+            advanceTimeBy(1_000)
             runCurrent()
+            model.warming.state.first { it.phase == ChatReadPhase.Ready && it.revision > warmed }
             assertEquals(confirmation, model.history.uiState.value.confirmation)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
-            assertTrue(paths.isEmpty())
+            assertEquals(listOf("/api/chat/events/catch-up"), paths.toList())
+            paths.clear()
 
             val stamp = "2026-11-13T00:00:01Z"
             indicators(api, stamp)
@@ -414,11 +609,13 @@ class RealtimeRoutingTest {
                 )
             }
             try {
-                realtime.invalidate(ChatChanges(threads = setOf(CHAT_PERSONAL)))
+                realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
                 runCurrent()
                 entered.await()
                 sequence.set(52)
-                repeat(50) { realtime.invalidate(ChatChanges(threads = setOf(CHAT_PERSONAL))) }
+                repeat(50) {
+                    realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
+                }
                 runCurrent()
                 release.countDown()
                 model.history.uiState.first {
@@ -430,7 +627,12 @@ class RealtimeRoutingTest {
                 }
                 runCurrent()
                 assertEquals(2, paths.count { it.endsWith("/event-rows") })
-                assertTrue(paths.all { it.startsWith("/api/chat-threads/$CHAT_PERSONAL") })
+                assertTrue(
+                    paths.all {
+                        it == "/api/chat/events/catch-up" ||
+                            it.startsWith("/api/chat-threads/$CHAT_PERSONAL")
+                    }
+                )
             } finally {
                 release.countDown()
             }
