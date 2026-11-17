@@ -69,8 +69,9 @@ class RecoveryApiFixture(api: ChatListApiFixture) {
             val selected = rows.get().filter { it.threadId == url.pathSegments[2] }
             val tail = selected.filter { it.seqId > since }
             val last = selected.lastOrNull()
+            val rawRows = tail.joinToString(",", "[", "]") { it.archiveJson() }
             jsonResponse(
-                """{"rows":${JsonArray(tail.map { it.wire })},"cursor":{"lastEventId":${last?.let { JsonPrimitive(it.id) } ?: JsonNull},"lastSeqId":${last?.seqId ?: 0}},"hasMore":false}"""
+                """{"rows":$rawRows,"cursor":{"lastEventId":${last?.let { JsonPrimitive(it.id) } ?: JsonNull},"lastSeqId":${last?.seqId ?: 0}},"hasMore":false}"""
             )
         }
     }

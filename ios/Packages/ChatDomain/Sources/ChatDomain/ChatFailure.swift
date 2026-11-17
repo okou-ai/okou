@@ -3,15 +3,20 @@ import Foundation
 /// The original failure fact survives decoding and cache replay; recovery never edits it.
 public struct ChatFailure: Equatable, Sendable {
   public let id: String
-  public let error: String
+  public let outputError: String?
   public let reason: String?
-  public let isRunFailure: Bool
+  public var isRunFailure: Bool { outputError == nil }
 
-  public init(id: String, error: String, reason: String?, isRunFailure: Bool) {
+  public init(id: String, runFailureReason: String?) {
     self.id = id
-    self.error = error
-    self.reason = reason
-    self.isRunFailure = isRunFailure
+    self.reason = runFailureReason
+    self.outputError = nil
+  }
+
+  public init(id: String, outputError: String) {
+    self.id = id
+    self.reason = nil
+    self.outputError = outputError
   }
 
   public enum Kind: Equatable, Sendable {
@@ -38,7 +43,7 @@ public struct ChatFailure: Equatable, Sendable {
 
   /// Run lifecycle recovery uses structured facts; output errors retain their own contract.
   public func recovery(personalFramework: Framework?) -> Recovery {
-    if isRunFailure { return runRecovery(personalFramework: personalFramework) }
+    guard let error = outputError else { return runRecovery(personalFramework: personalFramework) }
     let normalized = error.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
       .trimmingCharacters(in: .whitespacesAndNewlines)
     func matches(_ pattern: String) -> Bool {

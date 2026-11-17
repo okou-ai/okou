@@ -138,7 +138,7 @@ final class ChatUserMessageTests: XCTestCase {
       rows: [
         .init(
           id: identity(1), createdAt: .now, eventType: .inputRejected,
-          payload: .init(error: "Unavailable", userMessage: document))
+          payload: .init(userMessage: document), inputError: "Unavailable")
       ], recovering: false)
     let message = try XCTUnwrap(result.messages.first)
     XCTAssertEqual(message.userMessage, document)

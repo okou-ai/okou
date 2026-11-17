@@ -35,7 +35,7 @@ final class ChatFailureTests: XCTestCase {
     XCTAssertTrue(history.messages.contains { $0.id == lateOutput.id })
   }
 
-  func testStructuredReasonsOwnRecoveryDespiteMisleadingLegacyText() {
+  func testStructuredReasonsOwnRunRecovery() {
     let cases: [(String, ChatFailure.Kind, Bool)] = [
       ("session_history_limit", .newChat, false), ("context_window_exceeded", .newChat, false),
       ("guest_root_filesystem_full", .retryable, true),
@@ -54,7 +54,7 @@ final class ChatFailureTests: XCTestCase {
       ("unsupported_model", .unavailable, true), ("usage_limit", .usage, true)
     ]
     for (reason, kind, retry) in cases {
-      let recovery = failure(reason, text: "AUTONOMY_BUDGET_EXHAUSTED").recovery(
+      let recovery = failure(reason).recovery(
         personalFramework: .codex)
       XCTAssertEqual(recovery.kind, kind, reason)
       XCTAssertEqual(recovery.canRetry, retry, reason)
@@ -63,29 +63,29 @@ final class ChatFailureTests: XCTestCase {
 
   func testUnknownStructuredReasonsNeverBorrowLegacyActionsOrSubscription() {
     for framework: ChatFailure.Framework? in [nil, .codex, .claude] {
-      let recovery = failure("future_reason", text: "You've hit your usage limit").recovery(
+      let recovery = failure("future_reason").recovery(
         personalFramework: framework)
       XCTAssertEqual(recovery.kind, .unknown)
       XCTAssertFalse(recovery.canRetry)
       XCTAssertFalse(recovery.showsModelPicker)
     }
     XCTAssertEqual(
-      failure(nil, text: "Unclassified provider failure").recovery(personalFramework: .claude).kind,
+      failure(nil).recovery(personalFramework: .claude).kind,
       .unknown)
     XCTAssertFalse(
-      failure(nil, text: "Unclassified provider failure").recovery(personalFramework: nil).canRetry)
+      failure(nil).recovery(personalFramework: nil).canRetry)
   }
 
-  func testRunRecoveryIgnoresProseAndUnverifiableResetHints() {
+  func testRunRecoveryDoesNotInventFrameworkOrResetHints() {
     for reason in [nil, "unknown", "future_reason"] as [String?] {
-      let recovery = failure(reason, text: "You've hit your weekly limit. Resets 9pm.")
+      let recovery = failure(reason)
         .recovery(personalFramework: .codex)
       XCTAssertEqual(recovery.kind, .unknown)
       XCTAssertNil(recovery.framework)
       XCTAssertNil(recovery.resetLabel)
       XCTAssertFalse(recovery.canRetry)
     }
-    let usage = failure("usage_limit", text: "You've hit your Opus limit. Resets 9pm.")
+    let usage = failure("usage_limit")
       .recovery(personalFramework: .codex)
     XCTAssertEqual(usage.kind, .usage)
     XCTAssertEqual(usage.framework, .codex)
@@ -93,27 +93,25 @@ final class ChatFailureTests: XCTestCase {
     XCTAssertFalse(usage.modelScoped)
     XCTAssertNil(usage.resetLabel)
     XCTAssertEqual(
-      failure("provider_overloaded", text: "insufficient_credits")
+      failure("provider_overloaded")
         .recovery(personalFramework: nil).kind, .capacity)
   }
 
   func testRunFailureWithoutTextSurvivesProjectionAndOwnsRecovery() throws {
-    for error: String? in [nil, ""] {
-      let event = ChatEvent(
-        id: "failure", runId: "run", createdAt: .now, eventType: .runFailed,
-        failureReason: "execution_timeout", payload: .init(error: error))
-      let history = try ChatEventProjection.history(rows: [event], recovering: false)
-      XCTAssertEqual(history.executionState, .failed)
-      XCTAssertEqual(history.latestFailureID, "failure")
-      XCTAssertFalse(try XCTUnwrap(history.messages.first).text.isEmpty)
-      XCTAssertEqual(
-        history.messages.first?.failure?.recovery(personalFramework: nil).kind, .timeout)
-    }
+    let event = ChatEvent(
+      id: "failure", runId: "run", createdAt: .now, eventType: .runFailed,
+      failureReason: "execution_timeout")
+    let history = try ChatEventProjection.history(rows: [event], recovering: false)
+    XCTAssertEqual(history.executionState, .failed)
+    XCTAssertEqual(history.latestFailureID, "failure")
+    XCTAssertFalse(try XCTUnwrap(history.messages.first).text.isEmpty)
+    XCTAssertEqual(
+      history.messages.first?.failure?.recovery(personalFramework: nil).kind, .timeout)
   }
 
   func testAutonomyOutputErrorStillRequiresContinuation() {
     let output = ChatFailure(
-      id: "output", error: "AUTONOMY_BUDGET_EXHAUSTED", reason: nil, isRunFailure: false)
+      id: "output", outputError: "AUTONOMY_BUDGET_EXHAUSTED")
     XCTAssertEqual(output.recovery(personalFramework: nil).kind, .autonomy)
     XCTAssertTrue(output.recovery(personalFramework: nil).canRetry)
   }
@@ -121,7 +119,7 @@ final class ChatFailureTests: XCTestCase {
   func testOnlyLatestRenderableFailureCanOwnActions() throws {
     let failed = ChatEvent(
       id: "failure", createdAt: .now, eventType: .runFailed,
-      failureReason: "execution_timeout", payload: .init(error: "Time limit"))
+      failureReason: "execution_timeout")
     let partial = ChatEvent(
       id: "partial", createdAt: .now, eventType: .outputMessage,
       payload: .init(content: "Saved answer"))
@@ -141,8 +139,8 @@ final class ChatFailureTests: XCTestCase {
     }
   }
 
-  private func failure(_ reason: String?, text: String) -> ChatFailure {
-    ChatFailure(id: "failure", error: text, reason: reason, isRunFailure: true)
+  private func failure(_ reason: String?) -> ChatFailure {
+    ChatFailure(id: "failure", runFailureReason: reason)
   }
 
   private func input(_ id: String, run: String?) -> ChatEvent {
@@ -155,6 +153,6 @@ final class ChatFailureTests: XCTestCase {
   private func failed(_ id: String, run: String) -> ChatEvent {
     ChatEvent(
       id: id, runId: run, createdAt: .now, eventType: .runFailed,
-      failureReason: "execution_timeout", payload: .init(error: "Timeout"))
+      failureReason: "execution_timeout")
   }
 }

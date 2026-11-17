@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
+import type { ClientChatEvent as ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import type { SessionOutputDelta } from "@okouai/api-contracts/contracts/realtime";
 import type {
   OptimisticChatEvent,

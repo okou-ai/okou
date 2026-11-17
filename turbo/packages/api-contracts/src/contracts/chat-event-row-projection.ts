@@ -4,6 +4,7 @@ import { normalizeRunFailureReason } from "./run-failure-reasons";
 import type { ChatEventType } from "./chat-events";
 import type {
   ChatEvent,
+  ClientChatEvent,
   ChatEventUsagePayload,
   UserMessageDocument,
 } from "./chat-threads";
@@ -37,7 +38,7 @@ function chatEventBase(row: ChatEventRow, content: string | null) {
 }
 
 /** Kept separate from the server's wire projection until #47704 activates it. */
-export function chatEventFromRowForDisplay(row: ChatEventRow): ChatEvent {
+export function chatEventFromRowForDisplay(row: ChatEventRow): ClientChatEvent {
   if (row.eventType !== "run.failed" && row.eventType !== "run.cancelled") {
     return chatEventFromRow(row);
   }

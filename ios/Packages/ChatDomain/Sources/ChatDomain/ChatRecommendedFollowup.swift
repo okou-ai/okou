@@ -132,7 +132,7 @@ enum ChatFollowupProjection {
 
   private static func hasStatusOutcome(_ row: ChatEvent) -> Bool {
     row.eventType == .runFailed || row.eventType == .runCancelled
-      || row.eventType == .outputError && row.payload?.error?.isEmpty == false
+      || row.eventType == .outputError && row.outputError?.isEmpty == false
   }
 
   private static func isAssistant(_ type: ChatEventType) -> Bool {
