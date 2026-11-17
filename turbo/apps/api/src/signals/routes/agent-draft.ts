@@ -15,7 +15,10 @@ import { conflict, notFound } from "../../lib/error";
 import { visibleAgentIdentityCondition } from "../services/agent-data.service";
 import { projectReferenceWritesEnabled } from "../services/project-reference.service";
 import { replaceAgentDraft$ } from "../services/composer-draft-write.service";
-import { conditionalComposerDraftsEnabled$ } from "../services/composer-draft-access";
+import {
+  conditionalComposerDraftsEnabled$,
+  conditionalDraftReferencesAllowed$,
+} from "../services/composer-draft-access";
 import type { RouteEntry } from "../route-entry";
 
 const agentReadAuth = {
@@ -111,10 +114,11 @@ function createAgentDraftReplacer(
     if (!body.ok) {
       return body.response;
     }
-    const references = await get(
-      projectReferenceWritesEnabled(auth, body.data.draft.draftUserMessage),
+    const references = await set(
+      conditionalDraftReferencesAllowed$,
+      body.data.draft.draftUserMessage,
+      signal,
     );
-    signal.throwIfAborted();
     if (!references) {
       return notFound("Projects unavailable");
     }

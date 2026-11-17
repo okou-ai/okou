@@ -1,9 +1,11 @@
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { computed } from "ccstate";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { command, computed } from "ccstate";
 
 import { authContext$ } from "../auth/auth-context";
 import { createUserFeatureSwitchContext } from "./feature-switches.service";
+import { projectReferences } from "./project-reference.service";
 
 const identity$ = computed((get) => {
   const auth = get(authContext$);
@@ -18,3 +20,22 @@ export const conditionalComposerDraftsEnabled$ = computed(async (get) => {
     isFeatureEnabled(FeatureSwitchKey.ConditionalComposerDrafts, context)
   );
 });
+
+export const conditionalDraftReferencesAllowed$ = command(
+  async (
+    { get },
+    document: UserMessageDocument | null,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    signal.throwIfAborted();
+    if (projectReferences(document).length === 0) {
+      return true;
+    }
+    const context = await get(featureContext$);
+    signal.throwIfAborted();
+    return (
+      context !== null &&
+      isFeatureEnabled(FeatureSwitchKey.SingleAgent, context)
+    );
+  },
+);

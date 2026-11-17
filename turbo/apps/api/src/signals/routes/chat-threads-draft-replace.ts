@@ -6,8 +6,10 @@ import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { replaceThreadDraft$ } from "../services/composer-draft-write.service";
-import { conditionalComposerDraftsEnabled$ } from "../services/composer-draft-access";
-import { projectReferenceWritesEnabled } from "../services/project-reference.service";
+import {
+  conditionalComposerDraftsEnabled$,
+  conditionalDraftReferencesAllowed$,
+} from "../services/composer-draft-access";
 import type { RouteEntry } from "../route-entry";
 
 const replace$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -23,10 +25,11 @@ const replace$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
-  const references = await get(
-    projectReferenceWritesEnabled(auth, body.data.draft.draftUserMessage),
+  const references = await set(
+    conditionalDraftReferencesAllowed$,
+    body.data.draft.draftUserMessage,
+    signal,
   );
-  signal.throwIfAborted();
   if (!references) {
     return badRequestMessage("Projects unavailable");
   }

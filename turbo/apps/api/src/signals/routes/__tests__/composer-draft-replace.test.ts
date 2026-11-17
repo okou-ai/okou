@@ -307,6 +307,53 @@ describe.each<Kind>(["agent", "thread"])("conditional %s drafts", (kind) => {
     await expect(read(kind, second)).resolves.toStrictEqual(empty);
   });
 
+  it("gates new Project references while allowing an existing draft to clear", async () => {
+    const value = await fixture();
+    if (!value.actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const actor = { ...value.actor, orgId: value.actor.orgId };
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.SingleAgent]: false,
+    });
+    const saved = textDraft("Keep this draft");
+    await patch(kind, value, saved);
+    const withProject: ComposerDraft = {
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "project",
+            projectId: randomUUID(),
+            nameSnapshot: "Captured project",
+          },
+        ],
+      },
+      draftAttachments: null,
+    };
+    const args = {
+      params: target(kind, value),
+      headers: headers(actor),
+      body: { expected: saved, draft: withProject },
+    };
+    const client = setupApp({ context, routes });
+    if (kind === "agent") {
+      await accept(client(agentDraftContract).replace(args), [404]);
+    } else {
+      await accept(client(chatThreadDraftContract).replace(args), [400]);
+    }
+    await expect(read(kind, value)).resolves.toStrictEqual(saved);
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.SingleAgent]: true,
+    });
+    expect((await replace(kind, value, saved, withProject)).status).toBe(204);
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.SingleAgent]: false,
+    });
+    expect((await replace(kind, value, withProject, empty)).status).toBe(204);
+    await expect(read(kind, value)).resolves.toStrictEqual(empty);
+  });
+
   it("rejects missing expectations, partial snapshots and invalid rich payloads", async () => {
     const value = await fixture();
     const saved = richDraft();

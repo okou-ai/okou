@@ -19,28 +19,27 @@ import { conditionalComposerDraftsEnabled$ } from "../services/composer-draft-ac
 import type { RouteEntry } from "../route-entry";
 
 const missing = notFound("Project or conversation not found");
-function ownedThread(id: string) {
-  return computed(async (get) => {
-    const owner = get(organizationAuthContext$);
-    if (
-      owner.tokenType === "agent" &&
-      !owner.capabilities.includes("project:read")
-    ) {
-      return resourceUnavailable("Project access is not available");
-    }
-    const rows = await get(db$)
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, id),
-          eq(chatThreads.userId, owner.userId),
-          chatThreadOrganizationPredicate(owner.orgId),
-        ),
-      );
-    return rows.length > 0;
-  });
-}
+const ownedThread$ = computed(async (get) => {
+  const id = get(pathParamsOf(projectChatContract.draft)).id;
+  const owner = get(organizationAuthContext$);
+  if (
+    owner.tokenType === "agent" &&
+    !owner.capabilities.includes("project:read")
+  ) {
+    return resourceUnavailable("Project access is not available");
+  }
+  const rows = await get(db$)
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.id, id),
+        eq(chatThreads.userId, owner.userId),
+        chatThreadOrganizationPredicate(owner.orgId),
+      ),
+    );
+  return rows.length > 0;
+});
 const send$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!(await get(projectAccess$))) {
     return missing;
@@ -57,7 +56,7 @@ const draft$ = computed(async (get) => {
     return missing;
   }
   const id = get(pathParamsOf(projectChatContract.draft)).id;
-  if (!(await get(ownedThread(id)))) {
+  if (!(await get(ownedThread$))) {
     return missing;
   }
   return {
@@ -75,7 +74,7 @@ const saveDraft$ = command(async ({ get, set }, signal: AbortSignal) => {
     return missing;
   }
   const id = get(pathParamsOf(projectChatContract.saveDraft)).id;
-  if (!(await get(ownedThread(id)))) {
+  if (!(await get(ownedThread$))) {
     return missing;
   }
   const body = await get(bodyResultOf(projectChatContract.saveDraft));
@@ -106,7 +105,7 @@ const replaceDraft$ = command(async ({ get, set }, signal: AbortSignal) => {
     return missing;
   }
   const id = get(pathParamsOf(projectChatContract.replaceDraft)).id;
-  const access = await get(ownedThread(id));
+  const access = await get(ownedThread$);
   signal.throwIfAborted();
   if (access !== true) {
     return access === false ? missing : access;

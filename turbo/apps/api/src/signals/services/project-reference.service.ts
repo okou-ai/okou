@@ -8,7 +8,9 @@ import type { AuthContext } from "../../types/auth";
 import { db$ } from "../external/db";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 
-function projectReferences(document: UserMessageDocument | null | undefined) {
+export function projectReferences(
+  document: UserMessageDocument | null | undefined,
+) {
   return (document?.parts ?? [])
     .flatMap((part) => {
       return part.type === "feedback" ? part.note : [part];
