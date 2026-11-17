@@ -89,7 +89,9 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly discordContext$: ReturnType<typeof createDiscordThreadContext>;
   readonly automationContext$: ReturnType<typeof createThreadAutomationContext>;
   readonly automationTarget$: Computed<Promise<ThreadAutomationTarget | null>>;
-  readonly templates$: ReturnType<typeof createRunTemplates>;
+  /** Event-resolved raw rows, independent of guidance/paid-tool assembly. */
+  readonly templateSources$: ReturnType<typeof createRunTemplates>["sources$"];
+  readonly templates$: ReturnType<typeof createRunTemplates>["templates$"];
   readonly queuedModel$: ThreadModels["queuedModel$"];
   readonly modelSelection$: ThreadModels["modelSelection$"];
   readonly subscriptionSelection$: ThreadModels["subscriptionSelection$"];
@@ -147,7 +149,7 @@ export function createThreadContext(
     integrations.automationTarget$,
   );
   const templateOrgId$ = createThreadOrgId(orgId);
-  const templates$ = createRunTemplates(
+  const templates = createRunTemplates(
     pickedEvent$,
     templateOrgId$,
     sourceSettings.disabledPaidTools$,
@@ -180,7 +182,7 @@ export function createThreadContext(
   );
   const inputSources = {
     connectorSelection$: connectedAccounts.connectorSelection$,
-    templates$,
+    templateSources$: templates.sources$,
     computerUseHostGrant$,
     phoneUseGrant$,
     modelRoute$: model.modelRoute$,
@@ -215,7 +217,8 @@ export function createThreadContext(
     workflows$: workflowContext.workflows$,
     officialWorkflows$: workflowContext.officialWorkflows$,
     officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
-    templates$,
+    templateSources$: templates.sources$,
+    templates$: templates.templates$,
     queuedModel$: model.queuedModel$,
     modelSelection$: model.modelSelection$,
     subscriptionSelection$: model.subscriptionSelection$,
@@ -239,7 +242,7 @@ function createThreadInputResources(
   context: Pick<
     ThreadContext,
     | "connectorSelection$"
-    | "templates$"
+    | "templateSources$"
     | "computerUseHostGrant$"
     | "phoneUseGrant$"
     | "modelRoute$"
@@ -289,7 +292,7 @@ function createThreadInputResources(
     // surface at their original joins; all started branches remain owned.
     await Promise.allSettled([
       get(context.connectorSelection$),
-      get(context.templates$),
+      get(context.templateSources$),
       get(context.computerUseHostGrant$),
       get(context.phoneUseGrant$),
       get(incompleteContext$),

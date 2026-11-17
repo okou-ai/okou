@@ -56,27 +56,28 @@ export function createRunTemplates(
   orgId$: Parameters<typeof createRunTemplateGuidance>[1],
   disabledPaidTools$: Parameters<typeof createRunTemplateGuidance>[2],
   prefetched?: PrefetchedTemplates,
-): Computed<Promise<RunTemplatesResult>> {
-  const guidance$ = createRunTemplateGuidance(
+) {
+  const guidance = createRunTemplateGuidance(
     event$,
     orgId$,
     disabledPaidTools$,
     prefetched,
   );
-  return computed(async (get): Promise<RunTemplatesResult> => {
-    const guidance = await get(guidance$);
-    if ("error" in guidance) {
-      return guidance;
+  const templates$ = computed(async (get): Promise<RunTemplatesResult> => {
+    const prepared = await get(guidance.guidance$);
+    if ("error" in prepared) {
+      return prepared;
     }
     return {
-      templateUsageIdentities: guidance.templateUsageIdentities,
-      skillVolumes: guidance.skillVolumes,
+      templateUsageIdentities: prepared.templateUsageIdentities,
+      skillVolumes: prepared.skillVolumes,
       systemPromptVariables: {
-        generationTemplatePrompt: guidance.renderPrompt(),
+        generationTemplatePrompt: prepared.renderPrompt(),
       },
       userPromptVariables: {},
     };
   });
+  return { sources$: guidance.sources$, templates$ };
 }
 
 /** Current ACLs, selection validation and bundles, without discarded prompt text. */
@@ -85,16 +86,16 @@ export function createRunTemplatePackages(
   orgId$: Parameters<typeof createRunTemplateGuidance>[1],
   disabledPaidTools$: Parameters<typeof createRunTemplateGuidance>[2],
 ) {
-  const guidance$ = createRunTemplateGuidance(
+  const guidance = createRunTemplateGuidance(
     event$,
     orgId$,
     disabledPaidTools$,
   );
   return computed(async (get) => {
-    const guidance = await get(guidance$);
-    return "error" in guidance
-      ? guidance
-      : { skillVolumes: guidance.skillVolumes };
+    const prepared = await get(guidance.guidance$);
+    return "error" in prepared
+      ? prepared
+      : { skillVolumes: prepared.skillVolumes };
   });
 }
 
@@ -110,7 +111,7 @@ function createRunTemplateGuidance(
   orgId$: Computed<Promise<string>>,
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
   prefetched?: PrefetchedTemplates,
-): Computed<Promise<RunTemplateGuidanceResult>> {
+) {
   const selection$ = computed(async (get) => {
     const event = await get(event$);
     if (!event) {
@@ -200,21 +201,24 @@ function createRunTemplateGuidance(
           ];
     });
   });
-  return computed(async (get): Promise<RunTemplateGuidanceResult> => {
-    const [selection, presentations, mounted, disabledPaidTools] =
-      await Promise.all([
-        get(selection$),
-        get(presentations$),
-        get(mounted$),
-        get(disabledPaidTools$),
-      ]);
-    return buildRunTemplateGuidance({
-      templates: selection?.templates ?? [],
-      presentations,
-      mounted,
-      disabledPaidTools,
-    });
-  });
+  const guidance$ = computed(
+    async (get): Promise<RunTemplateGuidanceResult> => {
+      const [selection, presentations, mounted, disabledPaidTools] =
+        await Promise.all([
+          get(selection$),
+          get(presentations$),
+          get(mounted$),
+          get(disabledPaidTools$),
+        ]);
+      return buildRunTemplateGuidance({
+        templates: selection?.templates ?? [],
+        presentations,
+        mounted,
+        disabledPaidTools,
+      });
+    },
+  );
+  return { sources$, guidance$ };
 }
 
 function buildRunTemplateGuidance(args: {

@@ -27,7 +27,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db$ } from "../external/db";
 import { badRequestMessage } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
-import { safeSync } from "../utils";
+import { joinAll, safeSync } from "../utils";
 import type { AgentConnectorScope } from "./agent-connector-scope.service";
 import type {
   AgentRunContextSignals,
@@ -259,7 +259,7 @@ function createChatAccountInputSignals(
       );
   });
   const effectiveAccounts$ = computed(async (get) => {
-    const [snapshot, overrides, chatAccountsEnabled] = await Promise.all([
+    const [snapshot, overrides, chatAccountsEnabled] = await joinAll([
       get(execution.connectors$),
       get(accessOverrides$),
       get(chatAccountsEnabled$),
@@ -626,7 +626,7 @@ function createThreadAccountSignals(
       get,
     ): Promise<ThreadConnectorSelectionIds | ConnectedAccountsError> => {
       const [thread, selections, accountRows, scope, connectorSourceId] =
-        await Promise.all([
+        await joinAll([
           get(ownedThread$),
           get(threadSelections$),
           get(accountRows$),
@@ -727,7 +727,7 @@ function createConnectorPreparationSignals(
   const connectorSelection$ = computed(
     async (get): Promise<RunConnectorSelection | ConnectedAccountsError> => {
       const [connectorCatalogSelection, threadConnectorSelectionIds] =
-        await Promise.all([get(connectorCatalog$), get(selectionIds$)]);
+        await joinAll([get(connectorCatalog$), get(selectionIds$)]);
       if (isConnectedAccountsError(threadConnectorSelectionIds)) {
         return threadConnectorSelectionIds;
       }

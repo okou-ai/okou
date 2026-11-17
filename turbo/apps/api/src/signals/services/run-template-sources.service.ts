@@ -7,6 +7,7 @@ import {
   pgTextDecoder,
 } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
+import { joinAll } from "../utils";
 
 interface TemplateSourceInput {
   readonly userId: string;
@@ -69,7 +70,7 @@ export function createRunTemplateSources(
       );
   });
   return computed(async (get) => {
-    const [presentations, mounted] = await Promise.all([
+    const [presentations, mounted] = await joinAll([
       get(presentations$),
       get(mounted$),
     ]);
