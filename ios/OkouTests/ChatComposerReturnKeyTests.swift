@@ -202,7 +202,8 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     try await focusMentionInput(input)
     input.insertText("Before @pl")
     try await eventually(
-      message: chatReferenceSuggestionStatus(workspace, fixture: fixture, input: input, host: host.view)
+      message: chatReferenceSuggestionStatus(
+        workspace, fixture: fixture, input: input, host: host.view)
     ) {
       mentionTable(in: host.view)?.visibleCells.first != nil
     }
