@@ -40,8 +40,7 @@ final class WorkspaceChatPresentation {
   func finishTransition(showsChat: Bool) {
     allowsFocus = showsChat
     if showsChat {
-      // A cancelled pop restores the same editor and selection, never a new input session.
-      departingInput?.setFocused(true)
+      cancelDeparture()
     } else {
       focusedInput?.setFocused(false)
       deferredInput = nil
@@ -49,6 +48,12 @@ final class WorkspaceChatPresentation {
     departingInput = nil
     keepsComposerExpanded = false
     isTransitioning = false
+  }
+
+  func cancelDeparture() {
+    // Restore focus as UIKit starts the interactive rollback, keeping the native selection.
+    allowsFocus = true
+    departingInput?.setFocused(true)
   }
 
   func disappear() {

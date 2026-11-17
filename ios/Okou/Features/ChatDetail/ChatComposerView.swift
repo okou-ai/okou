@@ -64,12 +64,12 @@ struct ChatComposerView: View {
       && (showsStop || modelSelection?.canSend != false)
   }
   private var canSendFromKeyboard: Bool { hasContent && canPerformPrimaryAction }
-  /// A draft keeps the open layout after the keyboard closes; collapsing it cut the text to
-  /// one truncated line under the controls. Voice input opens it too, and the model sheet
-  /// keeps it open while the keyboard is down under the sheet.
   private var showsEditingLayout: Bool {
     isFocused || draftState?.focusRequest != nil || presentation?.keepsComposerExpanded == true
   }
+  /// A draft keeps the open layout after the keyboard closes; collapsing it cut the text to
+  /// one truncated line under the controls. Voice input opens it too, and the model sheet
+  /// keeps it open while the keyboard is down under the sheet.
   private var expandsInput: Bool {
     showsEditingLayout || hasText || draftState?.document.hasFeedback == true
       || draftState?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false

@@ -48,7 +48,7 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     let sidebar: SidebarInteraction
     // Retain both hosts across a pop so drafts, list position and transcript state survive.
     let list = UIHostingController(rootView: AnyView(EmptyView()))
-    let presentation = WorkspaceChatPresentation()
+    let presentation: WorkspaceChatPresentation
     let chat: WorkspaceChatHostingController
     var requestedSidebarOpen: Bool
     private weak var navigation: UINavigationController?
@@ -56,7 +56,9 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     private var popGestures: [WorkspacePopGestureDelegate] = []
 
     init(sidebar: SidebarInteraction) {
+      let presentation = WorkspaceChatPresentation()
       self.sidebar = sidebar
+      self.presentation = presentation
       chat = WorkspaceChatHostingController(presentation: presentation)
       requestedSidebarOpen = sidebar.isOpen
     }
@@ -101,10 +103,9 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
       transitionTarget = showsSidebar
       sidebar.setTransitioning(true)
       presentation.beginTransition(showsChat: !showsSidebar)
-      navigationController.transitionCoordinator?.animate(alongsideTransition: nil) {
+      navigationController.transitionCoordinator?.notifyWhenInteractionChanges {
         [weak self] context in
-        self?.presentation.finishTransition(
-          showsChat: context.isCancelled ? showsSidebar : !showsSidebar)
+        if showsSidebar && context.isCancelled { self?.presentation.cancelDeparture() }
       }
       // A native pop (including accessibility return) starts outside the SwiftUI selection.
       if requestedSidebarOpen != showsSidebar {
@@ -124,7 +125,7 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
         sidebar.setOpen(showsSidebar)
       }
       transitionTarget = nil
-      // Also covers unanimated navigation, which has no transition coordinator.
+      // UIKit reports the actual surviving page, including cancelled and unanimated transitions.
       presentation.finishTransition(showsChat: !showsSidebar)
       sidebar.setTransitioning(false)
       navigationController.view.setNeedsLayout()

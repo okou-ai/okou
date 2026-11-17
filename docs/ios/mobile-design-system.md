@@ -795,6 +795,11 @@ feature; the catalog shows each one.
   return and Reduce Motion adaptation. Retain both page hosts across navigation
   so drafts and scroll state survive. Forward the SwiftUI environment to both
   hosts, including appearance, scene phase and scoped link/system-entry actions.
+  Automatic composer focus waits for the chat host's native appearance, not just
+  window attachment. Prepare new-message input expanded before entry; retain its
+  expanded layout through departure. Cancelled interactive return restores the
+  same editor and selection through UIKit's transition coordinator. Keep system
+  keyboard safe-area avoidance as the geometry owner rather than adding keyboard offsets.
 - **Sidebar layout**: the workspace switcher top left, and top right one 44 pt glass capsule
   that groups the chat list menu (Lucide `list-filter`) on the left and back to the chat
   (`arrow-right`, toward the page it returns to; "Close sidebar" for VoiceOver) on the right,
