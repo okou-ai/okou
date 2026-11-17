@@ -198,19 +198,20 @@ describe("Teams message launch context", () => {
         error: null,
         prompt: "hello from teams diagnostics",
       });
-      expect(detail.body.appendSystemPrompt).toContain(
+      const execution = await createRunsApi(context).executionInput(
+        teamsRun.id,
+      );
+      expect(execution.appendSystemPrompt).toContain(
         `Tenant ID: ${fixture.teamsTenantId}`,
       );
-      expect(detail.body.appendSystemPrompt).toContain(
+      expect(execution.appendSystemPrompt).toContain(
         "Conversation ID: 19:e2e-dm@thread.v2",
       );
-      expect(detail.body.appendSystemPrompt).toContain(
+      expect(execution.appendSystemPrompt).toContain(
         "Conversation type: personal",
       );
-      expect(detail.body.appendSystemPrompt).toContain(
-        "Thread ID: activity-e2e",
-      );
-      expect(detail.body.appendSystemPrompt).toContain(
+      expect(execution.appendSystemPrompt).toContain("Thread ID: activity-e2e");
+      expect(execution.appendSystemPrompt).toContain(
         "Activity ID: activity-e2e",
       );
 
