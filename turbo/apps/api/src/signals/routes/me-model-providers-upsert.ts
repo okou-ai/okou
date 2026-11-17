@@ -1,7 +1,9 @@
 import {
   subscriptionSwitchRecoveries,
-  resumeSubscriptionConversations$,
+  enqueueSubscriptionRecovery$,
 } from "../services/subscription-switch-recovery.service";
+import { waitUntil } from "../context/wait-until";
+import { continueIntegrationRecovery$ } from "../services/integration-recovery-continuation.service";
 import { command } from "ccstate";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
@@ -105,16 +107,21 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
     if (result.status === 200 || result.status === 201) {
-      await set(
-        resumeSubscriptionConversations$,
-        {
-          ...auth,
-          recoveries,
-          account: result.body.provider,
-          change: "credentials",
-        },
-        signal,
-      );
+      for (const recovery of recoveries) {
+        const input = await set(
+          enqueueSubscriptionRecovery$,
+          {
+            ...auth,
+            recovery,
+            account: result.body.provider,
+            change: "credentials",
+          },
+          signal,
+        );
+        if (input) {
+          waitUntil(set(continueIntegrationRecovery$, input, signal));
+        }
+      }
     }
     return result;
   }
@@ -147,11 +154,16 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (!("status" in result)) {
-    await set(
-      resumeSubscriptionConversations$,
-      { ...auth, recoveries, account: result.provider, change: "credentials" },
-      signal,
-    );
+    for (const recovery of recoveries) {
+      const input = await set(
+        enqueueSubscriptionRecovery$,
+        { ...auth, recovery, account: result.provider, change: "credentials" },
+        signal,
+      );
+      if (input) {
+        waitUntil(set(continueIntegrationRecovery$, input, signal));
+      }
+    }
   }
   return "status" in result
     ? result

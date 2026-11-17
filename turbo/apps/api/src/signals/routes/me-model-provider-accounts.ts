@@ -31,8 +31,10 @@ import {
 import { resetDisconnectedMemberModelSelection } from "../services/member-subscription-models.service";
 import {
   subscriptionSwitchRecoveries,
-  resumeSubscriptionConversations$,
+  enqueueSubscriptionRecovery$,
 } from "../services/subscription-switch-recovery.service";
+import { waitUntil } from "../context/wait-until";
+import { continueIntegrationRecovery$ } from "../services/integration-recovery-continuation.service";
 
 const resetMemberModelSelection$ = resetDisconnectedMemberModelSelection(
   organizationAuthContext$,
@@ -190,11 +192,16 @@ const activateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (!("status" in result)) {
-    await set(
-      resumeSubscriptionConversations$,
-      { ...auth, recoveries, account: result, change: "switch" },
-      signal,
-    );
+    for (const recovery of recoveries) {
+      const input = await set(
+        enqueueSubscriptionRecovery$,
+        { ...auth, recovery, account: result, change: "switch" },
+        signal,
+      );
+      if (input) {
+        waitUntil(set(continueIntegrationRecovery$, input, signal));
+      }
+    }
   }
   return "status" in result ? result : { status: 200 as const, body: result };
 });

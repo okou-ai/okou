@@ -1,7 +1,9 @@
 import {
   subscriptionSwitchRecoveries,
-  resumeSubscriptionConversations$,
+  enqueueSubscriptionRecovery$,
 } from "../services/subscription-switch-recovery.service";
+import { waitUntil } from "../context/wait-until";
+import { continueIntegrationRecovery$ } from "../services/integration-recovery-continuation.service";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import { command } from "ccstate";
 
@@ -108,16 +110,21 @@ const completeCodexDeviceAuthInner$ = command(
         };
       }
       case "complete": {
-        await set(
-          resumeSubscriptionConversations$,
-          {
-            ...auth,
-            recoveries,
-            account: result.body.provider,
-            change: "credentials",
-          },
-          signal,
-        );
+        for (const recovery of recoveries) {
+          const input = await set(
+            enqueueSubscriptionRecovery$,
+            {
+              ...auth,
+              recovery,
+              account: result.body.provider,
+              change: "credentials",
+            },
+            signal,
+          );
+          if (input) {
+            waitUntil(set(continueIntegrationRecovery$, input, signal));
+          }
+        }
         return {
           status: 200 as const,
           body: {

@@ -21,12 +21,11 @@ import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { db$ } from "../external/db";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
-import { waitUntil } from "../context/wait-until";
 import {
   enqueueIntegrationRecovery$,
   unchangedFailedIntegrationConversation,
+  type IntegrationRecoveryInput,
 } from "./integration-recovery-input.service";
-import { continueIntegrationRecovery$ } from "./integration-recovery-continuation.service";
 
 const target = alias(modelProviderAccounts, "recovery_switch_target");
 
@@ -158,36 +157,31 @@ type SubscriptionRecovery = Awaited<
 >[number];
 
 /** A saved inactive account does not restore access; use only the committed active account. */
-export const resumeSubscriptionConversations$ = command(
+export const enqueueSubscriptionRecovery$ = command(
   async (
     { set },
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly recoveries: readonly SubscriptionRecovery[];
+      readonly recovery: SubscriptionRecovery;
       readonly account: ModelProviderResponse;
       readonly change: "switch" | "credentials";
     },
     signal: AbortSignal,
-  ): Promise<void> => {
-    if (args.account.isActive !== true || args.account.needsReconnect) {
-      return;
+  ): Promise<IntegrationRecoveryInput | null> => {
+    if (
+      args.account.isActive !== true ||
+      args.account.needsReconnect ||
+      (args.recovery.accountId === args.account.id &&
+        (args.change === "switch" ||
+          args.recovery.failureReason === "usage_limit"))
+    ) {
+      return null;
     }
-    for (const recovery of args.recoveries) {
-      if (
-        recovery.accountId === args.account.id &&
-        (args.change === "switch" || recovery.failureReason === "usage_limit")
-      ) {
-        continue;
-      }
-      const input = await set(
-        enqueueIntegrationRecovery$,
-        { orgId: args.orgId, userId: args.userId, ...recovery },
-        signal,
-      );
-      if (input) {
-        waitUntil(set(continueIntegrationRecovery$, input, signal));
-      }
-    }
+    return await set(
+      enqueueIntegrationRecovery$,
+      { orgId: args.orgId, userId: args.userId, ...args.recovery },
+      signal,
+    );
   },
 );
