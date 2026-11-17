@@ -294,8 +294,6 @@ export function agentRunById(args: {
       runId: run.id,
       status: run.status as RunStatus,
       prompt: run.prompt,
-      // Keep the nullable wire slot; diagnostic content is read through Context.
-      appendSystemPrompt: null,
       sandboxId: run.sandboxId || undefined,
       result:
         run.result === null

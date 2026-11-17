@@ -7,7 +7,6 @@ import {
   number,
   object,
   preprocess,
-  record,
   string,
   uuid,
   enum as zEnum,
@@ -95,10 +94,6 @@ const getRunResponseSchema = object({
   runId: string(),
   status: runStatusSchema,
   prompt: string(),
-  /** @deprecated Diagnostic content is available through the Run Context endpoint. Returns null. */
-  appendSystemPrompt: string().nullable(),
-  /** @deprecated Read original launch variables through the Run Context endpoint. Omitted here. */
-  vars: record(string(), string()).optional(),
   sandboxId: string().optional(),
   result: object({
     output: string().optional(),
