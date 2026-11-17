@@ -116,10 +116,8 @@ final class AuthenticationHTTPFixture: Sendable {
     state.withLock { $0 = snapshot }
     try await clerk.refreshClient()
     try await clerk.refreshEnvironment()
-    // Test-only SDK reconfiguration cancels pending persistence. Retire this
-    // fixture's cache owner and await its queued writes before replacing it.
-    let cache = try XCTUnwrap(clerk.cacheManager)
-    await cache.shutdownAndDrain()
+    // Retire SDK-owned work and drain persistence before replacing this fixture's runtime.
+    await clerk.runtime.shutdown()
     // Recreate the SDK with its real persisted session, as on a cold launch.
     let restoredOptions = Clerk.Options(
       telemetryEnabled: false,
