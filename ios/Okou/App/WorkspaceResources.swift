@@ -118,7 +118,31 @@ final class WorkspaceResources {
     let preferenceValue = preference.value
     let availableValue = available.value
     let catalogValue = catalog.value
-    invalidateReads = Command { context, changes in
+    invalidateReads = Self.makeInvalidation(
+      lifetime: lifetime, modelBootstrap: modelBootstrap, preference: preference,
+      available: available, catalog: catalog, features: features)
+    configuration = computedTask { get, options in
+      guard try get(lifetime) else { throw CancellationError() }
+      // Collect every dependency and start independent I/O before awaiting any result.
+      let preference = try get(preferenceValue)
+      let available = try get(availableValue)
+      let catalog = try get(catalogValue)
+      let features = try get(featureValue)
+      let value = try await ChatModelConfiguration(
+        preference: preference.value, available: available.value, catalog: catalog.value,
+        switches: features.value.effectiveSwitches)
+      try Task.checkCancellation()
+      try options.signal.checkCancellation()
+      return value
+    }
+  }
+
+  private static func makeInvalidation(
+    lifetime: CCState.State<Bool>, modelBootstrap: WorkspaceReadBootstrap?,
+    preference: WorkspaceRead<ModelPreference>, available: WorkspaceRead<AvailableRunModels>,
+    catalog: WorkspaceRead<ModelCatalog>, features: WorkspaceRead<SidebarFeatureSwitches>
+  ) -> Command<Void, Set<ChatInvalidation>> {
+    Command { context, changes in
       guard try context.get(lifetime) else { throw CancellationError() }
       var full = changes.contains(.reconnected)
       if changes.contains(.startup) {
@@ -139,20 +163,6 @@ final class WorkspaceResources {
         try context.set(catalog.reload)
       }
       if full { try context.set(features.reload) }
-    }
-    configuration = computedTask { get, options in
-      guard try get(lifetime) else { throw CancellationError() }
-      // Collect every dependency and start independent I/O before awaiting any result.
-      let preference = try get(preferenceValue)
-      let available = try get(availableValue)
-      let catalog = try get(catalogValue)
-      let features = try get(featureValue)
-      let value = try await ChatModelConfiguration(
-        preference: preference.value, available: available.value, catalog: catalog.value,
-        switches: features.value.effectiveSwitches)
-      try Task.checkCancellation()
-      try options.signal.checkCancellation()
-      return value
     }
   }
 

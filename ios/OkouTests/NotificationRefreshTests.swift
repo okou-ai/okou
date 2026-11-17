@@ -45,14 +45,7 @@ final class NotificationRefreshTests: XCTestCase {
       }
     }
     let system = NotificationSystemFixture()
-    let destination = try XCTUnwrap(
-      NotificationDestination(userInfo: [
-        "okou": [
-          "version": 1, "userId": "current", "workspaceId": "org_test",
-          "threadId": threadID, "runId": "74000000-0000-4000-8000-000000000004",
-          "notificationId": "read-state"
-        ]
-      ]))
+    let destination = try notificationDestination(threadID: threadID)
     system.delivered = [
       DeliveredChatNotification(identifier: "read-state", destination: destination)
     ]
@@ -117,5 +110,16 @@ final class NotificationRefreshTests: XCTestCase {
     await notifications.refreshNotificationState(userID: "current")
     XCTAssertEqual(system.badgeCount, 0)
     XCTAssertTrue(system.delivered.isEmpty)
+  }
+
+  private func notificationDestination(threadID: String) throws -> NotificationDestination {
+    try XCTUnwrap(
+      NotificationDestination(userInfo: [
+        "okou": [
+          "version": 1, "userId": "current", "workspaceId": "org_test",
+          "threadId": threadID, "runId": "74000000-0000-4000-8000-000000000004",
+          "notificationId": "read-state"
+        ]
+      ]))
   }
 }

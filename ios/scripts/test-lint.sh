@@ -152,6 +152,40 @@ for path in "${file_length_paths[@]}"; do
   rm "$fixture/$path/LengthBoundary.swift"
 done
 
+# Function bodies share the same hard limit across production and test targets.
+# Blank and comment-only lines do not consume the 100-line budget.
+for path in "${file_length_paths[@]}"; do
+  python3 - "$fixture/$path/FunctionLengthBoundary.swift" <<'PY'
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(
+    "func lengthBoundary() {\n" + "  _ = 0\n\n  // Ignored by the body length rule.\n" * 100 + "}\n"
+)
+PY
+done
+if ! run_lint; then
+  cat "$test_root/lint.log" >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  python3 - "$fixture/$path/FunctionLengthBoundary.swift" <<'PY'
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+source.write_text(source.read_text().removesuffix("}\n") + "  _ = 0\n}\n")
+PY
+done
+if run_lint; then
+  echo 'A function above 100 body lines passed strict lint.' >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  grep -F "$path/FunctionLengthBoundary.swift" "$test_root/lint.log" | grep -F '(function_body_length)' >/dev/null
+  rm "$fixture/$path/FunctionLengthBoundary.swift"
+done
+
 # The production-only state rule must be enabled by the real root config.
 for path in "${production_paths[@]}"; do
   printf 'var sharedState = 0\n' > "$fixture/$path/GlobalState.swift"

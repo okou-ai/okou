@@ -119,6 +119,144 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       "{\"target\":\(try json(target(state))),\"accounts\":[\(rows)],\"currentConnectionId\":\(current),\"available\":\(!enabled.isEmpty)}"
   }
 
+  private static func error(_ status: Int, _ message: String) -> ChatHTTPResponse {
+    ChatHTTPResponse(status: status, body: "{\"error\":{\"message\":\"\(message)\"}}")
+  }
+
+  private static func connectionsResponse(
+    query: [URLQueryItem], queriedTarget: Target, state: State
+  ) -> ChatHTTPResponse {
+    guard queriedTarget == target(state) else { return error(403, "Wrong connector") }
+    let search = query.first { $0.name == "search" }?.value ?? ""
+    let accounts = state.accountIDs.map { account($0, state: state) }.filter {
+      search.isEmpty || $0.localizedCaseInsensitiveContains(search)
+    }
+    let current = state.defaultID.map { account($0, state: state) } ?? "null"
+    return ChatHTTPResponse(
+      body:
+        "{\"connections\":[\(accounts.joined(separator: ","))],\"defaultConnection\":\(current),\"nextCursor\":null}"
+    )
+  }
+
+  private static func setEnabledResponse(_ request: URLRequest, parts: [String], state: inout State)
+    throws -> ChatHTTPResponse
+  {
+    let body = try JSONDecoder().decode(Choice.self, from: chatRequestBody(request))
+    guard body.target == target(state), state.accountIDs.contains(parts[2]),
+      let enabled = body.enabled
+    else { return error(403, "Account unavailable") }
+    state.enabled[parts[2]] = enabled
+    repairDefault(&state)
+    return ChatHTTPResponse(body: defaultAccount(parts[2], state: state))
+  }
+
+  private static func setDefaultResponse(_ request: URLRequest, parts: [String], state: inout State)
+    throws -> ChatHTTPResponse
+  {
+    let body = try JSONDecoder().decode(Choice.self, from: chatRequestBody(request))
+    guard body.target == target(state), state.enabled[parts[2]] == true else {
+      return error(403, "Default account must be enabled")
+    }
+    state.defaultID = parts[2]
+    return ChatHTTPResponse(body: account(parts[2], state: state))
+  }
+
+  private static func permissionsResponse(
+    _ request: URLRequest, method: String, queriedTarget: Target, state: inout State
+  ) throws -> ChatHTTPResponse {
+    if method == "GET", queriedTarget != target(state) { return error(403, "Wrong connector") }
+    if method == "PUT" {
+      struct Edit: Decodable {
+        let permission: String
+        let action: String
+        let expiresIn: String?
+      }
+      struct Body: Decodable {
+        let target: Target
+        let mode: String
+        let grants: [Edit]
+      }
+      let body = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
+      guard body.target == target(state) else { return error(403, "Wrong connector") }
+      if body.mode == "replace" { state.grants = [] }
+      for edit in body.grants {
+        state.grants.removeAll { $0.permission == edit.permission }
+        state.grants.append(
+          Grant(
+            permission: edit.permission, action: edit.action,
+            expiresAt: edit.action == "allow" && edit.expiresIn != "always"
+              ? "2099-01-01T00:00:00.000Z" : nil))
+      }
+    }
+    return ChatHTTPResponse(
+      body: "{\"target\":\(try json(target(state))),\"grants\":\(try json(state.grants))}")
+  }
+
+  private static func currentAccountResponse(
+    _ request: URLRequest, parts: [String], id: String, state: inout State
+  ) throws -> ChatHTTPResponse {
+    let body = try JSONDecoder().decode(Choice.self, from: chatRequestBody(request))
+    guard body.target == target(state), let account = body.connectionId,
+      state.accountIDs.contains(account)
+    else { return error(403, "Wrong account") }
+    if state.rejectCurrentOnce {
+      state.rejectCurrentOnce = false
+      return error(403, "Account selection rejected")
+    }
+    var settings = state.threads[id] ?? ThreadSettings()
+    if parts[3] == "connector-account-approval" { settings.overrides[account] = true }
+    guard settings.overrides[account] ?? (state.enabled[account] == true) else {
+      return error(403, "Account is disabled")
+    }
+    settings.currentID = account
+    state.threads[id] = settings
+    if parts[3] == "connector-account-approval" {
+      return ChatHTTPResponse(
+        body: "{\"target\":\(try json(body.target)),\"connectionId\":\"\(account)\"}")
+    }
+    return ChatHTTPResponse(body: try access(id, state: &state))
+  }
+
+  private static func connectedResponse(state: State) -> ChatHTTPResponse {
+    let builtin =
+      "[{\"slug\":\"slack\",\"label\":\"Slack\",\"hasPermissions\":\(state.hasPermissions)}]"
+    let custom =
+      "[{\"id\":\"\(FixtureData.customID)\",\"displayName\":\"Internal\",\"permissionBundleRef\":null,\"integrationManaged\":false}]"
+    return ChatHTTPResponse(
+      body:
+        "{\"builtinConnectors\":\(state.custom ? "[]" : builtin),\"customConnectors\":\(state.custom ? custom : "[]")}"
+    )
+  }
+
+  private static func connectorAccessResponse(
+    _ request: URLRequest, method: String, queriedTarget: Target, parts: [String], id: String,
+    state: inout State
+  ) throws -> ChatHTTPResponse {
+    if method == "GET", queriedTarget != target(state) { return error(403, "Wrong connector") }
+    if method == "PUT", parts.count == 5 {
+      let body = try JSONDecoder().decode(Choice.self, from: chatRequestBody(request))
+      guard body.target == target(state), state.accountIDs.contains(parts[4]) else {
+        return error(403, "Wrong account")
+      }
+      var settings = state.threads[id] ?? ThreadSettings()
+      settings.overrides[parts[4]] = body.enabled
+      state.threads[id] = settings
+    }
+    return ChatHTTPResponse(body: try access(id, state: &state))
+  }
+
+  private static func createThreadResponse(_ request: URLRequest, state: inout State) throws
+    -> ChatHTTPResponse
+  {
+    struct Body: Decodable { let clientThreadId: String }
+    let body = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
+    let id = body.clientThreadId.lowercased()
+    state.threads[id] = ThreadSettings()
+    return ChatHTTPResponse(
+      status: 201,
+      body: "{\"id\":\"\(id)\",\"createdAt\":\"2026-11-03T00:00:00Z\",\"selectedModel\":null}")
+  }
+
   private static func respond(
     _ request: URLRequest, state: inout State
   ) throws -> ChatHTTPResponse {
@@ -130,9 +268,6 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       kind: query.first { $0.name == "kind" }?.value ?? "",
       connectorSlug: query.first { $0.name == "connectorSlug" }?.value,
       customConnectorId: query.first { $0.name == "customConnectorId" }?.value)
-    func error(_ status: Int, _ message: String) -> ChatHTTPResponse {
-      ChatHTTPResponse(status: status, body: "{\"error\":{\"message\":\"\(message)\"}}")
-    }
     if path == "/api/feature-switches" {
       return ChatHTTPResponse(
         body: "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":true}}")
@@ -145,14 +280,7 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       return ChatHTTPResponse(body: "{\"agentId\":\"\(parts[2])\",\"displayName\":\"Assistant\"}")
     }
     if path == "/api/connectors/connected" {
-      let builtin =
-        "[{\"slug\":\"slack\",\"label\":\"Slack\",\"hasPermissions\":\(state.hasPermissions)}]"
-      let custom =
-        "[{\"id\":\"\(FixtureData.customID)\",\"displayName\":\"Internal\",\"permissionBundleRef\":null,\"integrationManaged\":false}]"
-      return ChatHTTPResponse(
-        body:
-          "{\"builtinConnectors\":\(state.custom ? "[]" : builtin),\"customConnectors\":\(state.custom ? custom : "[]")}"
-      )
+      return connectedResponse(state: state)
     }
     if path == "/api/remotes/overview" {
       return ChatHTTPResponse(
@@ -173,16 +301,7 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       )
     }
     if path == "/api/connector-accounts/connections" {
-      guard queriedTarget == target(state) else { return error(403, "Wrong connector") }
-      let search = query.first { $0.name == "search" }?.value ?? ""
-      let accounts = state.accountIDs.map { account($0, state: state) }.filter {
-        search.isEmpty || $0.localizedCaseInsensitiveContains(search)
-      }
-      let current = state.defaultID.map { account($0, state: state) } ?? "null"
-      return ChatHTTPResponse(
-        body:
-          "{\"connections\":[\(accounts.joined(separator: ","))],\"defaultConnection\":\(current),\"nextCursor\":null}"
-      )
+      return connectionsResponse(query: query, queriedTarget: queriedTarget, state: state)
     }
     if parts.count == 3, parts[1] == "connector-accounts", state.accountIDs.contains(parts[2]) {
       guard queriedTarget == target(state) else { return error(403, "Wrong connector") }
@@ -193,21 +312,10 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       return ChatHTTPResponse(body: defaults(state))
     }
     if parts.count == 4, parts[1] == "connector-account-access", parts[3] == "default-enabled" {
-      let body = try JSONDecoder().decode(Choice.self, from: chatRequestBody(request))
-      guard body.target == target(state), state.accountIDs.contains(parts[2]),
-        let enabled = body.enabled
-      else { return error(403, "Account unavailable") }
-      state.enabled[parts[2]] = enabled
-      repairDefault(&state)
-      return ChatHTTPResponse(body: defaultAccount(parts[2], state: state))
+      return try setEnabledResponse(request, parts: parts, state: &state)
     }
     if parts.count == 4, parts[1] == "connector-accounts", parts[3] == "default" {
-      let body = try JSONDecoder().decode(Choice.self, from: chatRequestBody(request))
-      guard body.target == target(state), state.enabled[parts[2]] == true else {
-        return error(403, "Default account must be enabled")
-      }
-      state.defaultID = parts[2]
-      return ChatHTTPResponse(body: account(parts[2], state: state))
+      return try setDefaultResponse(request, parts: parts, state: &state)
     }
     if path == "/api/connectors/slack/no-auth"
       || path == "/api/custom-connectors/\(FixtureData.customID)/values"
@@ -218,41 +326,11 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       return ChatHTTPResponse(body: "{\"connectionId\":\"\(FixtureData.accountID)\"}")
     }
     if path == "/api/connector-permissions" {
-      if method == "GET", queriedTarget != target(state) { return error(403, "Wrong connector") }
-      if method == "PUT" {
-        struct Edit: Decodable {
-          let permission: String
-          let action: String
-          let expiresIn: String?
-        }
-        struct Body: Decodable {
-          let target: Target
-          let mode: String
-          let grants: [Edit]
-        }
-        let body = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
-        guard body.target == target(state) else { return error(403, "Wrong connector") }
-        if body.mode == "replace" { state.grants = [] }
-        for edit in body.grants {
-          state.grants.removeAll { $0.permission == edit.permission }
-          state.grants.append(
-            Grant(
-              permission: edit.permission, action: edit.action,
-              expiresAt: edit.action == "allow" && edit.expiresIn != "always"
-                ? "2099-01-01T00:00:00.000Z" : nil))
-        }
-      }
-      return ChatHTTPResponse(
-        body: "{\"target\":\(try json(target(state))),\"grants\":\(try json(state.grants))}")
+      return try permissionsResponse(
+        request, method: method, queriedTarget: queriedTarget, state: &state)
     }
     if path == "/api/chat-threads", method == "POST" {
-      struct Body: Decodable { let clientThreadId: String }
-      let body = try JSONDecoder().decode(Body.self, from: chatRequestBody(request))
-      let id = body.clientThreadId.lowercased()
-      state.threads[id] = ThreadSettings()
-      return ChatHTTPResponse(
-        status: 201,
-        body: "{\"id\":\"\(id)\",\"createdAt\":\"2026-11-03T00:00:00Z\",\"selectedModel\":null}")
+      return try createThreadResponse(request, state: &state)
     }
     if parts.count >= 4, parts[1] == "chat-threads" {
       let id = parts[2]
@@ -262,39 +340,12 @@ public final class ConnectorAccessHTTPFixture: Sendable {
       }
       if parts[3] == "remote-access" { return ChatHTTPResponse(body: "{\"ssh\":[],\"vnc\":[]}") }
       if parts[3] == "connector-access" {
-        if method == "GET", queriedTarget != target(state) { return error(403, "Wrong connector") }
-        if method == "PUT", parts.count == 5 {
-          let body = try JSONDecoder().decode(Choice.self, from: chatRequestBody(request))
-          guard body.target == target(state), state.accountIDs.contains(parts[4]) else {
-            return error(403, "Wrong account")
-          }
-          var settings = state.threads[id] ?? ThreadSettings()
-          settings.overrides[parts[4]] = body.enabled
-          state.threads[id] = settings
-        }
-        return ChatHTTPResponse(body: try access(id, state: &state))
+        return try connectorAccessResponse(
+          request, method: method, queriedTarget: queriedTarget, parts: parts, id: id, state: &state
+        )
       }
       if parts[3] == "connector-current" || parts[3] == "connector-account-approval" {
-        let body = try JSONDecoder().decode(Choice.self, from: chatRequestBody(request))
-        guard body.target == target(state), let account = body.connectionId,
-          state.accountIDs.contains(account)
-        else { return error(403, "Wrong account") }
-        if state.rejectCurrentOnce {
-          state.rejectCurrentOnce = false
-          return error(403, "Account selection rejected")
-        }
-        var settings = state.threads[id] ?? ThreadSettings()
-        if parts[3] == "connector-account-approval" { settings.overrides[account] = true }
-        guard settings.overrides[account] ?? (state.enabled[account] == true) else {
-          return error(403, "Account is disabled")
-        }
-        settings.currentID = account
-        state.threads[id] = settings
-        if parts[3] == "connector-account-approval" {
-          return ChatHTTPResponse(
-            body: "{\"target\":\(try json(body.target)),\"connectionId\":\"\(account)\"}")
-        }
-        return ChatHTTPResponse(body: try access(id, state: &state))
+        return try currentAccountResponse(request, parts: parts, id: id, state: &state)
       }
     }
     if path == "/api/chat/events" {

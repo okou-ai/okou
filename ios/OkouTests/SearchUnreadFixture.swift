@@ -1,6 +1,7 @@
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
+import Foundation
 import Observation
 import Synchronization
 import XCTest
@@ -158,88 +159,94 @@ final class SearchUnreadFixture: Sendable {
           return ChatHTTPResponse(status: 204, body: "")
         }
       default:
-        guard path.hasPrefix("/api/chat-threads/") else { throw URLError(.unsupportedURL) }
-        let id = String(path.dropFirst("/api/chat-threads/".count).prefix(36))
-        guard let number = Int(id.suffix(12)), (1...40).contains(number), id == Self.id(number)
-        else { throw URLError(.unsupportedURL) }
-        let threadPath = "/api/chat-threads/\(id)"
-        switch (request.httpMethod, path) {
-        case ("POST", threadPath + "/mark-read"), ("POST", threadPath + "/mark-unread"):
-          let read = path == threadPath + "/mark-read"
-          let (gate, cancelled, finished) = state.value.withLock { value in
-            let gate = read ? value.readGate : nil
-            let cancelled = read ? value.readCancelled : nil
-            let finished = read ? value.readFinished : nil
-            if read {
-              value.readGate = nil
-              value.readCancelled = nil
-              value.readFinished = nil
-              value.readStarted?()
-              value.readStarted = nil
-            }
-            return (gate, cancelled, finished)
-          }
-          defer { finished?() }
-          if let gate {
-            await withTaskCancellationHandler {
-              await gate.wait()
-            } onCancel: {
-              cancelled?()
-            }
-          }
-          let response = state.value.withLock { value in
-            if read && value.failNextRead {
-              value.failNextRead = false
-              return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Try later\"}}")
-            }
-            if value.failWrites {
-              return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Try later\"}}")
-            }
-            value.writes.append(read ? "read" : "unread")
-            if read { value.unread.remove(number) } else { value.unread.insert(number) }
-            return ChatHTTPResponse(
-              body: "{\"lastReadAt\":\(read ? "\"\(value.marker)\"" : "null")}")
-          }
-          if !read && state.value.withLock({ $0.dropUnreadResponse }) {
-            throw URLError(.networkConnectionLost)
-          }
-          return response
-        case ("GET", threadPath + "/event-snapshot"):
-          return ChatHTTPResponse(
-            status: 404,
-            body:
-              "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}"
-          )
-        case ("GET", threadPath + "/event-rows"):
-          let after = Int(query(request, "sinceSeqId") ?? "0") ?? 0
-          let last = min(161, after + 50)
-          let rows =
-            after < last
-            ? ((after + 1)...last).map { sequence in
-              let terminal = sequence == 161
-              return """
-                {"id":"\(Self.rowID(sequence))","chatThreadId":"\(id)","seqId":\(sequence),"runId":\(terminal ? "\"62000000-0000-4000-8000-999999999999\"" : "null"),"createdAt":"\(Self.timestamp)","eventType":"\(terminal ? "run.completed" : "output.message")","payload":\(terminal ? "null" : "{\"content\":\"History message \(sequence)\"}")}
-                """
-            }.joined(separator: ",") : ""
-          return ChatHTTPResponse(
-            body:
-              "{\"rows\":[\(rows)],\"cursor\":{\"lastEventId\":\"\(Self.rowID(last))\",\"lastSeqId\":\(last)},\"hasMore\":\(last < 161)}"
-          )
-        case ("GET", threadPath):
-          let gate = state.value.withLock { value -> SearchResponseGate? in
-            let gate = value.recoveryGate
-            value.recoveryGate = nil
-            value.recoveryStarted?()
-            value.recoveryStarted = nil
-            return gate
-          }
-          if let gate { await gate.wait() }
-          return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
-        default: throw URLError(.unsupportedURL)
-        }
+        return try await Self.threadResponse(request, path: path, state: state)
       }
     }
   }
+  private static func threadResponse(
+    _ request: URLRequest, path: String, state: LockedState
+  ) async throws -> ChatHTTPResponse {
+    guard path.hasPrefix("/api/chat-threads/") else { throw URLError(.unsupportedURL) }
+    let id = String(path.dropFirst("/api/chat-threads/".count).prefix(36))
+    guard let number = Int(id.suffix(12)), (1...40).contains(number), id == Self.id(number)
+    else { throw URLError(.unsupportedURL) }
+    let threadPath = "/api/chat-threads/\(id)"
+    switch (request.httpMethod, path) {
+    case ("POST", threadPath + "/mark-read"), ("POST", threadPath + "/mark-unread"):
+      let read = path == threadPath + "/mark-read"
+      let (gate, cancelled, finished) = state.value.withLock { value in
+        let gate = read ? value.readGate : nil
+        let cancelled = read ? value.readCancelled : nil
+        let finished = read ? value.readFinished : nil
+        if read {
+          value.readGate = nil
+          value.readCancelled = nil
+          value.readFinished = nil
+          value.readStarted?()
+          value.readStarted = nil
+        }
+        return (gate, cancelled, finished)
+      }
+      defer { finished?() }
+      if let gate {
+        await withTaskCancellationHandler {
+          await gate.wait()
+        } onCancel: {
+          cancelled?()
+        }
+      }
+      let response = state.value.withLock { value in
+        if read && value.failNextRead {
+          value.failNextRead = false
+          return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Try later\"}}")
+        }
+        if value.failWrites {
+          return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Try later\"}}")
+        }
+        value.writes.append(read ? "read" : "unread")
+        if read { value.unread.remove(number) } else { value.unread.insert(number) }
+        return ChatHTTPResponse(
+          body: "{\"lastReadAt\":\(read ? "\"\(value.marker)\"" : "null")}")
+      }
+      if !read && state.value.withLock({ $0.dropUnreadResponse }) {
+        throw URLError(.networkConnectionLost)
+      }
+      return response
+    case ("GET", threadPath + "/event-snapshot"):
+      return ChatHTTPResponse(
+        status: 404,
+        body:
+          "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}"
+      )
+    case ("GET", threadPath + "/event-rows"):
+      let after = Int(query(request, "sinceSeqId") ?? "0") ?? 0
+      let last = min(161, after + 50)
+      let rows =
+        after < last
+        ? ((after + 1)...last).map { sequence in
+          let terminal = sequence == 161
+          return """
+            {"id":"\(Self.rowID(sequence))","chatThreadId":"\(id)","seqId":\(sequence),"runId":\(terminal ? "\"62000000-0000-4000-8000-999999999999\"" : "null"),"createdAt":"\(Self.timestamp)","eventType":"\(terminal ? "run.completed" : "output.message")","payload":\(terminal ? "null" : "{\"content\":\"History message \(sequence)\"}")}
+            """
+        }.joined(separator: ",") : ""
+      return ChatHTTPResponse(
+        body:
+          "{\"rows\":[\(rows)],\"cursor\":{\"lastEventId\":\"\(Self.rowID(last))\",\"lastSeqId\":\(last)},\"hasMore\":\(last < 161)}"
+      )
+    case ("GET", threadPath):
+      let gate = state.value.withLock { value -> SearchResponseGate? in
+        let gate = value.recoveryGate
+        value.recoveryGate = nil
+        value.recoveryStarted?()
+        value.recoveryStarted = nil
+        return gate
+      }
+      if let gate { await gate.wait() }
+      return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
+    default: throw URLError(.unsupportedURL)
+    }
+  }
+
   @MainActor func workspace() -> WorkspaceStore {
     WorkspaceStore(client: http.client, webURL: http.baseURL)
   }

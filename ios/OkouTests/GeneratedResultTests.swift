@@ -358,10 +358,7 @@ private final class GeneratedResultFixture: Sendable {
     self.files = files
   }
 
-  @MainActor static func make(
-    owner: XCTestCase,
-    text: String = "Synthetic generated text\nRead, copy, share, or save to Files."
-  ) async throws -> GeneratedResultFixture {
+  @MainActor private static func makeFiles(text: String) throws -> [GeneratedResultFile] {
     let image = UIGraphicsImageRenderer(size: CGSize(width: 800, height: 500)).pngData { context in
       UIColor.systemIndigo.setFill()
       context.fill(CGRect(x: 0, y: 0, width: 800, height: 500))
@@ -413,6 +410,14 @@ private final class GeneratedResultFixture: Sendable {
         reference: "html000001.html", filename: "Quarterly review.html", type: "text/html",
         bytes: Data(html.utf8), artifactKind: "presentation-html")
     ]
+    return files
+  }
+
+  @MainActor static func make(
+    owner: XCTestCase,
+    text: String = "Synthetic generated text\nRead, copy, share, or save to Files."
+  ) async throws -> GeneratedResultFixture {
+    let files = try makeFiles(text: text)
     let state = GeneratedResultState()
     let server = try ChatFileHTTPServer { request in
       state.storageRequests.withLock { $0.append(request) }

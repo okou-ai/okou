@@ -132,42 +132,10 @@ public final class PermissionBatchHTTPFixture: Sendable {
           return Self.encoded(value.grants)
         }
         if path == "/api/connector-permissions" {
-          let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
-          if request.httpMethod == "GET" {
-            if value.grantReadStatus != 200 { return Self.error(value.grantReadStatus) }
-            let slug = query?.first { $0.name == "connectorSlug" }?.value ?? ""
-            return Self.memberGrants(slug, grants: value.grants)
-          }
-          struct Body: Decodable {
-            struct Target: Decodable { let connectorSlug: String }
-            let target: Target
-            let mode: String
-            let grants: [Edit]
-          }
-          let body = try JSONDecoder().decode(Body.self, from: request.httpBody!)
-          if value.failConnector == body.target.connectorSlug { return Self.error(503) }
-          Self.apply(body.grants, slug: body.target.connectorSlug, state: &value)
-          return Self.memberGrants(body.target.connectorSlug, grants: value.grants)
+          return try Self.connectorPermissions(request, state: &value)
         }
         if path == "/api/user-permission-grants/apply-batch" {
-          struct Body: Decodable {
-            struct Group: Decodable {
-              let connectorSlug: String
-              let grants: [Edit]
-            }
-            let agentId: String
-            let groups: [Group]
-          }
-          let body = try JSONDecoder().decode(Body.self, from: request.httpBody!)
-          for group in body.groups {
-            Self.apply(group.grants, slug: group.connectorSlug, state: &value)
-          }
-          if value.failReadbackAfterWrite { value.grantReadStatus = 503 }
-          if value.loseBatchResponseOnce {
-            value.loseBatchResponseOnce = false
-            return Self.error(503)
-          }
-          return Self.encoded(value.grants)
+          return try Self.applyBatch(request, state: &value)
         }
         if path == threadPath + "/connector-selections" {
           return Self.response(["selections": []])
@@ -216,6 +184,50 @@ public final class PermissionBatchHTTPFixture: Sendable {
         throw URLError(.unsupportedURL)
       }
     }
+  }
+
+  private static func connectorPermissions(_ request: URLRequest, state value: inout State) throws
+    -> ChatHTTPResponse
+  {
+    let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+    if request.httpMethod == "GET" {
+      if value.grantReadStatus != 200 { return Self.error(value.grantReadStatus) }
+      let slug = query?.first { $0.name == "connectorSlug" }?.value ?? ""
+      return Self.memberGrants(slug, grants: value.grants)
+    }
+    struct Body: Decodable {
+      struct Target: Decodable { let connectorSlug: String }
+      let target: Target
+      let mode: String
+      let grants: [Edit]
+    }
+    let body = try JSONDecoder().decode(Body.self, from: request.httpBody!)
+    if value.failConnector == body.target.connectorSlug { return Self.error(503) }
+    Self.apply(body.grants, slug: body.target.connectorSlug, state: &value)
+    return Self.memberGrants(body.target.connectorSlug, grants: value.grants)
+  }
+
+  private static func applyBatch(_ request: URLRequest, state value: inout State) throws
+    -> ChatHTTPResponse
+  {
+    struct Body: Decodable {
+      struct Group: Decodable {
+        let connectorSlug: String
+        let grants: [Edit]
+      }
+      let agentId: String
+      let groups: [Group]
+    }
+    let body = try JSONDecoder().decode(Body.self, from: request.httpBody!)
+    for group in body.groups {
+      Self.apply(group.grants, slug: group.connectorSlug, state: &value)
+    }
+    if value.failReadbackAfterWrite { value.grantReadStatus = 503 }
+    if value.loseBatchResponseOnce {
+      value.loseBatchResponseOnce = false
+      return Self.error(503)
+    }
+    return Self.encoded(value.grants)
   }
 
   private struct Edit: Decodable {

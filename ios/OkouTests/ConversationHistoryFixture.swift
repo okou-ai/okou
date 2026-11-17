@@ -48,25 +48,7 @@ final class ConversationHistoryFixture: Sendable {
     self.rows = rows
     let requests = requests
     let path = "/api/chat-threads/\(Self.threadID)"
-    let methods = [
-      "/api/indicators": "GET",
-      "/api/chat-threads/snapshot": "GET",
-      "/api/chat-threads/events": "GET",
-      "/api/ios-notifications/prefetch": "POST",
-      path + "/activity-summary": "POST",
-      "/api/connector-catalog/slack": "GET",
-      "/api/connector-accounts/connections": "GET",
-      "/api/agents/\(Self.agentID)/user-connectors": "GET",
-      path + "/usage": "POST",
-      "/api/web/file-url": "GET",
-      path + "/event-snapshot": "GET",
-      path + "/event-rows": "GET",
-      path: "GET",
-      path + "/mark-read": "POST",
-      path + "/connector-selections": "GET",
-      path + "/metadata": "GET",
-      "/api/chat/events": "POST"
-    ]
+    let methods = Self.expectedMethods(for: path)
     http = ChatHTTPFixture { request in
       let requestPath = request.url?.path ?? ""
       if let method = methods[requestPath], request.httpMethod != method {
@@ -135,27 +117,8 @@ final class ConversationHistoryFixture: Sendable {
           body:
             "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
       case path + "/event-rows":
-        try await beforeEventRows?(request)
-        let status = eventRowsStatus()
-        if status != 200 {
-          return ChatHTTPResponse(
-            status: status, body: #"{"error":{"message":"History unavailable"}}"#)
-        }
-        let after =
-          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
-          .queryItems?.first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
-        return try rows.values.withLock { values in
-          let last = min(values.count, after + 50)
-          let identity =
-            last == 0
-            ? nil
-            : try JSONDecoder().decode(EventIdentity.self, from: Data(values[last - 1].utf8)).id
-          let cursorID = identity.map { "\"\($0)\"" } ?? "null"
-          return ChatHTTPResponse(
-            body: """
-              {"rows":[\(values[after..<last].joined(separator: ","))],"cursor":{"lastEventId":\(cursorID),"lastSeqId":\(last)},"hasMore":\(last < values.count)}
-              """)
-        }
+        return try await Self.eventRowsResponse(
+          request, rows: rows, beforeEventRows: beforeEventRows, eventRowsStatus: eventRowsStatus)
       case path:
         if request.httpMethod == "PATCH", let updateDetail {
           return try await updateDetail(request)
@@ -179,6 +142,56 @@ final class ConversationHistoryFixture: Sendable {
         if let additional { return try await additional(request) }
         throw URLError(.unsupportedURL)
       }
+    }
+  }
+
+  private static func expectedMethods(for path: String) -> [String: String] {
+    [
+      "/api/indicators": "GET",
+      "/api/chat-threads/snapshot": "GET",
+      "/api/chat-threads/events": "GET",
+      "/api/ios-notifications/prefetch": "POST",
+      path + "/activity-summary": "POST",
+      "/api/connector-catalog/slack": "GET",
+      "/api/connector-accounts/connections": "GET",
+      "/api/agents/\(Self.agentID)/user-connectors": "GET",
+      path + "/usage": "POST",
+      "/api/web/file-url": "GET",
+      path + "/event-snapshot": "GET",
+      path + "/event-rows": "GET",
+      path: "GET",
+      path + "/mark-read": "POST",
+      path + "/connector-selections": "GET",
+      path + "/metadata": "GET",
+      "/api/chat/events": "POST"
+    ]
+  }
+
+  private static func eventRowsResponse(
+    _ request: URLRequest, rows: HistoryRows,
+    beforeEventRows: (@Sendable (URLRequest) async throws -> Void)?,
+    eventRowsStatus: @Sendable () -> Int
+  ) async throws -> ChatHTTPResponse {
+    try await beforeEventRows?(request)
+    let status = eventRowsStatus()
+    if status != 200 {
+      return ChatHTTPResponse(
+        status: status, body: #"{"error":{"message":"History unavailable"}}"#)
+    }
+    let after =
+      URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+      .queryItems?.first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
+    return try rows.values.withLock { values in
+      let last = min(values.count, after + 50)
+      let identity =
+        last == 0
+        ? nil
+        : try JSONDecoder().decode(EventIdentity.self, from: Data(values[last - 1].utf8)).id
+      let cursorID = identity.map { "\"\($0)\"" } ?? "null"
+      return ChatHTTPResponse(
+        body: """
+          {"rows":[\(values[after..<last].joined(separator: ","))],"cursor":{"lastEventId":\(cursorID),"lastSeqId":\(last)},"hasMore":\(last < values.count)}
+          """)
     }
   }
 

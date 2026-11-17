@@ -1,7 +1,6 @@
 # Inherit upstream defaults; adopt metric and naming policy separately.
 disabled_rules:
   - cyclomatic_complexity
-  - function_body_length
   - function_parameter_count
   - identifier_name
   - large_tuple
@@ -41,6 +40,11 @@ opening_brace:
 file_length:
   warning: 800
   error: 1000
+
+# Function and initializer bodies fail above 100 non-comment, nonblank lines.
+function_body_length:
+  warning: 100
+  error: 100
 
 included:
   - Okou

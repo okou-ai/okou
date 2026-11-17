@@ -98,211 +98,295 @@ enum OkouAvatarRig {
     p.y = -1.3 + sin(a / 4) * 1.3
     switch mood {
     case .idle:
-      p.r = sin(a / 8) * 3.3
-      p.fx = sin(a / 8) * 1.5
+      applyIdlePose(&p, angle: a)
     case .happy:
-      let b = sin(a / 2.4)
-      p.y = -3 - max(0, b) * 8
-      p.r = sin(a / 4.8) * 3.5
-      p.sy = 1 + 0.012 * b
-      p.sx = 1 - 0.007 * b
-      p.happy = 0.98
-      p.blush = 0.48
-      p.mouthHappy = 1
-      p.stars = 0.8
+      applyHappyPose(&p, angle: a)
     case .nod:
-      let n = pulse(mod(t, 3.5), 0.9, 0.36) + pulse(mod(t, 3.5), 1.7, 0.36)
-      p.y = 9 * n
-      p.sy = 1 - 0.087 * n
-      p.sx = 1 + 0.012 * n
-      p.fy = 5 * n
-      p.gy = 6 * n
-      p.mouthHappy = 0.18
-      p.brow = 0.12
+      applyNodPose(&p, at: t)
     case .shake:
-      let v = mod(t, 3.6)
-      let w = sin(v * .pi * 2 / 1.2) * pow(sin(.pi * v / 3.6), 2)
-      p.x = 8 * w
-      p.r = 7.5 * w
-      p.sx = 1 - 0.035 * abs(w)
-      p.fx = 7 * w
-      p.gx = 3 * w
-      p.brow = 0.42
-      p.asym = -0.3
-      p.mouthShy = 0.35
+      applyShakePose(&p, at: t)
     case .sleepy:
-      let d = pulse(mod(t, 6.8), 3.3, 1.5)
-      p.r = 6.5 + sin(a / 6.8) * 1.8
-      p.y = 4 + 3 * d
-      p.sy = 0.985 - 0.012 * d
-      p.ey = 0.42 - 0.3 * d
-      p.gy = 3
-      p.fy = 2
-      p.brow = 0.3
-      p.sleep = 1
-      p.mouthSleep = 1
+      applySleepyPose(&p, at: t, angle: a)
     case .surprise:
-      let v = mod(t, 4.8)
-      let e = ease((v - 0.18) / 0.25) * (1 - ease((v - 2.05) / 0.85))
-      p.r = -3 * e
-      p.y = -3 * e
-      p.sy = 1 + 0.035 * e
-      p.ex = 1 + 0.3 * e
-      p.ey = 1 + 0.5 * e
-      p.fy = -2 * e
-      p.brow = e
-      p.o = e
+      applySurprisePose(&p, at: t)
     case .think:
-      p.r = -8 + sin(a / 5) * 1.2
-      p.fx = 3
-      p.fy = -1
-      p.gx = 6
-      p.gy = -5
-      p.ey = 0.92
-      p.brow = 0.8
-      p.asym = 1
-      p.think = 1
-      p.mouthSleep = 0.55
+      applyThinkPose(&p, angle: a)
     case .shy:
-      p.r = 7 + sin(a / 5.2) * 1.8
-      p.y = 3
-      p.sy = 0.985
-      p.fx = -1
-      p.fy = 2
-      p.gx = -4.5 + sin(a / 5.2) * 1.5
-      p.gy = 5
-      p.ey = 0.82
-      p.blush = 0.85 + sin(a / 3.5) * 0.1
-      p.mouthShy = 1
+      applyShyPose(&p, angle: a)
     case .laugh:
-      let v = mod(t, 4.8)
-      let c = pulse(v, 0.55, 0.26) + 0.9 * pulse(v, 1.14, 0.28) + 0.72 * pulse(v, 1.75, 0.34)
-      p.y = -2.3 - 2.6 * c + sin(a / 4.8) * 0.5
-      p.r = -5 + sin(a / 4.8) * 1.2 + 0.7 * c
-      p.sy = 0.986 + 0.008 * c
-      p.sx = 1 + 0.008 * c
-      p.fy = -1.6 - c
-      p.gy = -0.6
-      p.happy = 1
-      p.joy = 1
-      p.chuckle = c
-      p.ex = 1.06 + 0.04 * c
-      p.ey = 0.86 - 0.04 * c
-      p.blush = 0.15 + 0.08 * c
+      applyLaughPose(&p, at: t, angle: a)
     case .wink:
-      let cycle = 2.83
-      let v = mod(t, cycle)
-      p.wink = ease((v - 0.2) / 0.23) * (1 - ease((v - 1.13) / 0.3))
-      p.r = -6 + sin(a / cycle) * 1.5 - 1.2 * p.wink
-      p.mouthHappy = 0.6
-      p.blush = 0.25 + 0.15 * p.wink
-      p.stars = 0.55 + 0.45 * p.wink
-      p.gx = -2
+      applyWinkPose(&p, at: t, angle: a)
     case .angry:
-      p.x = sin(a * 5) * 0.9
-      p.r = sin(a / 2) * 2
-      p.ey = 0.8
-      p.brow = 1
-      p.anger = 1
-      p.frown = 0.8
-      p.blush = 0.5
-      p.sy = 1 + sin(a) * 0.013
+      applyAngryPose(&p, angle: a)
     case .cry:
-      let v = mod(t, 4.6)
-      let sob = pulse(v, 0.75, 0.28) + 0.85 * pulse(v, 1.45, 0.32)
-      p.weeping = 1
-      p.sob = sob
-      p.tears = 1
-      p.sad = 0.85
-      p.gy = 0.6
-      p.y = 2 + 2.8 * sob
-      p.r = -1.5 + sin(a / 4.6) * 0.65
-      p.sy = 1 - 0.014 * sob
-      p.fy = 0.6 * sob
-      p.blush = 0.12
+      applyCryPose(&p, at: t, angle: a)
     case .pout:
-      p.r = 4 + sin(a / 4) * 1.4
-      p.ey = 1.22
-      p.ex = 1.08
-      p.sad = 1
-      p.brow = 0.8
-      p.frown = 1
-      p.blush = 0.35
-      p.gy = 3
-      p.y = 3
-      p.fx = sin(a * 3) * 0.4
+      applyPoutPose(&p, angle: a)
     case .confused:
-      p.r = sin(a / 5) * 7 - 3
-      p.brow = 0.9
-      p.asym = 2
-      p.gx = -4 + sin(a / 5) * 3
-      p.mouthSleep = 0.8
-      p.question = 1
-      p.ey = 1.05
+      applyConfusedPose(&p, angle: a)
     case .sweat:
-      p.r = -4
-      p.ey = 0.43
-      p.flat = 0.9
-      p.sweat = 1
-      p.brow = 0.45
-      p.asym = 0.8
-      p.x = sin(a / 3) * 1.5
+      applySweatPose(&p, angle: a)
     case .party:
-      let v = mod(t, 4.8)
-      let prep = pulse(v, 0.3, 0.24)
-      let jump = pulse(v, 0.87, 0.52)
-      p.celebrate = 1
-      p.starEyes = 1
-      p.confetti = 1
-      p.blush = 0.26
-      p.hop = 6.5 * jump - 0.8 * prep
-      p.y = 0
-      p.r = -1.3 + 1.1 * jump
-      p.sy = 1 - 0.012 * prep
-      p.fy = -0.6 * jump
+      applyPartyPose(&p, at: t)
     case .cool:
-      p.r = -8 + sin(a / 5) * 2
-      p.y = -3
-      p.glasses = 1
-      p.mouthShy = 0.7
-      p.stars = 0.65
+      applyCoolPose(&p, angle: a)
     case .please:
-      p.r = sin(a / 3) * 2
-      p.y = 3 + sin(a / 1.5) * 2
-      p.ex = 1.35
-      p.ey = 1.45
-      p.brow = 0.6
-      p.sad = 0.7
-      p.blush = 0.5
-      p.mouthShy = 1
-      p.plead = 1
+      applyPleasePose(&p, angle: a)
     case .kiss:
-      p.r = -8 + sin(a / 3) * 2
-      p.happy = 1
-      p.kiss = 1
-      p.blush = 0.7
-      p.hearts = 1
-      p.fx = 2 + sin(a / 3) * 2
+      applyKissPose(&p, angle: a)
     case .dizzy:
-      p.r = sin(a / 3) * 8
-      p.x = cos(a / 3) * 4
-      p.y = sin(a / 1.5) * 3
-      p.spiral = 1
-      p.dizzy = 1
-      p.o = 1
-      p.sy = 0.99
+      applyDizzyPose(&p, angle: a)
     case .focus:
-      p.r = -2
-      p.ey = 0.72
-      p.brow = 1
-      p.anger = 0.5
-      p.flat = 1
-      p.focus = 1
-      p.gx = sin(a / 4) * 3
-      p.gy = 1
-      p.y = -1 + sin(a / 6) * 0.5
+      applyFocusPose(&p, angle: a)
     }
     return p
+  }
+
+  private static func applyIdlePose(_ p: inout Pose, angle a: Double) {
+    p.r = sin(a / 8) * 3.3
+    p.fx = sin(a / 8) * 1.5
+  }
+
+  private static func applyHappyPose(_ p: inout Pose, angle a: Double) {
+    let b = sin(a / 2.4)
+    p.y = -3 - max(0, b) * 8
+    p.r = sin(a / 4.8) * 3.5
+    p.sy = 1 + 0.012 * b
+    p.sx = 1 - 0.007 * b
+    p.happy = 0.98
+    p.blush = 0.48
+    p.mouthHappy = 1
+    p.stars = 0.8
+  }
+
+  private static func applyNodPose(_ p: inout Pose, at t: Double) {
+    let n = pulse(mod(t, 3.5), 0.9, 0.36) + pulse(mod(t, 3.5), 1.7, 0.36)
+    p.y = 9 * n
+    p.sy = 1 - 0.087 * n
+    p.sx = 1 + 0.012 * n
+    p.fy = 5 * n
+    p.gy = 6 * n
+    p.mouthHappy = 0.18
+    p.brow = 0.12
+  }
+
+  private static func applyShakePose(_ p: inout Pose, at t: Double) {
+    let v = mod(t, 3.6)
+    let w = sin(v * .pi * 2 / 1.2) * pow(sin(.pi * v / 3.6), 2)
+    p.x = 8 * w
+    p.r = 7.5 * w
+    p.sx = 1 - 0.035 * abs(w)
+    p.fx = 7 * w
+    p.gx = 3 * w
+    p.brow = 0.42
+    p.asym = -0.3
+    p.mouthShy = 0.35
+  }
+
+  private static func applySleepyPose(_ p: inout Pose, at t: Double, angle a: Double) {
+    let d = pulse(mod(t, 6.8), 3.3, 1.5)
+    p.r = 6.5 + sin(a / 6.8) * 1.8
+    p.y = 4 + 3 * d
+    p.sy = 0.985 - 0.012 * d
+    p.ey = 0.42 - 0.3 * d
+    p.gy = 3
+    p.fy = 2
+    p.brow = 0.3
+    p.sleep = 1
+    p.mouthSleep = 1
+  }
+
+  private static func applySurprisePose(_ p: inout Pose, at t: Double) {
+    let v = mod(t, 4.8)
+    let e = ease((v - 0.18) / 0.25) * (1 - ease((v - 2.05) / 0.85))
+    p.r = -3 * e
+    p.y = -3 * e
+    p.sy = 1 + 0.035 * e
+    p.ex = 1 + 0.3 * e
+    p.ey = 1 + 0.5 * e
+    p.fy = -2 * e
+    p.brow = e
+    p.o = e
+  }
+
+  private static func applyThinkPose(_ p: inout Pose, angle a: Double) {
+    p.r = -8 + sin(a / 5) * 1.2
+    p.fx = 3
+    p.fy = -1
+    p.gx = 6
+    p.gy = -5
+    p.ey = 0.92
+    p.brow = 0.8
+    p.asym = 1
+    p.think = 1
+    p.mouthSleep = 0.55
+  }
+
+  private static func applyShyPose(_ p: inout Pose, angle a: Double) {
+    p.r = 7 + sin(a / 5.2) * 1.8
+    p.y = 3
+    p.sy = 0.985
+    p.fx = -1
+    p.fy = 2
+    p.gx = -4.5 + sin(a / 5.2) * 1.5
+    p.gy = 5
+    p.ey = 0.82
+    p.blush = 0.85 + sin(a / 3.5) * 0.1
+    p.mouthShy = 1
+  }
+
+  private static func applyLaughPose(_ p: inout Pose, at t: Double, angle a: Double) {
+    let v = mod(t, 4.8)
+    let c = pulse(v, 0.55, 0.26) + 0.9 * pulse(v, 1.14, 0.28) + 0.72 * pulse(v, 1.75, 0.34)
+    p.y = -2.3 - 2.6 * c + sin(a / 4.8) * 0.5
+    p.r = -5 + sin(a / 4.8) * 1.2 + 0.7 * c
+    p.sy = 0.986 + 0.008 * c
+    p.sx = 1 + 0.008 * c
+    p.fy = -1.6 - c
+    p.gy = -0.6
+    p.happy = 1
+    p.joy = 1
+    p.chuckle = c
+    p.ex = 1.06 + 0.04 * c
+    p.ey = 0.86 - 0.04 * c
+    p.blush = 0.15 + 0.08 * c
+  }
+
+  private static func applyWinkPose(_ p: inout Pose, at t: Double, angle a: Double) {
+    let cycle = 2.83
+    let v = mod(t, cycle)
+    p.wink = ease((v - 0.2) / 0.23) * (1 - ease((v - 1.13) / 0.3))
+    p.r = -6 + sin(a / cycle) * 1.5 - 1.2 * p.wink
+    p.mouthHappy = 0.6
+    p.blush = 0.25 + 0.15 * p.wink
+    p.stars = 0.55 + 0.45 * p.wink
+    p.gx = -2
+  }
+
+  private static func applyAngryPose(_ p: inout Pose, angle a: Double) {
+    p.x = sin(a * 5) * 0.9
+    p.r = sin(a / 2) * 2
+    p.ey = 0.8
+    p.brow = 1
+    p.anger = 1
+    p.frown = 0.8
+    p.blush = 0.5
+    p.sy = 1 + sin(a) * 0.013
+  }
+
+  private static func applyCryPose(_ p: inout Pose, at t: Double, angle a: Double) {
+    let v = mod(t, 4.6)
+    let sob = pulse(v, 0.75, 0.28) + 0.85 * pulse(v, 1.45, 0.32)
+    p.weeping = 1
+    p.sob = sob
+    p.tears = 1
+    p.sad = 0.85
+    p.gy = 0.6
+    p.y = 2 + 2.8 * sob
+    p.r = -1.5 + sin(a / 4.6) * 0.65
+    p.sy = 1 - 0.014 * sob
+    p.fy = 0.6 * sob
+    p.blush = 0.12
+  }
+
+  private static func applyPoutPose(_ p: inout Pose, angle a: Double) {
+    p.r = 4 + sin(a / 4) * 1.4
+    p.ey = 1.22
+    p.ex = 1.08
+    p.sad = 1
+    p.brow = 0.8
+    p.frown = 1
+    p.blush = 0.35
+    p.gy = 3
+    p.y = 3
+    p.fx = sin(a * 3) * 0.4
+  }
+
+  private static func applyConfusedPose(_ p: inout Pose, angle a: Double) {
+    p.r = sin(a / 5) * 7 - 3
+    p.brow = 0.9
+    p.asym = 2
+    p.gx = -4 + sin(a / 5) * 3
+    p.mouthSleep = 0.8
+    p.question = 1
+    p.ey = 1.05
+  }
+
+  private static func applySweatPose(_ p: inout Pose, angle a: Double) {
+    p.r = -4
+    p.ey = 0.43
+    p.flat = 0.9
+    p.sweat = 1
+    p.brow = 0.45
+    p.asym = 0.8
+    p.x = sin(a / 3) * 1.5
+  }
+
+  private static func applyPartyPose(_ p: inout Pose, at t: Double) {
+    let v = mod(t, 4.8)
+    let prep = pulse(v, 0.3, 0.24)
+    let jump = pulse(v, 0.87, 0.52)
+    p.celebrate = 1
+    p.starEyes = 1
+    p.confetti = 1
+    p.blush = 0.26
+    p.hop = 6.5 * jump - 0.8 * prep
+    p.y = 0
+    p.r = -1.3 + 1.1 * jump
+    p.sy = 1 - 0.012 * prep
+    p.fy = -0.6 * jump
+  }
+
+  private static func applyCoolPose(_ p: inout Pose, angle a: Double) {
+    p.r = -8 + sin(a / 5) * 2
+    p.y = -3
+    p.glasses = 1
+    p.mouthShy = 0.7
+    p.stars = 0.65
+  }
+
+  private static func applyPleasePose(_ p: inout Pose, angle a: Double) {
+    p.r = sin(a / 3) * 2
+    p.y = 3 + sin(a / 1.5) * 2
+    p.ex = 1.35
+    p.ey = 1.45
+    p.brow = 0.6
+    p.sad = 0.7
+    p.blush = 0.5
+    p.mouthShy = 1
+    p.plead = 1
+  }
+
+  private static func applyKissPose(_ p: inout Pose, angle a: Double) {
+    p.r = -8 + sin(a / 3) * 2
+    p.happy = 1
+    p.kiss = 1
+    p.blush = 0.7
+    p.hearts = 1
+    p.fx = 2 + sin(a / 3) * 2
+  }
+
+  private static func applyDizzyPose(_ p: inout Pose, angle a: Double) {
+    p.r = sin(a / 3) * 8
+    p.x = cos(a / 3) * 4
+    p.y = sin(a / 1.5) * 3
+    p.spiral = 1
+    p.dizzy = 1
+    p.o = 1
+    p.sy = 0.99
+  }
+
+  private static func applyFocusPose(_ p: inout Pose, angle a: Double) {
+    p.r = -2
+    p.ey = 0.72
+    p.brow = 1
+    p.anger = 0.5
+    p.flat = 1
+    p.focus = 1
+    p.gx = sin(a / 4) * 3
+    p.gy = 1
+    p.y = -1 + sin(a / 6) * 0.5
   }
 
   // MARK: - Shaping helpers (Web's `clamp`, `mod`, `ease`, `pulse`)
