@@ -5,8 +5,6 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import {
@@ -519,13 +517,6 @@ test.each(["free", "pro"] as const)(
   "%s App previews respect the download paywall without blocking agent inputs",
   async (plan) => {
     const { actor, share } = await fixture(plan);
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId! },
-      {
-        [FeatureSwitchKey.FreePlanArtifactPaywall]: true,
-      },
-    );
     session(actor);
     const prepared = await accept(
       api()(uploadsContract).prepare({

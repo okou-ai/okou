@@ -8,6 +8,7 @@ import { createDeferredPromise } from "../../utils";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostBddApi } from "./helpers/api-bdd-host";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 
 /*
 FILE-01 hosted-site soft deletion through `DELETE /api/host/sites/:publicSlug`.
@@ -39,6 +40,8 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
     const api = createHostBddApi(context);
     const actor = bdd.user();
     const outsider = bdd.user();
+    await createRunsApi(context).grantProEntitlement(actor);
+    await createRunsApi(context).grantProEntitlement(outsider);
     const capture = api.captureHostedSitesS3();
     const site = `bdd-delete-${randomUUID().slice(0, 8)}`;
     const first = await api.prepareHostedSite(
@@ -151,6 +154,7 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
     const bdd = createBddApi(context);
     const api = createHostBddApi(context);
     const owner = bdd.user();
+    await createRunsApi(context).grantProEntitlement(owner);
     const member = bdd.user({ orgId: owner.orgId, orgRole: "org:admin" });
     const capture = api.captureHostedSitesS3();
     const site = `bdd-owned-${randomUUID().slice(0, 8)}`;
@@ -176,6 +180,7 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
     const bdd = createBddApi(context);
     const api = createHostBddApi(context);
     const owner = bdd.user();
+    await createRunsApi(context).grantProEntitlement(owner);
     const capture = api.captureHostedSitesS3();
     const site = `bdd-delayed-${randomUUID().slice(0, 8)}`;
     const pending = await api.prepareHostedSite(
@@ -248,6 +253,7 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
     const bdd = createBddApi(context);
     const api = createHostBddApi(context);
     const owner = bdd.user();
+    await createRunsApi(context).grantProEntitlement(owner);
     const capture = api.captureHostedSitesS3();
     const site = `bdd-overlap-${randomUUID().slice(0, 8)}`;
     const pending = await api.prepareHostedSite(
@@ -323,6 +329,7 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
     const bdd = createBddApi(context);
     const api = createHostBddApi(context);
     const owner = bdd.user();
+    await createRunsApi(context).grantProEntitlement(owner);
     const capture = api.captureHostedSitesS3();
     const site = `bdd-delete-wait-${randomUUID().slice(0, 8)}`;
     const first = await api.prepareHostedSite(
@@ -393,6 +400,7 @@ describe("FILE-01: hosted-site deletion through host APIs", () => {
     const bdd = createBddApi(context);
     const api = createHostBddApi(context);
     const owner = bdd.user();
+    await createRunsApi(context).grantProEntitlement(owner);
     const capture = api.captureHostedSitesS3();
     const site = `bdd-partial-${randomUUID().slice(0, 8)}`;
     const published = await api.prepareHostedSite(

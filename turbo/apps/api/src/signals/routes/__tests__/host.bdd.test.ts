@@ -26,6 +26,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     const bdd = createBddApi(context);
     const api = createHostBddApi(context);
     const actor = bdd.user();
+    await createRunsApi(context).grantProEntitlement(actor);
     const capture = api.captureHostedSitesS3();
     const site = `publication-history-${randomUUID().slice(0, 8)}`;
     const files = [hostedTextFile("/index.html", "<main>published</main>")];
@@ -162,6 +163,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     const bdd = createBddApi(context);
     const api = createHostBddApi(context);
     const actor = bdd.user();
+    await createRunsApi(context).grantProEntitlement(actor);
     api.captureHostedSitesS3();
     const site = `bdd-published-${randomUUID().slice(0, 8)}`;
     const body = {
@@ -561,6 +563,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       ]);
 
       const outsider = bdd.user();
+      await createRunsApi(context).grantProEntitlement(outsider);
       const crossOrg = await api.requestHostedSiteFiles(
         outsider,
         first.publicSlug,
