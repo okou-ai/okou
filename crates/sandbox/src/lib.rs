@@ -68,11 +68,12 @@ pub use operation_cancellation::{CancelledOperationOwner, OperationCancellationC
 pub use request_timing::RequestTiming;
 pub use runtime::{RuntimeProvider, SandboxRuntime};
 pub use sandbox::{
-    GuestMemorySnapshot, Sandbox, SandboxFinalExecParkHandoff, SandboxFinalExecParkHandoffOutcome,
-    SandboxFinalExecParkHandoffPoint, SandboxFinalExecParkObserver, SandboxFinalExecParkOutcome,
-    SandboxFinalExecParkStage, SandboxFinalExecParkSubstage, SandboxFinalExecParkSubstageOutcome,
-    SandboxGuestConnectionPhase, SandboxParkNonReusableReason, SandboxParkOutcome,
-    SandboxStartObserver, SandboxStartStage, SevereMemoryRetentionDiagnostics,
+    GuestMemorySnapshot, Sandbox, SandboxFinalExecParkHandoff, SandboxFinalExecParkHandoffPoint,
+    SandboxFinalExecParkObserver, SandboxFinalExecParkOutcome, SandboxFinalExecParkStage,
+    SandboxFinalExecParkSubstage, SandboxFinalExecParkSubstageOutcome,
+    SandboxFinalExecParkTransitionOutcome, SandboxGuestConnectionPhase, SandboxIdleAdmission,
+    SandboxParkNonReusableReason, SandboxParkOutcome, SandboxStartObserver, SandboxStartStage,
+    SevereMemoryRetentionDiagnostics,
 };
 pub use snapshot::{
     PendingSnapshotPublish, SnapshotCreateConfig, SnapshotError, SnapshotOutput, SnapshotProvider,

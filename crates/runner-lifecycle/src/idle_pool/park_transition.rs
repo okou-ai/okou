@@ -64,7 +64,7 @@ use futures_util::FutureExt;
 use guest_contracts::reuse_preparation::ReusePreparationReport;
 use sandbox::{
     DeviceRateLimits, Sandbox, SandboxFactory, SandboxFinalExecParkHandoff,
-    SandboxFinalExecParkHandoffOutcome, SandboxFinalExecParkObserver, SandboxId,
+    SandboxFinalExecParkObserver, SandboxFinalExecParkTransitionOutcome, SandboxId,
     SandboxParkNonReusableReason, SandboxParkOutcome,
 };
 
@@ -208,6 +208,9 @@ pub struct IdleParkNonReusable {
 /// post-park reuse validation rejected the candidate; its parked destroy path
 /// must be used instead. `RunningHandoff` preserves the distinct fenced-running
 /// ownership and must be destroyed without parked home promotion.
+/// `RunningTerminal` retains a never-paused sandbox and its full active lease
+/// after local admission closes; finish Guest readiness before optional Home
+/// preparation and finalized cleanup.
 #[must_use = "idle park failures must be explicitly destroyed or otherwise handled"]
 pub struct IdleParkFailure {
     ownership: IdleParkFailureOwnership,
@@ -226,6 +229,10 @@ enum IdleParkFailureOwnership {
     },
     RunningHandoff {
         candidate: Box<ImmediateHandoffCandidate>,
+    },
+    RunningTerminal {
+        resources: Box<IdleSandboxResources>,
+        budget_lease: BudgetLease,
     },
 }
 
@@ -256,6 +263,10 @@ pub struct IdleParkActiveParts {
 /// are converted to a rollback destroy job.
 #[must_use = "idle park failure parts must be logged and cleaned up"]
 pub enum IdleParkFailureParts {
+    /// Local idle admission closed before pause. The VM remains running and
+    /// fenced, with its full active budget. Finish terminal readiness before
+    /// optional Home preparation; never admit it to idle or successor reuse.
+    RunningTerminal { active: IdleParkActiveParts },
     /// Park was not proven successful, or the transition state is uncertain.
     Active {
         active: IdleParkActiveParts,
@@ -316,7 +327,7 @@ impl IdleParkRequest {
 
     #[cfg(any(test, feature = "test-support"))]
     pub async fn park_for_idle(self) -> Result<IdleParkOutcome, IdleParkFailure> {
-        self.park_for_idle_with_optional_observer(None).await
+        self.park_for_idle_with_optional_observer(None, None).await
     }
 
     /// Run reuse preparation and physical parking, optionally producing an
@@ -331,13 +342,25 @@ impl IdleParkRequest {
         self,
         observer: &mut dyn SandboxFinalExecParkObserver,
     ) -> Result<IdleParkOutcome, IdleParkFailure> {
-        self.park_for_idle_with_optional_observer(Some(observer))
+        self.park_for_idle_with_optional_observer(Some(observer), None)
+            .await
+    }
+
+    /// Stop idle-only work at a provider-owned safe boundary if local admission
+    /// closes. The full active lease follows a running-terminal exit.
+    pub async fn park_for_idle_while_admitted(
+        self,
+        admission: &dyn sandbox::SandboxIdleAdmission,
+        observer: &mut dyn SandboxFinalExecParkObserver,
+    ) -> Result<IdleParkOutcome, IdleParkFailure> {
+        self.park_for_idle_with_optional_observer(Some(observer), Some(admission))
             .await
     }
 
     async fn park_for_idle_with_optional_observer(
         self,
         observer: Option<&mut dyn SandboxFinalExecParkObserver>,
+        admission: Option<&dyn sandbox::SandboxIdleAdmission>,
     ) -> Result<IdleParkOutcome, IdleParkFailure> {
         let IdleParkRequestParts {
             run_id,
@@ -389,17 +412,21 @@ impl IdleParkRequest {
             },
             observer,
             handoff,
+            admission,
         )
         .await
     }
 }
 
-/// Transition active execution to physical park or fenced running handoff.
+/// Transition active execution to park, accepted handoff, or running terminal cleanup.
 ///
 /// This function validates promotion identity before invoking the sandbox,
 /// then validates the reuse-preparation report after the sandbox confirms park
-/// or running handoff. Failures retain [`IdleParkFailureParts::Active`],
-/// [`IdleParkFailureParts::Parked`], or [`IdleParkFailureParts::RunningHandoff`]
+/// or running handoff. A local admission closure returns running terminal
+/// ownership without authorizing reuse. Failures retain
+/// [`IdleParkFailureParts::Active`],
+/// [`IdleParkFailureParts::Parked`], [`IdleParkFailureParts::RunningHandoff`], or
+/// [`IdleParkFailureParts::RunningTerminal`]
 /// ownership according to the completed boundary. The handoff argument is
 /// supplied by the finalization caller for a physically reusable
 /// predecessor; this function does not infer native-history authority from the
@@ -408,6 +435,7 @@ async fn park_idle_transition(
     input: IdleParkTransitionInput,
     observer: Option<&mut dyn SandboxFinalExecParkObserver>,
     handoff: Option<SandboxFinalExecParkHandoff>,
+    admission: Option<&dyn sandbox::SandboxIdleAdmission>,
 ) -> Result<IdleParkOutcome, IdleParkFailure> {
     let IdleParkTransitionInput {
         operation_run_id,
@@ -492,8 +520,19 @@ async fn park_idle_transition(
     let final_exec_and_park = {
         let request = preparation.exec_request();
         let transition = async {
-            match (observer, handoff.as_ref()) {
-                (Some(observer), Some(handoff)) => {
+            match (observer, handoff.as_ref(), admission) {
+                (Some(observer), handoff, Some(admission)) => {
+                    sandbox
+                        .final_exec_and_park_with_admission(
+                            &request,
+                            "idle-reuse-preparation-and-park",
+                            handoff,
+                            admission,
+                            observer,
+                        )
+                        .await
+                }
+                (Some(observer), Some(handoff), None) => {
                     sandbox
                         .final_exec_and_park_for_handoff(
                             &request,
@@ -503,18 +542,18 @@ async fn park_idle_transition(
                         )
                         .await
                 }
-                (Some(observer), None) => sandbox
+                (Some(observer), None, None) => sandbox
                     .final_exec_and_park_with_observer(
                         &request,
                         "idle-reuse-preparation-and-park",
                         observer,
                     )
                     .await
-                    .map(SandboxFinalExecParkHandoffOutcome::Parked),
-                (None, _) => sandbox
+                    .map(SandboxFinalExecParkTransitionOutcome::Parked),
+                (None, _, _) => sandbox
                     .final_exec_and_park(&request, "idle-reuse-preparation-and-park")
                     .await
-                    .map(SandboxFinalExecParkHandoffOutcome::Parked),
+                    .map(SandboxFinalExecParkTransitionOutcome::Parked),
             }
         };
         AssertUnwindSafe(transition).catch_unwind().await
@@ -526,35 +565,56 @@ async fn park_idle_transition(
                 factory,
                 home_promotion,
             };
-            let exec_result = match &outcome {
-                SandboxFinalExecParkHandoffOutcome::Parked(outcome) => &outcome.exec_result,
-                SandboxFinalExecParkHandoffOutcome::Handoff { exec_result, .. } => exec_result,
+            let (exec_result, candidate, non_reusable) = match outcome {
+                SandboxFinalExecParkTransitionOutcome::Terminal { .. } => {
+                    return Err(IdleParkFailure {
+                        ownership: IdleParkFailureOwnership::RunningTerminal {
+                            resources: Box::new(resources),
+                            budget_lease,
+                        },
+                        reason: "idle_admission_closed",
+                        error: "local idle admission closed before physical pause".into(),
+                        expected_capacity_rejection: false,
+                    });
+                }
+                SandboxFinalExecParkTransitionOutcome::Handoff { exec_result, point } => (
+                    exec_result,
+                    IdleParkCandidate::Immediate(ImmediateHandoffCandidate {
+                        resources,
+                        metadata,
+                        budget_lease,
+                        handoff_point: point,
+                        retirement_backing: None,
+                    }),
+                    None,
+                ),
+                SandboxFinalExecParkTransitionOutcome::Parked(outcome) => (
+                    outcome.exec_result,
+                    IdleParkCandidate::Ordinary(ParkedIdleCandidate {
+                        resources,
+                        metadata,
+                        budget_lease,
+                        retirement_backing: None,
+                    }),
+                    match outcome.park_outcome {
+                        SandboxParkOutcome::Reusable => None,
+                        SandboxParkOutcome::NonReusable(reason) => Some(reason),
+                    },
+                ),
             };
-            let preparation_report = match preparation.validate_result(exec_result) {
+            let preparation_report = match preparation.validate_result(&exec_result) {
                 Ok(report) => report,
                 Err(error) => {
                     let expected_capacity_rejection = error.is_expected_capacity_rejection();
-                    let ownership = match outcome {
-                        SandboxFinalExecParkHandoffOutcome::Parked(_) => {
-                            let candidate = ParkedIdleCandidate {
-                                resources,
-                                metadata,
-                                budget_lease,
-                                retirement_backing: None,
-                            };
+                    let ownership = match candidate {
+                        IdleParkCandidate::Ordinary(candidate) => {
                             IdleParkFailureOwnership::Parked {
                                 rejected: Box::new(candidate.into_rejected()),
                             }
                         }
-                        SandboxFinalExecParkHandoffOutcome::Handoff { point, .. } => {
+                        IdleParkCandidate::Immediate(candidate) => {
                             IdleParkFailureOwnership::RunningHandoff {
-                                candidate: Box::new(ImmediateHandoffCandidate {
-                                    resources,
-                                    metadata,
-                                    budget_lease,
-                                    handoff_point: point,
-                                    retirement_backing: None,
-                                }),
+                                candidate: Box::new(candidate),
                             }
                         }
                     };
@@ -566,32 +626,16 @@ async fn park_idle_transition(
                     });
                 }
             };
-            Ok(match outcome {
-                SandboxFinalExecParkHandoffOutcome::Handoff { point, .. } => {
-                    IdleParkOutcome::Handoff(ImmediateHandoffCandidate {
-                        resources,
-                        metadata,
-                        budget_lease,
-                        handoff_point: point,
-                        retirement_backing: None,
-                    })
-                }
-                SandboxFinalExecParkHandoffOutcome::Parked(outcome) => {
-                    let candidate = ParkedIdleCandidate {
-                        resources,
-                        metadata,
-                        budget_lease,
-                        retirement_backing: None,
-                    };
-                    match outcome.park_outcome {
-                        SandboxParkOutcome::Reusable => IdleParkOutcome::Reusable(candidate),
-                        SandboxParkOutcome::NonReusable(reason) => IdleParkOutcome::NonReusable {
-                            candidate,
-                            reason,
-                            preparation_report,
-                        },
-                    }
-                }
+            Ok(match candidate {
+                IdleParkCandidate::Immediate(candidate) => IdleParkOutcome::Handoff(candidate),
+                IdleParkCandidate::Ordinary(candidate) => match non_reusable {
+                    None => IdleParkOutcome::Reusable(candidate),
+                    Some(reason) => IdleParkOutcome::NonReusable {
+                        candidate,
+                        reason,
+                        preparation_report,
+                    },
+                },
             })
         }
         Ok(Err(error)) => Err(IdleParkFailure {
@@ -671,6 +715,7 @@ impl SpeculativeIdleSandbox {
                 budget_lease,
                 home_image_size_bytes,
             },
+            None,
             None,
             None,
         )
@@ -786,6 +831,10 @@ impl IdleParkFailure {
             IdleParkFailureOwnership::Active {
                 resources,
                 budget_lease,
+            }
+            | IdleParkFailureOwnership::RunningTerminal {
+                resources,
+                budget_lease,
             } => (
                 (*resources).into_destroy_payload(HomePromotionPolicy::AbandonUnpublished(reason)),
                 budget_lease,
@@ -823,6 +872,24 @@ impl IdleParkFailure {
             expected_capacity_rejection,
         } = self;
         match ownership {
+            IdleParkFailureOwnership::RunningTerminal {
+                resources,
+                budget_lease,
+            } => {
+                let IdleSandboxResources {
+                    sandbox,
+                    factory,
+                    home_promotion,
+                } = *resources;
+                IdleParkFailureParts::RunningTerminal {
+                    active: IdleParkActiveParts {
+                        sandbox,
+                        factory,
+                        budget_lease,
+                        home_promotion,
+                    },
+                }
+            }
             IdleParkFailureOwnership::Active {
                 resources,
                 budget_lease,
@@ -866,6 +933,7 @@ impl IdleParkFailure {
             IdleParkFailureParts::Active { error, .. }
             | IdleParkFailureParts::Parked { error, .. }
             | IdleParkFailureParts::RunningHandoff { error, .. } => error,
+            IdleParkFailureParts::RunningTerminal { .. } => "local idle admission closed".into(),
         }
     }
 }

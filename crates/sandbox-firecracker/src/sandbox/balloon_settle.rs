@@ -8,7 +8,8 @@ use std::time::Duration;
 use guest_control_client::GuestControlClient;
 use sandbox::{
     GuestMemorySnapshot, SandboxFinalExecParkHandoff, SandboxFinalExecParkSubstageOutcome,
-    SandboxParkNonReusableReason, SandboxParkOutcome, SevereMemoryRetentionDiagnostics,
+    SandboxIdleAdmission, SandboxParkNonReusableReason, SandboxParkOutcome,
+    SevereMemoryRetentionDiagnostics,
 };
 use tracing::{info, warn};
 
@@ -498,6 +499,7 @@ pub(super) struct BalloonSettleResult {
 pub(super) enum BalloonSettleWaitResult {
     Settled(BalloonSettleResult),
     Handoff,
+    AdmissionClosed,
 }
 
 /// Wait until the guest balloon driver inflates close enough to `target_mib`.
@@ -518,8 +520,10 @@ pub(super) async fn wait_for_balloon_with_outcome(
     target_mib: u32,
     log_id: &str,
 ) -> BalloonSettleResult {
-    match wait_for_balloon_with_optional_handoff(client, target_mib, log_id, None, None).await {
+    match wait_for_balloon_with_optional_handoff(client, target_mib, log_id, None, None, None).await
+    {
         BalloonSettleWaitResult::Settled(result) => result,
+        BalloonSettleWaitResult::AdmissionClosed => panic!("admission gate was not provided"),
         BalloonSettleWaitResult::Handoff => panic!("handoff signal was not provided"),
     }
 }
@@ -530,6 +534,7 @@ pub(super) async fn wait_for_balloon_with_optional_handoff(
     log_id: &str,
     guest: Option<&Arc<tokio::sync::Mutex<Option<Arc<GuestControlClient>>>>>,
     handoff: Option<&SandboxFinalExecParkHandoff>,
+    admission: Option<&dyn SandboxIdleAdmission>,
 ) -> BalloonSettleWaitResult {
     let tolerance_mib = balloon_settle_tolerance_mib(target_mib);
     let mut summary = BalloonSettleSummary::new(target_mib);
@@ -538,6 +543,13 @@ pub(super) async fn wait_for_balloon_with_optional_handoff(
     let max_deadline = summary.started_at + BALLOON_SETTLE_MAX_TIMEOUT;
     let mut fast_poll_intervals = BALLOON_SETTLE_FAST_POLL_INTERVALS.into_iter();
     loop {
+        if admission.is_some_and(|gate| !gate.is_open()) {
+            return if handoff.is_some_and(SandboxFinalExecParkHandoff::accept_if_requested) {
+                BalloonSettleWaitResult::Handoff
+            } else {
+                BalloonSettleWaitResult::AdmissionClosed
+            };
+        }
         let now = tokio::time::Instant::now();
         if now >= deadline {
             if now >= max_deadline {
@@ -682,6 +694,13 @@ pub(super) async fn wait_for_balloon_with_optional_handoff(
             }
             None => tokio::time::timeout_at(deadline, client.get_balloon_statistics()).await,
         };
+        if admission.is_some_and(|gate| !gate.is_open()) {
+            return if handoff.is_some_and(SandboxFinalExecParkHandoff::accept_if_requested) {
+                BalloonSettleWaitResult::Handoff
+            } else {
+                BalloonSettleWaitResult::AdmissionClosed
+            };
+        }
         match statistics {
             Ok(Ok(stats)) => {
                 let deficit_mib = summary.observe(&stats);
