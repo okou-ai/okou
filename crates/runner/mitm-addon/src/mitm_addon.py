@@ -95,7 +95,7 @@ from auth import (
     FirewallAuthHandlingResult,
     FirewallHeaderPhaseAuthResult,
     handle_firewall_request,
-    invalidate_network_admission,
+    handle_response_auth_failure,
     is_billable_firewall,
     mark_auth_base_forwarding_saturated,
     mark_auth_base_request_length_required,
@@ -108,11 +108,6 @@ from auth import (
     try_apply_stream_safe_firewall_auth_for_requestheaders,
 )
 from body_limits import STREAM_BUFFER_LIMIT
-from firewall_auth_cache import (
-    FirewallAuthCacheEntryIdentity,
-    FirewallAuthCacheKey,
-    invalidate_cached_firewall_headers,
-)
 from generated.data_router import DATA_ROUTER_REQUEST_BODY_MAX_BYTES
 from logging_utils import (
     elapsed_ms,
@@ -124,7 +119,6 @@ from logging_utils import (
 )
 
 # HTTP status boundaries used in response-phase classification.
-_HTTP_STATUS_UNAUTHORIZED = 401
 _HTTP_STATUS_BAD_GATEWAY = 502
 _HTTP_STATUS_ERROR_MIN = 400  # inclusive: start of 4xx/5xx error range
 # Request-header phase state.
@@ -2112,42 +2106,7 @@ def _finish_response_handling(
     response_streaming.finalize_connector_response_state(flow)
     usage.report_connector_usage(flow, run_id)
 
-    # Invalidate firewall header cache on 401 so next request gets fresh headers.
-    # Also request a force-refresh so the next /firewall/auth fetch refreshes
-    # the access token regardless of DB tokenExpiresAt — the provider just told
-    # us the token is no longer valid, overriding whatever the DB believes.
-    # request_force_refresh enforces a cooldown so a persistent non-token 401
-    # can't amplify into a loop of provider refresh calls (#9860).
-    # Both reverse-proxied auth layers can send the same challenges and OAuth
-    # error bodies. A bound rejection cannot authorize app credential refresh.
-    authentication_unattributed = bool(
-        flow.response
-        and flow.metadata.get(metadata_keys.CUSTOM_NETWORK_BOUND)
-        and flow.response.status_code in (401, 403)
-    )
-    if flow.response and flow.response.status_code in (401, 403):
-        invalidate_network_admission(flow)
-    if authentication_unattributed:
-        log_proxy_entry(
-            proxy_log_path,
-            "warn",
-            "The Access-protected request failed authentication; its source is unknown. "
-            "Check network access and application authentication, then retry explicitly",
-            type="cloudflare_access",
-            status=flow.response.status_code if flow.response else 0,
-        )
-    if (
-        flow.response
-        and flow.response.status_code == _HTTP_STATUS_UNAUTHORIZED
-        and flow_metadata.firewall_base(flow.metadata)
-        and not authentication_unattributed
-    ):
-        cache_key = flow.metadata.get(metadata_keys.FIREWALL_AUTH_CACHE_KEY)
-        cache_entry_identity = flow.metadata.get(metadata_keys.FIREWALL_AUTH_CACHE_ENTRY_IDENTITY)
-        if isinstance(cache_key, FirewallAuthCacheKey) and isinstance(
-            cache_entry_identity, FirewallAuthCacheEntryIdentity
-        ):
-            invalidate_cached_firewall_headers(cache_key, cache_entry_identity)
+    handle_response_auth_failure(flow, proxy_log_path=proxy_log_path)
 
     # Log HTTP error responses to the per-job proxy JSONL log.
     if flow.response and flow.response.status_code >= _HTTP_STATUS_ERROR_MIN:
