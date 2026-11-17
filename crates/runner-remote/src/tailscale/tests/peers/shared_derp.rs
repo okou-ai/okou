@@ -268,7 +268,7 @@ async fn one_driver_concurrently_handles_inline_pong_data_send_and_bounded_recei
 
 async fn surviving_original_b(secure: bool) {
     use super::wire;
-    use ts_netstack_smoltcp_socket::CreateSocket;
+    use ts_netstack_smoltcp::netsock::CreateSocket;
     inside(move |control| async move {
         let mut shared = fixture::Shared::new(control, secure).await;
         let a = shared.sides[0].channel();
@@ -345,7 +345,7 @@ async fn original_b_tcp_survives_a_partial_tls_derp_frame_retirement_and_owned_r
 #[tokio::test]
 async fn the_scheduled_native_root_uses_sdk_tcp_deadlines_after_a_real_derp_syn_loss() {
     use super::wire;
-    use ts_netstack_smoltcp_socket::CreateSocket;
+    use ts_netstack_smoltcp::netsock::CreateSocket;
     inside(|control| async move {
         let mut shared = fixture::Shared::new(control, true).await;
         shared.sides[1].lose_first_syn();
@@ -374,7 +374,7 @@ async fn the_scheduled_native_root_uses_sdk_tcp_deadlines_after_a_real_derp_syn_
 
 async fn abandoning_pending_root_dial(target: &'static str) {
     use super::wire;
-    use ts_netstack_smoltcp_socket::CreateSocket;
+    use ts_netstack_smoltcp::netsock::CreateSocket;
     inside(move |control| async move {
         let mut shared = fixture::Shared::new(control, true).await;
         let channel = shared.sides[1].channel();

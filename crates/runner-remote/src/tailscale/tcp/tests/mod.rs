@@ -3,7 +3,7 @@ use crate::tailscale::peers::Peers;
 use futures_util::StreamExt;
 use serde_json::json;
 use ts_keys::NodeKeyPair;
-use ts_netstack_smoltcp_core::smoltcp::phy::{Device as _, TxToken as _};
+use ts_netstack_smoltcp::smoltcp::phy::{Device as _, TxToken as _};
 
 async fn connection() -> (Peers, Connection) {
     let keys = NodeKeyPair::random();

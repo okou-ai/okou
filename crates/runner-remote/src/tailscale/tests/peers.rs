@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use std::{net::SocketAddr, sync::Arc};
 use ts_control::{Node, StateUpdate};
 use ts_keys::{NodeKeyPair, NodePublicKey};
-use ts_netstack_smoltcp_socket::CreateSocket;
+use ts_netstack_smoltcp::netsock::CreateSocket;
 use ts_packet::PacketMut;
 use ts_transport::{DynEndpoint, UnderlayTransportId};
 use wire::{Stack, local, peer_ip, remote};
