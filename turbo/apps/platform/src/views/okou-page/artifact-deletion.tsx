@@ -10,21 +10,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "@okouai/ui";
-import { Loader2, MoreHorizontal, RotateCcw, Trash2 } from "lucide-react";
+import { Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
-  artifactDeleteTarget$,
-  artifactDeletionFinalFocus$,
   artifactPreviewDeletionScope,
-  deleteCatalogArtifact$,
-  setArtifactDeleteTarget$,
   type PreviewArtifactDeletion,
   type ArtifactDeletionSourceKind,
 } from "../../signals/artifact-deletion.ts";
@@ -37,7 +30,6 @@ import {
   type ArtifactDeletionOrigin,
 } from "../../signals/artifact-deletion-origin.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
 import {
   ArtifactDownloadMenu,
   useGoogleDriveAvailability,
@@ -190,77 +182,6 @@ function PreviewArtifactDeleteMenuItem({
         })}
       </DropdownMenuItem>
     </>
-  );
-}
-
-export function ArtifactDeleteMenu({
-  artifact,
-}: {
-  readonly artifact: CatalogArtifact;
-}) {
-  const { t } = useTranslation();
-  const triggerRef = useSet(artifact.deletion.triggerRef$);
-  const requestDeletion = useSet(artifact.deletion.request$);
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        ref={triggerRef}
-        aria-label={t(
-          ($) => {
-            return $.artifacts.deletion.menu;
-          },
-          {
-            title: artifact.title,
-          },
-        )}
-        render={
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            className="bg-background/90"
-          />
-        }
-      >
-        <MoreHorizontal size={16} />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          className="text-destructive"
-          onClick={requestDeletion}
-        >
-          <Trash2 size={14} />
-          {t(($) => {
-            return $.artifacts.deletion.delete;
-          })}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-export function ArtifactDeleteDialog() {
-  const target = useGet(artifactDeleteTarget$);
-  const finalFocus = useSet(artifactDeletionFinalFocus$);
-  const setTarget = useSet(setArtifactDeleteTarget$);
-  const [deletion, deleteArtifact] = useLoadableSet(deleteCatalogArtifact$);
-  const pageSignal = useGet(pageSignal$);
-  return (
-    <ArtifactDeleteConfirmation
-      target={target}
-      busy={deletion.state === "loading"}
-      finalFocus={finalFocus}
-      onCancel={() => {
-        setTarget(null);
-      }}
-      onConfirm={() => {
-        detach(
-          deleteArtifact(pageSignal),
-          Reason.DomCallback,
-          "delete artifact",
-        );
-      }}
-    />
   );
 }
 

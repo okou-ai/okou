@@ -48,10 +48,6 @@ import { classifyChatAttachment } from "../../signals/chat-page/parse-body-block
 import type { ArtifactKind } from "../../signals/chat-page/artifact-card-signals.ts";
 import { officeFilePreviewKind } from "../okou-page/office-file-preview.ts";
 import { artifactCatalogViewportRef$ } from "../../signals/artifact-deletion.ts";
-import {
-  ArtifactDeleteDialog,
-  ArtifactDeleteMenu,
-} from "../okou-page/artifact-deletion.tsx";
 
 // Distance from the bottom of the scroll container at which the next page is
 // requested. The signal layer deduplicates repeated requests for one cursor.
@@ -443,9 +439,6 @@ function ArtifactSharedConversationList({
                 className="shrink-0 transition-colors group-hover:text-foreground"
               />
             </a>
-            <div className="pr-3">
-              <ArtifactDeleteMenu artifact={artifact} />
-            </div>
           </li>
         );
       })}
@@ -789,7 +782,6 @@ export function ArtifactCatalogPage({
             )}
           </div>
         </main>
-        <ArtifactDeleteDialog />
       </div>
     </ChatThreadSidebarShell>
   );
