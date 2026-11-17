@@ -254,8 +254,18 @@ function expectFeedbackContext(
 async function expectSuggestionFeedbackLifecycle(
   owned: Awaited<ReturnType<typeof publicChatActor>>,
   workflowId: string,
-  existing: Awaited<ReturnType<typeof saveOwnedFeedback>>["expected"],
+  definitionName: string,
+  expectedFeedback: readonly Awaited<
+    ReturnType<typeof saveOwnedFeedback>
+  >["expected"][],
 ) {
+  if (definitionName !== "agent-suggestions") {
+    return;
+  }
+  const existing = expectedFeedback[0];
+  if (!existing) {
+    throw new Error("Expected the owner's saved feedback");
+  }
   const fixture = createChatEventsFixture(context);
   const app = setupApp({
     context,
@@ -280,7 +290,7 @@ async function expectSuggestionFeedbackLifecycle(
       }),
     ),
   });
-  async function readFeedback(at: number) {
+  function readFeedback(at: number) {
     return withMockNowForTest(at, async () => {
       await owned.run(() => {
         return accept(
@@ -301,8 +311,9 @@ async function expectSuggestionFeedbackLifecycle(
         );
       });
       const schedule = schedules.body[0];
-      if (!schedule?.nextRunAt)
+      if (!schedule?.nextRunAt) {
         throw new Error("Expected the Suggestions schedule");
+      }
       return withMockNowForTest(
         Math.max(at, Date.parse(schedule.nextRunAt)),
         async () => {
@@ -331,8 +342,9 @@ async function expectSuggestionFeedbackLifecycle(
               [200],
             );
           });
-          if (!current.body.chatThreadId)
+          if (!current.body.chatThreadId) {
             throw new Error("Expected the Suggestions execution thread");
+          }
           const events = await owned.run(() => {
             return createChatFilesBddApi(context).listThreadEventRows(
               owned.actor,
@@ -342,7 +354,9 @@ async function expectSuggestionFeedbackLifecycle(
           const runId = [...events].reverse().find((event) => {
             return event.eventType === "input.prompt" && event.runId;
           })?.runId;
-          if (!runId) throw new Error("Expected a scheduled Suggestions Run");
+          if (!runId) {
+            throw new Error("Expected a scheduled Suggestions Run");
+          }
           const { execution, sandboxHeaders } = await owned.runExecution(runId);
           expect(execution.appendSystemPrompt).toContain(
             "# Suggestions feedback context",
@@ -367,7 +381,7 @@ async function expectSuggestionFeedbackLifecycle(
               [200],
             );
           });
-          expect(feedback.complete).toBe(true);
+          expect(feedback.complete).toBeTruthy();
           return feedback.feedback;
         },
       );
@@ -388,17 +402,19 @@ async function expectSuggestionFeedbackLifecycle(
     await saveOwnedFeedback(owned, "Dismissed suggestion", "", "dismissed");
     const initial = await readFeedback(startedAt);
     expect(initial).toHaveLength(3);
-    expect(initial).toEqual(
+    expect(initial).toStrictEqual(
       expect.arrayContaining([existing, undone.expected, selected.expected]),
     );
     await undone.undo();
     const afterUndo = await readFeedback(startedAt);
     expect(afterUndo).toHaveLength(2);
-    expect(afterUndo).toEqual(
+    expect(afterUndo).toStrictEqual(
       expect.arrayContaining([existing, selected.expected]),
     );
-    expect(await readFeedback(startedAt + 7 * day)).toEqual([existing]);
-    expect(await readFeedback(startedAt + 30 * day)).toEqual([]);
+    await expect(readFeedback(startedAt + 7 * day)).resolves.toStrictEqual([
+      existing,
+    ]);
+    await expect(readFeedback(startedAt + 30 * day)).resolves.toStrictEqual([]);
   });
 }
 
@@ -872,11 +888,12 @@ test.each(scenarios)(
       });
       await owned.run(flushWaitUntilForTest);
     });
-    if (definitionName === "agent-suggestions") {
-      const existing = expectedFeedback[0];
-      if (!existing) throw new Error("Expected the owner's saved feedback");
-      await expectSuggestionFeedbackLifecycle(owned, workflow.id, existing);
-    }
+    await expectSuggestionFeedbackLifecycle(
+      owned,
+      workflow.id,
+      definitionName,
+      expectedFeedback,
+    );
     if (definitionName === "morning-brief") {
       await expectPublishedMorningBriefRecovery(
         owned,
