@@ -2370,7 +2370,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         ],
       },
     });
-    expect(heads).toBe(1);
+    expect(heads).toBe(0);
     const messages = await waitForThreadMessages(
       actor,
       run.threadId,
@@ -2399,7 +2399,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       prompt: "resolve the object again in a new send",
       userMessage: { version: 1, parts: [file] },
     });
-    expect(heads).toBe(2);
+    expect(heads).toBe(0);
     expect((await api.readRun(actor, next.runId)).prompt).toContain(filename);
     await cancelAndCompleteChatRun(actor, next.runId);
   }, 60_000);

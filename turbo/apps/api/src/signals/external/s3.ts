@@ -427,17 +427,30 @@ const hostedSitesPublicS3Client$ = computed((get): S3Client => {
     : get(hostedSitesS3Client$);
 });
 
+/** SDK calls, including failures and each LIST page; excludes SDK-internal retries. */
+export interface S3ObjectReadCounts {
+  head: number;
+  list: number;
+}
+
 export function listS3Objects(
   bucket: string,
   prefix: string,
+  counts?: S3ObjectReadCounts,
 ): Computed<Promise<readonly S3Object[]>> {
-  return listS3ObjectsWithClient(s3ClientForBucket(bucket), bucket, prefix);
+  return listS3ObjectsWithClient(
+    s3ClientForBucket(bucket),
+    bucket,
+    prefix,
+    counts,
+  );
 }
 
 function listS3ObjectsWithClient(
   client$: Computed<S3Client>,
   bucket: string,
   prefix: string,
+  counts?: S3ObjectReadCounts,
 ): Computed<Promise<readonly S3Object[]>> {
   return computed(async (get): Promise<readonly S3Object[]> => {
     const client = get(client$);
@@ -445,6 +458,9 @@ function listS3ObjectsWithClient(
     let continuationToken: string | undefined;
 
     do {
+      if (counts) {
+        counts.list += 1;
+      }
       const response = await client.send(
         new ListObjectsV2Command({
           Bucket: bucket,
@@ -1212,6 +1228,9 @@ function generatePresignedPutUrlWithClient(
     });
     return getSignedUrl(client, command, {
       expiresIn: options.expiresInSeconds ?? PRESIGNED_URL_TTL_SECONDS,
+      ...(options.contentLength === undefined
+        ? {}
+        : { signableHeaders: new Set(["content-length"]) }),
       ...(metadataHeaders
         ? { unhoistableHeaders: new Set(Object.keys(metadataHeaders)) }
         : {}),
@@ -1900,8 +1919,15 @@ export function s3ObjectHead(
   bucket: string,
   key: string,
   signal?: AbortSignal,
+  counts?: S3ObjectReadCounts,
 ): Computed<Promise<S3ObjectHead>> {
-  return s3ObjectHeadWithClient(s3ClientForBucket(bucket), bucket, key, signal);
+  return s3ObjectHeadWithClient(
+    s3ClientForBucket(bucket),
+    bucket,
+    key,
+    signal,
+    counts,
+  );
 }
 
 function s3ObjectHeadWithClient(
@@ -1909,9 +1935,13 @@ function s3ObjectHeadWithClient(
   bucket: string,
   key: string,
   signal?: AbortSignal,
+  counts?: S3ObjectReadCounts,
 ): Computed<Promise<S3ObjectHead>> {
   return computed(async (get): Promise<S3ObjectHead> => {
     const client = get(client$);
+    if (counts) {
+      counts.head += 1;
+    }
     const result = await settle(
       client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }), {
         abortSignal: signal,

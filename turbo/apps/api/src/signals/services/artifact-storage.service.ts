@@ -27,6 +27,7 @@ import {
   putS3Object,
   s3ObjectHead,
   type S3ObjectHead,
+  type S3ObjectReadCounts,
   tryListMultipartS3Parts,
 } from "../external/s3";
 import { safeUriComponentDecode, safeUrlParse } from "../utils";
@@ -421,12 +422,13 @@ const resolveExactV2ArtifactObject$ = command(
       readonly id: string;
       readonly filenameHint: string;
       readonly variant: string | undefined;
+      readonly counts?: S3ObjectReadCounts;
     },
     signal: AbortSignal,
   ): Promise<ResolvedArtifactObject | null> => {
     const { bucket, userId, id, filenameHint, variant } = args;
     const key = buildArtifactKeyV2(id, filenameHint, variant);
-    const head = await get(s3ObjectHead(bucket, key));
+    const head = await get(s3ObjectHead(bucket, key, signal, args.counts));
     signal.throwIfAborted();
     return resolvedV2ArtifactObjectFromHead({ userId, id, key, head });
   },
@@ -435,15 +437,21 @@ const resolveExactV2ArtifactObject$ = command(
 const resolveV2ArtifactObject$ = command(
   async (
     { get },
-    bucket: string,
-    userId: string,
-    id: string,
+    args: {
+      readonly bucket: string;
+      readonly userId: string;
+      readonly id: string;
+      readonly counts?: S3ObjectReadCounts;
+    },
     signal: AbortSignal,
   ): Promise<ResolvedArtifactObject | null> => {
-    const objects = await get(listS3Objects(bucket, buildArtifactPrefixV2(id)));
+    const { bucket, userId, id, counts } = args;
+    const objects = await get(
+      listS3Objects(bucket, buildArtifactPrefixV2(id), counts),
+    );
     signal.throwIfAborted();
     for (const object of objects) {
-      const head = await get(s3ObjectHead(bucket, object.key));
+      const head = await get(s3ObjectHead(bucket, object.key, signal, counts));
       signal.throwIfAborted();
       const resolved = resolvedV2ArtifactObjectFromHead({
         userId,
@@ -463,16 +471,20 @@ const resolveV2ArtifactObject$ = command(
 const resolveV1ArtifactObject$ = command(
   async (
     { get },
-    bucket: string,
-    userId: string,
-    id: string,
+    args: {
+      readonly bucket: string;
+      readonly userId: string;
+      readonly id: string;
+      readonly counts?: S3ObjectReadCounts;
+    },
     signal: AbortSignal,
   ): Promise<ResolvedArtifactObject | null> => {
+    const { bucket, userId, id, counts } = args;
     // V1 objects predate the layout marker and keep their legacy links for the
     // persisted object's lifetime. Remove with V1 reads once no V1 object
     // remains reachable; tracked by #28449.
     const objects = await get(
-      listS3Objects(bucket, buildArtifactPrefix(userId, id)),
+      listS3Objects(bucket, buildArtifactPrefix(userId, id), counts),
     );
     signal.throwIfAborted();
     const object = objects[0];
@@ -500,6 +512,7 @@ export const resolvedArtifactObject$ = command(
       readonly id: string;
       readonly filenameHint?: string;
       readonly variant?: string;
+      readonly counts?: S3ObjectReadCounts;
     },
     signal: AbortSignal,
   ): Promise<ResolvedArtifactObject | null> => {
@@ -508,7 +521,7 @@ export const resolvedArtifactObject$ = command(
     if (filenameHint !== undefined) {
       const exact = await set(
         resolveExactV2ArtifactObject$,
-        { bucket, userId, id, filenameHint, variant },
+        { bucket, userId, id, filenameHint, variant, counts: args.counts },
         signal,
       );
       if (exact) {
@@ -519,8 +532,16 @@ export const resolvedArtifactObject$ = command(
       return null;
     }
     return (
-      (await set(resolveV2ArtifactObject$, bucket, userId, id, signal)) ??
-      (await set(resolveV1ArtifactObject$, bucket, userId, id, signal))
+      (await set(
+        resolveV2ArtifactObject$,
+        { bucket, userId, id, counts: args.counts },
+        signal,
+      )) ??
+      (await set(
+        resolveV1ArtifactObject$,
+        { bucket, userId, id, counts: args.counts },
+        signal,
+      ))
     );
   },
 );
