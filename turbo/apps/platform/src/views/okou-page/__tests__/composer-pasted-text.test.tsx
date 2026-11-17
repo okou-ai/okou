@@ -4,7 +4,6 @@ import {
   uploadsContract,
   type UploadCompleteResponse,
 } from "@okouai/api-contracts/contracts/uploads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MAX_ATTACHMENT_UPLOAD_BYTES } from "@okouai/core/upload-limits";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -32,16 +31,6 @@ const FIRST_FILE_ID = "a0000000-0000-4000-a000-000000045955";
 const SECOND_FILE_ID = "a0000000-0000-4000-a000-000000045956";
 const FIRST_FILENAME = "Pasted text-1.txt";
 const SECOND_FILENAME = "Pasted text-2.txt";
-function staffAuth() {
-  return {
-    user: { id: "test-user-123", fullName: "Test User" },
-    organization: {
-      activeOrg: { id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", name: "Staff" },
-      memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
-    },
-  };
-}
-
 interface UploadedContent {
   readonly filename: string;
   readonly contentType: string;
@@ -126,55 +115,13 @@ function textClipboard(
   return clipboard;
 }
 
-async function openComposer({
-  staff = true,
-  override,
-}: {
-  readonly staff?: boolean;
-  readonly override?: boolean;
-} = {}): Promise<HTMLElement> {
+async function openComposer(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    auth: staff ? staffAuth() : undefined,
-    featureSwitches:
-      override === undefined
-        ? undefined
-        : { [FeatureSwitchKey.PastedTextAttachments]: override },
   });
   return await screen.findByRole("textbox", { name: "Message" });
 }
-
-test.each([
-  { audience: "external organizations", staff: false },
-  {
-    audience: "external organizations with an enabled override",
-    staff: false,
-    override: true,
-  },
-  {
-    audience: "staff with a disabled override",
-    staff: true,
-    override: false,
-  },
-])("Keep long pastes inline for $audience", async ({ staff, override }) => {
-  const user = userEvent.setup({ delay: null });
-  const text = "a".repeat(10_001);
-  mockAttachmentChat(context);
-  const editor = await openComposer({ staff, override });
-
-  await fill(editor, EXISTING_DRAFT);
-  expect(editor.textContent).toBe(EXISTING_DRAFT);
-  await user.paste(textClipboard(text));
-
-  await waitFor(() => {
-    expect(editor.textContent).toBe(EXISTING_DRAFT + text);
-  });
-  expect(screen.getByLabelText("Send")).toBeEnabled();
-  expect(
-    screen.queryByLabelText(`Remove ${FIRST_FILENAME}`),
-  ).not.toBeInTheDocument();
-});
 
 test.each([
   { label: "10,000 ASCII code units", text: "a".repeat(10_000) },

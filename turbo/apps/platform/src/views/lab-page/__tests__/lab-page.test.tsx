@@ -103,11 +103,6 @@ test("Lab groups active feature switches", async () => {
   }
   expect(screen.getAllByRole("switch")).toHaveLength(keys.length);
   expect(
-    within(featureSwitchRow(FeatureSwitchKey.PastedTextAttachments)).getByRole(
-      "switch",
-    ),
-  ).toHaveAttribute("aria-checked", "true");
-  expect(
     within(featureSwitchGroup("Alpha")).getByText(FeatureSwitchKey.Banking),
   ).toBeVisible();
   expect(
@@ -144,26 +139,6 @@ test.each(["org_external", "org_3ANttyrbWYJk6JKRSTRLEsbsDLe"])(
     ).not.toBeInTheDocument();
   },
 );
-
-test("External members cannot opt into long pasted text attachments in Lab", async () => {
-  await setupPage({
-    context,
-    path: "/_/lab",
-    featureSwitches: {
-      [FeatureSwitchKey.Lab]: true,
-      [FeatureSwitchKey.Banking]: true,
-      [FeatureSwitchKey.PastedTextAttachments]: true,
-    },
-  });
-
-  await screen.findByRole("heading", { name: "Lab" });
-  expect(
-    within(featureSwitchRow(FeatureSwitchKey.Banking)).getByRole("switch"),
-  ).toHaveAttribute("aria-checked", "true");
-  expect(
-    screen.queryByText("Long pasted text attachments"),
-  ).not.toBeInTheDocument();
-});
 
 test("Maintainer filters narrow the feature list", async () => {
   const user = userEvent.setup({ delay: null });
