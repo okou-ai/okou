@@ -4,8 +4,12 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { array, boolean, object } from "zod";
+import { normalizeBuildCommitSha } from "../../lib/build-info";
 import { parseRawRows } from "../../lib/db-raw-rows";
+import { env } from "../../lib/env";
+import { nowDate } from "../../lib/time";
 import { rawSqlReadDb$ } from "../external/db";
+import { recordSandboxOperations } from "../external/sandbox-op-log";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { agentInstructionsSelectionSql } from "./execution-instructions-selection";
 import { createExecutionContext } from "./execution-context";
@@ -25,7 +29,10 @@ import {
   type ExecutionPublicationRun,
 } from "./run-execution-publication.service";
 import type { RunnerReusePreparation } from "./runner-reuse-preference";
-import { persistStoragePresignedUrls$ } from "./system-storage-presigned-url-cache.service";
+import {
+  persistStoragePresignedUrls$,
+  type StoragePresignedUrlCacheWrite,
+} from "./system-storage-presigned-url-cache.service";
 import { recordExecutionPreparationTimings } from "./api-dispatch-timing.service";
 import {
   executionWorkflowSchema,
@@ -145,11 +152,6 @@ export const prepareDirectRun$ = command(
       },
       signal,
     );
-    await set(
-      persistStoragePresignedUrls$,
-      [...prepared.storageCacheWrites, ...publication.cacheWrites],
-      signal,
-    );
     signal.throwIfAborted();
     recordExecutionPreparationTimings({
       runId: input.run.id,
@@ -158,6 +160,7 @@ export const prepareDirectRun$ = command(
       records: prepared.connectorOperationTimings,
     });
     return {
+      cacheWrites: [...prepared.storageCacheWrites, ...publication.cacheWrites],
       executionContext: publication.executionContext,
       sourceAuthorization: {
         workflows: packages.selection,
@@ -179,5 +182,49 @@ export const prepareDirectRun$ = command(
         secretValues: response.secretValues,
       },
     };
+  },
+);
+
+/** The pick entry owns this optional publication independently of delivery. */
+export const publishDirectRunCache$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly runnerGroup: string;
+      readonly profile: string;
+      readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
+    },
+    signal: AbortSignal,
+  ) => {
+    const publication = await set(
+      persistStoragePresignedUrls$,
+      args.cacheWrites,
+      signal,
+    );
+    const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
+    recordSandboxOperations([
+      {
+        sandboxType: "runner",
+        actionType: "api_dispatch_presigned_url_cache_write",
+        runId: args.runId,
+        durationMs: publication.durationMs,
+        success: publication.status !== "error",
+        timestamp: nowDate().toISOString(),
+        dimensions: {
+          span_kind: "background",
+          cache_write_status: publication.status,
+          cache_entry_count: new Set(
+            args.cacheWrites.map((value) => {
+              return value.cacheKey;
+            }),
+          ).size,
+          runner_group: args.runnerGroup,
+          profile: args.profile,
+          ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
+        },
+      },
+    ]);
+    return publication;
   },
 );
