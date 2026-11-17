@@ -13,6 +13,31 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1141.5](https://github.com/okou-ai/okou/compare/app-v0.1141.4...app-v0.1141.5) (2026-11-17)
+
+
+### Bug Fixes
+
+* align phone availability with usable native control ([#48135](https://github.com/okou-ai/okou/issues/48135)) ([1744a58](https://github.com/okou-ai/okou/commit/1744a58d3f33923f71a34d07e85a87eeb86d03c1))
+* **app:** keep artifact categories visible and group pptx presentations ([#48154](https://github.com/okou-ai/okou/issues/48154)) ([ff91500](https://github.com/okou-ai/okou/commit/ff915007aee99db02847333166b8f4bd2962b0f3))
+* **app:** restore clerk automatic social button layout ([#48229](https://github.com/okou-ai/okou/issues/48229)) ([fd38783](https://github.com/okou-ai/okou/commit/fd38783a06afebe51cdaa6f29a16cdf6bd6da792))
+* **app:** stabilize chat notice and media card geometry ([#48209](https://github.com/okou-ai/okou/issues/48209)) ([982d717](https://github.com/okou-ai/okou/commit/982d7172dd2d929e18ba40dd2fd906d3f5fec312))
+* **platform:** compact batch permission cards and stabilize loading ([#48213](https://github.com/okou-ai/okou/issues/48213)) ([ff507fb](https://github.com/okou-ai/okou/commit/ff507fbafe1be0db00cdf321109deab1e658e67a))
+
+
+### Performance Improvements
+
+* **api:** retire debug-only run fields from application sql ([#48082](https://github.com/okou-ai/okou/issues/48082)) ([a40cf00](https://github.com/okou-ai/okou/commit/a40cf00d2f9e5c63fcb2dfa6ea68485b13be4f13))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.80.0
+    * @okouai/core bumped to 8.847.4
+    * @okouai/ui bumped to 1.21.40
+
 ## [0.1141.4](https://github.com/okou-ai/okou/compare/app-v0.1141.3...app-v0.1141.4) (2026-11-17)
 
 
