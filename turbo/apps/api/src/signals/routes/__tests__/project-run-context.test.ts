@@ -28,14 +28,20 @@ function projects() {
   return setupApp({ context, routes: projectRoutes })(projectsContract);
 }
 test("prepares queued inputs from current membership while preserving an already started Run and captured mentions", async () => {
-  const { actor, agentId } = await fixture.entitledNativeChatActor();
+  const { actor } = await fixture.entitledNativeChatActor();
+  fixture.bdd.acceptAgentStorageWrites();
+  const { defaultAgentId: agentId } =
+    await fixture.bdd.readOnboardingStatus(actor);
+  if (!agentId) {
+    throw new Error("Expected the workspace executor");
+  }
   if (!actor.orgId) {
     throw new Error("Missing organization");
   }
   await updateFeatureSwitchesForUser(
     context,
     { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.Projects]: true },
+    { [FeatureSwitchKey.SingleAgent]: true },
   );
   const first = await fixture.sendChatRun(actor, {
     agentId,
@@ -86,7 +92,7 @@ test("prepares queued inputs from current membership while preserving an already
     context,
     { ...actor, orgId: actor.orgId },
     {
-      [FeatureSwitchKey.Projects]: false,
+      [FeatureSwitchKey.SingleAgent]: false,
     },
   );
   expect(
@@ -96,7 +102,7 @@ test("prepares queued inputs from current membership while preserving an already
     context,
     { ...actor, orgId: actor.orgId },
     {
-      [FeatureSwitchKey.Projects]: true,
+      [FeatureSwitchKey.SingleAgent]: true,
     },
   );
   expect(

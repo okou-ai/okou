@@ -53,7 +53,7 @@ async function owner(options?: ApiTestUserOptions) {
   await updateFeatureSwitchesForUser(
     context,
     { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.Projects]: true },
+    { [FeatureSwitchKey.SingleAgent]: true },
   );
   return actor;
 }
@@ -195,7 +195,7 @@ describe("private cross-Agent Projects", () => {
       context,
       { ...actor, orgId: actor.orgId },
       {
-        [FeatureSwitchKey.Projects]: false,
+        [FeatureSwitchKey.SingleAgent]: false,
       },
     );
     expect(
@@ -218,8 +218,19 @@ describe("private cross-Agent Projects", () => {
     ).toBe(404);
   });
 
-  it("is disabled by default and isolates colleagues and organizations", async () => {
+  it("follows My Okou membership state and isolates colleagues and organizations", async () => {
     const disabled = bdd.user();
+    expect((await client().list({ headers: headers(disabled) })).status).toBe(
+      200,
+    );
+    if (!disabled.orgId) {
+      throw new Error("Missing org");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...disabled, orgId: disabled.orgId },
+      { [FeatureSwitchKey.SingleAgent]: false },
+    );
     expect((await client().list({ headers: headers(disabled) })).status).toBe(
       404,
     );
@@ -232,7 +243,7 @@ describe("private cross-Agent Projects", () => {
     await updateFeatureSwitchesForUser(
       context,
       { ...peer, orgId: peer.orgId },
-      { [FeatureSwitchKey.Projects]: true },
+      { [FeatureSwitchKey.SingleAgent]: true },
     );
     expect(
       (await client().get({ headers: headers(peer), params: { id: p.id } }))
