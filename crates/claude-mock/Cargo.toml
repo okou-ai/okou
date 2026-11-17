@@ -11,7 +11,7 @@ serde_json = { workspace = true, features = ["std"] }
 uuid = { workspace = true, features = ["std", "v7"] }
 
 [target.'cfg(unix)'.dependencies]
-rustix = { workspace = true, features = ["process", "std"] }
+rustix = { workspace = true, features = ["process", "std", "time"] }
 
 [dev-dependencies]
 cli-test-support = { workspace = true, features = ["test-support"] }

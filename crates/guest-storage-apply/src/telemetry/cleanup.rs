@@ -112,18 +112,12 @@ fn cpu_elapsed(start: Option<Duration>, end: Option<Duration>) -> Option<Duratio
 }
 
 fn thread_cpu_time() -> Option<Duration> {
-    let mut time = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-    // SAFETY: time points to a writable timespec. This clock measures only the
-    // calling thread; cleanup is synchronous and has not started download workers.
-    if unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) } != 0 {
-        return None;
-    }
+    // Cleanup is synchronous and has not started download workers, so measure
+    // only the calling thread.
+    let time = nix::time::clock_gettime(nix::time::ClockId::CLOCK_THREAD_CPUTIME_ID).ok()?;
     Some(Duration::new(
-        time.tv_sec.try_into().ok()?,
-        time.tv_nsec.try_into().ok()?,
+        time.tv_sec().try_into().ok()?,
+        time.tv_nsec().try_into().ok()?,
     ))
 }
 
