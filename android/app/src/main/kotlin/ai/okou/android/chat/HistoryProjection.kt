@@ -129,8 +129,17 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                             )
                         HistoryRole.Assistant
                     }
-                    "output.error",
                     "run.failed" -> {
+                        blocks.add(HistoryBlock(HistoryBlockKind.Error, "Run failed"))
+                        blocks.add(
+                            HistoryBlock(
+                                HistoryBlockKind.Reference,
+                                row.wire.text("failureReason") ?: "unknown",
+                            )
+                        )
+                        HistoryRole.System
+                    }
+                    "output.error" -> {
                         payload?.text("content")?.let {
                             blocks.add(HistoryBlock(HistoryBlockKind.Text, it))
                         }
@@ -142,16 +151,16 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                         }
                         HistoryRole.System
                     }
-                    "run.cancelled",
+                    "run.cancelled" -> {
+                        blocks.add(HistoryBlock(HistoryBlockKind.Text, "Run cancelled"))
+                        HistoryRole.Assistant
+                    }
                     "run.completed",
                     "control.interrupt" -> {
                         if (row.type == "control.interrupt" && row.runId == null)
                             return@mapNotNull null
                         payload?.text("content")?.let {
                             blocks.add(HistoryBlock(HistoryBlockKind.Text, it))
-                        }
-                        payload?.text("error")?.let {
-                            blocks.add(HistoryBlock(HistoryBlockKind.Error, it))
                         }
                         HistoryRole.Assistant
                     }

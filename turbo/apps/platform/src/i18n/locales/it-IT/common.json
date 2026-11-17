@@ -76,29 +76,12 @@
       },
       "downloadRawData": "Scarica i dati grezzi",
       "errorGuidance": {
-        "computerUseAuthorizationRequired": {
-          "guidance": "Richiedi un link di autorizzazione delegata per Computer Use, chiedi all'utente di selezionare un host {{assistantName}} Desktop per questa chat o thread Slack, quindi avvia una nuova esecuzione. I token delle esecuzioni esistenti non possono essere aggiornati sul posto.",
-          "title": "Autorizzazione Computer Use richiesta"
-        },
         "concurrentRunLimitReached": {
           "guidance": "Attendi il completamento dell'esecuzione corrente prima di iniziarne una nuova.",
           "title": "Limite di esecuzioni simultanee raggiunto"
         },
-        "creditsDepleted": {
-          "guidance": "Esegui prima la diagnostica del credito. Acquista crediti solo quando il piano attuale lo consente; altrimenti restituisci il link per l'aggiornamento del piano.",
-          "title": "Crediti esauriti"
-        },
-        "noModelProvider": {
-          "guidance": "Collega un abbonamento personale Claude Code o Codex nelle Impostazioni.",
-          "title": "Nessun provider di modelli è disponibile per questa esecuzione"
-        },
         "paidPlanRequired": {
-          "guidance": "La generazione video integrata non è disponibile nel piano attuale.",
           "title": "È richiesto un piano a pagamento"
-        },
-        "providerIncompatible": {
-          "guidance": "Questa sessione è stata creata con un tipo di provider diverso.",
-          "title": "Provider non compatibile"
         },
         "providerTemporarilyUnavailable": {
           "guidance": "Il provider del modello è temporaneamente non disponibile.",

@@ -754,7 +754,7 @@ class ConversationHistoryTest {
         assertEquals(listOf("rejected", HISTORY_LAST_EVENT), result.messages.map { it.id })
         assertTrue(result.messages.first().rejected)
         assertEquals(HistoryExecution.Cancelled, result.execution)
-        assertEquals("Stopped by user", result.messages.last().blocks.single().text)
+        assertEquals("Run cancelled", result.messages.last().blocks.single().text)
         val raw =
             projectHistory(
                 HistoryCheckpoint(CHAT_PERSONAL, listOf(input), HistoryCursor("input", 2))

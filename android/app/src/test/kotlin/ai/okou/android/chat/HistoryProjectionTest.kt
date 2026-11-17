@@ -8,6 +8,29 @@ import org.junit.Test
 
 class HistoryProjectionTest {
     @Test
+    fun runFailuresIgnoreRetainedDiagnosticsWhileOutputErrorsRemainVisible() {
+        for (payload in
+            listOf("null", """{"content":"private diagnostic","error":"private diagnostic"}""")) {
+            val failed = transcript(event("failed", 1, "run.failed", payload = payload))
+            assertEquals(HistoryExecution.Failed, failed.execution)
+            assertTrue(failed.messages.flatMap { it.blocks }.any { it.text == "Run failed" })
+            assertFalse(
+                failed.messages.flatMap { it.blocks }.any { it.text.contains("private diagnostic") }
+            )
+        }
+        val output =
+            transcript(
+                event(
+                    "output",
+                    1,
+                    "output.error",
+                    payload = """{"error":"Ordinary output error"}""",
+                )
+            )
+        assertTrue(output.messages.flatMap { it.blocks }.any { it.text == "Ordinary output error" })
+    }
+
+    @Test
     fun activeOutputTargetUsesNewestLiveRunLikeWeb() {
         val nextRun = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         val old = input("older", 1)
@@ -73,7 +96,7 @@ class HistoryProjectionTest {
         val confirmed = transcript(prompt, partial, interrupt, terminal)
         assertEquals(HistoryExecution.Cancelled, confirmed.execution)
         assertEquals(1, confirmed.messages.count { it.status == "run.cancelled" })
-        assertTrue(confirmed.messages.flatMap { it.blocks }.any { it.text == "Stopped by user" })
+        assertTrue(confirmed.messages.flatMap { it.blocks }.any { it.text == "Run cancelled" })
 
         val completed = event("completed", 3, "run.completed")
         val lateInterrupt = event("late-interrupt", 4, "control.interrupt")

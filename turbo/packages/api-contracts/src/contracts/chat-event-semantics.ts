@@ -51,7 +51,6 @@ function createInterruptedAssistantProjection(
     eventType: "run.cancelled" as const,
     content: "Run cancelled",
     runId,
-    error: "Run cancelled",
     runLifecycleEvent: "cancelled",
   };
 }

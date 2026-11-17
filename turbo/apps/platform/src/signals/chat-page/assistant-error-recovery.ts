@@ -345,7 +345,10 @@ function latestAssistantErrorCandidate(groups: readonly ChatEventGroup[]): {
   ) {
     return null;
   }
-  return { event, error: event.error ?? "" };
+  return {
+    event,
+    error: event.eventType === "output.error" ? event.error : "",
+  };
 }
 
 function exhaustedUsageWindows(

@@ -74,29 +74,12 @@
       },
       "downloadRawData": "Unduh data mentah",
       "errorGuidance": {
-        "computerUseAuthorizationRequired": {
-          "guidance": "Minta tautan otorisasi Computer Use yang didelegasikan, minta pengguna memilih host {{assistantName}} Desktop untuk chat atau thread Slack ini, lalu jalankan run baru. Token run yang ada tidak dapat ditingkatkan di tempat.",
-          "title": "Otorisasi Computer Use diperlukan"
-        },
         "concurrentRunLimitReached": {
           "guidance": "Tunggu run saat ini selesai sebelum menjalankan run baru.",
           "title": "Batas run bersamaan tercapai"
         },
-        "creditsDepleted": {
-          "guidance": "Jalankan diagnostik kredit dulu. Beli kredit hanya jika paket saat ini mengizinkannya; jika tidak, kembalikan tautan upgrade paket.",
-          "title": "Kredit habis"
-        },
-        "noModelProvider": {
-          "guidance": "Hubungkan langganan pribadi Claude Code atau Codex di Pengaturan.",
-          "title": "Tidak ada penyedia model yang tersedia untuk eksekusi ini"
-        },
         "paidPlanRequired": {
-          "guidance": "Pembuatan video bawaan tidak tersedia pada paket ini.",
           "title": "Paket berbayar diperlukan"
-        },
-        "providerIncompatible": {
-          "guidance": "Sesi ini dibuat dengan jenis provider yang berbeda.",
-          "title": "Provider tidak kompatibel"
         },
         "providerTemporarilyUnavailable": {
           "guidance": "Provider model sedang tidak tersedia.",

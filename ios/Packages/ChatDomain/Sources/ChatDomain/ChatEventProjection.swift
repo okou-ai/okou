@@ -106,7 +106,7 @@ public enum ChatEventProjection {
           modelChange: modelChange,
           failure: (row.eventType == .runFailed || row.eventType == .outputError)
             ? ChatFailure(
-              id: row.id, error: row.payload?.error ?? "",
+              id: row.id, error: row.eventType == .outputError ? row.payload?.error ?? "" : "",
               reason: row.failureReason, isRunFailure: row.eventType == .runFailed)
             : nil))
     }
