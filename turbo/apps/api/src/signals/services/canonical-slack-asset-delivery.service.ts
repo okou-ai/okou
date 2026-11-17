@@ -3,7 +3,7 @@ import { resolveSlackMessageSendFooter$ } from "./slack-message-context.service"
 import { command } from "ccstate";
 import { createHash } from "node:crypto";
 import { artifactStorageBucket } from "./private-artifact-storage.service";
-import { downloadS3BufferWithMaxBytes } from "../external/s3";
+import { downloadS3BufferWithMaxBytes$ } from "../external/s3";
 import { MAX_SLACK_FILE_SIZE_BYTES } from "../external/slack-file-fetcher";
 import { uploadSlackFileBytes } from "../external/slack-file-upload";
 import type { SlackUploadDeliveryResponse } from "@okouai/api-contracts/contracts/integrations";
@@ -156,7 +156,7 @@ function sharedSlackFileResult(
 
 function failedResult(
   error: CanonicalSlackDeliveryFailure,
-): CompletedCanonicalSlackDeliveryResult {
+): Extract<CompletedCanonicalSlackDeliveryResult, { status: "failed" }> {
   return {
     status: "failed",
     message: error.message,
@@ -694,13 +694,24 @@ export const completeCanonicalSlackDelivery$ = command(
     if (row.status === "delivered") {
       return { ...deliveredResult(row), channelId: row.destination.channelId };
     }
+    if (row.externalId !== args.fileId) {
+      const conflict = await set(readCanonicalSlackConflict$, row);
+      signal.throwIfAborted();
+      return { ...conflict, channelId: row.destination.channelId };
+    }
     const access = await set(
       resolveCanonicalSlackDelivery$,
       { ...args, destination: row.destination },
       signal,
     );
     if ("status" in access) {
-      return { ...access, channelId: row.destination.channelId };
+      const failed = await set(recordCanonicalSlackFailure$, row, {
+        code: "slack-access-denied",
+        message: access.message,
+        retryable: access.retryable,
+      });
+      signal.throwIfAborted();
+      return { ...failed, channelId: row.destination.channelId };
     }
     const client = access.client;
     const footerText = await set(
@@ -708,19 +719,12 @@ export const completeCanonicalSlackDelivery$ = command(
       access.workspaceId,
       signal,
     );
-    const readConflict = () => {
-      return set(readCanonicalSlackConflict$, row);
-    };
-
     const completeDelivery = async (
       deliverySignal: AbortSignal,
     ): Promise<CompletedCanonicalSlackDeliveryResult> => {
       const recordDeliveryFailure = (error: CanonicalSlackDeliveryFailure) => {
         return set(recordCanonicalSlackFailure$, row, error);
       };
-      if (row.externalId !== args.fileId) {
-        return await readConflict();
-      }
       if (args.uploadError) {
         return await recordDeliveryFailure({
           code: "slack-upload-failed",
@@ -785,7 +789,7 @@ export const completeCanonicalSlackDelivery$ = command(
 /** New native CLI path: the server owns storage reads and all Slack traffic. */
 export const deliverCanonicalSlackAsset$ = command(
   async (
-    { get, set },
+    { set },
     args: PrepareCanonicalSlackDeliveryArgs,
     signal: AbortSignal,
   ): Promise<CompletedCanonicalSlackDeliveryResult | null> => {
@@ -817,13 +821,14 @@ export const deliverCanonicalSlackAsset$ = command(
             "Canonical Slack file has no verified storage identity",
           );
         }
-        const bytes = await get(
-          downloadS3BufferWithMaxBytes(
-            artifactStorageBucket(row.metadata),
-            row.storageKey,
-            MAX_SLACK_FILE_SIZE_BYTES,
-            signal,
-          ),
+        const bytes = await set(
+          downloadS3BufferWithMaxBytes$,
+          {
+            bucket: artifactStorageBucket(row.metadata),
+            key: row.storageKey,
+            maxBytes: MAX_SLACK_FILE_SIZE_BYTES,
+          },
+          signal,
         );
         if (
           bytes.byteLength !== row.sizeBytes ||
