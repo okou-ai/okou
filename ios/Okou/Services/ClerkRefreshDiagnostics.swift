@@ -41,7 +41,7 @@
         (UIApplication.willEnterForegroundNotification, "will-enter-foreground"),
         (UIApplication.didBecomeActiveNotification, "did-become-active"),
         (UIApplication.willResignActiveNotification, "will-resign-active"),
-        (UIApplication.didEnterBackgroundNotification, "did-enter-background"),
+        (UIApplication.didEnterBackgroundNotification, "did-enter-background")
       ]
       for (name, phase) in events {
         let observer = NotificationCenter.default.addObserver(
@@ -131,7 +131,8 @@
     private struct ResponseTrace: ClerkResponseMiddleware {
       let owner: ClerkRefreshDiagnostics
 
-      func validate(_ response: HTTPURLResponse, data _: Data, for request: URLRequest) async throws {
+      func validate(_ response: HTTPURLResponse, data _: Data, for request: URLRequest) async throws
+      {
         owner.received(response, for: request)
       }
     }
