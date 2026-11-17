@@ -30,6 +30,8 @@ import {
   cn,
 } from "@okouai/ui";
 import type { Project } from "@okouai/api-contracts/validators/projects";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { projectsEnabled$ } from "../../signals/projects/projects.ts";
 import {
   openProjectEditor$,
@@ -42,6 +44,8 @@ import {
 } from "../../signals/projects/project-fold.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { ChatThreadMenuShortcut } from "../okou-page/chat-thread-menu-shortcut.tsx";
+import { HoverScrollTitle } from "../okou-page/hover-scroll-title.tsx";
+import { useTitleReveal } from "../okou-page/use-title-reveal.ts";
 import type {
   ChatThreadListRow,
   ProjectChatThreadListRow,
@@ -128,7 +132,7 @@ function ProjectMenu({
             size="icon-sm"
             iconSize="md"
             className={cn(
-              "group/project-menu shrink-0",
+              "group/project-menu pointer-events-auto shrink-0",
               touch && "min-h-11 min-w-11",
             )}
             aria-label={t(
@@ -198,11 +202,13 @@ function ProjectActions({
   rowIndex,
   expanded,
   active,
+  titleRevealEnabled,
 }: ProjectRowProps & {
   indicator: ProjectIndicatorState | null;
   rowIndex: number;
   expanded: boolean;
   active: boolean;
+  titleRevealEnabled: boolean;
 }) {
   const { t } = useTranslation();
   // The state glyph stands where the menu dots would, so it keeps the menu
@@ -217,7 +223,10 @@ function ProjectActions({
   return (
     <div
       className={cn(
-        "group/project-actions flex shrink-0 items-center group-hover/project:opacity-100 group-focus-within/project:opacity-100 has-[[data-popup-open]]:opacity-100",
+        "group/project-actions flex items-center group-hover/project:opacity-100 group-focus-within/project:opacity-100 has-[[data-popup-open]]:opacity-100",
+        titleRevealEnabled
+          ? "pointer-events-none col-start-1 row-start-1 justify-self-end"
+          : "shrink-0",
         !resting && "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0",
         layout === "list" ? "gap-1" : "gap-0.5",
       )}
@@ -237,7 +246,7 @@ function ProjectActions({
                     size: "icon-sm",
                     iconSize: "md",
                   }),
-                  "shrink-0",
+                  "pointer-events-auto shrink-0",
                   touch && "min-h-11 min-w-11",
                   resting &&
                     "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 group-focus-within/project:opacity-100 group-has-[[data-popup-open]]/project:opacity-100",
@@ -264,19 +273,24 @@ function ProjectActions({
 function ProjectTrigger({
   project,
   layout,
+  touch,
   expanded,
   active,
   indicator,
+  titleRevealEnabled,
 }: {
   readonly project: Project;
   readonly layout: ProjectRowLayout;
+  readonly touch: boolean;
   readonly expanded: boolean;
   readonly active: boolean;
   readonly indicator: ProjectIndicatorState | null;
+  readonly titleRevealEnabled: boolean;
 }) {
   const { t } = useTranslation();
   const toggle = useSet(toggleProjectWithMotion$);
   const signal = useGet(pageSignal$);
+  const titleReveal = useTitleReveal();
   const Chevron = expanded ? ChevronDown : ChevronRight;
   const stateId = `project-state-${layout}-${project.id}`;
   const shortcut = expanded
@@ -284,6 +298,7 @@ function ProjectTrigger({
     : GLOBAL_KEYBOARD_SHORTCUTS.expandProject;
   return (
     <button
+      {...(titleRevealEnabled ? titleReveal : {})}
       type="button"
       data-project-trigger=""
       aria-expanded={expanded}
@@ -299,8 +314,13 @@ function ProjectTrigger({
         detach(toggle(project.id, signal), Reason.DomCallback);
       }}
       className={cn(
-        "group/project-fold flex min-w-0 flex-1 items-center rounded-lg pr-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        "group/project-fold flex min-w-0 items-center rounded-lg text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        titleRevealEnabled ? "col-start-1 row-start-1" : "flex-1 pr-2",
         layout === "list" ? "h-14 gap-2 text-base leading-5" : "h-8",
+        titleRevealEnabled &&
+          (touch
+            ? "pr-24"
+            : "pr-18 md:[@media(hover:hover)_and_(pointer:fine)]:pr-8 group-hover/project:pr-18 group-focus-within/project:pr-18 group-has-[[data-popup-open]]/project:pr-18"),
         active && "font-medium",
       )}
     >
@@ -322,7 +342,11 @@ function ProjectTrigger({
           className="hidden opacity-70 md:group-hover/project:block group-focus-visible/project-fold:block"
         />
       </span>
-      <span className="truncate">{projectNameParts(project.name).text}</span>
+      {titleRevealEnabled ? (
+        <HoverScrollTitle title={projectNameParts(project.name).text} />
+      ) : (
+        <span className="truncate">{projectNameParts(project.name).text}</span>
+      )}
       {indicator !== null && (
         <span id={stateId}>
           <ChatThreadStateText state={indicator} />
@@ -346,6 +370,8 @@ export function ProjectRow({
   readonly layout: ProjectRowLayout;
 }) {
   const { project, expanded } = row;
+  const titleRevealEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ProjectTitleReveal];
   // A Project's page makes its row the list's current item.
   const active = useGet(selectedProjectId$) === project.id;
   const state =
@@ -355,16 +381,19 @@ export function ProjectRow({
   return (
     <div
       className={cn(
-        "group/project flex min-w-0 items-center rounded-lg motion-safe:transition-colors motion-safe:duration-[180ms]",
+        "group/project min-w-0 items-center rounded-lg motion-safe:transition-colors motion-safe:duration-[180ms]",
+        titleRevealEnabled ? "grid grid-cols-[minmax(0,1fr)]" : "flex",
         active ? "bg-state-selected" : "hover:bg-state-hover",
       )}
     >
       <ProjectTrigger
         project={project}
         layout={layout}
+        touch={touch}
         expanded={expanded}
         active={active}
         indicator={indicator}
+        titleRevealEnabled={titleRevealEnabled}
       />
       <ProjectActions
         project={project}
@@ -374,6 +403,7 @@ export function ProjectRow({
         rowIndex={rowIndex}
         expanded={expanded}
         active={active}
+        titleRevealEnabled={titleRevealEnabled}
       />
     </div>
   );
