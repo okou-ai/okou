@@ -755,13 +755,17 @@ fn mkfifo(path: &std::path::Path) {
     use std::os::unix::ffi::OsStrExt;
 
     let c_path = CString::new(path.as_os_str().as_bytes()).unwrap();
-    let result = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
-    assert_eq!(
-        result,
-        0,
-        "mkfifo failed: {}",
-        std::io::Error::last_os_error()
+    let result = nix::unistd::mkfifo(
+        c_path.as_c_str(),
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
     );
+    if let Err(error) = result {
+        assert!(
+            result.is_ok(),
+            "mkfifo failed: {}",
+            std::io::Error::from(error)
+        );
+    }
 }
 
 #[cfg(unix)]

@@ -20,15 +20,17 @@ impl PostOpenMockGate {
         let fifo = dir.join("agent-log-mock-start.fifo");
         let fifo_c = CString::new(fifo.as_os_str().as_bytes())
             .map_err(|error| format!("encode mock gate path: {error}"))?;
-        // SAFETY: fifo_c is a valid NUL-terminated path and the mode is a
-        // normal POSIX permission mask for this test-only FIFO.
-        if unsafe { libc::mkfifo(fifo_c.as_ptr(), 0o600) } != 0 {
-            return Err(format!(
+        nix::unistd::mkfifo(
+            fifo_c.as_c_str(),
+            nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+        )
+        .map_err(|error| {
+            format!(
                 "create mock gate {}: {}",
                 fifo.display(),
-                io::Error::last_os_error()
-            ));
-        }
+                io::Error::from(error)
+            )
+        })?;
 
         // Keep both FIFO ends open so release can happen immediately after
         // readiness even if the wrapper has not entered its read yet.
