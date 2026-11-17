@@ -357,28 +357,40 @@ function ResolvedMediaVideo({
 
 function MediaVideoRenderer({ poster, ...props }: MarkdownVideoProps) {
   const preview = props.node?.data?.videoPosterPreview;
-  const videoProps = omitMarkdownNodeProp(props);
-  if (preview) {
-    return <ResolvedMediaVideo {...videoProps} preview={preview} />;
-  }
+  const videoProps = {
+    ...omitMarkdownNodeProp(props),
+    className: cn(
+      props.className,
+      "absolute inset-0 h-full w-full object-contain",
+    ),
+  };
   return (
-    <video
-      {...videoProps}
-      poster={
-        poster
-          ? r2ImageTransformUrl(
-              poster,
-              { width: 800, height: 720 },
-              resolveArtifactImageTransformOrigin(),
-            )
-          : undefined
-      }
-    />
+    <span
+      data-markdown-ui
+      className="relative my-1 inline-block aspect-[16/10] w-[min(100%,400px)] max-w-full overflow-hidden rounded-lg align-top"
+    >
+      {preview ? (
+        <ResolvedMediaVideo {...videoProps} preview={preview} />
+      ) : (
+        <video
+          {...videoProps}
+          poster={
+            poster
+              ? r2ImageTransformUrl(
+                  poster,
+                  { width: 800, height: 720 },
+                  resolveArtifactImageTransformOrigin(),
+                )
+              : undefined
+          }
+        />
+      )}
+    </span>
   );
 }
 
 function MediaImageRenderer(props: MarkdownImageProps) {
-  const { src, alt, ...rest } = props;
+  const { src, alt } = props;
   const card = props.node?.data?.card;
   if (card?.kind === "artifact") {
     return card.signals.kind === "image" ? (
@@ -391,7 +403,7 @@ function MediaImageRenderer(props: MarkdownImageProps) {
   if (typeof src === "string" && isSafeMediaUrl(src) && load) {
     return <MediaImage src={src} url={src} alt={alt ?? ""} load={load} />;
   }
-  return <img {...omitMarkdownNodeProp(rest)} src={src} alt={alt} />;
+  return null;
 }
 
 /**
@@ -646,7 +658,7 @@ function LinkedMediaImageRenderer(props: MarkdownImageProps) {
       />
     );
   }
-  return <PlainImageRenderer {...props} />;
+  return null;
 }
 
 function containsBlockArtifact(node: Element): boolean {
