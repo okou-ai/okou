@@ -1,5 +1,9 @@
 import { runGenerationKindSchema } from "@okouai/api-contracts/contracts/run-phase-timing";
 import {
+  runArtifactResultSchema,
+  type RunArtifactResult,
+} from "@okouai/api-contracts/contracts/runs";
+import {
   array,
   boolean,
   discriminatedUnion,
@@ -25,6 +29,7 @@ const TERMINAL_STATUSES = [
 ] as const;
 const KINDS = [...runGenerationKindSchema.options, "unknown"] as const;
 const METRICS = ["prepare", "research", "makingDelivery", "total"] as const;
+const ARTIFACT_RESULTS = ["success", "no-content", null] as const;
 
 type TerminalStatus = (typeof TERMINAL_STATUSES)[number];
 type GenerationKind = (typeof KINDS)[number];
@@ -74,7 +79,11 @@ const metricSchema = object({
 });
 
 export const runPhaseTimingRollupSchema = object({
-  schemaVersion: literal(1),
+  schemaVersion: literal(2),
+  metricCohort: object({
+    status: literal("completed"),
+    artifactResult: literal("success"),
+  }),
   date: string().regex(/^\d{4}-\d{2}-\d{2}$/u),
   timezone: literal("Asia/Shanghai"),
   missingDateMeans: literal("gap-not-zero"),
@@ -85,6 +94,7 @@ export const runPhaseTimingRollupSchema = object({
     endTime: iso.datetime(),
     population: literal("phase-marked-runs"),
     globalCoverage: literal("unknown"),
+    artifactEvidence: literal("native-ready-by-run-completion"),
     rawRetentionDays: literal(3),
     queryComplete: literal(true),
     earlierRawData: literal("not-covered"),
@@ -108,6 +118,9 @@ export const runPhaseTimingRollupSchema = object({
     observedRuns: countSchema,
     observedMarks: countSchema,
     markedRuns: countSchema,
+    completedArtifactRuns: countSchema,
+    noContentRuns: countSchema,
+    unknownArtifactRuns: countSchema,
     completed: countSchema,
     failed: countSchema,
     cancelled: countSchema,
@@ -120,10 +133,18 @@ export const runPhaseTimingRollupSchema = object({
     skippedResearchRuns: countSchema,
     retentionLimitedRuns: countSchema,
   }),
+  artifactResults: array(
+    object({
+      runId: uuid(),
+      status: zEnum(TERMINAL_STATUSES),
+      artifactResult: runArtifactResultSchema.nullable(),
+    }),
+  ),
   groups: array(
     object({
       generationKind: zEnum(KINDS),
       status: zEnum(TERMINAL_STATUSES),
+      artifactResult: runArtifactResultSchema.nullable(),
       runs: countSchema,
       metrics: object({
         prepare: metricSchema,
@@ -141,6 +162,7 @@ export interface RunPhaseTimingMetadata {
   readonly userId: string;
   readonly orgId: string;
   readonly status: string;
+  readonly artifactResult: RunArtifactResult | null;
   readonly startedAt: string | null;
   readonly completedAt: string | null;
 }
@@ -201,6 +223,7 @@ interface MetricAccumulator {
 interface GroupAccumulator {
   readonly generationKind: GenerationKind;
   readonly status: TerminalStatus;
+  readonly artifactResult: RunArtifactResult | null;
   runs: number;
   readonly metrics: Record<Metric, MetricAccumulator>;
 }
@@ -211,10 +234,12 @@ function metricAccumulator(): MetricAccumulator {
 function groupAccumulator(
   generationKind: GenerationKind,
   status: TerminalStatus,
+  artifactResult: RunArtifactResult | null,
 ): GroupAccumulator {
   return {
     generationKind,
     status,
+    artifactResult,
     runs: 0,
     metrics: {
       prepare: metricAccumulator(),
@@ -340,13 +365,16 @@ interface DayAccumulator {
   readonly day: RunPhaseTimingSourceWindow["days"][number];
   firstMarkAt: string | null;
   readonly counts: RunPhaseTimingRollup["counts"];
+  readonly artifactResults: RunPhaseTimingRollup["artifactResults"];
   readonly groups: readonly GroupAccumulator[];
 }
 
 interface AttributedRun {
+  readonly runId: string;
   readonly day: DayAccumulator;
   readonly owned: readonly PhaseMark[];
   readonly status: TerminalStatus;
+  readonly artifactResult: RunArtifactResult | null;
   readonly start: number;
   readonly end: number;
 }
@@ -413,6 +441,9 @@ function dayAccumulator(
       observedRuns: 0,
       observedMarks: 0,
       markedRuns: 0,
+      completedArtifactRuns: 0,
+      noContentRuns: 0,
+      unknownArtifactRuns: 0,
       completed: 0,
       failed: 0,
       cancelled: 0,
@@ -425,9 +456,12 @@ function dayAccumulator(
       skippedResearchRuns: 0,
       retentionLimitedRuns: 0,
     },
+    artifactResults: [],
     groups: KINDS.flatMap((kind) => {
-      return TERMINAL_STATUSES.map((status) => {
-        return groupAccumulator(kind, status);
+      return TERMINAL_STATUSES.flatMap((status) => {
+        return ARTIFACT_RESULTS.map((artifactResult) => {
+          return groupAccumulator(kind, status, artifactResult);
+        });
       });
     }),
   };
@@ -468,7 +502,15 @@ function attributeRunObservations(
     sourceCounts.outsideCompletedDaysRuns++;
     return null;
   }
-  return { day, owned, status, start, end };
+  return {
+    runId: run.id,
+    day,
+    owned,
+    status,
+    artifactResult: run.artifactResult,
+    start,
+    end,
+  };
 }
 
 function summarizeGenerationConflicts(
@@ -603,7 +645,7 @@ function accumulateRunPhaseTiming(
   attributed: AttributedRun,
   sourceStartTime: string,
 ): void {
-  const { day, owned, status, start, end } = attributed;
+  const { runId, day, owned, status, artifactResult, start, end } = attributed;
   day.counts.observedRuns++;
   day.counts.observedMarks += owned.length;
   const bounded = owned
@@ -626,7 +668,17 @@ function accumulateRunPhaseTiming(
   day.counts.duplicateMarks += phases.duplicateMarks;
   day.counts.conflictingMarks += phases.conflictingMarks;
   day.counts.markedRuns++;
+  day.artifactResults.push({ runId, status, artifactResult });
   day.counts[status]++;
+  if (status === "completed" && artifactResult === "success") {
+    day.counts.completedArtifactRuns++;
+  }
+  if (artifactResult === "no-content") {
+    day.counts.noContentRuns++;
+  }
+  if (artifactResult === null) {
+    day.counts.unknownArtifactRuns++;
+  }
   if (phases.researchAt === null && !phases.skipped) {
     day.counts.missingResearchRuns++;
   }
@@ -641,7 +693,9 @@ function accumulateRunPhaseTiming(
   }
   const group = day.groups.find((entry) => {
     return (
-      entry.generationKind === phases.generationKind && entry.status === status
+      entry.generationKind === phases.generationKind &&
+      entry.status === status &&
+      entry.artifactResult === artifactResult
     );
   });
   if (!group) {
@@ -658,7 +712,8 @@ function serializeDayRollup(
   sourceCounts: SourceCounts,
 ): RunPhaseTimingRollup {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    metricCohort: { status: "completed", artifactResult: "success" },
     date: day.day.date,
     timezone: "Asia/Shanghai",
     missingDateMeans: "gap-not-zero",
@@ -669,6 +724,7 @@ function serializeDayRollup(
       endTime: window.endTime,
       population: "phase-marked-runs",
       globalCoverage: "unknown",
+      artifactEvidence: "native-ready-by-run-completion",
       rawRetentionDays: 3,
       queryComplete: true,
       earlierRawData: "not-covered",
@@ -683,10 +739,12 @@ function serializeDayRollup(
       quantile: "nearest-rank-upper-bound",
     },
     counts: day.counts,
+    artifactResults: day.artifactResults,
     groups: day.groups.map((group) => {
       return {
         generationKind: group.generationKind,
         status: group.status,
+        artifactResult: group.artifactResult,
         runs: group.runs,
         metrics: {
           prepare: summarizeMetric(group.metrics.prepare),
@@ -756,9 +814,29 @@ export function preserveRunPhaseTimingRollup(
   ) {
     return true;
   }
-  // More complete evidence may retract samples newly proven conflicting.
+  const nextArtifacts = new Set(
+    next.artifactResults
+      .filter((run) => {
+        return run.status === "completed" && run.artifactResult === "success";
+      })
+      .map((run) => {
+        return run.runId;
+      }),
+  );
+  // A new success cannot conceal another Run losing its native receipt.
+  // Track identity rather than kind so genuine phase conflicts can still move
+  // the same verified Run between generation-kind cohorts.
+  const artifactEvidenceLost = previous.artifactResults.some((run) => {
+    return (
+      run.status === "completed" &&
+      run.artifactResult === "success" &&
+      !nextArtifacts.has(run.runId)
+    );
+  });
+  // More complete phase evidence may retract samples newly proven conflicting.
   return (
     previous.counts.observedMarks > next.counts.observedMarks ||
-    previous.counts.markedRuns > next.counts.markedRuns
+    previous.counts.markedRuns > next.counts.markedRuns ||
+    artifactEvidenceLost
   );
 }

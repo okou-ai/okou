@@ -88,12 +88,18 @@ export const ALL_RUN_STATUSES = [
  */
 const runStatusSchema = zEnum(ALL_RUN_STATUSES);
 
+/** Artifact production is independent of execution success; null means unknown. */
+export const runArtifactResultSchema = zEnum(["success", "no-content"]);
+export type RunArtifactResult = zInfer<typeof runArtifactResultSchema>;
+
 /**
  * Get run response schema
  */
 const getRunResponseSchema = object({
   runId: string(),
   status: runStatusSchema,
+  // Derived from verified native output receipts, not intent or completion alone.
+  artifactResult: runArtifactResultSchema.nullable().optional(),
   prompt: string(),
   sandboxId: string().optional(),
   result: object({

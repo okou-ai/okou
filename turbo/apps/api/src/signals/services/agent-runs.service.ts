@@ -23,6 +23,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 
+import { runArtifactResultSelection } from "./run-artifact-result-sql";
 import { db$ } from "../external/db";
 import {
   activePaidConcurrencySlots,
@@ -217,6 +218,7 @@ export function agentRunById(args: {
         id: agentRuns.id,
         launchSnapshot: agentRuns.launchSnapshot,
         status: agentRuns.status,
+        artifactResult: runArtifactResultSelection(),
         prompt: agentRuns.prompt,
         sandboxId: agentRuns.sandboxId,
         result: agentRuns.result,
@@ -293,6 +295,7 @@ export function agentRunById(args: {
     return {
       runId: run.id,
       status: run.status as RunStatus,
+      artifactResult: run.artifactResult,
       prompt: run.prompt,
       sandboxId: run.sandboxId || undefined,
       result:
