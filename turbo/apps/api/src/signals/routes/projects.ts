@@ -122,6 +122,30 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   return { status: 200 as const, body: project };
 });
+const reorder$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if (!(await get(projectAccess$))) {
+    return unavailable;
+  }
+  const body = await get(bodyResultOf(projectsContract.reorder));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const owner = get(organizationAuthContext$);
+  const id = get(pathParamsOf(projectsContract.reorder)).id;
+  const result = await set(
+    mutateProject$,
+    owner,
+    { kind: "sort_updated", id, ...body.data },
+    signal,
+  );
+  if (result !== "written") {
+    return result === "conflict" ? conflict : unavailable;
+  }
+  await publishThreadListChanged(owner);
+  signal.throwIfAborted();
+  return { status: 204 as const, body: undefined };
+});
 const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!(await get(projectAccess$))) {
     return unavailable;
@@ -306,6 +330,13 @@ export const projectRoutes: readonly RouteEntry[] = [
     handler: authRoute(
       { requireOrganization: true, requiredCapability: "project:write" },
       update$,
+    ),
+  },
+  {
+    route: projectsContract.reorder,
+    handler: authRoute(
+      { requireOrganization: true, requiredCapability: "project:write" },
+      reorder$,
     ),
   },
   {

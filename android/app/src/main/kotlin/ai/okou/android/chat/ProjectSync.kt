@@ -46,27 +46,56 @@ data class ProjectCheckpoint(
     }
 }
 
-/** Web's Project projection: a rename cannot fabricate a missing creation. */
+private fun ConfirmedProject.effectiveSortOrder(): String =
+    sortOrder ?: "a0${chatTime(createdAt).toString().padStart(17, '0')}1"
+
+private fun compareProjectBytes(left: String, right: String): Int {
+    val lhs = left.toByteArray(Charsets.UTF_8)
+    val rhs = right.toByteArray(Charsets.UTF_8)
+    for (index in 0 until minOf(lhs.size, rhs.size)) {
+        val difference = (lhs[index].toInt() and 255) - (rhs[index].toInt() and 255)
+        if (difference != 0) return difference
+    }
+    return lhs.size.compareTo(rhs.size)
+}
+
+/** Web's Project projection: metadata changes cannot fabricate a missing creation. */
 fun replayProjects(checkpoint: ProjectCheckpoint): List<ConfirmedProject> {
     checkpoint.validate()
     val projects = checkpoint.archive.projects.associateByTo(linkedMapOf()) { it.id }
     checkpoint.events.forEach { event ->
-        if (event.kind == ProjectEventsEventsItemKind.DELETED) projects.remove(event.projectId)
-        else {
-            val name = event.name
-            requireChatWire(name != null)
-            val existing = projects[event.projectId]
-            requireChatWire(event.kind != ProjectEventsEventsItemKind.RENAMED || existing != null)
-            projects[event.projectId] =
-                ConfirmedProject(
-                    event.projectId,
-                    checkNotNull(name),
-                    existing?.createdAt ?: event.createdAt,
-                    event.createdAt,
+        val existing = projects[event.projectId]
+        when (event.kind) {
+            ProjectEventsEventsItemKind.DELETED -> projects.remove(event.projectId)
+            ProjectEventsEventsItemKind.SORT_UPDATED -> {
+                requireChatWire(existing != null && event.sortOrder != null)
+                projects[event.projectId] =
+                    checkNotNull(existing)
+                        .copy(sortOrder = event.sortOrder, updatedAt = event.createdAt)
+            }
+            ProjectEventsEventsItemKind.CREATED,
+            ProjectEventsEventsItemKind.RENAMED -> {
+                val name = event.name
+                requireChatWire(name != null)
+                requireChatWire(
+                    event.kind != ProjectEventsEventsItemKind.RENAMED || existing != null
                 )
+                projects[event.projectId] =
+                    ConfirmedProject(
+                        id = event.projectId,
+                        name = checkNotNull(name),
+                        createdAt = existing?.createdAt ?: event.createdAt,
+                        updatedAt = event.createdAt,
+                        sortOrder = event.sortOrder ?: existing?.sortOrder,
+                    )
+            }
         }
     }
-    return projects.values.sortedWith(compareBy<ConfirmedProject> { it.createdAt }.thenBy { it.id })
+    return projects.values.sortedWith { left, right ->
+        compareProjectBytes(left.effectiveSortOrder(), right.effectiveSortOrder()).takeIf {
+            it != 0
+        } ?: compareProjectBytes(left.id, right.id)
+    }
 }
 
 /** Independent Project snapshot/tail, with Web's cursor recovery and no event compaction. */
@@ -121,7 +150,13 @@ class ProjectSync(
                 is ProjectSnapshotVariant1 ->
                     ProjectArchive(
                         descriptor.projects.map {
-                            ConfirmedProject(it.id, it.name, it.createdAt, it.updatedAt)
+                            ConfirmedProject(
+                                it.id,
+                                it.name,
+                                it.createdAt,
+                                it.updatedAt,
+                                it.sortOrder,
+                            )
                         },
                         descriptor.latestEventId,
                         descriptor.latestSeqId,

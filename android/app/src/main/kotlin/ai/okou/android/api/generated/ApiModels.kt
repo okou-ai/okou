@@ -3118,6 +3118,7 @@ data class ProjectSnapshotVariant1ProjectsItem(
     val `name`: String,
     val `createdAt`: String,
     val `updatedAt`: String,
+    val `sortOrder`: String? = null,
 )
 
 @Serializable
@@ -3170,6 +3171,7 @@ enum class ProjectEventsEventsItemKind {
     @SerialName("created") CREATED,
     @SerialName("renamed") RENAMED,
     @SerialName("deleted") DELETED,
+    @SerialName("sort_updated") SORT_UPDATED,
 }
 
 @Serializable
@@ -3179,6 +3181,7 @@ data class ProjectEventsEventsItem(
     val `projectId`: String,
     val `kind`: ProjectEventsEventsItemKind,
     val `name`: String?,
+    val `sortOrder`: String? = null,
     val `createdAt`: String,
 )
 
@@ -3458,6 +3461,7 @@ data class ProjectArchiveProjectsItem(
     val `name`: String,
     val `createdAt`: String,
     val `updatedAt`: String,
+    val `sortOrder`: String? = null,
 )
 
 @Serializable

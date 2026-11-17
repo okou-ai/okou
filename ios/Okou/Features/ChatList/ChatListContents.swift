@@ -31,10 +31,7 @@ struct ChatListContents {
     }
     // Only the inbox leaves archived chats out, so only it offers them.
     let inbox = filter == .recent
-    // Projects keep their creation order, oldest first, as the web replays them.
-    let ordered = projects.sorted {
-      ($0.createdAt, $0.id) < ($1.createdAt, $1.id)
-    }
+    let ordered = projects.sorted(by: ChatProject.isOrderedBefore)
     self.projects = ordered.compactMap { project in
       let held = threads.filter { $0.projectId == project.id }
       let members = held.filter(matches)

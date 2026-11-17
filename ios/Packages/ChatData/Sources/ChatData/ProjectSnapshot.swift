@@ -31,24 +31,34 @@ struct ProjectSnapshot: Codable, Sendable {
         records[event.projectId] = ChatProject(
           id: event.projectId, name: name,
           createdAt: records[event.projectId]?.createdAt ?? event.createdAt,
-          updatedAt: event.createdAt)
+          updatedAt: event.createdAt,
+          sortOrder: event.sortOrder ?? records[event.projectId]?.sortOrder)
+      case .sortUpdated:
+        guard let existing = records[event.projectId], let sortOrder = event.sortOrder else {
+          throw ChatError.invalidContract("The Project sort event has no baseline or rank.")
+        }
+        records[event.projectId] = ChatProject(
+          id: existing.id, name: existing.name, createdAt: existing.createdAt,
+          updatedAt: event.createdAt, sortOrder: sortOrder)
       }
       latestEventId = event.id
       latestSeqId = event.seqId
     }
-    projects = records.values.sorted {
-      $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt < $1.createdAt
-    }
+    projects = records.values.sorted(by: ChatProject.isOrderedBefore)
   }
 }
 
 struct ProjectEvent: Decodable, Sendable {
-  enum Kind: String, Decodable { case created, renamed, deleted }
+  enum Kind: String, Decodable {
+    case created, renamed, deleted
+    case sortUpdated = "sort_updated"
+  }
   let id: String
   let seqId: Int
   let projectId: String
   let kind: Kind
   let name: String?
+  let sortOrder: String?
   let createdAt: Date
 }
 

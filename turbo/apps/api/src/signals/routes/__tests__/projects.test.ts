@@ -116,6 +116,221 @@ async function move(
   });
 }
 
+function reorder(
+  actor: ApiTestUser,
+  projectId: string,
+  targetId: string,
+  side: "before" | "after",
+  eventId = operation(),
+) {
+  return client().reorder({
+    headers: headers(actor),
+    params: { id: projectId },
+    body: { targetId, side, eventId },
+  });
+}
+async function listedIds(actor: ApiTestUser) {
+  const result = await accept(
+    client().list({ headers: headers(actor) }),
+    [200],
+  );
+  return result.body.projects.map((project) => {
+    return project.id;
+  });
+}
+
+describe("private Project order", () => {
+  it("moves whole groups before and after targets, preserves rank on rename and appends new Projects", async () => {
+    const actor = await owner();
+    const first = await create(actor, "First");
+    const second = await create(actor, "Second");
+    const third = await create(actor, "Third");
+    expect(first.sortOrder).toStrictEqual(expect.any(String));
+    await expect(listedIds(actor)).resolves.toStrictEqual([
+      first.id,
+      second.id,
+      third.id,
+    ]);
+    await accept(reorder(actor, third.id, first.id, "before"), [204]);
+    await expect(listedIds(actor)).resolves.toStrictEqual([
+      third.id,
+      first.id,
+      second.id,
+    ]);
+    await accept(reorder(actor, first.id, second.id, "after"), [204]);
+    const moved = await accept(
+      client().get({ headers: headers(actor), params: { id: first.id } }),
+      [200],
+    );
+    const renamed = await accept(
+      client().update({
+        headers: headers(actor),
+        params: { id: first.id },
+        body: { eventId: operation(), name: "Renamed" },
+      }),
+      [200],
+    );
+    expect(renamed.body.sortOrder).toBe(moved.body.sortOrder);
+    const fourth = await create(actor, "Fourth");
+    await expect(listedIds(actor)).resolves.toStrictEqual([
+      third.id,
+      second.id,
+      first.id,
+      fourth.id,
+    ]);
+    const events = await accept(
+      client().events({ headers: headers(actor), query: { sinceSeqId: 0 } }),
+      [200],
+    );
+    expect(
+      events.body.events.filter((event) => {
+        return event.kind === "sort_updated";
+      }),
+    ).toMatchObject([
+      { projectId: third.id, sortOrder: expect.any(String) },
+      { projectId: first.id, sortOrder: moved.body.sortOrder },
+    ]);
+  });
+
+  it("settles no-op and replayed moves by event identity without undoing a newer order", async () => {
+    const actor = await owner();
+    const first = await create(actor, "First");
+    const second = await create(actor, "Second");
+    const third = await create(actor, "Third");
+    const eventId = operation();
+    await accept(reorder(actor, third.id, first.id, "before", eventId), [204]);
+    await accept(reorder(actor, third.id, second.id, "after"), [204]);
+    await accept(reorder(actor, third.id, first.id, "before", eventId), [204]);
+    await expect(listedIds(actor)).resolves.toStrictEqual([
+      first.id,
+      second.id,
+      third.id,
+    ]);
+    expect(
+      (await reorder(actor, third.id, second.id, "before", eventId)).status,
+    ).toBe(409);
+    const noop = operation();
+    await accept(reorder(actor, third.id, second.id, "after", noop), [204]);
+    const events = await accept(
+      client().events({ headers: headers(actor), query: { sinceSeqId: 0 } }),
+      [200],
+    );
+    expect(
+      events.body.events.filter((event) => {
+        return event.id === eventId;
+      }),
+    ).toHaveLength(1);
+    expect(events.body.events).toContainEqual(
+      expect.objectContaining({
+        id: noop,
+        kind: "sort_updated",
+        projectId: third.id,
+      }),
+    );
+    await expect(listedIds(actor)).resolves.toStrictEqual([
+      first.id,
+      second.id,
+      third.id,
+    ]);
+  });
+
+  it("hides foreign source and target Projects from colleagues and other organizations", async () => {
+    const actor = await owner();
+    const first = await create(actor, "First");
+    const second = await create(actor, "Second");
+    const peer = await owner({ orgId: actor.orgId });
+    const foreign = await create(peer, "Foreign");
+    const elsewhere = await owner({ userId: actor.userId });
+    const external = await create(elsewhere, "Elsewhere");
+    expect((await reorder(peer, first.id, foreign.id, "before")).status).toBe(
+      404,
+    );
+    expect((await reorder(actor, first.id, foreign.id, "before")).status).toBe(
+      404,
+    );
+    expect(
+      (await reorder(elsewhere, first.id, external.id, "before")).status,
+    ).toBe(404);
+    expect((await reorder(actor, first.id, external.id, "before")).status).toBe(
+      404,
+    );
+    await expect(listedIds(actor)).resolves.toStrictEqual([
+      first.id,
+      second.id,
+    ]);
+    await expect(listedIds(peer)).resolves.toStrictEqual([foreign.id]);
+    await expect(listedIds(elsewhere)).resolves.toStrictEqual([external.id]);
+  });
+
+  it("arbitrates competing owner writes without duplicate tail ranks or partial event publication", async () => {
+    const actor = await owner();
+    const initial = await create(actor, "Initial");
+    const ids = [operation(), operation()];
+    const responses = await Promise.all(
+      ids.map((id) => {
+        return client().create({
+          headers: headers(actor),
+          body: { id, eventId: id, name: id },
+        });
+      }),
+    );
+    expect(
+      responses.map((response) => {
+        return response.status;
+      }),
+    ).toContain(201);
+    for (const [index, response] of responses.entries()) {
+      expect([201, 409]).toContain(response.status);
+      if (response.status === 409) {
+        const id = ids[index]!;
+        await accept(
+          client().create({
+            headers: headers(actor),
+            body: { id, eventId: id, name: id },
+          }),
+          [201],
+        );
+      }
+    }
+    const listed = await accept(
+      client().list({ headers: headers(actor) }),
+      [200],
+    );
+    expect(listed.body.projects[0]?.id).toBe(initial.id);
+    expect(
+      new Set(
+        listed.body.projects.map((project) => {
+          return project.sortOrder;
+        }),
+      ).size,
+    ).toBe(3);
+    const eventId = operation();
+    const duplicate = await Promise.all([
+      reorder(actor, initial.id, ids[0]!, "after", eventId),
+      reorder(actor, initial.id, ids[0]!, "after", eventId),
+    ]);
+    expect(
+      duplicate.map((response) => {
+        return response.status;
+      }),
+    ).toStrictEqual([204, 204]);
+    const events = await accept(
+      client().events({ headers: headers(actor), query: { sinceSeqId: 0 } }),
+      [200],
+    );
+    expect(
+      events.body.events.map((event) => {
+        return event.seqId;
+      }),
+    ).toStrictEqual([1, 2, 3, 4]);
+    expect(events.body.events.at(-1)).toMatchObject({
+      id: eventId,
+      projectId: initial.id,
+      kind: "sort_updated",
+    });
+  });
+});
+
 describe("private cross-Agent Projects", () => {
   it("preserves structured Project references through ordinary Agent and Thread drafts", async () => {
     const actor = await owner();
@@ -275,6 +490,7 @@ describe("private cross-Agent Projects", () => {
     const p = await create(actor, "Launch", first.id);
     const q = await create(actor, "Research");
     expect((await move(actor, second.id, p.id)).status).toBe(200);
+    await accept(reorder(actor, q.id, p.id, "before"), [204]);
     const members = (
       await accept(
         client().threads({
@@ -510,6 +726,12 @@ test("publishes immutable owner-scoped metadata snapshots with an exact event ta
     await import("@okouai/api-contracts/validators/projects");
   const actor = await owner();
   const storage = installWorkflowVolumeS3Fixture(context);
+  const empty = await accept(
+    client().snapshot({ headers: headers(actor) }),
+    [200],
+  );
+  expect(empty.body).toMatchObject({ latestEventId: null, latestSeqId: 0 });
+  const emptyKeys = new Set(storage.objects.keys());
   const p = await create(actor, "Original");
   const snapshot = await accept(
     client().snapshot({ headers: headers(actor) }),
@@ -519,7 +741,7 @@ test("publishes immutable owner-scoped metadata snapshots with an exact event ta
     throw new Error("Project snapshot URL missing");
   }
   const first = [...storage.objects.entries()].find(([key]) => {
-    return key.startsWith("project-snapshots/v1/");
+    return key.startsWith("project-snapshots/v1/") && !emptyKeys.has(key);
   });
   if (!first) {
     throw new Error("Project metadata was not published");
@@ -528,7 +750,17 @@ test("publishes immutable owner-scoped metadata snapshots with an exact event ta
     JSON.parse(gunzipSync(first[1]).toString("utf8")),
   );
   expect(archived.projects).toStrictEqual([p]);
-  expect(archived.latestSeqId).toBe(1);
+  expect(archived).toMatchObject({ latestEventId: p.id, latestSeqId: 1 });
+  expect(snapshot.body).toMatchObject({
+    latestEventId: archived.latestEventId,
+    latestSeqId: archived.latestSeqId,
+  });
+  const q = await create(actor, "Second");
+  await accept(reorder(actor, q.id, p.id, "before"), [204]);
+  const reordered = await accept(
+    client().get({ headers: headers(actor), params: { id: q.id } }),
+    [200],
+  );
   await accept(
     client().update({
       headers: headers(actor),
@@ -545,12 +777,29 @@ test("publishes immutable owner-scoped metadata snapshots with an exact event ta
     [200],
   );
   expect(tail.body.events).toMatchObject([
-    { kind: "renamed", projectId: p.id, name: "Renamed", seqId: 2 },
+    { kind: "created", projectId: q.id, sortOrder: q.sortOrder, seqId: 2 },
+    {
+      kind: "sort_updated",
+      projectId: q.id,
+      sortOrder: reordered.body.sortOrder,
+      seqId: 3,
+    },
+    {
+      kind: "renamed",
+      projectId: p.id,
+      name: "Renamed",
+      sortOrder: p.sortOrder,
+      seqId: 4,
+    },
   ]);
   const renamed = await accept(
     client().snapshot({ headers: headers(actor) }),
     [200],
   );
-  expect(renamed.body.latestSeqId).toBe(2);
+  expect(renamed.body).toMatchObject({
+    latestEventId: tail.body.events.at(-1)?.id,
+    latestSeqId: 4,
+  });
+  await expect(listedIds(actor)).resolves.toStrictEqual([q.id, p.id]);
   expect(storage.objects.get(first[0])).toStrictEqual(first[1]);
 });

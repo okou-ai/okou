@@ -1,4 +1,6 @@
 import { command } from "ccstate";
+import { projectOrderShortcutOwner } from "../../lib/project-order-shortcut-owner.ts";
+import { selectedProjectId$ } from "../projects/project-navigation.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
 import { currentChatThreadId$ } from "../agent-chat.ts";
@@ -35,6 +37,13 @@ export const setupChatThreadPinShortcuts$ = command(
       if (
         !shouldHandleShortcutPress(event) ||
         !get(pinnedThreadReorderEnabled$)
+      ) {
+        return false;
+      }
+      const owner = projectOrderShortcutOwner(event.target);
+      if (
+        owner?.kind === "project" ||
+        (owner === null && get(selectedProjectId$) !== null)
       ) {
         return false;
       }

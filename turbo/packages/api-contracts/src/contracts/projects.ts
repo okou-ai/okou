@@ -75,6 +75,18 @@ export const projectsContract = c.router({
     body: object({ eventId: uuid() }).strict(),
     responses: { 204: c.noBody(), ...errors },
   },
+  reorder: {
+    method: "POST",
+    path: "/api/projects/:id/reorder",
+    headers: authHeadersSchema,
+    pathParams: object({ id: uuid() }),
+    body: object({
+      eventId: uuid(),
+      targetId: uuid(),
+      side: zEnum(["before", "after"]),
+    }).strict(),
+    responses: { 204: c.noBody(), ...errors },
+  },
   membership: {
     method: "PUT",
     path: "/api/chat-threads/:id/project",
