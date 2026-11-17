@@ -23,7 +23,6 @@ async function cancelChatRun(actor: ApiTestUser, runId: string) {
 }
 
 async function expectImageGuidance(
-  actor: ApiTestUser,
   runId: string,
   model: string,
 ): Promise<void> {
@@ -40,7 +39,7 @@ describe("CHAT-02: run image model through public prompts", () => {
       agentId,
       prompt: "image model comes from the global default",
     });
-    await expectImageGuidance(actor, first.runId, "gpt-image-2.5-flare");
+    await expectImageGuidance(first.runId, "gpt-image-2.5-flare");
     await cancelChatRun(actor, first.runId);
 
     await chat.updateUserModelPreference(
@@ -53,13 +52,13 @@ describe("CHAT-02: run image model through public prompts", () => {
       threadId: first.threadId,
       prompt: "existing thread follows the member image model",
     });
-    await expectImageGuidance(actor, second.runId, "flux-pro-1.1");
+    await expectImageGuidance(second.runId, "flux-pro-1.1");
     await chat.updateUserModelPreference(
       actor,
       "claude-fable-5-1",
       "fal-ai/nano-banana-2",
     );
-    await expectImageGuidance(actor, second.runId, "flux-pro-1.1");
+    await expectImageGuidance(second.runId, "flux-pro-1.1");
     const prompt = (await api.executionInput(second.runId)).appendSystemPrompt;
     expect(prompt).toContain(
       "The model cannot be changed per request. Do not pass `--model` to image generation commands.",
@@ -74,7 +73,7 @@ describe("CHAT-02: run image model through public prompts", () => {
       threadId: first.threadId,
       prompt: "next run sees the new image model",
     });
-    await expectImageGuidance(actor, third.runId, "nano-banana-2");
+    await expectImageGuidance(third.runId, "nano-banana-2");
     await cancelChatRun(actor, third.runId);
   }, 90_000);
 
