@@ -888,8 +888,7 @@ final class WorkspaceStore {
         threadID: id, message: message,
         actionTitle: restore ? String(localized: "Undo and return to chat") : "Undo",
         requiresNavigation: restore
-      ) {
-        [weak self] in
+      ) { [weak self] in
         guard let self else { return }
         await self.setArchived(id, archived: !archived, reopenOnSuccess: restore)
       }

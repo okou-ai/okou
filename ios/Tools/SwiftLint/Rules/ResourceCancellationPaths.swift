@@ -57,21 +57,20 @@ struct ResourceCancellationPaths {
 
   private func proves(_ parts: [ExprSyntax], value: Bool, depth: Int = 0) -> Bool {
     guard depth < 16 else { return false }
-    for operation in ["||", "&&"] {
-      if parts.contains(where: { $0.as(BinaryOperatorExprSyntax.self)?.operator.text == operation })
-      {
-        let segments = parts.split {
-          $0.as(BinaryOperatorExprSyntax.self)?.operator.text == operation
-        }
-        let constant = operation == "||"
-        if segments.contains(where: { literal(Array($0), depth: depth) == constant }) {
-          return false
-        }
-        let remaining = segments.filter { literal(Array($0), depth: depth) == nil }
-        guard !remaining.isEmpty else { return false }
-        let checks = remaining.map { proves(Array($0), value: value, depth: depth) }
-        return (operation == "||") == value ? checks.allSatisfy { $0 } : checks.contains(true)
+    for operation in ["||", "&&"]
+    where parts.contains(where: { $0.as(BinaryOperatorExprSyntax.self)?.operator.text == operation }
+    ) {
+      let segments = parts.split {
+        $0.as(BinaryOperatorExprSyntax.self)?.operator.text == operation
       }
+      let constant = operation == "||"
+      if segments.contains(where: { literal(Array($0), depth: depth) == constant }) {
+        return false
+      }
+      let remaining = segments.filter { literal(Array($0), depth: depth) == nil }
+      guard !remaining.isEmpty else { return false }
+      let checks = remaining.map { proves(Array($0), value: value, depth: depth) }
+      return (operation == "||") == value ? checks.allSatisfy { $0 } : checks.contains(true)
     }
     if parts.count == 1, let first = parts.first,
       first.is(PrefixOperatorExprSyntax.self) || first.is(TupleExprSyntax.self)
@@ -119,7 +118,7 @@ struct ResourceCancellationPaths {
   }
 
   private let cancellationTypes: Set<String> = [
-    "CancellationError", "_Concurrency.CancellationError", "Swift.CancellationError",
+    "CancellationError", "_Concurrency.CancellationError", "Swift.CancellationError"
   ]
 
   private func literal(_ parts: [ExprSyntax], depth: Int = 0) -> Bool? {
@@ -157,7 +156,7 @@ struct ResourceCancellationPaths {
   private func cancelledCode(_ text: String) -> Bool {
     [
       ".cancelled", "URLError.cancelled", "URLError.Code.cancelled",
-      "Foundation.URLError.cancelled", "Foundation.URLError.Code.cancelled",
+      "Foundation.URLError.cancelled", "Foundation.URLError.Code.cancelled"
     ].contains(text)
   }
 

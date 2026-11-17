@@ -53,28 +53,28 @@ final class ChatModelStore {
 
   /// The graph owns the request and publishes one confirmed snapshot for send admission.
   /// Views observe this Task directly; they do not mirror its loading or error state here.
-  @ObservationIgnored lazy var configurationValue = Computed<Task<ChatModelConfiguration, Error>> {
-    [weak self] get, options in
-    guard let self, try get(lifetime), !closed else { throw CancellationError() }
-    let pending = try get(resources.configuration)
-    let signal = options.signal
-    let task = Task.immediate { @MainActor [weak self] in
-      do {
-        let value = try await pending.value
-        try signal.checkCancellation()
-        try Task.checkCancellation()
-        guard let self, !closed else { throw CancellationError() }
-        configuration = value
-        return value
-      } catch {
-        if !Task.isCancelled, !signal.isCancelled { self?.report(error) }
-        throw error
+  @ObservationIgnored lazy var configurationValue =
+    Computed<Task<ChatModelConfiguration, Error>> { [weak self] get, options in
+      guard let self, try get(lifetime), !closed else { throw CancellationError() }
+      let pending = try get(resources.configuration)
+      let signal = options.signal
+      let task = Task.immediate { @MainActor [weak self] in
+        do {
+          let value = try await pending.value
+          try signal.checkCancellation()
+          try Task.checkCancellation()
+          guard let self, !closed else { throw CancellationError() }
+          configuration = value
+          return value
+        } catch {
+          if !Task.isCancelled, !signal.isCancelled { self?.report(error) }
+          throw error
+        }
       }
+      publication = task
+      signal.onCancel { task.cancel() }
+      return task
     }
-    publication = task
-    signal.onCancel { task.cancel() }
-    return task
-  }
 
   /// Non-view consumers await the same graph Task as every SwiftUI subscriber.
   func load() async {
@@ -190,45 +190,46 @@ final class ChatModelSelectionStore {
   @ObservationIgnored lazy var metadataValue = makeMetadataValue()
 
   private func makeMetadataValue() -> Computed<Task<ChatModelSelection?, Error>> {
-    Computed {
-      [weak self] get, options in
+    Computed { [weak self] get, options in
       guard let self, !closed, try get(lifetime) else { throw CancellationError() }
       let demand = try get(metadataDemand)
       let signal = options.signal
-      let task = Task<ChatModelSelection?, Error> {
-        @MainActor [weak self, service = models.service, sleep = models.readRetrySleep, threadID] in
-        try Task.checkCancellation()
-        try signal.checkCancellation()
-        guard let self, !closed else { throw CancellationError() }
-        guard let demand, let threadID else { return nil }
-        defer {
-          if metadataID == demand {
-            metadataTask = nil
-            metadataID = nil
-          }
-        }
-        do {
-          let value = try await ChatReadRecovery.read("saved model selection", sleep: sleep) {
-            try await service.selection(threadID: threadID)
-          }
+      let service = models.service
+      let sleep = models.readRetrySleep
+      let task: Task<ChatModelSelection?, Error> =
+        Task { @MainActor [weak self, service, sleep, threadID] in
           try Task.checkCancellation()
           try signal.checkCancellation()
-          guard !closed else { throw CancellationError() }
-          // This confirmed snapshot is also consumed by send admission and draft capture.
-          stored = value
-          hasLoaded = true
-          uncertain = false
-          needsThreadReadback = false
-          error = nil
-          return value
-        } catch {
-          if !closed, !Task.isCancelled, !signal.isCancelled {
-            uncertain = true
-            models.report(error)
+          guard let self, !closed else { throw CancellationError() }
+          guard let demand, let threadID else { return nil }
+          defer {
+            if metadataID == demand {
+              metadataTask = nil
+              metadataID = nil
+            }
           }
-          throw error
+          do {
+            let value = try await ChatReadRecovery.read("saved model selection", sleep: sleep) {
+              try await service.selection(threadID: threadID)
+            }
+            try Task.checkCancellation()
+            try signal.checkCancellation()
+            guard !closed else { throw CancellationError() }
+            // This confirmed snapshot is also consumed by send admission and draft capture.
+            stored = value
+            hasLoaded = true
+            uncertain = false
+            needsThreadReadback = false
+            error = nil
+            return value
+          } catch {
+            if !closed, !Task.isCancelled, !signal.isCancelled {
+              uncertain = true
+              models.report(error)
+            }
+            throw error
+          }
         }
-      }
       lifecycleTasks.track(task)
       if let demand {
         metadataTask?.cancel()
@@ -248,7 +249,7 @@ final class ChatModelSelectionStore {
   var modelsWebURL: URL {
     models.webURL.appending(queryItems: [
       URLQueryItem(name: "settings", value: "billing"),
-      URLQueryItem(name: "billingView", value: "plans"),
+      URLQueryItem(name: "billingView", value: "plans")
     ])
   }
   var isMutating: Bool { isSaving || isSending }

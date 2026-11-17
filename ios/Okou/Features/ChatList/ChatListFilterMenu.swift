@@ -48,13 +48,13 @@ struct ChatListFilterMenu: UIViewRepresentable {
     if filter != .recent {
       configuration.title = filter.title
       configuration.imagePadding = OkouSpace.six
-      configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer {
-        attributes in
+      let titleAttributes = UIConfigurationTextAttributesTransformer { attributes in
         var attributes = attributes
         attributes.font = OkouTypography.font(
           ofSize: UIFont.preferredFont(forTextStyle: .callout).pointSize, weight: .medium)
         return attributes
       }
+      configuration.titleTextAttributesTransformer = titleAttributes
     }
     button.configuration = configuration
     button.tintColor = UIColor(OkouColor.foreground)

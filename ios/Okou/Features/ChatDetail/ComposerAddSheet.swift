@@ -205,8 +205,9 @@ final class RecentPhotoLibrary {
     options.deliveryMode = .highQualityFormat
     let images = PhotoLibraryImageManager(PHImageManager.default())
     let (data, typeIdentifier): (Data, String?) = try await images.read { manager, complete in
-      manager.requestImageDataAndOrientation(for: asset, options: options) {
-        data, typeIdentifier, _, _ in
+      manager.requestImageDataAndOrientation(
+        for: asset, options: options
+      ) { data, typeIdentifier, _, _ in
         if let data {
           complete(.success((data, typeIdentifier)))
         } else {

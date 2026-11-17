@@ -94,7 +94,8 @@ def main():
         "}", "",
     ]
     files[SYSTEM / "OkouIconAssets.generated.swift"] = subprocess.run(
-        ["xcrun", "swift-format", "format"], input="\n".join(lines),
+        ["xcrun", "swift-format", "format", "--assume-filename",
+         str(SYSTEM / "OkouIconAssets.generated.swift")], input="\n".join(lines),
         capture_output=True, text=True, check=True).stdout
     stale = []
     for path, content in files.items():

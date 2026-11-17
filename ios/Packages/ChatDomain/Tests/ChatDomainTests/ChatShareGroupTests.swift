@@ -9,7 +9,7 @@ final class ChatShareGroupTests: XCTestCase {
         input("question", runID: "run"), input("context", runID: "run"),
         output("work", runID: "run"), output("answer", runID: "run"),
         ChatEvent(id: "done", runId: "run", createdAt: .now, eventType: .runCompleted),
-        input("queued", runID: nil),
+        input("queued", runID: nil)
       ], recovering: false)
     let groups = ChatShareGroup.groups(in: history)
     XCTAssertEqual(groups.map(\.eventIDs), [["question", "context"], ["answer"]])
@@ -31,7 +31,7 @@ final class ChatShareGroupTests: XCTestCase {
         input("revoked", runID: "run"),
         ChatEvent(
           id: "revoke", revokesEventId: "revoked", createdAt: .now, eventType: .controlRevoke),
-        attachment, output("answer", runID: "run"),
+        attachment, output("answer", runID: "run")
       ], recovering: false)
     XCTAssertEqual(
       ChatShareGroup.groups(in: history).map(\.eventIDs), [["attachment"], ["answer"]])

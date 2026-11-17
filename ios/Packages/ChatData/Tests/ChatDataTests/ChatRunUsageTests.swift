@@ -49,7 +49,7 @@ final class ChatRunUsageTests: XCTestCase {
       "{\"runs\":[{\"runId\":\"other\",\"usage\":\(receipt)}]}",
       "{\"runs\":[{\"runId\":\"run\",\"usage\":\(receipt.replacingOccurrences(of: "\"version\":1", with: "\"version\":2"))}]}",
       "{\"runs\":[{\"runId\":\"run\",\"usage\":\(receipt.replacingOccurrences(of: "\"totalCredits\":0", with: "\"totalCredits\":-1"))}]}",
-      "{\"runs\":[{\"runId\":\"run\",\"usage\":\(receipt)},{\"runId\":\"run\",\"usage\":\(receipt)}]}",
+      "{\"runs\":[{\"runId\":\"run\",\"usage\":\(receipt)},{\"runId\":\"run\",\"usage\":\(receipt)}]}"
     ] {
       let fixture = ChatHTTPFixture { _ in ChatHTTPResponse(body: body) }
       do {

@@ -52,7 +52,7 @@ public struct ChatComposerConnector: Identifiable, Sendable {
   public let managed: Bool
   public let authorized: Bool
   /// The partner's own logo; custom connectors have none.
-  public var icon: ChatConnectorIcon? = nil
+  public var icon: ChatConnectorIcon?
   public var access: ChatConnectorAccess?
   public var currentAccount: ChatConnectorAccount?
   public var id: String { target.key }

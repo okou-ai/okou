@@ -283,8 +283,9 @@ extension NativeLifetimeTrace {
       let parameters =
         ancestor.as(FunctionDeclSyntax.self)?.signature.parameterClause.parameters
         ?? ancestor.as(InitializerDeclSyntax.self)?.signature.parameterClause.parameters
-      if let parameter = parameters?.first(where: { ($0.secondName ?? $0.firstName).text == base })
-      {
+      if let parameter = parameters?.first(
+        where: { ($0.secondName ?? $0.firstName).text == base }
+      ) {
         return ["XCTestCase", "XCTest.XCTestCase"].contains(parameter.type.trimmedDescription)
       }
     }

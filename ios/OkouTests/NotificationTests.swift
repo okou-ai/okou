@@ -160,8 +160,7 @@ final class NotificationTests: XCTestCase {
     XCTAssertFalse(fixture.requests.values.withLock { $0.contains { $0.contains("mark-read") } })
   }
 
-  func testBackgroundLaunchRestoresAuthenticationBeforeRejectingUnavailableMembership() async throws
-  {
+  func testBackgroundLaunchAuthenticatesBeforeRejectingUnavailableMembership() async throws {
     let identity = try AuthenticationHTTPFixture()
     addTeardownBlock { await identity.close() }
     identity.state.withLock {
@@ -177,7 +176,7 @@ final class NotificationTests: XCTestCase {
     let info: [String: String] = [
       "CFBundleIdentifier": "ai.okou.tests.notification", "CFBundleShortVersionString": "1.0.0",
       "APIBaseURL": fixture.http.baseURL.absoluteString,
-      "WebBaseURL": fixture.http.baseURL.absoluteString,
+      "WebBaseURL": fixture.http.baseURL.absoluteString
     ]
     try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
       .write(to: bundleURL.appendingPathComponent("Info.plist"))
@@ -491,7 +490,7 @@ final class NotificationTests: XCTestCase {
     [
       "okou": [
         "version": 1, "userId": user, "workspaceId": workspace, "threadId": thread, "runId": run,
-        "notificationId": run + ":completed",
+        "notificationId": run + ":completed"
       ]
     ]
   }

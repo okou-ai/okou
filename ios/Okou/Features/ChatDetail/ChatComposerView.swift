@@ -14,21 +14,21 @@ struct ChatComposerView: View {
   let error: String?
   let attachmentURL: URL
   let attachments: AttachmentDraftStore
-  var draftState: ComposerDraftStore? = nil
+  var draftState: ComposerDraftStore?
   let submit: @MainActor () async -> Void
   let refresh: (@MainActor () async -> Void)?
 
-  var modelSelection: ChatModelSelectionStore? = nil
-  var connectorSelection: ComposerConnectorStore? = nil
-  var mentionSource: ComposerMentionSource? = nil
-  var workflowSource: ComposerWorkflowSource? = nil
-  var agentID: String? = nil
-  var sendTransition: ConversationSendTransition? = nil
+  var modelSelection: ChatModelSelectionStore?
+  var connectorSelection: ComposerConnectorStore?
+  var mentionSource: ComposerMentionSource?
+  var workflowSource: ComposerWorkflowSource?
+  var agentID: String?
+  var sendTransition: ConversationSendTransition?
   /// "Message <agent>", so the field names who will do the work.
-  var placeholder: String? = nil
+  var placeholder: String?
   var showsTrailingFeedbackInput = true
-  var project: ChatProject? = nil
-  var removeProject: (() -> Void)? = nil
+  var project: ChatProject?
+  var removeProject: (() -> Void)?
 
   @Environment(\.composerPreferences) private var preferences
   @State private var isFocused = false
@@ -336,8 +336,9 @@ struct ChatComposerView: View {
     .onChange(of: mentionSource, initial: true) { _, source in
       draftState?.editor.mentionSource = source
     }
-    .onChange(of: "\(workflowSource?.id.uuidString ?? "")/\(agentID ?? "")", initial: true) {
-      _, _ in
+    .onChange(
+      of: "\(workflowSource?.id.uuidString ?? "")/\(agentID ?? "")", initial: true
+    ) { _, _ in
       draftState?.editor.workflows.configure(source: workflowSource, agentID: agentID)
     }
     .onChange(of: draftState.map(ObjectIdentifier.init), initial: true) { _, _ in

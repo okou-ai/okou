@@ -17,12 +17,10 @@ extension XCTestCase {
     let ready = expectation(
       description: "The production business result became available at \(file):\(line)")
     let observation = Task {
-      for await result in Observations({ predicate() }) {
-        if result {
-          observed = started.duration(to: .now)
-          ready.fulfill()
-          return
-        }
+      for await result in Observations({ predicate() }) where result {
+        observed = started.duration(to: .now)
+        ready.fulfill()
+        return
       }
     }
     let result = await XCTWaiter.fulfillment(of: [ready], timeout: timeout)

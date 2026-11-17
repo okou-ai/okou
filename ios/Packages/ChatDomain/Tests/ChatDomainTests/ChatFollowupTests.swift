@@ -17,7 +17,7 @@ final class ChatFollowupTests: XCTestCase {
       history.recommendedFollowups?.followups,
       [
         .init(prompt: "Save this process as a workflow", kind: .workflow),
-        .init(prompt: "After I send it, notify me when they reply", kind: .email),
+        .init(prompt: "After I send it, notify me when they reply", kind: .email)
       ])
     XCTAssertEqual(history.messages, try project(completed).messages)
   }
@@ -51,7 +51,7 @@ final class ChatFollowupTests: XCTestCase {
       "{\"version\":1,\"followups\":[{\"prompt\":\"x\",\"kind\":\"talk\",\"extra\":true}]}",
       "{\"version\":1,\"followups\":[{\"prompt\":\"x\",\"kind\":\"generate\",\"generationType\":null}]}",
       "{\"version\":1,\"followups\":[{\"prompt\":\"x\",\"kind\":\"generate\",\"generationType\":\"future\"}]}",
-      "{\"version\":1,\"followups\":[{\"prompt\":\"x\",\"kind\":\"generate\",\"generationType\":\"video\"}]}",
+      "{\"version\":1,\"followups\":[{\"prompt\":\"x\",\"kind\":\"generate\",\"generationType\":\"video\"}]}"
     ] {
       let history = try project(completed + [followups(4), followups(5, content: content)])
       XCTAssertNil(history.recommendedFollowups, content)
@@ -70,12 +70,12 @@ final class ChatFollowupTests: XCTestCase {
       [
         event(5, .inputPrompt, run: "next"),
         event(6, .outputMessage, content: "New answer", run: "next"),
-        event(7, .runCompleted, run: "next"),
+        event(7, .runCompleted, run: "next")
       ],
       [event(5, .outputError, content: "Failed")],
       [event(5, .runFailed, content: "Failed")],
       [event(5, .runFailed)],
-      [event(5, .runCancelled)],
+      [event(5, .runCancelled)]
     ] {
       XCTAssertNil(try project(rows + tail).recommendedFollowups)
     }
@@ -88,7 +88,7 @@ final class ChatFollowupTests: XCTestCase {
   func testLateOldRunDoesNotOvertakeNewRunAndSameRunNewTurnRetiresSource() throws {
     let newer = [
       event(5, .inputPrompt, run: "next"), event(6, .outputMessage, content: "New", run: "next"),
-      event(7, .runCompleted, run: "next"),
+      event(7, .runCompleted, run: "next")
     ]
     XCTAssertNil(try project(completed + newer + [followups(8)]).recommendedFollowups)
     let newerSource = followups(8, run: "next")
@@ -123,14 +123,14 @@ final class ChatFollowupTests: XCTestCase {
       try project(completed + [followups(4), error, followups(11)]).recommendedFollowups)
     let newer = [
       event(5, .inputPrompt, run: "next"), event(6, .outputMessage, content: "New", run: "next"),
-      event(7, .runCompleted, run: "next"), followups(8, run: "next"),
+      event(7, .runCompleted, run: "next"), followups(8, run: "next")
     ]
     XCTAssertEqual(try project(completed + newer + [error]).recommendedFollowups?.eventID, "8")
     // Bookkeeping from another run is not a replacement for the last visible outcome.
     XCTAssertNil(
       try project(
         completed + [
-          error, event(12, .runCompleted, run: "bookkeeping"), followups(13, run: "bookkeeping"),
+          error, event(12, .runCompleted, run: "bookkeeping"), followups(13, run: "bookkeeping")
         ]
       ).recommendedFollowups)
     let interrupt = ChatEvent(id: "14", runId: "run", createdAt: .now, eventType: .controlInterrupt)
@@ -139,7 +139,7 @@ final class ChatFollowupTests: XCTestCase {
 
   func testRunOutcomesRetireRecommendationsIndependentlyOfRetainedDiagnostics() throws {
     let payloads: [ChatEvent.Payload?] = [
-      nil, .init(content: "Private outcome", error: "Private diagnostic"),
+      nil, .init(content: "Private outcome", error: "Private diagnostic")
     ]
     for payload in payloads {
       for terminal in [ChatEventType.runFailed, .runCancelled] {

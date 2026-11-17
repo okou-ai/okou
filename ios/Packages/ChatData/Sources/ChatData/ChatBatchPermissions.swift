@@ -44,8 +44,9 @@ public struct ChatBatchPermissions: Sendable {
   private let client: APIClient
   public init(client: APIClient) { self.client = client }
 
-  public func load(_ action: ChatPermissionBatchAction) async throws -> ChatPermissionBatchSnapshot
-  {
+  public func load(
+    _ action: ChatPermissionBatchAction
+  ) async throws -> ChatPermissionBatchSnapshot {
     let features: SidebarFeatureSwitches = try await client.request("/api/feature-switches")
     let shared = features.effectiveSwitches["connectorChatAccountAccess"] == true
     guard features.effectiveSwitches["batchConnectorPermissions"] == true else {
@@ -73,8 +74,9 @@ public struct ChatBatchPermissions: Sendable {
     }
     let permissions = ChatPermissions(client: client)
     let slugs = Set(action.items.map(\.connectorSlug))
-    let groups = try await withThrowingTaskGroup(of: ChatPermissionBatchSnapshot.Group.self) {
-      tasks in
+    let groups = try await withThrowingTaskGroup(
+      of: ChatPermissionBatchSnapshot.Group.self
+    ) { tasks in
       for slug in slugs {
         tasks.addTask {
           let metadata: ChatPermissionMetadata?

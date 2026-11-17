@@ -48,7 +48,8 @@ actor ConversationHeightDiskCache {
     let heights = Dictionary(
       entries.map { ($0.digest, $0.height) }, uniquingKeysWith: { _, last in last })
     return keys.reduce(into: [:]) { result, pair in
-      if let digest = digest(pair.value), let height = heights[digest], height.isFinite, height > 0
+      if let digest = digest(pair.value),
+        let height = heights[digest], height.isFinite, height > 0
       {
         result[pair.key] = height
       }

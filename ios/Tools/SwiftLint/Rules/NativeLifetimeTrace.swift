@@ -63,7 +63,7 @@ final class NativeLifetimeTrace {
     teardown = true
     defer { teardown = previous }
     var entries: Set<String> = [
-      "close", "stop", "cancel", "dismiss", "deactivate", "invalidate", "detach",
+      "close", "stop", "cancel", "dismiss", "deactivate", "invalidate", "detach"
     ]
     if kind.isTask { entries = nativeTaskTeardown }
     let initial = NativeLifetimePath(values: ["self." + name: value], acquired: true)
@@ -230,8 +230,9 @@ final class NativeLifetimeTrace {
         + results.map { result in
           var result = result
           if result.exit == .breakLoop || result.exit == .continueLoop { result.exit = .normal }
-          result.values = path.values.merging(result.values.filter { $0.key.hasPrefix("self.") }) {
-            _, new in new
+          result.values = path.values.merging(
+            result.values.filter { $0.key.hasPrefix("self.") }
+          ) { _, new in new
           }
           result.locals = path.locals
           result.immutable = path.immutable

@@ -36,8 +36,7 @@ final class ConversationRunUsageTests: XCTestCase {
     } else {
       payload = ["content": text]
     }
-    let encoded = String(
-      decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self)
+    let encoded = try JSONSerialization.string(withJSONObject: payload)
     return """
       {"id":"\(ConversationHistoryFixture.id(index))","chatThreadId":"\(ConversationHistoryFixture.threadID)","seqId":\(index),"eventType":"\(type)","runId":"\(runID)","createdAt":"2026-10-20T00:00:00Z","payload":\(encoded)}
       """
@@ -48,7 +47,7 @@ final class ConversationRunUsageTests: XCTestCase {
     let fixture = ConversationHistoryFixture(
       rows: [
         try row(1, type: "input.prompt", text: "Question"), try row(2, text: "Answer"),
-        try row(3, type: "run.completed"), try row(4, type: "usage.recorded"),
+        try row(3, type: "run.completed"), try row(4, type: "usage.recorded")
       ],
       usage: { _ in
         reads.withLock { $0 += 1 }
@@ -112,7 +111,7 @@ final class ConversationRunUsageTests: XCTestCase {
         try row(2, text: "Earlier work"), try row(3, text: "First reply"),
         try row(4, type: "input.prompt", text: "Supplement"),
         try row(5, text: "More work"), try row(6, text: "Final reply"),
-        try row(7, type: "run.cancelled"), try row(8, type: "usage.recorded"),
+        try row(7, type: "run.cancelled"), try row(8, type: "usage.recorded")
       ], usage: { _ in Self.response(8) })
     let conversation = fixture.conversation()
     let usage = RunUsageProbe(conversation.runUsage, owner: self)
@@ -143,7 +142,7 @@ final class ConversationRunUsageTests: XCTestCase {
         try row(index * 4 + 1, type: "input.prompt", text: "Question", runID: runID),
         try row(index * 4 + 2, text: "Answer", runID: runID),
         try row(index * 4 + 3, type: "run.completed", runID: runID),
-        try row(index * 4 + 4, type: "usage.recorded", runID: runID),
+        try row(index * 4 + 4, type: "usage.recorded", runID: runID)
       ]
     }
     let fixture = ConversationHistoryFixture(

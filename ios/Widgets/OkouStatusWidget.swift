@@ -66,7 +66,7 @@ struct OkouStatusWidget: Widget {
     .description("What needs you, what's working, and what just finished.")
     .supportedFamilies([
       .systemSmall, .systemMedium, .systemLarge,
-      .accessoryRectangular, .accessoryCircular, .accessoryInline,
+      .accessoryRectangular, .accessoryCircular, .accessoryInline
     ])
   }
 }

@@ -168,7 +168,7 @@ final class ComposerVoiceInputTests: XCTestCase {
     composer.text = "Before old after "
     let reference = MessageJSON.object([
       "type": .string("agent"), "agentId": .string("73000000-0000-4000-8000-000000000001"),
-      "nameSnapshot": .string("Planner"),
+      "nameSnapshot": .string("Planner")
     ])
     let block = try XCTUnwrap(composer.editorBlocks.first)
     var document = block.content
@@ -747,7 +747,7 @@ private final class VoiceComposerFixture: Sendable {
           return ChatHTTPResponse(body: "{}")
         }
         let data = try JSONEncoder().encode(state.value.withLock { $0.remote })
-        return ChatHTTPResponse(body: String(decoding: data, as: UTF8.self))
+        return ChatHTTPResponse(body: String(data: data, encoding: .utf8)!)
       case "/api/voice-io/quota":
         let quota = state.value.withLock { value in
           value.quotaApproved = false

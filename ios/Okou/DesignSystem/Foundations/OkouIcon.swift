@@ -90,8 +90,9 @@ extension Label where Title == Text, Icon == OkouIcon {
   // Disfavored like SwiftUI's own String overloads, so a literal title resolves to the
   // LocalizedStringKey initializer and is extracted and localized.
   @_disfavoredOverload
-  init<S: StringProtocol>(_ title: S, okouSymbol: String, iconSize: CGFloat = OkouIconSize.standard)
-  {
+  init<S: StringProtocol>(
+    _ title: S, okouSymbol: String, iconSize: CGFloat = OkouIconSize.standard
+  ) {
     self.init {
       Text(title)
     } icon: {

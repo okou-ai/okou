@@ -91,7 +91,7 @@ final class SettingsBillingTests: XCTestCase {
       ("admin", 1200.5, 350, 1550.5),
       ("admin", -1200, 350, 350),
       ("member", 1200, 350, 350),
-      ("member", 1200, 0, 0),
+      ("member", 1200, 0, 0)
     ] {
       let fixture = ChatHTTPFixture { request in
         guard request.httpMethod == "GET" else { throw URLError(.unsupportedURL) }

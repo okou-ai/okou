@@ -1,11 +1,37 @@
-# Native SwiftLint Rules
+# SwiftLint Rules
 
 Native code uses the pinned SwiftLint source plus the rules in
-[`ios/Tools/SwiftLint/Rules`](../../ios/Tools/SwiftLint/Rules). They use SwiftSyntax,
-run with SourceKit disabled, and do not compile the App. Follow
+[`ios/Tools/SwiftLint/Rules`](../../ios/Tools/SwiftLint/Rules). Native rules use
+SwiftSyntax; the upstream defaults also use the installed toolchain's SourceKit.
+Neither requires compiling the App. Follow
 [iOS development](ios-development.md) and [iOS ccstate](ios-ccstate.md) for the
 underlying ownership contracts. Setup commands belong in the
 [iOS README](../../ios/README.md#swiftlint).
+
+## Upstream Defaults
+
+The root configuration inherits upstream defaults and explicitly defers the
+eight metric checks and `identifier_name` in `disabled_rules` for separate
+policy decisions. The other 92 defaults remain enabled. It uses `opt_in_rules`
+for the three additional upstream checks and the native rules, rather than
+maintaining a second copy of the default set. Test overrides relax only force
+casts and force tries. Rule fixtures verify the exact deferred set and the
+remaining defaults; the wrapper also exercises `statement_position` so a
+SourceKit-backed check cannot silently disappear from CI.
+
+Keep `swift-format` as the layout owner. SwiftLint's multiline-brace options
+preserve its layout. `ios/.swift-format` omits collection trailing commas to
+match the default `trailing_comma` rule.
+Do not add a baseline, inline suppression or excluded source path to adopt a
+new check. Resolve findings at their owner and review any changed behavior.
+
+Upstream syntax checks complement native ownership checks. For example,
+`redundant_discardable_let` normalizes a discarded result's spelling, but does
+not require anyone to handle a Task failure. `notification_center_detachment`
+checks selector observers removed as `self`; it does not prove that a retained
+block-observer token is removed at owner teardown. An unused closure parameter
+check does not establish a graph accessor's lifetime. Keep a native rule until
+an upstream rule demonstrably covers the same contract and valid use cases.
 
 ## Enforced Boundaries
 

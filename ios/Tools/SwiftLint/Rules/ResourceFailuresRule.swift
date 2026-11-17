@@ -167,7 +167,7 @@ struct ResourceFailuresRule: NativeRule {
       return arguments(
         type,
         names: [
-          "Task", "Result", "Computed", "Signal", "Loadable", "AsyncStream", "AsyncThrowingStream",
+          "Task", "Result", "Computed", "Signal", "Loadable", "AsyncStream", "AsyncThrowingStream"
         ],
         modules: ["Swift", "_Concurrency", "CCState", "CCStateSwiftUI"]) != nil
     }
@@ -218,7 +218,7 @@ struct ResourceFailuresRule: NativeRule {
 
     private func cancellationName(_ item: CatchItemSyntax) -> String? {
       let types = [
-        "CancellationError", "_Concurrency.CancellationError", "Swift.CancellationError",
+        "CancellationError", "_Concurrency.CancellationError", "Swift.CancellationError"
       ]
       let tokens = item.pattern?.tokens(viewMode: .sourceAccurate).map(\.text) ?? []
       if let cast = tokens.lastIndex(where: { $0 == "is" || $0 == "as" }),

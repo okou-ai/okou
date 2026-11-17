@@ -518,7 +518,7 @@ private final class MailDraftHTTPFixture: Sendable {
       "accessStatus": state.reconnect ? "reconnect" : "ready",
       "attachments": hasDetails
         ? [["filename": "review.txt", "contentType": "text/plain", "size": 12]] : [],
-      "createdAt": "2026-11-11T00:00:00Z", "updatedAt": "2026-11-11T00:00:00Z",
+      "createdAt": "2026-11-11T00:00:00Z", "updatedAt": "2026-11-11T00:00:00Z"
     ]
     if state.provider == "outlook" {
       draft["outlookMessageId"] = "test-provider-draft"
@@ -531,8 +531,8 @@ private final class MailDraftHTTPFixture: Sendable {
     }
     let data = try! JSONSerialization.data(withJSONObject: [
       "mailDraftId": id, "mailDraftUrl": "https://app.example.invalid/mail/drafts/\(id)",
-      "mailDraft": draft,
+      "mailDraft": draft
     ])
-    return ChatHTTPResponse(body: String(decoding: data, as: UTF8.self))
+    return ChatHTTPResponse(body: String(data: data, encoding: .utf8)!)
   }
 }

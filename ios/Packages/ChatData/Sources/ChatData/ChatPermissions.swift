@@ -67,18 +67,18 @@ public struct ChatPermissionMetadata: Decodable, Sendable {
     permission == "__unknown__" || permissions.contains { $0.name == permission }
   }
 
-  public func policy(for permission: String, grants: [ChatPermissionRule], at date: Date) -> Policy
-  {
+  public func policy(
+    for permission: String, grants: [ChatPermissionRule], at date: Date
+  ) -> Policy {
     if let grant = grants.last(where: {
       $0.connectorSlug == connectorSlug && $0.permission == permission && $0.isActive(at: date)
     }) {
       return grant.action == .allow ? .allow : .deny
     }
     if permission == "__unknown__" { return defaultPolicy.unknownPolicy }
-    for policy: Policy in [.ask, .deny, .allow] {
-      if defaultPolicy.permissionOverrides?[policy.rawValue]?.contains(permission) == true {
-        return policy
-      }
+    for policy: Policy in [.ask, .deny, .allow]
+    where defaultPolicy.permissionOverrides?[policy.rawValue]?.contains(permission) == true {
+      return policy
     }
     return defaultPolicy.permissionDefault
   }

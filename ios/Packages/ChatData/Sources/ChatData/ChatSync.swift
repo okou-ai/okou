@@ -24,7 +24,8 @@ public actor ChatSync {
   /// Dirty rows survive a failed write until a later catch-up persists them.
   public func releaseHistory(threadID: String) -> Bool {
     guard !readingHistories.contains(threadID) else { return false }
-    if cache != nil, let history = histories[threadID], history.replaced || !history.newRows.isEmpty
+    if cache != nil,
+      let history = histories[threadID], history.replaced || !history.newRows.isEmpty
     {
       return false
     }
@@ -626,7 +627,7 @@ public actor ChatSync {
       do {
         var query = [
           URLQueryItem(name: "sinceSeqId", value: String(current.seqID)),
-          URLQueryItem(name: "limit", value: "50"),
+          URLQueryItem(name: "limit", value: "50")
         ]
         if let id = current.eventID { query.append(URLQueryItem(name: "sinceEventId", value: id)) }
         let response = try await client.data(
@@ -682,8 +683,9 @@ public actor ChatSync {
         ?? false)
   }
 
-  private func readHistory(threadID: String, requirePersistence: Bool) async throws -> CachedHistory
-  {
+  private func readHistory(
+    threadID: String, requirePersistence: Bool
+  ) async throws -> CachedHistory {
     // Actor methods can interleave at every network/cache await. Serialize each
     // thread's catch-up and durable cursor update, including calls from Stop.
     if !readingHistories.insert(threadID).inserted {
@@ -726,8 +728,9 @@ public actor ChatSync {
     }
   }
 
-  private func loadHistory(threadID: String, requirePersistence: Bool) async throws -> CachedHistory
-  {
+  private func loadHistory(
+    threadID: String, requirePersistence: Bool
+  ) async throws -> CachedHistory {
     let cached = await readCachedHistory(threadID: threadID)
     var history: CachedHistory
     if let cached {
@@ -758,10 +761,10 @@ public actor ChatSync {
     do {
       snapshot = try await client.request(
         "/api/chat-threads/\(threadID)/event-snapshot")
-    } catch let error as APIClientError
-      where error.statusCode == 404
-      && error.serverCode == "CHAT_EVENT_SNAPSHOT_NOT_FOUND"
-    {
+    } catch let error as APIClientError {
+      guard error.statusCode == 404, error.serverCode == "CHAT_EVENT_SNAPSHOT_NOT_FOUND" else {
+        throw error
+      }
       return CachedHistory(
         rows: [], rawRows: [], newRows: [], cursor: .start, replaced: true,
         cursorFromServerSnapshot: true)
@@ -856,7 +859,7 @@ public actor ChatSync {
     while true {
       var query = [
         URLQueryItem(name: "sinceSeqId", value: String(history.cursor.lastSeqId)),
-        URLQueryItem(name: "limit", value: "50"),
+        URLQueryItem(name: "limit", value: "50")
       ]
       if let eventID = history.cursor.lastEventId {
         query.append(URLQueryItem(name: "sinceEventId", value: eventID))
@@ -961,7 +964,7 @@ extension ChatSync {
       "/api/artifacts/catalog",
       query: [
         URLQueryItem(name: "keyword", value: keyword),
-        URLQueryItem(name: "limit", value: String(ChatSearchArtifact.searchLimit)),
+        URLQueryItem(name: "limit", value: String(ChatSearchArtifact.searchLimit))
       ])
     return response.artifacts.filter { $0.kind != "shared-thread" }
   }

@@ -12,7 +12,7 @@ struct ChatFeedbackComposer: View {
   var showsTrailingParagraph = true
   var returnKeyPreference = ComposerReturnKeyPreference.newline
   var canSendFromKeyboard = false
-  var submitFromKeyboard: (@MainActor () -> Void)? = nil
+  var submitFromKeyboard: (@MainActor () -> Void)?
   @State private var focusedBlock: UUID?
   @State private var contentHeight: CGFloat = 24
 

@@ -94,7 +94,8 @@ def main():
         "    })", "  }", "}", "",
     ]
     formatted = subprocess.run(
-        ["xcrun", "swift-format", "format"], input="\n".join(lines),
+        ["xcrun", "swift-format", "format", "--assume-filename", str(OUTPUT)],
+        input="\n".join(lines),
         capture_output=True, text=True, check=True).stdout
     files = {OUTPUT: formatted}
     # The system tint (caret, alert actions, plain buttons) and the sign-in primary are neutral

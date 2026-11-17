@@ -14,7 +14,8 @@ public enum ChatPinOrder {
 
   /// A key strictly between `lower` and `upper`; nil leaves that side open.
   public static func key(between lower: String?, and upper: String?) throws -> String {
-    String(decoding: try key(lower.map { Key($0.utf8) }, upper.map { Key($0.utf8) }), as: UTF8.self)
+    // Validated base-62 keys contain only ASCII bytes.
+    String(bytes: try key(lower.map { Key($0.utf8) }, upper.map { Key($0.utf8) }), encoding: .utf8)!
   }
 
   /// `count` ascending keys strictly between `lower` and `upper`.
@@ -22,7 +23,7 @@ public enum ChatPinOrder {
     -> [String]
   {
     try keys(lower.map { Key($0.utf8) }, upper.map { Key($0.utf8) }, count).map {
-      String(decoding: $0, as: UTF8.self)
+      String(bytes: $0, encoding: .utf8)!
     }
   }
 

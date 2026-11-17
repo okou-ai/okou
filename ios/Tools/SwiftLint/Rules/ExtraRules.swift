@@ -11,6 +11,6 @@ public func extraRules() -> [any Rule.Type] {
     ImportBoundariesRule.self,
     StorageBoundariesRule.self, GlobalMutableStateRule.self,
     TaskLifecycleRule.self, DiscardedThrowingTaskRule.self,
-    LoggingBoundariesRule.self,
+    LoggingBoundariesRule.self
   ]
 }

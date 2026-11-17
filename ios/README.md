@@ -269,7 +269,11 @@ separately from compilation, automated tests, and release publication.
 ## SwiftLint
 
 SwiftLint 0.65.1 includes the repository's [native rules](../docs/ios/ios-lint.md)
-through its SwiftLintExtraRules extension. `swift-format` owns formatting.
+through its SwiftLintExtraRules extension. It enables 92 upstream default checks;
+eight metric checks and `identifier_name` are deferred for a separate policy
+decision. The existing opt-in and native rules remain enabled. `swift-format` owns
+formatting; multiline braces remain compatible with its layout, and
+`ios/.swift-format` aligns collection commas with SwiftLint's default rule.
 Build the pinned source and run the shared entry point from the repository root:
 
 ```sh
@@ -281,7 +285,10 @@ python3 ios/Tools/SwiftLint/Tests/rules.test.py
 A first installation requires Python 3.9+, Git, and a compatible Swift toolchain
 (Xcode 27.1 on macOS; CI uses Swift 6.4.2 on Ubuntu 24.04). It fetches the exact
 commit in `.swiftlint-version`, uses upstream's locked SwiftPM dependencies,
-and overlays only the native rule module. No App build or SourceKit is required.
+and overlays only the native rule module. No App build is required. The default
+`statement_position` check uses SourceKit from that same installed toolchain;
+keep Swift available on `PATH` (or set `LINUX_SOURCEKIT_LIB_PATH` to its library
+directory for a nonstandard Linux installation).
 `SWIFTLINT_BUILD_JOBS` controls compiler parallelism (default 2). The native
 SwiftPM engine and per-file compilation bound cold-build compiler memory.
 Toolchain upgrades must revalidate that build mode.
@@ -294,7 +301,7 @@ an explicitly supplied `SWIFTLINT_BIN`, otherwise the verified local installatio
 an ordinary official binary cannot replace the custom build. The lint entry
 point never downloads, builds or fixes code.
 
-The configured safety/directive and `okou_*` rules in `.swiftlint.yml` cover
+The default, opt-in and `okou_*` rules in `.swiftlint.yml` cover
 App, Push, packages, tests and rule implementations. Generated Swift and build
 output are excluded. Test/test-support
 overrides relax only force casts and force tries; do not add baselines,

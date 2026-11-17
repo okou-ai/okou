@@ -147,7 +147,7 @@ final class ChatModelConfigurationTests: XCTestCase {
       [
         "/api/me/model-provider-accounts/\(account.id)/activate",
         "/api/me/model-provider-accounts/\(account.id)/subscription-reset",
-        "/api/me/model-provider-accounts/\(account.id)",
+        "/api/me/model-provider-accounts/\(account.id)"
       ])
   }
 }

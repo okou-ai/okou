@@ -130,8 +130,8 @@ struct ConversationCollectionView<Content: View>: UIViewControllerRepresentable 
   let metricsChanged: (ConversationCollectionMetrics) -> Void
   let rowsPresented: (String?) -> Void
   var earlierMessages: () -> [ChatMessage] = { [] }
-  var quote: ((ChatFeedbackSelection) -> Void)? = nil
-  var fork: ((ChatFeedbackSelection) -> Void)? = nil
+  var quote: ((ChatFeedbackSelection) -> Void)?
+  var fork: ((ChatFeedbackSelection) -> Void)?
   let refresh: () async -> Void
   @ViewBuilder let content: (ConversationCollectionRow, ConversationScrollAnchor?) -> Content
 
@@ -278,8 +278,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       source.anchor.followBottom()
       scrollingEnded()
     }
-    (collection as? ConversationAccessibilityCollection)?.beginsAccessibilityScroll = {
-      [weak self] in
+    let accessibilityCollection = collection as? ConversationAccessibilityCollection
+    accessibilityCollection?.beginsAccessibilityScroll = { [weak self] in
       guard let self else { return }
       source.sendTransition?.cancel()
       pendingScroll = nil
@@ -290,8 +290,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     refresh.addTarget(self, action: #selector(refreshConversation), for: .valueChanged)
     collection.refreshControl = refresh
     view.addSubview(collection)
-    dataSource = UICollectionViewDiffableDataSource<Int, String>(collectionView: collection) {
-      [weak self] collection, index, id in
+    dataSource = UICollectionViewDiffableDataSource<Int, String>(
+      collectionView: collection
+    ) { [weak self] collection, index, id in
       guard let self else { return nil }
       guard
         let cell = collection.dequeueReusableCell(withReuseIdentifier: "message", for: index)
@@ -344,9 +345,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     registerForTraitChanges([
       UITraitPreferredContentSizeCategory.self, UITraitLayoutDirection.self,
       UITraitLegibilityWeight.self, UITraitDisplayScale.self,
-      UITraitUserInterfaceStyle.self,
-    ]) {
-      (controller: ConversationCollectionController<Content>, _: UITraitCollection) in
+      UITraitUserInterfaceStyle.self
+    ]) { (controller: ConversationCollectionController<Content>, _: UITraitCollection) in
       controller.publishViewportChange()
       controller.prepareRowsIfNeeded()
     }
@@ -524,7 +524,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       container.widthAnchor.constraint(equalTo: viewport.widthAnchor),
       container.heightAnchor.constraint(equalTo: viewport.heightAnchor),
       container.topAnchor.constraint(equalTo: viewport.topAnchor),
-      container.trailingAnchor.constraint(equalTo: viewport.leadingAnchor),
+      container.trailingAnchor.constraint(equalTo: viewport.leadingAnchor)
     ])
     contentPrefetchContainer = container
     return container
@@ -935,8 +935,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     return true
   }
 
-  private func measureImmediately(_ rows: [ConversationCollectionRow], width: CGFloat) -> [CGFloat]
-  {
+  private func measureImmediately(
+    _ rows: [ConversationCollectionRow], width: CGFloat
+  ) -> [CGFloat] {
     rows.map { row in
       switch row {
       case .message(let message, _, let topSpacing, let pendingRetry, _, _, _):
@@ -1079,15 +1080,16 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     else { return nil }
     let top = collection.bounds.minY + collection.adjustedContentInset.top
     let bottom = collection.bounds.maxY - collection.adjustedContentInset.bottom
-    return collection.indexPathsForVisibleItems.compactMap {
-      index -> ConversationReadingPosition? in
-      guard let id = dataSource.itemIdentifier(for: index), ids?.contains(id) ?? true,
-        let spacing = displayedRows[id]?.readingContentTopSpacing,
-        let frame = layout.layoutAttributesForItem(at: index)?.frame,
-        frame.maxY > top, frame.minY + spacing < bottom
-      else { return nil }
-      return ConversationReadingPosition(messageID: id, offset: frame.minY + spacing - top)
-    }.min { $0.offset < $1.offset }
+    let positions: [ConversationReadingPosition] =
+      collection.indexPathsForVisibleItems.compactMap { index in
+        guard let id = dataSource.itemIdentifier(for: index), ids?.contains(id) ?? true,
+          let spacing = displayedRows[id]?.readingContentTopSpacing,
+          let frame = layout.layoutAttributesForItem(at: index)?.frame,
+          frame.maxY > top, frame.minY + spacing < bottom
+        else { return nil }
+        return ConversationReadingPosition(messageID: id, offset: frame.minY + spacing - top)
+      }
+    return positions.min { $0.offset < $1.offset }
   }
 
   private func restoreReadingPosition(_ position: ConversationReadingPosition) {

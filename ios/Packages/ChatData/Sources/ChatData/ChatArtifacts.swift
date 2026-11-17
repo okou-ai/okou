@@ -9,7 +9,7 @@ public struct ChatArtifactResolution: Sendable {
   public let previewImageURL: URL?
   public let expiresAt: Date?
   /// Canonical identity supplied by the authority, including files reached through a reference.
-  public var fileID: String? = nil
+  public var fileID: String?
 }
 
 /// Read-only artifact access through the existing API and credential-free storage transport.
@@ -112,10 +112,10 @@ public struct ChatArtifacts: Sendable {
         try Task.checkCancellation()
         if let key { files.insert(file, for: key) }
         return (resolved.artifact, file)
-      } catch APIClientError.downloadFailed(let status)
-        where attempt == 0 && [401, 403].contains(status)
-        && resolved.artifact.source.requiresAuthorization
-      {
+      } catch let error as APIClientError {
+        guard case .downloadFailed(let status) = error,
+          attempt == 0, [401, 403].contains(status), resolved.artifact.source.requiresAuthorization
+        else { throw error }
         // Renew once through the authority, rather than reusing an expired storage signature.
         resolved = try await resolve(resolved.artifact)
       }
@@ -157,9 +157,12 @@ public struct ChatArtifacts: Sendable {
         try Task.checkCancellation()
         if isOriginal { files.insert(file, for: key) }
         return (resolved.artifact, file)
-      } catch APIClientError.downloadFailed(let status)
-        where attempt == 0 && [401, 403].contains(status) && artifact.source.requiresAuthorization
-      { continue }
+      } catch let error as APIClientError {
+        guard case .downloadFailed(let status) = error,
+          attempt == 0, [401, 403].contains(status), artifact.source.requiresAuthorization
+        else { throw error }
+        continue
+      }
     }
     throw APIClientError.invalidResponse
   }

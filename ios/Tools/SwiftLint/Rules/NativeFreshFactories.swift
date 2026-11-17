@@ -124,8 +124,9 @@ final class NativeFreshFactories {
 
   private func fixedDispatch(_ function: FunctionDeclSyntax) -> Bool {
     guard function.parent?.is(MemberBlockItemSyntax.self) == true else { return true }
-    if function.modifiers.contains(where: { ["static", "final", "private"].contains($0.name.text) })
-    {
+    if function.modifiers.contains(
+      where: { ["static", "final", "private"].contains($0.name.text) }
+    ) {
       return true
     }
     let owner = nativeOwner(function)?.parent

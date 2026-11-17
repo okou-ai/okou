@@ -208,6 +208,6 @@ enum ChatOfficialArtifactPreviews {
     "https://static.vm0.io/vm0/welcome-thread/2026-09-17-3f913309fe14/new-agent.png",
     "https://sproutpop-launch-deck-p9jk.okou.app",
     "https://coastal-hotel-example.okou.app",
-    "https://4nnp6iwpss.okou.app",
+    "https://4nnp6iwpss.okou.app"
   ]
 }

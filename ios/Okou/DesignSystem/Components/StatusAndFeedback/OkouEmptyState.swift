@@ -8,7 +8,7 @@ import SwiftUI
 struct OkouEmptyState<Actions: View>: View {
   let title: Text
   let icon: String
-  var description: Text? = nil
+  var description: Text?
   let actions: Actions
 
   init(

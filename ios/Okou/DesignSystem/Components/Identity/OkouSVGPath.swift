@@ -203,7 +203,8 @@ private struct SVGPathScanner {
         while index < bytes.count, isDigit(bytes[index]) { index += 1 }
       }
     }
-    return CGFloat(Double(String(decoding: bytes[begin..<index], as: UTF8.self)) ?? 0)
+    let value = String(bytes: bytes[begin..<index], encoding: .utf8).flatMap(Double.init)
+    return CGFloat(value ?? 0)
   }
 
   mutating func flag() -> Bool {

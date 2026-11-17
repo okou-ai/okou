@@ -173,7 +173,7 @@ extension OkouWidgetSnapshot {
           isPinned: false, activityAt: now.addingTimeInterval(-3600)),
         Chat(
           id: "e", title: "请求与Okou互动", emoji: nil, state: .draft, isPinned: false,
-          activityAt: now.addingTimeInterval(-7200)),
+          activityAt: now.addingTimeInterval(-7200))
       ])
   }
 }

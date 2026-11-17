@@ -65,7 +65,7 @@ final class ConversationHistoryFixture: Sendable {
       path + "/mark-read": "POST",
       path + "/connector-selections": "GET",
       path + "/metadata": "GET",
-      "/api/chat/events": "POST",
+      "/api/chat/events": "POST"
     ]
     http = ChatHTTPFixture { request in
       let requestPath = request.url?.path ?? ""
@@ -106,9 +106,9 @@ final class ConversationHistoryFixture: Sendable {
       case path + "/activity-summary":
         let body = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))
         let data = try JSONSerialization.data(withJSONObject: [
-          "runId": body["runId"] ?? "", "status": "ineligible", "messages": [],
+          "runId": body["runId"] ?? "", "status": "ineligible", "messages": []
         ])
-        return ChatHTTPResponse(body: String(decoding: data, as: UTF8.self))
+        return ChatHTTPResponse(body: String(data: data, encoding: .utf8)!)
       case "/api/connector-catalog/slack":
         return ChatHTTPResponse(body: ConnectorHTTPFixtures.catalog())
       case "/api/connector-accounts/connections":
@@ -238,7 +238,7 @@ final class ConversationHistoryFixture: Sendable {
         UserPayload(userMessage: Document(parts: [Part(text: text)])))
     }
     return """
-      {"id":"\(id(sequence))","chatThreadId":"\(threadID)","runId":null,"revokesEventId":\(revokes.map { "\"\(id($0))\"" } ?? "null"),"contextType":null,"contextId":null,"runEventSequenceNumber":null,"runEventId":null,"seqId":\(sequence),"createdAt":"2026-10-08T00:00:00.000Z","eventType":"\(type)","payload":\(String(decoding: payload, as: UTF8.self))}
+      {"id":"\(id(sequence))","chatThreadId":"\(threadID)","runId":null,"revokesEventId":\(revokes.map { "\"\(id($0))\"" } ?? "null"),"contextType":null,"contextId":null,"runEventSequenceNumber":null,"runEventId":null,"seqId":\(sequence),"createdAt":"2026-10-08T00:00:00.000Z","eventType":"\(type)","payload":\(String(data: payload, encoding: .utf8)!)}
       """
   }
 

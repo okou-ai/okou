@@ -50,7 +50,7 @@ final class NotificationRefreshTests: XCTestCase {
         "okou": [
           "version": 1, "userId": "current", "workspaceId": "org_test",
           "threadId": threadID, "runId": "74000000-0000-4000-8000-000000000004",
-          "notificationId": "read-state",
+          "notificationId": "read-state"
         ]
       ]))
     system.delivered = [

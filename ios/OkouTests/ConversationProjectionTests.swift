@@ -1,4 +1,5 @@
 import ChatData
+import ChatDataTestSupport
 import ChatDomain
 import XCTest
 
@@ -42,7 +43,7 @@ final class ConversationProjectionTests: XCTestCase {
     let fixture = ConversationHistoryFixture(rows: [
       try row(1, type: "input.prompt", text: "Start"),
       try row(2, text: "Earlier reasoning"), try row(3, text: "Final answer"),
-      try row(4, type: "run.completed"),
+      try row(4, type: "run.completed")
     ])
     let conversation = fixture.conversation()
     defer { conversation.close() }
@@ -184,9 +185,9 @@ final class ConversationProjectionTests: XCTestCase {
       "id": eventID ?? ConversationHistoryFixture.id(index),
       "chatThreadId": ConversationHistoryFixture.threadID, "seqId": index,
       "eventType": type, "runId": runID, "createdAt": "2026-10-20T00:00:00Z",
-      "payload": payload,
+      "payload": payload
     ]
-    return String(decoding: try JSONSerialization.data(withJSONObject: row), as: UTF8.self)
+    return try JSONSerialization.string(withJSONObject: row)
   }
 }
 

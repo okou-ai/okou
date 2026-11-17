@@ -385,8 +385,9 @@ private struct ChatModelPickerContent: View {
 
   private func modelSections(_ configuration: ChatModelConfiguration) -> some View {
     List {
-      ForEach(["built-in"] + PersonalSubscriptionType.allCases.map(\.rawValue), id: \.self) {
-        type in
+      ForEach(
+        ["built-in"] + PersonalSubscriptionType.allCases.map(\.rawValue), id: \.self
+      ) { type in
         let rows = configuration.models.filter {
           ($0.selectedModel == nil ? "built-in" : $0.memberEffective.providerType) == type
         }

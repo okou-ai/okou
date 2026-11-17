@@ -12,8 +12,7 @@ private let threadID = "41000000-0000-4000-8000-000000000003"
 
 @MainActor
 final class ChatAttachmentTests: XCTestCase {
-  func testDirectUploadKeepsCredentialsOnAPIAndFinalizesBeforeSendingFileOnlyMessage() async throws
-  {
+  func testDirectUploadScopesCredentialsAndFinalizesBeforeFileMessage() async throws {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try Data("invoice".utf8).write(to: file)
     defer { try? FileManager.default.removeItem(at: file) }

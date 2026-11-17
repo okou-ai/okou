@@ -67,8 +67,8 @@ final class FailureRecoveryFixture: Sendable {
           #"{"userMessage":{"version":1,"parts":[{"type":"text","text":"Original question"}]}}"#),
       Self.row(2, type: "output.message", payload: #"{"content":"Already generated content."}"#),
       Self.row(
-        3, type: "run.failed", payload: String(decoding: payload, as: UTF8.self),
-        failureReason: reason),
+        3, type: "run.failed", payload: String(data: payload, encoding: .utf8)!,
+        failureReason: reason)
     ]
     var initial = State(rows: rows)
     initial.draft = draft
@@ -127,9 +127,8 @@ final class FailureRecoveryFixture: Sendable {
         }
         return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
       case threadPath + "/draft":
-        return ChatHTTPResponse(
-          body: String(
-            decoding: try JSONEncoder().encode(state.value.withLock { $0.draft }), as: UTF8.self))
+        return try ChatHTTPResponse(
+          json: state.value.withLock { $0.draft })
       case "/api/web/file-url":
         return ChatHTTPResponse(body: #"{"url":"https://file.example.invalid/draft"}"#)
       case "/api/uploads/prepare":
@@ -201,7 +200,7 @@ final class FailureRecoveryFixture: Sendable {
             value.rows.append(
               Self.row(
                 value.rows.count + 1, type: "input.prompt",
-                payload: String(decoding: document, as: UTF8.self), id: id))
+                payload: String(data: document, encoding: .utf8)!, id: id))
             value.lastID = id
             if value.failNextSend {
               value.failNextSend = false

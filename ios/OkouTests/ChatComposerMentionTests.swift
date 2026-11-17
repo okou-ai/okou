@@ -160,10 +160,10 @@ final class ChatComposerMentionTests: XCTestCase {
     }
     let reference: MessageJSON = .object([
       "type": .string("agent"), "agentId": .string(MentionNavigationFixture.agent(1)),
-      "nameSnapshot": .string("Planner"),
+      "nameSnapshot": .string("Planner")
     ])
     let draft = ChatDraftDocument(parts: [
-      reference, .object(["type": .string("text"), "text": .string(" ")]),
+      reference, .object(["type": .string("text"), "text": .string(" ")])
     ])
     let expected = ChatDraftDocument(parts: [reference])
     let block = try XCTUnwrap(conversation.composer.editorBlocks.first)
@@ -212,14 +212,14 @@ final class ChatComposerMentionTests: XCTestCase {
     let chat = try XCTUnwrap(source.suggestions(for: "plan").first)
     let agent: MessageJSON = .object([
       "type": .string("agent"), "agentId": .string(MentionNavigationFixture.agent(1)),
-      "nameSnapshot": .string("Planner"),
+      "nameSnapshot": .string("Planner")
     ])
     let note = ChatDraftDocument(parts: [
       .object(["type": .string("text"), "text": .string("Compare ")]),
       chat.part,
       .object(["type": .string("text"), "text": .string(" with ")]),
       agent,
-      .object(["type": .string("text"), "text": .string(" ")]),
+      .object(["type": .string("text"), "text": .string(" ")])
     ])
     conversation.composer.editBlock(block, document: note)
     let file = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -263,7 +263,7 @@ final class ChatComposerMentionTests: XCTestCase {
     let reference = try XCTUnwrap(
       candidates.mentionTestSource.suggestions(for: "plan").first)
     let draft = ChatDraftDocument(parts: [
-      reference.part, .object(["type": .string("text"), "text": .string(" ")]),
+      reference.part, .object(["type": .string("text"), "text": .string(" ")])
     ])
     let expected = ChatDraftDocument(parts: [reference.part])
     let block = try XCTUnwrap(workspace.newComposer.editorBlocks.first)

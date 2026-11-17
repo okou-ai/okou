@@ -10,7 +10,7 @@ struct OkouBanner<Actions: View>: View {
   let message: Text
   let icon: String
   var tone: Tone = .status
-  var dismiss: (() -> Void)? = nil
+  var dismiss: (() -> Void)?
   let actions: Actions
   /// One footnote line, so the glyph and the ✕ centre on the first line of the message.
   @ScaledMetric(relativeTo: .footnote) private var lineHeight: CGFloat = 18

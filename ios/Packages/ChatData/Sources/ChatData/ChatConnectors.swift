@@ -207,8 +207,7 @@ public struct ChatConnectorService: Sendable {
         guard account.target == target, UUID(uuidString: account.id) != nil else {
           throw APIClientError.invalidResponse
         }
-      } else if !chatAccountAccess && (!response.connections.isEmpty || response.nextCursor != nil)
-      {
+      } else if !chatAccountAccess, !response.connections.isEmpty || response.nextCursor != nil {
         throw APIClientError.http(
           status: 409,
           message:
@@ -273,8 +272,9 @@ public struct ChatConnectorService: Sendable {
       selected: selected, chatAccountAccess: chatAccountAccess)
   }
 
-  public func account(id: String, target: ChatConnectorTarget) async throws -> ChatConnectorAccount
-  {
+  public func account(
+    id: String, target: ChatConnectorTarget
+  ) async throws -> ChatConnectorAccount {
     let account: ChatConnectorAccount = try await client.request(
       "/api/connector-accounts/\(id)", query: target.query)
     guard account.id.lowercased() == id.lowercased(), account.target == target else {

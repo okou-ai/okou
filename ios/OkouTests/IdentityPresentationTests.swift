@@ -101,7 +101,7 @@ final class IdentityPresentationTests: XCTestCase {
     try await cache.saveWorkspaces(
       [
         .init(id: "org_one", name: "Previously confirmed workspace"),
-        .init(id: "org_removed", name: "Removed workspace"),
+        .init(id: "org_removed", name: "Removed workspace")
       ], activeID: "org_one")
     try await cache.close()
     await authentication.preparePresentation()

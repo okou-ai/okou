@@ -223,7 +223,7 @@ final class WorkspaceStartupFixture: Sendable {
   func expectedModelRequests(rounds: Int) -> [String: Int] {
     [
       "/api/user-model-preference": rounds, "/api/run-models": rounds,
-      "/api/model-catalog": rounds, "/api/feature-switches": rounds,
+      "/api/model-catalog": rounds, "/api/feature-switches": rounds
     ]
   }
 }

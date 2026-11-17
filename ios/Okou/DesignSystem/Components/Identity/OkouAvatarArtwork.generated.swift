@@ -53,7 +53,7 @@ extension OkouAvatarArtwork {
                           width: 2.89154, cap: .round, join: .round),
                         shape(
                           nil, "M123.903 188.24V202.698", stroke: p3(0.1451, 0.1294, 0.1294),
-                          width: 2.89154, cap: .round, join: .round),
+                          width: 2.89154, cap: .round, join: .round)
                       ])
                   ])
               ])
@@ -92,7 +92,7 @@ extension OkouAvatarArtwork {
                           "cheeks", opacity: 0,
                           [
                             shape(nil, ellipse(74, 138.5, 8, 4.3), fill: hex(0xE77F98)),
-                            shape(nil, ellipse(142, 138.5, 8, 4.3), fill: hex(0xE77F98)),
+                            shape(nil, ellipse(142, 138.5, 8, 4.3), fill: hex(0xE77F98))
                           ]),
                         group(
                           "eyes-track",
@@ -117,7 +117,7 @@ extension OkouAvatarArtwork {
                                           "eye-left-smile",
                                           "M82.0978 122.6Q87.3978 115.2 92.6978 122.6",
                                           stroke: hex(0x252121), width: 2.89154, cap: .round,
-                                          opacity: 0),
+                                          opacity: 0)
                                       ])
                                   ])
                               ]),
@@ -141,10 +141,10 @@ extension OkouAvatarArtwork {
                                           "eye-right-smile",
                                           "M123.302 122.6Q128.602 115.2 133.90200000000002 122.6",
                                           stroke: hex(0x252121), width: 2.89154, cap: .round,
-                                          opacity: 0),
+                                          opacity: 0)
                                       ])
                                   ])
-                              ]),
+                              ])
                           ]),
                         group(
                           "brows",
@@ -158,7 +158,7 @@ extension OkouAvatarArtwork {
                               "brow-right",
                               "M132.578 107.703C131.44 107.248 129.843 106.985 128.238 106.987C126.634 106.989 125.039 107.254 123.903 107.71",
                               stroke: p3(0.1451, 0.1294, 0.1294), width: 2.89154, cap: .round,
-                              join: .round),
+                              join: .round)
                           ]),
                         shape(
                           "smile",
@@ -167,7 +167,7 @@ extension OkouAvatarArtwork {
                           join: .round),
                         shape(
                           "mouth-o", ellipse(119.5, 153, 4.9, 6.1), stroke: hex(0x252121),
-                          width: 2.89154, opacity: 0),
+                          width: 2.89154, opacity: 0)
                       ]),
                     group(
                       "back-hair",
@@ -200,7 +200,7 @@ extension OkouAvatarArtwork {
                           "source-back-hair",
                           "M109.156 45.5418C129.916 45.5418 146.746 62.3714 146.746 83.1318C146.746 85.2633 146.567 87.3531 146.226 89.3878C136.182 80.9713 123.236 75.9029 109.107 75.9029C95.0168 75.9029 82.1042 80.9424 72.0717 89.3165C71.7386 87.3044 71.5656 85.2383 71.5656 83.1318C71.5656 62.3714 88.3952 45.5418 109.156 45.5418Z",
                           fill: p3(0.2, 0.3894, 0.8281), stroke: p3(0.1451, 0.1294, 0.1294),
-                          width: 2.89154, join: .round),
+                          width: 2.89154, join: .round)
                       ]),
                     group(
                       "fringe",
@@ -210,11 +210,11 @@ extension OkouAvatarArtwork {
                           "M108 65.0596C133.073 65.0596 154.395 81.1161 162.246 103.507H146.988C125.655 103.507 108.361 86.4556 108.361 65.421C108.361 86.4556 91.0678 103.507 69.7351 103.507H53.754C61.6052 81.1161 82.9272 65.0596 108 65.0596Z",
                           fill: p3(0.2, 0.3894, 0.8281), stroke: p3(0.1451, 0.1294, 0.1294),
                           width: 2.89154, join: .round)
-                      ]),
+                      ])
                   ])
               ])
           ]),
-        group("extras", []),
+        group("extras", [])
       ])
   }
 }

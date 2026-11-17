@@ -12,20 +12,20 @@ struct ChatComposerTextInput: UIViewRepresentable {
   let acceptsImages: Bool
   let isCurrent: @MainActor () -> Bool
   let pasteImages: ([NSItemProvider]) -> Void
-  var editor: ComposerEditor? = nil
-  var editorBlockID: UUID? = nil
+  var editor: ComposerEditor?
+  var editorBlockID: UUID?
   var editorOrder = 0
   var isAppendTarget = true
-  var document: Binding<ChatDraftDocument>? = nil
-  var searchableRanges: (@MainActor () -> [NSRange])? = nil
-  var focusRequested: (@MainActor () -> Void)? = nil
-  var inputReady: (@MainActor () -> Void)? = nil
+  var document: Binding<ChatDraftDocument>?
+  var searchableRanges: (@MainActor () -> [NSRange])?
+  var focusRequested: (@MainActor () -> Void)?
+  var inputReady: (@MainActor () -> Void)?
   var placeholder = String(localized: "Message Okou")
   var identifier = "message-input"
   var expanded = false
   var returnKeyPreference = ComposerReturnKeyPreference.newline
   var canSendFromKeyboard = false
-  var submitFromKeyboard: (@MainActor () -> Void)? = nil
+  var submitFromKeyboard: (@MainActor () -> Void)?
   @Environment(\.isEnabled) private var isEnabled
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -112,7 +112,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
         view.acceptsImages
         ? [
           ComposerAttributedDocument.pasteboardType, UTType.plainText.identifier,
-          UTType.image.identifier,
+          UTType.image.identifier
         ]
         : [ComposerAttributedDocument.pasteboardType, UTType.plainText.identifier])
     view.placeholder.isHidden = !view.text.isEmpty
@@ -297,9 +297,8 @@ final class ComposerTextView: UITextView {
     placeholder.lineBreakMode = .byTruncatingTail
     addSubview(placeholder)
     registerForTraitChanges([
-      UITraitPreferredContentSizeCategory.self, UITraitUserInterfaceStyle.self,
-    ]) {
-      (view: ComposerTextView, _: UITraitCollection) in
+      UITraitPreferredContentSizeCategory.self, UITraitUserInterfaceStyle.self
+    ]) { (view: ComposerTextView, _: UITraitCollection) in
       view.refreshAppearance()
     }
   }
@@ -350,8 +349,9 @@ final class ComposerTextView: UITextView {
     let insertion = NSMutableAttributedString(attributedString: value)
     insertion.addAttributes(
       composerTextAttributes, range: NSRange(location: 0, length: insertion.length))
-    insertion.enumerateAttribute(.attachment, in: NSRange(location: 0, length: insertion.length)) {
-      value, _, _ in
+    insertion.enumerateAttribute(
+      .attachment, in: NSRange(location: 0, length: insertion.length)
+    ) { value, _, _ in
       (value as? ComposerReferenceAttachment)?.referenceFont =
         ComposerAttributedDocument.scaledFont(for: traitCollection)
     }
@@ -477,7 +477,7 @@ final class ComposerTextView: UITextView {
       [
         ComposerAttributedDocument.pasteboardType: data,
         UTType.utf8PlainText.identifier: Data(
-          ComposerAttributedDocument.clipboardText(selection).utf8),
+          ComposerAttributedDocument.clipboardText(selection).utf8)
       ]
     ])
     return true

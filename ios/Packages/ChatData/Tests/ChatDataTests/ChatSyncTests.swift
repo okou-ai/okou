@@ -57,7 +57,7 @@ final class ChatSyncTests: XCTestCase {
             ? syncPage(
               [
                 syncRow(3, text: "New answer", runID: syncSecondRunID),
-                syncRow(4, runID: syncSecondRunID),
+                syncRow(4, runID: syncSecondRunID)
               ], cursor: 4)
             : syncPage([], cursor: 2)
         case 4: return syncPage([], cursor: 4)
@@ -182,7 +182,7 @@ final class ChatSyncTests: XCTestCase {
             return syncPage(
               [
                 syncRow(3, text: "Later answer", runID: syncSecondRunID),
-                syncRow(4, runID: syncSecondRunID),
+                syncRow(4, runID: syncSecondRunID)
               ], cursor: 4)
           }
           return syncPage([], cursor: 2)
@@ -229,7 +229,7 @@ final class ChatSyncTests: XCTestCase {
     let initialRows = [syncRow(1, text: "Initial answer"), syncRow(2)]
     let laterRows = [
       syncRow(3, text: "Latest answer", runID: syncSecondRunID),
-      syncRow(4, runID: syncSecondRunID),
+      syncRow(4, runID: syncSecondRunID)
     ]
     let fixture = ChatHTTPFixture { request in
       requests.withLock { $0.append(request) }

@@ -9,7 +9,7 @@ final class ConversationMeasurementCache {
     let category: UIContentSizeCategory
     let environment: ConversationHeightDiskCache.Layout
     var height: CGFloat
-    var diskKey: ConversationHeightDiskCache.Key? = nil
+    var diskKey: ConversationHeightDiskCache.Key?
   }
 
   let namespace: [String]?

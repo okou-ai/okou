@@ -32,26 +32,26 @@ final class ChatThreadPreviewResources {
     Computed { [weak self] get, options in
       guard let self, !closed, try get(lifetime) else { throw CancellationError() }
       let signal = options.signal
-      let task = Task<ChatThreadPreviewContent, Error> {
-        @MainActor [weak self, sync, threadID, didFinish] in
-        let history: ChatHistory
-        do {
-          try Task.checkCancellation()
-          history = try await sync.eventHistory(threadID: threadID)
-        } catch {
+      let task =
+        Task<ChatThreadPreviewContent, Error> { @MainActor [weak self, sync, threadID, didFinish] in
+          let history: ChatHistory
+          do {
+            try Task.checkCancellation()
+            history = try await sync.eventHistory(threadID: threadID)
+          } catch {
+            await didFinish()
+            try Task.checkCancellation()
+            try signal.checkCancellation()
+            guard self?.closed == false else { throw CancellationError() }
+            self?.didFail(error)
+            throw error
+          }
           await didFinish()
           try Task.checkCancellation()
           try signal.checkCancellation()
           guard self?.closed == false else { throw CancellationError() }
-          self?.didFail(error)
-          throw error
+          return ChatThreadPreviewContent(history: history)
         }
-        await didFinish()
-        try Task.checkCancellation()
-        try signal.checkCancellation()
-        guard self?.closed == false else { throw CancellationError() }
-        return ChatThreadPreviewContent(history: history)
-      }
       request = task
       signal.onCancel { task.cancel() }
       return task

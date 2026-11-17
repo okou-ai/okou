@@ -114,7 +114,7 @@ public enum ChatEventProjection {
     let state: ChatExecutionState
     if recovering {
       state = .recovering
-    } else if !activeRuns.intersection(interrupted).isEmpty {
+    } else if !activeRuns.isDisjoint(with: interrupted) {
       state = .stopping
     } else if !activeRuns.isEmpty {
       state = .running

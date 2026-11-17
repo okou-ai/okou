@@ -38,8 +38,7 @@ final class ProjectDisclosureTests: XCTestCase {
     XCTAssertTrue(replacement.isExpanded("last-click"))
   }
 
-  func testClosingDuringRestoreRejectsOldPublicationAndTheReplacementRestoresItsState() async throws
-  {
+  func testReplacementRestoresStateAfterClosingDuringRestore() async throws {
     let fixture = try environment()
     let http = ChatHTTPFixture { _ in throw URLError(.unsupportedURL) }
     let scope = ChatCacheScope(apiBaseURL: http.baseURL, userID: "user", workspaceID: "workspace")

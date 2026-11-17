@@ -60,7 +60,7 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
       navigation.loadViewIfNeeded()
       popGestures = [
         navigation.interactivePopGestureRecognizer,
-        navigation.interactiveContentPopGestureRecognizer,
+        navigation.interactiveContentPopGestureRecognizer
       ].compactMap { $0 }.map {
         WorkspacePopGestureDelegate(navigation: navigation, gestureRecognizer: $0)
       }

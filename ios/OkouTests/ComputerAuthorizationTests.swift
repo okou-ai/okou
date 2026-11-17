@@ -363,8 +363,7 @@ final class ComputerAuthorizationTests: XCTestCase {
     }
   }
 
-  func testRegistryKeepsUncertainGrantAndCallbackIdentityAcrossReturnAndReadPressure() async throws
-  {
+  func testRegistryPreservesUncertainGrantAndCallbackAcrossPressure() async throws {
     let fixture = ComputerAuthorizationFixture(kind: .computerUse)
     fixture.state.withLock { $0.loseGrantResponse = true }
     let conversation = fixture.conversation()
@@ -522,7 +521,7 @@ private final class ComputerAuthorizationFixture: Sendable {
           || (request.httpMethod == "GET"
             && [
               threadPath, threadPath + "/metadata", threadPath + "/event-snapshot",
-              threadPath + "/event-rows",
+              threadPath + "/event-rows"
             ]
             .contains(path))
           || (request.httpMethod == "POST" && path == "/api/chat/events")
@@ -603,13 +602,13 @@ private final class ComputerAuthorizationFixture: Sendable {
               "id": .string(Self.requestID), "chatThreadId": .string(Self.threadID),
               "seqId": .number(1), "createdAt": .string("2026-11-10T00:00:00Z"),
               "eventType": .string("input.prompt"),
-              "payload": .object(["userMessage": input["userMessage"] ?? .object([:])]),
+              "payload": .object(["userMessage": input["userMessage"] ?? .object([:])])
             ]
           }
           let data = try JSONEncoder().encode(rows)
           return ChatHTTPResponse(
             body:
-              "{\"rows\":\(String(decoding: data, as: UTF8.self)),\"cursor\":{\"lastEventId\":\(rows.isEmpty ? "null" : "\"\(Self.requestID)\""),\"lastSeqId\":\(rows.count)},\"hasMore\":false}"
+              "{\"rows\":\(String(data: data, encoding: .utf8)!),\"cursor\":{\"lastEventId\":\(rows.isEmpty ? "null" : "\"\(Self.requestID)\""),\"lastSeqId\":\(rows.count)},\"hasMore\":false}"
           )
         }
         if path == "/api/chat/events" {

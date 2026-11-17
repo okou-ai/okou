@@ -224,7 +224,7 @@ private actor IdentityImageDecoder {
           kCGImageSourceCreateThumbnailFromImageAlways: true,
           kCGImageSourceCreateThumbnailWithTransform: true,
           kCGImageSourceThumbnailMaxPixelSize: 192,
-          kCGImageSourceShouldCacheImmediately: true,
+          kCGImageSourceShouldCacheImmediately: true
         ] as CFDictionary)
     else { return nil }
     return UIImage(cgImage: image)
