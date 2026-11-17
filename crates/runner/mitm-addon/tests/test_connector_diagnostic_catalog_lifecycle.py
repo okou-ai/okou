@@ -190,6 +190,51 @@ def test_pinned_flow_uses_catalog_a_for_auth_error_and_releases_on_connection_er
         assert flow.response.stream is False
 
 
+@pytest.mark.parametrize("terminal_hook", ["response", "error"])
+def test_terminal_cleanup_preserves_external_diagnostic_stream_replacement(
+    tmp_path, real_flow, mitm_ctx, terminal_hook
+):
+    cache_path = write_connector_diagnostic_catalog_cache(
+        tmp_path,
+        firewalls=_catalog("catalog-a", "CATALOG_A_TOKEN"),
+        version="catalog-a",
+    )
+    registry_path = _capture_registry(tmp_path)
+    flow = _flow(real_flow)
+
+    with mitm_ctx(
+        registry_path=str(registry_path),
+        builtin_firewall_catalog_cache_path=str(cache_path),
+    ):
+        record_connector_diagnostic_requestheaders_context(flow)
+        flow.response = tutils.tresp(
+            status_code=401,
+            headers=header_map({"content-type": "text/plain"}),
+            content=b"upstream auth error",
+        )
+        mitm_addon.responseheaders(flow)
+        assert response_stream(flow)(b"upstream auth error") == ()
+
+        def external_stream(chunk: bytes) -> bytes:
+            return chunk
+
+        flow.response.stream = external_stream
+        if terminal_hook == "response":
+            mitm_addon.response(flow)
+        else:
+            error = Error("connection reset by peer")
+            flow.error = error
+            mitm_addon.error(flow)
+            assert flow.error is error
+
+    assert flow.response.status_code == 401
+    assert _response_connector(flow) == "catalog-a"
+    assert flow.response.stream is external_stream
+    assert response_stream(flow)(b"external stream bytes") == b"external stream bytes"
+    _assert_connector_diagnostic_state_released(flow)
+    _assert_catalog_a_public_diagnostic_metadata(flow)
+
+
 def test_websocket_end_releases_pinned_connector_diagnostic_state_at_entry(
     tmp_path,
     real_flow,
