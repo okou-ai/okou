@@ -2,7 +2,6 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   paidToolsContract,
   type PaidToolId,
@@ -33,7 +32,6 @@ async function setupPeopleSearch() {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
   });
   const people = await screen.findByRole("region", { name: "Find people" });
   click(button("Explore", people));

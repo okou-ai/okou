@@ -80,13 +80,10 @@ fn baseline(manifest: &[u8], groups: &[(&str, &[StorageFile])]) -> std::io::Resu
 
 #[cfg(target_os = "linux")]
 fn peak_rss_kib() -> Option<i64> {
-    let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
-    // SAFETY: getrusage initializes `usage` on a successful return.
-    if unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) } != 0 {
-        return None;
-    }
-    // SAFETY: getrusage returned success and initialized `usage`.
-    Some(unsafe { usage.assume_init() }.ru_maxrss)
+    use nix::sys::resource::{UsageWho, getrusage};
+
+    let usage = getrusage(UsageWho::RUSAGE_SELF).ok()?;
+    Some(usage.max_rss())
 }
 
 #[cfg(not(target_os = "linux"))]

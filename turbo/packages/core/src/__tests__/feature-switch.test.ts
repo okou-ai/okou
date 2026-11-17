@@ -18,35 +18,6 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.CodexExecution).toBe("_codexExecution");
-    expect(FeatureSwitchKey.ChatMessageVisualizationSummary).toBe(
-      "_chatMessageVisualizationSummary",
-    );
-  });
-
-  it("keeps chat visualization summaries internal to the staff audience", () => {
-    const key = FeatureSwitchKey.ChatMessageVisualizationSummary;
-    const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
-
-    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");
-    expect(isFeatureEnabled(key, { orgId: staffOrgId })).toBe(true);
-    expect(
-      isFeatureEnabled(key, {
-        orgId: staffOrgId,
-        overrides: { [key]: false },
-      }),
-    ).toBe(false);
-    expect(
-      isFeatureEnabled(key, {
-        orgId: "external-org",
-        overrides: { [key]: true },
-      }),
-    ).toBe(false);
-    expect(
-      getAllFeatureStates({
-        orgId: "external-org",
-        overrides: { [key]: true },
-      })[key],
-    ).toBe(false);
   });
 });
 
@@ -66,7 +37,6 @@ describe("isFeatureEnabled", () => {
   });
 
   it.each([
-    FeatureSwitchKey.Projects,
     FeatureSwitchKey.ConnectorChatAccountAccess,
     FeatureSwitchKey.ArtifactSidebarPreview,
     FeatureSwitchKey.ArtifactPreviewToolbar,
@@ -78,25 +48,6 @@ describe("isFeatureEnabled", () => {
       [{ orgId: "external-org" }, false],
       [{ userId: "external-user", orgId: "external-org" }, false],
       [{ orgId: "external-org", overrides: { [key]: true } }, true],
-      [staff, true],
-      [{ ...staff, overrides: { [key]: false } }, false],
-    ] as const) {
-      expect(isFeatureEnabled(key, context)).toBe(enabled);
-      expect(getAllFeatureStates(context)[key]).toBe(enabled);
-    }
-  });
-
-  it("defaults home capabilities on for everyone and honors Lab overrides", () => {
-    const key = FeatureSwitchKey.HomeCapabilities;
-    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("released");
-    for (const [context, enabled] of [
-      [{}, true],
-      [{ userId: "external-user" }, true],
-      [{ orgId: "external-org" }, true],
-      [{ userId: "external-user", orgId: "external-org" }, true],
-      [{ orgId: "external-org", overrides: { [key]: true } }, true],
-      [{ orgId: "external-org", overrides: { [key]: false } }, false],
       [staff, true],
       [{ ...staff, overrides: { [key]: false } }, false],
     ] as const) {

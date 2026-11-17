@@ -41,7 +41,15 @@ describe("integration model recovery in Teams", () => {
       await runs.heartbeatRunner("vm0/test");
       const execution = await runs.executionInput(run.id);
       const messages: unknown[] = [];
+      const indicators: unknown[] = [];
       server.use(
+        http.post(
+          `${fixture.installation.serviceUrl}v3/conversations/:conversationId/activities`,
+          async ({ request }) => {
+            indicators.push(await request.json());
+            return HttpResponse.json({ id: "recovery-typing" });
+          },
+        ),
         http.post(
           `${fixture.installation.serviceUrl}v3/conversations/:conversationId/activities/:activityId`,
           async ({ request }) => {
@@ -172,6 +180,10 @@ describe("integration model recovery in Teams", () => {
         (await chat.readThreadMetadata(fixture.actor, thread.chatThreadId))
           .selectedModel,
       ).toBe("auto");
+      await flushWaitUntilForTest();
+      expect(indicators).toContainEqual(
+        expect.objectContaining({ type: "typing" }),
+      );
       expect(
         (
           await reads.requestListLogs(
@@ -180,7 +192,7 @@ describe("integration model recovery in Teams", () => {
             [200],
           )
         ).body.data,
-      ).toHaveLength(1);
+      ).toHaveLength(2);
     });
   });
 });

@@ -12,6 +12,19 @@ if [[ ! "$floor" =~ ^[0-9a-f]{40}$ ]] || ! git merge-base --is-ancestor "$floor"
   exit 1
 fi
 
+format=${PRESENTATION_OUTPUT_FORMAT:-html}
+native_floor=""
+if [[ "$format" == pptx ]]; then
+  native_floor=$(git show origin/main:.github/scripts/release/presentation-template-release-pptx.json | jq -er '.readerPreparationCommit')
+  if [[ ! "$native_floor" =~ ^[0-9a-f]{40}$ ]] || ! git merge-base --is-ancestor "$native_floor" origin/main; then
+    echo "::error::The native presentation reader requirement must be a full SHA on main." >&2
+    exit 1
+  fi
+elif [[ "$format" != html ]]; then
+  echo "::error::Unsupported presentation output format: ${format}." >&2
+  exit 1
+fi
+
 for origin in https://api.vm0.ai https://api.okou.ai; do
   build=$(curl -fsS --connect-timeout 10 --max-time 30 "${origin}/api/build-info")
   commit=$(jq -er '.commitSha | select(type == "string" and test("^[0-9a-f]{40}$"))' <<<"$build")
@@ -19,5 +32,9 @@ for origin in https://api.vm0.ai https://api.okou.ai; do
     echo "::error::${origin} does not serve the independent Registry reader: ${commit}." >&2
     exit 1
   fi
-  printf '%s serves the independent Registry reader: %s\n' "$origin" "$commit"
+  if [[ -n "$native_floor" ]] && ! git merge-base --is-ancestor "$native_floor" "$commit"; then
+    echo "::error::${origin} does not serve the native presentation reader: ${commit}." >&2
+    exit 1
+  fi
+  printf '%s serves the compatible %s Registry reader: %s\n' "$origin" "$format" "$commit"
 done

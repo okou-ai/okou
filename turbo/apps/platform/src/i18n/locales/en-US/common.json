@@ -74,29 +74,12 @@
       },
       "downloadRawData": "Download raw data",
       "errorGuidance": {
-        "computerUseAuthorizationRequired": {
-          "guidance": "Request a delegated Computer Use authorization link, ask the user to select a {{assistantName}} Desktop host for this chat or Slack thread, then start a new run. Existing run tokens cannot be upgraded in place.",
-          "title": "Computer Use authorization required"
-        },
         "concurrentRunLimitReached": {
           "guidance": "Wait for your current run to complete before starting a new one.",
           "title": "Concurrent run limit reached"
         },
-        "creditsDepleted": {
-          "guidance": "Run credit diagnostics first. Buy credits only when the current plan allows it; otherwise return the plan upgrade link.",
-          "title": "Credits depleted"
-        },
-        "noModelProvider": {
-          "guidance": "Connect a personal Claude Code or Codex subscription in Settings.",
-          "title": "No model provider is available for this run"
-        },
         "paidPlanRequired": {
-          "guidance": "Built-in video generation is unavailable on the current plan.",
           "title": "Paid plan required"
-        },
-        "providerIncompatible": {
-          "guidance": "This session was created with a different provider type.",
-          "title": "Provider not compatible"
         },
         "providerTemporarilyUnavailable": {
           "guidance": "The model provider is temporarily unavailable.",
@@ -530,7 +513,6 @@
       "deleting": "Deleting…",
       "description": "This removes the artifact and disables its Okou links. Copies already downloaded or saved to other services will remain.",
       "hostedDescription": "This takes the website and all its published versions offline. Copies saved to other services will remain.",
-      "menu": "More actions for {{title}}",
       "sharedDescription": "Delete this shared chat from your artifacts. Its shared link will stop working. Your original chat will stay available.",
       "success": "Artifact deleted",
       "title": "Delete {{title}}?"
@@ -1852,14 +1834,6 @@
       "customAmountError": "Enter between $1 and $10,000",
       "customDollarAmount": "Custom dollar amount",
       "outOfCredits": "You're out of credits",
-      "proCard": {
-        "creditsNow": "credits · Just now",
-        "description": "Advanced features · 3 cloud computers",
-        "priceUnavailable": "See plans for current pricing",
-        "title": "About 5 tasks left",
-        "upgradeFromPrice": "Upgrade from {{price}}/month",
-        "upgradeNow": "Upgrade now"
-      },
       "redirecting": "Redirecting...",
       "upgradeToContinue": "Upgrade to Pro to keep chatting with {{assistantName}}.",
       "upgradeToPro": "Upgrade to Pro",
@@ -2068,7 +2042,6 @@
       "slashPanel": {
         "browseAll": "Browse all templates",
         "hint": "Search workflows or choose a template…",
-        "make": "Make",
         "useTemplate": "Use template {{title}}"
       },
       "temporarilySwitchTo": "Temporarily switch to",
@@ -2602,206 +2575,6 @@
       "unsupported": "Manual reset is not supported; usage recovers naturally."
     },
     "taskChips": {
-      "chooseTask": "Choose a task",
-      "ideas": {
-        "document": {
-          "contract": {
-            "label": "Draft a contract for a new client",
-            "prompt": "Draft a contract for a new client"
-          },
-          "creativeBrief": {
-            "label": "Write a creative brief for a launch",
-            "prompt": "Write a creative brief for a launch"
-          },
-          "invoice": {
-            "label": "Create an itemized invoice",
-            "prompt": "Create an itemized invoice"
-          },
-          "serviceAgreement": {
-            "label": "Outline a service agreement",
-            "prompt": "Outline a service agreement"
-          }
-        },
-        "image": {
-          "birthdayInvitation": {
-            "label": "Design a birthday invitation",
-            "prompt": "Create a birthday invitation. Help me combine the name, date, location, and party theme in a personal design."
-          },
-          "brandCharacter": {
-            "label": "Create a character for my brand",
-            "prompt": "Create a character concept for my brand. Help me define its personality, appearance, and where it will be used."
-          },
-          "businessLogo": {
-            "label": "Create a logo for my business",
-            "prompt": "Help me create a logo concept for my business. Start with the business name, what it does, and the impression I want to make."
-          },
-          "cafeMenu": {
-            "label": "Design a menu for my café counter",
-            "prompt": "Design a menu visual for my café. Use the items, prices, and brand details I provide, with clear readable sections."
-          },
-          "eventPoster": {
-            "label": "Design a poster for my event",
-            "prompt": "Design a poster for my event. Help me put the event name, date, location, and main message into a clear visual."
-          },
-          "finishedSketch": {
-            "label": "Turn my sketch into a finished visual",
-            "prompt": "Turn my sketch into a finished visual. Keep its main idea and composition, and help me choose the final visual style."
-          },
-          "greetingCard": {
-            "label": "Make a personal greeting card",
-            "prompt": "Design a greeting card for someone I know. Help me choose a personal message and visual style for the occasion."
-          },
-          "headshot": {
-            "label": "Make a headshot I can use at work",
-            "prompt": "Turn a photo of me into a professional headshot. Keep my identity recognizable and help me choose a natural background and lighting."
-          },
-          "infographic": {
-            "label": "Turn an idea into an infographic",
-            "prompt": "Turn my idea or information into an infographic. Help me choose a clear structure and use only the facts and numbers I provide."
-          },
-          "newsletterCover": {
-            "label": "Make a cover for my newsletter",
-            "prompt": "Create a cover image for my newsletter. Help me turn the issue topic into a clear visual that fits my audience."
-          },
-          "packaging": {
-            "label": "Explore packaging for my product",
-            "prompt": "Create a packaging concept for my product. Help me explore colors, layout, and visual direction using my product and brand details."
-          },
-          "photoLighting": {
-            "label": "Improve the light in my photo",
-            "prompt": "Improve the lighting in a photo I provide. Keep the subject and recognizable details intact, and aim for a natural result."
-          },
-          "presentationVisual": {
-            "label": "Make a visual for my presentation",
-            "prompt": "Create a visual that explains a key idea in my presentation. Help me make the idea easy to understand at a glance."
-          },
-          "productScene": {
-            "label": "Put my product in a new scene",
-            "prompt": "Put my product in a new scene. I will add a product photo; help me choose a setting while keeping the product itself consistent."
-          },
-          "profileBanner": {
-            "label": "Refresh the banner on my profile",
-            "prompt": "Create a profile banner that represents my work. Help me choose a message, style, and composition for the platform I use."
-          },
-          "roomDesign": {
-            "label": "Try a new look for a room at home",
-            "prompt": "Help me visualize a different look for my room from a photo. Keep the room layout recognizable and explore furniture, colors, and decor."
-          },
-          "storePhoto": {
-            "label": "Make a photo ready for my store",
-            "prompt": "Prepare a product photo for my online store. Keep the product accurate and help me choose a clean background, crop, and consistent lighting."
-          },
-          "websiteImage": {
-            "label": "Create an image for my website",
-            "prompt": "Create a main image for my website. Help me match the image to the business, audience, page layout, and main message."
-          }
-        },
-        "presentation": {
-          "clientProposal": {
-            "label": "Write a proposal for a client project",
-            "prompt": "Create a client proposal deck. Ask me about the client, the work I am proposing, the timeline, and the price."
-          },
-          "companyOverview": {
-            "label": "Explain what my company does to a newcomer",
-            "prompt": "Create a company overview deck. Ask me what we do, who we serve, and what the audience should remember."
-          },
-          "eventTalk": {
-            "label": "Prepare a talk for an upcoming event",
-            "prompt": "Build a deck for a talk I am giving. Ask me about the event, the audience, and the one idea I want to land."
-          },
-          "pitchDeck": {
-            "label": "Pitch my new business to a room of investors",
-            "prompt": "Create an investor pitch deck for my business. Ask me about the problem, the product, the traction so far, and what I am raising."
-          },
-          "productIntro": {
-            "label": "Introduce a new product to our customers",
-            "prompt": "Create a deck introducing a new product. Ask me what it does, who it is for, and what makes it different."
-          },
-          "resultsReadout": {
-            "label": "Present this quarter’s results to the team",
-            "prompt": "Turn my results into a readout deck. Ask me for the numbers, the period they cover, and the decision they support."
-          },
-          "teamUpdate": {
-            "label": "Put together this week’s team update",
-            "prompt": "Build a deck for my team update. Ask me what happened this period, what comes next, and who is in the room."
-          },
-          "training": {
-            "label": "Teach my team how something works",
-            "prompt": "Build a training deck on a topic I choose. Ask me who is being trained and what they should be able to do afterwards."
-          }
-        },
-        "website": {
-          "bookingPage": {
-            "label": "Give people a place to book me",
-            "prompt": "Create a page explaining my services and how to book me. Use my existing booking link and ask for my service details."
-          },
-          "businessSite": {
-            "label": "Build a website for my business",
-            "prompt": "Build a website that explains my business, services, and how to contact me. Start with my business details and audience."
-          },
-          "cafeMenu": {
-            "label": "Put my café menu online for guests",
-            "prompt": "Create a café website with my menu, prices, opening hours, and location. Use the details and photos I provide."
-          },
-          "coursePage": {
-            "label": "Create a page that sells my course",
-            "prompt": "Create a page introducing my course, who it is for, what learners will gain, and how to sign up using my registration link."
-          },
-          "eventPage": {
-            "label": "Create a page for an event I am running",
-            "prompt": "Create an event page with the date, location, agenda, and registration link I provide. Ask for any missing details."
-          },
-          "linkPage": {
-            "label": "Bring my links together on one page",
-            "prompt": "Create a simple link-in-bio page with my introduction, work, and social links. Ask which links to include."
-          },
-          "portfolio": {
-            "label": "Showcase my work in a portfolio",
-            "prompt": "Create a portfolio website for my work. Help me organize my projects, introduce myself, and add contact details."
-          },
-          "productLaunch": {
-            "label": "Launch a page for my new product",
-            "prompt": "Create a landing page for my product with its benefits, visuals, and a clear next step. Ask what I am launching and who it is for."
-          }
-        },
-        "workflow": {
-          "emailBrief": {
-            "label": "Get my morning email brief",
-            "prompt": "Give me a morning brief of the emails I need to pay attention to, including replies and action items. First confirm which inbox to use and when I want to receive it."
-          },
-          "fileOrganization": {
-            "label": "Organize incoming files",
-            "prompt": "Organize new files as they arrive, using agreed naming and filing rules. First confirm the source, destination folder, and categories."
-          },
-          "meetingActions": {
-            "label": "Turn meeting notes into action items",
-            "prompt": "When new meeting notes arrive, extract action items, owners, and due dates. Flag missing details. First confirm where to find my meeting notes."
-          },
-          "meetingPrep": {
-            "label": "Help me prepare for meetings",
-            "prompt": "Before meetings, prepare the people, background, and discussion points I need. First confirm my calendar, source material, and how far ahead to remind me."
-          },
-          "numbersBrief": {
-            "label": "Get a daily numbers summary",
-            "prompt": "Give me a daily summary of the numbers I track and how they changed since the last update. First confirm the data source, the numbers to include, and when to send it."
-          },
-          "progressRecap": {
-            "label": "Recap my progress and next steps",
-            "prompt": "Regularly recap my completed work, unfinished items, and next priorities. First confirm where to find my work records and whether I want a daily or weekly recap."
-          },
-          "replyWatch": {
-            "label": "Tell me when an email gets a reply",
-            "prompt": "Watch one email for a reply, then notify me and summarize it. First confirm which email to follow."
-          },
-          "topicUpdates": {
-            "label": "Follow updates on a topic",
-            "prompt": "Follow a topic I care about and summarize important new information with source links. Ask what I want to follow and how often I want an update."
-          }
-        }
-      },
-      "ideasLabel": "Ideas to get started",
-      "label": "Tasks to get started",
-      "more": "More",
       "presentationFormat": "Presentation format",
       "presentationFormats": {
         "html": "HTML",
@@ -2814,8 +2587,7 @@
         "image": "Image styles",
         "nextPage": "Next page",
         "previousPage": "Previous page",
-        "website": "Website templates",
-        "workflows": "Workflows"
+        "website": "Website templates"
       },
       "tasks": {
         "document": "Document",
@@ -2949,215 +2721,53 @@
       },
       "workflows": {
         "browse": "Browse workflows",
-        "close": "Close",
-        "contextPrefix": "What matters to me: {{preference}}",
         "items": {
           "competitors": {
-            "cadence": "Daily or weekly",
             "description": "Track pricing, product, and messaging changes with source links.",
-            "name": "Competitor updates",
             "prompt": "Help me track meaningful changes to competitors’ pricing, features, and messaging. Save a clear before-and-after report with source links in Notion. Help me choose the pages, check frequency, and whether to receive Slack alerts.",
-            "steps": {
-              "one": "Check the competitor pages you choose on a schedule",
-              "three": "Save findings with sources to Notion; optionally alert Slack",
-              "two": "Identify meaningful pricing, packaging, or messaging changes"
-            },
             "title": "Know when competitors change"
           },
           "inbox": {
-            "cadence": "When new email arrives",
             "description": "Sort incoming email and prepare replies for you to review.",
-            "name": "Inbox sorting & reply drafts",
             "prompt": "Help me organize incoming Gmail by urgency and prepare reply drafts for messages that need a response. I will review and send the replies myself. Help me choose the inbox scope and sorting rules before turning it on.",
-            "steps": {
-              "one": "Read incoming messages in the inbox scope you choose",
-              "three": "Save suggested replies as Gmail drafts for review",
-              "two": "Sort them by urgency and the rules you agree on"
-            },
             "title": "Keep important emails moving"
           },
           "invoices": {
-            "cadence": "When you label an invoice",
             "description": "File labeled invoice emails to Drive and keep a clear record.",
-            "name": "Invoice filing",
             "prompt": "Help me file Gmail invoices in Google Drive when I apply an invoice label, with an optional Google Sheets log. Help me choose the label, destination folder, and file naming rules before turning it on.",
-            "steps": {
-              "one": "Use the Gmail label you choose to identify an invoice",
-              "three": "Optionally record the invoice details in Google Sheets",
-              "two": "File its invoice attachment in the agreed Drive folder"
-            },
             "title": "Keep your invoices organized"
           },
           "meetings": {
-            "cadence": "When a meeting is added",
             "description": "Know who you’re meeting, their context, and what to ask.",
-            "name": "Meeting preparation",
             "prompt": "Help me prepare for upcoming external meetings. Research the people and companies I am meeting, include source links, and suggest useful discussion points. Help me choose which calendar and meetings to include, and when to send each brief.",
-            "steps": {
-              "one": "Read the people and details in a new calendar event",
-              "three": "Prepare a brief with sources and discussion points",
-              "two": "Research relevant professional and company context"
-            },
             "title": "Walk into meetings prepared"
           },
           "metrics": {
-            "cadence": "Every morning",
             "description": "Visitors, signups, and activation in one readable daily snapshot.",
-            "name": "Daily metrics brief",
             "prompt": "Help me get a daily Slack snapshot of visitors, signups, and activation, using the PostHog data I have. Clearly label the reporting period. Help me choose the available metrics, delivery time, and Slack destination.",
-            "steps": {
-              "one": "Read the agreed website and signup metrics",
-              "three": "Share the snapshot in the Slack destination you choose",
-              "two": "Assemble a daily snapshot with the relevant period clearly labeled"
-            },
             "title": "See how your business is doing"
           },
           "morning": {
-            "cadence": "Every morning",
             "description": "Important emails, meetings, and priorities in one morning brief.",
-            "name": "Morning brief",
             "prompt": "Help me set up a morning brief with important emails, today’s meetings, priorities, and follow-ups. I would like a short daily plan in Slack. Help me choose the sources and morning delivery time before turning it on.",
-            "steps": {
-              "one": "Read important email and today’s meetings",
-              "three": "Deliver a concise morning plan to Slack",
-              "two": "Prioritize decisions, follow-ups, and focus time"
-            },
             "title": "Start your day with a clear plan"
           },
           "recap": {
-            "cadence": "Checks for new meeting notes",
             "description": "A clear recap with decisions, action items, and owners.",
-            "name": "Meeting recap",
             "prompt": "Help me turn new Google Meet transcripts into a concise recap with decisions, action items, owners, and due dates. Mark details that were not stated. Help me choose how often to check for new notes and where to deliver the recap.",
-            "steps": {
-              "one": "Read a new meeting transcript",
-              "three": "Deliver a concise recap to the destination you choose",
-              "two": "Extract decisions, action items, owners, and dates when stated"
-            },
             "title": "Turn meetings into next steps"
           },
           "reply": {
-            "cadence": "When a matching reply arrives",
             "description": "Follow one conversation and get the reply, summary, and next steps.",
-            "name": "Email reply watch",
             "prompt": "Help me watch one Gmail conversation for a reply from the person I am waiting for. Notify me once per new reply, summarize the key points and next steps, and prepare a follow-up draft if useful. I will send replies myself. Help me choose the conversation and where to receive the alert.",
-            "steps": {
-              "one": "Follow one email conversation and agreed sender scope",
-              "three": "Notify you once; prepare a reply draft when needed",
-              "two": "Identify a new incoming reply and summarize the important points"
-            },
             "title": "Catch the reply you’re waiting for"
           },
           "weekly": {
-            "cadence": "Every week",
             "description": "Completed work, open decisions, and next week’s priorities.",
-            "name": "Weekly work recap",
             "prompt": "Help me create a weekly work recap with accomplishments, pending decisions, follow-ups, and upcoming commitments. Use the work sources I choose and prepare a concise Slack update. Help me choose the sources, weekly delivery time, and destination.",
-            "steps": {
-              "one": "Collect activity from the sources you choose",
-              "three": "Share a weekly recap in your chosen Slack destination",
-              "two": "Group accomplishments, open decisions, and follow-ups"
-            },
             "title": "Wrap up your week clearly"
           }
-        },
-        "preview": {
-          "competitors": {
-            "changed": "Changed",
-            "footer": "Source page and change history included",
-            "heading": "One change worth a closer look.",
-            "label": "Competitor update",
-            "now": "Now",
-            "plan": "Example company’s team plan",
-            "previous": "Previous",
-            "unit": "/ mo"
-          },
-          "inbox": {
-            "draft": "Reply draft",
-            "label": "Your inbox",
-            "later": "Your weekly digest",
-            "needsReply": "Needs reply",
-            "readLater": "Read later",
-            "review": "Review before sending",
-            "subject": "Re: Next steps",
-            "text": "Thanks for the details. I’ve reviewed the proposal and…"
-          },
-          "invoices": {
-            "amount": "Amount",
-            "example": "Example studio",
-            "file": "Invoice — September",
-            "filed": "Filed",
-            "footer": "An optional Sheet keeps the record together",
-            "label": "Invoice filing",
-            "path": "Finance / Invoices / Sep",
-            "second": "Sample supply co.",
-            "status": "Status",
-            "vendor": "Vendor"
-          },
-          "meetings": {
-            "heading": "Your next conversation.",
-            "initials": "JL",
-            "label": "Meeting preparation",
-            "note": "A useful place to begin",
-            "person": "Jordan Lee",
-            "question": "Ask how the team handles customer handoffs.",
-            "role": "Operations lead · Example company",
-            "tagOne": "Company context",
-            "tagTwo": "Discussion points"
-          },
-          "metrics": {
-            "activated": "Activated",
-            "footer": "A clear period. Only the metrics you choose.",
-            "label": "Daily metrics",
-            "period": "Yesterday vs. prior day",
-            "signups": "Signups",
-            "visitors": "Visitors"
-          },
-          "morning": {
-            "footer": "2 emails need your attention",
-            "heading": "A little clarity for your day.",
-            "label": "Your morning brief",
-            "meetingOne": "Team check-in",
-            "meetingTwo": "Client discovery",
-            "priority": "First things first",
-            "task": "Review the proposal before your client call"
-          },
-          "recap": {
-            "assign": "To assign",
-            "decision": "Decision: move ahead with a pilot",
-            "due": "Due",
-            "friday": "Fri",
-            "label": "Meeting recap",
-            "monday": "Mon",
-            "one": "Send the revised brief",
-            "owner": "Owner",
-            "task": "Next step",
-            "team": "Team",
-            "three": "Book the next check-in",
-            "two": "Confirm the pilot scope",
-            "you": "You"
-          },
-          "reply": {
-            "heading": "The reply you were waiting for.",
-            "label": "Reply watch",
-            "next": "Next step",
-            "quote": "“Thursday works for us. Could you share a short agenda?”",
-            "subject": "Re: Our next conversation",
-            "task": "Confirm the time and prepare an agenda"
-          },
-          "weekly": {
-            "heading": "A week worth looking back on.",
-            "label": "Weekly recap",
-            "next": "Carry into next week",
-            "one": "Shared the revised proposal",
-            "task": "Confirm the launch date with the team",
-            "two": "Wrapped up the onboarding guide"
-          }
-        },
-        "sample": "Sample",
-        "tailor": "Anything you’d like to tailor?",
-        "use": "Use this workflow",
-        "whatHappens": "What happens each time"
+        }
       }
     },
     "templates": {

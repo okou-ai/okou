@@ -36,13 +36,11 @@ const CAPABILITY_LABELS = CAPABILITIES.map(({ label }) => {
 type User = ReturnType<typeof userEvent.setup>;
 
 async function setupMenus({
-  homeCapabilities = true,
   slashActions = false,
   desktop = false,
   path = HOME_PATH,
   sendGate,
 }: {
-  readonly homeCapabilities?: boolean;
   readonly slashActions?: boolean;
   readonly desktop?: boolean;
   readonly path?: string;
@@ -58,9 +56,8 @@ async function setupMenus({
     context,
     path: path === HOME_PATH ? `${path}?compose=1` : path,
     featureSwitches: {
-      [FeatureSwitchKey.HomeCapabilities]: homeCapabilities,
       [FeatureSwitchKey.SlashActions]: slashActions,
-      [FeatureSwitchKey.Projects]: false,
+      [FeatureSwitchKey.SingleAgent]: false,
     },
   });
   return { editor: await findComposerEditor(), lifecycle: capture.lifecycle };
@@ -236,7 +233,7 @@ test.each([
   },
 );
 
-test("The Templates browser remains usable when home capabilities replace Make", async () => {
+test("The Templates browser preserves the draft when opening its picker", async () => {
   const { editor } = await setupMenus({ slashActions: true, desktop: true });
   const user = userEvent.setup({ delay: null });
   await fill(editor, "Keep my template brief /");
@@ -329,35 +326,6 @@ test("Both menus reopen the remembered creation type and workflow kind without t
   await screen.findByRole("region", { name: "Triggers" });
   await expectDraftFocus(editor, `${draft} `);
 });
-
-test.each([false, true])(
-  "HomeCapabilities off retains template commands and the add menu with SlashActions=%s",
-  async (slashActions) => {
-    const { editor } = await setupMenus({
-      homeCapabilities: false,
-      slashActions,
-    });
-    const user = userEvent.setup({ delay: null });
-    const menu = await openAddMenu(editor, user);
-    expect(
-      queryAllByRoleFast("menuitem", menu).map(controlLabel),
-    ).toStrictEqual(["Attach", "Template", "Import skills"]);
-    await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(screen.queryByRole("menu", { name: "Add" })).toBeNull();
-    });
-
-    await fill(editor, "Keep the legacy draft /Website");
-    const slashMenu = await screen.findByTestId("slash-workflow-menu");
-    await user.click(control("button", "Website", slashMenu));
-    const picker = await screen.findByRole("dialog");
-    expect(control("tab", "Website", picker)).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    expect(editor.textContent).toBe("Keep the legacy draft ");
-  },
-);
 
 test("Task handoff stays compact until a menu opens a tray without replacing the conversation", async () => {
   const { editor: homeEditor, lifecycle } = await setupMenus();

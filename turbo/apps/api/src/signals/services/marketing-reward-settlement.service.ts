@@ -81,7 +81,11 @@ function matchesClaim(
 
 const publishAutomaticReward$ = command(
   async ({ set }, intent: MarketingRewardIntent, signal: AbortSignal) => {
-    if (intent.questKey !== "connector" && intent.questKey !== "imessage") {
+    if (
+      intent.questKey !== "connector" &&
+      intent.questKey !== "imessage" &&
+      intent.questKey !== "checkin"
+    ) {
       throw new Error("Unexpected automatic financial operation");
     }
     const at = nowDate();
@@ -239,7 +243,9 @@ export const resolveMarketingRewardIntent$ = command(
     await set(ensureGetStartedRewardWallet$, intent.orgId, signal);
     if (
       !claim &&
-      (intent.questKey === "connector" || intent.questKey === "imessage")
+      (intent.questKey === "connector" ||
+        intent.questKey === "imessage" ||
+        intent.questKey === "checkin")
     ) {
       await set(publishAutomaticReward$, intent, signal);
       claim = await set(readClaim$, intent, signal);

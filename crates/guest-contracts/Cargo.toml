@@ -1,6 +1,6 @@
 [package]
 name = "guest-contracts"
-version = "0.32.14"
+version = "0.32.15"
 edition.workspace = true
 description = "Shared contracts between runner and guest binaries"
 
@@ -21,6 +21,7 @@ tempfile = { workspace = true, features = ["getrandom"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 cli-test-support = { workspace = true, features = ["test-support"] }
+nix = { workspace = true, features = ["resource"] }
 
 [lints]
 workspace = true

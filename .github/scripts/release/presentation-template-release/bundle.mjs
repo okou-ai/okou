@@ -60,12 +60,17 @@ async function buildPackage(sourceDir, outputDir, release) {
   };
 }
 
-export async function buildBundle({ sourceDir, outputDir, sourceCommit }) {
+export async function buildBundle({
+  sourceDir,
+  outputDir,
+  sourceCommit,
+  outputFormat = "html",
+}) {
   if (!COMMIT_PATTERN.test(sourceCommit)) {
     throw new Error("--source-commit must be a full lowercase Git commit SHA");
   }
 
-  const config = await loadConfig();
+  const config = await loadConfig(outputFormat);
   assertSameSet(
     await sourceSlugs(sourceDir),
     config.templates.map((release) => release.slug),
@@ -183,8 +188,8 @@ async function verifyPackage(outputDir, pkg, release) {
   );
 }
 
-export async function verifyBundle(outputDir) {
-  const config = await loadConfig();
+export async function verifyBundle(outputDir, outputFormat = "html") {
+  const config = await loadConfig(outputFormat);
   const publication = await readJson(path.join(outputDir, "publication.json"));
   validatePublication(config, publication);
 

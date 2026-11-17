@@ -11,6 +11,7 @@ from pathlib import Path
 from async_helper_failure_cases import ASYNC_HELPER_FAILURE_CASES
 from cancellation_cases import CANCELLATION_CASES
 from collection_publication_cases import COLLECTION_PUBLICATION_CASES
+from duplicate_condition_cases import DUPLICATE_CONDITION_CASES
 from global_state_cases import GLOBAL_STATE_CASES
 from graph_factory_cases import GRAPH_FACTORY_CASES
 from import_cases import IMPORT_CASES
@@ -36,6 +37,7 @@ BINARY = (
 )
 
 CASES = [
+    *DUPLICATE_CONDITION_CASES,
     *COLLECTION_PUBLICATION_CASES,
     *THROWING_TASK_CASES,
     *USELESS_CATCH_CASES,

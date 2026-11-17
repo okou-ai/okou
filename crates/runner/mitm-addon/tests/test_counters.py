@@ -23,9 +23,6 @@ def assert_counter_underflow_log(call, counter: str) -> None:
 class TestUsagePendingCounter:
     """Tests for usage pending counters."""
 
-    def setup_method(self):
-        usage.counters.reset_for_tests()
-
     def test_increment_decrement_in_flight_flows(self, tmp_path):
         control_root = tmp_path / "delivery-control"
         assert_pending(control_root, flows=0, buffered=0, reports=0)

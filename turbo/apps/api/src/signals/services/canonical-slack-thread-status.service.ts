@@ -1,5 +1,6 @@
 import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
@@ -135,17 +136,28 @@ const canonicalSlackThreadHasOutstandingWork$ = command(
           physicalThread,
         ),
       );
+    const physicalContext = and(
+      eq(chatSlackContext.channelId, target.channelId),
+      eq(chatSlackContext.threadTs, target.threadTs),
+      eq(
+        sql`coalesce(${chatSlackContext.workspaceId}, ${slackOrgConnections.slackWorkspaceId})`,
+        workspaceId,
+      ),
+    );
     const queuedSlackMessages = db
       .select({ id: chatEvents.id })
       .from(chatEvents)
-      .innerJoin(slackChatIngress, eq(slackChatIngress.id, chatEvents.id))
+      .innerJoin(
+        chatSlackContext,
+        eq(chatSlackContext.id, chatEvents.contextId),
+      )
       .where(
         and(
           eq(chatEvents.chatThreadId, slackChatThreadRoutes.chatThreadId),
           chatEventTypeIn(["input.prompt"]),
           eq(chatEvents.contextType, "slack"),
           isNull(chatEvents.runId),
-          physicalThread,
+          physicalContext,
           notExists(
             db
               .select({ id: slackQueueEventRevoker.id })
@@ -165,15 +177,15 @@ const canonicalSlackThreadHasOutstandingWork$ = command(
         ),
       )
       .innerJoin(
-        slackChatIngress,
-        eq(slackChatIngress.id, chatEvents.revokesEventId),
+        chatSlackContext,
+        eq(chatSlackContext.id, chatEvents.contextId),
       )
       .where(
         and(
           eq(agentRuns.chatThreadId, slackChatThreadRoutes.chatThreadId),
           inArray(agentRuns.status, ACTIVE_RUN_STATUSES),
           eq(agentRuns.triggerSource, "slack"),
-          physicalThread,
+          physicalContext,
         ),
       );
     const [work] = await db

@@ -25,7 +25,14 @@ export const marketingRewardIntentSchema = object({
   environment: marketingRewardEnvironmentSchema,
   policy: literal("get-started-v1"),
   sourceEventId: uuid(),
-  questKey: zEnum(["connector", "slack", "imessage", "workflow", "invite"]),
+  questKey: zEnum([
+    "connector",
+    "slack",
+    "imessage",
+    "workflow",
+    "invite",
+    "checkin",
+  ]),
   sourceKey: string().min(1).max(256),
   rewardKey: string().min(1).max(512),
   orgId: string().min(1).max(256),
@@ -43,6 +50,7 @@ export const marketingRewardIntentSchema = object({
       imessage: 1000,
       workflow: 1000,
       invite: 100,
+      checkin: 100,
     }[intent.questKey];
     if (
       intent.rewardAmount !== amount ||

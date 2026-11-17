@@ -514,8 +514,12 @@ import { marketingEventsContract as OriginalMarketingEventsContract } from "../c
 import { marketingEventsContract } from "./marketing-events";
 import { marketingHandoffsContract as OriginalMarketingHandoffsContract } from "../contracts/marketing-handoffs";
 import { marketingHandoffsContract } from "./marketing-handoffs";
+import { marketingRewardProjectionContract as OriginalMarketingRewardProjectionContract } from "../contracts/marketing-reward-projection";
+import { marketingRewardProjectionContract } from "./marketing-reward-projection";
 import { marketingRewardSettlementContract as OriginalMarketingRewardSettlementContract } from "../contracts/marketing-reward-settlement";
 import { marketingRewardSettlementContract } from "./marketing-reward-settlement";
+import { marketingWorkflowSourceContract as OriginalMarketingWorkflowSourceContract } from "../contracts/marketing-workflow-source";
+import { marketingWorkflowSourceContract } from "./marketing-workflow-source";
 import { mcpChatSearchContract as OriginalMcpChatSearchContract } from "../contracts/mcp-chat-search";
 import { mcpChatSearchContract } from "./mcp-chat-search";
 import { mcpConnectorsContract as OriginalMcpConnectorsContract } from "../contracts/mcp-connectors";
@@ -1233,9 +1237,14 @@ export const clientDescriptorContracts: readonly (readonly [
   [marketingEventsContract, OriginalMarketingEventsContract],
   [marketingHandoffsContract, OriginalMarketingHandoffsContract],
   [
+    marketingRewardProjectionContract,
+    OriginalMarketingRewardProjectionContract,
+  ],
+  [
     marketingRewardSettlementContract,
     OriginalMarketingRewardSettlementContract,
   ],
+  [marketingWorkflowSourceContract, OriginalMarketingWorkflowSourceContract],
   [mcpChatSearchContract, OriginalMcpChatSearchContract],
   [mcpConnectorsContract, OriginalMcpConnectorsContract],
   [mcpOAuthContract, OriginalMcpOAuthContract],

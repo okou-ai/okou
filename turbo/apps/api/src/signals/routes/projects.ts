@@ -29,7 +29,7 @@ import type { RouteEntry } from "../route-entry";
 export const projectAccess$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   return isFeatureEnabled(
-    FeatureSwitchKey.Projects,
+    FeatureSwitchKey.SingleAgent,
     await get(userFeatureSwitchContext(auth.orgId, auth.userId)),
   );
 });

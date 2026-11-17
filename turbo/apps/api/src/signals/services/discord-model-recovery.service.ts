@@ -1,3 +1,5 @@
+import { waitUntil } from "../context/wait-until";
+import { continueIntegrationRecovery$ } from "./integration-recovery-continuation.service";
 import { command } from "ccstate";
 import { discordAccountMessage } from "../../lib/discord-interaction-messages";
 import type { DiscordComponentInteraction } from "@okouai/api-contracts/contracts/discord-interactions";
@@ -52,17 +54,19 @@ export const handleDiscordModelRecovery$ = command(
       return discordAccountMessage(MODEL_RECOVERY_STALE);
     }
     if (action === "ms" && interaction.data.component_type === 3) {
-      return discordAccountMessage(
-        await set(
-          saveIntegrationModelChoice$,
-          {
-            ...identity,
-            model: interaction.data.values[0],
-            expectedModelState: recovery,
-          },
-          signal,
-        ),
+      const saved = await set(
+        saveIntegrationModelChoice$,
+        {
+          ...identity,
+          model: interaction.data.values[0],
+          expectedModelState: recovery,
+        },
+        signal,
       );
+      if (saved.input) {
+        waitUntil(set(continueIntegrationRecovery$, saved.input, signal));
+      }
+      return discordAccountMessage(saved.message);
     }
     const requestedPage = Number(pageText ?? "0");
     const page =
@@ -125,7 +129,7 @@ export const handleDiscordModelRecovery$ = command(
     });
     return {
       ...discordAccountMessage(
-        `Current model: ${recovery.currentModelLabel}. Select a model for this conversation, then send your previous request again.`,
+        `Current model: ${recovery.currentModelLabel}. Select a model to automatically continue this conversation.`,
       ),
       components,
     };

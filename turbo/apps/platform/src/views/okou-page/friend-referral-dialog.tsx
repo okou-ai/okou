@@ -165,62 +165,73 @@ function FriendReferralDetails({
   );
 }
 
-export function FriendReferralDialog({
-  trigger,
-  data,
-  loading,
-  failed,
-  onRetry,
-}: {
-  readonly trigger: ReactNode;
+interface FriendReferralContentProps {
   readonly data: FriendReferralStatus | null;
   readonly loading: boolean;
   readonly failed: boolean;
   readonly onRetry: () => void;
-}) {
+}
+
+function FriendReferralContent({
+  data,
+  loading,
+  failed,
+  onRetry,
+}: FriendReferralContentProps) {
   const { t } = useTranslation();
+  return (
+    <>
+      <ReferralFigure />
+      <DialogHeader className="gap-1 sm:text-center">
+        <DialogTitle>
+          {t(($) => {
+            return $.friendReferrals.dialogTitle;
+          })}
+        </DialogTitle>
+        <DialogDescription className="text-xs">
+          {t(($) => {
+            return $.friendReferrals.description;
+          })}
+        </DialogDescription>
+      </DialogHeader>
+      <ReferralSteps />
+      {loading && <FriendReferralSkeleton />}
+      {failed && (
+        <div className="grid justify-items-center gap-3">
+          <p className="text-xs text-destructive" role="alert">
+            {t(($) => {
+              return $.friendReferrals.loadFailed;
+            })}
+          </p>
+          <Button variant="outline" onClick={onRetry}>
+            {t(($) => {
+              return $.friendReferrals.retry;
+            })}
+          </Button>
+        </div>
+      )}
+      {!loading && !failed && data && <FriendReferralDetails data={data} />}
+      <div className="h-px bg-divider" />
+      <p className="text-center text-xs leading-relaxed text-gray-700">
+        {t(($) => {
+          return $.friendReferrals.terms;
+        })}
+      </p>
+    </>
+  );
+}
+
+export function FriendReferralDialog({
+  trigger,
+  ...content
+}: FriendReferralContentProps & { readonly trigger: ReactNode }) {
   const open = useGet(friendReferralOpen$);
   const setOpen = useSet(setFriendReferralOpen$);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {trigger}
       <DialogContent smMaxWidth="lg" contentClassName="gap-5">
-        <ReferralFigure />
-        <DialogHeader className="gap-1 sm:text-center">
-          <DialogTitle>
-            {t(($) => {
-              return $.friendReferrals.dialogTitle;
-            })}
-          </DialogTitle>
-          <DialogDescription className="text-xs">
-            {t(($) => {
-              return $.friendReferrals.description;
-            })}
-          </DialogDescription>
-        </DialogHeader>
-        <ReferralSteps />
-        {loading && <FriendReferralSkeleton />}
-        {failed && (
-          <div className="grid justify-items-center gap-3">
-            <p className="text-xs text-destructive" role="alert">
-              {t(($) => {
-                return $.friendReferrals.loadFailed;
-              })}
-            </p>
-            <Button variant="outline" onClick={onRetry}>
-              {t(($) => {
-                return $.friendReferrals.retry;
-              })}
-            </Button>
-          </div>
-        )}
-        {!loading && !failed && data && <FriendReferralDetails data={data} />}
-        <div className="h-px bg-divider" />
-        <p className="text-center text-xs leading-relaxed text-gray-700">
-          {t(($) => {
-            return $.friendReferrals.terms;
-          })}
-        </p>
+        <FriendReferralContent {...content} />
       </DialogContent>
     </Dialog>
   );

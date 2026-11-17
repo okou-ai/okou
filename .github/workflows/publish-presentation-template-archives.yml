@@ -1,9 +1,22 @@
 name: Publish Presentation Template Archives
 
-run-name: Publish Template-artifact/main presentation archives by @${{ github.actor }}
+run-name: Publish ${{ inputs.format }} Template-artifact/main presentation archives by @${{ github.actor }}
 
 on:
   workflow_dispatch:
+    inputs:
+      format:
+        description: Presentation archive format
+        type: choice
+        required: true
+        default: html
+        options:
+          - html
+          - pptx
+      initialize_missing_heads:
+        description: Allow first-time PPTX resource HEAD creation
+        type: boolean
+        default: false
 
 concurrency:
   group: publish-presentation-template-archives
@@ -14,6 +27,8 @@ permissions:
 
 env:
   npm_config_audit: "false"
+  PRESENTATION_OUTPUT_FORMAT: ${{ inputs.format }}
+  PRESENTATION_INITIALIZE_MISSING_HEADS: ${{ inputs.initialize_missing_heads }}
 
 defaults:
   run:
@@ -32,6 +47,27 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+
+      - name: Select presentation package family
+        id: format
+        run: |
+          set -euo pipefail
+          case "$PRESENTATION_OUTPUT_FORMAT" in
+            html) source_directory=Template-Presentation ;;
+            pptx) source_directory=Template-Presentation-Native ;;
+            *) echo "::error::Unsupported presentation output format."; exit 1 ;;
+          esac
+          case "$PRESENTATION_INITIALIZE_MISSING_HEADS" in
+            true|false) ;;
+            *) echo "::error::HEAD initialization must be a boolean."; exit 1 ;;
+          esac
+          if [[ "$PRESENTATION_INITIALIZE_MISSING_HEADS" == true && "$PRESENTATION_OUTPUT_FORMAT" != pptx ]]; then
+            echo "::error::First-time HEAD creation is only supported for PPTX resources."
+            exit 1
+          fi
+          printf 'source_directory=%s\n' "$source_directory" >> "$GITHUB_OUTPUT"
+          printf '### Package family\n\n- Format: %s\n- Initialize missing HEADs: %s\n\n' \
+            "$PRESENTATION_OUTPUT_FORMAT" "$PRESENTATION_INITIALIZE_MISSING_HEADS" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Normalize GitHub App private key
         id: source-private-key
@@ -91,6 +127,7 @@ jobs:
           mkdir -p "$release_dir"
           cp .github/scripts/release/publish-presentation-template-archives.mjs "$release_dir/"
           cp .github/scripts/release/presentation-template-release.json "$release_dir/"
+          cp .github/scripts/release/presentation-template-release-pptx.json "$release_dir/"
           cp -R .github/scripts/release/presentation-template-release "$release_dir/"
           cd "$release_dir"
           npm init --yes >/dev/null
@@ -109,7 +146,8 @@ jobs:
           set -euo pipefail
           output_dir="$RUNNER_TEMP/presentation-template-output"
           node "${{ steps.tooling.outputs.path }}/publish-presentation-template-archives.mjs" build \
-            --source-dir "$GITHUB_WORKSPACE/template-artifact/Template-Presentation" \
+            --format "$PRESENTATION_OUTPUT_FORMAT" \
+            --source-dir "$GITHUB_WORKSPACE/template-artifact/${{ steps.format.outputs.source_directory }}" \
             --source-commit "$SOURCE_COMMIT" \
             --output-dir "$output_dir"
 
@@ -117,6 +155,7 @@ jobs:
         run: |
           set -euo pipefail
           node "${{ steps.tooling.outputs.path }}/publish-presentation-template-archives.mjs" verify \
+            --format "$PRESENTATION_OUTPUT_FORMAT" \
             --output-dir "$RUNNER_TEMP/presentation-template-output"
 
       - name: Upload verified release bundle
@@ -132,8 +171,8 @@ jobs:
           set -euo pipefail
           publication="$RUNNER_TEMP/presentation-template-output/publication.json"
           package_count=$(jq '.packages | length' "$publication")
-          printf '\n### Verified bundle\n\n- Packages: %s\n' \
-            "$package_count" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n### Verified bundle\n\n- Format: %s\n- Packages: %s\n' \
+            "$PRESENTATION_OUTPUT_FORMAT" "$package_count" >> "$GITHUB_STEP_SUMMARY"
 
   publish:
     needs: build
@@ -172,6 +211,7 @@ jobs:
           mkdir -p "$release_dir"
           cp .github/scripts/release/publish-presentation-template-archives.mjs "$release_dir/"
           cp .github/scripts/release/presentation-template-release.json "$release_dir/"
+          cp .github/scripts/release/presentation-template-release-pptx.json "$release_dir/"
           cp -R .github/scripts/release/presentation-template-release "$release_dir/"
           cd "$release_dir"
           npm init --yes >/dev/null
@@ -191,6 +231,7 @@ jobs:
         run: |
           set -euo pipefail
           node "${{ steps.tooling.outputs.path }}/publish-presentation-template-archives.mjs" verify \
+            --format "$PRESENTATION_OUTPUT_FORMAT" \
             --output-dir "$RUNNER_TEMP/presentation-template-output"
 
       - name: Publish immutable Registry archives and update HEADs
@@ -228,13 +269,17 @@ jobs:
           mask_value="${mask_value//$'\n'/%0A}"
           printf '::add-mask::%s\n' "$mask_value"
 
+          publish_args=(publish --format "$PRESENTATION_OUTPUT_FORMAT" \
+            --output-dir "$RUNNER_TEMP/presentation-template-output")
+          if [[ "$PRESENTATION_INITIALIZE_MISSING_HEADS" == true ]]; then
+            publish_args+=(--initialize-missing-heads)
+          fi
           DATABASE_URL="$database_url" \
-            node "${{ steps.tooling.outputs.path }}/publish-presentation-template-archives.mjs" publish \
-              --output-dir "$RUNNER_TEMP/presentation-template-output"
+            node "${{ steps.tooling.outputs.path }}/publish-presentation-template-archives.mjs" "${publish_args[@]}"
 
       - name: Summarize publication
         env:
           SOURCE_COMMIT: ${{ needs.build.outputs.source_commit }}
         run: |
-          printf '### Production publication complete\n\n- Source commit: %s\n- Private immutable archives and independent Registry index/HEADs verified.\n' \
-            "$SOURCE_COMMIT" >> "$GITHUB_STEP_SUMMARY"
+          printf '### Production publication complete\n\n- Format: %s\n- Source commit: %s\n- Private immutable archives and independent Registry index/HEADs verified.\n' \
+            "$PRESENTATION_OUTPUT_FORMAT" "$SOURCE_COMMIT" >> "$GITHUB_STEP_SUMMARY"

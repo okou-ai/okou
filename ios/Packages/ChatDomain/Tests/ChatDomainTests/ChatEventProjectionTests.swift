@@ -3,6 +3,31 @@ import Foundation
 import XCTest
 
 final class ChatEventProjectionTests: XCTestCase {
+  func testRunFailureIgnoresRetainedDiagnosticsWhileOutputErrorsKeepTheirMeaning() throws {
+    let payloads: [ChatEvent.Payload?] = [
+      nil, .init(content: "private diagnostic", error: "private diagnostic"),
+    ]
+    for payload in payloads {
+      let history = try ChatEventProjection.history(
+        rows: [
+          ChatEvent(
+            id: eventID(1), createdAt: .now, eventType: .runFailed,
+            failureReason: "usage_limit", payload: payload)
+        ], recovering: false)
+      let failure = try XCTUnwrap(history.messages.first?.failure)
+      XCTAssertEqual(failure.error, "")
+      XCTAssertEqual(failure.recovery(personalFramework: nil).kind, .usage)
+      XCTAssertFalse(history.messages[0].text.contains("private diagnostic"))
+    }
+    let output = try ChatEventProjection.history(
+      rows: [
+        ChatEvent(
+          id: eventID(2), createdAt: .now, eventType: .outputError,
+          payload: .init(error: "Ordinary output error"))
+      ], recovering: false)
+    XCTAssertEqual(output.messages.first?.failure?.error, "Ordinary output error")
+  }
+
   func testUsageHintsRetainLatestEventIdentityWithoutInventingMessagesOrActiveRuns() throws {
     let history = try ChatEventProjection.history(
       rows: [

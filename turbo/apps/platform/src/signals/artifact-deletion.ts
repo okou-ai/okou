@@ -30,19 +30,7 @@ const internalArtifactCatalogRevision$ = state(0);
 export const artifactCatalogRevision$ = computed((get) => {
   return get(internalArtifactCatalogRevision$);
 });
-const internalDeleteTarget$ = state<ArtifactSummary | null>(null);
-const internalReturnFocus$ = state<HTMLElement | null>(null);
 const internalViewport$ = state<HTMLElement | null>(null);
-const internalDeletionCompleted$ = state(false);
-export const artifactDeleteTarget$ = computed((get) => {
-  return get(internalDeleteTarget$);
-});
-export const setArtifactDeleteTarget$ = command(
-  ({ set }, artifact: ArtifactSummary | null) => {
-    set(internalDeleteTarget$, artifact);
-    set(internalDeletionCompleted$, false);
-  },
-);
 
 export const artifactCatalogViewportRef$ = onRef(
   command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
@@ -57,51 +45,6 @@ export const artifactCatalogViewportRef$ = onRef(
       { once: true },
     );
   }),
-);
-
-// The menu item disappears when it opens the dialog. Cancellation returns to
-// the persistent card trigger; deletion returns to the remaining catalog.
-export const artifactDeletionFinalFocus$ = command(({ get }) => {
-  return get(internalDeletionCompleted$)
-    ? get(internalViewport$)
-    : get(internalReturnFocus$);
-});
-
-export function createArtifactDeleteMenuSignals(artifact: ArtifactSummary) {
-  const internalTrigger$ = state<HTMLElement | null>(null);
-  return {
-    triggerRef$: onRef(
-      command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
-        set(internalTrigger$, element);
-        signal.addEventListener(
-          "abort",
-          () => {
-            set(internalTrigger$, null);
-            if (get(internalReturnFocus$) === element) {
-              set(internalReturnFocus$, null);
-            }
-          },
-          { once: true },
-        );
-      }),
-    ),
-    request$: command(({ get, set }) => {
-      set(setArtifactDeleteTarget$, artifact);
-      set(internalReturnFocus$, get(internalTrigger$));
-    }),
-  };
-}
-
-export const deleteCatalogArtifact$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const target = get(internalDeleteTarget$);
-    if (!target) {
-      return;
-    }
-    await set(deleteOwnedArtifact$, target.id, signal);
-    set(internalDeleteTarget$, null);
-    set(internalDeletionCompleted$, true);
-  },
 );
 
 const deleteOwnedArtifact$ = command(

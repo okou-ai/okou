@@ -7,11 +7,7 @@ import type { PresentationOutputFormat } from "@okouai/core/presentation-output-
 const storage = localStorageSignals("presentation-output-format");
 
 export const presentationOutputFormatEnabled$ = computed((get) => {
-  const features = get(featureSwitch$);
-  return (
-    features[FeatureSwitchKey.HomeCapabilities] &&
-    features[FeatureSwitchKey.PresentationOutputFormat]
-  );
+  return get(featureSwitch$)[FeatureSwitchKey.PresentationOutputFormat];
 });
 
 export const presentationOutputFormat$ = computed(
