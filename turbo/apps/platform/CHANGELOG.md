@@ -13,6 +13,34 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1141.4](https://github.com/okou-ai/okou/compare/app-v0.1141.3...app-v0.1141.4) (2026-11-17)
+
+
+### Bug Fixes
+
+* **app:** refine the for you completion transition ([#48145](https://github.com/okou-ai/okou/issues/48145)) ([dd61df6](https://github.com/okou-ai/okou/commit/dd61df6eca4dca0907cf5ecc180de5ebd65204be))
+* **app:** remove first-task upgrade panel from chat ([#48163](https://github.com/okou-ai/okou/issues/48163)) ([acd0576](https://github.com/okou-ai/okou/commit/acd0576df543974a76c650512f025e82a489cba1))
+* **app:** remove shared chat deletion from artifact list ([#48159](https://github.com/okou-ai/okou/issues/48159)) ([ed49f47](https://github.com/okou-ai/okou/commit/ed49f47efed3c99f2354a1c91d74f43c7a645538))
+
+
+### Refactoring
+
+* **platform:** remove pasted text attachments feature switch ([#48148](https://github.com/okou-ai/okou/issues/48148)) ([5a278f0](https://github.com/okou-ai/okou/commit/5a278f0c51cd4c8ac0939f973ce47f9c873fa0fb))
+
+
+### Performance Improvements
+
+* **app:** prepare referral content when its dialog mounts ([#48161](https://github.com/okou-ai/okou/issues/48161)) ([1519693](https://github.com/okou-ai/okou/commit/1519693b067555c9c7c6f6b2780475d538a29435))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.79.0
+    * @okouai/core bumped to 8.847.3
+    * @okouai/ui bumped to 1.21.39
+
 ## [0.1141.3](https://github.com/okou-ai/okou/compare/app-v0.1141.2...app-v0.1141.3) (2026-11-17)
 
 
