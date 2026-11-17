@@ -59,9 +59,6 @@ struct ChatSettingsView: View {
         } header: {
           Text("Workspace").okouSectionHeader()
         }
-        StoreProvider(store.settingsResources.store) {
-          SettingsBillingSection(workspace: store)
-        }
         Section {
           Button {
             if notifications.status == .denied {
@@ -131,6 +128,9 @@ struct ChatSettingsView: View {
             }
           }
           .okouSectionNote()
+        }
+        StoreProvider(store.settingsResources.store) {
+          SettingsBillingSection(workspace: store)
         }
         Section {
           Link(destination: URL(string: "mailto:\(Self.supportEmail)")!) {
