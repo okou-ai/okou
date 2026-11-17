@@ -210,7 +210,7 @@ describe("native organization OAuth grants", () => {
       expect(
         (await request(token, path, method, method === "POST" ? {} : undefined))
           .status,
-      ).toBe(403);
+      ).toBe(path === "/api/realtime/token" ? 401 : 403);
     },
   );
 

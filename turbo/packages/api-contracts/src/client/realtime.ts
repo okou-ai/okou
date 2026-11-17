@@ -16,9 +16,7 @@ export const platformRealtimeTokenContract: ClientDescriptor<
     statuses: {
       200: true,
       401: true,
-      403: true,
       500: true,
-      503: true,
     },
   },
 };

@@ -1,8 +1,7 @@
 import { command } from "ccstate";
 import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 
-import { authContext$ } from "../auth/auth-context";
-import { authRoute } from "../auth/auth-route";
+import { requiredAuthContext$, setAuthContext$ } from "../auth/auth-context";
 import {
   createOAuthChatRealtimeToken,
   createPlatformRealtimeToken,
@@ -10,8 +9,29 @@ import {
 import { now } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 
-const createInner$ = command(async ({ get }, signal: AbortSignal) => {
-  const auth = get(authContext$);
+const unauthenticated = Object.freeze({
+  status: 401 as const,
+  body: Object.freeze({
+    error: Object.freeze({
+      message: "Authentication required",
+      code: "UNAUTHORIZED",
+    }),
+  }),
+});
+
+const createInner$ = command(async ({ set }, signal: AbortSignal) => {
+  const auth = await set(
+    requiredAuthContext$,
+    { oauthScope: "okou:chat:read" },
+    signal,
+  );
+  signal.throwIfAborted();
+  if ("status" in auth) {
+    return unauthenticated;
+  }
+
+  set(setAuthContext$, auth);
+
   const token =
     auth.tokenType === "oauth"
       ? await createOAuthChatRealtimeToken(
@@ -29,6 +49,6 @@ const createInner$ = command(async ({ get }, signal: AbortSignal) => {
 export const realtimeTokenRoutes: readonly RouteEntry[] = [
   {
     route: platformRealtimeTokenContract.create,
-    handler: authRoute({ oauthScope: "okou:chat:read" }, createInner$),
+    handler: createInner$,
   },
 ];
