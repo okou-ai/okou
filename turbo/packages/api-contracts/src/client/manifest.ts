@@ -520,6 +520,10 @@ export const clientDescriptorManifest = [
     contracts: ["marketingHandoffsContract"],
   },
   {
+    module: "marketing-invitation-source",
+    contracts: ["marketingInvitationSourceContract"],
+  },
+  {
     module: "marketing-reward-projection",
     contracts: ["marketingRewardProjectionContract"],
   },
