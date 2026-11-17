@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import {
   useGet,
   useLastLoadable,
@@ -16,13 +16,19 @@ import { defaultAgentId$, defaultAgentName$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 import {
   type AgentSuggestionEntry,
-  enterSuggestionSession$,
+  reloadSuggestionSession$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { openAgentSuggestionComposer$ } from "../../signals/okou-page/agent-suggestions.ts";
-import { forYouDeck$ } from "../../signals/okou-page/for-you.ts";
+import {
+  browseForYou$,
+  finishForYouPaginationOnRef$,
+  forYouCardMinHeight$,
+  forYouDeck$,
+  forYouPagination$,
+  measureForYouCardOnRef$,
+} from "../../signals/okou-page/for-you.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
-import { updateSearchParams$ } from "../../signals/route.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
@@ -34,18 +40,19 @@ import {
 } from "./agent-suggestions.tsx";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
 import { SuggestionsComplete } from "./suggestions-complete.tsx";
-import { forYouSourcesEnabled$ } from "../../signals/okou-page/for-you-sources.ts";
 import { ForYouSources } from "./for-you-sources.tsx";
 import { PlatformFeedEvent } from "./platform-feed-event.tsx";
 
 const STACK_LAYERS = [
-  "relative z-4",
-  "absolute inset-0 z-3 translate-y-2 -rotate-1",
-  "absolute inset-0 z-2 translate-y-4 rotate-1",
-  "absolute inset-0 z-1 translate-y-6 -rotate-2",
+  "z-3 translate-y-2 -rotate-1",
+  "z-2 translate-y-4 rotate-1",
+  "z-1 translate-y-6 -rotate-2",
 ] as const;
 
-function SuggestionSource() {
+const STACK_CARD =
+  "@container/suggestion col-start-1 row-start-1 flex min-h-125 origin-[50%_85%] flex-col rounded-3xl p-5 shadow-none sm:p-7";
+
+function SuggestionSource({ animated }: { readonly animated: boolean }) {
   const { t } = useTranslation();
   const agentId = useLastResolved(defaultAgentId$);
   const assistantName = useGet(assistantName$);
@@ -57,6 +64,7 @@ function SuggestionSource() {
           name={agentId}
           alt=""
           className="size-6 rounded-lg object-cover object-top"
+          motion={animated ? "animated" : "static"}
         />
       ) : (
         <Layers aria-hidden className="size-4" />
@@ -91,28 +99,59 @@ function ForYouStack({
   readonly onCustomDirection: (item: Suggestion) => void;
 }) {
   const deck = useLastResolved(forYouDeck$);
+  const pagination = useGet(forYouPagination$);
+  const minHeight = useGet(forYouCardMinHeight$);
+  const measureCard = useSet(measureForYouCardOnRef$);
+  const finishPagination = useSet(finishForYouPaginationOnRef$);
   if (!deck) {
     return null;
   }
   const { cards, settled } = deck;
   const complete = cards.length === 0;
+  const foreground = cards[0];
+  const departure =
+    foreground?.entry.item.id === pagination?.to ? pagination : null;
+  const displayed = [
+    ...(foreground ? [foreground] : []),
+    ...(departure ? [departure.from] : []),
+    ...settled,
+  ];
   return (
     <div className="mx-auto my-auto w-full max-w-160 py-6">
-      <div className="relative isolate grid pb-6">
-        {[...cards.slice(0, STACK_LAYERS.length), ...settled].map((card) => {
+      <div
+        className="relative isolate mb-6 grid min-h-(--for-you-card-min-height)"
+        style={
+          {
+            "--for-you-card-min-height": `${String(minHeight)}px`,
+          } as CSSProperties
+        }
+      >
+        {STACK_LAYERS.slice(0, Math.max(0, cards.length - 1)).map((layer) => {
+          return (
+            <Card
+              key={layer}
+              data-slot="suggestion-stack-layer"
+              aria-hidden
+              inert
+              className={cn(STACK_CARD, "relative", layer)}
+            />
+          );
+        })}
+        {displayed.map((card) => {
           const { entry, outcome } = card;
-          const layer = cards.findIndex((card) => {
-            return card.entry === entry;
-          });
-          const active = layer === 0 && outcome === null;
+          const outgoing = card === departure?.from;
+          const active = card === foreground;
           return (
             <Card
               key={entry.item.id}
               data-slot="suggestion-stack-card"
+              ref={
+                outgoing ? finishPagination : active ? measureCard : undefined
+              }
               inert={!active}
               aria-hidden={!active || undefined}
               className={cn(
-                "@container/suggestion col-start-1 row-start-1 flex min-h-125 origin-[50%_85%] flex-col rounded-3xl p-5 shadow-none transition-transform duration-500 ease-out sm:p-7 motion-reduce:transition-none",
+                STACK_CARD,
                 outcome
                   ? cn(
                       "pointer-events-none inset-0 z-5 motion-safe:animate-card-fly-out motion-reduce:invisible",
@@ -122,19 +161,28 @@ function ForYouStack({
                         ? "relative"
                         : "absolute",
                     )
-                  : STACK_LAYERS[layer],
+                  : outgoing && departure
+                    ? cn(
+                        "relative z-5 pointer-events-none",
+                        departure.direction === "next"
+                          ? "motion-safe:animate-card-page-next-out"
+                          : "motion-safe:animate-card-page-previous-out",
+                      )
+                    : cn(
+                        "relative z-4",
+                        departure &&
+                          (departure.direction === "next"
+                            ? "motion-safe:animate-card-page-next-in"
+                            : "motion-safe:animate-card-page-previous-in"),
+                      ),
               )}
             >
-              <ForYouCardContents
-                entry={entry}
-                active={active}
-                settled={outcome !== null}
-              >
+              <ForYouCardContents entry={entry} active={active}>
                 {card.kind === "event" ? (
                   <PlatformFeedEvent entry={card.entry} active={active} />
                 ) : (
                   <>
-                    <SuggestionSource />
+                    <SuggestionSource animated={active || outgoing} />
                     <AgentSuggestionCard
                       active={active}
                       item={card.entry.item}
@@ -155,23 +203,15 @@ function ForYouStack({
 function ForYouCardContents({
   entry,
   active,
-  settled,
   children,
 }: {
   readonly entry: Pick<AgentSuggestionEntry, "readOnRef$">;
   readonly active: boolean;
-  readonly settled: boolean;
   readonly children: ReactNode;
 }) {
   const read = useSet(entry.readOnRef$);
   return (
-    <div
-      ref={active ? read : undefined}
-      className={cn(
-        "flex flex-1 flex-col transition-opacity duration-300 motion-reduce:transition-none",
-        !active && !settled && "opacity-0",
-      )}
-    >
+    <div ref={active ? read : undefined} className="flex flex-1 flex-col">
       {children}
     </div>
   );
@@ -180,7 +220,8 @@ function ForYouCardContents({
 function ForYouNavigation() {
   const { t } = useTranslation();
   const cards = useLastResolved(forYouDeck$)?.cards ?? [];
-  const updatePosition = useSet(updateSearchParams$);
+  const browse = useSet(browseForYou$);
+  const signal = useGet(pageSignal$);
   return (
     <>
       {cards.length > 1 && (
@@ -197,6 +238,7 @@ function ForYouNavigation() {
                 return $.chat.agentSuggestions.forYou.previous;
               }),
               Icon: ArrowLeft,
+              direction: "previous" as const,
             },
             {
               card: cards[1],
@@ -204,8 +246,9 @@ function ForYouNavigation() {
                 return $.chat.agentSuggestions.forYou.next;
               }),
               Icon: ArrowRight,
+              direction: "next" as const,
             },
-          ].map(({ card, label, Icon }) => {
+          ].map(({ card, label, Icon, direction }) => {
             return card ? (
               <Link
                 key={label}
@@ -221,8 +264,9 @@ function ForYouNavigation() {
                     // This changes the reading position in the current
                     // visit; Router navigation would reload its snapshot.
                     event.preventDefault();
-                    updatePosition(
-                      new URLSearchParams({ suggestion: card.entry.item.id }),
+                    detach(
+                      browse(card.entry.item.id, direction, signal),
+                      Reason.DomCallback,
                     );
                   }
                 }}
@@ -243,7 +287,6 @@ function ForYouNavigation() {
 
 function ForYouHeader({ count }: { readonly count: number | undefined }) {
   const { t } = useTranslation();
-  const sourcesEnabled = useGet(forYouSourcesEnabled$);
   return (
     <header className="flex min-h-20 shrink-0 items-center justify-between gap-4 px-5 py-4 sm:px-8">
       <div>
@@ -272,7 +315,7 @@ function ForYouHeader({ count }: { readonly count: number | undefined }) {
               )
             : null}
         </span>
-        {sourcesEnabled && <ForYouSources />}
+        <ForYouSources />
       </div>
     </header>
   );
@@ -282,7 +325,7 @@ export function ForYouPage() {
   const { t } = useTranslation();
   const deck = useLastLoadable(forYouDeck$);
   const [composer, openComposer] = useLoadableSet(openAgentSuggestionComposer$);
-  const [reloading, reload] = useLoadableSet(enterSuggestionSession$);
+  const [reloading, reload] = useLoadableSet(reloadSuggestionSession$);
   const signal = useGet(pageSignal$);
   const cards = deck.state === "hasData" ? deck.data.cards : [];
   const settled = deck.state === "hasData" ? deck.data.settled : [];

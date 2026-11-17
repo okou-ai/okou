@@ -1,7 +1,7 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import { PRESENTATION_OUTPUT_FORMATS } from "@okouai/core/presentation-output-format";
 import {
-  PRESENTATION_OUTPUT_FORMATS,
   presentationOutputFormat$,
   presentationOutputFormatEnabled$,
   setPresentationOutputFormat$,

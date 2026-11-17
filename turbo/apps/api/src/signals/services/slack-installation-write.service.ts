@@ -1,12 +1,15 @@
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
+import { randomUUID } from "node:crypto";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { command } from "ccstate";
 import { eq, isNull, or, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
+import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { pendingSlackRewardSql } from "./slack-installation-reward";
 import { ensureGetStartedRewardWallet$ } from "./get-started-wallet.service";
 import { settleSlackWorkspaceRewards$ } from "./slack-reward.service";
+import { marketingRewardLinkEventInsert } from "./marketing-reward-event-publication";
 
 type SlackInstallation = typeof slackOrgInstallations.$inferSelect;
 interface SlackInstallationFields {
@@ -118,8 +121,28 @@ const commitSlackInstallation$ = command(
             .getSQL(),
         ),
       );
+    const sourceEvent = db.$with("slack_installation_source_event", {}).as(
+      marketingRewardLinkEventInsert(
+        {
+          id: randomUUID(),
+          environment: env("ENV"),
+          type: "slack.oauth-authorized",
+          occurredAt: at.toISOString(),
+          orgId: args.orgId,
+          userId: args.userId,
+        },
+        db
+          .select({
+            id: sql`${installed.slackWorkspaceId}`
+              .mapWith(slackOrgInstallations.slackWorkspaceId)
+              .as("id"),
+          })
+          .from(installed)
+          .getSQL(),
+      ),
+    );
     const [installation] = await db
-      .with(installed, receipt)
+      .with(installed, receipt, sourceEvent)
       .select()
       .from(installed);
     signal.throwIfAborted();

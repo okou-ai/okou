@@ -2,7 +2,6 @@ import {
   boolean,
   discriminatedUnion,
   enum as zEnum,
-  iso,
   literal,
   object,
   type infer as zInfer,
@@ -34,20 +33,8 @@ export const runPhaseMarkSchema = discriminatedUnion("phase", [
 export type RunPhaseMark = zInfer<typeof runPhaseMarkSchema>;
 
 export const runPhaseMarkResultSchema = object({
-  schemaVersion: literal(1),
-  status: zEnum(["recorded", "duplicate", "ignored"]),
-  reason: zEnum([
-    "run-not-running",
-    "generation-already-started",
-    "research-already-started",
-    "out-of-order",
-  ]).nullable(),
-  timing: object({
-    researchStartedAt: iso.datetime().nullable(),
-    generationStartedAt: iso.datetime().nullable(),
-    researchSkipped: boolean(),
-    generationKind: runGenerationKindSchema.nullable(),
-  }).nullable(),
+  schemaVersion: literal(2),
+  status: literal("accepted"),
 }).strict();
 export type RunPhaseMarkResult = zInfer<typeof runPhaseMarkResultSchema>;
 
@@ -58,13 +45,13 @@ export const runPhaseTimingContract = initContract().router({
     headers: authHeadersSchema,
     body: runPhaseMarkSchema,
     responses: {
-      200: runPhaseMarkResultSchema,
+      202: runPhaseMarkResultSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary: "Record the first phase boundary for the authenticated Run",
+    summary: "Accept a best-effort phase observation for the authenticated Run",
   },
 });

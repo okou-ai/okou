@@ -657,12 +657,7 @@ fn lock_session(codex_home: &Path, thread_id: &str) -> io::Result<SessionLock> {
     if !file.metadata()?.file_type().is_file() {
         return Err(invalid_session_file_error(&lock_path));
     }
-    // SAFETY: `file.as_raw_fd()` is an open fd owned by `file`, and `flock`
-    // only affects the advisory lock associated with that fd.
-    let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
-    if result < 0 {
-        return Err(io::Error::last_os_error());
-    }
+    file.lock()?;
     Ok(SessionLock { _file: file })
 }
 

@@ -12,7 +12,7 @@ struct ChatCardSurface: ViewModifier {
 struct ChatCardHeader<Details: View>: View {
   let title: String
   let icon: String
-  var titleLineLimit: Int? = nil
+  var titleLineLimit: Int?
   @ViewBuilder let details: () -> Details
   /// One line of callout Geist, so the glyph centres on the title's first line.
   @ScaledMetric(relativeTo: .callout) private var titleLineHeight: CGFloat = 21

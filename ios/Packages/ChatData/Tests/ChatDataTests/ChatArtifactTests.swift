@@ -24,7 +24,7 @@ final class ChatArtifactTests: XCTestCase {
       "/artifacts/invalid.png", "/artifacts/\(reference).HTML", "/artifacts/\(reference).html?x=1",
       "javascript:alert(1)", "https://example.com/report.pdf",
       "https://static.okou.ai/unlisted.html", "https://demo.sites.vm7.io/",
-      "https://not-okou.app/page", "https://files.sites.vm7.io/ordinary.html",
+      "https://not-okou.app/page", "https://files.sites.vm7.io/ordinary.html"
     ] { XCTAssertNil(ChatArtifactReference.parse(value, webURL: webURL, apiURL: apiURL), value) }
     let legacy = try XCTUnwrap(
       ChatArtifactReference.parse(
@@ -38,7 +38,7 @@ final class ChatArtifactTests: XCTestCase {
       "https://demo.okou.app/", "https://demo.sites.vm0.io/",
       "https://www.okou.ai/f/reader/id/report.pdf",
       "https://platform.okou.ai/f/reader/id/report.pdf",
-      "https://a.okou.io/abcdefgh12.tar.gz",
+      "https://a.okou.io/abcdefgh12.tar.gz"
     ] { XCTAssertNotNil(ChatArtifactReference.parse(value, webURL: webURL, apiURL: apiURL), value) }
   }
 
@@ -107,7 +107,7 @@ final class ChatArtifactTests: XCTestCase {
     for address in [
       "https://pv-token.okou.app/slide.html#next",
       "https://ps-token.okou.app/index.html", "https://sh-token.okou.app/",
-      "https://legacy.sites.vm0.io/",
+      "https://legacy.sites.vm0.io/"
     ] {
       let url = URL(string: address)!
       let artifact = try XCTUnwrap(
@@ -190,8 +190,7 @@ final class ChatArtifactTests: XCTestCase {
     file = nil
   }
 
-  func testCatalogAndAuthorizedHTMLKeepPresentationMetadataWithoutTreatingPPTXAsHTML() async throws
-  {
+  func testCatalogAndHTMLPreserveMetadataWithoutTreatingPPTXAsHTML() async throws {
     let fixture = ChatHTTPFixture { request in
       if request.url?.path.hasSuffix("/artifacts") == true {
         return ChatHTTPResponse(

@@ -83,8 +83,7 @@ final class MessageSelectionCell: UICollectionViewCell {
     title: String, icon: String, perform: ((ChatFeedbackSelection) -> Void)?
   ) -> UIAction? {
     guard let perform, let (input, selection) = selectedPassage() else { return nil }
-    return UIAction(title: title, image: OkouIcon.uiImage(icon)) {
-      [weak self, weak input] _ in
+    return UIAction(title: title, image: OkouIcon.uiImage(icon)) { [weak self, weak input] _ in
       guard let self, let input, input.window != nil,
         let (currentInput, current) = selectedPassage(), currentInput === input,
         current == selection

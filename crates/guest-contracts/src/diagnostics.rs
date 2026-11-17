@@ -731,6 +731,10 @@ impl FailureClass {
 pub enum FailureReason {
     /// The session history exceeded the native-history upload size limit.
     SessionHistoryLimit,
+    /// The Guest root filesystem has exhausted its available space or inodes.
+    GuestRootFilesystemFull,
+    /// The independently mounted Guest home has exhausted its space or inodes.
+    GuestHomeFilesystemFull,
     /// The run reached its execution time limit.
     ExecutionTimeout,
     /// The vm0 workspace has insufficient credits.
@@ -789,6 +793,8 @@ impl FailureReason {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::SessionHistoryLimit => "session_history_limit",
+            Self::GuestRootFilesystemFull => "guest_root_filesystem_full",
+            Self::GuestHomeFilesystemFull => "guest_home_filesystem_full",
             Self::ExecutionTimeout => "execution_timeout",
             Self::InsufficientCredits => "insufficient_credits",
             Self::ProviderInsufficientCredits => "provider_insufficient_credits",
@@ -824,6 +830,8 @@ impl From<FailureReason>
     fn from(reason: FailureReason) -> Self {
         match reason {
             FailureReason::SessionHistoryLimit => Self::SessionHistoryLimit,
+            FailureReason::GuestRootFilesystemFull => Self::GuestRootFilesystemFull,
+            FailureReason::GuestHomeFilesystemFull => Self::GuestHomeFilesystemFull,
             FailureReason::ExecutionTimeout => Self::ExecutionTimeout,
             FailureReason::InsufficientCredits => Self::InsufficientCredits,
             FailureReason::ProviderInsufficientCredits => Self::ProviderInsufficientCredits,

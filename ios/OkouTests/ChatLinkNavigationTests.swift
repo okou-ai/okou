@@ -24,7 +24,7 @@ final class ChatLinkNavigationTests: XCTestCase {
       "https://app.example.invalid:8443/chats/\(ChatLinkFixture.sourceID)",
       "https://example.slack.com/archives/C1/p1",
       "https://app.example.invalid/agents/\(ChatLinkFixture.agentID)/chat",
-      "https://app.example.invalid/workflows/\(ChatLinkFixture.workflowID)/automations",
+      "https://app.example.invalid/workflows/\(ChatLinkFixture.workflowID)/automations"
     ] {
       XCTAssertNil(ChatLinkDestination(url: try XCTUnwrap(URL(string: link)), webURL: web))
     }
@@ -236,8 +236,8 @@ final class ChatLinkFixture: Sendable {
             {"automations":[{"chatThreadId":"\(Self.sourceID)"},{"chatThreadId":"\(Self.sourceID)"}]}
             """)
       case "/api/chat-threads/snapshot":
-        let threads = [(Self.homeID, Self.agentID), (Self.sourceID, Self.otherAgentID)].map {
-          id, agent in
+        let identities = [(Self.homeID, Self.agentID), (Self.sourceID, Self.otherAgentID)]
+        let threads = identities.map { id, agent in
           """
           {"id":"\(id)","agentId":"\(agent)","title":"Source chat","createdAt":"2026-10-20T00:00:00Z","updatedAt":"2026-10-20T00:00:00Z","sortAt":"2026-10-20T00:00:00Z"}
           """

@@ -429,20 +429,45 @@ describe("recurring automation auto-disable platform feed events", () => {
         return item.id;
       }),
     ).toStrictEqual([notice.id]);
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({
-        headers: authHeaders(scenario.actor),
-        body: { switches: { [FeatureSwitchKey.ForYouSources]: true } },
-      }),
-      [200],
-    );
     const headers = authHeaders(scenario.actor);
     await accept(
       feedClient().updateSources({
         headers,
         body: { suggestions: false, whatsNew: false, offers: false },
+      }),
+      [200],
+    );
+    expect(
+      (await accept(feedClient().summary({ headers }), [200])).body.hasUnread,
+    ).toBeTruthy();
+    await accept(
+      feedClient().updateSources({
+        headers,
+        body: { systemUpdates: false },
+      }),
+      [200],
+    );
+    expect(
+      (await accept(feedClient().summary({ headers }), [200])).body.hasUnread,
+    ).toBeFalsy();
+    await expect(inbox(scenario.actor)).resolves.toStrictEqual(delivered);
+    await accept(
+      feedClient().updateSources({
+        headers,
+        body: { suggestions: true, offers: true },
+      }),
+      [200],
+    );
+    expect(
+      (await accept(feedClient().sources({ headers }), [200])).body,
+    ).toMatchObject({ systemUpdates: false, offers: true });
+    expect(
+      (await accept(feedClient().summary({ headers }), [200])).body.hasUnread,
+    ).toBeFalsy();
+    await accept(
+      feedClient().updateSources({
+        headers,
+        body: { systemUpdates: true },
       }),
       [200],
     );
@@ -458,6 +483,59 @@ describe("recurring automation auto-disable platform feed events", () => {
     ).toBeFalsy();
     await expect(inbox(scenario.actor)).resolves.toStrictEqual(delivered);
     expect((await readAutomation(scenario)).enabled).toBeFalsy();
+  });
+
+  it("stops future system update deliveries until enabled again without changing automation failure handling", async () => {
+    await setupApp({
+      context,
+      routes: cronExecuteWorkflowAutomationsRoutes,
+      isolatePg: true,
+    });
+    const scenario = await createScenario();
+    const changed = await accept(
+      feedClient().updateSources({
+        headers: authHeaders(scenario.actor),
+        body: { systemUpdates: false },
+      }),
+      [200],
+    );
+    expect(changed.body).toStrictEqual({
+      suggestions: true,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: false,
+    });
+    for (let failure = 0; failure < 3; failure++) {
+      await completeFailedOccurrence(scenario);
+    }
+    expect((await readAutomation(scenario)).enabled).toBeFalsy();
+    await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
+    await accept(
+      feedClient().updateSources({
+        headers: authHeaders(scenario.actor),
+        body: { systemUpdates: true },
+      }),
+      [200],
+    );
+    await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
+    await accept(
+      automationsClient().enable({
+        headers: authHeaders(scenario.actor),
+        params: { id: scenario.automationId },
+      }),
+      [200],
+    );
+    for (let failure = 0; failure < 3; failure++) {
+      await completeFailedOccurrence(scenario);
+    }
+    expect((await readAutomation(scenario)).enabled).toBeFalsy();
+    const delivered = await inbox(scenario.actor);
+    expect(delivered).toHaveLength(1);
+    const [event] = delivered;
+    if (!event) {
+      throw new Error("Expected a new system update after enabling its source");
+    }
+    expectDisableNotice(event, scenario, new Date(now()).toISOString());
   });
 
   it("notifies once for a journaled Morning Brief after three Runner failures and retains its recovery anchor", async () => {

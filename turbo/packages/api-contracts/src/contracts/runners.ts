@@ -23,7 +23,6 @@ import {
   type infer as zInfer,
 } from "zod";
 import { MIN_EPOCH_MS_TIMESTAMP } from "./api-start-time";
-import type { DISABLED_PAID_TOOLS_ENV_VAR } from "./paid-tools";
 import {
   executionFirewallInlineEntrySchema,
   executionFirewallsSchema,
@@ -819,23 +818,20 @@ const storedSkillBundleSchema = contentBundleSchema
 
 /**
  * Complete API-owned runtime preparation, assembled before direct dispatch.
- * The admission input below captures only irrecoverable decisions.
  */
-const preparedExecutionContextBaseSchema = object({
+const preparedExecutionContextObjectSchema = object({
   // Exact Official content is frozen at admission.
-  officialWorkflowBundles: array(storedSkillBundleSchema).optional(),
+  officialWorkflowBundles: array(storedSkillBundleSchema),
   // Current authorized Seed references selected during execution preparation.
   seedSkillBundles: array(storedSkillBundleSchema),
   // Current explicitly selected template guidance.
-  templateGuidanceBundles: array(storedTemplateGuidanceBundleSchema).optional(),
+  templateGuidanceBundles: array(storedTemplateGuidanceBundleSchema),
   // API-only intent. No custom Workflow body or attachment is frozen here.
   customWorkflowSelection: object({
     agentId: uuid(),
     automationId: uuid().optional(),
     protectedMountPaths: array(string()),
-  })
-    .strict()
-    .optional(),
+  }).strict(),
   storageMounts: array(storedStorageMountEntrySchema).superRefine(
     uniqueStorageMountPaths,
   ),
@@ -847,8 +843,8 @@ const preparedExecutionContextBaseSchema = object({
   // This field must not be included in the runner-facing ExecutionContext.
   secretValueEnvironmentKeys: array(string()).nullable(),
   // Connector-owned runtime vars used by proxy/firewall template resolution.
-  // Run vars stay in agent_runs.vars and merge during execution preparation.
-  vars: record(string(), string()).nullable().optional(),
+  // Original Run vars travel in the admitted launch and merge during execution preparation.
+  vars: record(string(), string()).nullable(),
   nativeContinuation: nativeContinuationSchema,
   // AES-256-GCM encrypted Record<string, string>. Keys are the runtime secret
   // names used by `${{ secrets.NAME }}`; connector/model-provider keys are env
@@ -856,12 +852,10 @@ const preparedExecutionContextBaseSchema = object({
   encryptedSecrets: string().nullable(),
   // Maps firewall auth secret env aliases (the `NAME` in `${{ secrets.NAME }}`) to
   // their connector or provider owner. Keys are env aliases, not storage secret names.
-  secretConnectorMap: record(string(), string()).nullable().optional(),
+  secretConnectorMap: record(string(), string()).nullable(),
   // Same keys as secretConnectorMap; adds source details when the owner alone
   // is not enough to locate access storage (for example, personal model providers).
-  secretConnectorMetadataMap: secretConnectorMetadataMapSchema
-    .nullable()
-    .optional(),
+  secretConnectorMetadataMap: secretConnectorMetadataMapSchema.nullable(),
   // Preview evaluation escape hatch: bypass preview mock CLIs and use the real
   // agent runtime.
   realAgentInPreview: boolean().optional(),
@@ -872,13 +866,13 @@ const preparedExecutionContextBaseSchema = object({
   apiStartTime: apiStartTimeSchema.optional(),
   // Firewall entries for proxy-side token replacement. Built-ins stay compact;
   // org custom connectors use inline firewall bodies.
-  firewalls: executionFirewallsSchema.optional(),
+  firewalls: executionFirewallsSchema,
   // Per-firewall network policies: which permissions are granted + unknownPolicy
-  networkPolicies: networkPoliciesSchema.optional(),
+  networkPolicies: networkPoliciesSchema,
   // Captured decisions: singleAgent and connectorChatAccountAccess.
   // They must match the admitted token, prompt and connector account choices.
-  featureFlags: record(string(), boolean()).optional(),
-  billableFirewalls: array(string()).optional(),
+  featureFlags: record(string(), boolean()),
+  billableFirewalls: array(string()),
   // Provider the proxy reports model token usage under: a Built-in route's
   // `usage_pricing` provider (possibly an alias of the actual model), else the
   // catalog model id. Billing eligibility is decided from API-owned run context.
@@ -902,19 +896,14 @@ const preparedExecutionContextBaseSchema = object({
   // Pi session identity and pinned route reconstructed from the accepted Run.
   piSessionId: uuid().optional(),
   piModelConfig: piModelConfigSchema.optional(),
+  cliAgentType: string(),
+  // Effective authorized targets reconstructed from admitted bindings.
+  connectorRuntimeTargets: connectorRuntimeTargetsSchema,
+  piLaunchConfig: piLaunchConfigSchema.optional(),
+  // Current preference and product default.
+  userTimezone: string().optional(),
+  disallowedTools: array(string()),
 });
-
-/** Complete execution preparation also supplies diagnostics and the Runner response. */
-const preparedExecutionContextObjectSchema =
-  preparedExecutionContextBaseSchema.extend({
-    cliAgentType: string(),
-    // Effective authorized targets reconstructed from admitted bindings.
-    connectorRuntimeTargets: connectorRuntimeTargetsSchema,
-    piLaunchConfig: piLaunchConfigSchema.optional(),
-    // Current preference and product default.
-    userTimezone: string().optional(),
-    disallowedTools: array(string()).optional(),
-  });
 
 export const preparedExecutionContextSchema =
   preparedExecutionContextObjectSchema.superRefine(requireCompletePiFields);
@@ -981,10 +970,6 @@ const executionContextObjectSchema = object({
   connectorRuntimeTargets: connectorRuntimeTargetsSchema,
   // Tools to disable in Claude CLI (passed as --disallowed-tools)
   disallowedTools: array(string()).optional(),
-  // Tools to make available in Claude CLI (passed as --tools)
-  tools: array(string()).optional(),
-  // Settings JSON to pass to Claude CLI (passed as --settings)
-  settings: string().optional(),
   // Feature flags evaluated at job creation time (all switch states for user/org)
   featureFlags: record(string(), boolean()).optional(),
   billableFirewalls: array(string()).optional(),
@@ -1277,22 +1262,6 @@ export type ExecutionContext = zInfer<typeof executionContextSchema>;
 export type PreparedExecutionContext = zInfer<
   typeof preparedExecutionContextSchema
 >;
-/** In-memory admission input; current Run sources are reconstructed before dispatch. */
-export type ExecutionInput = Pick<
-  PreparedExecutionContext,
-  | "nativeContinuation"
-  | "customWorkflowSelection"
-  | "featureFlags"
-  | "realAgentInPreview"
-  | "apiStartTime"
-> & {
-  // Preview-only admission authorization; absence grants no bypass.
-  previewBypassAuthorized?: boolean;
-  platformEnvironment: {
-    OKOU_TOKEN?: string;
-    [DISABLED_PAID_TOOLS_ENV_VAR]: string;
-  };
-};
 export type PiModelConfig = zInfer<typeof piModelConfigSchema>;
 export type PiModelConfigV2 = zInfer<typeof piModelConfigV2Schema>;
 export type PiModelConfigV3 = zInfer<typeof piModelConfigV3Schema>;

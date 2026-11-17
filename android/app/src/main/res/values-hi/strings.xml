@@ -1,5 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="controls_storage_failed">लंबित नियंत्रण अनुरोध सहेजे नहीं जा सकते।</string>
+    <string name="controls_stop">चल रहा काम रोकें</string>
+    <string name="controls_queued_automation">कतार में ऑटोमेशन</string>
+    <string name="controls_skip">ऑटोमेशन छोड़ें</string>
+    <string name="controls_preparing">नियंत्रण अनुरोध सहेजा जा रहा है…</string>
+    <string name="controls_sending">नियंत्रण अनुरोध भेजा जा रहा है…</string>
+    <string name="controls_accepted">अनुरोध स्वीकार हुआ। पुष्टि की प्रतीक्षा है।</string>
+    <string name="controls_checking">परिणाम की पुष्टि की जा रही है…</string>
+    <string name="controls_unknown">नियंत्रण का परिणाम अज्ञात है।</string>
+    <string name="controls_retryable">मूल लक्ष्य अभी उपलब्ध है।</string>
+    <string name="controls_retry_original">मूल अनुरोध दोबारा भेजें</string>
+    <string name="controls_check">परिणाम की पुष्टि करें</string>
+    <string name="controls_recorded">नियंत्रण अनुरोध इतिहास में दर्ज है।</string>
+    <string name="controls_target_settled">मूल लक्ष्य का निपटारा हो चुका है।</string>
+    <string name="controls_read_failed">परिणाम की पुष्टि नहीं हो सकी।</string>
+    <string name="controls_recovery_failed">बातचीत की रिकवरी स्थिति उपलब्ध नहीं है।</string>
+    <string name="controls_recovering">बातचीत जारी रखने की तैयारी हो रही है।</string>
+    <string name="output_live">लाइव जवाब</string>
+    <string name="output_waiting">लाइव जवाब का इंतज़ार है</string>
+    <string name="output_catching_up">सहेजे गए संदेश सिंक हो रहे हैं। मिला हुआ टेक्स्ट बना रहेगा।</string>
     <string name="settings">सेटिंग</string>
     <string name="back">वापस</string>
     <string name="appearance">दिखावट</string>

@@ -31,7 +31,10 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     XCTAssertEqual(conversation.draft, prompt)
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
     input.insertText("\n")
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(
+      message: recommendedFollowupSendStatus(
+        conversation, fixture: fixture, input: input, prompt: prompt)
+    ) {
       conversation.pending.isEmpty && conversation.draft.isEmpty
         && conversation.messages.contains { $0.text == prompt }
     }
@@ -39,6 +42,27 @@ final class ChatComposerReturnKeyTests: XCTestCase {
       try $0.messages.map { try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0) }
     }
     XCTAssertEqual(sent.map { $0.userMessage.parts.compactMap(\.text).joined() }, [prompt])
+  }
+
+  private func recommendedFollowupSendStatus(
+    _ conversation: ConversationStore, fixture: AttachmentFlowFixture,
+    input: ComposerTextView, prompt: String
+  ) -> String {
+    let pending = conversation.pending.map { "\($0.id):retry=\($0.needsRetry)" }
+    let messages = conversation.messages.map { "\($0.id):matchesPrompt=\($0.text == prompt)" }
+    let persisted = conversation.history?.persistedEventIDs.sorted() ?? []
+    let delivery = fixture.state.value.withLock {
+      (writes: $0.messages.count, accepted: $0.accepted != nil)
+    }
+    return "Recommended followup send after waiter join: "
+      + "sending=\(conversation.isSending); loading=\(conversation.isLoading); "
+      + "pending=\(pending); draft=\(String(reflecting: conversation.draft)); "
+      + "messages=\(messages); persisted=\(persisted); "
+      + "writes=\(delivery.writes); accepted=\(delivery.accepted); "
+      + "error=\(String(describing: conversation.error)); "
+      + "syncError=\(String(describing: conversation.syncError)); "
+      + "returnKey=\(input.returnKeyPreference); editable=\(input.isEditable); submitted input: "
+      + mentionInputStatus(input)
   }
 
   func testRepeatedKeyboardSendDoesNotStopTheExistingWorkAfterTheDraftClears() async throws {
@@ -63,7 +87,9 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     // Both key events arrive before the scheduled submission can clear the editor.
     input.insertText("\n")
     input.insertText("\n")
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(
+      message: repeatedSendStatus(conversation, fixture: fixture, input: input)
+    ) {
       !conversation.isSending && !conversation.isStopping
         && conversation.pending.contains { $0.needsRetry }
     }
@@ -73,6 +99,22 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     XCTAssertEqual(writes.map { $0["prompt"]?.string }, ["Keep the existing work running"])
     XCTAssertEqual(conversation.history?.canStop, true)
     XCTAssertNil(conversation.stopIssue)
+  }
+
+  private func repeatedSendStatus(
+    _ conversation: ConversationStore, fixture: ConversationHistoryFixture, input: ComposerTextView
+  ) -> String {
+    let pending = conversation.pending.map { "\($0.id):retry=\($0.needsRetry)" }
+    let requests = fixture.requests.values.withLock { $0 }
+    let writes = fixture.requests.sentMessages.withLock { $0.count }
+    return "Repeated keyboard send after waiter join: "
+      + "sending=\(conversation.isSending); stopping=\(conversation.isStopping); "
+      + "pending=\(pending); writes=\(writes); requests=\(requests); "
+      + "draft=\(String(reflecting: conversation.draft)); "
+      + "error=\(String(describing: conversation.error)); "
+      + "canStop=\(String(describing: conversation.history?.canStop)); "
+      + "stopIssue=\(String(describing: conversation.stopIssue)); submitted input: "
+      + mentionInputStatus(input)
   }
 
   func testDefaultReturnEditsTheDraftAndSavedSendPreferenceDeliversTheSameMessage() async throws {
@@ -159,7 +201,12 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
     try await focusMentionInput(input)
     input.insertText("Before @pl")
-    try await eventually { mentionTable(in: host.view)?.visibleCells.first != nil }
+    try await eventually(
+      message: chatReferenceSuggestionStatus(
+        workspace, fixture: fixture, input: input, host: host.view)
+    ) {
+      mentionTable(in: host.view)?.visibleCells.first != nil
+    }
     input.insertText("\n")
     try await waitForBusinessResult {
       workspace.newComposer.document.parts.contains { $0["type"]?.string == "chat_thread" }
@@ -177,5 +224,21 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     try await eventually { input.undoManager?.groupingLevel == 0 }
     input.undoManager?.undo()
     try await waitForBusinessResult { workspace.newComposer.document == before }
+  }
+
+  private func chatReferenceSuggestionStatus(
+    _ workspace: WorkspaceStore, fixture: MentionNavigationFixture,
+    input: ComposerTextView, host: UIView
+  ) -> String {
+    let paths = fixture.paths.value.withLock { $0 }
+    return "Chat reference suggestions after native readiness wait: "
+      + "agent=\(String(describing: workspace.selectedAgentID)); "
+      + "threads=\(workspace.list.threads.count); "
+      + "threadsLoaded=\(workspace.list.hasLoadedThreads); "
+      + "workspaceError=\(String(describing: workspace.error)); "
+      + "listActionOrSyncError=\(String(describing: workspace.list.error)); "
+      + "draft=\(String(reflecting: workspace.newChatDraft)); "
+      + "ownsEditor=\(input.mentionEditor === workspace.newComposer.editor); "
+      + "requests=\(paths); " + mentionState(input, in: host)
   }
 }

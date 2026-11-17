@@ -25,6 +25,7 @@ import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { array, object, string, uuid, type infer as zInfer } from "zod";
 
 import {
+  nullableDriverValueDecoder,
   pgBooleanDecoder,
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
@@ -61,6 +62,7 @@ export interface ChatRunPreparationFacts {
 function buildPreparationTables(
   claim: { readonly orgId: string; readonly chatThreadId: string },
   capacity: number,
+  requestInputId: string | undefined,
 ) {
   const builder = new QueryBuilder();
   const occupancy = builder.$with("preparation_occupancy").as(
@@ -74,6 +76,23 @@ function buildPreparationTables(
       ),
   );
   const revoker = alias(chatEvents, "preparation_input_revoker");
+  // This request already validated and committed its canonical input facts.
+  // Other FIFO heads still read and strictly decode their stored payload.
+  const payload =
+    requestInputId === undefined
+      ? chatEvents.payload
+      : sql`CASE WHEN ${eq(chatEvents.id, requestInputId)} THEN NULL
+          ELSE ${chatEvents.payload} END`;
+  const modelSelection =
+    requestInputId === undefined
+      ? chatEvents.modelSelection
+      : sql`CASE WHEN ${eq(chatEvents.id, requestInputId)} THEN NULL
+          ELSE ${chatEvents.modelSelection} END`;
+  const requiredOfficialWorkflowIds =
+    requestInputId === undefined
+      ? chatEvents.requiredOfficialWorkflowIds
+      : sql`CASE WHEN ${eq(chatEvents.id, requestInputId)} THEN NULL
+          ELSE ${chatEvents.requiredOfficialWorkflowIds} END`;
   const head = builder.$with("preparation_head").as(
     builder
       .select({
@@ -84,12 +103,16 @@ function buildPreparationTables(
         eventType: chatEvents.eventType,
         contextType: chatEvents.contextType,
         contextId: chatEvents.contextId,
-        userMessage: canonicalChatEventUserMessage().as("user_message"),
-        requiredOfficialWorkflowIds: chatEvents.requiredOfficialWorkflowIds,
-        modelSelection: chatEvents.modelSelection,
-        canonicalModelSelection: canonicalChatInputModelSelection().as(
-          "canonical_model_selection",
-        ),
+        userMessage: canonicalChatEventUserMessage(payload).as("user_message"),
+        requiredOfficialWorkflowIds: sql`${requiredOfficialWorkflowIds}`
+          .mapWith(
+            nullableDriverValueDecoder(chatEvents.requiredOfficialWorkflowIds),
+          )
+          .as("required_official_workflow_ids"),
+        modelSelection:
+          canonicalChatInputModelSelection(modelSelection).as(
+            "model_selection",
+          ),
         sourceAutonomyBudget: agentRuns.autonomyBudget,
       })
       .from(chatEvents)
@@ -180,7 +203,11 @@ export function createChatRunPreparationSnapshot(
     const database = get(db$);
     // The limit belongs to the identity context; occupancy is sampled here.
     const capacity = await get(bootstrap.concurrencyCapacity$);
-    const { occupancy, head } = buildPreparationTables(claim, capacity);
+    const { occupancy, head } = buildPreparationTables(
+      claim,
+      capacity,
+      requestFacts?.input.id,
+    );
     const hasCapacity =
       capacity === 0 ? sql`true` : lt(occupancy.activeCount, capacity);
     const selections = buildPreparationSelections(head, {
@@ -210,7 +237,6 @@ export function createChatRunPreparationSnapshot(
             userMessage: head.userMessage,
             requiredOfficialWorkflowIds: head.requiredOfficialWorkflowIds,
             modelSelection: head.modelSelection,
-            canonicalModelSelection: head.canonicalModelSelection,
             sourceAutonomyBudget: head.sourceAutonomyBudget,
           },
           // No head/full queues do not inspect policy or selections; automation
@@ -245,17 +271,15 @@ export function createChatRunPreparationSnapshot(
     // Only this request's actual FIFO head may use its canonical input facts.
     const owned =
       requestFacts?.input.id === picked.id ? requestFacts.input : undefined;
+    const modelSelection = owned ? owned.modelSelection : picked.modelSelection;
     const pickedEvent: PickedThreadInputEvent = {
       ...picked,
-      ...(owned
-        ? {
-            userMessage: owned.userMessage,
-            modelSelection: owned.modelSelection,
-            canonicalModelSelection: owned.modelSelection,
-            requiredOfficialWorkflowIds:
-              owned.requiredOfficialWorkflowIds ?? null,
-          }
-        : {}),
+      userMessage: owned ? owned.userMessage : picked.userMessage,
+      modelSelection,
+      canonicalModelSelection: modelSelection,
+      requiredOfficialWorkflowIds: owned
+        ? (owned.requiredOfficialWorkflowIds ?? null)
+        : picked.requiredOfficialWorkflowIds,
       userId: thread.userId,
       agentId: thread.agentId,
       thread,

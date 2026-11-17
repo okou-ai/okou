@@ -83,8 +83,9 @@ final class PermissionCardResources {
       didFail: didFail, load: { [commands] in try await commands.permissions.load(action) })
   }
 
-  func read(_ action: ChatPermissionBatchAction) -> PermissionCardRead<ChatPermissionBatchSnapshot>
-  {
+  func read(
+    _ action: ChatPermissionBatchAction
+  ) -> PermissionCardRead<ChatPermissionBatchSnapshot> {
     batches.read(
       key: Key(
         [action.agentID.lowercased(), action.threadID.lowercased()]

@@ -22,7 +22,7 @@ import type {
   ChatThreadDraft,
   FeedbackNotePart,
   GenerationTemplateRequest,
-  ChatEvent as PersistedChatEvent,
+  ClientChatEvent as PersistedChatEvent,
   ResolvedAttachFile,
   UserMessageDocument,
   UserMessageInputDocument,
@@ -233,10 +233,7 @@ import {
 import { createPermissionCardSignalsRegistry } from "./permission-card-signals.ts";
 import { createPermissionBatchCardSignalsRegistry } from "./permission-batch-signals.ts";
 import { createSubscriptionResetCardSignalsRegistry } from "./subscription-reset-block.ts";
-import {
-  createFirstTaskUpgradeEligibility,
-  createPlanUpgradeCardSignalsRegistry,
-} from "./plan-upgrade-block.ts";
+import { createPlanUpgradeCardSignalsRegistry } from "./plan-upgrade-block.ts";
 import { serverUnreadAt$ } from "./sidebar-unread-threads.ts";
 import {
   createThreadActivitySummarySignals,
@@ -2573,9 +2570,6 @@ function createChatThreadMessagePipeline({
       projections.eventImageGroups$,
       effects.sidebar.target$,
     ),
-    firstTaskUpgradeEligible$: createFirstTaskUpgradeEligibility(
-      projections.allSemanticChatGroups$,
-    ),
     ...lifecycle,
     initialEventsReady$: initialEventsReadyView$,
     ...assistantErrorRecovery,
@@ -3629,7 +3623,6 @@ function createThinkingIndicatorSignals() {
 
 function publicChatThreadEventSignals(events: MessageListSignals) {
   return {
-    firstTaskUpgradeEligible$: events.firstTaskUpgradeEligible$,
     latestRunFinishCreatedAt$: events.latestRunFinishCreatedAt$,
     latestAssistantTextCreatedAt$: events.latestAssistantTextCreatedAt$,
     visibleRenderedChatGroups$: events.visibleRenderedChatGroups$,

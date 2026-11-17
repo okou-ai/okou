@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   phoneUseContract,
+  phoneUseDevicesChangedEvent,
   type PhoneDevice,
   type PhoneUseSelection,
 } from "@okouai/api-contracts/contracts/phone-use";
@@ -24,7 +25,7 @@ import {
 const context = testContext();
 const { installRunChat } = createChatRunFixtures(context);
 
-function phone(ready = true, online = true): PhoneDevice {
+function phone(online = true): PhoneDevice {
   return {
     id: "e0000000-0000-4000-a000-000000001001",
     displayName: "Owner iPhone",
@@ -32,7 +33,6 @@ function phone(ready = true, online = true): PhoneDevice {
     appVersion: "1",
     generation: 1,
     online,
-    ready,
     lastSeenAt: "2026-11-16T04:00:00.000Z",
   };
 }
@@ -40,7 +40,11 @@ function phone(ready = true, online = true): PhoneDevice {
 async function setup(
   enabled: boolean,
   accountAccess = true,
-  options: { path?: string; onSend?: () => void } = {},
+  options: {
+    path?: string;
+    onSend?: () => void;
+    transport?: "direct" | "message-port";
+  } = {},
 ) {
   installRunChat({ onSendRequest: options.onSend });
   context.mocks.api(remotesContract.overview, ({ respond }) => {
@@ -56,6 +60,7 @@ async function setup(
     context,
     path: options.path ?? NEW_CHAT_PATH,
     locale: "en-US",
+    sharedWorkerTestTransport: options.transport,
     featureSwitches: {
       [FeatureSwitchKey.PhoneUse]: enabled,
       [FeatureSwitchKey.ConnectorChatAccountAccess]: accountAccess,
@@ -78,29 +83,62 @@ test("Phone Use stays hidden without fetching devices until manually enabled", a
 });
 
 test.each([true, false])(
-  "Show only online phones without readiness labels (account menu: %s)",
+  "Show only online phones (account menu: %s)",
   async (accountAccess) => {
     const offline = {
-      ...phone(true, false),
+      ...phone(false),
       id: "e0000000-0000-4000-a000-000000001003",
       displayName: "Offline iPhone",
     };
-    let devices = [phone(false), offline];
+    let devices = [phone(), offline];
     context.mocks.api(phoneUseContract.devices, ({ respond }) => {
       return respond(200, { devices });
     });
     await setup(true, accountAccess);
     const phones = await screen.findByRole("list", { name: "Your phone" });
     expect(within(phones).getByText("Owner iPhone")).toBeVisible();
-    expect(within(phones).queryByText("Ready")).toBeNull();
-    expect(within(phones).queryByText("Not ready")).toBeNull();
     expect(within(phones).queryByText("Offline iPhone")).toBeNull();
-    devices = [phone(false, false), offline];
-    await userEvent.keyboard("{Escape}");
-    click(await findButton("Connectors"));
+    devices = [phone(false), offline];
+    context.mocks.ably.trigger(phoneUseDevicesChangedEvent);
     await screen.findByText("No phones online");
+    devices = [phone(), offline];
+    context.mocks.ably.trigger(phoneUseDevicesChangedEvent);
+    await screen.findByRole("switch", { name: /Owner iPhone/u });
   },
 );
+
+test("A selected phone stays visible offline so its chat access can be revoked", async () => {
+  let selection: PhoneUseSelection | null = {
+    deviceId: phone().id,
+    generation: phone().generation,
+  };
+  context.mocks.api(phoneUseContract.devices, ({ respond }) => {
+    return respond(200, { devices: [phone(false)] });
+  });
+  context.mocks.api(phoneUseContract.chatGrant, ({ respond }) => {
+    return respond(200, { selection });
+  });
+  context.mocks.api(phoneUseContract.grant, async ({ request, respond }) => {
+    await expect(request.json()).resolves.toStrictEqual({
+      deviceId: phone().id,
+      generation: phone().generation,
+      threadId: RUN_THREAD_ID,
+      allow: false,
+    });
+    selection = null;
+    return respond(200, { ok: true });
+  });
+  await setup(true, true, { path: RUN_PATH });
+  const control = await screen.findByRole("switch", { name: /Owner iPhone/u });
+  await waitFor(() => {
+    expect(control).toBeChecked();
+    expect(control).not.toHaveAttribute("aria-disabled", "true");
+  });
+  await expect(screen.findByText("Offline")).resolves.toBeVisible();
+  click(control);
+  await screen.findByText("No phones online");
+  expect(selection).toBeNull();
+});
 
 test("A phone-list failure recovers when reopening the menu", async () => {
   let failed = true;
@@ -141,7 +179,7 @@ test.each([true, false])(
   "Authorize, switch and revoke a phone from this chat (account menu: %s)",
   async (accountAccess) => {
     const secondary = {
-      ...phone(false),
+      ...phone(),
       id: "e0000000-0000-4000-a000-000000001002",
       displayName: "Second iPhone",
     };
@@ -295,3 +333,28 @@ test("Rejected phone consent preserves the new-chat draft and never starts its R
     screen.findByRole("switch", { name: /^Owner iPhone/u }),
   ).resolves.toBeChecked();
 });
+
+test.each(["leave", "expired readiness"])(
+  "Refresh an open phone menu after %s on its native channel",
+  async (event) => {
+    let online = true;
+    context.mocks.api(phoneUseContract.devices, ({ respond }) => {
+      return respond(200, { devices: [phone(online)] });
+    });
+    await setup(true, true, { transport: "message-port" });
+    await screen.findByRole("switch", { name: /Owner iPhone/u });
+    await waitFor(() => {
+      expect(
+        context.mocks.ably.hasPhonePresenceSubscription(phone().id, 1),
+      ).toBeTruthy();
+    });
+    online = false;
+    context.mocks.ably.triggerPhonePresence(
+      phone().id,
+      1,
+      event === "leave" ? "leave" : "update",
+      "2000-01-01T00:00:00.000Z",
+    );
+    await screen.findByText("No phones online");
+  },
+);

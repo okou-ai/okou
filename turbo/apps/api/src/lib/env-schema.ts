@@ -2,7 +2,9 @@ import { createEnv } from "@t3-oss/env-core";
 import {
   array,
   coerce,
+  discriminatedUnion,
   email,
+  literal,
   object,
   record,
   string,
@@ -98,6 +100,35 @@ function serviceEnvSchema() {
       email().optional(),
     CRON_SECRET: string().min(1),
     MARKETING_REWARDS_EXPORT_SECRET: string().min(32).optional(),
+    MARKETING_REWARDS_RECEIPT_SECRET: string().min(32).optional(),
+    MARKETING_REWARDS_SETTLEMENT_SECRET: string().min(32).optional(),
+    MARKETING_REWARDS_PROJECTION_SECRET: string().min(32).optional(),
+    MARKETING_REWARDS_SOURCE_SECRET: string().min(32).optional(),
+    MARKETING_REWARDS_CAMPAIGN_SECRET: string().min(32).optional(),
+    // Writer ownership is fixed server configuration, never a browser override.
+    MARKETING_REWARDS_ROUTING: string()
+      .transform((value): unknown => {
+        return JSON.parse(value);
+      })
+      .pipe(
+        discriminatedUnion("mode", [
+          object({ mode: literal("app") }).strict(),
+          object({ mode: literal("marketing") }).strict(),
+          object({
+            mode: literal("cohort"),
+            userIds: array(string().min(1).max(256)).max(128),
+            orgIds: array(string().min(1).max(256)).max(128),
+          }).strict(),
+        ]),
+      )
+      .optional(),
+    MARKETING_REWARDS_EVENTS_SECRET: string().min(32).optional(),
+    MARKETING_REWARDS_EVENTS_ORIGIN: url()
+      .refine((value) => {
+        const origin = new URL(value);
+        return origin.protocol === "https:" && value === origin.origin;
+      }, "Expected an HTTPS origin without a path or credentials")
+      .optional(),
     // Enable only after Stage 1 API writers have drained and cannot be rolled back.
     WORKFLOW_ATTACHMENT_CLEANUP_ENABLED: zEnum(["true", "false"]).default(
       "false",

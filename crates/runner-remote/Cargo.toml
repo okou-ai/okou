@@ -1,6 +1,6 @@
 [package]
 name = "runner-remote"
-version = "0.31.61"
+version = "0.31.70"
 edition.workspace = true
 description = "Runner guest RPC, remote usage, SSH, Tailscale, and VNC services"
 
@@ -53,9 +53,7 @@ ts_dataplane = { workspace = true, features = ["async_tokio"] }
 ts_derp.workspace = true
 ts_http_util.workspace = true
 ts_keys.workspace = true
-ts_netstack_smoltcp_core = { workspace = true, features = ["std"] }
-ts_netstack_smoltcp_socket = { workspace = true, features = ["tokio"] }
-ts_overlay_router.workspace = true
+ts_netstack_smoltcp = { workspace = true, features = ["tokio"] }
 ts_packet.workspace = true
 ts_packetfilter.workspace = true
 ts_packetfilter_state.workspace = true

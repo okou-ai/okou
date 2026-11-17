@@ -59,7 +59,6 @@ import {
   initializeSharedDatabaseWorker$,
   querySharedDatabaseWorker$,
   refreshWorkerComputed$,
-  startChatThreadIndicatorsRefreshFromRealtime$,
   startSharedDatabaseWorkerDaemons$,
 } from "./worker-signals.ts";
 
@@ -115,6 +114,9 @@ function directRealtimeChannelName(
   topic: string,
 ): string {
   switch (scope) {
+    case "phone-presence": {
+      return `phone-use:${identity.orgId}:${identity.userId}:${topic}`;
+    }
     case "run-output": {
       return sessionOutputChannelName(identity.userId, identity.orgId, topic);
     }
@@ -189,17 +191,17 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
     channelName: string,
     message: DirectRealtimeMessage,
   ): void {
-    const scope = (["credential", "org", "user", "run-output"] as const).find(
-      (candidate) => {
-        return (
-          directRealtimeChannelName(
-            this.options.identity,
-            candidate,
-            message.name,
-          ) === channelName
-        );
-      },
-    );
+    const scope = (
+      ["credential", "org", "user", "run-output", "phone-presence"] as const
+    ).find((candidate) => {
+      return (
+        directRealtimeChannelName(
+          this.options.identity,
+          candidate,
+          message.name,
+        ) === channelName
+      );
+    });
     if (scope) {
       this.handleRealtimeMessage(scope, message);
     }
@@ -219,15 +221,8 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
         subscription.listener(message);
       }
     }
-    // Run-state indicator changes use the production Worker loop command,
-    // including its shared refresh throttle.
-    if (message.name === "chatIndicatorsChanged") {
-      this.workerStore.set(
-        startChatThreadIndicatorsRefreshFromRealtime$,
-        this.workerSignal,
-      );
-      return;
-    }
+    // chatIndicatorsChanged is owned by the Worker's Ably subscription;
+    // refreshing here too would queue a duplicate trailing refresh.
     const computedKey: ComputedKey | null =
       message.name === "chatThreadReadCursorUpdated"
         ? "chat-thread-indicators"

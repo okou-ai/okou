@@ -452,6 +452,8 @@ async fn bounded_inventory_preserves_profile_caps_and_completion_order_across_ro
     let profiles = (0..=MAX_HOME_CACHES_PER_REUSE_KEY)
         .map(|index| format!("vm0/profile-{index:02}"))
         .collect::<Vec<_>>();
+    let mut metadata = original;
+    let mut metadata_bytes = Vec::new();
     let mut seed = |reuse_key: &str, profile: &str, completed_at: &str| {
         let key = f.cache.scoped_cache_key(profile, reuse_key, SIZE);
         let paths = f.cache.entry_paths(&key);
@@ -462,7 +464,6 @@ async fn bounded_inventory_preserves_profile_caps_and_completion_order_across_ro
         let image = paths.image(&generation.to_string()).unwrap();
         // Inventory reads completed writes in-process, not crash durability.
         drop(create_image(&image, b"home", SIZE));
-        let mut metadata = original.clone();
         metadata.image_generation = generation.to_string();
         metadata.profile_name = profile.into();
         metadata.reuse_key = reuse_key.into();
@@ -470,7 +471,9 @@ async fn bounded_inventory_preserves_profile_caps_and_completion_order_across_ro
         metadata.current_image = super::super::metadata::HomeImageFileIdentity::from_metadata(
             &std::fs::symlink_metadata(&image).unwrap(),
         );
-        std::fs::write(paths.metadata(), serde_json::to_vec(&metadata).unwrap()).unwrap();
+        metadata_bytes.clear();
+        serde_json::to_writer(&mut metadata_bytes, &metadata).unwrap();
+        std::fs::write(paths.metadata(), &metadata_bytes).unwrap();
         expected.push(HeldHomeState {
             reuse_key: reuse_key.into(),
             last_completed_at: completed_at.into(),
@@ -499,6 +502,8 @@ async fn bounded_inventory_preserves_profile_caps_and_completion_order_across_ro
             },
         );
     }
+    drop(metadata);
+    drop(metadata_bytes);
     let configured = profiles
         .iter()
         .map(|profile| (profile.as_str(), SIZE))

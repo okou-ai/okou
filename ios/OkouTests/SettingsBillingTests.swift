@@ -15,6 +15,7 @@ final class SettingsBillingTests: XCTestCase {
     }
     let server = Mutex(Server())
     let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET" else { throw URLError(.unsupportedURL) }
       switch request.url?.path {
       case "/api/billing/status":
         let state = server.withLock { $0 }
@@ -60,6 +61,7 @@ final class SettingsBillingTests: XCTestCase {
   func testBillingReadPreservesTheRequiredAppUpdateBoundary() async {
     for rejectedPath in ["/api/billing/status", "/api/billing/usage-pack-credits"] {
       let fixture = ChatHTTPFixture { request in
+        guard request.httpMethod == "GET" else { throw URLError(.unsupportedURL) }
         if request.url?.path == rejectedPath {
           return ChatHTTPResponse(
             status: 426,
@@ -89,9 +91,10 @@ final class SettingsBillingTests: XCTestCase {
       ("admin", 1200.5, 350, 1550.5),
       ("admin", -1200, 350, 350),
       ("member", 1200, 350, 350),
-      ("member", 1200, 0, 0),
+      ("member", 1200, 0, 0)
     ] {
       let fixture = ChatHTTPFixture { request in
+        guard request.httpMethod == "GET" else { throw URLError(.unsupportedURL) }
         switch request.url?.path {
         case "/api/billing/status":
           return ChatHTTPResponse(body: "{\"tier\":\"pro\",\"credits\":\(organizationCredits)}")
@@ -119,6 +122,7 @@ final class SettingsBillingTests: XCTestCase {
     }
     let server = Mutex(Server())
     let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET" else { throw URLError(.unsupportedURL) }
       switch request.url?.path {
       case "/api/billing/status":
         return ChatHTTPResponse(body: #"{"tier":"pro","credits":1200}"#)

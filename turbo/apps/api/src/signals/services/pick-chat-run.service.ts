@@ -24,7 +24,12 @@ import { waitUntil } from "../context/wait-until";
 import { nowDate } from "../../lib/time";
 import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
 import type { ReleasedRunSlot } from "./agent-run-terminal-transition.service";
-import { createDirectRunDispatcher } from "./direct-run-dispatch.service";
+import {
+  createDirectRunDispatchPreparation,
+  dispatchPreparedRun$,
+  type DirectRunDispatchResult,
+} from "./direct-run-dispatch.service";
+import { publishDirectRunCache$ } from "./direct-run-preparation.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   CHAT_THREAD_LEASE_MS,
@@ -93,13 +98,15 @@ function createCapturedClaimObjects(
     context,
     claim.requestFacts,
   );
-  const dispatchRun$ = createDirectRunDispatcher(preparation.admittedLaunch$);
+  const prepareDispatch$ = createDirectRunDispatchPreparation(
+    preparation.admittedLaunch$,
+  );
   // Reobserve occupancy after release, but retain the same org capacity snapshot.
   // Newly purchased slots take effect only in a subsequent context.
   const orgHasCapacityAfterRelease$ = createOrgHasCapacity(context);
   return {
     ...preparation,
-    dispatchRun$,
+    prepareDispatch$,
     context,
     orgHasCapacityAfterRelease$,
   };
@@ -452,7 +459,32 @@ function createPickObjects() {
       // Activation is outside the admission-failure boundary. Slot scheduling
       // precedes terminal callbacks so they cannot delay the next queued input.
       await set(claimed.publishPendingRun$, pending, signal);
-      const dispatched = await set(claimed.dispatchRun$, signal);
+      const preparation = await set(claimed.prepareDispatch$, signal);
+      let dispatched: DirectRunDispatchResult;
+      if (preparation.kind === "failed") {
+        dispatched = preparation.result;
+      } else {
+        const { input } = preparation.delivery;
+        // Signed URLs are already in the payload; optional reuse publication
+        // must not hold up ownership, intake or the pick's terminal effects.
+        waitUntil(
+          set(
+            publishDirectRunCache$,
+            {
+              runId: input.run.id,
+              runnerGroup: input.runnerGroup,
+              profile: input.profile,
+              cacheWrites: preparation.cacheWrites,
+            },
+            signal,
+          ),
+        );
+        dispatched = await set(
+          dispatchPreparedRun$,
+          preparation.delivery,
+          signal,
+        );
+      }
       if (dispatched.terminal !== null) {
         set(
           scheduleReleasedSlotPicks$,

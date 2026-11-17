@@ -13375,6 +13375,43 @@
         }
       }
     },
+    "New Message": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Neue Nachricht" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Nuevo mensaje" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Nouveau message" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "नया संदेश" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Pesan baru" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Nuovo messaggio" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "新規メッセージ" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "새 메시지" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Nova mensagem" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "新消息" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "新訊息" }
+        }
+      }
+    },
     "New chat": {
       "localizations": {
         "de": {

@@ -7,6 +7,52 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HistoryProjectionTest {
+    @Test
+    fun runFailuresIgnoreRetainedDiagnosticsWhileOutputErrorsRemainVisible() {
+        for (payload in
+            listOf("null", """{"content":"private diagnostic","error":"private diagnostic"}""")) {
+            val decoded = event("failed", 1, "run.failed", payload = payload)
+            assertNull(decoded.inputError)
+            assertNull(decoded.outputError)
+            val failed = transcript(decoded)
+            assertEquals(HistoryExecution.Failed, failed.execution)
+            assertEquals("run.failed", failed.messages.single().status)
+            assertFalse(
+                failed.messages.flatMap { it.blocks }.any { it.text.contains("private diagnostic") }
+            )
+        }
+        val output =
+            transcript(
+                event(
+                    "output",
+                    1,
+                    "output.error",
+                    payload = """{"error":"Ordinary output error"}""",
+                )
+            )
+        assertTrue(output.messages.flatMap { it.blocks }.any { it.text == "Ordinary output error" })
+    }
+
+    @Test
+    fun activeOutputTargetUsesNewestLiveRunLikeWeb() {
+        val nextRun = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val old = input("older", 1)
+        val next = input("newer", 2, nextRun)
+        val lateOld = event("older-late", 3, "output.message")
+        assertEquals(nextRun, transcript(old, next, lateOld).activeRunId)
+        val terminal = event("newer-terminal", 4, "run.completed", nextRun)
+        val stillLate = event("still-older-late", 5, "output.message")
+        assertEquals(HISTORY_RUN, transcript(old, next, lateOld, terminal, stillLate).activeRunId)
+        assertNull(
+            transcript(old, next, terminal, event("older-terminal", 5, "run.completed")).activeRunId
+        )
+        assertEquals(
+            nextRun,
+            transcript(old, event("new-output", 2, "output.message", nextRun)).activeRunId,
+        )
+        assertNull(transcript(input("queued", 1, null)).activeRunId)
+    }
+
     private fun event(
         id: String,
         seq: Long,
@@ -49,11 +95,10 @@ class HistoryProjectionTest {
         assertTrue(stopped.messages.flatMap { it.blocks }.any { it.text == "Partial reply" })
 
         val terminal =
-            event("terminal", 4, "run.cancelled", payload = """{"content":"Run cancelled"}""")
+            event("terminal", 4, "run.cancelled", payload = """{"error":"Stopped by user"}""")
         val confirmed = transcript(prompt, partial, interrupt, terminal)
         assertEquals(HistoryExecution.Cancelled, confirmed.execution)
         assertEquals(1, confirmed.messages.count { it.status == "run.cancelled" })
-        assertTrue(confirmed.messages.flatMap { it.blocks }.any { it.text == "Run cancelled" })
 
         val completed = event("completed", 3, "run.completed")
         val lateInterrupt = event("late-interrupt", 4, "control.interrupt")

@@ -8,6 +8,16 @@ import { publishThreadListChanged } from "../external/realtime";
 import { notFound } from "../../lib/error";
 import { updateChatThreadMetadata$ } from "../services/chat-thread-metadata-update.service";
 import type { RouteEntry } from "../route-entry";
+import {
+  latestThreadModelRecovery,
+  loadIntegrationModelChoices$,
+} from "../services/integration-model-recovery.service";
+import {
+  enqueueIntegrationRecovery$,
+  integrationRecoverySource,
+} from "../services/integration-recovery-input.service";
+import { continueIntegrationRecovery$ } from "../services/integration-recovery-continuation.service";
+import { waitUntil } from "../context/wait-until";
 
 const modelSelectionBody$ = bodyResultOf(
   chatThreadModelSelectionContract.update,
@@ -22,6 +32,16 @@ const updateModelSelectionInner$ = command(
     if (!body.ok) {
       return body.response;
     }
+
+    const failure =
+      body.data.model !== undefined
+        ? await get(latestThreadModelRecovery({ ...auth, threadId: params.id }))
+        : null;
+    const recovery =
+      failure && (await get(integrationRecoverySource(failure)))
+        ? await set(loadIntegrationModelChoices$, failure, signal)
+        : null;
+    signal.throwIfAborted();
 
     const preserveTier =
       body.data.codexServiceTier === undefined &&
@@ -63,6 +83,16 @@ const updateModelSelectionInner$ = command(
 
     await publishThreadListChanged({ userId: auth.userId, orgId: auth.orgId });
     signal.throwIfAborted();
+    if (recovery && result.state.selectedModel) {
+      const input = await set(
+        enqueueIntegrationRecovery$,
+        { ...recovery, selectedModel: result.state.selectedModel },
+        signal,
+      );
+      if (input) {
+        waitUntil(set(continueIntegrationRecovery$, input, signal));
+      }
+    }
     return { status: 204 as const, body: undefined };
   },
 );

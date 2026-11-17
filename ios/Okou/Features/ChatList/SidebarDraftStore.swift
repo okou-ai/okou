@@ -31,8 +31,8 @@ final class SidebarDraftStore {
     guard !closed, !Task.isCancelled else { return }
     do {
       if subscription == nil {
-        subscription = try resources.store.watch(resources.sidebarDraftThreadIDs) {
-          [weak self] in self?.confirm()
+        subscription = try resources.store.watch(resources.sidebarDraftThreadIDs) { [weak self] in
+          self?.confirm()
         }
         confirm()
       }
@@ -103,7 +103,9 @@ final class SidebarDraftStore {
     publication?.cancel()
     do { try subscription?.cancel() } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatDrafts")
-        .error("Cannot close draft observation: \(error.localizedDescription, privacy: .public)")
+        .error(
+          "event=chat.drafts.observation.close.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
     }
     subscription = nil
   }

@@ -26,6 +26,7 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
+import { updateFeatureSwitchesForUser } from "./feature-switches";
 
 import { emailUnsubscribeRoutes } from "../../email-unsubscribe";
 import { userExportRoutes } from "../../user-export";
@@ -395,6 +396,15 @@ export function createMiscRoutesApi(context: TestContext) {
       },
       statuses: readonly (201 | 400 | 401 | 403 | 409)[],
     ) {
+      if (!actor.orgId) {
+        throw new Error("Expected a retained Agent workspace");
+      }
+      // These fixtures bind Workflows to retained named Agents.
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        { singleAgent: false },
+      );
       return await accept(
         setupApp({ context, routes: workflowsRoutes })(
           workflowsCollectionContract,

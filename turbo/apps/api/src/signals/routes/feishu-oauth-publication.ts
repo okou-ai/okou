@@ -29,6 +29,8 @@ import { boolean, literal, object, string } from "zod";
 import { nowDate } from "../../lib/time";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { completedGetStartedQuestPublication } from "../services/get-started-member-reward";
+import { env } from "../../lib/env";
+import { marketingRewardOAuthEventInsert } from "../services/marketing-reward-event-publication";
 import { CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY } from "../services/get-started-rewards.service";
 import { slackRewardWalletEntitlement } from "../services/slack-installation-reward";
 import {
@@ -458,6 +460,19 @@ export function feishuOAuthPublicationSql(
       AND EXISTS (SELECT 1 FROM ${account.accepted}) AND (SELECT count(*) FROM ${credited}) >= 0 RETURNING id
   `);
   const grant = feishuOAuthGrant(args, admission, account, sql`${tenant}`);
+  const sourceEvent = query.$with("reward_source_event", {}).as(
+    marketingRewardOAuthEventInsert(
+      {
+        id: randomUUID(),
+        environment: env("ENV"),
+        occurredAt: args.at.toISOString(),
+        orgId: args.state.orgId,
+        userId: args.state.userId,
+        connector: { kind: "custom", customConnectorId: args.connector.id },
+      },
+      query.select({ id: account.accepted.id }).from(account.accepted).getSQL(),
+    ),
+  );
   return query
     .with(
       admission.agent,
@@ -480,6 +495,7 @@ export function feishuOAuthPublicationSql(
       tenant,
       grant.inserted,
       grant.retained,
+      sourceEvent,
     )
     .select({
       agent: sql`${exists(query.select().from(admission.agent))}`

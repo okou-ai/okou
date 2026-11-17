@@ -15,6 +15,14 @@ public struct ChatHTTPResponse: Sendable {
     self.body = body
     self.headers = headers
   }
+
+  public init<Value: Encodable>(
+    status: Int = 200, json: Value,
+    headers: [String: String] = ["Content-Type": "application/json"]
+  ) throws {
+    let body = try JSONEncoder().encodeString(json)
+    self.init(status: status, body: body, headers: headers)
+  }
 }
 
 /// HTTP boundary fixture. Production decoding, pagination, and commands remain real.
@@ -78,22 +86,23 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
   private let owner: String
   private let route: Route?
 
-  override init(request: URLRequest, cachedResponse: CachedURLResponse?, client: URLProtocolClient?)
-  {
+  override init(
+    request: URLRequest, cachedResponse: CachedURLResponse?, client: URLProtocolClient?
+  ) {
     let owner = request.value(forHTTPHeaderField: Self.ownerHeader) ?? request.url?.host ?? ""
     self.owner = owner
     route = Self.handlers.withLock { $0[owner] }
     super.init(request: request, cachedResponse: cachedResponse, client: client)
   }
 
-  override class func canInit(with request: URLRequest) -> Bool {
+  override static func canInit(with request: URLRequest) -> Bool {
     guard let url = request.url, let scheme = url.scheme, ["http", "https"].contains(scheme) else {
       return false
     }
     return !ChatFileHTTPServer.owns(url)
   }
 
-  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+  override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
   override func startLoading() {
     // Retain request ownership from protocol creation, before deferred loading
@@ -126,9 +135,9 @@ private final class ChatFixtureURLProtocol: URLProtocol, @unchecked Sendable {
       var forwarded = request
       forwarded.setValue(nil, forHTTPHeaderField: Self.ownerHeader)
       let result: ChatHTTPResponse
-      do { result = try await route.handler(forwarded) } catch let error as URLError
-        where error.code == .unsupportedURL
-      {
+      do {
+        result = try await route.handler(forwarded)
+      } catch let error as URLError where error.code == .unsupportedURL {
         route.report(description + " [owned handler rejected request for fixture \(owner)]")
         throw error
       }
@@ -179,7 +188,7 @@ public func modelCatalogResponse() -> ChatHTTPResponse {
     ("okou-1.0", "Auto", nil),
     ("gpt-5.6-sol", "GPT-5.6 Sol", nil),
     ("claude-opus-5-5", "Claude Opus 5.5", nil),
-    ("claude-opus-4-8", "Claude Opus 4.8", "claude-opus-5-5"),
+    ("claude-opus-4-8", "Claude Opus 4.8", "claude-opus-5-5")
   ]
   let models = entries.enumerated().map { index, entry -> String in
     let (model, displayName, replacedBy) = entry

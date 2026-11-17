@@ -62,9 +62,9 @@ public final class PermissionHTTPFixture: Sendable {
         if path == threadPath + "/activity-summary" {
           let body = try JSONDecoder().decode([String: String].self, from: chatRequestBody(request))
           let data = try JSONSerialization.data(withJSONObject: [
-            "runId": body["runId"] ?? "", "status": "ineligible", "messages": [],
+            "runId": body["runId"] ?? "", "status": "ineligible", "messages": []
           ])
-          return ChatHTTPResponse(body: String(decoding: data, as: UTF8.self))
+          return ChatHTTPResponse(body: String(data: data, encoding: .utf8)!)
         }
         if path == threadPath + "/metadata" {
           return ChatHTTPResponse(
@@ -168,11 +168,12 @@ public final class PermissionHTTPFixture: Sendable {
     ChatHTTPResponse(status: status, body: "{\"error\":{\"message\":\"\(message)\"}}")
   }
 
-  private static func row(id: String, sequence: Int, type: String, payload: [String: Any]) -> String
-  {
+  private static func row(
+    id: String, sequence: Int, type: String, payload: [String: Any]
+  ) -> String {
     let encoded = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
     return """
-      {"id":"\(id)","chatThreadId":"\(threadID)","runId":"61000000-0000-4000-8000-000000000004","seqId":\(sequence),"createdAt":"2026-10-20T00:00:00Z","eventType":"\(type)","payload":\(String(decoding: encoded, as: UTF8.self))}
+      {"id":"\(id)","chatThreadId":"\(threadID)","runId":"61000000-0000-4000-8000-000000000004","seqId":\(sequence),"createdAt":"2026-10-20T00:00:00Z","eventType":"\(type)","payload":\(String(data: encoded, encoding: .utf8)!)}
       """
   }
 }

@@ -185,7 +185,7 @@ enum OkouAvatarArtwork {
       group(
         "eye-\(name)-star", transform: svg(translate(x, 293), scale(1.35)), opacity: 0, [star()]),
       shape("eye-\(name)-cry", cry, stroke: ink, width: line, cap: .round, opacity: 0),
-      shape("eye-\(name)-shine", ellipse(frontX - 1.3, 119.6, 1.6, 1.6), fill: .white, opacity: 0),
+      shape("eye-\(name)-shine", ellipse(frontX - 1.3, 119.6, 1.6, 1.6), fill: .white, opacity: 0)
     ]
   }
 
@@ -199,7 +199,7 @@ enum OkouAvatarArtwork {
             nil, "M254 366Q282 378 315 354C315 405 276 423 254 366Z", fill: ink, stroke: ink,
             width: 5, join: .round),
           shape(nil, "M260 370Q283 380 308 363L305 375Q282 390 264 380Z", fill: paper),
-          shape(nil, "M276 397Q284 384 299 392Q290 405 276 397Z", fill: tongue),
+          shape(nil, "M276 397Q284 384 299 392Q290 405 276 397Z", fill: tongue)
         ]),
       group(
         "mouth-big-laugh", opacity: 0,
@@ -209,11 +209,11 @@ enum OkouAvatarArtwork {
             clip: .shape("big-laugh-clip-shape"),
             content: .group([
               shape("big-laugh-teeth", Path(), fill: paper),
-              shape("big-laugh-tongue", ellipse(116, 165, 8.5, 4.7), fill: tongue),
+              shape("big-laugh-tongue", ellipse(116, 165, 8.5, 4.7), fill: tongue)
             ])),
           shape(
             "big-laugh-outline", Path(), stroke: ink, width: lineStyle.width, cap: lineStyle.cap,
-            join: lineStyle.join),
+            join: lineStyle.join)
         ]),
       group(
         "mouth-party", opacity: 0,
@@ -223,11 +223,11 @@ enum OkouAvatarArtwork {
             clip: .shape("party-mouth-clip-shape"),
             content: .group([
               shape(nil, "M101 142H134V151.3Q117.5 155 101 151Z", fill: paper),
-              shape("party-mouth-tongue", ellipse(118, 162.5, 5.8, 3), fill: tongue),
+              shape("party-mouth-tongue", ellipse(118, 162.5, 5.8, 3), fill: tongue)
             ])),
           shape(
             "party-mouth-outline", Path(), stroke: ink, width: lineStyle.width,
-            cap: lineStyle.cap, join: lineStyle.join),
+            cap: lineStyle.cap, join: lineStyle.join)
         ]),
       group("mouth-kiss", opacity: 0, [inked(nil, "M278 364l10 7-10 7 11 7")]),
       group(
@@ -236,7 +236,7 @@ enum OkouAvatarArtwork {
           shape("tear-stream-left", Path(), stroke: water, width: 3.2, cap: .round),
           shape("tear-stream-right", Path(), stroke: water, width: 3.2, cap: .round),
           shape("teardrop-left", Self.teardrop, fill: water),
-          shape("teardrop-right", Self.teardrop, fill: water),
+          shape("teardrop-right", Self.teardrop, fill: water)
         ]),
       shape(
         "mouth-cry",
@@ -248,7 +248,7 @@ enum OkouAvatarArtwork {
           shape(
             nil, "M369 258C366 270 356 281 356 289a13 13 0 0 0 26 0c0-8-10-19-13-31Z",
             fill: water, stroke: ink, width: 3.5),
-          shape(nil, "M364 285q-3 7 2 10", stroke: paper, width: 3, cap: .round),
+          shape(nil, "M364 285q-3 7 2 10", stroke: paper, width: 3, cap: .round)
         ]),
       group(
         "glasses", opacity: 0,
@@ -260,8 +260,8 @@ enum OkouAvatarArtwork {
           lined(inked(nil, "M229 284q29-11 59 0m-132-2-20-5m226 5 20-5")),
           shape(
             nil, "m178 287-6 14m17-14-6 16m126-16-6 14m17-14-6 16", stroke: paper, width: 3.5,
-            opacity: 0.6),
-        ]),
+            opacity: 0.6)
+        ])
     ]
   }
 
@@ -282,7 +282,7 @@ enum OkouAvatarArtwork {
   private static func extraOverlays() -> [OkouAvatarNode] {
     let vein = [
       "M-10-18C-7-5 3.5-4 9-14.5", "M18.5-7.5C5.5-6.5 5.5 3.5 15 11", "M7.5 18C4.5 5-5.5 5.7-11 15",
-      "M-18 6.5C-5.5 4.5-6-4-16.5-9.5",
+      "M-18 6.5C-5.5 4.5-6-4-16.5-9.5"
     ]
     return [
       group(
@@ -320,14 +320,14 @@ enum OkouAvatarArtwork {
             }),
           shape(
             "anger-steam", "M100 225q-22-12-7-26t-7-25m335 57q22-12 7-26t7-25",
-            stroke: hex(0xB7AAA0), width: 5, cap: .round),
+            stroke: hex(0xB7AAA0), width: 5, cap: .round)
         ]),
       group(
         "question-mark", transform: translate(415, 155), opacity: 0,
         [
           shape(
             nil, "M-11-7C-14-26 14-26 14-10c0 11-13 9-13 20", stroke: blue, width: 6, cap: .round),
-          shape(nil, ellipse(1, 23, 3.5, 3.5), fill: blue),
+          shape(nil, ellipse(1, 23, 3.5, 3.5), fill: blue)
         ]),
       group("party-confetti", opacity: 0, (0..<16).map(confettiPiece)),
       group(
@@ -338,7 +338,7 @@ enum OkouAvatarArtwork {
           shape(
             nil, "M111 229v-18h18m278 18v-18h-18M111 361v18h18m278-18v18h-18", stroke: blue,
             width: 4, cap: .round)
-        ]),
+        ])
     ]
   }
 

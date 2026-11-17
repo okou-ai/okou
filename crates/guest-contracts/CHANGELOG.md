@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.32.17](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.16...guest-contracts-v0.32.17) (2026-11-17)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify disk exhaustion before completion ([#48222](https://github.com/okou-ai/okou/issues/48222)) ([2ba7427](https://github.com/okou-ai/okou/commit/2ba742774dce0ce2d76c4a2064fb78e75af0dcf3))
+
+## [0.32.16](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.15...guest-contracts-v0.32.16) (2026-11-17)
+
+
+### Refactoring
+
+* **runner:** remove unused execution overrides ([#48162](https://github.com/okou-ai/okou/issues/48162)) ([1f0afc6](https://github.com/okou-ai/okou/commit/1f0afc6aa21f773b54c1d64b540280698e58f699))
+
+## [0.32.15](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.14...guest-contracts-v0.32.15) (2026-11-17)
+
+
+### Refactoring
+
+* use typed resource usage sampling ([#48150](https://github.com/okou-ai/okou/issues/48150)) ([5eef290](https://github.com/okou-ai/okou/commit/5eef290885295b75469ba5966dfd01a1f1e55af5))
+
+## [0.32.14](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.13...guest-contracts-v0.32.14) (2026-11-17)
+
+## [0.32.13](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.12...guest-contracts-v0.32.13) (2026-11-16)
+
+## [0.32.12](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.11...guest-contracts-v0.32.12) (2026-11-16)
+
+
+### Refactoring
+
+* **runtime:** share sorted environment entry validation ([#47883](https://github.com/okou-ai/okou/issues/47883)) ([2170f64](https://github.com/okou-ai/okou/commit/2170f647745a06ae5957e4e230ff3701a9b14e1f))
+
 ## [0.32.11](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.10...guest-contracts-v0.32.11) (2026-11-16)
 
 ## [0.32.10](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.9...guest-contracts-v0.32.10) (2026-11-16)

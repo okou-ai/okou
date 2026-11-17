@@ -34,7 +34,7 @@ final class ProjectDisclosureStorageTests: XCTestCase {
     try await first.setExpanded(true, projectID: "mine").value
     let scopes = [
       scope(origin: "https://other.invalid"), scope(user: "other-user"),
-      scope(workspace: "other-workspace"),
+      scope(workspace: "other-workspace")
     ]
     for scope in scopes {
       let other = storage(fixture, scope: scope)

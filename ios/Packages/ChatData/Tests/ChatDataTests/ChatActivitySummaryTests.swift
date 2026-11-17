@@ -38,7 +38,7 @@ final class ChatActivitySummaryTests: XCTestCase {
       "{\"runId\":\"\(run)\",\"messages\":[],\"status\":\"unknown\"}",
       "{\"runId\":\"\(run)\",\"messages\":["
         + Array(repeating: "{\"id\":\"x\",\"text\":\"text\"}", count: 5).joined(separator: ",")
-        + "],\"status\":\"available\"}",
+        + "],\"status\":\"available\"}"
     ]
     for body in invalid {
       let fixture = ChatHTTPFixture { _ in ChatHTTPResponse(body: body) }

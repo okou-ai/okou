@@ -485,24 +485,8 @@ fn validate_pi_execution_context(context: &ExecutionContext) -> Result<(), Strin
 fn validate_user_environment_for_guest(context: &ExecutionContext) -> Result<(), String> {
     let mut entries: Vec<(&str, &str)> = Vec::new();
     for_each_guest_user_env_entry(context, |key, value| entries.push((key, value)));
-    entries.sort_by_key(|(key, _)| *key);
 
-    for (key, value) in entries {
-        if !guest_contracts::env::is_shell_identifier_env_key(key) {
-            return Err(format!(
-                "user environment contains invalid env key {:?}",
-                guest_contracts::env::sanitize_env_key_for_diagnostic(key)
-            ));
-        }
-        if value.contains('\0') {
-            return Err(format!(
-                "user environment contains NUL byte for env key {:?}",
-                guest_contracts::env::sanitize_env_key_for_diagnostic(key)
-            ));
-        }
-    }
-
-    Ok(())
+    guest_contracts::env::validate_sorted_shell_environment(entries, "user environment")
 }
 
 fn validate_run_payload_field(name: &str, value: &str) -> Result<(), String> {
@@ -550,25 +534,10 @@ fn json_value_contains_nul_string(value: &serde_json::Value) -> bool {
 fn validate_bootstrap_environment_for_guest(
     environment: &HashMap<String, String>,
 ) -> Result<(), String> {
-    let mut entries: Vec<(&String, &String)> = environment.iter().collect();
-    entries.sort_by_key(|(key, _)| *key);
-
-    for (key, value) in entries {
-        if !guest_contracts::env::is_shell_identifier_env_key(key) {
-            return Err(format!(
-                "bootstrap environment contains invalid env key {:?}",
-                guest_contracts::env::sanitize_env_key_for_diagnostic(key)
-            ));
-        }
-        if value.contains('\0') {
-            return Err(format!(
-                "bootstrap environment contains NUL byte for env key {:?}",
-                guest_contracts::env::sanitize_env_key_for_diagnostic(key)
-            ));
-        }
-    }
-
-    Ok(())
+    guest_contracts::env::validate_sorted_shell_environment(
+        environment.iter(),
+        "bootstrap environment",
+    )
 }
 
 pub fn validate_resume_session_id(context: &ExecutionContext) -> Result<(), String> {
@@ -874,28 +843,15 @@ pub(super) fn prepare_run_payload_for_run(
         validate_codex_runtime_config_field(config).map_err(RunnerError::Internal)?;
     }
 
-    let mut disallowed_tools = String::new();
-    let mut tools = String::new();
-    let mut settings = String::new();
-    if effective_cli_framework(&context.cli_agent_type) == EffectiveCliFramework::ClaudeCode {
-        if let Some(values) = &context.disallowed_tools {
-            disallowed_tools = serialize_claude_tool_env(
-                guest_contracts::env::DISALLOWED_TOOLS_RUN_PAYLOAD_FIELD,
-                values,
-            )?
-            .unwrap_or_default();
-        }
-        if let Some(values) = &context.tools {
-            tools =
-                serialize_claude_tool_env(guest_contracts::env::TOOLS_RUN_PAYLOAD_FIELD, values)?
-                    .unwrap_or_default();
-        }
-        if let Some(value) = &context.settings
-            && !value.is_empty()
-        {
-            settings = value.clone();
-        }
-    }
+    let disallowed_tools = if effective_cli_framework(&context.cli_agent_type)
+        == EffectiveCliFramework::ClaudeCode
+        && let Some(values) = &context.disallowed_tools
+    {
+        validate_disallowed_tools(values).map_err(RunnerError::Internal)?;
+        values.join(",")
+    } else {
+        String::new()
+    };
 
     let payload = guest_contracts::env::RunPayload {
         prompt: context.prompt.clone(),
@@ -911,8 +867,6 @@ pub(super) fn prepare_run_payload_for_run(
             .unwrap_or_default(),
         secret_values: String::new(),
         disallowed_tools,
-        tools,
-        settings,
         artifacts: serialize_artifacts_payload(context)?,
         feature_flags: serialize_feature_flags_payload(context)?,
         codex_runtime_config: serialize_codex_runtime_config_payload(context)?,
@@ -1082,42 +1036,27 @@ pub(super) fn insert_claude_code_env(
     }
 }
 
-pub(super) fn serialize_claude_tool_env(
-    env_name: &str,
-    tools: &[String],
-) -> RunnerResult<Option<String>> {
-    if tools.is_empty() {
-        return Ok(None);
-    }
-
-    validate_claude_tool_env_entries(env_name, tools).map_err(RunnerError::Internal)?;
-
-    Ok(Some(tools.join(",")))
-}
-
-pub(super) fn validate_claude_tool_env_entries(
-    env_name: &str,
-    tools: &[String],
-) -> Result<(), String> {
+fn validate_disallowed_tools(tools: &[String]) -> Result<(), String> {
+    let field_name = guest_contracts::env::DISALLOWED_TOOLS_RUN_PAYLOAD_FIELD;
     for (index, tool) in tools.iter().enumerate() {
         if tool.trim().is_empty() {
             return Err(format!(
-                "{env_name} entry at index {index} must not be empty"
+                "{field_name} entry at index {index} must not be empty"
             ));
         }
         if tool.contains(',') {
             return Err(format!(
-                "{env_name} entry at index {index} must not contain commas"
+                "{field_name} entry at index {index} must not contain commas"
             ));
         }
         if tool.contains('\0') {
             return Err(format!(
-                "{env_name} entry at index {index} must not contain NUL bytes"
+                "{field_name} entry at index {index} must not contain NUL bytes"
             ));
         }
         if tool.trim_start().starts_with('-') {
             return Err(format!(
-                "{env_name} entry at index {index} must not start with a hyphen"
+                "{field_name} entry at index {index} must not start with a hyphen"
             ));
         }
     }

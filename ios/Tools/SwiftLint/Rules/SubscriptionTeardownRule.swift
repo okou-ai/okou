@@ -83,7 +83,10 @@ struct SubscriptionTeardownRule: NativeRule {
             !$0.fresh(in: scope, repeated: lifetime.repeated(node))
               && !trace.preserves(node, scope: lifetime, storage: $0.storage, slot: $0)
           }
-        if !trace.reachedCreation || !acquired.allSatisfy({ acquisition.finished($0) }) || replaced
+        if !trace.reachedCreation
+          || !acquired.allSatisfy(
+            { acquisition.finished($0) }
+          ) || replaced
         {
           positions.append(node.positionAfterSkippingLeadingTrivia)
         }

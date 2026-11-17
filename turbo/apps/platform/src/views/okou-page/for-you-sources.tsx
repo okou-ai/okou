@@ -62,32 +62,30 @@ function SourceChoices() {
   }
   return (
     <div className="divide-y divide-gray-400">
-      {(["suggestions", "whatsNew", "offers"] as const).map((source) => {
-        return (
-          <label
-            key={source}
-            className="flex cursor-default items-center justify-between gap-6 py-4 text-sm"
-          >
-            <span>{labels[source]}</span>
-            {sources.state === "hasData" ? (
-              <Switch
-                size="compact"
-                checked={sources.data[source]}
-                disabled={saving.state === "loading"}
-                onCheckedChange={(enabled) => {
-                  detach(update(source, enabled, signal), Reason.DomCallback);
-                }}
-              />
-            ) : (
-              <Skeleton className="h-5 w-9 rounded-full" />
-            )}
-          </label>
-        );
-      })}
-      <div className="flex items-center justify-between gap-6 py-4 text-sm">
-        <span>{labels.systemUpdates}</span>
-        <span className="text-xs text-muted-foreground">{labels.alwaysOn}</span>
-      </div>
+      {(["suggestions", "whatsNew", "offers", "systemUpdates"] as const).map(
+        (source) => {
+          return (
+            <label
+              key={source}
+              className="flex cursor-default items-center justify-between gap-6 py-4 text-sm"
+            >
+              <span>{labels[source]}</span>
+              {sources.state === "hasData" ? (
+                <Switch
+                  size="compact"
+                  checked={sources.data[source]}
+                  disabled={saving.state === "loading"}
+                  onCheckedChange={(enabled) => {
+                    detach(update(source, enabled, signal), Reason.DomCallback);
+                  }}
+                />
+              ) : (
+                <Skeleton className="h-5 w-9 rounded-full" />
+              )}
+            </label>
+          );
+        },
+      )}
     </div>
   );
 }

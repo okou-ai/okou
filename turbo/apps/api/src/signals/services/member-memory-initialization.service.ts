@@ -2,7 +2,7 @@ import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/st
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -11,6 +11,10 @@ import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-
 import { PI_RESOURCE_EXTRACTOR_VERSION } from "../../lib/pi-resource-index";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 import type { MemberMemoryOwner } from "./member-memory";
+import {
+  memberMemories,
+  memoryVersions,
+} from "@okouai/db/schema/member-memory";
 
 /** Establish the member's memory before any run can require its mount. */
 export const initializeMemberMemory$ = command(
@@ -55,11 +59,7 @@ export const initializeMemberMemory$ = command(
         },
         setWhere: isNull(storages.headVersionId),
       })
-      .returning({
-        id: storages.id,
-        s3Prefix: storages.s3Prefix,
-        headVersionId: storages.headVersionId,
-      })
+      .returning()
       .getSQL();
     // Drizzle INSERT SELECT requires every table column; these dependent partial
     // inserts keep omitted fields on their database defaults. Index rows
@@ -74,7 +74,25 @@ export const initializeMemberMemory$ = command(
         ${sql.param(0, storageVersions.fileCount)},
         ${sql.param("Initial empty artifact", storageVersions.message)},
         ${sql.param(identity.userId, storageVersions.createdBy)} FROM initialized
-      ON CONFLICT DO NOTHING
+      -- Return the incumbent immutable row without changing its provenance.
+      ON CONFLICT (id) DO UPDATE SET id=excluded.id
+      RETURNING *
+    ), initialized_memory AS (
+      INSERT INTO ${memberMemories}
+        (id,org_id,user_id,object_prefix,content_size,file_count,head_version_id,created_at,updated_at)
+      SELECT id,org_id,user_id,s3_prefix,0,0,head_version_id,created_at,updated_at FROM initialized
+      ON CONFLICT (org_id,user_id) DO UPDATE SET
+        head_version_id=encode(sha256(convert_to('storage:' || ${memberMemories.id}::text || chr(10),'UTF8')),'hex'),
+        content_size=0,file_count=0,updated_at=excluded.updated_at
+      WHERE ${memberMemories.headVersionId} IS NULL
+      RETURNING *
+    ), registered_memory AS (
+      INSERT INTO ${memoryVersions}
+        (id,memory_id,object_prefix,content_size,archive_size,file_count,message,created_by)
+      SELECT m.head_version_id,m.id,m.object_prefix || '/' || m.head_version_id,0,0,0,
+        ${sql.param("Initial empty artifact", memoryVersions.message)},${sql.param(identity.userId, memoryVersions.createdBy)}
+      FROM initialized_memory AS m
+      ON CONFLICT (id) DO UPDATE SET id=excluded.id RETURNING id
     ) INSERT INTO ${piResourceVersionIndexes}
         (storage_version_id, extractor_version, status, projection,
          projection_hash, source_archive_size, lease_id, lease_expires_at, updated_at)
@@ -96,6 +114,27 @@ export const initializeMemberMemory$ = command(
 `;
     signal.throwIfAborted();
     await db.execute(statement);
+    signal.throwIfAborted();
+    // A concurrent B initializer can win after this statement's snapshot.
+    // Re-read Memory authority; a missing migrated root must never bootstrap
+    // itself from a published legacy HEAD. B/C identity creation still shares
+    // the incumbent legacy member key; remove that bridge after #47043 Gate 2.
+    const [memory] = await db
+      .select({ headVersionId: memberMemories.headVersionId })
+      .from(memberMemories)
+      .where(
+        and(
+          eq(memberMemories.orgId, identity.orgId),
+          eq(memberMemories.userId, identity.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!memory?.headVersionId) {
+      throw new Error(
+        "Member Memory authority is unavailable after initialization",
+      );
+    }
     // A completed statement can remain committed when cancellation skips the
     // caller's subsequent work; this is not transport cancellation or rollback.
     signal.throwIfAborted();

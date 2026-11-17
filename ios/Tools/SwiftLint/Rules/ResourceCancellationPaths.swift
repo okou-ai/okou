@@ -57,21 +57,20 @@ struct ResourceCancellationPaths {
 
   private func proves(_ parts: [ExprSyntax], value: Bool, depth: Int = 0) -> Bool {
     guard depth < 16 else { return false }
-    for operation in ["||", "&&"] {
-      if parts.contains(where: { $0.as(BinaryOperatorExprSyntax.self)?.operator.text == operation })
-      {
-        let segments = parts.split {
-          $0.as(BinaryOperatorExprSyntax.self)?.operator.text == operation
-        }
-        let constant = operation == "||"
-        if segments.contains(where: { literal(Array($0), depth: depth) == constant }) {
-          return false
-        }
-        let remaining = segments.filter { literal(Array($0), depth: depth) == nil }
-        guard !remaining.isEmpty else { return false }
-        let checks = remaining.map { proves(Array($0), value: value, depth: depth) }
-        return (operation == "||") == value ? checks.allSatisfy { $0 } : checks.contains(true)
+    for operation in ["||", "&&"]
+    where parts.contains(where: { $0.as(BinaryOperatorExprSyntax.self)?.operator.text == operation }
+    ) {
+      let segments = parts.split {
+        $0.as(BinaryOperatorExprSyntax.self)?.operator.text == operation
       }
+      let constant = operation == "||"
+      if segments.contains(where: { literal(Array($0), depth: depth) == constant }) {
+        return false
+      }
+      let remaining = segments.filter { literal(Array($0), depth: depth) == nil }
+      guard !remaining.isEmpty else { return false }
+      let checks = remaining.map { proves(Array($0), value: value, depth: depth) }
+      return (operation == "||") == value ? checks.allSatisfy { $0 } : checks.contains(true)
     }
     if parts.count == 1, let first = parts.first,
       first.is(PrefixOperatorExprSyntax.self) || first.is(TupleExprSyntax.self)
@@ -119,7 +118,7 @@ struct ResourceCancellationPaths {
   }
 
   private let cancellationTypes: Set<String> = [
-    "CancellationError", "_Concurrency.CancellationError", "Swift.CancellationError",
+    "CancellationError", "_Concurrency.CancellationError", "Swift.CancellationError"
   ]
 
   private func literal(_ parts: [ExprSyntax], depth: Int = 0) -> Bool? {
@@ -157,7 +156,7 @@ struct ResourceCancellationPaths {
   private func cancelledCode(_ text: String) -> Bool {
     [
       ".cancelled", "URLError.cancelled", "URLError.Code.cancelled",
-      "Foundation.URLError.cancelled", "Foundation.URLError.Code.cancelled",
+      "Foundation.URLError.cancelled", "Foundation.URLError.Code.cancelled"
     ].contains(text)
   }
 
@@ -292,10 +291,13 @@ struct ResourceCancellationPaths {
 
   private func shadowed(_ name: String, at node: ExprSyntax?, signalAlias: Bool = false) -> Bool {
     guard let node else { return false }
+    var crossedFunction = false
     for parent in ancestors(of: node) {
       if !signalAlias && parent.id == handler.id { break }
       if signalAlias, let closure = parent.as(ClosureExprSyntax.self) {
-        if closureCall(closure).map({ isGraphCall($0.0, names: graphCallbacks) }) == true {
+        if !crossedFunction,
+          closureCall(closure).map({ isGraphCall($0.0, names: graphCallbacks) }) == true
+        {
           break
         }
         for capture in closure.signature?.capture?.items ?? [] where capture.name.text == name {
@@ -306,6 +308,14 @@ struct ResourceCancellationPaths {
           }
         }
         if closureParameters(closure).contains(name) { return true }
+      }
+      if signalAlias, let function = parent.as(FunctionDeclSyntax.self) {
+        crossedFunction = true
+        if function.signature.parameterClause.parameters.contains(where: {
+          ($0.secondName ?? $0.firstName).text == name
+        }) {
+          return !signals.contains(name)
+        }
       }
       if let branch = parent.as(SwitchCaseSyntax.self),
         let label = branch.label.as(SwitchCaseLabelSyntax.self),

@@ -2,6 +2,7 @@ import { GET_STARTED_REWARDS } from "@okouai/api-contracts/contracts/get-started
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { workflows } from "@okouai/db/schema/workflow";
 import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
+import { appOwnedRewardPredicate } from "./marketing-reward-ownership";
 
 /** Pure statement builder: snapshot provenance with the queued input.
  * The enqueue owner executes this SQL; no database capability escapes it.
@@ -26,7 +27,7 @@ export function recordGetStartedWorkflowSql(
     ${sql.param(at, getStartedClaims.nextAttemptAt)}, ${sql.param(at, getStartedClaims.createdAt)},
     ${sql.param(at, getStartedClaims.updatedAt)}
   FROM ${workflows}
-  WHERE ${and(eq(workflows.id, args.workflowId), eq(workflows.orgId, args.orgId), isNull(workflows.officialDefinitionName))}
+  WHERE ${and(eq(workflows.id, args.workflowId), eq(workflows.orgId, args.orgId), isNull(workflows.officialDefinitionName), appOwnedRewardPredicate("user", workflows.createdBy))}
     AND NOT EXISTS (SELECT 1 FROM ${getStartedClaims}
       WHERE ${getStartedClaims.rewardKey} = 'workflow:' || ${workflows.createdBy})
     ${eligibility ? sql`AND ${eligibility}` : sql.empty()}

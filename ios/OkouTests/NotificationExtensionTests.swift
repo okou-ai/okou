@@ -9,8 +9,7 @@ import XCTest
 
 @MainActor
 final class NotificationExtensionTests: XCTestCase {
-  func testExtensionRestoresSessionAndPersistsHistoryBeforeDeliveringTheOriginalAlert() async throws
-  {
+  func testExtensionRestoresSessionAndHistoryBeforeDeliveringOriginalAlert() async throws {
     let offline = Mutex(false)
     let fixture = ConversationHistoryFixture(
       count: 2,
@@ -127,8 +126,7 @@ final class NotificationExtensionTests: XCTestCase {
     XCTAssertEqual(receipts.first?.report.outcome, "expired")
   }
 
-  func testUnavailableAccountOrWorkspaceDeliversTheAlertWithoutCachingForeignHistory() async throws
-  {
+  func testUnavailableMembershipDeliversAlertWithoutForeignHistory() async throws {
     let fixture = ConversationHistoryFixture(count: 2)
     let (session, user, directory, _) = try await session(fixture)
     for (targetUser, targetWorkspace) in [("user_foreign", "org_one"), (user, "org_elsewhere")] {
@@ -173,7 +171,7 @@ final class NotificationExtensionTests: XCTestCase {
         "version": 1, "userId": user, "workspaceId": workspace,
         "threadId": ConversationHistoryFixture.threadID,
         "runId": "60000000-0000-4000-8000-000000000003",
-        "notificationId": "60000000-0000-4000-8000-000000000003:completed",
+        "notificationId": "60000000-0000-4000-8000-000000000003:completed"
       ]
     ]
     return UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)

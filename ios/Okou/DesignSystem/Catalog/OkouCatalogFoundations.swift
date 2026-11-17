@@ -10,26 +10,26 @@
           OkouCatalogSwatches([
             ("Background", OkouColor.background), ("Card", OkouColor.card),
             ("Sidebar", OkouColor.sidebar), ("State hover", OkouColor.stateHover),
-            ("Border", OkouColor.border),
+            ("Border", OkouColor.border)
           ])
         }
         OkouCatalogSection("Text") {
           OkouCatalogSwatches([
             ("Foreground", OkouColor.foreground), ("Muted foreground", OkouColor.mutedForeground),
-            ("Trailing value", OkouColor.trailingValue), ("Placeholder", OkouColor.placeholder),
+            ("Trailing value", OkouColor.trailingValue), ("Placeholder", OkouColor.placeholder)
           ])
         }
         OkouCatalogSection("Action & brand") {
           OkouCatalogSwatches([
             ("Primary", OkouColor.primary), ("Brand text", OkouColor.brandText),
             ("Link", OkouColor.link), ("Interrupt", OkouColor.interrupt),
-            ("Destructive", OkouColor.destructive),
+            ("Destructive", OkouColor.destructive)
           ])
         }
         OkouCatalogSection("Status") {
           OkouCatalogSwatches([
             ("Running", OkouStatusColor.running), ("Success", OkouStatusColor.success),
-            ("Warning", OkouStatusColor.warning),
+            ("Warning", OkouStatusColor.warning)
           ])
         }
       }

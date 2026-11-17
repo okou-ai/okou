@@ -71,7 +71,7 @@ function setPhoneUse(enabled: boolean) {
   );
 }
 describe("Phone Use native connection authority", () => {
-  it("tracks online presence separately from control readiness and fences replaced connections", async () => {
+  it("advertises online only while native control and presence are available and fences replaced connections", async () => {
     const actor = authenticate();
     await setPhoneUse(true);
     const client = api();
@@ -107,9 +107,28 @@ describe("Phone Use native connection authority", () => {
     expect(connected.body.devices).toStrictEqual([
       expect.objectContaining({
         id: registered.body.id,
-        online: true,
-        ready: false,
+        online: false,
       }),
+    ]);
+    await accept(
+      client.heartbeat({
+        headers,
+        params: { deviceId: registered.body.id },
+        body: { generation: registered.body.generation, ready: true },
+      }),
+      [200],
+    );
+    const enabled = await accept(client.devices({ headers }), [200]);
+    expect(enabled.body.devices).toStrictEqual([
+      expect.objectContaining({
+        id: registered.body.id,
+        online: true,
+      }),
+    ]);
+    mockNow(now() + 45_001);
+    const expired = await accept(client.devices({ headers }), [200]);
+    expect(expired.body.devices).toStrictEqual([
+      expect.objectContaining({ online: false }),
     ]);
     await accept(
       client.heartbeat({
@@ -125,7 +144,6 @@ describe("Phone Use native connection authority", () => {
       expect.objectContaining({
         id: registered.body.id,
         online: false,
-        ready: true,
       }),
     ]);
     present.add(realtime.body.channel);
@@ -155,7 +173,7 @@ describe("Phone Use native connection authority", () => {
       expect.objectContaining({ online: false }),
     ]);
   });
-  it("replaces a connection without allowing its previous generation to become ready", async () => {
+  it("replaces a connection without allowing its previous generation to go online", async () => {
     authenticate();
     await setPhoneUse(true);
     const client = api();
@@ -172,7 +190,7 @@ describe("Phone Use native connection authority", () => {
     expect(second.body).toMatchObject({
       id: first.body.id,
       generation: first.body.generation + 1,
-      ready: false,
+      online: false,
     });
     await accept(
       client.heartbeat({
@@ -184,10 +202,10 @@ describe("Phone Use native connection authority", () => {
     );
     const listed = await accept(client.devices({ headers }), [200]);
     expect(listed.body.devices).toStrictEqual([
-      expect.objectContaining({ id: first.body.id, ready: false }),
+      expect.objectContaining({ id: first.body.id, online: false }),
     ]);
   });
-  it("fences a delayed disconnect after a replacement connection becomes ready", async () => {
+  it("fences a delayed disconnect after a replacement connection goes online", async () => {
     const actor = authenticate();
     await setPhoneUse(true);
     const client = api();
@@ -229,12 +247,15 @@ describe("Phone Use native connection authority", () => {
       throw disconnected.error;
     }
     expect(disconnected.value.status).toBe(409);
+    context.mocks.ably.presenceGet.mockResolvedValue({
+      items: [{ clientId: actor.userId }],
+    });
     const listed = await accept(client.devices({ headers }), [200]);
     expect(listed.body.devices).toStrictEqual([
       expect.objectContaining({
         id: first.body.id,
         generation: replacement.value.generation,
-        ready: true,
+        online: true,
       }),
     ]);
   });
@@ -481,6 +502,20 @@ test(
         [403],
       );
     });
+    context.mocks.ably.createTokenRequest.mockImplementation((options) => {
+      const params = options as {
+        capability: Record<string, string[]>;
+        clientId: string;
+      };
+      return Promise.resolve({
+        keyName: "phone.key",
+        timestamp: 1,
+        nonce: "nonce",
+        mac: "mac",
+        capability: JSON.stringify(params.capability),
+        clientId: params.clientId,
+      });
+    });
     const id = randomUUID();
     const action = {
       kind: "tap" as const,
@@ -501,6 +536,32 @@ test(
       deviceId: device.body.id,
       status: "queued",
     });
+    expect(submitted.body.realtime).toMatchObject({
+      channelName: `phone-use-result:${orgId}:${actor.userId}:${id}`,
+      eventName: "resultChanged",
+      tokenRequest: {
+        capability: JSON.stringify({
+          [`phone-use-result:${orgId}:${actor.userId}:${id}`]: ["subscribe"],
+        }),
+      },
+    });
+    const subscription = await scenario.run(() => {
+      return accept(
+        client.get({
+          headers: agentHeaders,
+          params: { operationId: id },
+          query: { realtime: "true" },
+        }),
+        [200],
+      );
+    });
+    expect(subscription.body.realtime?.channelName).toBe(
+      submitted.body.realtime?.channelName,
+    );
+    // A lost wakeup must not make retrying the same command identity fail.
+    context.mocks.ably.publish.mockRejectedValueOnce(
+      new Error("Notification unavailable"),
+    );
     const duplicate = await scenario.run(() => {
       return accept(
         client.create({ headers: agentHeaders, body: { id, action } }),

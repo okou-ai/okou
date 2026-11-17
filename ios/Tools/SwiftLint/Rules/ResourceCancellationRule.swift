@@ -235,7 +235,7 @@ struct ResourceCancellationRule: NativeRule {
         }
         if previous == cancelling { break }
       }
-      return !cancelling.intersection(["close", "cancel", "dismiss", "deactivate"]).isEmpty
+      return !cancelling.isDisjoint(with: ["close", "cancel", "dismiss", "deactivate"])
     }
   }
 }

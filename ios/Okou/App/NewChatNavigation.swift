@@ -2,7 +2,7 @@ import Observation
 import SwiftUI
 import UIKit
 
-/// System entry points carry no account data and wait for an authenticated workspace.
+/// New-chat entry points carry no account data and wait for an authenticated workspace.
 @MainActor @Observable
 final class NewChatRequests {
   static let shared = NewChatRequests()
@@ -54,7 +54,7 @@ final class NewChatRequests {
 }
 
 extension EnvironmentValues {
-  @Entry var newChatActivation: UUID? = nil
+  @Entry var newChatActivation: UUID?
 }
 
 struct NewChatNavigation: ViewModifier {

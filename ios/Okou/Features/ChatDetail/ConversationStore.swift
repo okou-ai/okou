@@ -12,10 +12,10 @@ final class ConversationStore {
     let text: String
     let createdAt: Date
     let attachments: [ChatAttachment]
-    var document: ChatDraftDocument? = nil
-    var modelSelection: ChatModelSelection? = nil
-    var reasoningEffort: String? = nil
-    var computerAccess: ChatComputerAccess? = nil
+    var document: ChatDraftDocument?
+    var modelSelection: ChatModelSelection?
+    var reasoningEffort: String?
+    var computerAccess: ChatComputerAccess?
     var needsRetry = false
 
     var message: ChatMessage {
@@ -114,7 +114,7 @@ final class ConversationStore {
     let position: ConversationReadingPosition
   }
   /// The complete semantic refresh, including publication and read confirmation.
-  var isLoading: Bool { refreshTask != nil }
+  var isLoading: Bool { refreshTask != nil || readTask != nil }
   private(set) var isSending = false
   enum DeliveryFailure {
     case notSent(String)
@@ -202,6 +202,8 @@ final class ConversationStore {
   private let didSettle: @MainActor () -> Void
   private var refreshAgain = false
   private var refreshTask: Task<Void, Never>?
+  private var readTask: Task<Void, Never>?
+  private var readAgain = false
   private var refreshGeneration = UUID()
   private var sendTask: Task<Bool, Never>?
   private var stopTask: Task<Void, Never>?
@@ -353,39 +355,7 @@ final class ConversationStore {
           if history != verified { history = verified }
           historySyncError = nil
           if !result.canStop { stopIssue = nil }
-          let unreadThrough = [result.latestRunFinishAt, thread.unreadAt].compactMap { $0 }.max()
-          if suppressAutomaticRead, let unreadThrough {
-            if let manualUnreadThrough {
-              // Preserve the explicitly unread delivery; a later delivery can be read normally.
-              if unreadThrough > manualUnreadThrough { suppressAutomaticRead = false }
-            } else {
-              manualUnreadThrough = unreadThrough
-            }
-          }
-          if isVisible(), !suppressAutomaticRead, let unreadThrough,
-            locallyReadThrough.map({ $0 < unreadThrough }) ?? true
-          {
-            do {
-              let watermark = try await commands.markRead(threadID: thread.id)
-              guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
-              readSyncError = nil
-              if let watermark {
-                locallyReadThrough = max(locallyReadThrough ?? watermark, watermark)
-                if suppressAutomaticRead {
-                  manualUnreadThrough = max(manualUnreadThrough ?? watermark, watermark)
-                }
-              }
-              if !suppressAutomaticRead { didMarkRead(watermark) }
-            } catch {
-              guard !closed, !Task.isCancelled, refreshGeneration == generation,
-                !(error is CancellationError)
-              else { return }
-              readSyncError = error.localizedDescription
-              report(error)
-            }
-          } else {
-            readSyncError = nil
-          }
+          await markVisibleDeliveryRead()
         } catch is CancellationError {
           return
         } catch {
@@ -397,6 +367,79 @@ final class ConversationStore {
     }
     lifecycleTasks.track(task)
     refreshTask = task
+    await task.value
+  }
+
+  /// Revisit an indicator watermark without fetching history again. A resident
+  /// refresh still owns its history/recovery confirmation before this decision.
+  func reconcileReadState() async {
+    let generation = refreshGeneration
+    if let refreshTask { await refreshTask.value }
+    guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation,
+      readSyncError == nil
+    else { return }
+    await markVisibleDeliveryRead()
+  }
+
+  private func markVisibleDeliveryRead() async {
+    guard !closed, !needsUpgrade, !Task.isCancelled, history != nil, historySyncError == nil else {
+      return
+    }
+    if let readTask {
+      readAgain = true
+      await readTask.value
+      return
+    }
+    let generation = refreshGeneration
+    let task = Task { [weak self] in
+      guard let self else { return }
+      defer {
+        if refreshGeneration == generation { readTask = nil }
+        didSettle()
+      }
+      repeat {
+        guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else {
+          return
+        }
+        readAgain = false
+        let unreadThrough = [history?.latestRunFinishAt, thread.unreadAt].compactMap { $0 }.max()
+        if suppressAutomaticRead, let unreadThrough {
+          if let manualUnreadThrough {
+            // Preserve the explicitly unread delivery; a later delivery can be read normally.
+            if unreadThrough > manualUnreadThrough { suppressAutomaticRead = false }
+          } else {
+            manualUnreadThrough = unreadThrough
+          }
+        }
+        if isVisible(), !suppressAutomaticRead, let unreadThrough,
+          locallyReadThrough.map({ $0 < unreadThrough }) ?? true
+        {
+          do {
+            let watermark = try await commands.markRead(threadID: thread.id)
+            guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
+            readSyncError = nil
+            if let watermark {
+              locallyReadThrough = max(locallyReadThrough ?? watermark, watermark)
+              if suppressAutomaticRead {
+                manualUnreadThrough = max(manualUnreadThrough ?? watermark, watermark)
+              }
+            }
+            if !suppressAutomaticRead { didMarkRead(watermark) }
+          } catch {
+            guard !closed, !Task.isCancelled, refreshGeneration == generation,
+              !(error is CancellationError)
+            else { return }
+            readSyncError = error.localizedDescription
+            report(error)
+            return
+          }
+        } else {
+          readSyncError = nil
+        }
+      } while readAgain && !closed && !needsUpgrade && !Task.isCancelled
+    }
+    lifecycleTasks.track(task)
+    readTask = task
     await task.value
   }
 
@@ -809,6 +852,9 @@ final class ConversationStore {
     refreshGeneration = UUID()
     refreshTask?.cancel()
     refreshTask = nil
+    readTask?.cancel()
+    readTask = nil
+    readAgain = false
     readResources.pause()
     refreshAgain = false
   }

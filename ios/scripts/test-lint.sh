@@ -42,7 +42,10 @@ printf 'let value = try! decode()\n' > "$fixture/Packages/ChatData/.build/Genera
 run_lint() {
   bash "$fixture/scripts/lint.sh" > "$test_root/lint.log" 2>&1
 }
-run_lint
+if ! run_lint; then
+  cat "$test_root/lint.log" >&2
+  exit 1
+fi
 for path in "${production_paths[@]}"; do
   printf 'let value = try! decode() as! Int\n' > "$fixture/$path/Invalid.swift"
 done
@@ -67,6 +70,59 @@ for path in "${test_paths[@]}"; do
   grep -F "$path/Duplicate.swift" "$test_root/lint.log" >/dev/null
   rm "$fixture/$path/Duplicate.swift"
 done
+
+for path in "${production_paths[@]}" "${test_paths[@]}"; do
+  cat > "$fixture/$path/DuplicateCondition.swift" <<'SWIFT'
+func classify(_ value: Int) -> Int {
+  if value == 1 { return 10 }
+  else if value == 1 { return 20 }
+  return 0
+}
+SWIFT
+done
+if run_lint; then
+  echo 'Duplicate conditions passed the configured lint entry point.' >&2
+  exit 1
+fi
+for path in "${production_paths[@]}" "${test_paths[@]}"; do
+  grep -F "$path/DuplicateCondition.swift" "$test_root/lint.log" >/dev/null
+  rm "$fixture/$path/DuplicateCondition.swift"
+done
+grep -F 'duplicate_conditions' "$test_root/lint.log" >/dev/null
+
+for path in "${production_paths[@]}" "${test_paths[@]}"; do
+  cat > "$fixture/$path/Setter.swift" <<'SWIFT'
+struct Setting {
+  var value: Int {
+    get { 1 }
+    set { persist(value) }
+  }
+}
+SWIFT
+done
+if run_lint; then
+  echo 'An unused setter value passed the default safety checks.' >&2
+  exit 1
+fi
+for path in "${production_paths[@]}" "${test_paths[@]}"; do
+  grep -F "$path/Setter.swift" "$test_root/lint.log" >/dev/null
+  rm "$fixture/$path/Setter.swift"
+done
+grep -F 'unused_setter_value' "$test_root/lint.log" >/dev/null
+
+# SourceKit-backed default checks must run through the real entry point.
+cat > "$fixture/Okou/Statement.swift" <<'SWIFT'
+func recover() {
+  do { try operation() }
+  catch { report(error) }
+}
+SWIFT
+if run_lint; then
+  echo 'A misplaced catch passed the SourceKit-backed default check.' >&2
+  exit 1
+fi
+grep -F 'statement_position' "$test_root/lint.log" >/dev/null
+rm "$fixture/Okou/Statement.swift"
 
 # The production-only state rule must be enabled by the real root config.
 for path in "${production_paths[@]}"; do
@@ -145,7 +201,10 @@ rm "$fixture/Okou/ResourceCancellation.swift"
 for path in "${test_paths[@]}"; do
   printf 'var fixtureState = 0\n' >> "$fixture/$path/Fixture.swift"
 done
-run_lint
+if ! run_lint; then
+  cat "$test_root/lint.log" >&2
+  exit 1
+fi
 
 printf 'only_rules: [\n' > "$fixture/.swiftlint.yml"
 if run_lint; then

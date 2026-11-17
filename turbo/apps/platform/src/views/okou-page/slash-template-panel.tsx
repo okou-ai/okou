@@ -1,7 +1,6 @@
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
-// The slash panel indexes creation types and workflows, with desktop previews
-// embedded on the right.
-// It renders inside the slash menu's popover shell from slash-workflow.tsx.
+// The slash panel indexes actions and workflows inside slash-workflow.tsx's
+// popover shell. Template covers are shared with the slash-actions overview.
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import {
   ChevronDown,
@@ -15,7 +14,7 @@ import {
   Route,
   Settings2,
 } from "lucide-react";
-import { cn, useMediaQuery } from "@okouai/ui";
+import { cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { useGet, useLastLoadable, useLastResolved } from "ccstate-react";
 import type { UserTemplateKind } from "@okouai/api-contracts/contracts/user-templates";
@@ -26,7 +25,6 @@ import {
 import { SlashWorkflowName, slashWorkflowOptionId } from "./slash-workflow.tsx";
 import { CustomTemplatesLoadError } from "./custom-template-preview-dialog.tsx";
 import { DocumentTemplateCover } from "./document-template-cover.tsx";
-import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { i18n } from "../../i18n/index.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
@@ -88,12 +86,7 @@ function workflowSummary(description: string): string {
 }
 
 interface SlashTemplatePanelProps {
-  /** Already filtered by the typed slash query. */
-  readonly categories: readonly SlashTemplateCategory[];
-  /**
-   * The chat actions the typed query names, indexed after the categories and
-   * before the workflows. Empty unless the slash-actions switch is on.
-   */
+  /** The capability and chat actions indexed before the workflows. */
   readonly actions: readonly SlashAction[];
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly workflowsLoading: boolean;
@@ -109,26 +102,17 @@ interface SlashTemplatePanelProps {
   readonly onNewWorkflow: () => void;
   /** Runs before the Manage workflows link navigates. */
   readonly onManageWorkflows: () => void;
-  /** Keep overview categories anchored nearest the composer on desktop. */
+  /** Keep overview actions anchored nearest the composer on desktop. */
   readonly reversed: boolean;
   readonly reverseWorkflows: boolean;
-  /**
-   * Categories, then actions, precede workflows in the editor's shared
-   * suggestion index.
-   */
+  /** Actions precede workflows in the editor's shared suggestion index. */
   readonly selectedIndex: number;
   /** The row the pointer is previewing, or null while the keyboard leads. */
   readonly previewIndex: number | null;
   readonly onPreview: (index: number | null) => void;
-  readonly onSelectCategory: (category: SlashTemplateCategory) => void;
-  readonly onSelectTemplate: (
-    preview: SlashTemplatePreview,
-    category: SlashTemplateCategory,
-  ) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
   readonly onBrowseAll: () => void;
   readonly workflowOptionId: (workflowId: string) => string;
-  readonly categoryOptionId: (category: SlashTemplateCategory) => string;
 }
 
 export function slashTemplateCategoryLabel(
@@ -273,7 +257,10 @@ function SlashCustomTemplateCovers({
   onSelectTemplate,
 }: {
   readonly category: Exclude<SlashTemplateCategory, "website">;
-  readonly onSelectTemplate: SlashTemplatePanelProps["onSelectTemplate"];
+  readonly onSelectTemplate: (
+    preview: SlashTemplatePreview,
+    category: SlashTemplateCategory,
+  ) => void;
 }) {
   const catalog = useLastLoadable(customTemplateCatalog$);
   const project = useGet(projectCustomTemplate$);
@@ -308,8 +295,7 @@ function SlashCustomTemplateCovers({
 }
 
 /**
- * The covers of one category, filling a positioned pane. Shared by the type
- * preview and the slash-actions Templates list.
+ * The covers of one category, filling the slash-actions Templates pane.
  */
 export function SlashTemplateCovers({
   category,
@@ -394,32 +380,6 @@ export function SlashTemplateCovers({
         </div>
       </div>
     </>
-  );
-}
-
-function SlashTemplateDetailPane({
-  category,
-  onSelectTemplate,
-}: {
-  readonly category: SlashTemplateCategory;
-  readonly onSelectTemplate: (
-    preview: SlashTemplatePreview,
-    category: SlashTemplateCategory,
-  ) => void;
-}) {
-  return (
-    <div
-      className="relative w-[400px] max-w-1/2 shrink-0 overflow-hidden border-l border-border/60"
-      role="region"
-      aria-label={slashTemplateCategoryLabel(category)}
-      data-slot="slash-template-detail"
-      data-category={category}
-    >
-      <SlashTemplateCovers
-        category={category}
-        onSelectTemplate={onSelectTemplate}
-      />
-    </div>
   );
 }
 
@@ -729,82 +689,6 @@ function SlashPanelWorkflowSection({
   );
 }
 
-function SlashPanelCategoryList({
-  categories,
-  markedIndex,
-  selectedIndex,
-  reversed,
-  onPreview,
-  onSelectCategory,
-  categoryOptionId,
-}: Pick<
-  SlashTemplatePanelProps,
-  | "categories"
-  | "selectedIndex"
-  | "reversed"
-  | "onPreview"
-  | "onSelectCategory"
-  | "categoryOptionId"
-> & { readonly markedIndex: number }) {
-  const { t } = useTranslation();
-  if (categories.length === 0) {
-    return null;
-  }
-  return (
-    <div>
-      <SectionLabel>
-        {t(($) => {
-          return $.chat.composer.slashPanel.make;
-        })}
-      </SectionLabel>
-      <div className="px-1">
-        {(reversed ? [...categories].reverse() : categories).map(
-          (category, visualIndex) => {
-            const index = reversed
-              ? categories.length - 1 - visualIndex
-              : visualIndex;
-            const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
-            const label = slashTemplateCategoryLabel(category);
-            return (
-              <button
-                key={category}
-                id={categoryOptionId(category)}
-                ref={
-                  selectedIndex === index
-                    ? scrollSelectedSlashOptionOnMount
-                    : undefined
-                }
-                type="button"
-                aria-label={label}
-                data-active={markedIndex === index ? "true" : undefined}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors",
-                  markedIndex === index
-                    ? SLASH_ROW_MARKED
-                    : "hover:bg-state-hover",
-                )}
-                onMouseMove={() => {
-                  onPreview(index);
-                }}
-                onClick={() => {
-                  onSelectCategory(category);
-                }}
-              >
-                <Icon
-                  size={16}
-                  className="shrink-0 text-muted-foreground"
-                  aria-hidden
-                />
-                <span className="min-w-0 flex-1 truncate">{label}</span>
-              </button>
-            );
-          },
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function slashActionOptionId(id: string): string {
   return `action-${id}`;
 }
@@ -877,7 +761,6 @@ export function SlashActionRow({
 
 function SlashPanelActionList({
   actions,
-  firstIndex,
   markedIndex,
   selectedIndex,
   reversed,
@@ -886,8 +769,6 @@ function SlashPanelActionList({
   SlashTemplatePanelProps,
   "actions" | "selectedIndex" | "reversed" | "onPreview"
 > & {
-  /** Where the first action sits in the shared suggestion index. */
-  readonly firstIndex: number;
   readonly markedIndex: number;
 }) {
   const { t } = useTranslation();
@@ -904,9 +785,9 @@ function SlashPanelActionList({
       <div className="px-1">
         {(reversed ? [...actions].reverse() : actions).map(
           (action, visualIndex) => {
-            const index =
-              firstIndex +
-              (reversed ? actions.length - 1 - visualIndex : visualIndex);
+            const index = reversed
+              ? actions.length - 1 - visualIndex
+              : visualIndex;
             return (
               <SlashActionRow
                 key={action.id}
@@ -961,7 +842,6 @@ function SlashPanelBrowseAll({
 }
 
 export function SlashTemplatePanel({
-  categories,
   actions,
   workflows,
   workflowsLoading,
@@ -976,51 +856,23 @@ export function SlashTemplatePanel({
   selectedIndex,
   previewIndex,
   onPreview,
-  onSelectCategory,
-  onSelectTemplate,
   onSelectWorkflow,
   onBrowseAll,
   workflowOptionId,
-  categoryOptionId,
 }: SlashTemplatePanelProps) {
-  const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
-  // Keep the mark on the previewed row while the pointer crosses into its
-  // preview. Keyboard navigation or leaving the panel restores the keyboard
-  // selection and its preview together.
+  // Pointer marking is separate from the keyboard's selected row.
   const markedIndex = previewIndex ?? selectedIndex;
-  // A workflow row indexes past the categories, so it previews nothing and the
-  // preview closes.
-  const detailCategory = categories[markedIndex] ?? null;
-  // The list owns the menu height and the covers fill it, so a query that
-  // leaves one type and no workflow would be shorter than one row of covers.
-  // The floor follows whether any type can be previewed, not the marked row:
-  // the menu grows upward from the composer, so a height that changed with the
-  // pointer would move the row under it.
-  const previewFloor = isDesktop && categories.length > 0;
-  const makeSection = (
-    <SlashPanelCategoryList
-      key="make"
-      categories={categories}
-      markedIndex={markedIndex}
-      selectedIndex={selectedIndex}
-      reversed={reversed}
-      onPreview={onPreview}
-      onSelectCategory={onSelectCategory}
-      categoryOptionId={categoryOptionId}
-    />
-  );
   const actionSection = (
     <SlashPanelActionList
       key="actions"
       actions={actions}
-      firstIndex={categories.length}
       markedIndex={markedIndex}
       selectedIndex={selectedIndex}
       reversed={reversed}
       onPreview={onPreview}
     />
   );
-  const headCount = categories.length + actions.length;
+  const headCount = actions.length;
   const workflowSection = (
     <SlashPanelWorkflowSection
       key="workflows"
@@ -1044,11 +896,7 @@ export function SlashTemplatePanel({
   return (
     <div
       className={cn(
-        "group/slash-panel flex w-full flex-row overflow-hidden",
-        // One full row of covers with their titles, and the top of the next so
-        // the pane reads as scrollable. Capped like the menu, so a short
-        // viewport still scrolls the list instead of clipping its last rows.
-        previewFloor ? "min-h-[min(11rem,var(--available-height))]" : "min-h-0",
+        "group/slash-panel flex min-h-0 w-full flex-row overflow-hidden",
         // Revealing the rest of the workflows keeps the menu's height, so the
         // menu never grows away from the composer and moves the row that was
         // clicked; the revealed rows scroll inside instead.
@@ -1074,17 +922,11 @@ export function SlashTemplatePanel({
         */}
         <div className="min-h-0 flex-1 overflow-y-auto pb-1">
           {reversed
-            ? [workflowSection, actionSection, makeSection]
-            : [makeSection, actionSection, workflowSection]}
+            ? [workflowSection, actionSection]
+            : [actionSection, workflowSection]}
           <SlashPanelBrowseAll onBrowseAll={onBrowseAll} />
         </div>
       </div>
-      {detailCategory !== null && isDesktop && (
-        <SlashTemplateDetailPane
-          category={detailCategory}
-          onSelectTemplate={onSelectTemplate}
-        />
-      )}
     </div>
   );
 }

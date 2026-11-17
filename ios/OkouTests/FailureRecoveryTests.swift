@@ -215,7 +215,7 @@ final class FailureRecoveryTests: XCTestCase {
               "\"selectedModel\":\"\(model)\",\"modelSettingsPatch\":{\"model\":\"\(model)\",\"effort\":\"high\"}"
           ),
           FailureRecoveryFixture.threadEvent(
-            2, kind: "service_tier_updated", fields: "\"serviceTier\":\(tier)"),
+            2, kind: "service_tier_updated", fields: "\"serviceTier\":\(tier)")
         ]
       }
       await workspace.refresh([.threadList])
@@ -430,12 +430,12 @@ final class FailureRecoveryTests: XCTestCase {
       .object(["type": .string("text"), "text": .string("An unfinished follow-up")]),
       .object([
         "type": .string("chat_thread"), "chatThreadId": .string(ModelHTTPFixtures.threadID),
-        "titleSnapshot": .string("Related chat"),
+        "titleSnapshot": .string("Related chat")
       ]),
       .object([
         "type": .string("file"), "fileId": .string("draft-file"),
-        "filenameSnapshot": .string("notes.txt"), "contentType": .string("text/plain"),
-      ]),
+        "filenameSnapshot": .string("notes.txt"), "contentType": .string("text/plain")
+      ])
     ])
     let file = ChatAttachment(
       id: "draft-file", filename: "notes.txt", contentType: "text/plain", size: 12,

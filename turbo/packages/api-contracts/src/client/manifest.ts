@@ -134,6 +134,10 @@ export const clientDescriptorManifest = [
     contracts: ["chatThreadActivitySummaryContract"],
   },
   {
+    module: "chat-thread-pdf-filename",
+    contracts: ["chatThreadPdfFilenameContract"],
+  },
+  {
     module: "chat-threads",
     contracts: [
       "chatSearchContract",
@@ -238,6 +242,7 @@ export const clientDescriptorManifest = [
   {
     module: "cron",
     contracts: [
+      "cronAggregateRunPhaseTimingsContract",
       "cronBrowserReconcileContract",
       "cronCleanupSandboxesContract",
       "cronCleanupSuggestionsContract",
@@ -358,6 +363,10 @@ export const clientDescriptorManifest = [
   {
     module: "get-started-history",
     contracts: ["getStartedHistoryContract"],
+  },
+  {
+    module: "get-started-receipt",
+    contracts: ["getStartedReceiptContract"],
   },
   {
     module: "get-started",
@@ -513,6 +522,22 @@ export const clientDescriptorManifest = [
   {
     module: "marketing-handoffs",
     contracts: ["marketingHandoffsContract"],
+  },
+  {
+    module: "marketing-invitation-source",
+    contracts: ["marketingInvitationSourceContract"],
+  },
+  {
+    module: "marketing-reward-projection",
+    contracts: ["marketingRewardProjectionContract"],
+  },
+  {
+    module: "marketing-reward-settlement",
+    contracts: ["marketingRewardSettlementContract"],
+  },
+  {
+    module: "marketing-workflow-source",
+    contracts: ["marketingWorkflowSourceContract"],
   },
   {
     module: "mcp-chat-search",

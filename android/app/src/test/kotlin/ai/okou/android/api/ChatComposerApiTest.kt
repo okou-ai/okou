@@ -1,17 +1,21 @@
 package ai.okou.android.api
 
 import ai.okou.android.CHAT_AGENT
+import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
 import ai.okou.android.ComposerApiFixture
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.chat.HistoryCursor
+import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.TextDisposition
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.*
 import org.junit.Test
@@ -23,6 +27,80 @@ class ChatComposerApiTest {
                 """{"agentId":"$CHAT_AGENT","threadId":"$thread","clientEventId":"${UUID.randomUUID()}","chatThreadSortEventId":"${UUID.randomUUID()}","prompt":${JsonPrimitive(text)},"userMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(text)}}]},"hasTextContent":true}"""
             )
         )
+
+    @Test
+    fun batchAndPerThreadHistoryShareAcceptedInputsAndContinueTheSameCursor() = runTest {
+        ComposerApiFixture().use { fixture ->
+            val thread =
+                fixture.service
+                    .createThread(
+                        CreateThreadRequest(
+                            agentId = CHAT_AGENT,
+                            clientThreadId = UUID.randomUUID().toString(),
+                            eventId = UUID.randomUUID().toString(),
+                        )
+                    )
+                    .id
+            val cold =
+                listOf(CHAT_PERSONAL, CHAT_IN_PROJECT, thread).associateWith { HistoryCursor() }
+            val empty = fixture.service.historyCatchUp(cold)
+            assertEquals(cold.mapValues { emptyList<HistoryEvent>() }, empty.events)
+            assertTrue(empty.notFoundThreads.isEmpty())
+            cold.forEach { (id, cursor) ->
+                val page = fixture.service.historyRows(id, cursor)
+                assertTrue(page.rows.isEmpty())
+                assertEquals(cursor, page.cursor)
+                assertFalse(page.hasMore)
+            }
+
+            val first = input(CHAT_PERSONAL)
+            val other = input(thread, "Created conversation")
+            fixture.service.sendInput(first)
+            fixture.service.sendInput(other)
+            val initial = fixture.service.historyRows(CHAT_PERSONAL, HistoryCursor())
+            assertEquals(listOf(first.clientEventId), initial.rows.map { it.id })
+            val second = input(CHAT_PERSONAL, "Next message after the cursor")
+            fixture.service.sendInput(second)
+
+            val cursors = cold + (CHAT_PERSONAL to initial.cursor)
+            val batch = fixture.service.historyCatchUp(cursors)
+            assertEquals(
+                mapOf(
+                    CHAT_PERSONAL to listOf(second.clientEventId),
+                    CHAT_IN_PROJECT to emptyList<String>(),
+                    thread to listOf(other.clientEventId),
+                ),
+                batch.events.mapValues { (_, rows) -> rows.map { it.id } },
+            )
+            val tails =
+                cursors.mapValues { (id, cursor) ->
+                    val page = fixture.service.historyRows(id, cursor)
+                    assertEquals(batch.events.getValue(id), page.rows)
+                    assertFalse(page.hasMore)
+                    page.cursor
+                }
+            val full = fixture.service.historyRows(CHAT_PERSONAL, HistoryCursor())
+            assertEquals(listOf(first.clientEventId, second.clientEventId), full.rows.map { it.id })
+            for ((request, row) in
+                listOf(
+                    first to full.rows[0],
+                    second to full.rows[1],
+                    other to batch.events.getValue(thread).single(),
+                )) {
+                assertEquals(request.threadId, row.threadId)
+                assertEquals("input.prompt", row.type)
+                assertEquals(Json.encodeToJsonElement(request.userMessage), row.userMessage)
+            }
+            val caughtUp = fixture.service.historyCatchUp(tails)
+            assertEquals(tails.mapValues { emptyList<HistoryEvent>() }, caughtUp.events)
+            tails.forEach { (id, cursor) ->
+                val page = fixture.service.historyRows(id, cursor)
+                assertTrue(page.rows.isEmpty())
+                assertEquals(cursor, page.cursor)
+                assertFalse(page.hasMore)
+            }
+        }
+    }
 
     @Test
     fun installedCreateAndSendUse201CanonicalDefaultsAndOriginalInputStatus() = runTest {

@@ -42,14 +42,14 @@ struct NativeCollectionMutation {
         return [
           "append", "insert", "remove", "removeAll", "removeFirst", "removeLast",
           "popLast", "removeSubrange", "replaceSubrange", "sort", "reverse", "shuffle",
-          "swapAt", "partition",
+          "swapAt", "partition"
         ].contains(name)
       case .dictionary:
         return ["updateValue", "merge", "removeValue", "removeAll", "popFirst"].contains(name)
       case .set:
         return [
           "insert", "update", "remove", "removeAll", "popFirst", "formUnion",
-          "formIntersection", "formSymmetricDifference", "subtract",
+          "formIntersection", "formSymmetricDifference", "subtract"
         ].contains(name)
       }
     }

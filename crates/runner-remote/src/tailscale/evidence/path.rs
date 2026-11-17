@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 use std::time::Instant;
-use ts_netstack_smoltcp_core::smoltcp::wire::{
+use ts_netstack_smoltcp::smoltcp::wire::{
     IpProtocol, IpVersion, Ipv4Packet, Ipv6Packet, TcpPacket,
 };
 
@@ -303,8 +303,8 @@ impl Detail {
         }
     }
 
-    pub(in crate::tailscale) fn netstack(error: ts_netstack_smoltcp_core::Error) -> Self {
-        use ts_netstack_smoltcp_core::Error as E;
+    pub(in crate::tailscale) fn netstack(error: ts_netstack_smoltcp::netcore::Error) -> Self {
+        use ts_netstack_smoltcp::netcore::Error as E;
         match error {
             E::ConnectionReset => Self::ResetOrClosed,
             E::BadRequest(_) => Self::InvalidRequest,

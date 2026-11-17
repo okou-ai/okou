@@ -31,7 +31,7 @@ struct OkouResultCard: View {
   let title: String
   let detail: String
   let icon: String
-  var cover: OkouPreviewState? = nil
+  var cover: OkouPreviewState?
   var shape: OkouCoverShape = .page
 
   var body: some View {
@@ -82,7 +82,7 @@ struct OkouResultCard: View {
 /// heading already says what is coming; a tile adds a faint glyph of its kind. Its content
 /// is unknown, so it is not drawn as an outline, unlike a chat's skeleton.
 struct OkouPictureLoading: View {
-  var icon: String? = nil
+  var icon: String?
 
   var body: some View {
     ZStack {

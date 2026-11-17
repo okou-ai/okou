@@ -71,7 +71,7 @@ func closureCall(_ closure: ClosureExprSyntax) -> (FunctionCallExprSyntax, Strin
 }
 
 let graphConstructors: Set<String> = [
-  "State", "Computed", "Command", "Store", "computedTask", "asyncCommand",
+  "State", "Computed", "Command", "Store", "computedTask", "asyncCommand"
 ]
 let graphCallbacks: Set<String> = ["Computed", "Command", "computedTask", "asyncCommand"]
 
@@ -106,7 +106,7 @@ func isDeferred(_ closure: ClosureExprSyntax) -> Bool {
   guard let (call, label) = closureCall(closure) else { return false }
   let actionLabels: Set<String> = [
     "action", "perform", "completion", "handler", "set", "dismiss", "cancel", "save", "close",
-    "retry", "choose", "showDetails", "moveToProject", "changed", "ended", "loadingChanged",
+    "retry", "choose", "showDetails", "moveToProject", "changed", "ended", "loadingChanged"
   ]
   if actionLabels.contains(label) || label.hasPrefix("on") || label.hasPrefix("did") {
     return true
@@ -114,14 +114,15 @@ func isDeferred(_ closure: ClosureExprSyntax) -> Bool {
   let name = callName(call.calledExpression)
   // Authorization decisions run when the card's controls are activated.
   if name == "ComputerAuthorizationCardContent" && label == "decide" { return true }
-  if name == "Button", label.isEmpty, call.arguments.contains(where: { $0.label?.text == "action" })
+  if name == "Button",
+    label.isEmpty, call.arguments.contains(where: { $0.label?.text == "action" })
   {
     return false  // An explicit action makes the trailing closure the label builder.
   }
   let callbacks: Set<String> = [
     "task", "onAppear", "onDisappear", "onChange", "onReceive", "onSubmit", "onCancel",
     "onTapGesture", "onLongPressGesture", "refreshable", "onOpenURL", "onContinueUserActivity",
-    "signOutConfirmation",
+    "signOutConfirmation"
   ]
   if callbacks.contains(name) { return true }
   // These shared controls' trailing parameters are actions, not ViewBuilders.
@@ -129,7 +130,7 @@ func isDeferred(_ closure: ClosureExprSyntax) -> Bool {
   let trailingActions: Set<String> = [
     "Button", "Task", "asyncCommand", "Command", "OkouCloseButton", "OkouCloseToolbarItem",
     "OkouChip", "OkouActionRow", "OkouLoadErrorRow", "ChatSyncStatusView", "ConnectorSafariView",
-    "ComposerAddSheet", "UIAction",
+    "ComposerAddSheet", "UIAction"
   ]
   if label.isEmpty && trailingActions.contains(name) {
     return true

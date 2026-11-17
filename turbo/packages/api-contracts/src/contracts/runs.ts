@@ -7,7 +7,6 @@ import {
   number,
   object,
   preprocess,
-  record,
   string,
   uuid,
   enum as zEnum,
@@ -89,15 +88,19 @@ export const ALL_RUN_STATUSES = [
  */
 const runStatusSchema = zEnum(ALL_RUN_STATUSES);
 
+/** Artifact production is independent of execution success; null means unknown. */
+export const runArtifactResultSchema = literal("success");
+export type RunArtifactResult = zInfer<typeof runArtifactResultSchema>;
+
 /**
  * Get run response schema
  */
 const getRunResponseSchema = object({
   runId: string(),
   status: runStatusSchema,
+  // Recorded after output succeeds, independently of execution completion.
+  artifactResult: runArtifactResultSchema.nullable().optional(),
   prompt: string(),
-  appendSystemPrompt: string().nullable(),
-  vars: record(string(), string()).optional(),
   sandboxId: string().optional(),
   result: object({
     output: string().optional(),

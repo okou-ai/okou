@@ -60,7 +60,7 @@ struct OkouSearchField: UIViewControllerRepresentable {
         field.topAnchor.constraint(equalTo: view.topAnchor),
         field.leadingAnchor.constraint(equalTo: view.leadingAnchor),
         field.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-        field.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        field.bottomAnchor.constraint(equalTo: view.bottomAnchor)
       ])
     }
 

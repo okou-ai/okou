@@ -45,14 +45,12 @@ async function openSlashActions({
   enabled = true,
   noModelChoice = false,
   noEffort = false,
-  featureSwitches = {},
 }: {
   readonly path?: string;
   readonly enabled?: boolean;
   readonly noModelChoice?: boolean;
   /** The chat model runs without a runtime route, so it has no levels. */
   readonly noEffort?: boolean;
-  readonly featureSwitches?: Partial<Record<FeatureSwitchKey, boolean>>;
 } = {}) {
   mockAgent();
   mockPersonalModelRoutes();
@@ -96,7 +94,6 @@ async function openSlashActions({
     context,
     path,
     featureSwitches: {
-      ...featureSwitches,
       [FeatureSwitchKey.SlashActions]: enabled,
     },
   });
@@ -133,19 +130,25 @@ function firstLevelNames(): string[] {
     });
 }
 
-test("The bare slash leads with chat actions, then Workflows and Templates with their counts", async () => {
+test("The bare slash leads with capabilities and chat actions, then Workflows and Templates with their counts", async () => {
   await openSlashActions();
   await waitFor(() => {
-    expect(firstLevelNames()).toHaveLength(6);
+    expect(firstLevelNames()).toHaveLength(10);
   });
   const names = firstLevelNames();
+  expect(names.slice(0, 4)).toStrictEqual([
+    "Find people",
+    "Research",
+    "Create",
+    "Workflow",
+  ]);
   expect(
-    names.slice(0, 4).map((name) => {
+    names.slice(4, 8).map((name) => {
       return name.split(" ")[0];
     }),
   ).toStrictEqual(["Model", "Effort", "Connect", "Schedule"]);
-  expect(names[4]).toBe("Workflows 3");
-  expect(names[5]).toMatch(/^Templates \d+$/u);
+  expect(names[8]).toBe("Workflows 3");
+  expect(names[9]).toMatch(/^Templates \d+$/u);
 });
 
 test("A chat adds the actions on the chat itself", async () => {
@@ -384,7 +387,7 @@ test("On a narrow screen an action's choices replace the first level", async () 
   });
 });
 
-test("Typing after the slash still searches workflows and types in one list", async () => {
+test("Typing after the slash searches workflows in one list", async () => {
   await openSlashActions();
   await fill(await findComposerEditor(), "Draft /axi");
   await waitFor(() => {

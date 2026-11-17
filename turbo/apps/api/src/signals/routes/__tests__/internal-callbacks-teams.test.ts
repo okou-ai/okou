@@ -821,9 +821,6 @@ describe("Teams chat callbacks", () => {
         });
         const queuedRun = await runsApi.readRun(teams.actor, queuedRunId);
         expect(queuedExecution.prompt).toBe(queuedRun.prompt);
-        expect(queuedExecution.appendSystemPrompt).toBe(
-          queuedRun.appendSystemPrompt,
-        );
         expect(queuedExecution.appendSystemPrompt).toContain(
           "You are currently running inside: Microsoft Teams",
         );

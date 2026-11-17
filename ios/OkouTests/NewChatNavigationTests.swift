@@ -72,14 +72,14 @@ final class NewChatNavigationTests: XCTestCase {
     XCTAssertFalse(input.isFirstResponder)
 
     host.rootView = SystemNewChatHarness(workspace: workspace, isAuthenticated: true)
-    try await eventually { input.isFirstResponder }
+    try await eventually(message: mentionInputStatus(input)) { input.isFirstResponder }
     XCTAssertEqual(workspace.newChatDraft, saved)
     input.selectedRange = NSRange(location: (saved as NSString).length, length: 0)
     input.insertText(" 继续")
     XCTAssertEqual(workspace.newChatDraft, saved + " 继续")
 
     input.resignFirstResponder()
-    try await eventually { !input.isFirstResponder }
+    try await eventually(message: mentionInputStatus(input)) { !input.isFirstResponder }
     let scene = try XCTUnwrap(window.windowScene)
     NewChatSceneDelegate().windowScene(
       scene,
@@ -88,7 +88,7 @@ final class NewChatNavigationTests: XCTestCase {
     ) { handled in
       XCTAssertTrue(handled)
     }
-    try await eventually { input.isFirstResponder }
+    try await eventually(message: mentionInputStatus(input)) { input.isFirstResponder }
     XCTAssertEqual(workspace.newChatDraft, saved + " 继续")
     XCTAssertEqual(creations.withLock { $0 }, 0)
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })

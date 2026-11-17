@@ -79,35 +79,29 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       fnv1a("qa-signup-20261112-21e53024@okou.io"),
     ],
   },
-  [FeatureSwitchKey.HomeCapabilities]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Home capabilities",
-    description:
-      "Explore capabilities in a shared home, project, and chat layout with a bottom-aligned composer.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.PresentationOutputFormat]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Presentation output format",
     description:
-      "Choose HTML or PPTX for presentations and remember the preference on this device. Requires Home capabilities.",
+      "Choose HTML or PPTX for presentations and remember the preference on this device.",
     enabled: false,
-  },
-  [FeatureSwitchKey.PastedTextAttachments]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Long pasted text attachments",
-    description:
-      "Turn plain-text pastes over 10,000 characters into text attachments in chat and onboarding.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
+    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
     restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.SingleAgent]: {
     maintainer: "lancy@okou.ai",
     displayName: "My Okou",
     description:
-      "Use personal Instructions and workspace Workflows with one Okou experience.",
+      "Use personal Instructions, workspace Workflows, and private Projects with one Okou experience.",
+    enabled: true,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ProjectTitleReveal]: {
+    maintainer: "ming@okou.ai",
+    displayName: "Project title reveal",
+    description:
+      "Show more of Project names with fading overflow and reveal them on hover or keyboard focus.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -187,15 +181,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Open each chat reply with the agent's avatar and name inside the reading column, and pick messages to share from a checkbox column beside them.",
     enabled: false,
   },
-  [FeatureSwitchKey.ChatMessageVisualizationSummary]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Chat visualization summaries",
-    description:
-      "Show selected output formats and chart types on user messages.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
-  },
   [FeatureSwitchKey.CloudBrowserPanel]: {
     maintainer: "tongx@okou.ai",
     displayName: "Cloud browser panel",
@@ -222,7 +207,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Free plan artifact paywall",
     description:
       "Reserve artifact downloads, Customize URL, and hiding the website banner for paid plans; free-plan workspaces see an upgrade prompt instead.",
-    enabled: false,
+    enabled: true,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.BillingSurvey]: {
@@ -244,13 +229,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     displayName: "Suggestions",
     description: "Discover and curate useful next-step suggestions.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ForYouSources]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "For you sources and unread",
-    description: "Choose For you sources and show unread cards with a dot.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -364,13 +342,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description:
       "Show the Feishu direct-message integration and Works page entry point.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.Projects]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Private cross-agent Projects. Enable only after supported readers and API/Runner drain gates.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

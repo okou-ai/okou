@@ -55,15 +55,21 @@ export interface ExecutionWorkflowInput {
   readonly skillRoot: string;
 }
 
+type WorkflowSelectionContext = Pick<
+  PreparedExecutionContext,
+  | "cliAgentType"
+  | "customWorkflowSelection"
+  | "officialWorkflowBundles"
+  | "storageMounts"
+>;
+
 function officialWorkflowSelection(
-  context: PreparedExecutionContext,
+  context: WorkflowSelectionContext,
   skillRoot: string,
 ): ExecutionWorkflowInput["selection"] {
-  const officialPaths = (context.officialWorkflowBundles ?? []).map(
-    (bundle) => {
-      return bundle.mountPath;
-    },
-  );
+  const officialPaths = context.officialWorkflowBundles.map((bundle) => {
+    return bundle.mountPath;
+  });
   if (
     new Set(officialPaths).size !== officialPaths.length ||
     officialPaths.some((path) => {
@@ -77,7 +83,7 @@ function officialWorkflowSelection(
   ) {
     throw new Error("Official Workflow bundle destinations are inconsistent");
   }
-  return context.customWorkflowSelection && officialPaths.length > 0
+  return officialPaths.length > 0
     ? {
         ...context.customWorkflowSelection,
         protectedMountPaths: [
@@ -89,7 +95,7 @@ function officialWorkflowSelection(
 }
 
 export function executionWorkflowInput(
-  context: PreparedExecutionContext,
+  context: WorkflowSelectionContext,
 ): ExecutionWorkflowInput {
   const skillRoot =
     context.cliAgentType === "pi"
@@ -98,15 +104,6 @@ export function executionWorkflowInput(
         ? "/home/user/.codex/skills"
         : "/home/user/.claude/skills";
   const selection = officialWorkflowSelection(context, skillRoot);
-  const ordinaryMount = /^custom-skill@[a-f0-9-]{36}$/u;
-  for (const mount of context.storageMounts) {
-    if (
-      mount.name.startsWith("custom-skill@") &&
-      !ordinaryMount.test(mount.name)
-    ) {
-      throw new Error("Unsupported legacy Workflow identity");
-    }
-  }
   return {
     selection,
     skillRoot,
@@ -114,7 +111,7 @@ export function executionWorkflowInput(
 }
 
 function workflowEligibilitySql(input: ExecutionWorkflowInput): SQL {
-  const protectedPaths = input.selection?.protectedMountPaths ?? [];
+  const protectedPaths = input.selection.protectedMountPaths;
   return sql`${eq(workflows.orgId, sql`admitted_run."orgId"`)}
     AND ${eq(workflows.agentId, sql`admitted_run."agentId"`)}
     AND ${eq(agents.orgId, sql`admitted_run."orgId"`)}
@@ -151,7 +148,7 @@ export function executionWorkflowSelectionSql(
   input: ExecutionWorkflowInput,
 ): SQL {
   const selection = input.selection;
-  const automationId = selection?.automationId ?? null;
+  const automationId = selection.automationId ?? null;
   const eligible = workflowEligibilitySql(input);
   return sql`selected_workflows AS MATERIALIZED (
       SELECT DISTINCT ON (${workflows.name}) ${workflows.id} AS id, ${workflows.name} AS name,
@@ -165,17 +162,13 @@ export function executionWorkflowSelectionSql(
       FROM selected_workflows
     ), workflow_admission AS MATERIALIZED (
       SELECT * FROM workflow_selection, admitted_run
-      WHERE (
-        admitted_run."agentId" IS NULL OR (
-          admitted_run."agentId" = ${selection?.agentId ?? null}::uuid
-          AND EXISTS (SELECT 1 FROM selected_agent)
-          AND (COALESCE(${automationId}::uuid, admitted_run."workflowAutomationId") IS NULL OR EXISTS (
-            SELECT 1 FROM ${workflowAutomations} INNER JOIN ${workflows} ON ${eq(workflows.id, workflowAutomations.workflowId)}
-            WHERE ${and(eq(workflowAutomations.id, sql`COALESCE(${automationId}::uuid, admitted_run."workflowAutomationId")`), eq(workflowAutomations.orgId, sql`admitted_run."orgId"`), eq(workflowAutomations.ownerUserId, sql`admitted_run."userId"`), eq(workflows.orgId, sql`admitted_run."orgId"`))}
-              AND ((${workflows.agentId} = admitted_run."agentId" AND ((${workflows.officialDefinitionName} IS NOT NULL AND ${workflows.officialInstallationState} = 'installed') OR EXISTS (SELECT 1 FROM selected_workflows WHERE id = ${workflows.id})))
-                OR ${retainedStaffWorkflowAdmission()})
-          ))
-        )
-      )
+      WHERE admitted_run."agentId" = ${selection.agentId}::uuid
+        AND EXISTS (SELECT 1 FROM selected_agent)
+        AND (COALESCE(${automationId}::uuid, admitted_run."workflowAutomationId") IS NULL OR EXISTS (
+          SELECT 1 FROM ${workflowAutomations} INNER JOIN ${workflows} ON ${eq(workflows.id, workflowAutomations.workflowId)}
+          WHERE ${and(eq(workflowAutomations.id, sql`COALESCE(${automationId}::uuid, admitted_run."workflowAutomationId")`), eq(workflowAutomations.orgId, sql`admitted_run."orgId"`), eq(workflowAutomations.ownerUserId, sql`admitted_run."userId"`), eq(workflows.orgId, sql`admitted_run."orgId"`))}
+            AND ((${workflows.agentId} = admitted_run."agentId" AND ((${workflows.officialDefinitionName} IS NOT NULL AND ${workflows.officialInstallationState} = 'installed') OR EXISTS (SELECT 1 FROM selected_workflows WHERE id = ${workflows.id})))
+              OR ${retainedStaffWorkflowAdmission()})
+        ))
     )`;
 }

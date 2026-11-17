@@ -1030,7 +1030,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
       });
 
-      it("prefers the installed CLI while retaining the legacy package URL in new run claims", async () => {
+      it("advertises the installed Okou CLI in execution input", async () => {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
         const run = await api.createThreadRun(actor, {
@@ -1052,7 +1052,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "share the report with my organization",
         });
-        const run = await api.readRun(actor, created.runId);
+        const run = await api.executionInput(created.runId);
         const prompt = run.appendSystemPrompt ?? "";
         expect(prompt.split("\n")).toContain(
           "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
@@ -1095,7 +1095,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "send a message",
         });
-        const disabledRun = await api.readRun(actor, disabled.runId);
+        const disabledRun = await api.executionInput(disabled.runId);
         expect(disabledRun.appendSystemPrompt).not.toContain("okou lark");
         expect(disabledRun.appendSystemPrompt).toContain(
           "okou feishu message send --help",
@@ -1109,7 +1109,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "send a message",
         });
-        const enabledRun = await api.readRun(actor, enabled.runId);
+        const enabledRun = await api.executionInput(enabled.runId);
         expect(enabledRun.appendSystemPrompt).toContain(
           "Lark messages: when the task explicitly asks to send or post to Lark",
         );
@@ -1119,16 +1119,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, enabled.runId, [200]);
       });
 
-      it("claims an exact-empty direct dispatch run without connector scope", async () => {
+      it("dispatches execution input without connector scope", async () => {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
-        const prompt = "api dispatch timing should not leak prompt";
-        const apiCommitSha = "a".repeat(40);
-        mockEnv("GIT_COMMIT_SHA", apiCommitSha);
-
         const created = await api.createThreadRun(actor, {
           agentId,
-          prompt,
+          prompt: "run without connectors",
         });
 
         await api.heartbeatRunner(runnerGroup);
@@ -1934,12 +1930,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(created.status).toBe("running");
         const execution = await api.executionInput(created.runId);
         expect(execution.prompt).toBe(prompt);
-        expect(context.mocks.axiom.ingest).toHaveBeenCalledWith("run-context", [
-          expect.objectContaining({
-            runId: created.runId,
-            prompt,
-          }),
-        ]);
+        await api.requestRunContext(actor, created.runId, [404]);
 
         await api.requestCancelRun(actor, created.runId, [200]);
       });
@@ -2802,7 +2793,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(queue.body.concurrency.active).toBe(0);
       });
 
-      it("claims managed Auto runs without delivering the managed provider key", async () => {
+      it("dispatches managed Auto runs without delivering the managed provider key", async () => {
         // The fixed test seed holds the same obvious fake managed key as
         // dev-seed. This guards the two copies against drift; execution input's
         // managed route proves that a managed key row is in use.
@@ -2876,7 +2867,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await finishCancelledRun(run.runId, execution.sandboxToken);
       });
 
-      it("claims personal Codex GPT 6 chat runs through Pi without platform model billing", async () => {
+      it("dispatches personal Codex GPT 6 chat runs through Pi without platform model billing", async () => {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const selectedModel = "gpt-6-sol";
@@ -9318,7 +9309,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           agentId,
           prompt: "summarize the safety policy",
         });
-        const stored = await api.readRun(actor, run.runId);
+        const stored = await api.executionInput(run.runId);
         const appendSystemPrompt = stored.appendSystemPrompt ?? "";
 
         expect(appendSystemPrompt).toContain("# Restricted Explicit Content");
@@ -9686,7 +9677,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "inspect my SSH hosts",
         });
         const prompt =
-          (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+          (await api.executionInput(run.runId)).appendSystemPrompt ?? "";
         expect(prompt).toContain("okou ssh host list --json");
         expect(prompt).toContain("okou ssh exec");
         expect(prompt).toContain("okou ssh session");
@@ -10135,7 +10126,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
       });
 
-      it("claims native continuation without reading history object metadata", async () => {
+      it("dispatches native continuation without reading history object metadata", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId } = await entitledRunActor(

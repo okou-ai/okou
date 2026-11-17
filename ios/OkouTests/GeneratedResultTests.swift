@@ -339,7 +339,7 @@ private struct GeneratedResultFile: Sendable {
   let filename: String
   let type: String
   let bytes: Data
-  var artifactKind: String? = nil
+  var artifactKind: String?
 }
 
 private final class GeneratedResultFixture: Sendable {
@@ -370,7 +370,7 @@ private final class GeneratedResultFixture: Sendable {
       ("Campaign study" as NSString).draw(
         at: CGPoint(x: 310, y: 210),
         withAttributes: [
-          .font: UIFont.systemFont(ofSize: 38, weight: .bold), .foregroundColor: UIColor.white,
+          .font: UIFont.systemFont(ofSize: 38, weight: .bold), .foregroundColor: UIColor.white
         ])
     }
     func bundled(_ name: String, _ ext: String) throws -> Data {
@@ -411,7 +411,7 @@ private final class GeneratedResultFixture: Sendable {
         bytes: Data("Region,Revenue\r\n\"North, coast\",120\r\nSouth,180\r\n".utf8)),
       .init(
         reference: "html000001.html", filename: "Quarterly review.html", type: "text/html",
-        bytes: Data(html.utf8), artifactKind: "presentation-html"),
+        bytes: Data(html.utf8), artifactKind: "presentation-html")
     ]
     let state = GeneratedResultState()
     let server = try ChatFileHTTPServer { request in
@@ -430,7 +430,7 @@ private final class GeneratedResultFixture: Sendable {
           status: 206,
           headers: [
             "Content-Type": file.type,
-            "Accept-Ranges": "bytes", "Content-Range": "bytes \(start)-\(end)/\(file.bytes.count)",
+            "Accept-Ranges": "bytes", "Content-Range": "bytes \(start)-\(end)/\(file.bytes.count)"
           ],
           body: file.bytes.subdata(in: start..<(end + 1)))
       }
@@ -439,23 +439,22 @@ private final class GeneratedResultFixture: Sendable {
     }
     owner.addTeardownBlock { await server.stop() }
     let origin = try await server.start()
-    let catalog = try String(
-      decoding: JSONSerialization.data(withJSONObject: [
-        "runs": [
-          [
-            "runId": "run",
-            "files": files.map { file -> [String: Any] in
-              var object: [String: Any] = [
-                "id": file.reference, "url": "/artifacts/" + file.reference,
-                "filename": file.filename, "contentType": file.type, "size": file.bytes.count,
-                "createdAt": "2026-10-21T00:00:00Z",
-              ]
-              if let kind = file.artifactKind { object["artifactKind"] = kind }
-              return object
-            },
-          ]
+    let catalog = try JSONSerialization.string(withJSONObject: [
+      "runs": [
+        [
+          "runId": "run",
+          "files": files.map { file -> [String: Any] in
+            var object: [String: Any] = [
+              "id": file.reference, "url": "/artifacts/" + file.reference,
+              "filename": file.filename, "contentType": file.type, "size": file.bytes.count,
+              "createdAt": "2026-10-21T00:00:00Z"
+            ]
+            if let kind = file.artifactKind { object["artifactKind"] = kind }
+            return object
+          }
         ]
-      ]), as: UTF8.self)
+      ]
+    ])
     let message = """
       ## Your results
 
@@ -469,7 +468,7 @@ private final class GeneratedResultFixture: Sendable {
 
       Read [the PDF brief](/artifacts/pdf0000001.pdf), or visit [the reference](https://example.com).
       """
-    let payload = String(decoding: try JSONEncoder().encode(["content": message]), as: UTF8.self)
+    let payload = try JSONEncoder().encodeString(["content": message])
     let row = """
       {"id":"\(ConversationHistoryFixture.id(1))","chatThreadId":"\(ConversationHistoryFixture.threadID)","runId":null,"revokesEventId":null,"contextType":null,"contextId":null,"runEventSequenceNumber":null,"runEventId":null,"seqId":1,"createdAt":"2026-10-21T00:00:00Z","eventType":"output.message","payload":\(payload)}
       """
@@ -497,15 +496,15 @@ private final class GeneratedResultFixture: Sendable {
         var body: [String: String] = [
           "url": contentURL.absoluteString,
           "downloadUrl": contentURL.absoluteString,
-          "filename": file.filename, "contentType": file.type, "expiresAt": "2026-10-21T00:00:00Z",
+          "filename": file.filename, "contentType": file.type, "expiresAt": "2026-10-21T00:00:00Z"
         ]
         if (file.type == "video/mp4" && !state.omitVideoPoster.withLock({ $0 }))
           || file.type == "text/html"
         {
           body["previewImageUrl"] = "/artifacts/poster0001.png"
         }
-        return ChatHTTPResponse(
-          body: String(decoding: try JSONEncoder().encode(body), as: UTF8.self))
+        return try ChatHTTPResponse(
+          json: body)
       })
     return GeneratedResultFixture(
       history: history, state: state, message: message, files: files)

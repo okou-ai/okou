@@ -122,19 +122,22 @@ private struct ChatSearchContent: View {
     NavigationStack {
       OkouSearchPage(
         text: Binding(get: { search.query }, set: { search.updateQuery($0) }),
-        prompt: "Search", close: { search.dismiss() }
-      ) {
-        // On the search field's and the rows' leading edge.
-        OkouChipRail(inset: OkouSpace.lg) {
-          ForEach(Scope.allCases, id: \.self) { item in
-            OkouChip(title: Text(item.title), isSelected: scope == item) { scope = item }
+        prompt: "Search", close: { search.dismiss() },
+        filters: {
+          // On the search field's and the rows' leading edge.
+          OkouChipRail(inset: OkouSpace.lg) {
+            ForEach(Scope.allCases, id: \.self) { item in
+              OkouChip(title: Text(item.title), isSelected: scope == item) { scope = item }
+            }
           }
+        },
+        results: {
+          results(titles: titles)
+        },
+        empty: {
+          emptyState(hasTitles: !titles.isEmpty)
         }
-      } results: {
-        results(titles: titles)
-      } empty: {
-        emptyState(hasTitles: !titles.isEmpty)
-      }
+      )
       .sheet(
         isPresented: Binding(
           get: { workspace.searchArtifacts.preview != nil },

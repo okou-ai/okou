@@ -104,8 +104,8 @@ or truncated data never publishes a partial checkpoint. Projection preserves
 revocation/rejection and queued/running/stopped/failure facts. CommonMark 0.24.0
 renders selectable native text/code; references and unsupported structured parts
 remain explicit with their original JSON. HTML remains literal text, and reading
-does not automatically download attachments or open links. Live updates, sending
-and interactive viewers remain later work.
+does not automatically download attachments or open links. Interactive viewers
+remain later work.
 
 An authorized, resumed, visible conversation marks read only after successful
 network confirmation and display. This calls the existing server mark-read POST
@@ -215,10 +215,40 @@ failed authentication. `RealtimeCatchUpTest` keeps canonical history held while
 list changes and status failures remain independent. `NativeRealtimeTest` covers
 the real native route's connecting first display, cross-client confirmed changes,
 disconnect/reconnect and foreground restoration while retaining a typed draft.
+The same foreground SDK connection carries the visible conversation's confirmed active-run
+output channel. `RunOutputModelTest` covers Web-compatible transient output, ownership,
+retention and persisted-ID replacement; real-SDK protocol tests cover decoding and run-channel
+cleanup. The native realtime journey displays streamed text, preserves it through a gap and
+reconnect, then replaces it with canonical saved text while retaining the draft. Chunks never
+enter the durable cache. Chunk zero starts a block, later payloads append in arrival order,
+and a missing first chunk waits for canonical history. Cached active runs can subscribe before
+HTTP catch-up; reconnects and thread navigation preserve received blocks. Native output adds no
+message, character or callback-queue limits that would discard data Web accepts. Persistence
+reconciles matching IDs, and the workspace owner releases remaining transient text on close.
 Its external SDK observations are controlled; this is not provider-live evidence.
+
+Run controls use the same authenticated event endpoint and generated request union.
+Stop freezes the displayed live-run IDs; skipping targets one canonical queued
+automation. HTTP acceptance is not completion. The workspace control owner checks
+canonical control/target evidence and never retargets an uncertain request.
+All current controllers of the same origin/user/workspace attach to one shared
+command owner, including target deduplication, phases and journal mutations.
+Retiring one controller cancels only its network requests; peers retain unknown
+commands and can explicitly check/retry their original identities.
+Frozen pending controls live separately in private `noBackupFilesDir/chat-controls`
+format-1 journals scoped by API origin, user and workspace. Disk commitment precedes
+POST, and restored intent only reads back until an explicit same-request retry.
+This adds no confirmed-cache or composer-journal migration and stores no stream text.
+Cancellation metadata reuses the conversation history owner's independent detail
+request and typed phase. Control outcome reads never take over that request's
+loading/completion state or create a second metadata producer.
+Both paths fail independently of ordinary history.
 
 Meaningful drafts and pending text operations live in `noBackupFilesDir/chat-input`,
 scoped by origin/user/workspace, separately from the rebuildable confirmed cache.
+Existing journal files require their stored format header. Unversioned or malformed
+files remain untouched and show a storage error with a retry action; a missing file initializes
+normally, and a valid empty journal stays usable.
 Native selection/composition stay with the text control. Accepted local writes
 outlive presentation controllers; dispatch requires a read-back durable copy of
 the same frozen operation and current authorization. Missing input observations
@@ -415,15 +445,20 @@ vectors use Lucide geometry; its shared license is also packaged under
 ## CI and Distribution
 
 `.github/workflows/android.yml` checks PRs, merge groups, main pushes and manual
-runs. Selection includes Android sources/docs, CI inputs, Web semantic colors,
-and shared font/color-evaluator assets. One native job runs all local tests,
+runs. Like Turbo and Crates, release-please PRs, queued release PRs and release
+commits skip Android validation after release-context detection succeeds. The
+production release job independently builds, signs and verifies its exact-target
+APK; it does not consume validation artifacts. Ordinary change selection includes
+Android sources/docs, CI inputs, Web semantic colors, and shared font/color-evaluator
+assets. One native job runs all local tests,
 lints, assembles, and uploads the debug APK plus the optimized unsigned Release
 APK and compressed R8 map for seven days. CI uses the production unsigned-build
 script, including metadata/alignment checks and mapping retention.
 A separate Linux/KVM job runs the existing instrumented suite against Release on the managed API 35
-phone. The final `ci-gate-android` check always reports an aggregate result. It
-requires successful detection and both selected JVM/build and instrumentation
-jobs to succeed; only explicit unselected results permit skipped native checks.
+phone. The final `ci-gate-android` check always reports an aggregate result. For
+non-release changes it requires successful change detection and both selected
+JVM/build and instrumentation jobs to succeed; only explicit unselected results
+permit skipped native checks.
 Cancellation, failure or an unexpected skip fails the gate. Emulator functional
 evidence does not establish OEM input-method behavior or physical-device startup
 budgets.
@@ -607,16 +642,80 @@ separate evidence; a configured Secret name proves only its presence.
 
 ## Foreground Chat Updates
 
+Assistant failure recovery follows the current canonical failure reason and the
+thread's current model route. The card reads model catalog, personal account,
+usage windows and reset credits independently of conversation history and draft
+editing. Billing and settings failures expose their own guidance. Eligible
+failures submit a new literal `continue` through the existing durable composer,
+preserving the editable draft and selected-model/priority annotation.
+
+Codex framework usage limits can reset the current personal account with a reset
+credit before continuing. The composer saves the exact account, UUID idempotency
+key, source failure/model and new input before either write. An uncertain reset
+requires an explicit retry with that same key; opening a conversation, reconnecting
+or restoring the process never replays a reset or send. Fresh canonical history,
+control state and current account checks reject stale recovery; input retries
+retain the original event identity and first observe an uncertain send.
+
+Before any input is dispatched, an explicit new choice can add a reset to an
+unsent continue or start a new reset after a definitive no-credit result and a
+fresh positive balance. Unknown resets always reuse their original key. A
+confirmed reset on a replaced account cannot continue automatically; a fresh
+displayed account and another explicit action start a separate intent.
+The live transaction restores the preceding recovery intent if a newly prepared
+reset is cancelled before its network call, including controller retirement.
+Failure or cancellation during that call retains the original account and key
+as an unknown operation; restoration never assumes an old intent was unsent.
+
+The composer journal reads existing format 1 drafts and pending requests. Its
+first recovery intent upgrades the whole retained journal to format 2 without
+dropping those entries. Older apps reject format 2 visibly instead of overwriting
+it; downgrade cannot restore that journal. No server schema or confirmed-history
+storage format changes. `AssistantRecoveryModelTest` covers real HTTPS requests,
+uncertain resets, stale account/source checks, draft retention and disk failures;
+the Release native journey exercises the recovery action and preserved draft.
+
 The authorized workspace owns an Ably device connection while the Activity is
 STARTED, including navigation to Settings. STOP and workspace retirement cancel
 token renewal and close subscriptions; foreground restoration connects again and
 catches up through the existing canonical HTTP list, indicators and selected
 history owners. Those reads remain independent of token/attachment readiness and
-of one another. Notifications contain no authoritative rows: recognized chat
-topics, initial attachment, reconnect and continuity loss invalidate HTTP reads.
+of one another. Notifications contain no authoritative rows. List changes wake
+chat/project navigation; message changes wake the matching selected history;
+detail changes refresh only that conversation's detail. Indicator/read-cursor
+changes refresh only indicators. Pending SDK
+notifications merge resource flags and thread IDs until the observer drains them,
+so a conflated wake-up cannot discard a different topic. Initial attachment,
+reconnect and continuity loss still request full canonical catch-up.
 Each confirmed resource coalesces its own notifications and retains a trailing
-read, so held history cannot delay subsequent list or indicator updates.
+read, so held history cannot delay subsequent list or indicator updates. Run-state
+indicator refreshes start at least one second apart; read-cursor and local
+mark-read changes wake delayed demand immediately. Manual refresh is unthrottled.
+Queued history and detail invalidations retain the selected conversation's
+generation. Their requests and failure states are independent: a held or failed
+detail read cannot delay history or erase its confirmation. Manual refresh and
+full resynchronization request both resources.
 Drafts and pending sends retain their existing durable journal ownership.
+
+Foreground message/recovery signals also request independent confirmed-history
+warming. Detail-only notifications do not request warming. Like Web, the
+cohort combines the 100 most recent non-hidden conversations
+with indicator thread IDs. The selected conversation keeps its own reader. A
+one-second serialized trailing worker reads lightweight Room cursors and uses the
+canonical batch catch-up endpoint; missing cursors rebuild through concurrent
+snapshot reads, matching Web. A recoverable failure in one snapshot does not
+discard successful siblings; authorization/update failures cancel the batch.
+Warming never marks content read or drives list loading. Conditional transactions
+reject an obsolete baseline or a now-selected target, preserving newer foreground
+history. STOP/retirement cancels the worker, and failures remain owned separately
+from visible reads. Every conversation remains fully readable on demand regardless
+of warming eligibility; the cohort is not a row, content or history-size limit.
+
+`HistoryWarmingTest` exercises actual batch HTTPS/tuple codecs, cursor reuse,
+large Unicode rows and disk reopen, concurrent snapshot/missing-thread recovery,
+held-background independence, stale foreground/background publication and
+stop/restart/retirement. Parallel recovery can increase concurrent network and
+memory use; its resource owner still cancels every child on STOP or retirement.
 
 The native connection notice reports connecting or unavailable with explicit
 retry; transport attachment is not a claim of confirmed-data freshness. Ordinary
@@ -652,7 +751,9 @@ joint selectors require every variant pair to be provably disjoint.
 Union selection rejects unknown or ambiguous variants and preserves the original
 wire object without inserting a discriminator wrapper. Nullable/optional fields,
 combined string-enum vocabularies, explicit nulls and empty tuples retain their
-wire representation. Unsupported mixed/ambiguous unions, arbitrary tuples and
+wire representation. Fixed-length tuples retain typed positions and serialize as
+exact-length JSON arrays, including the installed `historyCatchUp` request.
+Unsupported mixed/ambiguous unions, variable-length tuples and
 unrepresented values still fail generation. Canonical safe-integer literals have
 an exact singleton wire representation, including history's literal zero and
 structured messages' version one. Optional nullable outbound request fields preserve omitted,
@@ -708,7 +809,11 @@ raw event variants, opaque structured payloads, optional JSON nulls, forbidden
 fields, path escaping and query validation. The production `historySnapshot`,
 `historyRows`, `threadDetail` and `markRead` bindings are installed consumers used
 by the native reader. Their canonical raw event model and event schema version
-are generated alongside the existing list bindings.
+are generated alongside the existing list bindings. Selected raw-row envelopes
+use an explicit JSON-object binding representation so transport and cache retain
+unknown members unchanged. The native history reader decodes its consumed event
+facts and payloads separately; opaque transport data is not a validated business
+model. The canonical route schemas and protocol fixture proofs remain typed.
 
 The test-only `commandfixtures` namespace and `ChatCommandBindingsTest` prove
 canonical thread creation and input submission, including their 201 receipts,
@@ -768,10 +873,19 @@ Zod's complete validation runtime. Decode failures expose a typed incompatible
 response error without serializer messages/input snippets that could disclose
 response data through exception reporting.
 
-Both clients accept a finite `callTimeout` for the owner's HTTP budget, with a
-30-second default. A deadline while consuming an incomplete error body preserves
-the already received HTTP status, including the blocking 426 state; the absent
-envelope metadata remains unknown. Coroutine cancellation still propagates.
+Both clients accept a finite `callTimeout`, with a 30-second default for ordinary
+control/mutation calls and explicitly bounded byte transfers. Canonical API reads
+(including batch history catch-up) and streamed signed archives have no overall
+call deadline, so a progressing read can complete as it does on Web. These read
+clients share the owner's dispatcher/pool and retain connect/read-idle timeouts
+and coroutine cancellation. Every error body retains both the 64 KiB limit and
+the ordinary time budget. A deadline while consuming an incomplete error body
+preserves the already received HTTP status, including the blocking 426 state;
+the absent envelope metadata remains unknown.
+
+`CanonicalReadTransportTest` exercises progressing history/archive responses past
+the control budget, stalled successful bodies, bounded progressing error bodies,
+and cancellation during streaming.
 
 HTTP 426 retains a read-only `updateRequired` state and blocks further calls
 from that client; a malformed envelope keeps the minimum version unknown.

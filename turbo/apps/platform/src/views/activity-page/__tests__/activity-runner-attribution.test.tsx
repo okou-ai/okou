@@ -1,5 +1,8 @@
 import { screen, waitFor, within } from "@testing-library/react";
-import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
+import {
+  logsByIdContract,
+  type LogDetail,
+} from "@okouai/api-contracts/contracts/logs";
 import {
   runAgentEventsContract,
   runRunnerContract,
@@ -14,7 +17,6 @@ import { detachedNavigateTo$ } from "../../../signals/route.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type {
   AgentEventsResponse,
-  LogDetail,
   LogStatus,
 } from "../../../signals/okou-page/log-types.ts";
 

@@ -226,9 +226,10 @@ private struct WorkspaceRootView: View {
 
   var body: some View {
     WorkspaceNavigation(sidebar: sidebar) {
-      // Identity restoration gates the sidebar, never the new-chat screen.
+      // Mount the sidebar after identity and its complete local baseline are restored.
       Group {
-        if authentication.presentation?.userID == userID,
+        if store.hasRestoredSidebar,
+          authentication.presentation?.userID == userID,
           authentication.presentation?.preparedWorkspaceID == workspaceID
         {
           StoreProvider(store.projects.stateStore) {
@@ -470,9 +471,6 @@ private struct WorkspaceRootView: View {
   }
 
   private func startNewChat() {
-    UIApplication.shared.sendAction(
-      #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-    store.startNewChat()
-    closeSidebar()
+    NewChatRequests.shared.request()
   }
 }

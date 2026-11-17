@@ -256,7 +256,7 @@ final class ChatModelResourceTests: XCTestCase {
   private var initialRequests: [String: Int] {
     [
       "/api/user-model-preference": 1, "/api/run-models": 1,
-      "/api/model-catalog": 1, "/api/feature-switches": 1,
+      "/api/model-catalog": 1, "/api/feature-switches": 1
     ]
   }
 }

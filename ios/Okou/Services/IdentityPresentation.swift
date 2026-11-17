@@ -51,8 +51,10 @@ final class IdentityPresentation {
     let profile = read("profile")
     profile.configure(hasProfileImage ? profileURL : nil)
     // Resolve only local bytes before presenting the sidebar. Network reads follow below.
-    await logo.restore()
-    await profile.restore()
+    async let cachedLogo: Void = logo.restore()
+    async let cachedProfile: Void = profile.restore()
+    await cachedLogo
+    await cachedProfile
     guard !closed, !Task.isCancelled, preparationID == preparation else { return }
     preparedWorkspaceID = workspaceID
     logo.refresh()
@@ -107,7 +109,9 @@ final class IdentityPresentation {
 
   fileprivate static func log(_ error: Error) {
     Logger(subsystem: "ai.okou.ios", category: "IdentityPresentation")
-      .error("Identity display cache failed: \(error.localizedDescription, privacy: .public)")
+      .error(
+        "event=identity.presentation.cache.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+      )
   }
 }
 
@@ -222,7 +226,7 @@ private actor IdentityImageDecoder {
           kCGImageSourceCreateThumbnailFromImageAlways: true,
           kCGImageSourceCreateThumbnailWithTransform: true,
           kCGImageSourceThumbnailMaxPixelSize: 192,
-          kCGImageSourceShouldCacheImmediately: true,
+          kCGImageSourceShouldCacheImmediately: true
         ] as CFDictionary)
     else { return nil }
     return UIImage(cgImage: image)

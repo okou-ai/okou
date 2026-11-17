@@ -191,7 +191,6 @@
      because `animate-*` compiles to the `animation` shorthand and a shorthand
      resets any separate `animation-delay` rule back to zero. Keyframes stay
      below. */
-  --animate-composer-panel-in: okou-composer-panel-in 220ms ease-out;
   --animate-composer-rail-item-in: okou-composer-rail-item-in 260ms ease-out
     backwards;
 
@@ -214,13 +213,11 @@
 
   /* Capability home cards. Each card holds a few photographed objects, and
      the objects carry the card's motion: a Create or Workflow choice swaps
-     its objects in through `capability-layer-in`, and Explore replays the
-     card's own objects through `capability-layer-replay`, both registered in
-     the inline block below because they read per-layer values. The clock's
+     its objects in through `capability-layer-in`, registered in the inline
+     block below because it reads per-layer values. The clock's
      hands sweep to the time as it enters and then tick while the card is
      active; the bell rings once each time its card becomes active; the
-     gears turn only while the card is active and stop where they are; the
-     magnifier's lens shows plain glass while Explore replays the objects.
+     gears turn only while the card is active and stop where they are.
      Consumers reach every entry through `motion-safe:animate-*`, so reduced
      motion drops the class and the objects are simply present. Keyframes
      stay below. */
@@ -234,7 +231,6 @@
   --animate-capability-second-tick: capability-hand-tick 6s linear infinite;
   --animate-capability-ding: capability-ding 900ms
     cubic-bezier(0.3, 0.7, 0.3, 1);
-  --animate-capability-lens-replay: capability-lens-replay 900ms ease-out;
   --animate-capability-gear: capability-gear 9s linear infinite paused;
   --animate-capability-gear-fast: capability-gear 7.5s linear infinite paused;
   --animate-capability-gear-reverse: capability-gear 9s linear infinite reverse
@@ -270,8 +266,19 @@
   --animate-capability-tray-in: capability-tray-in 520ms
     cubic-bezier(0.32, 0.72, 0, 1) both;
 
-  --animate-card-fly-out: card-fly-out 520ms cubic-bezier(0.4, 0, 0.2, 1)
-    forwards;
+  --duration-card-fly-out: 520ms;
+  --animate-card-fly-out: card-fly-out var(--duration-card-fly-out)
+    cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  --duration-completion-in: 320ms;
+  --animate-completion-in: completion-in var(--duration-completion-in) ease-out
+    var(--duration-card-fly-out) backwards;
+  --animate-completion-check-in: completion-check-in
+    var(--duration-completion-in) ease-out var(--duration-card-fly-out)
+    backwards;
+  --animate-card-page-next-in: card-page-next-in 220ms ease-out both;
+  --animate-card-page-next-out: card-page-next-out 220ms ease-out both;
+  --animate-card-page-previous-in: card-page-previous-in 220ms ease-out both;
+  --animate-card-page-previous-out: card-page-previous-out 220ms ease-out both;
 
   /* Illustration strokes. These are drawn artwork inside a scaled canvas, not
      product chrome, so they are a different decision from `--border-width-surface`
@@ -296,6 +303,12 @@
 /* Palette previews keep the fixed 135deg/52% sRGB blend in Light and Dark.
    Inline references resolve on each themed element, not the document root. */
 @theme inline {
+  --animate-completion-dot: completion-dot 520ms ease-out
+    calc(
+      var(--duration-card-fly-out) + var(--duration-completion-in) +
+        var(--completion-dot-stagger)
+    );
+
   /* On the session's first home, the capability rows and the compliance block
      under them settle in after the greeting: an 8px rise and a fade on the
      greeting's own curve, one 70ms step apart through
@@ -315,15 +328,9 @@
      starts from its own pose in `--capability-from-*` (gathered in a stack,
      rolled back, or pressed down) and settles into wherever the card puts it,
      its resting or its lifted pose, one 70ms step after the object before it
-     through `--capability-delay`. A swap fades the new objects in; a replay
-     keeps them on screen, so running the pointer back over Explore never
-     blinks the card's own objects out. */
-  --animate-capability-layer-in: capability-layer-in
-    var(--capability-duration, 660ms) cubic-bezier(0.2, 0.8, 0.2, 1)
-    var(--capability-delay, 0ms) backwards;
-  --animate-capability-layer-replay: capability-layer-replay
-    var(--capability-duration, 660ms) cubic-bezier(0.2, 0.8, 0.2, 1)
-    var(--capability-delay, 0ms) backwards;
+     through `--capability-delay`, fading in as they go. */
+  --animate-capability-layer-in: capability-layer-in 660ms
+    cubic-bezier(0.2, 0.8, 0.2, 1) var(--capability-delay, 0ms) backwards;
 
   /* A capability card's ground: its hue strongest behind its objects at
      `--capability-pool-x`/`-y` and gone before the copy and the buttons, with
@@ -713,15 +720,43 @@ body {
   }
 }
 
-/* Transform only. The items inside own the fade, and two nested opacity
-   animations multiply: at 100ms a cover was rendering at 34% with both
-   running, which read as washed out rather than as arriving. */
-@keyframes okou-composer-panel-in {
+@keyframes card-page-next-in {
   from {
-    transform: translateY(0.375rem);
+    transform: translateX(8%) rotate(2deg);
   }
   to {
-    transform: translateY(0);
+    transform: translateX(0) rotate(0deg);
+  }
+}
+
+@keyframes card-page-next-out {
+  from {
+    transform: translateX(0) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-12%) rotate(-3deg);
+    opacity: 0;
+  }
+}
+
+@keyframes card-page-previous-in {
+  from {
+    transform: translateX(-8%) rotate(-2deg);
+  }
+  to {
+    transform: translateX(0) rotate(0deg);
+  }
+}
+
+@keyframes card-page-previous-out {
+  from {
+    transform: translateX(0) rotate(0deg);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(12%) rotate(3deg);
+    opacity: 0;
   }
 }
 
@@ -737,6 +772,46 @@ body {
     transform: translate(80%, -110px) rotate(16deg);
     opacity: 0;
     visibility: hidden;
+  }
+}
+
+@keyframes completion-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes completion-check-in {
+  0% {
+    transform: scale(0.72);
+  }
+  55% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes completion-dot {
+  0% {
+    opacity: 0;
+    transform: translate(
+      calc(var(--completion-dot-x) * 0.62),
+      calc(var(--completion-dot-y) * 0.62)
+    );
+  }
+  28% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--completion-dot-x), var(--completion-dot-y));
   }
 }
 
@@ -832,18 +907,10 @@ body {
 }
 
 /* An object enters from its own pose in `--capability-from-*` and settles
-   wherever the card puts it; a replay does the same without fading. */
+   wherever the card puts it. */
 @keyframes capability-layer-in {
   from {
     opacity: 0;
-    translate: var(--capability-from-x, 0px) var(--capability-from-y, 0px);
-    rotate: var(--capability-from-rotate, 0deg);
-    scale: var(--capability-from-scale, 1);
-  }
-}
-
-@keyframes capability-layer-replay {
-  from {
     translate: var(--capability-from-x, 0px) var(--capability-from-y, 0px);
     rotate: var(--capability-from-rotate, 0deg);
     scale: var(--capability-from-scale, 1);
@@ -887,15 +954,6 @@ body {
   }
   84% {
     rotate: -1deg;
-  }
-}
-
-/* The magnified page is placed for the resting and lifted poses only, so it
-   stays hidden while a replay carries the objects in from elsewhere. */
-@keyframes capability-lens-replay {
-  0%,
-  70% {
-    opacity: 0;
   }
 }
 

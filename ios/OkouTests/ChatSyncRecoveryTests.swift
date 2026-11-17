@@ -232,7 +232,7 @@ final class ChatSyncRecoveryTests: XCTestCase {
       (
         "/api/chat-threads/\(SyncRecoveryFixture.threadID)/event-rows",
         .history(threadID: SyncRecoveryFixture.threadID)
-      ),
+      )
     ]
     for (path, invalidation) in paths {
       let fixture = SyncRecoveryFixture()
@@ -349,9 +349,20 @@ final class ChatSyncRecoveryTests: XCTestCase {
       }
     }
     let viewRead = Task { await conversation.refresh() }
-    defer { viewRead.cancel() }
+    addTeardownBlock {
+      viewRead.cancel()
+      response.open()
+      await viewRead.value
+    }
     await fulfillment(of: [started], timeout: 3)
-    await store.refresh([.history(threadID: SyncRecoveryFixture.threadID)])
+    let workspaceRead = Task.immediate {
+      await store.refresh([.history(threadID: SyncRecoveryFixture.threadID)])
+    }
+    addTeardownBlock {
+      workspaceRead.cancel()
+      response.open()
+      await workspaceRead.value
+    }
     viewRead.cancel()
     fixture.state.value.withLock {
       $0.blockedPath = nil
@@ -359,6 +370,7 @@ final class ChatSyncRecoveryTests: XCTestCase {
       $0.messages.append("Answer received while leaving the view")
     }
     response.open()
+    await workspaceRead.value
     await viewRead.value
     XCTAssertEqual(conversation.messages.last?.text, "Answer received while leaving the view")
     XCTAssertNil(conversation.error)

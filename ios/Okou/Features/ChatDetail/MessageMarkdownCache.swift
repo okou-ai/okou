@@ -76,8 +76,9 @@ final class MessageMarkdownCache {
     return plan.value
   }
 
-  func renderPlan(for text: String, context: MessageRenderPlan.Context) async -> MessageRenderPlan?
-  {
+  func renderPlan(
+    for text: String, context: MessageRenderPlan.Context
+  ) async -> MessageRenderPlan? {
     guard !Task.isCancelled else { return nil }
     if let plan = cachedPlan(for: text, context: context) { return plan }
     let currentGeneration = generation

@@ -21,6 +21,7 @@ from tests.model_provider_response_helpers import (
     model_provider_flow,
     standard_success_payload,
 )
+from tests.stream_buffer_helpers import response_stream_capture
 from tests.x_flow_helpers import make_x_pipeline_flow, make_x_stream_pipeline_flow
 
 
@@ -50,10 +51,8 @@ def _stream_wire_body(flow, wire: bytes, chunk_size: int | None) -> None:
         chunk = wire[offset : offset + step]
         assert callback(chunk) == chunk
     assert callback(b"") == b""
-    assert len(flow.metadata[metadata_keys.STREAM_BUFFER]) == STREAM_BUFFER_LIMIT
-    assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE]["truncated"] is (
-        len(wire) > STREAM_BUFFER_LIMIT
-    )
+    assert len(response_stream_capture(flow).buffer) == STREAM_BUFFER_LIMIT
+    assert response_stream_capture(flow).truncated is (len(wire) > STREAM_BUFFER_LIMIT)
 
 
 @pytest.mark.parametrize("chunk_size", [None, 257], ids=["whole", "fragmented"])
@@ -148,11 +147,10 @@ async def test_x_incremental_billing_after_forensic_capture_truncates(
     with usage_webhook_api() as webhook:
         mitm_addon.responseheaders(flow)
         callback = response_stream(flow)
-        assert callback(body[:STREAM_BUFFER_LIMIT]) == body[:STREAM_BUFFER_LIMIT]
-        await mitm_addon.responseinspection(flow)
-        assert callback(body[STREAM_BUFFER_LIMIT:]) == body[STREAM_BUFFER_LIMIT:]
-        await mitm_addon.responseinspection(flow)
-        assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE]["truncated"] is True
+        for chunk in (body[:STREAM_BUFFER_LIMIT], body[STREAM_BUFFER_LIMIT:]):
+            assert callback(chunk) == chunk
+            await mitm_addon.responseinspection(flow)
+        assert response_stream_capture(flow).truncated is True
 
         if interrupted:
             flow.error = Error("connection reset by peer")

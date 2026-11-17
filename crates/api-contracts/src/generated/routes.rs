@@ -35,7 +35,7 @@ pub mod runners {
     pub mod realtime {
         /// Generated route bindings under `runners::realtime::token`.
         pub mod token {
-            /// Get Ably token for runner group job notifications.
+            /// Get Ably token for runner group control notifications.
             /// Route contract: `POST /api/runners/realtime/token`.
             pub const CREATE: crate::Route = crate::Route {
                 method: crate::Method::Post,

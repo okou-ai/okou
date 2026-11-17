@@ -10,6 +10,7 @@ from mitmproxy.flow import Error
 
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import stream_capture
 import usage
 from body_limits import (
     STREAM_BUFFER_LIMIT,
@@ -21,6 +22,7 @@ from tests.body_decode_helpers import compress_one_shot_body
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.repeated_bytes_helpers import repeat_bytes
+from tests.stream_buffer_helpers import response_stream_capture
 from tests.x_flow_helpers import (
     json_body_that_exceeds_integer_digit_limit,
     json_body_that_exceeds_nesting_limit,
@@ -51,8 +53,7 @@ class TestXConnectorResponsePipeline:
         callback(b"x" * (STREAM_BUFFER_LIMIT + 4096))
         await mitm_addon.responseinspection(flow)
         callback(b'"}],"includes":{"users":[{"id":"u1"}]},"meta":{"result_count":1}}')
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
         with self._usage_webhook_api() as webhook:
             mitm_addon.response(flow)
@@ -76,8 +77,7 @@ class TestXConnectorResponsePipeline:
         response_stream(flow)(compressed[:midpoint])
         response_stream(flow)(compressed[midpoint:])
         response_stream(flow)(b"")
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
         with self._usage_webhook_api() as webhook:
             mitm_addon.response(flow)
@@ -97,8 +97,7 @@ class TestXConnectorResponsePipeline:
         with mitm_ctx():
             mitm_addon.responseheaders(flow)
         response_stream(flow)(compress_one_shot_body("zstd", payload))
-        assert metadata_keys.STREAM_BUFFER in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is not None
 
         with self._usage_webhook_api() as webhook:
             assert mitm_addon.response(flow) is None
@@ -661,7 +660,7 @@ class TestXConnectorResponsePipeline:
         response_stream(flow)(
             repeat_bytes(b'{"data":[{"id":"1","text":"', b"x", STREAM_BUFFER_LIMIT, b"")
         )
-        assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE]["truncated"] is True
+        assert response_stream_capture(flow).truncated is True
         await mitm_addon.responseinspection(flow)
 
         with self._usage_webhook_api() as webhook:

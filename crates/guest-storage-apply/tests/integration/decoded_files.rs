@@ -288,17 +288,13 @@ fn concurrent_mounts_remain_writable_with_limited_descriptors() {
             // child before exec. Neither the parent nor its hard limit changes.
             unsafe {
                 child.pre_exec(move || {
-                    let mut limit = libc::rlimit {
-                        rlim_cur: 0,
-                        rlim_max: 0,
-                    };
-                    if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) != 0 {
-                        return Err(std::io::Error::last_os_error());
-                    }
-                    limit.rlim_cur = limit.rlim_cur.min(if low_limit { 32 } else { 1024 });
-                    if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
-                        return Err(std::io::Error::last_os_error());
-                    }
+                    use nix::sys::resource::{Resource, getrlimit, setrlimit};
+
+                    let (soft_limit, hard_limit) =
+                        getrlimit(Resource::RLIMIT_NOFILE).map_err(std::io::Error::from)?;
+                    let soft_limit = soft_limit.min(if low_limit { 32 } else { 1024 });
+                    setrlimit(Resource::RLIMIT_NOFILE, soft_limit, hard_limit)
+                        .map_err(std::io::Error::from)?;
                     Ok(())
                 });
             }

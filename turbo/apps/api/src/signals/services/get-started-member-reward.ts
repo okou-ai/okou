@@ -19,6 +19,12 @@ import {
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { GetStartedClaimRow } from "./get-started-rewards.service";
+import type { MarketingRewardInvitationEvent } from "../../lib/marketing-reward-events";
+import { marketingRewardInvitationEventInsert } from "./marketing-reward-event-publication";
+import {
+  getStartedRewardWriter,
+  type MarketingRewardWriter,
+} from "./marketing-reward-ownership";
 
 export function getStartedRewardAvailabilityQuery(
   claim: GetStartedClaimRow,
@@ -59,6 +65,7 @@ export function getStartedRewardAvailabilityQuery(
  * uniqueness remain enforced by their unique indexes.
  */
 export function getStartedMemberRewardSql(args: {
+  readonly writer?: MarketingRewardWriter;
   readonly claim: GetStartedClaimRow;
   readonly rewardKey: string;
   readonly rewardSlot: number | null;
@@ -69,6 +76,10 @@ export function getStartedMemberRewardSql(args: {
     readonly inviteeUserId: string;
     readonly completedAt: Date;
   };
+  readonly invitationEvent?: Pick<
+    Extract<MarketingRewardInvitationEvent, { type: "invitation.accepted" }>,
+    "id" | "environment" | "type" | "occurredAt"
+  >;
 }) {
   const { claim, rewardKey, rewardSlot, evidenceText, at, acceptance } = args;
   if (!claim.beneficiaryUserId || claim.rewardTarget !== "user") {
@@ -86,14 +97,17 @@ export function getStartedMemberRewardSql(args: {
     ? sql`, invitation_id = ${acceptance.invitationId}, invitee_user_id = ${acceptance.inviteeUserId},
         completed_at = ${sql.param(acceptance.completedAt, getStartedClaims.completedAt)}`
     : sql`, completed_at = COALESCE(completed_at, ${sql.param(at, getStartedClaims.completedAt)})`;
+  const sourceEvent = args.invitationEvent
+    ? sql`, source_published AS (${marketingRewardInvitationEventInsert(args.invitationEvent, sql`SELECT * FROM claimed`)})`
+    : sql.empty();
   return sql`WITH claimed AS (
     UPDATE ${getStartedClaims} SET status = 'granted', reward_key = ${rewardKey}, reward_slot = ${rewardSlot},
     member_credit_grant_id = ${grantId}::uuid, org_credit_record_id = NULL,
     granted_at = ${sql.param(at, getStartedClaims.grantedAt)}, expires_at = ${sql.param(expiresAt, getStartedClaims.expiresAt)},
     updated_at = ${sql.param(at, getStartedClaims.updatedAt)}, reason = NULL, lease_id = NULL, lease_expires_at = NULL ${evidence} ${accepted}
-    WHERE ${unresolvedClaimWhere(claim)}
-    RETURNING ${getStartedClaims.id}
-  ) INSERT INTO ${usagePackCreditGrants} (id, org_id, user_id, grant_type, idempotency_key, original_amount, remaining_amount, expires_at)
+    WHERE ${unresolvedClaimWhere(claim)} AND ${getStartedRewardWriter("user", claim.beneficiaryUserId) === (args.writer ?? "app")}
+    RETURNING id, org_id, actor_user_id, source_key, invitation_id, invitee_user_id
+  ) ${sourceEvent} INSERT INTO ${usagePackCreditGrants} (id, org_id, user_id, grant_type, idempotency_key, original_amount, remaining_amount, expires_at)
     SELECT ${grantId}::uuid, ${claim.orgId}, ${claim.beneficiaryUserId}, 'bonus', ${`get-started:${claim.id}`}, ${claim.rewardAmount}, ${claim.rewardAmount}, ${sql.param(expiresAt, usagePackCreditGrants.expiresAt)}
     FROM claimed`;
 }
@@ -140,10 +154,13 @@ export function completedGetStartedQuestSql(
 /** Pure statement parts allow an owning publication to gate its automatic award. */
 export function completedGetStartedQuestPublication(
   args: {
+    readonly writer?: MarketingRewardWriter;
     readonly orgId: string;
     readonly userId: string;
     readonly questKey: "connector" | "checkin" | "imessage";
     readonly sourceKey: string;
+    readonly claimId?: string;
+    readonly completedAt?: Date;
   },
   at: Date,
   acceptedSource?: SQL,
@@ -151,7 +168,7 @@ export function completedGetStartedQuestPublication(
   if (args.questKey === "imessage" && args.sourceKey !== "agentphone-link") {
     throw new Error("Unexpected iMessage quest source");
   }
-  const claimId = randomUUID();
+  const claimId = args.claimId ?? randomUUID();
   const grantId = randomUUID();
   const reward = GET_STARTED_REWARDS[args.questKey];
   const rewardKey = `${args.questKey}:${args.userId}:${args.sourceKey}`;
@@ -162,7 +179,7 @@ export function completedGetStartedQuestPublication(
   const expiresAt = new Date(at.getTime() + GET_STARTED_REWARD_TTL_MS);
   const values = sql`${claimId}::uuid, ${args.orgId}, ${args.userId}, ${args.userId}, ${args.questKey}, ${args.sourceKey},
       ${reward.amount}, 'user', 'granted', ${rewardKey}, ${rewardSlot}, ${grantId}::uuid,
-      ${sql.param(at, getStartedClaims.completedAt)}, ${sql.param(at, getStartedClaims.grantedAt)},
+      ${sql.param(args.completedAt ?? at, getStartedClaims.completedAt)}, ${sql.param(at, getStartedClaims.grantedAt)},
       ${sql.param(expiresAt, getStartedClaims.expiresAt)}, ${sql.param(at, getStartedClaims.nextAttemptAt)},
       ${sql.param(at, getStartedClaims.createdAt)}, ${sql.param(at, getStartedClaims.updatedAt)}`;
   const sources: SQL[] = [];
@@ -190,8 +207,8 @@ export function completedGetStartedQuestPublication(
   }
   const source =
     sources.length > 0
-      ? sql`SELECT ${values} FROM ${sql.join(sources, sql` CROSS JOIN `)} WHERE true${args.questKey === "connector" ? sql` ORDER BY connector_reward_slots.slot` : sql.empty()}`
-      : sql`VALUES (${values})`;
+      ? sql`SELECT ${values} FROM ${sql.join(sources, sql` CROSS JOIN `)} WHERE ${getStartedRewardWriter("user", args.userId) === (args.writer ?? "app")}${args.questKey === "connector" ? sql` ORDER BY connector_reward_slots.slot` : sql.empty()}`
+      : sql`SELECT ${values} WHERE ${getStartedRewardWriter("user", args.userId) === (args.writer ?? "app")}`;
   // Concurrent duplicates can collide on the source, reward key, or reward slot.
   // Arbitrate every unique index: targeting only the source can still raise a
   // uniqueness error on another index instead of returning the existing award.

@@ -3,10 +3,7 @@ import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { feedPreferences } from "@okouai/db/schema/feed-preference";
 import { feedItems } from "@okouai/db/schema/feed-item";
 import type { FeedSources } from "@okouai/api-contracts/contracts/feed";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { organizationAuthContext$ } from "../auth/auth-context";
-import { createUserFeatureSwitchContext } from "./feature-switches.service";
 import { db$, writeDb$ } from "../external/db";
 import { publishAgentSuggestionsChangedSafely } from "../external/realtime";
 import { liveSuggestion } from "./agent-suggestions-lifecycle";
@@ -29,14 +26,6 @@ function activePlatformEvent() {
     sql`${feedItems.state}->>'status' = 'active'`,
   );
 }
-const switchContext$ = createUserFeatureSwitchContext(organizationAuthContext$);
-export const forYouSourcesEnabled$ = computed(async (get) => {
-  return isFeatureEnabled(
-    FeatureSwitchKey.ForYouSources,
-    await get(switchContext$),
-  );
-});
-
 export const readFeedSources$ = computed(async (get): Promise<FeedSources> => {
   const owner = get(organizationAuthContext$);
   const [row] = await get(db$)
@@ -44,6 +33,7 @@ export const readFeedSources$ = computed(async (get): Promise<FeedSources> => {
       suggestions: feedPreferences.suggestions,
       whatsNew: feedPreferences.whatsNew,
       offers: feedPreferences.offers,
+      systemUpdates: feedPreferences.systemUpdates,
     })
     .from(feedPreferences)
     .where(
@@ -53,7 +43,14 @@ export const readFeedSources$ = computed(async (get): Promise<FeedSources> => {
       ),
     )
     .limit(1);
-  return row ?? { suggestions: true, whatsNew: true, offers: true };
+  return (
+    row ?? {
+      suggestions: true,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: true,
+    }
+  );
 });
 
 export const updateFeedSources$ = command(
@@ -74,6 +71,7 @@ export const updateFeedSources$ = command(
         suggestions: feedPreferences.suggestions,
         whatsNew: feedPreferences.whatsNew,
         offers: feedPreferences.offers,
+        systemUpdates: feedPreferences.systemUpdates,
       });
     signal.throwIfAborted();
     if (!row) {
@@ -88,6 +86,9 @@ export const updateFeedSources$ = command(
 export const readFeedSummary$ = computed(async (get) => {
   const owner = get(organizationAuthContext$);
   const sources = await get(readFeedSources$);
+  if (!sources.suggestions && !sources.systemUpdates) {
+    return { hasUnread: false };
+  }
   // This is independent of the review's ten-card snapshot and counts no
   // expired, consumed, removed or already displayed card.
   const [row] = await get(db$)
@@ -98,7 +99,7 @@ export const readFeedSummary$ = computed(async (get) => {
         feedOwner(owner),
         or(
           sources.suggestions ? liveSuggestion(nowDate()) : undefined,
-          activePlatformEvent(),
+          sources.systemUpdates ? activePlatformEvent() : undefined,
         ),
         isNull(feedItems.readAt),
       ),

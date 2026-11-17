@@ -136,14 +136,9 @@ pub(super) use artifact_digest::file_sha256;
 
 /// CLOCK_MONOTONIC matches P1's monotonic_ns; wall time is supplementary.
 pub(super) fn clocks() -> io::Result<(u64, u128)> {
-    let mut time = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-    // SAFETY: time is an initialized, aligned timespec valid for the whole call.
-    if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
+    let time = rustix::time::clock_gettime_dynamic(rustix::time::DynamicClockId::Known(
+        rustix::time::ClockId::Monotonic,
+    ))?;
     let seconds = u64::try_from(time.tv_sec).map_err(io::Error::other)?;
     let nanos = u64::try_from(time.tv_nsec).map_err(io::Error::other)?;
     let monotonic = seconds

@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.32.18](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.17...guest-storage-apply-v0.32.18) (2026-11-17)
+
+
+### Refactoring
+
+* use typed resource limit calls ([#48257](https://github.com/okou-ai/okou/issues/48257)) ([6a91f3e](https://github.com/okou-ai/okou/commit/6a91f3e48eae8cb2f0c01294602c0fa00bd2eb6c))
+
+## [0.32.17](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.16...guest-storage-apply-v0.32.17) (2026-11-17)
+
+## [0.32.16](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.15...guest-storage-apply-v0.32.16) (2026-11-17)
+
+## [0.32.15](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.14...guest-storage-apply-v0.32.15) (2026-11-17)
+
+## [0.32.14](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.13...guest-storage-apply-v0.32.14) (2026-11-17)
+
+## [0.32.13](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.12...guest-storage-apply-v0.32.13) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fallible native clock queries ([#48072](https://github.com/okou-ai/okou/issues/48072)) ([4b16d0b](https://github.com/okou-ai/okou/commit/4b16d0b56361a1f955133d6a161ff21eb8083394))
+
+## [0.32.12](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.11...guest-storage-apply-v0.32.12) (2026-11-16)
+
+## [0.32.11](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.10...guest-storage-apply-v0.32.11) (2026-11-16)
+
+## [0.32.10](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.9...guest-storage-apply-v0.32.10) (2026-11-16)
+
 ## [0.32.9](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.8...guest-storage-apply-v0.32.9) (2026-11-16)
 
 ## [0.32.8](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.7...guest-storage-apply-v0.32.8) (2026-11-16)

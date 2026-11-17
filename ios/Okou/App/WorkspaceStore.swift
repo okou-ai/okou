@@ -16,6 +16,7 @@ final class WorkspaceStore {
   private let resources: WorkspaceResources
   private let modelBootstrap: WorkspaceReadBootstrap?
   private let projectBootstrap: WorkspaceReadBootstrap?
+  private let indicatorsBootstrap: WorkspaceReadBootstrap?
   private let createRealtime: RealtimeService.ClientFactory?
   private let commands: ChatCommands
   private let conversationLimit: Int
@@ -43,6 +44,8 @@ final class WorkspaceStore {
   private(set) var fork: ChatForkStore?
   private(set) var threadPreview: ChatThreadPreviewResources?
   let sidebarInteraction = SidebarInteraction()
+  /// Mount the sidebar with its cached chats, Projects and disclosure restored together.
+  private(set) var hasRestoredSidebar = false
   private var chatLinkRequestID = UUID()
   @ObservationIgnored private var chatLinkThreadID: String?
   @ObservationIgnored private let selectedThread = CCState.State<String?>(nil)
@@ -135,7 +138,8 @@ final class WorkspaceStore {
     didFail: { [weak self] in self?.handle($0) },
     didChangeReadState: { [weak self] in self?.notificationReadStateChanged() },
     didLoadAgents: { [weak self] in self?.prepareDefaultDraft(from: $0) },
-    readRetrySleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
+    readRetrySleep: readRetrySleep, indicatorsBootstrap: indicatorsBootstrap,
+    lifecycleTasks: lifecycleTasks)
   @ObservationIgnored lazy var projects = ChatProjectStore(
     client: client, resources: resources, sync: sync, disclosure: projectDisclosure,
     didFail: { [weak self] in self?.handle($0) },
@@ -176,6 +180,7 @@ final class WorkspaceStore {
     },
     modelBootstrap: WorkspaceReadBootstrap? = nil,
     projectBootstrap: WorkspaceReadBootstrap? = nil,
+    indicatorsBootstrap: WorkspaceReadBootstrap? = nil,
     createRealtime: RealtimeService.ClientFactory? = nil,
     didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
@@ -191,6 +196,7 @@ final class WorkspaceStore {
     self.sync = sync
     self.modelBootstrap = modelBootstrap
     self.projectBootstrap = projectBootstrap
+    self.indicatorsBootstrap = indicatorsBootstrap
     self.createRealtime = createRealtime
     resources = WorkspaceResources(
       client: client, sync: sync, sleep: readRetrySleep, modelBootstrap: modelBootstrap,
@@ -228,10 +234,13 @@ final class WorkspaceStore {
         list.cancelNavigationPublication()
       }
     }
-    await list.restoreCached()
-    await projects.restore()
+    async let cachedList: Void = list.restoreCached()
+    async let cachedProjects: Void = projects.restore()
+    await cachedList
+    await cachedProjects
     guard canContinueStartup(generation) else { return }
     prepareDefaultDraft(from: list.agents)
+    hasRestoredSidebar = true
     await withTaskCancellationHandler {
       async let navigation: Void = refreshNavigation()
       let realtime = RealtimeService(
@@ -249,6 +258,7 @@ final class WorkspaceStore {
           self?.connectionStatus = status
           self?.modelBootstrap?.connectionChanged(status)
           self?.projectBootstrap?.connectionChanged(status)
+          self?.indicatorsBootstrap?.connectionChanged(status)
         },
         createRealtime: createRealtime, lifecycleTasks: lifecycleTasks)
       self.realtime = realtime
@@ -371,6 +381,7 @@ final class WorkspaceStore {
     composerWorkflows.close()
     newModelSelection.close()
     list.close()
+    indicatorsBootstrap?.close()
     projects.close()
     resources.close()
     threadFeedback = nil
@@ -513,12 +524,19 @@ final class WorkspaceStore {
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     await historyRefresh
     if awaitingSelectedThread, selectedThreadID == selectedBeforeRefresh {
-      await selectedConversation?.refresh()
+      await selectedConversation?.refresh(waitForCurrent: true)
     }
+    await indicatorsRefresh
+    guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
+    if full || batch.contains(.readCursor), selectedThreadID == selectedBeforeRefresh {
+      // Either independent read can finish first. Confirm read state with both
+      // published results, before waiting on unrelated workspace resources.
+      await selectedConversation?.reconcileReadState()
+    }
+    guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     await accessRefresh
     await modelRefresh
     await projectRefresh
-    await indicatorsRefresh
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     if modelStore.configuration != nil,
       full || selectedConversation?.modelSelection?.needsThreadReadback == true
@@ -564,10 +582,17 @@ final class WorkspaceStore {
   }
 
   private func refreshIndicators(_ batch: Set<ChatInvalidation>) async {
-    if batch.contains(where: \.requiresFullRefresh) || batch.contains(.indicators)
-      || batch.contains(.readCursor)
-    {
-      await list.refreshIndicators()
+    let immediate =
+      batch.contains(.indicators) || batch.contains(.readCursor)
+      || batch.contains {
+        $0.requiresFullRefresh && $0 != .startup && $0 != .initialSubscriptions
+      }
+    var catchUp = false
+    if batch.contains(.initialSubscriptions) {
+      catchUp = indicatorsBootstrap?.subscriptionsReady() ?? true
+    }
+    if immediate || catchUp || batch.contains(.startup) {
+      await list.refreshIndicators(waitForSubscriptions: !immediate && !catchUp)
     }
   }
 
@@ -628,9 +653,9 @@ final class WorkspaceStore {
       guard !Task.isCancelled, refreshGeneration == generation else { return }
       // Dormant conversations read their durable state when opened.
       if let conversation = conversations[id] {
-        await conversation.refresh()
+        await conversation.refresh(waitForCurrent: true)
       } else if selectedThreadID == id {
-        await conversation(for: id)?.refresh()
+        await conversation(for: id)?.refresh(waitForCurrent: true)
       }
     }
   }
@@ -666,7 +691,9 @@ final class WorkspaceStore {
           guard !closed, !Task.isCancelled else { return }
           handle(error)
           Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-            .error("Cannot warm chat history: \(error.localizedDescription, privacy: .public)")
+            .error(
+              "event=chat.history.warm.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+            )
         }
       } while warmAgain && !closed && !needsUpgrade && !Task.isCancelled
     }
@@ -863,8 +890,7 @@ final class WorkspaceStore {
         threadID: id, message: message,
         actionTitle: restore ? String(localized: "Undo and return to chat") : "Undo",
         requiresNavigation: restore
-      ) {
-        [weak self] in
+      ) { [weak self] in
         guard let self else { return }
         await self.setArchived(id, archived: !archived, reopenOnSuccess: restore)
       }

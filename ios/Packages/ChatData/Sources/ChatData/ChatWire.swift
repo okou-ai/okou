@@ -165,11 +165,46 @@ struct ChatEventRow: Decodable, Sendable {
   let eventType: ChatEventType
   let failureReason: String?
   let payload: ChatEvent.Payload?
+  private let inputError: String?
+  private let outputError: String?
+
+  private enum CodingKeys: String, CodingKey {
+    case id, chatThreadId, runId, revokesEventId, seqId, createdAt, eventType
+    case failureReason, payload
+  }
+  private enum PayloadKeys: String, CodingKey { case error }
+
+  init(from decoder: Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    id = try values.decode(String.self, forKey: .id)
+    chatThreadId = try values.decode(String.self, forKey: .chatThreadId)
+    runId = try values.decodeIfPresent(String.self, forKey: .runId)
+    revokesEventId = try values.decodeIfPresent(String.self, forKey: .revokesEventId)
+    seqId = try values.decode(Int.self, forKey: .seqId)
+    createdAt = try values.decode(Date.self, forKey: .createdAt)
+    eventType = try values.decode(ChatEventType.self, forKey: .eventType)
+    failureReason = try values.decodeIfPresent(String.self, forKey: .failureReason)
+    if eventType.isTerminal {
+      payload = nil
+    } else {
+      payload = try values.decodeIfPresent(ChatEvent.Payload.self, forKey: .payload)
+    }
+    if eventType == .inputRejected || eventType == .outputError, payload != nil {
+      let fields = try values.nestedContainer(keyedBy: PayloadKeys.self, forKey: .payload)
+      let error = try fields.decodeIfPresent(String.self, forKey: .error)
+      inputError = eventType == .inputRejected ? error : nil
+      outputError = eventType == .outputError ? error : nil
+    } else {
+      inputError = nil
+      outputError = nil
+    }
+  }
 
   var event: ChatEvent {
     ChatEvent(
       id: id, runId: runId, revokesEventId: revokesEventId,
-      createdAt: createdAt, eventType: eventType, failureReason: failureReason, payload: payload)
+      createdAt: createdAt, eventType: eventType, failureReason: failureReason, payload: payload,
+      inputError: inputError, outputError: outputError)
   }
 }
 
@@ -179,9 +214,9 @@ public struct AgentRecord: Codable, Equatable, Sendable {
   public let displayName: String?
   public let avatarUrl: String?
   /// The agent's responsibility, as written on its profile.
-  public var description: String? = nil
+  public var description: String?
   /// "public" (shared with the workspace) or "private".
-  public var visibility: String? = nil
+  public var visibility: String?
 }
 
 public struct SidebarFeatureSwitches: Codable, Sendable {

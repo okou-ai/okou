@@ -80,19 +80,6 @@ pub const SECRET_VALUES_RUN_PAYLOAD_FIELD: &str = "OKOU_SECRET_VALUES";
 /// Unset or empty means there is no explicit deny list.
 pub const DISALLOWED_TOOLS_RUN_PAYLOAD_FIELD: &str = "OKOU_DISALLOWED_TOOLS";
 
-/// Logical run-payload field name for comma-separated Claude Code tool names
-/// that should be allowed.
-///
-/// Unset or empty means there is no explicit allow list.
-pub const TOOLS_RUN_PAYLOAD_FIELD: &str = "OKOU_TOOLS";
-
-/// Logical run-payload field name for the raw Claude Code settings payload
-/// passed to the guest-agent.
-///
-/// The runner treats this as an opaque string. Unset or empty means there is no
-/// settings override.
-pub const SETTINGS_RUN_PAYLOAD_FIELD: &str = "OKOU_SETTINGS";
-
 /// CLI framework selector, for example `claude-code` or `codex`.
 ///
 /// This runner-owned bootstrap key intentionally does not use the `OKOU_`
@@ -380,12 +367,6 @@ pub struct RunPayload {
     /// Comma-separated Claude Code tool names that should be disallowed.
     #[serde(default)]
     pub disallowed_tools: String,
-    /// Comma-separated Claude Code tool names that should be allowed.
-    #[serde(default)]
-    pub tools: String,
-    /// Raw Claude Code settings payload passed to the guest-agent.
-    #[serde(default)]
-    pub settings: String,
     /// JSON array describing artifact mounts prepared by the runner.
     #[serde(default)]
     pub artifacts: String,
@@ -417,15 +398,13 @@ pub struct RunPayloadField<'a> {
 
 impl RunPayload {
     /// Return all logical string fields carried by this run payload.
-    pub fn fields(&self) -> [RunPayloadField<'_>; 13] {
+    pub fn fields(&self) -> [RunPayloadField<'_>; 11] {
         let Self {
             prompt,
             append_system_prompt,
             native_continuation,
             secret_values,
             disallowed_tools,
-            tools,
-            settings,
             artifacts,
             feature_flags,
             codex_runtime_config,
@@ -454,14 +433,6 @@ impl RunPayload {
             RunPayloadField {
                 name: DISALLOWED_TOOLS_RUN_PAYLOAD_FIELD,
                 value: disallowed_tools,
-            },
-            RunPayloadField {
-                name: TOOLS_RUN_PAYLOAD_FIELD,
-                value: tools,
-            },
-            RunPayloadField {
-                name: SETTINGS_RUN_PAYLOAD_FIELD,
-                value: settings,
             },
             RunPayloadField {
                 name: ARTIFACTS_RUN_PAYLOAD_FIELD,
@@ -614,6 +585,42 @@ pub fn sanitize_env_key_for_diagnostic(key: &str) -> String {
         truncated.push_str("...");
     }
     truncated
+}
+
+/// Validate shell-environment entries in stable lexical key order.
+///
+/// Each entry's shell-identifier key is checked before its NUL-free value.
+/// The caller retains source selection and supplies its fixed diagnostic label.
+/// Borrowing preserves the caller's string-pair representation and values;
+/// errors contain only the existing escaped, bounded key, never its value.
+///
+/// # Errors
+///
+/// Returns the first invalid entry in that order with the caller's label.
+pub fn validate_sorted_shell_environment<'a, S: AsRef<str> + ?Sized + 'a>(
+    entries: impl IntoIterator<Item = (&'a S, &'a S)>,
+    context: &'static str,
+) -> Result<(), String> {
+    let mut entries: Vec<_> = entries.into_iter().collect();
+    entries.sort_by(|(left, _), (right, _)| left.as_ref().cmp(right.as_ref()));
+
+    for (key, value) in entries {
+        let key = key.as_ref();
+        if !is_shell_identifier_env_key(key) {
+            return Err(format!(
+                "{context} contains invalid env key {:?}",
+                sanitize_env_key_for_diagnostic(key)
+            ));
+        }
+        if value.as_ref().contains('\0') {
+            return Err(format!(
+                "{context} contains NUL byte for env key {:?}",
+                sanitize_env_key_for_diagnostic(key)
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

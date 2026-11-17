@@ -8,7 +8,7 @@
       OkouCatalogPage(.chat, close: close) {
         OkouCatalogSection("Header") {
           // The menu circle on the left, the chat's "…" on the right; no title. The model
-          // control is a quiet note above the open composer.
+          // control is in the open composer's toolbar.
           HStack(spacing: OkouSpace.md) {
             OkouToolbarIcon("menu").modifier(OkouGlassControl(shape: .circle))
             Spacer(minLength: 0)
@@ -31,20 +31,24 @@
             } label: {
               OkouToolbarIcon("arrow-up").foregroundStyle(OkouColor.primaryForeground)
             }
-            .buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(OkouColor.primary)
+            .buttonStyle(.borderedProminent).buttonBorderShape(.circle).tint(OkouColor.primary)
             .accessibilityLabel("Send message")
             .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
             .contentShape(Circle())
           }
-          VStack(alignment: .trailing, spacing: 0) {
-            Button {
-            } label: {
-              OkouComposerValueLabel(title: "GPT 6.1 Sol", isFast: true)
-            }
-            .buttonStyle(.plain).accessibilityLabel("Model settings")
-            .accessibilityValue("GPT 6.1 Sol · Fast mode")
+          // Open, empty under Auto and with a draft under a ChatGPT model: the model's mark
+          // sits beside the mic, and send is a solid circle on the glass surface, disabled
+          // until there is something to send.
+          let samples: [(draft: String, mark: OkouComposerModelMark.Mark)] = [
+            ("", .okou), ("把第二点展开说明", .company("OpenAIMark"))
+          ]
+          ForEach(samples, id: \.draft) { sample in
             OkouComposerSurface(isExpanded: true) {
-              Text("Message Okou").font(.okou(.body)).foregroundStyle(OkouColor.placeholder)
+              Text(verbatim: sample.draft.isEmpty ? "Message Okou" : sample.draft)
+                .font(.okou(.body))
+                .foregroundStyle(
+                  sample.draft.isEmpty ? OkouColor.placeholder : OkouColor.foreground
+                )
                 .frame(maxWidth: .infinity, alignment: .leading)
             } leading: {
               Button {
@@ -57,15 +61,26 @@
               HStack(spacing: OkouSpace.xs) {
                 Button {
                 } label: {
+                  OkouComposerModelMark(mark: sample.mark)
+                }
+                .buttonStyle(.plain).accessibilityLabel("Model settings")
+                .accessibilityValue(sample.draft.isEmpty ? "Auto" : "GPT 6.1 Sol · Fast mode")
+                Button {
+                } label: {
                   OkouToolbarIcon("mic")
                     .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Voice input")
                 Button {
                 } label: {
-                  OkouToolbarIcon("arrow-up").foregroundStyle(OkouColor.primaryForeground)
+                  OkouToolbarIcon("arrow-up")
+                    .foregroundStyle(
+                      sample.draft.isEmpty
+                        ? OkouColor.mutedForeground : OkouColor.primaryForeground)
                 }
-                .buttonStyle(.glassProminent).buttonBorderShape(.circle).tint(OkouColor.primary)
+                .buttonStyle(.borderedProminent).buttonBorderShape(.circle)
+                .tint(OkouColor.primary)
+                .disabled(sample.draft.isEmpty)
                 .accessibilityLabel("Send message")
                 .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
                 .contentShape(Circle())
@@ -78,32 +93,35 @@
             title: "Chats",
             availableHeight: OkouControl.suggestionListHeight + OkouControl.minimumTarget,
             dismissLabel: "Dismiss chat suggestions", dismissIdentifier: "catalog-dismiss-chats",
-            dismiss: {}
-          ) { _ in
-            VStack(alignment: .leading, spacing: 0) {
-              ForEach(["iOS CCState", "storage 退役", "📅 iOS CI", "Axiom review"], id: \.self) {
-                title in
-                OkouSuggestionRow(title: title)
-                  .padding(.horizontal, OkouSpace.lg)
-                  .padding(.vertical, OkouSpace.sm)
+            dismiss: {},
+            content: { _ in
+              VStack(alignment: .leading, spacing: 0) {
+                ForEach(
+                  ["iOS CCState", "storage 退役", "📅 iOS CI", "Axiom review"], id: \.self
+                ) { title in
+                  OkouSuggestionRow(title: title)
+                    .padding(.horizontal, OkouSpace.lg)
+                    .padding(.vertical, OkouSpace.sm)
+                }
               }
+              .padding(.bottom, OkouSpace.sm)
             }
-            .padding(.bottom, OkouSpace.sm)
-          }
+          )
           OkouSuggestionPanel(
             title: "Workflows",
             availableHeight: OkouControl.suggestionListHeight + OkouControl.minimumTarget,
             dismissLabel: "Dismiss Workflow suggestions",
-            dismissIdentifier: "catalog-dismiss-workflows", dismiss: {}
-          ) { _ in
-            OkouSuggestionRow(
-              title: "Daily error review", detail: "Review production errors",
-              command: "/error-review"
-            )
-            .padding(.horizontal, OkouSpace.lg)
-            .padding(.vertical, OkouSpace.sm)
-            .padding(.bottom, OkouSpace.sm)
-          }
+            dismissIdentifier: "catalog-dismiss-workflows", dismiss: {},
+            content: { _ in
+              OkouSuggestionRow(
+                title: "Daily error review", detail: "Review production errors",
+                command: "/error-review"
+              )
+              .padding(.horizontal, OkouSpace.lg)
+              .padding(.vertical, OkouSpace.sm)
+              .padding(.bottom, OkouSpace.sm)
+            }
+          )
         }
         OkouCatalogSection("Dictation") {
           // A frozen sample of the live strip: dots before audio, then speech.
@@ -211,18 +229,29 @@
           .background(OkouColor.sidebar)
         }
         OkouCatalogSection("Bottom bar") {
-          // Account, search capsule, new chat: every bar control is the same clear glass.
+          // Account, new-message capsule, search: every bar control is the same clear glass.
           HStack(spacing: OkouSpace.md) {
             OkouProfileAvatar(
               imageURL: nil, hasImage: false, size: OkouControl.minimumTarget, name: "Tong")
-            OkouSearchBar(prompt: "Search chats")
             Button {
             } label: {
-              OkouToolbarIcon("square-pen")
+              Label("New Message", okouSymbol: "square-pen")
+                .font(.okou(.body))
+                .foregroundStyle(OkouColor.placeholder)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, OkouSpace.lg)
+                .modifier(OkouGlassControl(shape: .capsule))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("New Message")
+            Button {
+            } label: {
+              OkouToolbarIcon("search")
                 .modifier(OkouGlassControl(shape: .circle))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("New chat")
+            .accessibilityLabel("Search chats")
           }
         }
       }
@@ -243,7 +272,7 @@
             ForEach(
               [
                 ("apple", "Apple"), ("google", "Google"), ("microsoft", "Microsoft"),
-                ("slack", "Slack"),
+                ("slack", "Slack")
               ],
               id: \.0
             ) { provider in

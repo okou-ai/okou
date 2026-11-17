@@ -1,5 +1,99 @@
 # Changelog
 
+## [0.47.3](https://github.com/okou-ai/okou/compare/ios-v0.47.2...ios-v0.47.3) (2026-11-17)
+
+
+### Refactoring
+
+* define client run and activity read models ([#48165](https://github.com/okou-ai/okou/issues/48165)) ([9be7072](https://github.com/okou-ai/okou/commit/9be7072fcdb23c781cc0d68a93dc88fc7b86f8da))
+
+## [0.47.2](https://github.com/okou-ai/okou/compare/ios-v0.47.1...ios-v0.47.2) (2026-11-17)
+
+
+### Performance Improvements
+
+* **ios:** share the startup indicators baseline ([#48218](https://github.com/okou-ai/okou/issues/48218)) ([82937be](https://github.com/okou-ai/okou/commit/82937be28205937e2fced458c1636e493bc5a695))
+
+## [0.47.1](https://github.com/okou-ai/okou/compare/ios-v0.47.0...ios-v0.47.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **ios:** make the composer's toolbar concentric with its surface ([#48226](https://github.com/okou-ai/okou/issues/48226)) ([26cfe0e](https://github.com/okou-ai/okou/commit/26cfe0e3a66b115404d607b765220a7ed0ede274))
+
+## [0.47.0](https://github.com/okou-ai/okou/compare/ios-v0.46.2...ios-v0.47.0) (2026-11-17)
+
+
+### Features
+
+* **ios:** reject duplicate branch conditions ([#48141](https://github.com/okou-ai/okou/issues/48141)) ([e081fac](https://github.com/okou-ai/okou/commit/e081fac3a340d260c94717be23735e14f60ed2ad))
+
+
+### Refactoring
+
+* prepare structured run failure clients ([#48006](https://github.com/okou-ai/okou/issues/48006)) ([4839506](https://github.com/okou-ai/okou/commit/483950651b69db523f06a72f7cf2490c913ff8ab))
+
+## [0.46.2](https://github.com/okou-ai/okou/compare/ios-v0.46.1...ios-v0.46.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* **ios:** restore the cached sidebar before its first render ([#48090](https://github.com/okou-ai/okou/issues/48090)) ([29915ab](https://github.com/okou-ai/okou/commit/29915ab2fc03bfc71e58120bb0e77ab9ed06b8e7))
+
+## [0.46.1](https://github.com/okou-ai/okou/compare/ios-v0.46.0...ios-v0.46.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **ios:** keep the composer's model mark while reading history ([#48071](https://github.com/okou-ai/okou/issues/48071)) ([f59a85d](https://github.com/okou-ai/okou/commit/f59a85d6fd19a63e0f5f91368d3e51c1ba43e47b))
+
+## [0.46.0](https://github.com/okou-ai/okou/compare/ios-v0.45.4...ios-v0.46.0) (2026-11-17)
+
+
+### Features
+
+* **ios:** reject catch handlers that only rethrow ([#48008](https://github.com/okou-ai/okou/issues/48008)) ([7b37bf5](https://github.com/okou-ai/okou/commit/7b37bf575611ac645ecf968b450105a66da9dc2b))
+
+
+### Bug Fixes
+
+* **ios:** place billing after preferences in settings ([#47984](https://github.com/okou-ai/okou/issues/47984)) ([0c5b5fb](https://github.com/okou-ai/okou/commit/0c5b5fb346b5a7b5d20700ac3f4a5b0134feff86))
+
+## [0.45.4](https://github.com/okou-ai/okou/compare/ios-v0.45.3...ios-v0.45.4) (2026-11-16)
+
+
+### Bug Fixes
+
+* **ios:** catch discarded throwing task factory results ([#47904](https://github.com/okou-ai/okou/issues/47904)) ([9cfea8d](https://github.com/okou-ai/okou/commit/9cfea8db96cfeb18dc91e3b810a8d0bcb74220cb))
+
+## [0.45.3](https://github.com/okou-ai/okou/compare/ios-v0.45.2...ios-v0.45.3) (2026-11-16)
+
+
+### Bug Fixes
+
+* **ios:** standardize native diagnostic logging ([#47892](https://github.com/okou-ai/okou/issues/47892)) ([edf71fc](https://github.com/okou-ai/okou/commit/edf71fc2a86ab1f02a4ff9d3852af457ad03bfbf))
+
+
+### CI
+
+* **ios:** retain simulator selection failure evidence ([#47897](https://github.com/okou-ai/okou/issues/47897)) ([cf93b96](https://github.com/okou-ai/okou/commit/cf93b96f94c32ce6d04880087d81c864dd49c5d2))
+
+## [0.45.2](https://github.com/okou-ai/okou/compare/ios-v0.45.1...ios-v0.45.2) (2026-11-16)
+
+
+### Bug Fixes
+
+* **ios:** check async data helper failures ([#47808](https://github.com/okou-ai/okou/issues/47808)) ([dbbac95](https://github.com/okou-ai/okou/commit/dbbac95f25f1fd1a240ef6da5ca9a9475dfd92aa))
+* **ios:** defer composer focus until native readiness ([#47819](https://github.com/okou-ai/okou/issues/47819)) ([bb9a424](https://github.com/okou-ai/okou/commit/bb9a424f2dad6444d80551dd580c1b0269bf9477))
+* **ios:** place chat toasts above visible bottom controls with swipe dismissal ([#47765](https://github.com/okou-ai/okou/issues/47765)) ([39d14d8](https://github.com/okou-ai/okou/commit/39d14d8d79d1ab75de271192e9ffb262ea98af40))
+* **ios:** preserve and display the source project when forking ([#47774](https://github.com/okou-ai/okou/issues/47774)) ([1a69af5](https://github.com/okou-ai/okou/commit/1a69af5d285106809745ab6dfdd4375ecdfea39d))
+* **ios:** reconcile unread watermarks after concurrent refreshes ([#47767](https://github.com/okou-ai/okou/issues/47767)) ([eda4480](https://github.com/okou-ai/okou/commit/eda4480becc181aab9211b1fe8909b8a636e9780))
+
+
+### Refactoring
+
+* remove ios settings credits feature switch ([#47822](https://github.com/okou-ai/okou/issues/47822)) ([051dbad](https://github.com/okou-ai/okou/commit/051dbad9a13dba24291a9adf76b7665e6208a18f))
+
 ## [0.45.1](https://github.com/okou-ai/okou/compare/ios-v0.45.0...ios-v0.45.1) (2026-11-16)
 
 

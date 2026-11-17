@@ -46,6 +46,7 @@ mkdir -p \
   "${repo}/crates/member-one/src" \
   "${repo}/crates/member-two/src"
 cp "${REPO_ROOT}/scripts/crate-changed.sh" "${repo}/scripts/crate-changed.sh"
+cp "${REPO_ROOT}/rust-toolchain.toml" "${repo}/rust-toolchain.toml"
 chmod +x "${repo}/scripts/crate-changed.sh"
 
 cat > "${repo}/crates/Cargo.toml" <<'TOML'
@@ -84,6 +85,8 @@ assert_workspace_change_detected \
   "$repo" "crates/rustfmt.toml" "rustfmt-config-change"
 assert_workspace_change_detected \
   "$repo" "crates/.cargo/config.toml" "cargo-config-change"
+assert_workspace_change_detected \
+  "$repo" "rust-toolchain.toml" "toolchain-change"
 
 base=$(git -C "$repo" rev-parse HEAD)
 printf 'changed\n' >> "${repo}/README.md"

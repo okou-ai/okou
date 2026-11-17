@@ -1,3 +1,4 @@
+import type { RunArtifactResult } from "@okouai/api-contracts/contracts/runs";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import type { SandboxStartupPath } from "@okouai/api-contracts/contracts/runner-primitives";
@@ -21,9 +22,7 @@ import type {
   AgentRunLaunchSnapshot,
   AgentRunOfficialWorkflowProvenance,
   AgentRunResult,
-  AgentRunSecretNames,
   AgentRunStorageMounts,
-  AgentRunVars,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 
 /** Shared physical and runtime column builders. */
@@ -49,15 +48,15 @@ export function agentRunColumns() {
       length: 64,
     }),
     status: varchar("status", { length: 20 }).notNull(),
+    // Output outcome is independent of execution status; NULL means unknown.
+    artifactResult: varchar("artifact_result", {
+      length: 20,
+    }).$type<RunArtifactResult>(),
     // Explicit stop intent. NULL preserves ordinary completion and older writers.
     runnerCancellationMode: text(
       "runner_cancellation_mode",
     ).$type<RunnerCancellationMode>(),
     prompt: text("prompt").notNull(),
-    appendSystemPrompt: text("append_system_prompt"),
-    vars: jsonb("vars").$type<AgentRunVars>(),
-    // Secret names for validation (values never stored - must be provided at runtime)
-    secretNames: jsonb("secret_names").$type<AgentRunSecretNames>(),
     // Canonical resolved mounts used by new run writers.
     storageMounts: jsonb("storage_mounts").$type<AgentRunStorageMounts>(),
     launchSnapshot: jsonb("launch_snapshot").$type<AgentRunLaunchSnapshot>(),

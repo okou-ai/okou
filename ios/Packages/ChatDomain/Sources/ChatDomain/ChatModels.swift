@@ -11,10 +11,10 @@ public struct ChatThread: Identifiable, Equatable, Sendable {
   public var sortAt: Date
   public var pinnedAt: Date?
   public var pinOrder: String?
-  public var renamedAt: Date? = nil
+  public var renamedAt: Date?
   public var modelSettings: [String: ThreadModelSetting] = [:]
-  public var serviceTier: String? = nil
-  public var computerUseHostId: String? = nil
+  public var serviceTier: String?
+  public var computerUseHostId: String?
   public var cloudBrowserEnabled = false
   public var isArchived = false
   public var isHidden = false

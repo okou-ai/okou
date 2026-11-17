@@ -1,3 +1,5 @@
+import { notifyPhoneUseOwner$ } from "./phone-use-notifications.service";
+import { env } from "../../lib/env";
 import {
   normalizeRunFailureReason,
   type RunFailureReasonToken,
@@ -426,6 +428,11 @@ export const dispatchCompleteSideEffectsCore$ = command(
           ? input.userId
           : undefined;
     if (shellOwnerId !== undefined) {
+      await set(
+        notifyPhoneUseOwner$,
+        { orgId: input.orgId, userId: shellOwnerId },
+        signal,
+      );
       await publishDesktopShellAuthorizationChangedSafely(shellOwnerId);
       signal.throwIfAborted();
     }
@@ -582,6 +589,7 @@ export function createAgentRunCompletion(runId: string, userId: string) {
           orgId: input.auth.orgId,
           expectedChatThreadId,
           at: nowDate(),
+          environment: env("ENV"),
         });
         const result = await (async () => {
           const rows = await db

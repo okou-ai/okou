@@ -143,9 +143,11 @@ private struct ComposerConnectorSheetContent: View {
         ConnectorAuthorizationSheet(flow: flow, store: store.authorization)
           .okouSheetBackground()
       }
-      .sheet(item: $store.webDestination, onDismiss: { Task { await store.refresh() } }) { page in
-        ConnectorSafariView(url: page.url) { store.webDestination = nil }
-      }
+      .sheet(
+        item: $store.webDestination, onDismiss: { Task { await store.refresh() } },
+        content: { page in
+          ConnectorSafariView(url: page.url) { store.webDestination = nil }
+        })
     }
     // Loading belongs to the sheet, including its pushed destinations.
     .task { await store.refresh() }
@@ -218,7 +220,8 @@ private struct ComposerConnectorSheetContent: View {
           accountDestination = store.openAccounts(connector)
         }
       }
-      if connector.authorized && connector.hasPermissions, let slug = connector.target.connectorSlug
+      if connector.authorized && connector.hasPermissions,
+        let slug = connector.target.connectorSlug
       {
         rowAction("sliders-horizontal", label: "Permissions for \(connector.label)") {
           permissionDestination = store.openPermissions(slug: slug, label: connector.label)

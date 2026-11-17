@@ -7,13 +7,7 @@ import {
   object,
   record,
   string,
-  unknown,
 } from "zod";
-
-const legacySavedCardExpiry = object({
-  exp_month: number().int().min(1).max(12),
-  exp_year: number().int(),
-});
 
 const paymentMethod = object({
   id: string().regex(/^[A-Za-z0-9_-]{1,256}$/),
@@ -24,9 +18,6 @@ const paymentMethod = object({
   card_details: object({
     brand: string(),
     last4: string().regex(/^\d{4}$/),
-    // Link retired saved-card expiry. It is not payment-credential data.
-    exp_month: unknown().optional(),
-    exp_year: unknown().optional(),
   })
     .nullable()
     .optional(),
@@ -48,30 +39,15 @@ const paymentMethod = object({
 });
 
 export const linkPaymentMethodSchema = paymentMethod.transform((value) => {
-  const cardSummary = value.card_details
-    ? { brand: value.card_details.brand, last4: value.card_details.last4 }
-    : value.card_details;
-  const expiry = legacySavedCardExpiry.safeParse(value.card_details);
   return {
     id: value.id,
     type: value.type,
     name: value.name,
     nickname: value.nickname,
     isDefault: value.is_default,
-    cardSummary,
-    // Older App/CLI readers require expiry inside the optional `card` projection.
-    // Remove with #47624 after the App floor excludes old readers and older
-    // Runner/CLI artifacts have drained and are excluded from rollback.
-    card:
-      cardSummary && expiry.success
-        ? {
-            ...cardSummary,
-            expMonth: expiry.data.exp_month,
-            expYear: expiry.data.exp_year,
-          }
-        : cardSummary === null
-          ? null
-          : undefined,
+    cardSummary: value.card_details
+      ? { brand: value.card_details.brand, last4: value.card_details.last4 }
+      : value.card_details,
     bankAccount: value.bank_account_details
       ? {
           last4: value.bank_account_details.last4,

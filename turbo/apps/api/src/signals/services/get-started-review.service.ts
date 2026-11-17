@@ -12,6 +12,7 @@ import { grantGetStartedClaim$ } from "./get-started-member-reward.service";
 import type { GetStartedClaimRow } from "./get-started-rewards.service";
 
 import { processPendingSlackRewards$ } from "./slack-reward.service";
+import { appOwnedRewardPredicate } from "./marketing-reward-ownership";
 
 type Review =
   | {
@@ -105,6 +106,7 @@ export const processGetStartedClaims$ = command(
       signal.throwIfAborted();
       const at = nowDate();
       const eligible = and(
+        appOwnedRewardPredicate("user", getStartedClaims.beneficiaryUserId),
         eq(getStartedClaims.questKey, "workflow"),
         inArray(getStartedClaims.status, ["pending", "reviewing"]),
         lte(getStartedClaims.nextAttemptAt, at),

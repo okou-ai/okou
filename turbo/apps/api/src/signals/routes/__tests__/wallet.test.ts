@@ -2580,7 +2580,7 @@ test("does not infer financial actions from a scope or from a pending consent up
   ).toBeTruthy();
 });
 
-test("projects saved methods and user limits without exposing credential or address fields", async () => {
+test("projects saved-card summaries and user limits without exposing credential or address fields", async () => {
   const fixture = await carrier();
   server.use(tokenHandler({ scope: "payment_methods.agentic userinfo:read" }));
   await connect(fixture);
@@ -2592,8 +2592,6 @@ test("projects saved methods and user limits without exposing credential or addr
     card_details: {
       brand: "visa",
       last4: "4242",
-      exp_month: 12,
-      exp_year: 2030,
       number: "private-pan",
       cvc: "private-cvc",
     },
@@ -2666,11 +2664,9 @@ test("projects saved methods and user limits without exposing credential or addr
     );
   }
   mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
-  expect(retrieved.body.card).toStrictEqual({
+  expect(retrieved.body.cardSummary).toStrictEqual({
     brand: "visa",
     last4: "4242",
-    expMonth: 12,
-    expYear: 2030,
   });
   await accept(
     client().paymentMethod({
@@ -2711,70 +2707,6 @@ test("projects saved methods and user limits without exposing credential or addr
     ).body,
   ).toStrictEqual({ data: [] });
 });
-
-test.each([{}, { exp_month: 0, exp_year: 0 }])(
-  "reads saved cards without requiring deprecated expiry metadata: %j",
-  async (expiry) => {
-    const fixture = await carrier();
-    server.use(tokenHandler());
-    await connect(fixture);
-    const method = {
-      id: "pm_summary",
-      type: "CARD",
-      name: "Visa",
-      is_default: true,
-      card_details: {
-        brand: "visa",
-        last4: "4242",
-        ...expiry,
-        number: "private-pan",
-        cvc: "private-cvc",
-      },
-    };
-    server.use(
-      http.get("https://api.link.com/payment-details", () => {
-        return HttpResponse.json({ payment_details: [method] });
-      }),
-      http.get("https://api.link.com/payment-details/pm_summary", () => {
-        return HttpResponse.json(method);
-      }),
-    );
-    const expected = {
-      id: method.id,
-      type: method.type,
-      name: method.name,
-      isDefault: true,
-      cardSummary: { brand: "visa", last4: "4242" },
-    };
-    expect(
-      (
-        await accept(
-          client().paymentMethods({ headers: fixture.headers }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ data: [expected] });
-    expect(
-      (
-        await accept(
-          userClient().paymentMethods({ headers: sessionHeaders }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual({ data: [expected] });
-    expect(
-      (
-        await accept(
-          client().paymentMethod({
-            headers: fixture.headers,
-            params: { id: method.id },
-          }),
-          [200],
-        )
-      ).body,
-    ).toStrictEqual(expected);
-  },
-);
 
 test("paginates owner-isolated recorded spend history and retains it after reauthorization", async () => {
   const fixture = await carrier();

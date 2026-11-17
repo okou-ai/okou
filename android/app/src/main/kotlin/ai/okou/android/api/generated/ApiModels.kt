@@ -18,7 +18,377 @@ import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.encodeToJsonElement
+
+@Serializable
+data class RecoveryCatalogModelsItemRunOptionsFast(val `chatGptUsageMultiplier`: Double)
+
+@Serializable
+data class RecoveryCatalogModelsItemRunOptions(
+    val `fast`: RecoveryCatalogModelsItemRunOptionsFast? = null
+)
+
+@Serializable
+enum class RecoveryCatalogModelsItemPiRouteClass {
+    @SerialName("gpt-codex") GPT_CODEX
+}
+
+@Serializable
+data class RecoveryCatalogModelsItem(
+    val `model`: String,
+    val `displayName`: String,
+    val `sortOrder`: Long,
+    val `runOptions`: RecoveryCatalogModelsItemRunOptions? = null,
+    val `replacedBy`: String?,
+    val `resolvedModel`: String,
+    val `builtInOnRestrictedPlans`: Boolean,
+    val `piRouteClass`: RecoveryCatalogModelsItemPiRouteClass?,
+)
+
+@Serializable
+data class RecoveryCatalogRoutesItem(
+    val `model`: String,
+    val `providerType`: String,
+    val `concreteProviderType`: String,
+    val `subscriptionType`: String?,
+    val `upstreamModel`: String,
+    val `enabled`: Boolean,
+    val `priority`: Long,
+    val `serviceTiers`: List<String>,
+    val `defaultServiceTier`: String?,
+    val `efforts`: List<String>,
+    val `defaultEffort`: String?,
+    val `piRuntimeCapable`: Boolean? = null,
+)
+
+@Serializable
+data class RecoveryCatalog(
+    val `models`: List<RecoveryCatalogModelsItem>,
+    val `routes`: List<RecoveryCatalogRoutesItem>,
+    val `systemDefaultModel`: String,
+)
+
+@Serializable
+enum class RecoveryModelsModelsItemSubscriptionOptionsEffortsItem {
+    @SerialName("low") LOW,
+    @SerialName("medium") MEDIUM,
+    @SerialName("high") HIGH,
+    @SerialName("xhigh") XHIGH,
+    @SerialName("extra") EXTRA,
+    @SerialName("max") MAX,
+    @SerialName("ultra") ULTRA,
+    @SerialName("ultracode") ULTRACODE,
+}
+
+@Serializable
+enum class RecoveryModelsModelsItemSubscriptionOptionsServiceTier {
+    @SerialName("priority") PRIORITY
+}
+
+@Serializable
+data class RecoveryModelsModelsItemSubscriptionOptions(
+    val `efforts`: List<RecoveryModelsModelsItemSubscriptionOptionsEffortsItem>,
+    val `serviceTier`: RecoveryModelsModelsItemSubscriptionOptionsServiceTier?,
+)
+
+@Serializable
+enum class RecoveryModelsModelsItemMemberEffectiveProviderType {
+    @SerialName("claude-code-oauth-token") CLAUDE_CODE_OAUTH_TOKEN,
+    @SerialName("openrouter-codex") OPENROUTER_CODEX,
+    @SerialName("codex-oauth-token") CODEX_OAUTH_TOKEN,
+    @SerialName("built-in") BUILT_IN,
+}
+
+@Serializable
+enum class RecoveryModelsModelsItemMemberEffectiveRuntimeProviderType {
+    @SerialName("claude-code-oauth-token") CLAUDE_CODE_OAUTH_TOKEN,
+    @SerialName("openrouter-codex") OPENROUTER_CODEX,
+    @SerialName("codex-oauth-token") CODEX_OAUTH_TOKEN,
+    @SerialName("built-in") BUILT_IN,
+}
+
+@Serializable
+enum class RecoveryModelsModelsItemMemberEffectiveCredentialScope {
+    @SerialName("org") ORG,
+    @SerialName("member") MEMBER,
+}
+
+@Serializable
+enum class RecoveryModelsModelsItemMemberEffectiveAvailability {
+    @SerialName("available") AVAILABLE,
+    @SerialName("reconnect_required") RECONNECT_REQUIRED,
+    @SerialName("plan_restricted") PLAN_RESTRICTED,
+}
+
+@Serializable
+enum class RecoveryModelsModelsItemMemberEffectiveAccountSelection {
+    @SerialName("capture_required") CAPTURE_REQUIRED,
+    @SerialName("not_applicable") NOT_APPLICABLE,
+}
+
+@Serializable
+data class RecoveryModelsModelsItemMemberEffective(
+    val `providerType`: RecoveryModelsModelsItemMemberEffectiveProviderType,
+    val `runtimeProviderType`: RecoveryModelsModelsItemMemberEffectiveRuntimeProviderType?,
+    val `credentialScope`: RecoveryModelsModelsItemMemberEffectiveCredentialScope,
+    val `availability`: RecoveryModelsModelsItemMemberEffectiveAvailability,
+    val `accountSelection`: RecoveryModelsModelsItemMemberEffectiveAccountSelection,
+)
+
+@Serializable
+data class RecoveryModelsModelsItem(
+    val `model`: String?,
+    val `modelLabel`: String,
+    val `modelProviderId`: String?,
+    val `subscriptionOptions`: RecoveryModelsModelsItemSubscriptionOptions? = null,
+    val `memberEffective`: RecoveryModelsModelsItemMemberEffective,
+)
+
+@Serializable data class RecoveryModels(val `models`: List<RecoveryModelsModelsItem>)
+
+@Serializable
+enum class RecoverySubscriptionsSubscriptionsItemType {
+    @SerialName("claude-code-oauth-token") CLAUDE_CODE_OAUTH_TOKEN,
+    @SerialName("openrouter-codex") OPENROUTER_CODEX,
+    @SerialName("codex-oauth-token") CODEX_OAUTH_TOKEN,
+    @SerialName("built-in") BUILT_IN,
+}
+
+@Serializable
+enum class RecoverySubscriptionsSubscriptionsItemFramework {
+    @SerialName("claude-code") CLAUDE_CODE,
+    @SerialName("codex") CODEX,
+}
+
+@Serializable
+data class RecoverySubscriptionsSubscriptionsItemSubscriptionUsageFiveHour(
+    val `usedPercent`: Double?,
+    val `remainingPercent`: Double?,
+    val `resetAt`: String?,
+    val `windowSeconds`: Double?,
+)
+
+@Serializable
+data class RecoverySubscriptionsSubscriptionsItemSubscriptionUsageWeekly(
+    val `usedPercent`: Double?,
+    val `remainingPercent`: Double?,
+    val `resetAt`: String?,
+    val `windowSeconds`: Double?,
+)
+
+@Serializable
+data class RecoverySubscriptionsSubscriptionsItemSubscriptionUsage(
+    val `fiveHour`: RecoverySubscriptionsSubscriptionsItemSubscriptionUsageFiveHour?,
+    val `weekly`: RecoverySubscriptionsSubscriptionsItemSubscriptionUsageWeekly?,
+)
+
+@Serializable
+data class RecoverySubscriptionsSubscriptionsItemSubscriptionCredits(
+    val `balance`: Double?,
+    val `unlimited`: Boolean,
+)
+
+@Serializable
+data class RecoverySubscriptionsSubscriptionsItem(
+    val `id`: String,
+    val `modelProviderId`: String? = null,
+    val `isActive`: Boolean? = null,
+    val `type`: RecoverySubscriptionsSubscriptionsItemType,
+    val `framework`: RecoverySubscriptionsSubscriptionsItemFramework,
+    val `createdAt`: String,
+    val `updatedAt`: String,
+    val `accountEmail`: String? = null,
+    val `workspaceName`: String? = null,
+    val `planType`: String? = null,
+    val `subscriptionResetPeriod`: String? = null,
+    val `subscriptionNextResetAt`: String? = null,
+    val `subscriptionUsage`: RecoverySubscriptionsSubscriptionsItemSubscriptionUsage? = null,
+    val `subscriptionCredits`: RecoverySubscriptionsSubscriptionsItemSubscriptionCredits? = null,
+    val `subscriptionResetSupported`: Boolean? = null,
+    val `subscriptionResetCredits`: Long? = null,
+    val `subscriptionResetCreditsNextExpiresAt`: String? = null,
+    val `needsReconnect`: Boolean,
+    val `lastRefreshErrorCode`: String?,
+)
+
+@Serializable
+data class RecoverySubscriptions(val `subscriptions`: List<RecoverySubscriptionsSubscriptionsItem>)
+
+@Serializable
+enum class RecoveryBillingStatus {
+    @SerialName("active") ACTIVE,
+    @SerialName("suspended") SUSPENDED,
+}
+
+@Serializable
+enum class RecoveryBillingScheduledChangeType {
+    @SerialName("cancel") CANCEL,
+    @SerialName("downgrade") DOWNGRADE,
+}
+
+@Serializable
+enum class RecoveryBillingScheduledChangeTargetTier {
+    @SerialName("limited-free-1") LIMITED_FREE_1,
+    @SerialName("pro") PRO,
+    @SerialName("team") TEAM,
+}
+
+@Serializable
+data class RecoveryBillingScheduledChange(
+    val `type`: RecoveryBillingScheduledChangeType,
+    val `targetTier`: RecoveryBillingScheduledChangeTargetTier?,
+    val `effectiveDate`: String?,
+)
+
+@Serializable
+enum class RecoveryBillingAutoRechargeDisabledReason {
+    @SerialName("consecutive_failures") CONSECUTIVE_FAILURES
+}
+
+@Serializable
+data class RecoveryBillingAutoRecharge(
+    val `enabled`: Boolean,
+    val `threshold`: Double?,
+    val `amount`: Double?,
+    val `disabledReason`: RecoveryBillingAutoRechargeDisabledReason? = null,
+)
+
+@Serializable
+data class RecoveryBillingCreditExpiry(
+    val `expiringNextCycle`: Double,
+    val `nextExpiryDate`: String?,
+)
+
+@Serializable
+enum class RecoveryBillingCreditBreakdownItemCategory {
+    @SerialName("plan") PLAN,
+    @SerialName("free") FREE,
+    @SerialName("promotional") PROMOTIONAL,
+    @SerialName("payAsYouGo") PAYASYOUGO,
+}
+
+@Serializable
+enum class RecoveryBillingCreditBreakdownItemTier {
+    @SerialName("pro") PRO,
+    @SerialName("team") TEAM,
+}
+
+@Serializable
+data class RecoveryBillingCreditBreakdownItem(
+    val `category`: RecoveryBillingCreditBreakdownItemCategory,
+    val `label`: String,
+    val `credits`: Double,
+    val `tier`: RecoveryBillingCreditBreakdownItemTier? = null,
+)
+
+@Serializable
+data class RecoveryBillingCreditGrantsItem(
+    val `id`: String,
+    val `source`: String,
+    val `label`: String,
+    val `amount`: Double,
+    val `remaining`: Double,
+    val `createdAt`: String,
+    val `expiresAt`: String,
+)
+
+@Serializable
+data class RecoveryBillingConcurrencySubscriptionsItem(
+    val `id`: String,
+    val `quantity`: Long,
+    val `currentPeriodEnd`: String?,
+    val `cancelAtPeriodEnd`: Boolean,
+    val `canReduce`: Boolean? = null,
+    val `canChangeInApp`: Boolean? = null,
+    val `scheduledQuantity`: Long? = null,
+    val `scheduledChangeAt`: String? = null,
+)
+
+@Serializable
+data class RecoveryBilling(
+    val `tier`: String,
+    val `status`: RecoveryBillingStatus,
+    val `canBuyConcurrency`: Boolean,
+    val `concurrencyUnitAmountCents`: Long? = null,
+    val `concurrencyPurchaseReviewAvailable`: Boolean,
+    val `canBuyCredits`: Boolean,
+    val `showUsagePack`: Boolean,
+    val `autoRechargeAllowed`: Boolean,
+    val `restrictedBuiltInModels`: Boolean,
+    val `workflowWebhookAutomationAllowed`: Boolean,
+    val `credits`: Double,
+    val `onboardingPaymentPending`: Boolean,
+    val `subscriptionStatus`: String?,
+    val `currentPeriodEnd`: String?,
+    val `cancelAtPeriodEnd`: Boolean,
+    val `scheduledChange`: RecoveryBillingScheduledChange?,
+    val `canRestorePlan`: Boolean,
+    val `hasSubscription`: Boolean,
+    val `autoRecharge`: RecoveryBillingAutoRecharge,
+    val `creditExpiry`: RecoveryBillingCreditExpiry,
+    val `creditBreakdown`: List<RecoveryBillingCreditBreakdownItem>,
+    val `creditGrants`: List<RecoveryBillingCreditGrantsItem>,
+    val `concurrencyLimit`: Long,
+    val `concurrencySubscriptions`: List<RecoveryBillingConcurrencySubscriptionsItem>,
+)
+
+@Serializable data class ResetSubscriptionRequest(val `idempotencyKey`: String)
+
+@Serializable
+enum class ResetSubscriptionResultOutcome {
+    @SerialName("reset") RESET,
+    @SerialName("nothingToReset") NOTHINGTORESET,
+    @SerialName("noCredit") NOCREDIT,
+    @SerialName("alreadyRedeemed") ALREADYREDEEMED,
+}
+
+@Serializable data class ResetSubscriptionResult(val `outcome`: ResetSubscriptionResultOutcome)
+
+@Serializable
+data class SessionOutputDelta(
+    val `threadId`: String,
+    val `runId`: String,
+    val `eventId`: String,
+    val `runEventId`: String,
+    val `createdAt`: String,
+    val `chunkIndex`: Long,
+    val `delta`: String,
+)
+
+@Serializable(with = HistoryCatchUpRequestItemSerializer::class)
+data class HistoryCatchUpRequestItem(val item1: String, val item2: Long)
+
+object HistoryCatchUpRequestItemSerializer : KSerializer<HistoryCatchUpRequestItem> {
+    override val descriptor = ListSerializer(JsonElement.serializer()).descriptor
+
+    override fun deserialize(decoder: Decoder): HistoryCatchUpRequestItem {
+        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON tuple")
+        val values =
+            input.decodeJsonElement() as? JsonArray
+                ?: throw SerializationException("Expected JSON tuple")
+        if (values.size != 2) throw SerializationException("Unexpected tuple length")
+        return HistoryCatchUpRequestItem(
+            input.json.decodeFromJsonElement<String>(values[0]),
+            input.json.decodeFromJsonElement<Long>(values[1]),
+        )
+    }
+
+    override fun serialize(encoder: Encoder, value: HistoryCatchUpRequestItem) {
+        val output = encoder as? JsonEncoder ?: throw SerializationException("Expected JSON tuple")
+        output.encodeJsonElement(
+            JsonArray(
+                listOf(
+                    output.json.encodeToJsonElement(value.item1),
+                    output.json.encodeToJsonElement(value.item2),
+                )
+            )
+        )
+    }
+}
+
+typealias HistoryCatchUpRequest = List<HistoryCatchUpRequestItem>
 
 @Serializable data object RealtimeTokenRequest
 
@@ -335,8 +705,17 @@ enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1Type {
 }
 
 @Serializable
+enum class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1SelectionOutputFormat {
+    @SerialName("html") HTML,
+    @SerialName("pptx") PPTX,
+}
+
+@Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1Selection(
     val `templateId`: String,
+    val `outputFormat`:
+        SendRequestVariant1UserMessagePartsItemVariant4TemplateVariant1SelectionOutputFormat? =
+        null,
     val `colorSystemId`: String? = null,
     val `previewUrl`: String? = null,
 )
@@ -1109,8 +1488,17 @@ enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4Templ
 }
 
 @Serializable
+enum class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1SelectionOutputFormat {
+    @SerialName("html") HTML,
+    @SerialName("pptx") PPTX,
+}
+
+@Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1Selection(
     val `templateId`: String,
+    val `outputFormat`:
+        SendRequestVariant1UserMessagePartsItemVariant12NoteItemVariant4TemplateVariant1SelectionOutputFormat? =
+        null,
     val `colorSystemId`: String? = null,
     val `previewUrl`: String? = null,
 )
@@ -2803,6 +3191,12 @@ data class FeatureSwitches(
     val `effectiveSwitches`: Map<String, Boolean>,
 )
 
+@Serializable
+data class HistoryCatchUp(
+    val `events`: Map<String, List<Map<String, JsonElement>>>,
+    val `notFoundThreads`: List<String>,
+)
+
 @Serializable(with = HistorySnapshotSerializer::class) sealed interface HistorySnapshot
 
 @Serializable(with = CanonicalZeroSerializer::class) data object CanonicalZero
@@ -2917,238 +3311,6 @@ object HistorySnapshotSerializer : KSerializer<HistorySnapshot> {
     }
 }
 
-@Serializable(with = HistoryRowsRowsItemSerializer::class) sealed interface HistoryRowsRowsItem
-
-@Serializable
-enum class HistoryRowsRowsItemVariant1ContextType {
-    @SerialName("web") WEB,
-    @SerialName("slack") SLACK,
-    @SerialName("discord") DISCORD,
-    @SerialName("wechat") WECHAT,
-    @SerialName("feishu") FEISHU,
-    @SerialName("teams") TEAMS,
-    @SerialName("telegram") TELEGRAM,
-    @SerialName("agentphone") AGENTPHONE,
-    @SerialName("email") EMAIL,
-    @SerialName("automation") AUTOMATION,
-    @SerialName("agent_run") AGENT_RUN,
-}
-
-@Serializable(with = CanonicalOptionalJsonSerializer::class)
-sealed interface CanonicalOptionalJson {
-    data object Absent : CanonicalOptionalJson
-
-    data class Present(val value: JsonElement) : CanonicalOptionalJson
-}
-
-object CanonicalOptionalJsonSerializer : KSerializer<CanonicalOptionalJson> {
-    // A non-nullable property lets explicit JSON null reach this serializer.
-    override val descriptor = JsonElement.serializer().descriptor
-
-    override fun deserialize(decoder: Decoder): CanonicalOptionalJson {
-        val input = decoder as? JsonDecoder ?: throw SerializationException("Expected JSON value")
-        return CanonicalOptionalJson.Present(input.decodeJsonElement())
-    }
-
-    override fun serialize(encoder: Encoder, value: CanonicalOptionalJson) {
-        val output = encoder as? JsonEncoder ?: throw SerializationException("Expected JSON value")
-        if (value !is CanonicalOptionalJson.Present)
-            throw SerializationException("Absent JSON field must be omitted")
-        output.encodeJsonElement(value.value)
-    }
-}
-
-@Serializable
-data class HistoryRowsRowsItemVariant1Payload(
-    val `content`: String? = null,
-    val `userMessage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
-    val `error`: String? = null,
-    val `usage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
-)
-
-@Serializable
-enum class HistoryRowsRowsItemVariant1EventType {
-    @SerialName("run.failed") RUN_FAILED
-}
-
-@Serializable
-data class HistoryRowsRowsItemVariant1(
-    val `id`: String,
-    val `chatThreadId`: String,
-    val `runId`: String?,
-    val `revokesEventId`: String?,
-    val `contextType`: HistoryRowsRowsItemVariant1ContextType?,
-    val `contextId`: String?,
-    val `runEventSequenceNumber`: Long?,
-    val `runEventId`: String?,
-    val `seqId`: Long,
-    val `createdAt`: String,
-    val `payload`: HistoryRowsRowsItemVariant1Payload?,
-    val `eventType`: HistoryRowsRowsItemVariant1EventType,
-    val `failureReason`: String? = null,
-) : HistoryRowsRowsItem
-
-@Serializable
-enum class HistoryRowsRowsItemVariant2ContextType {
-    @SerialName("web") WEB,
-    @SerialName("slack") SLACK,
-    @SerialName("discord") DISCORD,
-    @SerialName("wechat") WECHAT,
-    @SerialName("feishu") FEISHU,
-    @SerialName("teams") TEAMS,
-    @SerialName("telegram") TELEGRAM,
-    @SerialName("agentphone") AGENTPHONE,
-    @SerialName("email") EMAIL,
-    @SerialName("automation") AUTOMATION,
-    @SerialName("agent_run") AGENT_RUN,
-}
-
-@Serializable
-data class HistoryRowsRowsItemVariant2Payload(
-    val `content`: String? = null,
-    val `userMessage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
-    val `error`: String? = null,
-    val `usage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
-)
-
-@Serializable
-enum class HistoryRowsRowsItemVariant2EventType {
-    @SerialName("input.prompt") INPUT_PROMPT,
-    @SerialName("input.automation") INPUT_AUTOMATION,
-    @SerialName("input.budget") INPUT_BUDGET,
-    @SerialName("input.rejected") INPUT_REJECTED,
-}
-
-@Serializable
-data class HistoryRowsRowsItemVariant2(
-    val `id`: String,
-    val `chatThreadId`: String,
-    val `runId`: String?,
-    val `revokesEventId`: String?,
-    val `contextType`: HistoryRowsRowsItemVariant2ContextType,
-    val `contextId`: String?,
-    val `runEventSequenceNumber`: Long?,
-    val `runEventId`: String?,
-    val `seqId`: Long,
-    val `createdAt`: String,
-    val `payload`: HistoryRowsRowsItemVariant2Payload?,
-    val `eventType`: HistoryRowsRowsItemVariant2EventType,
-) : HistoryRowsRowsItem
-
-@Serializable
-enum class HistoryRowsRowsItemVariant3ContextType {
-    @SerialName("web") WEB,
-    @SerialName("slack") SLACK,
-    @SerialName("discord") DISCORD,
-    @SerialName("wechat") WECHAT,
-    @SerialName("feishu") FEISHU,
-    @SerialName("teams") TEAMS,
-    @SerialName("telegram") TELEGRAM,
-    @SerialName("agentphone") AGENTPHONE,
-    @SerialName("email") EMAIL,
-    @SerialName("automation") AUTOMATION,
-    @SerialName("agent_run") AGENT_RUN,
-}
-
-@Serializable
-data class HistoryRowsRowsItemVariant3Payload(
-    val `content`: String? = null,
-    val `userMessage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
-    val `error`: String? = null,
-    val `usage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
-)
-
-@Serializable
-enum class HistoryRowsRowsItemVariant3EventType {
-    @SerialName("output.message") OUTPUT_MESSAGE,
-    @SerialName("output.error") OUTPUT_ERROR,
-    @SerialName("output.followups") OUTPUT_FOLLOWUPS,
-    @SerialName("run.completed") RUN_COMPLETED,
-    @SerialName("run.cancelled") RUN_CANCELLED,
-    @SerialName("control.interrupt") CONTROL_INTERRUPT,
-    @SerialName("control.revoke") CONTROL_REVOKE,
-    @SerialName("usage.recorded") USAGE_RECORDED,
-}
-
-@Serializable
-data class HistoryRowsRowsItemVariant3(
-    val `id`: String,
-    val `chatThreadId`: String,
-    val `runId`: String?,
-    val `revokesEventId`: String?,
-    val `contextType`: HistoryRowsRowsItemVariant3ContextType?,
-    val `contextId`: String?,
-    val `runEventSequenceNumber`: Long?,
-    val `runEventId`: String?,
-    val `seqId`: Long,
-    val `createdAt`: String,
-    val `payload`: HistoryRowsRowsItemVariant3Payload?,
-    val `eventType`: HistoryRowsRowsItemVariant3EventType,
-) : HistoryRowsRowsItem
-
-object HistoryRowsRowsItemSerializer : KSerializer<HistoryRowsRowsItem> {
-    override val descriptor =
-        buildClassSerialDescriptor("ai.okou.android.api.generated.HistoryRowsRowsItem")
-
-    override fun deserialize(decoder: Decoder): HistoryRowsRowsItem {
-        val input =
-            decoder as? JsonDecoder
-                ?: throw SerializationException("Expected JSON object for HistoryRowsRowsItem")
-        val value =
-            input.decodeJsonElement() as? JsonObject
-                ?: throw SerializationException("Expected object for HistoryRowsRowsItem")
-        val matches =
-            listOf(
-                (value["eventType"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("run.failed")
-                } == true,
-                ((value["eventType"] as? JsonPrimitive)?.let {
-                    it.isString &&
-                        it.content in
-                            setOf(
-                                "input.prompt",
-                                "input.automation",
-                                "input.budget",
-                                "input.rejected",
-                            )
-                } == true) && (!value.containsKey("failureReason")),
-                ((value["eventType"] as? JsonPrimitive)?.let {
-                    it.isString &&
-                        it.content in
-                            setOf(
-                                "output.message",
-                                "output.error",
-                                "output.followups",
-                                "run.completed",
-                                "run.cancelled",
-                                "control.interrupt",
-                                "control.revoke",
-                                "usage.recorded",
-                            )
-                } == true) && (!value.containsKey("failureReason")),
-            )
-        if (matches.count { it } != 1)
-            throw SerializationException("Unknown or ambiguous HistoryRowsRowsItem variant")
-        return when (matches.indexOf(true)) {
-            0 -> input.json.decodeFromJsonElement(HistoryRowsRowsItemVariant1.serializer(), value)
-            1 -> input.json.decodeFromJsonElement(HistoryRowsRowsItemVariant2.serializer(), value)
-            2 -> input.json.decodeFromJsonElement(HistoryRowsRowsItemVariant3.serializer(), value)
-            else -> throw SerializationException("Unknown HistoryRowsRowsItem variant")
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: HistoryRowsRowsItem) {
-        when (value) {
-            is HistoryRowsRowsItemVariant1 ->
-                encoder.encodeSerializableValue(HistoryRowsRowsItemVariant1.serializer(), value)
-            is HistoryRowsRowsItemVariant2 ->
-                encoder.encodeSerializableValue(HistoryRowsRowsItemVariant2.serializer(), value)
-            is HistoryRowsRowsItemVariant3 ->
-                encoder.encodeSerializableValue(HistoryRowsRowsItemVariant3.serializer(), value)
-        }
-    }
-}
-
 @Serializable(with = HistoryRowsCursorSerializer::class) sealed interface HistoryRowsCursor
 
 @Serializable
@@ -3218,7 +3380,7 @@ object HistoryRowsCursorSerializer : KSerializer<HistoryRowsCursor> {
 
 @Serializable
 data class HistoryRows(
-    val `rows`: List<HistoryRowsRowsItem>,
+    val `rows`: List<Map<String, JsonElement>>,
     val `cursor`: HistoryRowsCursor,
     val `hasMore`: Boolean,
 )
@@ -3228,213 +3390,7 @@ data class ThreadDetail(val `lastReadAt`: String?, val `cancellationRecoveryPend
 
 @Serializable data class ReadState(val `lastReadAt`: String?)
 
-@Serializable(with = RawHistoryRowSerializer::class) sealed interface RawHistoryRow
-
-@Serializable
-enum class RawHistoryRowVariant1ContextType {
-    @SerialName("web") WEB,
-    @SerialName("slack") SLACK,
-    @SerialName("discord") DISCORD,
-    @SerialName("wechat") WECHAT,
-    @SerialName("feishu") FEISHU,
-    @SerialName("teams") TEAMS,
-    @SerialName("telegram") TELEGRAM,
-    @SerialName("agentphone") AGENTPHONE,
-    @SerialName("email") EMAIL,
-    @SerialName("automation") AUTOMATION,
-    @SerialName("agent_run") AGENT_RUN,
-}
-
-@Serializable
-data class RawHistoryRowVariant1Payload(
-    val `content`: String? = null,
-    val `userMessage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
-    val `error`: String? = null,
-    val `usage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
-)
-
-@Serializable
-enum class RawHistoryRowVariant1EventType {
-    @SerialName("run.failed") RUN_FAILED
-}
-
-@Serializable
-data class RawHistoryRowVariant1(
-    val `id`: String,
-    val `chatThreadId`: String,
-    val `runId`: String?,
-    val `revokesEventId`: String?,
-    val `contextType`: RawHistoryRowVariant1ContextType?,
-    val `contextId`: String?,
-    val `runEventSequenceNumber`: Long?,
-    val `runEventId`: String?,
-    val `seqId`: Long,
-    val `createdAt`: String,
-    val `payload`: RawHistoryRowVariant1Payload?,
-    val `eventType`: RawHistoryRowVariant1EventType,
-    val `failureReason`: String? = null,
-) : RawHistoryRow
-
-@Serializable
-enum class RawHistoryRowVariant2ContextType {
-    @SerialName("web") WEB,
-    @SerialName("slack") SLACK,
-    @SerialName("discord") DISCORD,
-    @SerialName("wechat") WECHAT,
-    @SerialName("feishu") FEISHU,
-    @SerialName("teams") TEAMS,
-    @SerialName("telegram") TELEGRAM,
-    @SerialName("agentphone") AGENTPHONE,
-    @SerialName("email") EMAIL,
-    @SerialName("automation") AUTOMATION,
-    @SerialName("agent_run") AGENT_RUN,
-}
-
-@Serializable
-data class RawHistoryRowVariant2Payload(
-    val `content`: String? = null,
-    val `userMessage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
-    val `error`: String? = null,
-    val `usage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
-)
-
-@Serializable
-enum class RawHistoryRowVariant2EventType {
-    @SerialName("input.prompt") INPUT_PROMPT,
-    @SerialName("input.automation") INPUT_AUTOMATION,
-    @SerialName("input.budget") INPUT_BUDGET,
-    @SerialName("input.rejected") INPUT_REJECTED,
-}
-
-@Serializable
-data class RawHistoryRowVariant2(
-    val `id`: String,
-    val `chatThreadId`: String,
-    val `runId`: String?,
-    val `revokesEventId`: String?,
-    val `contextType`: RawHistoryRowVariant2ContextType,
-    val `contextId`: String?,
-    val `runEventSequenceNumber`: Long?,
-    val `runEventId`: String?,
-    val `seqId`: Long,
-    val `createdAt`: String,
-    val `payload`: RawHistoryRowVariant2Payload?,
-    val `eventType`: RawHistoryRowVariant2EventType,
-) : RawHistoryRow
-
-@Serializable
-enum class RawHistoryRowVariant3ContextType {
-    @SerialName("web") WEB,
-    @SerialName("slack") SLACK,
-    @SerialName("discord") DISCORD,
-    @SerialName("wechat") WECHAT,
-    @SerialName("feishu") FEISHU,
-    @SerialName("teams") TEAMS,
-    @SerialName("telegram") TELEGRAM,
-    @SerialName("agentphone") AGENTPHONE,
-    @SerialName("email") EMAIL,
-    @SerialName("automation") AUTOMATION,
-    @SerialName("agent_run") AGENT_RUN,
-}
-
-@Serializable
-data class RawHistoryRowVariant3Payload(
-    val `content`: String? = null,
-    val `userMessage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
-    val `error`: String? = null,
-    val `usage`: CanonicalOptionalJson = CanonicalOptionalJson.Absent,
-)
-
-@Serializable
-enum class RawHistoryRowVariant3EventType {
-    @SerialName("output.message") OUTPUT_MESSAGE,
-    @SerialName("output.error") OUTPUT_ERROR,
-    @SerialName("output.followups") OUTPUT_FOLLOWUPS,
-    @SerialName("run.completed") RUN_COMPLETED,
-    @SerialName("run.cancelled") RUN_CANCELLED,
-    @SerialName("control.interrupt") CONTROL_INTERRUPT,
-    @SerialName("control.revoke") CONTROL_REVOKE,
-    @SerialName("usage.recorded") USAGE_RECORDED,
-}
-
-@Serializable
-data class RawHistoryRowVariant3(
-    val `id`: String,
-    val `chatThreadId`: String,
-    val `runId`: String?,
-    val `revokesEventId`: String?,
-    val `contextType`: RawHistoryRowVariant3ContextType?,
-    val `contextId`: String?,
-    val `runEventSequenceNumber`: Long?,
-    val `runEventId`: String?,
-    val `seqId`: Long,
-    val `createdAt`: String,
-    val `payload`: RawHistoryRowVariant3Payload?,
-    val `eventType`: RawHistoryRowVariant3EventType,
-) : RawHistoryRow
-
-object RawHistoryRowSerializer : KSerializer<RawHistoryRow> {
-    override val descriptor =
-        buildClassSerialDescriptor("ai.okou.android.api.generated.RawHistoryRow")
-
-    override fun deserialize(decoder: Decoder): RawHistoryRow {
-        val input =
-            decoder as? JsonDecoder
-                ?: throw SerializationException("Expected JSON object for RawHistoryRow")
-        val value =
-            input.decodeJsonElement() as? JsonObject
-                ?: throw SerializationException("Expected object for RawHistoryRow")
-        val matches =
-            listOf(
-                (value["eventType"] as? JsonPrimitive)?.let {
-                    it.isString && it.content in setOf("run.failed")
-                } == true,
-                ((value["eventType"] as? JsonPrimitive)?.let {
-                    it.isString &&
-                        it.content in
-                            setOf(
-                                "input.prompt",
-                                "input.automation",
-                                "input.budget",
-                                "input.rejected",
-                            )
-                } == true) && (!value.containsKey("failureReason")),
-                ((value["eventType"] as? JsonPrimitive)?.let {
-                    it.isString &&
-                        it.content in
-                            setOf(
-                                "output.message",
-                                "output.error",
-                                "output.followups",
-                                "run.completed",
-                                "run.cancelled",
-                                "control.interrupt",
-                                "control.revoke",
-                                "usage.recorded",
-                            )
-                } == true) && (!value.containsKey("failureReason")),
-            )
-        if (matches.count { it } != 1)
-            throw SerializationException("Unknown or ambiguous RawHistoryRow variant")
-        return when (matches.indexOf(true)) {
-            0 -> input.json.decodeFromJsonElement(RawHistoryRowVariant1.serializer(), value)
-            1 -> input.json.decodeFromJsonElement(RawHistoryRowVariant2.serializer(), value)
-            2 -> input.json.decodeFromJsonElement(RawHistoryRowVariant3.serializer(), value)
-            else -> throw SerializationException("Unknown RawHistoryRow variant")
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: RawHistoryRow) {
-        when (value) {
-            is RawHistoryRowVariant1 ->
-                encoder.encodeSerializableValue(RawHistoryRowVariant1.serializer(), value)
-            is RawHistoryRowVariant2 ->
-                encoder.encodeSerializableValue(RawHistoryRowVariant2.serializer(), value)
-            is RawHistoryRowVariant3 ->
-                encoder.encodeSerializableValue(RawHistoryRowVariant3.serializer(), value)
-        }
-    }
-}
+typealias RawHistoryRow = Map<String, JsonElement>
 
 @Serializable
 enum class ChatArchiveChatThreadsItemModelSettingsValueEffort {

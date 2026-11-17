@@ -8,11 +8,14 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from async_helper_failure_cases import ASYNC_HELPER_FAILURE_CASES
 from cancellation_cases import CANCELLATION_CASES
 from collection_publication_cases import COLLECTION_PUBLICATION_CASES
+from duplicate_condition_cases import DUPLICATE_CONDITION_CASES
 from global_state_cases import GLOBAL_STATE_CASES
 from graph_factory_cases import GRAPH_FACTORY_CASES
 from import_cases import IMPORT_CASES
+from logging_cases import LOGGING_CASES
 from resource_cancellation_binding_cases import RESOURCE_CANCELLATION_BINDING_CASES
 from resource_failure_cases import RESOURCE_FAILURE_CASES
 from resource_failure_path_cases import RESOURCE_FAILURE_PATH_CASES
@@ -22,6 +25,7 @@ from subscription_replacement_cases import SUBSCRIPTION_REPLACEMENT_CASES
 from task_dictionary_cases import TASK_DICTIONARY_CASES
 from task_lifecycle_cases import TASK_LIFECYCLE_CASES
 from throwing_task_cases import THROWING_TASK_CASES
+from useless_catch_cases import USELESS_CATCH_CASES
 
 IOS = Path(__file__).resolve().parents[3]
 BINARY = (
@@ -33,12 +37,15 @@ BINARY = (
 )
 
 CASES = [
+    *DUPLICATE_CONDITION_CASES,
     *COLLECTION_PUBLICATION_CASES,
     *THROWING_TASK_CASES,
+    *USELESS_CATCH_CASES,
     *CANCELLATION_CASES,
     *RESOURCE_CANCELLATION_BINDING_CASES,
     *RESOURCE_FAILURE_CASES,
     *RESOURCE_FAILURE_PATH_CASES,
+    *ASYNC_HELPER_FAILURE_CASES,
     *SUBSCRIPTION_CASES,
     *SUBSCRIPTION_REPLACEMENT_CASES,
     *TASK_LIFECYCLE_CASES,
@@ -713,6 +720,39 @@ CASES = [
 
 
 class NativeRuleTests(unittest.TestCase):
+    def test_pinned_defaults_have_only_the_deferred_policy_exclusions(self):
+        result = subprocess.run(
+            [BINARY, "rules", "--config", str(IOS / ".swiftlint.yml")],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        self.assertNotIn("warning:", result.stderr, result.stderr)
+        defaults = {}
+        for line in result.stdout.splitlines():
+            if not line.startswith("|"):
+                continue
+            columns = [value.strip() for value in line.strip("|").split("|")]
+            identifier, opt_in, _, enabled = columns[:4]
+            if opt_in == "no" and identifier != "custom_rules":
+                defaults[identifier] = enabled
+        self.assertEqual(len(defaults), 101)
+        self.assertEqual(
+            {name for name, value in defaults.items() if value == "no"},
+            {
+                "cyclomatic_complexity",
+                "file_length",
+                "function_body_length",
+                "function_parameter_count",
+                "identifier_name",
+                "large_tuple",
+                "line_length",
+                "nesting",
+                "type_body_length",
+            },
+        )
+        self.assertEqual(sum(value == "yes" for value in defaults.values()), 92)
+
     def lint(self, root, source, rule, filename="Screen.swift"):
         path = root / filename
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -856,6 +896,27 @@ class NativeRuleTests(unittest.TestCase):
                     self.assertEqual(
                         result.returncode, 2 if expected else 0, result.stderr
                     )
+                    self.assertEqual(
+                        sorted((d["rule_id"], d["line"]) for d in diagnostics),
+                        [(rule, line) for line in expected],
+                        result.stdout,
+                    )
+
+    def test_logging_boundaries(self):
+        rule = "okou_logging_boundaries"
+        with tempfile.TemporaryDirectory(prefix="native logging cases ") as directory:
+            for index, (name, filename, source) in enumerate(LOGGING_CASES):
+                with self.subTest(name=name):
+                    source = textwrap.dedent(source).lstrip()
+                    expected = [
+                        i
+                        for i, line in enumerate(source.splitlines(), 1)
+                        if "// violation" in line
+                    ]
+                    root = Path(directory) / str(index)
+                    root.mkdir()
+                    result, diagnostics = self.lint(root, source, rule, filename)
+                    self.assertEqual(result.returncode, 2 if expected else 0, result.stderr)
                     self.assertEqual(
                         sorted((d["rule_id"], d["line"]) for d in diagnostics),
                         [(rule, line) for line in expected],

@@ -11,13 +11,19 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
   private var cornerRadius: CGFloat {
     isExpanded ? 28 : OkouControl.composerCompactHeight / 2
   }
+  /// Each 44 pt action is centred on its corner's arc, so the toolbar is concentric with the
+  /// surface: a control sits as far from the side as from the bottom, on both sides, and in
+  /// the open composer `+` lines up with the text. Flush to the sides, `+` sat closer to the
+  /// edge than the text, and send twice as close to the side as to the bottom.
+  private var toolbarInset: CGFloat { cornerRadius - actionSize / 2 }
+  private var textInset: CGFloat { toolbarInset + (actionSize - OkouIconSize.toolbar) / 2 }
 
   var body: some View {
     content()
-      .padding(.leading, isExpanded ? 18 : actionSize + OkouSpace.sm)
+      .padding(.leading, isExpanded ? textInset : actionSize + OkouSpace.sm)
       // Only the primary action shares the compact input's line. Hidden expansion
       // controls keep their toolbar geometry without reserving space in the editor.
-      .padding(.trailing, isExpanded ? 18 : actionSize + OkouSpace.sm)
+      .padding(.trailing, isExpanded ? textInset : actionSize + OkouSpace.sm)
       .padding(.top, isExpanded ? 17 : OkouSpace.six)
       .padding(.bottom, isExpanded ? 62 : OkouSpace.six)
       .frame(
@@ -27,7 +33,7 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
       .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
       .overlay(alignment: .bottomLeading) {
         leading()
-          .padding(.bottom, isExpanded ? OkouSpace.six : 0)
+          .padding([.leading, .bottom], toolbarInset)
       }
       .overlay(alignment: .bottomTrailing) {
         trailing()
@@ -35,31 +41,48 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
           // position while the keyboard raises the surface.
           .geometryGroup()
           .padding(.leading, isExpanded ? actionSize + OkouSpace.xs : 0)
-          .padding(.bottom, isExpanded ? OkouSpace.six : 0)
+          .padding([.trailing, .bottom], toolbarInset)
       }
   }
 }
 
-/// A quiet model note above the composer: supporting text, an optional Fast mark and a
-/// disclosure chevron. Its 44 pt target stays separate from the glass input surface.
-struct OkouComposerValueLabel: View {
-  let title: String
-  var isFast = false
+/// The open composer's model control, beside the mic as Web's narrow composer draws it: the
+/// model's company mark, or `cpu` for a model the catalog does not know, on the 44 pt toolbar
+/// target. The name, effort and Fast belong to its VoiceOver value and the model sheet.
+struct OkouComposerModelMark: View {
+  enum Mark {
+    /// Okou's own mark, for Auto and built-in models.
+    case okou
+    /// A company's mark asset, drawn edge to edge.
+    case company(String)
+    case icon(String)
+  }
+
+  let mark: Mark
+  @ScaledMetric(relativeTo: .body) private var brandSize = OkouIconSize.toolbarMark
 
   var body: some View {
-    HStack(spacing: OkouSpace.xs) {
-      Text(verbatim: title)
-        .font(.okou(.footnote))
-        .layoutPriority(1)
-      if isFast {
-        OkouIcon("zap", size: OkouIconSize.badge)
+    Group {
+      switch mark {
+      case .okou:
+        brand(OkouBrand.symbol, size: brandSize / OkouBrand.symbolArtworkRatio)
+      case .company(let asset):
+        brand(asset, size: brandSize)
+      case .icon(let name):
+        OkouIcon(name, size: OkouIconSize.toolbar)
       }
-      OkouIcon("chevron-down", size: OkouIconSize.badge)
     }
-    .foregroundStyle(OkouColor.mutedForeground)
-    .lineLimit(1)
-    .padding(.horizontal, OkouSpace.sm)
-    .frame(minHeight: OkouControl.minimumTarget)
-    .contentShape(Rectangle())
+    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+    .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
+    .contentShape(Circle())
+  }
+
+  private func brand(_ asset: String, size: CGFloat) -> some View {
+    Image(asset)
+      .resizable()
+      .renderingMode(.template)
+      .scaledToFit()
+      .frame(width: size, height: size)
+      .accessibilityHidden(true)
   }
 }

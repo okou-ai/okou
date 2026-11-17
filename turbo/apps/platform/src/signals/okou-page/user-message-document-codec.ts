@@ -27,6 +27,8 @@ import type { RestorableAttachment } from "./chat-draft.ts";
 import { formatFeedbackPrompt, type FeedbackSource } from "./chat-feedback.ts";
 import { serializeChatThreadMention } from "./chat-thread-suggestion-domain.ts";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
+import { findPresentationRunbookPackage } from "@okouai/core/resource-registry";
+import type { PresentationOutputFormat } from "@okouai/core/presentation-output-format";
 import {
   serializeAgentMention,
   splitAgentMentionSegments,
@@ -520,6 +522,51 @@ export function editorDocToMessageDocument(
   return editorDocToDraftDocument(document, context)?.userMessage ?? null;
 }
 
+function withPresentationOutputFormat(
+  template: GenerationTemplateRequest,
+  outputFormat: PresentationOutputFormat,
+): GenerationTemplateRequest {
+  if (
+    template.type !== "presentation" ||
+    !findPresentationRunbookPackage(template.selection.templateId)
+  ) {
+    return template;
+  }
+  return {
+    ...template,
+    selection: { ...template.selection, outputFormat },
+  };
+}
+
+function withPresentationTemplateFormats(
+  part: UserMessageInputDocument["parts"][number],
+  outputFormat: PresentationOutputFormat,
+): UserMessageInputDocument["parts"][number] {
+  if (part.type === "template") {
+    return {
+      ...part,
+      template: withPresentationOutputFormat(part.template, outputFormat),
+    };
+  }
+  if (part.type === "feedback") {
+    return {
+      ...part,
+      note: part.note.map((notePart) => {
+        return notePart.type === "template"
+          ? {
+              ...notePart,
+              template: withPresentationOutputFormat(
+                notePart.template,
+                outputFormat,
+              ),
+            }
+          : notePart;
+      }),
+    };
+  }
+  return part;
+}
+
 /**
  * Freezes the immutable ProseMirror document selected for one submission while
  * allowing external attachment ids to be supplied after upload/model filtering
@@ -528,6 +575,7 @@ export function editorDocToMessageDocument(
 export function createEditorDocumentSnapshot(
   document: ProseMirrorNode,
   additionalInfo?: string,
+  presentationOutputFormat?: PresentationOutputFormat,
 ): EditorDocumentSnapshot {
   return Object.freeze({
     toEditorDocument() {
@@ -537,15 +585,22 @@ export function createEditorDocumentSnapshot(
       context: EditorDocumentContext = {},
     ): UserMessageInputDocument | null {
       const message = editorDocToMessageDocument(document, context);
-      return message && additionalInfo
-        ? {
-            ...message,
-            parts: [
-              { type: "additional_info", text: additionalInfo },
-              ...message.parts,
-            ],
-          }
-        : message;
+      if (!message) {
+        return null;
+      }
+      return {
+        ...message,
+        parts: [
+          ...(additionalInfo
+            ? [{ type: "additional_info" as const, text: additionalInfo }]
+            : []),
+          ...message.parts.map((part) => {
+            return presentationOutputFormat
+              ? withPresentationTemplateFormats(part, presentationOutputFormat)
+              : part;
+          }),
+        ],
+      };
     },
     toDraft(context: EditorDocumentContext = {}) {
       return editorDocToDraftDocument(document, context);

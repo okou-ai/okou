@@ -55,7 +55,6 @@ def test_repeating_the_name_stays_malformed(real_flow, headers):
     connector_intent.capture_and_strip(flow)
 
     assert connector_intent.from_flow(flow) == connector_intent.MALFORMED
-    assert connector_intent._VALUE_METADATA_KEY not in flow.metadata
     _assert_private_header_is_not_forwarded(flow)
 
 
@@ -76,7 +75,6 @@ def test_unusable_value_is_malformed(real_flow, headers, value):
     connector_intent.capture_and_strip(flow)
 
     assert connector_intent.from_flow(flow) == connector_intent.MALFORMED
-    assert connector_intent._VALUE_METADATA_KEY not in flow.metadata
     _assert_private_header_is_not_forwarded(flow)
 
 
@@ -92,24 +90,39 @@ def test_oversized_value_is_malformed_without_decoding(real_flow):
     connector_intent.capture_and_strip(flow)
 
     assert connector_intent.from_flow(flow) == connector_intent.MALFORMED
-    assert connector_intent._VALUE_METADATA_KEY not in flow.metadata
     _assert_private_header_is_not_forwarded(flow)
 
 
-def test_already_captured_flow_still_removes_the_name(real_flow, headers):
+@pytest.mark.parametrize(
+    ("initial_fields", "expected"),
+    [
+        pytest.param((), connector_intent.ABSENT, id="absent"),
+        pytest.param(
+            ((_CANONICAL_HEADER, "primary,auditor"),),
+            connector_intent.MALFORMED,
+            id="malformed",
+        ),
+        pytest.param(
+            ((_CANONICAL_HEADER, "primary"),),
+            connector_intent.ConnectorIntent("present", "primary"),
+            id="present",
+        ),
+    ],
+)
+def test_already_captured_flow_still_removes_the_name(real_flow, headers, initial_fields, expected):
     flow = real_flow(
         with_response=False,
-        request_headers=headers(
-            ("Host", "example.com"),
-            (_CANONICAL_HEADER, "canonical"),
-        ),
+        request_headers=headers(("Host", "example.com"), ("X-Trace", "kept"), *initial_fields),
     )
-    flow.metadata[connector_intent._STATUS_METADATA_KEY] = "absent"
+    connector_intent.capture_and_strip(flow)
+    assert connector_intent.from_flow(flow) == expected
+    flow.request.headers[_CANONICAL_HEADER] = "auditor"
 
     connector_intent.capture_and_strip(flow)
 
-    assert connector_intent.from_flow(flow) == connector_intent.ABSENT
+    assert connector_intent.from_flow(flow) == expected
     _assert_private_header_is_not_forwarded(flow)
+    assert flow.request.headers.fields == ((b"Host", b"example.com"), (b"X-Trace", b"kept"))
 
 
 def test_absent_intent_leaves_unrelated_headers_untouched(real_flow, headers):

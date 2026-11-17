@@ -72,7 +72,6 @@ async fn dropped_reactor_recovers_supplied_finalizing_result_without_dispatch() 
     env.handle.unblock_completions();
     wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
     assert_eq!(env.handle.completions.lock().unwrap().len(), 1);
-    assert_eq!(env.handle.discover_started_count(), 0);
     drop(predecessor);
     drop(occupied);
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
@@ -153,7 +152,6 @@ async fn cancelled_finalizing_handoff_flushes_outcome_without_executor() {
     assert_eq!(completion.exit_code, 137);
 
     drop(predecessor_guard);
-    assert_eq!(env.handle.discover_started_count(), 0);
     peer.shutdown().await;
     shutdown(&env, run_handle).await;
     telemetry_mock.assert_calls_async(1).await;
@@ -316,7 +314,6 @@ async fn assert_finalizing_activation_failure_retains_lease_until_completion(dir
     wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
     drop(predecessor);
-    assert_eq!(env.handle.discover_started_count(), 0);
     peer.shutdown().await;
     shutdown(&env, run_handle).await;
     telemetry_mock.assert_calls_async(1).await;

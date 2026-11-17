@@ -42,8 +42,7 @@ final class PersonalSubscriptionResources {
   @ObservationIgnored lazy var value = makeValue()
 
   private func makeValue() -> Computed<Task<[PersonalSubscription], Error>> {
-    Computed {
-      [weak self] get, options in
+    Computed { [weak self] get, options in
       guard let self, try get(lifetime), !closed else { throw CancellationError() }
       _ = try get(revision)
       let signal = options.signal
@@ -76,14 +75,14 @@ final class PersonalSubscriptionResources {
     }
   }
 
-  @ObservationIgnored lazy var groups: Computed<Task<[Group], Error>> = computedTask {
-    [value] get, options in
-    let pending = try get(value)
-    let accounts = try await pending.value
-    try Task.checkCancellation()
-    try options.signal.checkCancellation()
-    return Self.group(accounts)
-  }
+  @ObservationIgnored lazy var groups: Computed<Task<[Group], Error>> =
+    computedTask { [value] get, options in
+      let pending = try get(value)
+      let accounts = try await pending.value
+      try Task.checkCancellation()
+      try options.signal.checkCancellation()
+      return Self.group(accounts)
+    }
 
   var confirmedGroups: [Group] { Self.group(accounts) }
 

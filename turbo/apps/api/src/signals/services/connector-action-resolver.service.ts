@@ -120,7 +120,7 @@ export interface ConnectorActionResolver {
 
 function lacksExecutableCapability(args: {
   readonly connectorSlug: ConnectorSlug;
-  readonly runtimeConnector: ConnectorRuntimeConnector;
+  readonly runtimeConnector: Pick<ConnectorRuntimeConnector, "methods">;
 }): boolean {
   if (
     [...args.runtimeConnector.methods.values()].some((method) => {

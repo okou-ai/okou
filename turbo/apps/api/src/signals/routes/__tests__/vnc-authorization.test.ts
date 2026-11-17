@@ -376,8 +376,7 @@ describe("VNC chat authorization", () => {
       throw new Error("Expected an approved VNC continuation Run");
     }
     resumed.push({ actor: s.run.actor, runId: continuation.runId });
-    const continued = await createRunsApi(context).readRun(
-      s.run.actor,
+    const continued = await createRunsApi(context).executionInput(
       continuation.runId,
     );
     expect(continued.appendSystemPrompt).toContain(

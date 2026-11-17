@@ -30,7 +30,7 @@ Build the actual public fixture test, then pass its executable path (printed by 
 cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
   -p rfb-client --test rsa_aes_tigervnc --no-run
 bash crates/rfb-client/tests/fixtures/tigervnc_rsa_aes.sh \
-  crates/target/local/deps/rsa_aes_tigervnc-<cargo-reported-hash>
+  crates/target/local/build/rfb-client/<cargo-reported-hash>/out/rsa_aes_tigervnc-<cargo-reported-hash>
 ```
 
 On an authorized lab with a separately transferred exact test binary/script, `RSA_AES_FIXTURE_ROOT` may name an isolated owned scratch parent. Do not transfer real credentials or use a production server. Record the binary SHA256 and exact source revision separately.

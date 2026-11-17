@@ -20,19 +20,20 @@ final class ChatPermissionTests: XCTestCase {
   func testTrustedOriginsAndCallbackValidationCannotPromoteForeignClaims() throws {
     let webURL = URL(string: "https://app.okou.ai")!
     let relative = PermissionHTTPFixture.actionURL()
-    for prefix in ["", "https://app.okou.ai", "https://api.okou.ai", "https://dev-platform.vm7.ai"]
-    {
+    for prefix in [
+      "", "https://app.okou.ai", "https://api.okou.ai", "https://dev-platform.vm7.ai"
+    ] {
       XCTAssertNotNil(ChatPermissionAction.trustedURL(prefix + relative, webURL: webURL))
     }
     for prefix in [
       "https://evil.invalid", "https://app.okou.ai.evil.invalid",
-      "https://app.okou.ai@evil.invalid", "https://files.vm7.ai",
+      "https://app.okou.ai@evil.invalid", "https://files.vm7.ai"
     ] {
       XCTAssertNil(ChatPermissionAction.trustedURL(prefix + relative, webURL: webURL))
     }
     for suffix in [
       "&threadId=\(PermissionHTTPFixture.threadID)", "&callbackPrompt=Continue",
-      "&callbackPrompt=%20&threadId=\(PermissionHTTPFixture.threadID)", "&permission=another",
+      "&callbackPrompt=%20&threadId=\(PermissionHTTPFixture.threadID)", "&permission=another"
     ] {
       let source = PermissionHTTPFixture.actionURL(callback: false) + suffix
       let url = try XCTUnwrap(ChatPermissionAction.trustedURL(source, webURL: webURL))

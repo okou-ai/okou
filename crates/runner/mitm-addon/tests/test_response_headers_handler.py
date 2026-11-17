@@ -4,6 +4,7 @@ from mitmproxy.test import tutils
 
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import stream_capture
 from tests.flow_helpers import header_map, response_stream
 
 
@@ -21,8 +22,7 @@ class TestResponseHeadersHandler:
 
         assert callable(response_stream(flow))
         assert flow.metadata[metadata_keys.RESPONSE_STREAM_STATE] == {"total_bytes": 0}
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     def test_capture_body_also_streams(self, real_flow):
         """When capture_body is set, streaming should still be enabled."""
@@ -36,8 +36,7 @@ class TestResponseHeadersHandler:
 
         assert callable(response_stream(flow))
         assert flow.metadata[metadata_keys.RESPONSE_STREAM_STATE] == {"total_bytes": 0}
-        assert metadata_keys.STREAM_BUFFER in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is not None
 
     def test_no_response_is_noop(self, real_flow):
         """Flow without response should not raise."""

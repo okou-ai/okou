@@ -31,6 +31,6 @@ final class HTTPFixtureTests: XCTestCase {
     request.httpMethod = "POST"
     request.setValue("Bearer fixture", forHTTPHeaderField: "Authorization")
     let (bytes, _) = try await fixture.session.data(for: request)
-    XCTAssertEqual(String(decoding: bytes, as: UTF8.self), "accepted")
+    XCTAssertEqual(String(data: bytes, encoding: .utf8), "accepted")
   }
 }

@@ -17,20 +17,26 @@ import ai.okou.android.api.generated.InputStatusVariant3Status
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectArchive
+import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.chat.AblyRealtimeConnection
+import ai.okou.android.chat.AssistantRecoveryService
 import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ChatSnapshotUnavailable
+import ai.okou.android.chat.HistoryBatch
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.HistoryPage
 import ai.okou.android.chat.InputObservation
 import ai.okou.android.chat.RealtimeService
 import ai.okou.android.chat.RealtimeSnapshot
+import ai.okou.android.chat.RunControlService
+import ai.okou.android.chat.RunOutputSignal
+import ai.okou.android.chat.RunOutputTarget
 import ai.okou.android.chat.TextDisposition
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
@@ -39,7 +45,11 @@ import java.io.Closeable
 import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
@@ -65,7 +75,13 @@ data class WorkspaceIdentity(
 data class WorkspaceBootstrap(val organization: Organization, val preferences: UserPreferences)
 
 interface WorkspaceSession :
-    Closeable, ChatListService, PersonalInstructionsService, ChatComposerService, RealtimeService {
+    Closeable,
+    ChatListService,
+    PersonalInstructionsService,
+    ChatComposerService,
+    RealtimeService,
+    RunControlService,
+    AssistantRecoveryService {
     suspend fun bootstrap(): WorkspaceBootstrap
 
     suspend fun preferences(): UserPreferences
@@ -94,7 +110,11 @@ class CanonicalWorkspaceSession(
 
     override suspend fun chatSnapshot() = api.chatSnapshot()
 
-    override suspend fun observeRealtime(observe: suspend (RealtimeSnapshot) -> Unit): Nothing =
+    override suspend fun observeRealtime(
+        target: StateFlow<RunOutputTarget?>,
+        output: suspend (RunOutputTarget, RunOutputSignal) -> Unit,
+        observe: suspend (RealtimeSnapshot) -> Unit,
+    ): Nothing =
         withContext(Dispatchers.IO) {
             AblyRealtimeConnection(
                     identity.userId,
@@ -104,9 +124,22 @@ class CanonicalWorkspaceSession(
                     archiveJson.encodeToString(api.realtimeToken())
                 }
                 .use { connection ->
-                    connection.state.collect { next ->
-                        next.failure?.let { throw it }
-                        withContext(Dispatchers.Main.immediate) { observe(next) }
+                    coroutineScope {
+                        launch {
+                            target.collectLatest { selected ->
+                                if (selected != null)
+                                    connection.runOutput(selected).collect { signal ->
+                                        withContext(Dispatchers.Main.immediate) {
+                                            output(selected, signal)
+                                        }
+                                    }
+                            }
+                        }
+                        connection.state.collect {
+                            val next = connection.takeObservation()
+                            next.failure?.let { throw it }
+                            withContext(Dispatchers.Main.immediate) { observe(next) }
+                        }
                     }
                 }
         }
@@ -128,6 +161,19 @@ class CanonicalWorkspaceSession(
     override suspend fun createThread(request: CreateThreadRequest) = api.createThread(request)
 
     override suspend fun sendInput(request: SendRequestVariant1) = api.sendInput(request)
+
+    override suspend fun sendControl(request: SendRequest) = api.sendInput(request)
+
+    override suspend fun recoveryCatalog() = api.recoveryCatalog()
+
+    override suspend fun recoveryModels() = api.recoveryModels()
+
+    override suspend fun recoverySubscriptions() = api.recoverySubscriptions()
+
+    override suspend fun recoveryBilling() = api.recoveryBilling()
+
+    override suspend fun resetSubscription(accountId: String, idempotencyKey: String) =
+        api.resetSubscription(accountId, idempotencyKey)
 
     override suspend fun observeInput(threadId: String, eventId: String): InputObservation {
         val observed = api.inputStatus(threadId, eventId)
@@ -183,6 +229,17 @@ class CanonicalWorkspaceSession(
     }
 
     override suspend fun historySnapshot(threadId: String) = api.historySnapshot(threadId)
+
+    override suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>): HistoryBatch =
+        withContext(Dispatchers.Default) {
+            val batch = api.historyCatchUp(cursors)
+            HistoryBatch(
+                batch.events.mapValues { (_, rows) ->
+                    rows.map { HistoryEvent.decode(historyJson.encodeToJsonElement(it).jsonObject) }
+                },
+                batch.notFoundThreads,
+            )
+        }
 
     override suspend fun threadDetail(threadId: String) = api.threadDetail(threadId)
 

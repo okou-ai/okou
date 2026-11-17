@@ -1,5 +1,168 @@
 # Changelog
 
+## [8.848.0](https://github.com/okou-ai/okou/compare/core-v8.847.6...core-v8.848.0) (2026-11-17)
+
+
+### Features
+
+* roll out free plan artifact paywall ([#48265](https://github.com/okou-ai/okou/issues/48265)) ([a8c6d85](https://github.com/okou-ai/okou/commit/a8c6d85e09610d0268362ec7db53d7ec8f031fb6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.83.0
+
+## [8.847.6](https://github.com/okou-ai/okou/compare/core-v8.847.5...core-v8.847.6) (2026-11-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.82.0
+
+## [8.847.5](https://github.com/okou-ai/okou/compare/core-v8.847.4...core-v8.847.5) (2026-11-17)
+
+
+### Bug Fixes
+
+* **app:** match project titles to thread overflow behavior ([#48220](https://github.com/okou-ai/okou/issues/48220)) ([96b2fc7](https://github.com/okou-ai/okou/commit/96b2fc71b22699ef6cd56c3229a762aa2887e19b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.81.0
+
+## [8.847.4](https://github.com/okou-ai/okou/compare/core-v8.847.3...core-v8.847.4) (2026-11-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.80.0
+
+## [8.847.3](https://github.com/okou-ai/okou/compare/core-v8.847.2...core-v8.847.3) (2026-11-17)
+
+
+### Refactoring
+
+* **platform:** remove pasted text attachments feature switch ([#48148](https://github.com/okou-ai/okou/issues/48148)) ([5a278f0](https://github.com/okou-ai/okou/commit/5a278f0c51cd4c8ac0939f973ce47f9c873fa0fb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.79.0
+
+## [8.847.2](https://github.com/okou-ai/okou/compare/core-v8.847.1...core-v8.847.2) (2026-11-17)
+
+
+### Bug Fixes
+
+* make projects follow the single agent switch ([#48142](https://github.com/okou-ai/okou/issues/48142)) ([c8c181a](https://github.com/okou-ai/okou/commit/c8c181a5d258306463622a74129e8f770ba00fd7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.78.0
+
+## [8.847.1](https://github.com/okou-ai/okou/compare/core-v8.847.0...core-v8.847.1) (2026-11-17)
+
+
+### Refactoring
+
+* remove for you sources feature switch ([#48074](https://github.com/okou-ai/okou/issues/48074)) ([335f7b5](https://github.com/okou-ai/okou/commit/335f7b5c0410626867316382e92753d219e1e937))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.77.0
+
+## [8.847.0](https://github.com/okou-ai/okou/compare/core-v8.846.0...core-v8.847.0) (2026-11-17)
+
+
+### Features
+
+* **core:** enable home capabilities for everyone ([#48000](https://github.com/okou-ai/okou/issues/48000)) ([5df5fc2](https://github.com/okou-ai/okou/commit/5df5fc264b933fdb4aa8210740221f921e6232d7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.76.1
+
+## [8.846.0](https://github.com/okou-ai/okou/compare/core-v8.845.0...core-v8.846.0) (2026-11-17)
+
+
+### Features
+
+* **my-okou:** preserve initialized members and enable new-member defaults ([#47051](https://github.com/okou-ai/okou/issues/47051)) ([cf1c9e5](https://github.com/okou-ai/okou/commit/cf1c9e53c2076c58bd6bb85d51dedbd62c30b6d1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.76.0
+
+## [8.845.0](https://github.com/okou-ai/okou/compare/core-v8.844.3...core-v8.845.0) (2026-11-16)
+
+
+### Features
+
+* route presentation templates by output format ([#47842](https://github.com/okou-ai/okou/issues/47842)) ([b342805](https://github.com/okou-ai/okou/commit/b342805293be679b34781d7ff4811669feccbb77))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.75.0
+
+## [8.844.3](https://github.com/okou-ai/okou/compare/core-v8.844.2...core-v8.844.3) (2026-11-16)
+
+
+### Bug Fixes
+
+* **app:** refine visualization selection chips ([#47888](https://github.com/okou-ai/okou/issues/47888)) ([c64cef6](https://github.com/okou-ai/okou/commit/c64cef650edd4ad914514bb20f5a87c8431edff2))
+
+
+### Refactoring
+
+* **api:** remove workflow storage launch remnants ([#47913](https://github.com/okou-ai/okou/issues/47913)) ([5093a7d](https://github.com/okou-ai/okou/commit/5093a7d563b2290b988726b3ef4bdb5ac1459e08))
+
+## [8.844.2](https://github.com/okou-ai/okou/compare/core-v8.844.1...core-v8.844.2) (2026-11-16)
+
+
+### Refactoring
+
+* **api:** consolidate execution admission facts ([#47899](https://github.com/okou-ai/okou/issues/47899)) ([270a932](https://github.com/okou-ai/okou/commit/270a932913e030a8d3628889d04d7a11ff213761))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.74.0
+
+## [8.844.1](https://github.com/okou-ai/okou/compare/core-v8.844.0...core-v8.844.1) (2026-11-16)
+
+
+### Refactoring
+
+* remove ios settings credits feature switch ([#47822](https://github.com/okou-ai/okou/issues/47822)) ([051dbad](https://github.com/okou-ai/okou/commit/051dbad9a13dba24291a9adf76b7665e6208a18f))
+
 ## [8.844.0](https://github.com/okou-ai/okou/compare/core-v8.843.0...core-v8.844.0) (2026-11-16)
 
 

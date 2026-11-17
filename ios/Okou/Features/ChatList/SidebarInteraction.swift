@@ -2,7 +2,7 @@ import Observation
 
 @MainActor @Observable
 final class SidebarInteraction {
-  private(set) var isOpen = false
+  private(set) var isOpen = true
   private(set) var isTransitioning = false
 
   func setTransitioning(_ transitioning: Bool) {

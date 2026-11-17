@@ -10,7 +10,6 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { pathname } from "../../../signals/location.ts";
 import { createTemplateGalleryHelpers } from "./chat-composer-template-gallery-test-helpers.ts";
 import { THREAD_ID, findComposerEditor } from "./chat-composer-test-helpers.ts";
 
@@ -35,7 +34,10 @@ async function setupComposer(): Promise<HTMLElement> {
   context.mocks.http.put(UPLOAD_URL, () => {
     return new HttpResponse(null, { status: 200 });
   });
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+  });
   return await findComposerEditor();
 }
 
@@ -68,12 +70,16 @@ function menuItem(menu: HTMLElement, label: string): HTMLElement {
   return item;
 }
 
-test("groups attach, template and import skills actions in the add menu", async () => {
+test("groups attachment, template, capability and import skills actions in the add menu", async () => {
   const editor = await setupComposer();
   const menu = await openAddMenu(editor);
   expect(menuItemLabels(menu)).toStrictEqual([
     "Attach",
     "Template",
+    "Find people",
+    "Research",
+    "Create",
+    "Workflow",
     "Import skills",
   ]);
 });
@@ -82,11 +88,6 @@ test("opens the import skills dialog from the add menu", async () => {
   const editor = await setupComposer();
 
   const menu = await openAddMenu(editor);
-  expect(menuItemLabels(menu)).toStrictEqual([
-    "Attach",
-    "Template",
-    "Import skills",
-  ]);
   click(menuItem(menu, "Import skills"));
 
   const dialog = await screen.findByRole("dialog", {
@@ -109,7 +110,7 @@ test("opens the import skills dialog from the add menu", async () => {
   }
   click(viewWorkflows);
   await waitFor(() => {
-    expect(pathname()).toBe("/workflows");
+    expect(window.location.pathname).toBe("/workflows");
   });
   expect(
     screen.queryByRole("dialog", { name: "Import your skills" }),

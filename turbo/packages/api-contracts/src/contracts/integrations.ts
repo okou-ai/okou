@@ -676,6 +676,26 @@ const slackUploadMaterializeBodySchema = object({
   operationId: uuid(),
 });
 
+const slackDeliveredFileSchema = object({
+  status: literal("delivered"),
+  fileId: string(),
+  permalink: string(),
+});
+const slackDeliveryFailureSchema = object({
+  status: literal("failed"),
+  message: string(),
+  retryable: boolean(),
+});
+
+const slackUploadDeliveryResponseSchema = object({
+  assetId: uuid(),
+  url: artifactUrlSchema,
+  delivery: discriminatedUnion("status", [
+    slackDeliveredFileSchema,
+    slackDeliveryFailureSchema,
+  ]),
+});
+
 const slackUploadMaterializeResponseSchema = object({
   assetId: uuid(),
   url: artifactUrlSchema,
@@ -685,16 +705,8 @@ const slackUploadMaterializeResponseSchema = object({
       uploadUrl: string(),
       fileId: string(),
     }),
-    object({
-      status: literal("delivered"),
-      fileId: string(),
-      permalink: string(),
-    }),
-    object({
-      status: literal("failed"),
-      message: string(),
-      retryable: boolean(),
-    }),
+    slackDeliveredFileSchema,
+    slackDeliveryFailureSchema,
   ]),
 });
 
@@ -704,8 +716,25 @@ export type SlackUploadMaterializeBody = zInfer<
 export type SlackUploadMaterializeResponse = zInfer<
   typeof slackUploadMaterializeResponseSchema
 >;
+export type SlackUploadDeliveryResponse = zInfer<
+  typeof slackUploadDeliveryResponseSchema
+>;
 
 export const integrationsSlackUploadMaterializeContract = c.router({
+  deliver: {
+    method: "POST",
+    path: "/api/integrations/slack/upload-file/deliver",
+    headers: authHeadersSchema,
+    body: slackUploadMaterializeBodySchema,
+    responses: {
+      200: slackUploadDeliveryResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Deliver a canonical file to Slack entirely on the server",
+  },
   materialize: {
     method: "POST",
     path: "/api/integrations/slack/upload-file/materialize",

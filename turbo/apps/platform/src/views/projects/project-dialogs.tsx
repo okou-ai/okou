@@ -436,9 +436,13 @@ function DeleteProjectDialog({
   const [deletion, remove] = useLoadableSet(deleteProject$);
   const signal = useGet(pageSignal$);
   async function submit() {
-    await remove(dialog.projectId, signal);
-    signal.throwIfAborted();
-    close(dialog);
+    await remove(
+      dialog.projectId,
+      () => {
+        close(dialog);
+      },
+      signal,
+    );
   }
   return (
     <Dialog

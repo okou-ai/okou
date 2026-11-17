@@ -5,6 +5,7 @@ import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListRoute
+import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.MemberPreferencesSettings
 import android.content.res.Configuration
@@ -119,6 +120,35 @@ class OkouAppTest {
                     else null,
                 )
             }
+        val controls =
+            compose.runOnIdle {
+                ViewModelProvider(
+                    owners,
+                    viewModelFactory {
+                        initializer {
+                            val app = compose.activity.application as TestOkouApplication
+                            val identity =
+                                WorkspaceIdentity(
+                                    "https://api.okou.ai",
+                                    "shell-user",
+                                    "shell-session",
+                                    "shell-org",
+                                )
+                            RunControlsModel(
+                                app.createWorkspaceSession(
+                                    identity,
+                                    WorkspaceTokenProvider { "test-token" },
+                                ),
+                                app.runControlJournal,
+                                identity,
+                                models.first.first.history,
+                                { true },
+                                {},
+                            )
+                        }
+                    },
+                )[RunControlsModel::class.java]
+            }
         compose.setContent {
             val state by models.second.uiState.collectAsStateWithLifecycle()
             CompositionLocalProvider(
@@ -136,7 +166,9 @@ class OkouAppTest {
                         workspacePreferences = {
                             models.third?.let { MemberPreferencesSettings(it) }
                         },
-                        homeContent = { ChatListRoute(models.first.first, models.first.second) },
+                        homeContent = {
+                            ChatListRoute(models.first.first, models.first.second, controls)
+                        },
                     )
                 }
             }

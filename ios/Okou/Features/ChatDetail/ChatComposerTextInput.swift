@@ -12,20 +12,20 @@ struct ChatComposerTextInput: UIViewRepresentable {
   let acceptsImages: Bool
   let isCurrent: @MainActor () -> Bool
   let pasteImages: ([NSItemProvider]) -> Void
-  var editor: ComposerEditor? = nil
-  var editorBlockID: UUID? = nil
+  var editor: ComposerEditor?
+  var editorBlockID: UUID?
   var editorOrder = 0
   var isAppendTarget = true
-  var document: Binding<ChatDraftDocument>? = nil
-  var searchableRanges: (@MainActor () -> [NSRange])? = nil
-  var focusRequested: (@MainActor () -> Void)? = nil
-  var inputReady: (@MainActor () -> Void)? = nil
+  var document: Binding<ChatDraftDocument>?
+  var searchableRanges: (@MainActor () -> [NSRange])?
+  var focusRequested: (@MainActor () -> Void)?
+  var inputReady: (@MainActor () -> Void)?
   var placeholder = String(localized: "Message Okou")
   var identifier = "message-input"
   var expanded = false
   var returnKeyPreference = ComposerReturnKeyPreference.newline
   var canSendFromKeyboard = false
-  var submitFromKeyboard: (@MainActor () -> Void)? = nil
+  var submitFromKeyboard: (@MainActor () -> Void)?
   @Environment(\.isEnabled) private var isEnabled
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -112,12 +112,12 @@ struct ChatComposerTextInput: UIViewRepresentable {
         view.acceptsImages
         ? [
           ComposerAttributedDocument.pasteboardType, UTType.plainText.identifier,
-          UTType.image.identifier,
+          UTType.image.identifier
         ]
         : [ComposerAttributedDocument.pasteboardType, UTType.plainText.identifier])
     view.placeholder.isHidden = !view.text.isEmpty
     container.expandsOnTap = isEnabled && !isFocused && !expanded
-    view.setFocused(isFocused)
+    view.prepareFocus(isFocused)
     view.notifyInputReady()
   }
 
@@ -201,6 +201,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
 
     func textViewDidBeginEditing(_ textView: UITextView) {
       guard input.isCurrent() else { return }
+      (textView as? ComposerTextView)?.prepareFocus(true)
       if !input.isFocused { input.isFocused = true }
       if let view = textView as? ComposerTextView {
         input.editor?.updateMention(in: view)
@@ -209,6 +210,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     }
     func textViewDidEndEditing(_ textView: UITextView) {
       guard input.isCurrent() else { return }
+      (textView as? ComposerTextView)?.prepareFocus(false)
       if input.isFocused { input.isFocused = false }
       input.editor?.dismissMentions()
       if let view = textView as? ComposerTextView { input.editor?.workflows.unregister(view) }
@@ -295,9 +297,8 @@ final class ComposerTextView: UITextView {
     placeholder.lineBreakMode = .byTruncatingTail
     addSubview(placeholder)
     registerForTraitChanges([
-      UITraitPreferredContentSizeCategory.self, UITraitUserInterfaceStyle.self,
-    ]) {
-      (view: ComposerTextView, _: UITraitCollection) in
+      UITraitPreferredContentSizeCategory.self, UITraitUserInterfaceStyle.self
+    ]) { (view: ComposerTextView, _: UITraitCollection) in
       view.refreshAppearance()
     }
   }
@@ -348,8 +349,9 @@ final class ComposerTextView: UITextView {
     let insertion = NSMutableAttributedString(attributedString: value)
     insertion.addAttributes(
       composerTextAttributes, range: NSRange(location: 0, length: insertion.length))
-    insertion.enumerateAttribute(.attachment, in: NSRange(location: 0, length: insertion.length)) {
-      value, _, _ in
+    insertion.enumerateAttribute(
+      .attachment, in: NSRange(location: 0, length: insertion.length)
+    ) { value, _, _ in
       (value as? ComposerReferenceAttachment)?.referenceFont =
         ComposerAttributedDocument.scaledFont(for: traitCollection)
     }
@@ -475,7 +477,7 @@ final class ComposerTextView: UITextView {
       [
         ComposerAttributedDocument.pasteboardType: data,
         UTType.utf8PlainText.identifier: Data(
-          ComposerAttributedDocument.clipboardText(selection).utf8),
+          ComposerAttributedDocument.clipboardText(selection).utf8)
       ]
     ])
     return true
@@ -486,10 +488,15 @@ final class ComposerTextView: UITextView {
     reconcileFocus()
   }
 
+  func prepareFocus(_ focused: Bool) {
+    // A responder handoff can synchronously write another editor's focus binding.
+    // Record SwiftUI's intent here; native readiness applies it after the update.
+    wantsFocus = focused
+  }
+
   override func didMoveToWindow() {
     super.didMoveToWindow()
     if window != nil { refreshAppearance() }
-    reconcileFocus()
     notifyInputReady()
   }
 
@@ -497,9 +504,9 @@ final class ComposerTextView: UITextView {
     // UIKit can attach the editor after SwiftUI has prepared it. Recheck the
     // actual native attachment after the current representable update finishes.
     DispatchQueue.main.async { [weak self] in
-      guard let self, window != nil, isEditable, isCurrent(),
-        markedTextRange == nil, !isSettlingComposition
-      else { return }
+      guard let self, window != nil, isCurrent() else { return }
+      reconcileFocus()
+      guard isEditable, markedTextRange == nil, !isSettlingComposition else { return }
       inputReady?()
     }
   }
@@ -523,7 +530,7 @@ final class ComposerTextView: UITextView {
   private func reconcileFocus() {
     // SwiftUI can prepare the replacement editor before it has a window.
     guard window != nil else { return }
-    if wantsFocus && !isFirstResponder { becomeFirstResponder() }
+    if wantsFocus && isCurrent() && !isFirstResponder { becomeFirstResponder() }
     if !wantsFocus && isFirstResponder { resignFirstResponder() }
   }
 

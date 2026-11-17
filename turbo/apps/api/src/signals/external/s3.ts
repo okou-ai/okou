@@ -427,17 +427,30 @@ const hostedSitesPublicS3Client$ = computed((get): S3Client => {
     : get(hostedSitesS3Client$);
 });
 
+/** SDK calls, including failures and each LIST page; excludes SDK-internal retries. */
+export interface S3ObjectReadCounts {
+  head: number;
+  list: number;
+}
+
 export function listS3Objects(
   bucket: string,
   prefix: string,
+  counts?: S3ObjectReadCounts,
 ): Computed<Promise<readonly S3Object[]>> {
-  return listS3ObjectsWithClient(s3ClientForBucket(bucket), bucket, prefix);
+  return listS3ObjectsWithClient(
+    s3ClientForBucket(bucket),
+    bucket,
+    prefix,
+    counts,
+  );
 }
 
 function listS3ObjectsWithClient(
   client$: Computed<S3Client>,
   bucket: string,
   prefix: string,
+  counts?: S3ObjectReadCounts,
 ): Computed<Promise<readonly S3Object[]>> {
   return computed(async (get): Promise<readonly S3Object[]> => {
     const client = get(client$);
@@ -445,6 +458,9 @@ function listS3ObjectsWithClient(
     let continuationToken: string | undefined;
 
     do {
+      if (counts) {
+        counts.list += 1;
+      }
       const response = await client.send(
         new ListObjectsV2Command({
           Bucket: bucket,
@@ -699,6 +715,31 @@ const getS3Object$ = command(
       new GetObjectCommand({ Bucket: args.bucket, Key: args.key }),
       { abortSignal: signal },
     );
+  },
+);
+
+/** Read bytes and their revision together for conditional object replacement. */
+export const readS3ObjectWithEtag$ = command(
+  async (
+    { set },
+    args: {
+      readonly bucket: string;
+      readonly key: string;
+      readonly maxBytes: number;
+    },
+    signal: AbortSignal,
+  ): Promise<{ readonly buffer: Buffer; readonly etag: string }> => {
+    const response = await set(getS3Object$, args, signal);
+    const buffer = await readS3ObjectBody(
+      response,
+      args.key,
+      { maxBytes: args.maxBytes },
+      signal,
+    );
+    if (!response.ETag) {
+      throw new Error("S3 object has no storage revision");
+    }
+    return { buffer, etag: response.ETag };
   },
 );
 
@@ -1187,6 +1228,9 @@ function generatePresignedPutUrlWithClient(
     });
     return getSignedUrl(client, command, {
       expiresIn: options.expiresInSeconds ?? PRESIGNED_URL_TTL_SECONDS,
+      ...(options.contentLength === undefined
+        ? {}
+        : { signableHeaders: new Set(["content-length"]) }),
       ...(metadataHeaders
         ? { unhoistableHeaders: new Set(Object.keys(metadataHeaders)) }
         : {}),
@@ -1387,6 +1431,8 @@ interface PutS3ObjectArgs {
   readonly body: string | Buffer;
   readonly contentType: string;
   readonly metadata?: Readonly<Record<string, string>>;
+  readonly ifMatch?: string;
+  readonly ifNoneMatch?: "*";
 }
 
 function createPutS3ObjectCommand(args: PutS3ObjectArgs): PutObjectCommand {
@@ -1396,6 +1442,10 @@ function createPutS3ObjectCommand(args: PutS3ObjectArgs): PutObjectCommand {
     Body: args.body,
     ContentType: args.contentType,
     Metadata: args.metadata,
+    ...(args.ifMatch === undefined ? {} : { IfMatch: args.ifMatch }),
+    ...(args.ifNoneMatch === undefined
+      ? {}
+      : { IfNoneMatch: args.ifNoneMatch }),
   });
 }
 
@@ -1868,19 +1918,30 @@ export function isS3NotFoundError(error: unknown): boolean {
 export function s3ObjectHead(
   bucket: string,
   key: string,
+  counts?: S3ObjectReadCounts,
   signal?: AbortSignal,
 ): Computed<Promise<S3ObjectHead>> {
-  return s3ObjectHeadWithClient(s3ClientForBucket(bucket), bucket, key, signal);
+  return s3ObjectHeadWithClient(
+    s3ClientForBucket(bucket),
+    bucket,
+    key,
+    counts,
+    signal,
+  );
 }
 
 function s3ObjectHeadWithClient(
   client$: Computed<S3Client>,
   bucket: string,
   key: string,
+  counts?: S3ObjectReadCounts,
   signal?: AbortSignal,
 ): Computed<Promise<S3ObjectHead>> {
   return computed(async (get): Promise<S3ObjectHead> => {
     const client = get(client$);
+    if (counts) {
+      counts.head += 1;
+    }
     const result = await settle(
       client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }), {
         abortSignal: signal,

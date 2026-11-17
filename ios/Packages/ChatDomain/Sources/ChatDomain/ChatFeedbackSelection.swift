@@ -48,8 +48,8 @@ public struct ChatFeedbackSelection: Equatable, Sendable {
       "eventId": .string(eventID),
       "range": .object([
         "start": .number(Decimal(range.location)),
-        "end": .number(Decimal(range.location + range.length)),
-      ]),
+        "end": .number(Decimal(range.location + range.length))
+      ])
     ])
   }
 }

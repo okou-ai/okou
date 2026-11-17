@@ -7,7 +7,7 @@ struct OkouUsageMeter: View {
   let title: LocalizedStringKey
   /// Percent remaining, 0–100.
   let remaining: Double
-  var resetsAt: Date? = nil
+  var resetsAt: Date?
   @ScaledMetric(relativeTo: .body) private var barHeight = OkouControl.meterHeight
 
   enum Tone { case normal, low, exhausted }

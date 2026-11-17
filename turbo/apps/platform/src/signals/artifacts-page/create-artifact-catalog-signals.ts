@@ -26,10 +26,7 @@ import {
   type ImageLoadSignals,
 } from "../image-load.ts";
 import { artifactDetailPreview } from "./artifact-catalog-preview.ts";
-import {
-  artifactCatalogRevision$,
-  createArtifactDeleteMenuSignals,
-} from "../artifact-deletion.ts";
+import { artifactCatalogRevision$ } from "../artifact-deletion.ts";
 
 // First screen and every scroll step request the same page size. The server
 // orders by `(createdAt, id)` and never reorders on update, so a cursor stays
@@ -38,7 +35,6 @@ const ARTIFACT_CATALOG_PAGE_SIZE = 60;
 const ARTIFACT_CARD_THUMBNAIL_WIDTH_PX = 640;
 
 export type CatalogArtifact = ArtifactSummary & {
-  readonly deletion: ReturnType<typeof createArtifactDeleteMenuSignals>;
   /**
    * Load state of the thumbnail, created when the page's data arrives. A
    * reload replaces the page and its signals; an already-broken thumbnail
@@ -80,7 +76,6 @@ function withThumbnailLoad(
         : null;
       return {
         ...artifact,
-        deletion: createArtifactDeleteMenuSignals(artifact),
         thumbnailLoad: createImageLoadSignals(),
         thumbnailUrl$: computed(async (get) => {
           return thumbnailPreview
@@ -306,6 +301,7 @@ function createCatalogSelectionSignals(
       }
       const registered = set(previews.register$, {
         url: source.url,
+        contentType: source.contentType,
         ...(preview ? { preview } : {}),
       });
       if (get(internalSelectedArtifactId$) === artifactId) {

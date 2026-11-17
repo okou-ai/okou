@@ -241,7 +241,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       userMessage,
     });
 
-    const run = await api.readRun(actor, sent.runId);
+    const run = await api.executionInput(sent.runId);
     expect(run.prompt).toBe(
       [
         `[Template #1: ${style.title} (illustration)]`,
@@ -315,7 +315,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       userMessage,
     });
 
-    const run = await api.readRun(actor, sent.runId);
+    const run = await api.executionInput(sent.runId);
     expect(run.appendSystemPrompt).toContain(
       [
         "# Referenced Agents and Threads",
@@ -360,7 +360,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       userMessage,
     });
 
-    const run = await api.readRun(actor, sent.runId);
+    const run = await api.executionInput(sent.runId);
     expect(run.prompt).toBe(prompt);
     expect(run.appendSystemPrompt).not.toContain(
       "# Referenced Agents and Threads",
@@ -673,7 +673,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       prompt: "legacy fallback",
       userMessage,
     });
-    const run = await api.readRun(actor, sent.runId);
+    const run = await api.executionInput(sent.runId);
     const firstMarker = `[Template #1: ${style.title} (illustration)]`;
     const secondMarker = `[Template #2: ${workflow.title} (workflow)]`;
     const feedbackMarker = `[Template #3: ${style.title} (illustration)]`;
@@ -728,6 +728,72 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelAndCompleteChatRun(actor, sent.runId);
   }, 90_000);
 
+  it.each([undefined, "html", "pptx"] as const)(
+    "routes an attached presentation to its %s format package and preserves the selection",
+    async (outputFormat) => {
+      const { actor, agentId } = await entitledChatActor();
+      const template: GenerationTemplateRequest = {
+        type: "presentation",
+        selection: {
+          templateId: "template:html-ppt-schoolhouse",
+          colorSystemId: "color-system:bauhaus-primary",
+          ...(outputFormat ? { outputFormat } : {}),
+        },
+      };
+      const userMessage: UserMessageInputDocument = {
+        version: 1,
+        parts: [
+          { type: "text", text: "Prepare a school community briefing using " },
+          { type: "template", titleSnapshot: "Schoolhouse", template },
+        ],
+      };
+      const sent = await sendChatRun(actor, {
+        agentId,
+        prompt: "Prepare a school community briefing",
+        userMessage,
+      });
+      const run = await api.executionInput(sent.runId);
+      const native = outputFormat === "pptx";
+      const resourceId = native
+        ? "template:pptx-schoolhouse-runbook"
+        : "template:html-ppt-schoolhouse-runbook";
+      expect(run.appendSystemPrompt).toContain(
+        `Pull the selected package once: okou resource pull ${resourceId}`,
+      );
+      expect(run.appendSystemPrompt).toContain(
+        `Output format: ${native ? "PPTX" : "HTML"}`,
+      );
+      expect(run.appendSystemPrompt).toContain(
+        native
+          ? "./generated/resources/pptx/schoolhouse-native/SKILL.md"
+          : "./generated/resources/schoolhouse/SKILL.md",
+      );
+      expect(run.appendSystemPrompt).toContain(
+        "The message wins over the selected format preference",
+      );
+      expect(run.appendSystemPrompt).toContain(
+        native
+          ? "Author an editable native PPTX directly with the selected package"
+          : "Keep all slides and visible content in index.html",
+      );
+      const messages = await chat.listThreadEvents(actor, sent.threadId);
+      const message = userMessages(messages.events).find(
+        (event): event is PromptMessage => {
+          return (
+            event.eventType === "input.prompt" && event.runId === sent.runId
+          );
+        },
+      );
+      expect(message?.userMessage?.parts).toContainEqual({
+        type: "template",
+        titleSnapshot: "Schoolhouse",
+        template,
+      });
+      await cancelAndCompleteChatRun(actor, sent.runId);
+    },
+    90_000,
+  );
+
   it("uses runbook names for presentation prompts while preserving picker titles in chat history", async () => {
     const { actor, agentId } = await entitledChatActor();
     const userMessage: UserMessageInputDocument = {
@@ -757,7 +823,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       prompt: "Compare these presentation templates",
       userMessage,
     });
-    const run = await api.readRun(actor, sent.runId);
+    const run = await api.executionInput(sent.runId);
 
     for (const [index, item] of PRESENTATION_TEMPLATE_PICKER_ITEMS.entries()) {
       const runbook = findPresentationRunbookPackage(item.templateId);
@@ -872,7 +938,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       template: generationTemplate,
     });
 
-    const run = await api.readRun(actor, sent.runId);
+    const run = await api.executionInput(sent.runId);
     expect(run.prompt).toBe(
       "draw a dog\n\n[Template #1: Illustration template (illustration)]",
     );
@@ -964,7 +1030,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         },
       },
     });
-    const presentationRun = await api.readRun(actor, presentation.runId);
+    const presentationRun = await api.executionInput(presentation.runId);
     expect(presentationRun.prompt).toBe(
       "make a launch deck\n\n[Template #1: Playful Launch Presentation (presentation)]",
     );
@@ -1003,7 +1069,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       prompt: "Revise the deck and publish the updated HTML",
     });
     const revisionPrompt =
-      (await api.readRun(actor, revision.runId)).appendSystemPrompt ?? "";
+      (await api.executionInput(revision.runId)).appendSystemPrompt ?? "";
     expect(revisionPrompt).not.toContain("# Inline Templates");
     expect(revisionPrompt).toContain("okou host screenshot");
     expect(revisionPrompt).toContain("previewImageUrl");
@@ -1021,7 +1087,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         selection: { websiteTemplateId: websiteTemplate.id },
       },
     });
-    const websiteRun = await api.readRun(actor, website.runId);
+    const websiteRun = await api.executionInput(website.runId);
     const websitePrompt = websiteRun.appendSystemPrompt ?? "";
     expect(websitePrompt).toContain("okou host screenshot");
     expect(websitePrompt).toContain(" --preview ");
@@ -1073,7 +1139,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         template,
       });
       const prompt =
-        (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+        (await api.executionInput(run.runId)).appendSystemPrompt ?? "";
       expect(prompt).toContain("# Inline Templates");
       expect(prompt).not.toContain("okou generate image-batch");
       expect(prompt).not.toContain("--provider built-in");
@@ -1107,7 +1173,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       },
     });
     const defaultR2Prompt =
-      (await api.readRun(actor, defaultR2Run.runId)).appendSystemPrompt ?? "";
+      (await api.executionInput(defaultR2Run.runId)).appendSystemPrompt ?? "";
     expect(defaultR2Prompt).toContain(
       "Style source: private R2 registry resource image-style:ink-storefront",
     );
@@ -1131,7 +1197,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         selection: { illustrationStyleId: style.illustrationStyleId },
       },
     });
-    const firstPrompt = (await api.readRun(actor, first.runId))
+    const firstPrompt = (await api.executionInput(first.runId))
       .appendSystemPrompt;
     expect(firstPrompt).toContain("# Inline Templates");
     expect(firstPrompt).toContain(
@@ -1162,7 +1228,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       threadId: first.threadId,
       prompt: "another one",
     });
-    const secondPrompt = (await api.readRun(actor, second.runId))
+    const secondPrompt = (await api.executionInput(second.runId))
       .appendSystemPrompt;
     expect(secondPrompt).not.toContain("# Inline Templates");
     expect(secondPrompt).toContain("# This Chat Thread");
@@ -1189,7 +1255,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         selection: { websiteTemplateId: websiteTemplate.id },
       },
     });
-    const thirdPrompt = (await api.readRun(actor, third.runId))
+    const thirdPrompt = (await api.executionInput(third.runId))
       .appendSystemPrompt;
     expect(thirdPrompt).toContain(
       `Template: ${websiteTemplate.title} (${websiteTemplate.id})`,
@@ -1202,7 +1268,7 @@ describe("CHAT-02: generation templates and attachments", () => {
 
     // A brand-new thread starts clean: neither template carries over.
     const fresh = await sendChatRun(actor, { agentId, prompt: "draw a cat" });
-    const freshPrompt = (await api.readRun(actor, fresh.runId))
+    const freshPrompt = (await api.executionInput(fresh.runId))
       .appendSystemPrompt;
     expect(freshPrompt).not.toContain("# Inline Templates");
     expect(freshPrompt).not.toContain(
@@ -1231,7 +1297,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         selection: { illustrationStyleId: style.illustrationStyleId },
       },
     });
-    const illustrationPrompt = (await api.readRun(actor, illustration.runId))
+    const illustrationPrompt = (await api.executionInput(illustration.runId))
       .appendSystemPrompt;
     expect(illustrationPrompt).toContain("# Inline Templates");
     expect(illustrationPrompt).toContain(style.illustrationStyleId);
@@ -1246,7 +1312,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         selection: { workflowTemplateId: workflowTemplate.id },
       },
     });
-    const workflowPrompt = (await api.readRun(actor, workflow.runId))
+    const workflowPrompt = (await api.executionInput(workflow.runId))
       .appendSystemPrompt;
     expect(workflowPrompt).toContain("# Inline Templates");
     expect(workflowPrompt).toContain(
@@ -1269,7 +1335,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       threadId: illustration.threadId,
       prompt: "continue the thread",
     });
-    const followUpPrompt = (await api.readRun(actor, followUp.runId))
+    const followUpPrompt = (await api.executionInput(followUp.runId))
       .appendSystemPrompt;
     // Both cancelled runs remain incomplete context without carrying either
     // prior template selection into this run.
@@ -1451,7 +1517,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         ],
       },
     });
-    const systemPrompt = (await api.readRun(actor, sent.runId))
+    const systemPrompt = (await api.executionInput(sent.runId))
       .appendSystemPrompt;
     expect(systemPrompt).toContain("# Inline Templates");
     expect(systemPrompt).toContain(style.illustrationStyleId);
@@ -1475,7 +1541,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       prompt: "Prepare my invoice",
       template,
     });
-    const run = await api.readRun(actor, sent.runId);
+    const run = await api.executionInput(sent.runId);
     expect(run.appendSystemPrompt).toContain(
       "https://raw.githubusercontent.com/sparksuite/simple-html-invoice-template/7d74fe34c862b7712f1a23a3f12147a4a8bd53e1/invoice.html",
     );
@@ -1544,7 +1610,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       ],
     };
     const sent = await sendChatRun(actor, { agentId, prompt, userMessage });
-    const run = await api.readRun(actor, sent.runId);
+    const run = await api.executionInput(sent.runId);
     const systemPrompt = run.appendSystemPrompt;
     expect(systemPrompt).toBeDefined();
     if (!systemPrompt) {
@@ -2227,7 +2293,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       },
     });
 
-    const created = await api.readRun(actor, run.runId);
+    const created = await api.executionInput(run.runId);
     expect(created.prompt).toContain(`[Web file] ${filename} (image/png)`);
     expect(created.prompt).toContain(`[ID] ${fileId}`);
     expect(created.appendSystemPrompt).toContain("okou web download-file -h");
@@ -2304,7 +2370,7 @@ describe("CHAT-02: generation templates and attachments", () => {
         ],
       },
     });
-    expect(heads).toBe(1);
+    expect(heads).toBe(0);
     const messages = await waitForThreadMessages(
       actor,
       run.threadId,
@@ -2333,7 +2399,7 @@ describe("CHAT-02: generation templates and attachments", () => {
       prompt: "resolve the object again in a new send",
       userMessage: { version: 1, parts: [file] },
     });
-    expect(heads).toBe(2);
+    expect(heads).toBe(0);
     expect((await api.readRun(actor, next.runId)).prompt).toContain(filename);
     await cancelAndCompleteChatRun(actor, next.runId);
   }, 60_000);

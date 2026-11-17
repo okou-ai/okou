@@ -40,7 +40,7 @@ final class ComposerPreferences {
 }
 
 extension EnvironmentValues {
-  @Entry var composerPreferences: ComposerPreferences? = nil
+  @Entry var composerPreferences: ComposerPreferences?
 }
 
 extension ComposerTextView {

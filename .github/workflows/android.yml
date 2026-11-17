@@ -19,7 +19,54 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Detect release-please context across all event types (PR, push, merge queue).
+  detect-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - name: Check for release-please
+        id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_REF: ${{ github.head_ref || '' }}
+          COMMIT_MSG: ${{ github.event.head_commit.message || '' }}
+          EVENT_NAME: ${{ github.event_name }}
+          MQ_HEAD_REF: ${{ github.event.merge_group.head_ref || '' }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [[ "$HEAD_REF" == release-please--branches--* ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Release-please PR detected (branch: $HEAD_REF)"
+            exit 0
+          fi
+          if [[ "$EVENT_NAME" == "push" ]] && [[ "$COMMIT_MSG" == chore:\ release* ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Release-please push detected (message: $COMMIT_MSG)"
+            exit 0
+          fi
+          if [[ "$EVENT_NAME" == "merge_group" ]] && [[ -n "$MQ_HEAD_REF" ]]; then
+            PR_NUM=$(echo "$MQ_HEAD_REF" | grep -oE 'pr-[0-9]+' | head -1 | sed 's/pr-//')
+            if [[ -n "$PR_NUM" ]]; then
+              PR_BRANCH=$(gh pr view "$PR_NUM" --repo "$REPO" --json headRefName --jq .headRefName)
+              if [[ "$PR_BRANCH" == release-please--branches--* ]]; then
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                echo "Release-please merge queue entry detected (PR #$PR_NUM, branch: $PR_BRANCH)"
+                exit 0
+              fi
+            fi
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "Not a release-please context"
+
   detect:
+    needs: [detect-release]
+    if: needs.detect-release.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -165,18 +212,32 @@ jobs:
           retention-days: 7
 
   ci-gate-android:
-    needs: [detect, build-test, instrumentation]
+    needs: [detect-release, detect, build-test, instrumentation]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Validate CI results
         env:
+          RELEASE_DETECT: ${{ needs.detect-release.result }}
+          IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           DETECT: ${{ needs.detect.result }}
           NEEDED: ${{ needs.detect.outputs.needed }}
           BUILD: ${{ needs.build-test.result }}
           INSTRUMENTATION: ${{ needs.instrumentation.result }}
         run: |
+          if [ "$RELEASE_DETECT" != success ]; then
+            echo "::error::Android release classification must succeed; got $RELEASE_DETECT"
+            exit 1
+          fi
+          if [ "$IS_RELEASE" != true ] && [ "$IS_RELEASE" != false ]; then
+            echo '::error::Missing or invalid Android release selection'
+            exit 1
+          fi
+          if [ "$IS_RELEASE" = true ]; then
+            echo 'Release-please: skipping Android validation; production builds its own APK.'
+            exit 0
+          fi
           if [ "$DETECT" != success ]; then
             echo "::error::Android change detection must succeed; got $DETECT"
             exit 1

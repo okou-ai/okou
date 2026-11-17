@@ -1,5 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="controls_storage_failed">Impossibile salvare i comandi in attesa.</string>
+    <string name="controls_stop">Interrompi il lavoro in corso</string>
+    <string name="controls_queued_automation">Automazione in coda</string>
+    <string name="controls_skip">Salta automazione</string>
+    <string name="controls_preparing">Salvataggio del comando…</string>
+    <string name="controls_sending">Invio del comando…</string>
+    <string name="controls_accepted">Richiesta accettata. In attesa di conferma.</string>
+    <string name="controls_checking">Verifica del risultato…</string>
+    <string name="controls_unknown">Il risultato è ancora sconosciuto.</string>
+    <string name="controls_retryable">La destinazione originale è ancora disponibile.</string>
+    <string name="controls_retry_original">Riprova la richiesta originale</string>
+    <string name="controls_check">Verifica il risultato</string>
+    <string name="controls_recorded">Comando registrato nella cronologia.</string>
+    <string name="controls_target_settled">La destinazione originale è già stata gestita.</string>
+    <string name="controls_read_failed">Impossibile verificare il risultato.</string>
+    <string name="controls_recovery_failed">Lo stato di ripristino non è disponibile.</string>
+    <string name="controls_recovering">Preparazione della conversazione per continuare.</string>
+    <string name="output_live">Risposta in tempo reale</string>
+    <string name="output_waiting">In attesa della risposta in tempo reale</string>
+    <string name="output_catching_up">Aggiornamento dei messaggi salvati. Il testo ricevuto viene conservato.</string>
     <string name="settings">Impostazioni</string>
     <string name="back">Indietro</string>
     <string name="appearance">Aspetto</string>

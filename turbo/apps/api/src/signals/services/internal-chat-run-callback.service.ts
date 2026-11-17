@@ -53,6 +53,7 @@ import {
 } from "../external/realtime";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { recordLastEventToComplete$ } from "./internal-chat-run-output-timing.service";
+import type { ModelFirstPin } from "./model-selection.service";
 import {
   onRejection,
   settle,
@@ -334,7 +335,7 @@ export interface CreateQueuedChatRunInput {
   readonly threadId: string;
   readonly queuedMessage: QueuedUserMessage;
   readonly selectedModel: string;
-  readonly effectiveModelProvider: string | null | undefined;
+  readonly effectiveModelProvider: ModelFirstPin["modelProviderType"];
   readonly piExecution: boolean;
   readonly codexServiceTier: "fast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;

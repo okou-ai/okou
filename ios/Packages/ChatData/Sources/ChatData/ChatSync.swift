@@ -24,7 +24,8 @@ public actor ChatSync {
   /// Dirty rows survive a failed write until a later catch-up persists them.
   public func releaseHistory(threadID: String) -> Bool {
     guard !readingHistories.contains(threadID) else { return false }
-    if cache != nil, let history = histories[threadID], history.replaced || !history.newRows.isEmpty
+    if cache != nil,
+      let history = histories[threadID], history.replaced || !history.newRows.isEmpty
     {
       return false
     }
@@ -47,7 +48,9 @@ public actor ChatSync {
       return try await cache?.loadNavigation()
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot read cached navigation: \(error.localizedDescription, privacy: .public)")
+        .error(
+          "event=chat.cache.navigation.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       return nil
     }
   }
@@ -59,14 +62,18 @@ public actor ChatSync {
     } catch is CancellationError {
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot save navigation cache: \(error.localizedDescription, privacy: .public)")
+        .error(
+          "event=chat.cache.navigation.save.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
     }
   }
 
   public func cachedProjects() async -> [ChatProject]? {
     do { return try await cache?.loadProjects() } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot read cached Projects: \(error.localizedDescription, privacy: .public)")
+        .error(
+          "event=chat.cache.projects.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       return nil
     }
   }
@@ -78,7 +85,9 @@ public actor ChatSync {
     } catch is CancellationError {
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot save Projects: \(error.localizedDescription, privacy: .public)")
+        .error(
+          "event=chat.cache.projects.save.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
     }
   }
 
@@ -121,7 +130,9 @@ public actor ChatSync {
       throw CancellationError()
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatSync")
-        .info("Keeping available unread state: \(error.localizedDescription, privacy: .public)")
+        .info(
+          "event=chat.indicators.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       indicators = nil
     }
     let threads = result.threads.map { thread in
@@ -172,7 +183,8 @@ public actor ChatSync {
       } catch {
         Logger(subsystem: "ai.okou.ios", category: "ChatCache")
           .debug(
-            "Skipping chat list snapshot rebase: \(error.localizedDescription, privacy: .public)")
+            "event=chat.cache.list.rebase.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+          )
         rebased = nil
       }
       if let rebased { state = try await catchUpThreadEvents(rebased) }
@@ -193,7 +205,8 @@ public actor ChatSync {
       } catch {
         Logger(subsystem: "ai.okou.ios", category: "ChatCache")
           .error(
-            "Cannot remove deleted chat history: \(error.localizedDescription, privacy: .public)")
+            "event=chat.cache.history.delete.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+          )
       }
     }
     return (current, eventIDs, state.cursor)
@@ -263,7 +276,9 @@ public actor ChatSync {
 
   private func logIndicatorCacheFailure(_ error: Error) {
     Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-      .error("Unread cache unavailable: \(error.localizedDescription, privacy: .public)")
+      .error(
+        "event=chat.cache.unread.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+      )
   }
 
   /// Both push entry points own and cancel the optional indicators read. It
@@ -276,7 +291,9 @@ public actor ChatSync {
         do { _ = try await self.indicators() } catch {
           if !Task.isCancelled {
             Logger(subsystem: "ai.okou.ios", category: "ChatSync")
-              .info("Push unread unavailable: \(error.localizedDescription, privacy: .public)")
+              .info(
+                "event=notifications.unread.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+              )
           }
         }
         return nil
@@ -354,7 +371,9 @@ public actor ChatSync {
         replaced: false, cursorFromServerSnapshot: false)
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot read cached chat list: \(error.localizedDescription, privacy: .public)")
+        .error(
+          "event=chat.cache.list.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       return nil
     }
   }
@@ -446,7 +465,9 @@ public actor ChatSync {
       return true
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot save chat list cache: \(error.localizedDescription, privacy: .public)")
+        .error(
+          "event=chat.cache.list.save.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       return false
     }
   }
@@ -606,7 +627,7 @@ public actor ChatSync {
       do {
         var query = [
           URLQueryItem(name: "sinceSeqId", value: String(current.seqID)),
-          URLQueryItem(name: "limit", value: "50"),
+          URLQueryItem(name: "limit", value: "50")
         ]
         if let id = current.eventID { query.append(URLQueryItem(name: "sinceEventId", value: id)) }
         let response = try await client.data(
@@ -662,8 +683,9 @@ public actor ChatSync {
         ?? false)
   }
 
-  private func readHistory(threadID: String, requirePersistence: Bool) async throws -> CachedHistory
-  {
+  private func readHistory(
+    threadID: String, requirePersistence: Bool
+  ) async throws -> CachedHistory {
     // Actor methods can interleave at every network/cache await. Serialize each
     // thread's catch-up and durable cursor update, including calls from Stop.
     if !readingHistories.insert(threadID).inserted {
@@ -706,8 +728,9 @@ public actor ChatSync {
     }
   }
 
-  private func loadHistory(threadID: String, requirePersistence: Bool) async throws -> CachedHistory
-  {
+  private func loadHistory(
+    threadID: String, requirePersistence: Bool
+  ) async throws -> CachedHistory {
     let cached = await readCachedHistory(threadID: threadID)
     var history: CachedHistory
     if let cached {
@@ -738,10 +761,10 @@ public actor ChatSync {
     do {
       snapshot = try await client.request(
         "/api/chat-threads/\(threadID)/event-snapshot")
-    } catch let error as APIClientError
-      where error.statusCode == 404
-      && error.serverCode == "CHAT_EVENT_SNAPSHOT_NOT_FOUND"
-    {
+    } catch let error as APIClientError {
+      guard error.statusCode == 404, error.serverCode == "CHAT_EVENT_SNAPSHOT_NOT_FOUND" else {
+        throw error
+      }
       return CachedHistory(
         rows: [], rawRows: [], newRows: [], cursor: .start, replaced: true,
         cursorFromServerSnapshot: true)
@@ -806,7 +829,9 @@ public actor ChatSync {
         replaced: false, cursorFromServerSnapshot: false)
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot read cached history: \(error.localizedDescription, privacy: .public)")
+        .error(
+          "event=chat.cache.history.read.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       return nil
     }
   }
@@ -834,7 +859,7 @@ public actor ChatSync {
     while true {
       var query = [
         URLQueryItem(name: "sinceSeqId", value: String(history.cursor.lastSeqId)),
-        URLQueryItem(name: "limit", value: "50"),
+        URLQueryItem(name: "limit", value: "50")
       ]
       if let eventID = history.cursor.lastEventId {
         query.append(URLQueryItem(name: "sinceEventId", value: eventID))
@@ -887,7 +912,9 @@ public actor ChatSync {
       return true
     } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Cannot save chat history cache: \(error.localizedDescription, privacy: .public)")
+        .error(
+          "event=chat.cache.history.save.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       return false
     }
   }
@@ -937,7 +964,7 @@ extension ChatSync {
       "/api/artifacts/catalog",
       query: [
         URLQueryItem(name: "keyword", value: keyword),
-        URLQueryItem(name: "limit", value: String(ChatSearchArtifact.searchLimit)),
+        URLQueryItem(name: "limit", value: String(ChatSearchArtifact.searchLimit))
       ])
     return response.artifacts.filter { $0.kind != "shared-thread" }
   }

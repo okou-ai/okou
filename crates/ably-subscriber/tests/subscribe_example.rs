@@ -1,7 +1,7 @@
 #![cfg(test)]
 
-use cli_test_support::json_fixture::parse_json_lines;
-use std::path::{Path, PathBuf};
+use cli_test_support::{json_fixture::parse_json_lines, mock_build::cargo_test_profile_dir};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -28,10 +28,7 @@ enum Scenario {
 
 fn build_subscribe_example() -> PathBuf {
     let test_executable = std::env::current_exe().expect("test executable");
-    let profile_dir = test_executable
-        .parent()
-        .and_then(Path::parent)
-        .expect("test profile directory");
+    let profile_dir = cargo_test_profile_dir(&test_executable).expect("test profile directory");
     let profile = profile_dir.file_name().expect("profile name");
     let mut command = std::process::Command::new(env!("CARGO"));
     command

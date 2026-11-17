@@ -124,6 +124,9 @@ readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
 # #41860 always reads Agent instructions from the DB, without the retired
 # execution-context marker. Earlier APIs may select the deleted Storage instead.
 readonly AGENT_INSTRUCTIONS_DB_ONLY_READER_COMMIT=b4a90a6b3f79527f91836df6a2bcc8fe81c622e8
+# #47043 keeps its minimum supported Memory protocol in a main-owned floor.
+# Advance the floor to C before native-only (D) Memory publication can serve.
+readonly MEMBER_MEMORY_DUAL_WRITER_PATH=.github/rollback-floors/member-memory-dual-writer
 # #43808 explicitly clears callbacks, queue rows and usage links before Run deletion.
 readonly RUN_REFERENCE_PREPARATION_PATH=.github/rollback-floors/run-reference-preparation
 # #41393 prepared inline file injection before release 2 emits it.
@@ -1174,6 +1177,21 @@ if ! git merge-base --is-ancestor "$run_reference_preparation_commit" origin/mai
 fi
 if ! git merge-base --is-ancestor "$run_reference_preparation_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates explicit Run reference cleanup: ${run_reference_preparation_commit}."
+fi
+
+# The main-owned Memory floor advances independently of runtime retirement.
+# Native-only publication must never regain legacy authority through rollback.
+if ! member_memory_dual_writer_commit=$(git show "origin/main:${MEMBER_MEMORY_DUAL_WRITER_PATH}"); then
+  fail "Cannot read the member Memory dual-writer rollback floor from main."
+fi
+if [[ ! "$member_memory_dual_writer_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid member Memory dual-writer rollback floor."
+fi
+if ! git merge-base --is-ancestor "$member_memory_dual_writer_commit" origin/main; then
+  fail "Member Memory dual-writer rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$member_memory_dual_writer_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the member Memory dual writer: ${member_memory_dual_writer_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

@@ -1,3 +1,4 @@
+import { switchRecoverySubscription } from "./helpers/subscription-recovery";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { state, createStore } from "ccstate";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
@@ -3001,6 +3002,18 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       expect(reply).toContain("Wait for your subscription allowance to reset");
       expect(reply).toContain("?settings=model");
       expect(reply).toContain('reply "continue"');
+      const typingBeforeRecovery = sends.typing.length;
+      mockNow(now() + 2000);
+      await switchRecoverySubscription(
+        context,
+        actor,
+        label === "Claude" ? "claude-code-oauth-token" : "codex-oauth-token",
+      );
+      await flushWaitUntilForTest();
+      const continued = await readDispatchedRun(runnerGroup);
+      expect(continued.runId).not.toBe(run.runId);
+      expect(continued.prompt).toBe("continue");
+      expect(sends.typing.length).toBeGreaterThan(typingBeforeRecovery);
     },
   );
 

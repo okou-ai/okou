@@ -146,10 +146,7 @@ export interface ComposerSubmission {
   readonly prompt: string;
   readonly generationTemplate: GenerationTemplateRequest | undefined;
   readonly editorDocument: WorkflowComposerSubmissionSnapshot["editorDocument"];
-  /**
-   * What the composer is set to make. A send inside a thread keeps it, so a
-   * send that creates one hands it to the thread it opens.
-   */
+  /** The task and retained parameters for the composer after this send. */
   readonly taskSelection: ComposerTaskSelection;
 }
 
@@ -916,6 +913,59 @@ function joinAdditionalInfo(
   return text.length > 0 ? text : undefined;
 }
 
+function createReadComposerTaskSelection(
+  create: ComposerCreateSignals,
+  taskChips: ComposerTaskChipsSignals,
+) {
+  return command(({ get }): ComposerTaskSelection => {
+    const task = get(taskChips.task$) ?? get(create.mode$);
+    const source = taskChips.visualization;
+    const visualizationSubmission =
+      task === "visualization"
+        ? { source, snapshot: { revision: get(source.revision$) } }
+        : undefined;
+    return {
+      task,
+      presentationSlideCount: get(create.presentationSlideCount$),
+      visualization: get(source.preferences$),
+      ...(visualizationSubmission ? { visualizationSubmission } : {}),
+    };
+  });
+}
+
+function createSubmitMessageWithVisualization(
+  submitMessage$: CreateComposerSignalsOptions["submitMessage$"],
+) {
+  return command(
+    async (
+      { set },
+      action: ComposerSubmissionAction,
+      submission: ComposerSubmission,
+      signal: AbortSignal,
+    ): Promise<boolean> => {
+      const visualization = submission.taskSelection.visualizationSubmission;
+      if (!visualization) {
+        return await set(submitMessage$, action, submission, signal);
+      }
+      set(visualization.source.trackSubmission$, visualization.snapshot);
+      let submitted = false;
+      {
+        using _visualizationSubmission = {
+          [Symbol.dispose]() {
+            set(
+              visualization.source.finishSubmission$,
+              visualization.snapshot,
+              submitted,
+            );
+          },
+        };
+        submitted = await set(submitMessage$, action, submission, signal);
+      }
+      return submitted;
+    },
+  );
+}
+
 function createSubmitCurrentInput({
   options,
   workflowComposer,
@@ -931,6 +981,10 @@ function createSubmitCurrentInput({
 }) {
   const draft = options.draft.signals;
   const voiceState$ = voice.state$;
+  const readTaskSelection$ = createReadComposerTaskSelection(create, taskChips);
+  const submitMessage$ = createSubmitMessageWithVisualization(
+    options.submitMessage$,
+  );
   return command(
     async (
       { get, set },
@@ -975,16 +1029,21 @@ function createSubmitCurrentInput({
       }
       signal.throwIfAborted();
       const mode = get(create.mode$);
-      const selectedTask = get(taskChips.task$);
+      const taskSelection = set(readTaskSelection$);
+      const visualization =
+        taskSelection.task === "visualization"
+          ? taskSelection.visualization
+          : undefined;
+      const presentationFormat =
+        get(presentationOutputFormatEnabled$) &&
+        (mode === "presentation" || visualization?.output === "presentation")
+          ? get(presentationOutputFormat$)
+          : undefined;
       const composerAdditionalInfo = buildComposerAdditionalInfo(
         mode,
         get(create.presentationSlideCount$),
-        selectedTask === "visualization"
-          ? get(taskChips.visualization.preferences$)
-          : undefined,
-        get(presentationOutputFormatEnabled$)
-          ? get(presentationOutputFormat$)
-          : undefined,
+        visualization,
+        presentationFormat,
       );
       const additionalInfo = joinAdditionalInfo(
         callerAdditionalInfo,
@@ -996,17 +1055,14 @@ function createSubmitCurrentInput({
               submission.editorDocument.toEditorDocument(),
             ),
             additionalInfo,
+            presentationFormat,
           )
         : submission.editorDocument;
       const nextSubmission: ComposerSubmission = {
         prompt: visiblePrompt,
         generationTemplate: get(draft.generationTemplate$),
         editorDocument,
-        taskSelection: {
-          task: selectedTask ?? mode,
-          presentationSlideCount: get(create.presentationSlideCount$),
-          visualization: get(taskChips.visualization.preferences$),
-        },
+        taskSelection,
       };
       if (!(await set(checkPaidToolForCreation$, mode, signal))) {
         return false;
@@ -1019,7 +1075,7 @@ function createSubmitCurrentInput({
         signal,
       );
       const submitted = await set(
-        options.submitMessage$,
+        submitMessage$,
         action,
         nextSubmission,
         signal,

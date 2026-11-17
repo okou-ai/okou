@@ -1,11 +1,28 @@
 import { runContextArchiveSchema } from "@okouai/api-contracts/contracts/run-context-archive";
 import type { RunContextResponse } from "@okouai/api-contracts/contracts/run-routes";
+import { object, unknown as zUnknown, type infer as zInfer } from "zod";
 import { networkLogEntrySchema } from "@okouai/api-contracts/validators/runs";
 import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
-import type { AgentEvent, LogDetail } from "../okou-page/log-types.ts";
+import type { AgentEvent } from "../okou-page/log-types.ts";
 import { isNonArrayRecord, jsonParseOr } from "../utils.ts";
 
-export type InspectLogMeta = Partial<LogDetail>;
+const inspectLogMetaSchema = object({
+  id: zUnknown().optional(),
+  displayName: zUnknown().optional(),
+  modelProvider: zUnknown().optional(),
+  selectedModel: zUnknown().optional(),
+  framework: zUnknown().optional(),
+  failureReason: zUnknown().optional(),
+  status: zUnknown().optional(),
+  triggerSource: zUnknown().optional(),
+  createdAt: zUnknown().optional(),
+  startedAt: zUnknown().optional(),
+  completedAt: zUnknown().optional(),
+  prompt: zUnknown().optional(),
+  appendSystemPrompt: zUnknown().optional(),
+});
+
+export type InspectLogMeta = zInfer<typeof inspectLogMetaSchema>;
 
 const INVALID_JSON = Symbol("invalid-json");
 
@@ -72,7 +89,9 @@ export function parseInspectLog(jsonText: string): {
   }
 
   return {
-    meta: isNonArrayRecord(rawValue.meta) ? rawValue.meta : null,
+    meta: isNonArrayRecord(rawValue.meta)
+      ? inspectLogMetaSchema.parse(rawValue.meta)
+      : null,
     events: parseAgentEvents(rawValue.events),
     context: parseRunContext(rawValue.context),
     networkLogs: parseNetworkLogs(rawValue.networkLogs),

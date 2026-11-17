@@ -17,7 +17,7 @@ final class StagingPreviewAccessTests: XCTestCase {
       "https://storage.example.invalid/api/projects",
       "https://api.okou.ai/api/projects",
       "http://staging-api.vm6.ai/api/projects",
-      "https://staging-api.vm6.ai/unrelated",
+      "https://staging-api.vm6.ai/unrelated"
     ] {
       let url = try XCTUnwrap(URL(string: origin))
       XCTAssertTrue(storage.cookies(for: url)?.isEmpty ?? true, origin)

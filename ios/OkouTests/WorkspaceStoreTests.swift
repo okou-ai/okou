@@ -352,20 +352,22 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertNil(store.selectedThreadID)
   }
 
-  func testStartupShowsCachedRecentChatsBeforeNavigationAndPreservesArchiveVisibility() async throws
-  {
+  func testStartupRestoresCachedProjectsBeforeNetworkAndPreservesArchiveVisibility() async throws {
     let cacheDirectory = CacheTestDirectory(owner: self)
     let archivedID = "40000000-0000-4000-8000-000000000004"
+    let projectID = "30000000-0000-4000-8000-000000000071"
     let snapshot = ChatHTTPResponse(
       body: """
         {"chatThreads":[
-          {"id":"\(storeThreadID)","agentId":"\(storeAgentID)","title":"Recent cached chat",\
+          {"id":"\(storeThreadID)","agentId":"\(storeAgentID)","projectId":"\(projectID)",\
+        "title":"Recent cached chat",\
         "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":false},
           {"id":"\(archivedID)","agentId":"\(storeAgentID)","title":"Archived cached chat",\
         "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":true}
         ],"latestEventId":null,"latestSeqId":null}
         """)
     let navigationStarted = expectation(description: "Navigation is being loaded")
+    let holdNavigation = Mutex(false)
     let releaseNavigation = HTTPResponseGate()
     defer { releaseNavigation.open() }
     let catchUpStarted = expectation(
@@ -376,13 +378,24 @@ final class WorkspaceStoreTests: XCTestCase {
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/agents":
-        navigationStarted.fulfill()
-        await releaseNavigation.wait()
+        if holdNavigation.withLock({ $0 }) {
+          navigationStarted.fulfill()
+          await releaseNavigation.wait()
+        }
         return ChatHTTPResponse(
           body: """
             [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"}]
             """)
       case "/api/chat-threads/snapshot": return snapshot
+      case "/api/projects/snapshot":
+        return ChatHTTPResponse(
+          body: """
+            {"latestEventId":null,"latestSeqId":0,"projects":[{
+            "id":"\(projectID)","name":"Cached Project",\
+            "createdAt":"\(storeDate)","updatedAt":"\(storeDate)"}]}
+            """)
+      case "/api/projects/events":
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
       case "/api/chat-threads/events":
         if holdCatchUp.withLock({ $0 }) {
           catchUpStarted.fulfill()
@@ -397,27 +410,42 @@ final class WorkspaceStoreTests: XCTestCase {
       default: throw URLError(.unsupportedURL)
       }
     }
-    let cache = cacheDirectory.cache(
-      scope: ChatCacheScope(
-        apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"))
-    let previous = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL, cache: cache)
+    let scope = ChatCacheScope(
+      apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace")
+    let cache = cacheDirectory.cache(scope: scope)
+    let previous = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL, cache: cache,
+      projectDisclosure: ProjectDisclosureStorage(scope: scope, directory: cacheDirectory.url))
+    await previous.refreshNavigation()
     await previous.list.refresh()
+    await previous.projects.activate()
+    await previous.projects.expand(projectID)?.value
     XCTAssertNil(previous.list.error)
-    previous.close()
+    await previous.close().value
+    await cache.close()
 
+    holdNavigation.withLock { $0 = true }
     holdCatchUp.withLock { $0 = true }
-    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL, cache: cache)
+    let store = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL, cache: cacheDirectory.cache(scope: scope),
+      projectDisclosure: ProjectDisclosureStorage(scope: scope, directory: cacheDirectory.url))
     defer { store.close() }
     store.startNewChat()
     let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
     addTeardownBlock { @MainActor in
-      store.close()
+      let closing = store.close()
       startup.cancel()
       releaseNavigation.open()
       releaseCatchUp.open()
       await startup.value
+      await closing.value
     }
     await fulfillment(of: [navigationStarted], timeout: 2)
+    let cached = try store.sidebar.stateStore.get(store.sidebar.presentation)
+    XCTAssertEqual(cached.projects.map(\.project.name), ["Cached Project"])
+    XCTAssertEqual(cached.projects.first?.section.rows.map(\.title), ["Recent cached chat"])
+    XCTAssertTrue(store.projects.isExpanded(projectID))
+    XCTAssertTrue(cached.chats.isEmpty)
     XCTAssertEqual(
       store.list.threads(agentID: storeAgentID, archived: false).map(\.title),
       ["Recent cached chat"])
@@ -796,7 +824,7 @@ final class WorkspaceStoreTests: XCTestCase {
           rows: [
             historyEvent(
               sequence: 2, type: "output.message", payload: "{\"content\":\"Final answer\"}"),
-            historyEvent(sequence: 3, type: "run.completed"),
+            historyEvent(sequence: 3, type: "run.completed")
           ], lastSequence: 3)
       case "/api/chat-threads/\(storeThreadID)":
         return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
@@ -813,12 +841,22 @@ final class WorkspaceStoreTests: XCTestCase {
     await store.list.refresh()
     store.selectedThreadID = storeThreadID
     let initialRead = Task { await store.conversation(for: storeThreadID)?.refresh() }
+    addTeardownBlock {
+      initialRead.cancel()
+      releaseOldResponse.open()
+      _ = await initialRead.value
+    }
     await fulfillment(of: [oldReadStarted], timeout: 2)
 
     // A final-result invalidation enters refresh while the detail view's old read is pending.
-    // Awaiting the reconciler makes the ordering deterministic without a live Ably connection.
-    await store.refresh()
+    let refresh = Task.immediate { await store.refresh() }
+    addTeardownBlock {
+      refresh.cancel()
+      releaseOldResponse.open()
+      await refresh.value
+    }
     releaseOldResponse.open()
+    await refresh.value
     await initialRead.value
 
     XCTAssertEqual(
@@ -945,7 +983,7 @@ final class WorkspaceStoreTests: XCTestCase {
           ? [
             historyEvent(
               sequence: 1, type: "output.message", payload: "{\"content\":\"Unread answer\"}"),
-            historyEvent(sequence: 2, type: "run.completed"),
+            historyEvent(sequence: 2, type: "run.completed")
           ] : []
         return historyPage(rows: rows, lastSequence: 2)
       case "/api/chat-threads/\(storeThreadID)":
@@ -976,6 +1014,7 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertTrue(unread.withLock { $0 })
 
     store.selectedThreadID = storeThreadID
+    store.sidebarInteraction.setOpen(false)
     await store.conversation(for: storeThreadID)?.refresh()
     XCTAssertNil(store.list.threads.first?.indicator)
     XCTAssertNil(store.conversation(for: storeThreadID)?.error)
@@ -1016,7 +1055,7 @@ final class WorkspaceStoreTests: XCTestCase {
             historyEvent(
               sequence: 1, type: "output.message", payload: "{\"content\":\"Old workspace answer\"}"
             ),
-            historyEvent(sequence: 2, type: "run.completed"),
+            historyEvent(sequence: 2, type: "run.completed")
           ], lastSequence: 2)
       case "/api/chat-threads/\(storeThreadID)":
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
@@ -1057,7 +1096,7 @@ final class WorkspaceStoreTests: XCTestCase {
             historyEvent(
               sequence: 1, type: "output.message",
               payload: "{\"content\":\"Fresh workspace answer\"}"),
-            historyEvent(sequence: 2, type: "run.completed"),
+            historyEvent(sequence: 2, type: "run.completed")
           ], lastSequence: 2)
       case "/api/chat-threads/\(storeThreadID)":
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
@@ -1216,14 +1255,14 @@ final class WorkspaceStoreTests: XCTestCase {
               historyEvent(
                 sequence: 1, type: "output.message",
                 payload: "{\"content\":\"Initial \(id)\"}"),
-              historyEvent(sequence: 2, type: "run.completed"),
+              historyEvent(sequence: 2, type: "run.completed")
             ]
           } else if since == "2", hasUpdate {
             rows = [
               historyEvent(
                 sequence: 3, type: "output.message",
                 payload: "{\"content\":\"Latest reply\"}"),
-              historyEvent(sequence: 4, type: "run.completed"),
+              historyEvent(sequence: 4, type: "run.completed")
             ]
           } else {
             rows = []
@@ -1259,7 +1298,7 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(
       Set(requests.withLock { $0 }),
       [
-        "/api/chat-threads/\(otherID)/event-rows", "/api/chat-threads/\(otherID)",
+        "/api/chat-threads/\(otherID)/event-rows", "/api/chat-threads/\(otherID)"
       ])
 
     requests.withLock { $0.removeAll() }
@@ -1299,7 +1338,7 @@ final class WorkspaceStoreTests: XCTestCase {
             ? [
               historyEvent(
                 sequence: 1, type: "output.message", payload: "{\"content\":\"Saved reply\"}"),
-              historyEvent(sequence: 2, type: "run.completed"),
+              historyEvent(sequence: 2, type: "run.completed")
             ] : []
           var response = historyPage(rows: rows, lastSequence: 2)
           response.body = response.body.replacingOccurrences(of: storeThreadID, with: id)
@@ -1343,7 +1382,7 @@ final class WorkspaceStoreTests: XCTestCase {
 
   func testAuxiliaryUpgradeResponseBlocksAllFurtherWorkspaceReads() async {
     for endpoint in [
-      "/api/agents", "/api/indicators",
+      "/api/agents", "/api/indicators"
     ] {
       let requests = Mutex<[String]>([])
       let fixture = ChatHTTPFixture { request in

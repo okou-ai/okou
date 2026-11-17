@@ -16,6 +16,7 @@ import http_network_log
 import mitm_addon
 import request_classification
 import request_streaming
+import stream_capture
 import upstream_destination_binding
 import usage
 from tests.connector_diagnostic_helpers import (
@@ -161,8 +162,8 @@ class TestErrorHandler:
         assert entry["error"] == "connection reset by peer"
         assert "firewall_error" not in entry
         assert "connector_diagnostic_slug" not in entry
-        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is None
+        assert request_streaming.streamed_request_size(flow) is None
         assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY not in flow.metadata
 
     def test_header_phase_connector_diagnostic_error_keeps_connection_error(
@@ -194,8 +195,7 @@ class TestErrorHandler:
         assert flow.response.status_code == 401
         assert flow.response.trailers is None
         assert flow.response.stream is False
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
         [entry] = read_jsonl_entries_after_flush(tmp_path / "net.jsonl")
         assert entry["status"] == 0
@@ -248,8 +248,8 @@ class TestErrorHandler:
         assert entry["request_body_encoding"] == "utf-8"
         assert entry["request_body_truncated"] is True
         assert "firewall_error" not in entry
-        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is None
+        assert request_streaming.streamed_request_size(flow) is None
         assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY not in flow.metadata
         assert flow.request.stream is False
 
@@ -300,8 +300,7 @@ class TestErrorHandler:
         assert entry["response_body_encoding"] == "utf-8"
         assert entry["response_body_truncated"] is True
         assert metadata_keys.RESPONSE_STREAM_STATE not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
         assert flow.response.stream is False
 
     async def test_browser_connector_candidate_error_keeps_original_error(
@@ -412,8 +411,7 @@ class TestErrorHandler:
             mitm_addon.error(flow)
 
         assert flow.response.stream is False
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
         assert "model_json_usage_finish" not in flow.metadata
         assert metadata_keys.MODEL_PROVIDER_USAGE not in flow.metadata
 
@@ -437,8 +435,7 @@ class TestErrorHandler:
             mitm_addon.error(flow)
 
         assert flow.response.stream is False
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
         assert "connector_response_finish" not in flow.metadata
 
     def test_error_without_run_id_releases_request_stream_state(self, real_flow, mitm_ctx):
@@ -454,8 +451,8 @@ class TestErrorHandler:
             mitm_addon.error(flow)
 
         assert flow.request.stream is False
-        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is None
+        assert request_streaming.streamed_request_size(flow) is None
 
     def test_error_does_not_bill_partial_x_json_response(
         self, tmp_path, real_flow, sync_usage_executor, usage_webhook_api
@@ -492,7 +489,7 @@ class TestErrorHandler:
 
         assert webhook.request_count == 0
         assert flow.response.stream is False
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
         assert "connector_response_finish" not in flow.metadata
 
     def test_skips_log_when_no_metadata(self, real_flow, mitm_ctx):
@@ -646,7 +643,7 @@ class TestErrorHandler:
             mitm_addon.error(flow)
 
         assert metadata_keys.HTTP_REQUEST_START_MONOTONIC not in flow.metadata
-        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is None
         assert flow.request.stream is False
         assert not Path(log_path).exists()
 
@@ -677,8 +674,8 @@ class TestErrorHandler:
         request_streaming.configure_request_stream(flow)
         stream = flow.request.stream
         assert callable(stream)
-        assert stream(body[:2]) == body[:2]
-        assert stream(body[2:]) == body[2:]
+        for chunk in (body[:2], body[2:]):
+            assert stream(chunk) == chunk
 
         with mitm_ctx():
             mitm_addon.error(flow)
@@ -686,8 +683,8 @@ class TestErrorHandler:
         [entry] = read_jsonl_entries_after_flush(Path(log_path))
         assert entry["request_size"] == len(body)
         assert entry["error"] == "connection reset by peer"
-        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is None
+        assert request_streaming.streamed_request_size(flow) is None
         assert flow.request.stream is False
 
     def test_error_includes_firewall_context(self, tmp_path, real_flow, mitm_ctx):

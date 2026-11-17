@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recovery_loading">正在讀取復原選項…</string>
+    <string name="recovery_read_failed">暫時無法讀取復原選項。</string>
+    <string name="recovery_continue">繼續</string>
+    <string name="recovery_reset">重設用量並繼續（使用一次重設額度）</string>
+    <string name="recovery_reset_unknown">原重設結果尚未確認，不會自動重試。</string>
+    <string name="recovery_reset_retry">重試原重設</string>
+    <string name="recovery_needs_changes">繼續前請調整模型、帳號設定或建立新對話。</string>
+    <string name="recovery_billing">工作區點數：%1$s。請檢查帳單以復原。</string>
+    <string name="recovery_no_credit">上次重設時沒有可用額度。</string>
+    <string name="recovery_submitted">繼續請求已接受，等待對話歷程確認。</string>
+    <string name="recovery_failed">復原未完成，請先確認原操作再重試。</string>
+    <string name="recovery_credits">重設額度：%1$d</string>
+</resources>

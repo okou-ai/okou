@@ -13,8 +13,9 @@ final class ComposerWorkflowSource {
   private(set) var isClosed = false
   private let didFail: @MainActor (Error) -> Void
 
-  init(client: APIClient, storage: ChatDraftStorage?, didFail: @escaping @MainActor (Error) -> Void)
-  {
+  init(
+    client: APIClient, storage: ChatDraftStorage?, didFail: @escaping @MainActor (Error) -> Void
+  ) {
     self.client = client
     self.storage = storage
     self.didFail = didFail
@@ -75,7 +76,9 @@ final class ComposerWorkflowSource {
 
   private func reportHistoryError(_ error: Error) {
     Logger(subsystem: "ai.okou.ios", category: "Composer")
-      .error("Cannot persist recent Workflows: \(error.localizedDescription, privacy: .public)")
+      .error(
+        "event=composer.workflows.recent.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+      )
   }
 }
 

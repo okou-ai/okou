@@ -213,19 +213,16 @@ fn copy_buffered<R: Read>(entry: &mut tar::Entry<'_, R>, file: &mut File) -> io:
 }
 
 fn has_descriptor_budget(concurrency: usize) -> bool {
-    let mut limit = libc::rlimit {
-        rlim_cur: 0,
-        rlim_max: 0,
-    };
-    // SAFETY: limit is a valid writable rlimit and RLIMIT_NOFILE is supported.
-    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) } != 0 {
+    use nix::sys::resource::{Resource, getrlimit};
+
+    let Ok((soft_limit, _)) = getrlimit(Resource::RLIMIT_NOFILE) else {
         return false;
-    }
+    };
     // All workers can retain a full directory cache at once. Keep the same
     // number of slots free for source setup and checked file IO: releasing one
     // worker's handles on EMFILE cannot release handles held by its peers.
     let required = (2 * MAX_DIRECTORY_HANDLES * concurrency) as libc::rlim_t;
-    if limit.rlim_cur < required {
+    if soft_limit < required {
         return false;
     }
     let Ok(mut descriptors) = fs::read_dir("/proc/self/fd") else {
@@ -235,7 +232,7 @@ fn has_descriptor_budget(concurrency: usize) -> bool {
     else {
         return false;
     };
-    limit.rlim_cur.saturating_sub(open_descriptors) >= required
+    soft_limit.saturating_sub(open_descriptors) >= required
 }
 
 fn descriptor_limit(error: &io::Error) -> bool {

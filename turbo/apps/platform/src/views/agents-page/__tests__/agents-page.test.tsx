@@ -88,64 +88,67 @@ async function creatorPopup(creatorName: string): Promise<HTMLElement> {
   return popup;
 }
 
-test("Unread indicators update after an indicator change", async () => {
-  let showUnread = false;
-  const refreshed = context.mocks.deferred<void>();
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    if (showUnread && !refreshed.settled()) {
-      refreshed.resolve(undefined);
-    }
-    return respond(200, {
-      agents: showUnread
-        ? {
-            [PRIVATE_AGENT_ID]: "unread",
-            [RESEARCH_AGENT_ID]: "unread",
-          }
-        : {},
-      threads: {},
-      unreadAt: {},
+test.each(["direct", "message-port"] as const)(
+  "Unread indicators update after an indicator change (%s)",
+  async (sharedWorkerTestTransport) => {
+    let showUnread = false;
+    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+      return respond(200, {
+        agents: showUnread
+          ? {
+              [PRIVATE_AGENT_ID]: "unread",
+              [RESEARCH_AGENT_ID]: "unread",
+            }
+          : {},
+        threads: {},
+        unreadAt: {},
+      });
     });
-  });
-  configureAgentList(context, [
-    agent(RESEARCH_AGENT_ID, {
-      displayName: "Research Agent",
-      visibility: "public",
-    }),
-    agent(PRIVATE_AGENT_ID, {
-      displayName: "Private Ops",
-      visibility: "private",
-    }),
-  ]);
-  await setupPage({ context, path: "/agents" });
-  await waitForVisibilityTabs();
+    configureAgentList(context, [
+      agent(RESEARCH_AGENT_ID, {
+        displayName: "Research Agent",
+        visibility: "public",
+      }),
+      agent(PRIVATE_AGENT_ID, {
+        displayName: "Private Ops",
+        visibility: "private",
+      }),
+    ]);
+    await setupPage({ context, path: "/agents", sharedWorkerTestTransport });
+    await waitForVisibilityTabs();
 
-  click(visibilityTab("Private"));
+    click(visibilityTab("Private"));
 
-  await screen.findByText("Private Ops");
-  const privateCard = agentCard(PRIVATE_AGENT_ID);
-  expect(
-    within(privateCard).queryByLabelText("Unread"),
-  ).not.toBeInTheDocument();
-
-  showUnread = true;
-  context.mocks.ably.trigger("chatIndicatorsChanged");
-  await refreshed.promise;
-
-  await waitFor(() => {
+    await screen.findByText("Private Ops");
+    const privateCard = agentCard(PRIVATE_AGENT_ID);
     expect(
-      within(agentCard(PRIVATE_AGENT_ID)).getByLabelText("Unread"),
+      within(privateCard).queryByLabelText("Unread"),
+    ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        context.mocks.ably.hasSubscription("chatIndicatorsChanged"),
+      ).toBeTruthy();
+    });
+
+    showUnread = true;
+    context.mocks.ably.trigger("chatIndicatorsChanged");
+
+    await waitFor(() => {
+      expect(
+        within(agentCard(PRIVATE_AGENT_ID)).getByLabelText("Unread"),
+      ).toBeVisible();
+    });
+
+    click(visibilityTab("Public"));
+
+    await waitFor(() => {
+      expect(agentCard(RESEARCH_AGENT_ID)).toBeVisible();
+    });
+    expect(
+      within(agentCard(RESEARCH_AGENT_ID)).getByLabelText("Unread"),
     ).toBeVisible();
-  });
-
-  click(visibilityTab("Public"));
-
-  await waitFor(() => {
-    expect(agentCard(RESEARCH_AGENT_ID)).toBeVisible();
-  });
-  expect(
-    within(agentCard(RESEARCH_AGENT_ID)).getByLabelText("Unread"),
-  ).toBeVisible();
-});
+  },
+);
 
 test("Agent visibility tabs show public creators without management data", async () => {
   const user = userEvent.setup({ delay: null });

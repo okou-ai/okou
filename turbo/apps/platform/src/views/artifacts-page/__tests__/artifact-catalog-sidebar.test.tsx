@@ -89,6 +89,33 @@ test.each([false, true])(
   },
 );
 
+test.each([false, true])(
+  "HEIC catalog previews convert extensionless image sources (sidebar=%s)",
+  async (sidebar) => {
+    const detail = fileDetail("iPhone.heic", "image/heic");
+    const source = `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private/opaque?X-Amz-Signature=signature`;
+    mockCatalog({ ...detail, file: { ...detail.file, url: source } });
+    await setupPage({
+      context,
+      path: "/artifacts?tab=file",
+      featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar },
+    });
+
+    click(await findArtifactAction("iPhone.heic"));
+    const preview = await screen.findByTestId(
+      sidebar ? "artifact-sidebar" : "attachment-lightbox",
+    );
+    await expect(
+      within(preview).findByTestId(
+        sidebar ? "artifact-sidebar-body-image" : "attachment-lightbox-image",
+      ),
+    ).resolves.toHaveAttribute(
+      "src",
+      `https://cdn.vm7.io/cdn-cgi/image/fit=scale-down,format=auto,quality=85,metadata=none/${source}`,
+    );
+  },
+);
+
 test("A routed website preview opens in the sidebar and Close returns to its catalog", async () => {
   mockCatalog({
     ...artifact({ title: "Release website", kind: "hosted-site" }),

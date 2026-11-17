@@ -1,33 +1,62 @@
 #!/usr/bin/env bats
 
-# Workflow file refresh and agent instructions at the runner boundary.
+# Workspace Workflow refresh and personal Instructions at the runner boundary.
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
 load '../../helpers/runner-api'
 
 setup() {
+    WORKFLOW_ID=""
+    ORIGINAL_INSTRUCTIONS=""
+    PERSONAL_INSTRUCTIONS_MARKER=""
     runner_e2e_use_mock_codex_profile
     runner_e2e_require_environment
     runner_e2e_setup_test
-    WORKFLOW_ID=""
+    PERSONAL_INSTRUCTIONS_MARKER="PERSONAL_INSTRUCTIONS_${TEST_ID}"
 }
 
 teardown() {
+    # The workspace default Agent is borrowed, not owned by this test.
+    runner_e2e_teardown_test
     if [[ -n "$WORKFLOW_ID" ]]; then
         runner_e2e_delete_workflow "$WORKFLOW_ID" >/dev/null 2>&1 || true
     fi
-    runner_e2e_teardown_test
+    if [[ -n "$ORIGINAL_INSTRUCTIONS" ]]; then
+        local current restore_payload
+        current="$(runner_api_curl "/api/instructions")" || return
+        # Recover an uncertain save too, without overwriting another writer.
+        if jq -e --arg marker "$PERSONAL_INSTRUCTIONS_MARKER" \
+            '.content == $marker' <<<"$current" >/dev/null; then
+            restore_payload="$(jq -nc \
+                --argjson original "$ORIGINAL_INSTRUCTIONS" \
+                --argjson current "$current" \
+                '{content: $original.content, ifVersion: $current.version}')" || return
+            runner_api_curl "/api/instructions" -X PUT \
+                -d "$restore_payload" >/dev/null
+        fi
+    fi
 }
 
-@test "runner refreshes workflow files and mounts instructions" {
-    run create_runner_agent "e2e-runner-context-${TEST_ID}"
+@test "runner refreshes workspace workflow files and mounts personal instructions" {
+    run runner_api_curl "/api/onboarding/status"
     echo "$output"
     assert_success
-    AGENT_ID="$output"
+    local agent_id
+    agent_id=$(jq -er '.defaultAgentId | select(type == "string" and length > 0)' <<<"$output")
 
-    local instruction_marker="AGENT_INSTRUCTION_${TEST_ID}"
-    run set_runner_agent_instructions "$AGENT_ID" "$instruction_marker"
+    # This is the mock profile's sole personal-Instructions writer. Parallel
+    # shards run their own non-default Agents and retain Agent instructions.
+    run runner_api_curl "/api/instructions"
+    echo "$output"
+    assert_success
+    ORIGINAL_INSTRUCTIONS=$(jq -c '{content, version}' <<<"$output")
+    local instruction_payload
+    instruction_payload=$(jq -nc \
+        --arg content "$PERSONAL_INSTRUCTIONS_MARKER" \
+        --argjson original "$ORIGINAL_INSTRUCTIONS" \
+        '{content: $content, ifVersion: $original.version}')
+    run runner_api_curl "/api/instructions" -X PUT -d "$instruction_payload"
     echo "$output"
     assert_success
 
@@ -35,7 +64,7 @@ teardown() {
     local workflow_marker="WORKFLOW_FILE_${TEST_ID}"
     local workflow_payload
     workflow_payload=$(jq -nc \
-        --arg agentId "$AGENT_ID" \
+        --arg agentId "$agent_id" \
         --arg name "$workflow_name" \
         --arg marker "$workflow_marker" '
         {
@@ -78,12 +107,12 @@ if (!Number.isFinite(claims.iat) || !Number.isFinite(claims.exp) || claims.exp <
 printf '__OUTPUT_MARKER__\n'
 EOF
 )
-    prompt=${prompt//__INSTRUCTION_MARKER__/$instruction_marker}
+    prompt=${prompt//__INSTRUCTION_MARKER__/$PERSONAL_INSTRUCTIONS_MARKER}
     prompt=${prompt//__WORKFLOW_MARKER__/$workflow_marker}
     prompt=${prompt//__WORKFLOW_NAME__/$workflow_name}
     prompt=${prompt//__OUTPUT_MARKER__/$output_marker}
 
-    run runner_e2e_start_mock_shell_chat_run "$AGENT_ID" "$prompt"
+    run runner_e2e_start_mock_shell_chat_run "$agent_id" "$prompt"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")
@@ -99,7 +128,7 @@ EOF
         "$output_marker"
     echo "$output"
     assert_success
-    assert_output --partial "$instruction_marker"
+    assert_output --partial "$PERSONAL_INSTRUCTIONS_MARKER"
     assert_output --partial "$workflow_marker"
 
     local updated_workflow_marker="WORKFLOW_FILE_UPDATED_${TEST_ID}"
@@ -136,7 +165,7 @@ EOF
     continuation_prompt=${continuation_prompt//__CONTINUATION_MARKER__/$continuation_marker}
 
     run runner_e2e_continue_chat_run \
-        "$AGENT_ID" \
+        "$agent_id" \
         "$THREAD_ID" \
         "$continuation_prompt"
     echo "$output"

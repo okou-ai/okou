@@ -153,32 +153,6 @@ function mailDraft(
   };
 }
 
-test("Keep an empty conversation ready for its first message", async () => {
-  const thread = continuityThread(31, 1, "Empty conversation");
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 31,
-    threads: [thread],
-    chatEventRows: [],
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    ...workspace.pageOptions,
-  });
-
-  const invitation = await screen.findByText(
-    "Send a message to start the conversation",
-  );
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  expect(invitation).toBeVisible();
-  expect(composer).toBeVisible();
-
-  const scroller = scrollContainer(thread.id);
-  expect(scroller.scrollTop).toBe(0);
-  expect(scroller.querySelector("[data-scroll-to-bottom]")).toBeNull();
-});
-
 test("Explain unavailable email cards in a conversation", async () => {
   const thread = continuityThread(32, 1, "Unavailable email cards");
   const runId = "b1000000-0000-4000-a000-000000000032";

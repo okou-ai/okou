@@ -8,7 +8,10 @@ import {
   chatEventFromRow,
   projectRunFailureRow,
 } from "../chat-event-row-projection";
-import { CHAT_RUN_TRANSIENT_ERROR_MESSAGE } from "../errors";
+import {
+  CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
+  CHAT_RUN_USAGE_LIMIT_MESSAGE,
+} from "../errors";
 import { chatEventRowSchema, type ChatEventRow } from "../chat-event-rows";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../chat-event-schema-version";
 import {
@@ -18,6 +21,81 @@ import {
 } from "../chat-threads";
 
 const CREATED_AT = "2026-08-08T10:00:00.000Z";
+
+describe("client Run failure presentation before API cutover", () => {
+  it.each([
+    [undefined, CHAT_RUN_TRANSIENT_ERROR_MESSAGE],
+    ["future_reason", CHAT_RUN_TRANSIENT_ERROR_MESSAGE],
+    ["usage_limit", CHAT_RUN_USAGE_LIMIT_MESSAGE],
+  ] as const)(
+    "presents retained diagnostics independently of reason %s without changing server output",
+    (failureReason, expected) => {
+      const row = canonicalRow({
+        eventType: "run.failed",
+        runId: "run-1",
+        runEventId: "event-1",
+        runEventSequenceNumber: 9,
+        failureReason,
+        payload: {
+          content: "retained diagnostic",
+          error: "retained diagnostic",
+        },
+      });
+      const original = JSON.stringify(row);
+      const displayed = chatEventFromRowForDisplay(row);
+      expect(displayed).toMatchObject({
+        id: row.id,
+        seqId: row.seqId,
+        runId: row.runId,
+        runEventId: row.runEventId,
+        sequenceNumber: 9,
+        createdAt: CREATED_AT,
+        content: expected,
+        failureReason:
+          failureReason === "usage_limit" ? "usage_limit" : "unknown",
+      });
+      expect(displayed).not.toHaveProperty("error");
+      expect(chatEventFromRow(row)).toMatchObject({
+        content: "retained diagnostic",
+        error: "retained diagnostic",
+      });
+      expect(JSON.stringify(row)).toBe(original);
+    },
+  );
+
+  it("accepts Run failures without diagnostics and keeps ordinary output errors", () => {
+    const failed = canonicalRow({
+      eventType: "run.failed",
+      runId: "run-1",
+      failureReason: "usage_limit",
+      payload: null,
+    });
+    expect(chatEventFromRowForDisplay(failed)).toMatchObject({
+      content: CHAT_RUN_USAGE_LIMIT_MESSAGE,
+      failureReason: "usage_limit",
+    });
+    const cancelled = canonicalRow({
+      eventType: "run.cancelled",
+      runId: "run-1",
+      payload: {
+        content: "private cancellation detail",
+        error: "Stopped by user",
+      },
+    });
+    expect(chatEventFromRowForDisplay(cancelled)).toMatchObject({
+      content: "Run cancelled",
+    });
+    expect(chatEventFromRowForDisplay(cancelled)).not.toHaveProperty("error");
+    const output = projectableRow("output.error");
+    expect(chatEventFromRowForDisplay(output)).toStrictEqual(
+      chatEventFromRow(output),
+    );
+    expect(chatEventFromRowForDisplay(output)).toHaveProperty(
+      "error",
+      "output error",
+    );
+  });
+});
 
 function canonicalRow(
   overrides: Readonly<Record<string, unknown>>,

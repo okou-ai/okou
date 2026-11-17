@@ -1,10 +1,20 @@
 import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
+import { ComposerVisualizationPreferences } from "./composer-visualization-preferences.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
-import { ChartNoAxesCombined, Globe, Route, X } from "lucide-react";
+import {
+  ChartNoAxesCombined,
+  Globe,
+  Route,
+  Telescope,
+  UserRoundSearch,
+  X,
+} from "lucide-react";
 import { Button } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
+import type { HomeExploreKind } from "../../signals/okou-page/composer-home.ts";
+import type { ComposerTask } from "../../signals/okou-page/composer-task-chips.ts";
 import { cn } from "@okouai/ui/lib/utils";
 import { COMPOSER_CREATE_ICONS } from "./slash-workflow.tsx";
 
@@ -33,6 +43,8 @@ const TASK_ICONS = {
   workflow: Route,
   website: Globe,
   visualization: ChartNoAxesCombined,
+  search: UserRoundSearch,
+  research: Telescope,
 } as const;
 
 /**
@@ -91,32 +103,39 @@ export function ComposerChoiceChip({
 
 function ComposerSelectedTask({
   signals,
+  task,
 }: {
   readonly signals: ComposerSignals;
+  readonly task: ComposerTask | HomeExploreKind;
 }) {
   const { t } = useTranslation();
-  const task = useGet(signals.taskChips.task$);
   const selectTask = useSet(signals.taskChips.selectTask$);
-  const labels = t(
-    ($) => {
-      return $.chat.taskChips.tasks;
-    },
-    { returnObjects: true },
-  );
-  if (!task) {
-    return null;
-  }
+  const labels = {
+    ...t(
+      ($) => {
+        return $.chat.taskChips.tasks;
+      },
+      { returnObjects: true },
+    ),
+    search: t(($) => {
+      return $.chat.capabilityHome.search.title;
+    }),
+    research: t(($) => {
+      return $.chat.capabilityHome.research.title;
+    }),
+  };
+  const label = labels[task];
   const Icon = TASK_ICONS[task];
   return (
     <ComposerChoiceChip
       icon={<Icon size={16} />}
-      label={labels[task]}
+      label={label}
       labelClassName={TASK_CONTROL_LABEL}
       removeLabel={t(
         ($) => {
           return $.chat.taskChips.removeTask;
         },
-        { task: labels[task] },
+        { task: label },
       )}
       onRemove={() => {
         selectTask(null);
@@ -128,26 +147,30 @@ function ComposerSelectedTask({
 /**
  * What the run will make, at the end of the footer's icon row.
  *
- * The divider marks the break the row now carries: everything left of it adds
- * content to the message and is cleared by a send, everything right of it is
- * the composer's own state and is not. The type's parameters follow it on the
- * same line -- the slide count here -- so a value sits beside the type it
- * belongs to instead of two rows above the controls that act on it.
+ * The selected task stays after a send. Its parameters follow it on the same
+ * line, so a value sits beside the task it belongs to.
  */
 export function ComposerTaskControls({
   signals,
 }: {
   readonly signals: ComposerSignals;
 }) {
-  const task = useGet(signals.taskChips.task$);
+  const selectedTask = useGet(signals.taskChips.task$);
+  const homeTask = useGet(signals.taskChips.home.task$);
+  const task = homeTask ?? selectedTask;
   if (task === null) {
     return null;
   }
   return (
     <>
       <div className="h-5 w-px shrink-0 bg-divider/60" aria-hidden />
-      <ComposerSelectedTask signals={signals} />
-      <ComposerPresentationOptions signals={signals} />
+      <ComposerSelectedTask signals={signals} task={task} />
+      {task === "presentation" && (
+        <ComposerPresentationOptions signals={signals} />
+      )}
+      {task === "visualization" && (
+        <ComposerVisualizationPreferences signals={signals} />
+      )}
     </>
   );
 }

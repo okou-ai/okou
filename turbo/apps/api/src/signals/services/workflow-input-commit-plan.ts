@@ -24,6 +24,7 @@ import {
   consumeWorkflowScheduleAnchorSql,
   journalWorkflowScheduleClaimSql,
 } from "./workflow-schedule-queue.service";
+import { workflowRewardQueuedEventInsert } from "./workflow-reward-source-publication";
 
 export const workflowInputCommitRowSchema = object({
   eventId: uuid(),
@@ -154,6 +155,7 @@ export function workflowInputCommitSql(args: {
     readonly statement: SQL;
     readonly eventScope: ModelEventScope;
   };
+  readonly rewardSource: Parameters<typeof workflowRewardQueuedEventInsert>[0];
 }) {
   const { plan, source, currentTime } = args;
   const chatThreadId = plan.context.chatThreadId;
@@ -241,6 +243,9 @@ export function workflowInputCommitSql(args: {
     );
   }
   ctes.push(sql`workflow_queued AS (${args.queueStatement})`);
+  ctes.push(
+    sql`workflow_reward_source AS (${workflowRewardQueuedEventInsert(args.rewardSource, accepted)})`,
+  );
   return sql`WITH ${sql.join(ctes, sql`, `)}
     SELECT (SELECT id FROM inserted) AS "eventId",
       ${args.replacePendingTicks ? sql`(SELECT count(*)::integer FROM workflow_pending_ticks)` : sql`0`} AS "tickCount",

@@ -185,7 +185,7 @@ test("Searching connector names returns from account navigation to connector res
     throw new Error("Connector row was not available");
   }
   click(row);
-  await within(dialog).findByRole("combobox", {
+  await screen.findByRole("switch", {
     name: "Focus app 20 account access",
   });
   await fill(search, "Focus app 1");

@@ -396,7 +396,7 @@ final class PermissionEditorFixture: Sendable {
       guard let edit = state.grants[name] else { return nil }
       var result: [String: Any] = [
         "permission": edit.permission, "action": edit.action,
-        "expiresAt": state.expirations[edit.permission].map { $0 as Any } ?? NSNull(),
+        "expiresAt": state.expirations[edit.permission].map { $0 as Any } ?? NSNull()
       ]
       if !state.memberScoped {
         result["agentId"] = state.agentID
@@ -407,7 +407,7 @@ final class PermissionEditorFixture: Sendable {
     let body: Any =
       state.memberScoped
       ? ["target": ["kind": "builtin", "connectorSlug": "gmail"], "grants": grants] : grants
-    return String(decoding: try JSONSerialization.data(withJSONObject: body), as: UTF8.self)
+    return try JSONSerialization.string(withJSONObject: body)
   }
 
   static let catalog =

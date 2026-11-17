@@ -1,7 +1,10 @@
 import { command, computed } from "ccstate";
 import { featureGuidesContract } from "@okouai/api-contracts/contracts/feature-guides";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import {
+  getAllFeatureStates,
+  isFeatureEnabled,
+} from "@okouai/core/feature-switch";
 import { isStaffOrg } from "@okouai/core/staff-org";
 import { optionalEnv } from "../../lib/env";
 import { resourceUnavailable, notFound } from "../../lib/error";
@@ -13,7 +16,7 @@ import type { RouteEntry } from "../route-entry";
 import { createUserFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   acknowledgeableFeatureGuideRevision,
-  currentFeatureGuide$,
+  currentFeatureGuide,
   featureGuideReceipt,
   featureGuideRevision,
   importFeatureGuide$,
@@ -21,21 +24,35 @@ import {
   publishFeatureGuide$,
 } from "../services/feature-guides.service";
 
-const switchContext$ = createUserFeatureSwitchContext(
-  computed((get) => {
-    return Promise.resolve(get(organizationAuthContext$));
-  }),
-);
+const viewer$ = computed((get) => {
+  return get(organizationAuthContext$);
+});
+const switchContext$ = createUserFeatureSwitchContext(viewer$);
+const currentFeatureGuide$ = currentFeatureGuide(viewer$);
 const enabled$ = computed(async (get) => {
   return isFeatureEnabled(
     FeatureSwitchKey.FeatureGuides,
     await get(switchContext$),
   );
 });
+const deliverableEdition$ = computed(async (get) => {
+  const edition = await get(currentFeatureGuide$);
+  if (!edition) {
+    return null;
+  }
+  const switches: Readonly<Record<string, boolean | undefined>> =
+    getAllFeatureStates(await get(switchContext$));
+  const items = edition.content.items.filter((item) => {
+    return !item.featureSwitch || switches[item.featureSwitch] === true;
+  });
+  return items.length > 0
+    ? { ...edition, content: { ...edition.content, items } }
+    : null;
+});
 const receipt$ = featureGuideReceipt(
   computed(async (get) => {
     const { userId } = get(organizationAuthContext$);
-    const edition = await get(currentFeatureGuide$);
+    const edition = await get(deliverableEdition$);
     return edition ? { userId, editionId: edition.id } : null;
   }),
 );
@@ -53,7 +70,7 @@ const current$ = command(async ({ get, set }, signal: AbortSignal) => {
       "Guide previews are available only in preview deployments",
     );
   }
-  const edition = await get(currentFeatureGuide$);
+  const edition = await get(deliverableEdition$);
   signal.throwIfAborted();
   if (!edition) {
     return { status: 200 as const, body: { edition: null } };
@@ -71,7 +88,11 @@ const seenRevision$ = acknowledgeableFeatureGuideRevision(
   computed(async (get) => {
     const body = await get(seenBody$);
     return body.ok
-      ? { ...get(seenParams$), revisionId: body.data.revisionId }
+      ? {
+          ...get(seenParams$),
+          ...get(viewer$),
+          revisionId: body.data.revisionId,
+        }
       : null;
   }),
 );

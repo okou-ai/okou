@@ -1,23 +1,36 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { Command } from "commander";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   phoneUseContract,
   phoneActionSchema,
+  phoneOperationSchema,
   type PhoneAction,
 } from "@okouai/api-contracts/contracts/phone-use";
 import { getClientConfig, handleError } from "../lib/api/core/client-factory";
 import { withErrorHandler } from "../lib/command/with-error-handler";
+import {
+  createRealtimeNotifier,
+  waitForRealtimeChange,
+  type RealtimeNotifier,
+} from "../lib/realtime-notifier";
 
 async function client() {
   return initClient(phoneUseContract, await getClientConfig());
 }
-async function readOperation(operationId: string) {
+async function readOperation(
+  operationId: string,
+  realtime = false,
+  signal?: AbortSignal,
+) {
   const api = await client();
-  const response = await api.get({ params: { operationId } });
+  const response = await api.get({
+    params: { operationId },
+    query: realtime ? { realtime: "true" } : {},
+    fetchOptions: { signal },
+  });
   if (response.status !== 200)
     handleError(response, "Could not read Phone Use operation");
   return response.body;
@@ -29,6 +42,7 @@ async function renderOperation(
   operation: Awaited<ReturnType<typeof readOperation>>,
   output?: string,
 ) {
+  operation = phoneOperationSchema.parse(operation);
   const operationId = operation.id;
   const api = await client();
   if (output && operation.status === "succeeded") {
@@ -85,25 +99,52 @@ async function execute(
       response,
       `Operation submission is uncertain; inspect ${operationId} before retrying`,
     );
-  const until = Date.now() + wait * 1000;
-  let operation = response.body;
-  while (
-    ["queued", "running", "approval_required"].includes(operation.status) &&
-    Date.now() < until
-  ) {
-    await delay(750);
-    const current = await (await client()).get({ params: { operationId } });
-    if (current.status !== 200)
-      handleError(current, "Could not read operation; do not resubmit");
-    operation = current.body;
-  }
-  await inspect(operationId, options.output);
+  const operation = await waitForOperation(response.body, wait);
+  await renderOperation(operation, options.output);
 }
+function pending(operation: Awaited<ReturnType<typeof readOperation>>) {
+  return ["queued", "running", "approval_required"].includes(operation.status);
+}
+
+async function waitForOperation(
+  initial: Awaited<ReturnType<typeof readOperation>>,
+  seconds: number,
+) {
+  const deadline = Date.now() + seconds * 1000;
+  const owner = new AbortController();
+  const timer = setTimeout(() => {
+    owner.abort();
+  }, seconds * 1000);
+  let operation = initial;
+  let notifier: RealtimeNotifier | undefined;
+  try {
+    if (!pending(operation) || seconds === 0) return operation;
+    if (!operation.realtime)
+      operation = await readOperation(operation.id, true, owner.signal);
+    if (operation.realtime)
+      notifier = createRealtimeNotifier(operation.realtime, owner.signal);
+    // Subscribe first, then read again: completion may race token setup.
+    while (pending(operation) && Date.now() < deadline) {
+      operation = await readOperation(operation.id, false, owner.signal);
+      if (pending(operation))
+        await waitForRealtimeChange(notifier, deadline, owner.signal);
+    }
+    return operation;
+  } catch (error) {
+    if (!owner.signal.aborted) throw error;
+    return operation;
+  } finally {
+    clearTimeout(timer);
+    owner.abort();
+    await notifier?.close();
+  }
+}
+
 export const phoneUseCommand = new Command("phone-use")
   .description("Internal iPhone automation through Okou iOS Use")
   .addHelpText(
     "after",
-    `\nOpen Okou iOS Use, sign in and start a control window. Turn on your phone in this chat's Connectors menu. Start a new Run after granting access.\nObserve before every input. Preserve operation IDs. Never replay unknown effects. Secrets and device unlock require the owner.\nFor send/publish/pay/order/delete and other sensitive commits, use --confirm with the exact consequence. Only the owner can confirm in Use. On approval_required, tell the owner to review in Use, then wait <operationId> without ending the Run or resubmitting. Ordinary navigation and scrolling run automatically.\n`,
+    `\nOpen Okou iOS Use, sign in and go online. Online means connected with control available. Turn on your iPhone in this Web Chat's Connectors menu. Start a new Run after granting access.\nStart a session, observe the foreground UI and open the app requested by the task. The companion can observe its own App, the Home screen and alerts. Observe before every tap, type or swipe. Preserve operation IDs. Never replay unknown effects. Secrets and device unlock require the owner.\nAuthorized input runs directly without local screen, label or gesture classification. Follow the task authorization and the Agent's applicable confirmation rules. Use status or wait <operationId> to read existing receipts. An approval_required receipt comes from an older companion that needs updating.\n`,
   );
 phoneUseCommand
   .command("devices")
@@ -126,7 +167,7 @@ phoneUseCommand
 phoneUseCommand
   .command("wait <operationId>")
   .description(
-    "Wait for an existing operation or owner review; never resubmit input",
+    "Read an existing operation until completion; never resubmit input",
   )
   .option("--timeout <seconds>", "Wait at most 300 seconds", "300")
   .option("--output <dir>", "Save a private screenshot")
@@ -136,20 +177,11 @@ phoneUseCommand
         const seconds = Number(options.timeout);
         if (!Number.isFinite(seconds) || seconds < 0 || seconds > 300)
           throw new Error("--timeout must be between 0 and 300 seconds");
-        const until = Date.now() + seconds * 1000;
-        while (true) {
-          const operation = await readOperation(id);
-          if (
-            !["queued", "running", "approval_required"].includes(
-              operation.status,
-            ) ||
-            Date.now() >= until
-          ) {
-            await renderOperation(operation, options.output);
-            return;
-          }
-          await delay(Math.min(2000, Math.max(0, until - Date.now())));
-        }
+        const initial = await readOperation(id, true);
+        await renderOperation(
+          await waitForOperation(initial, seconds),
+          options.output,
+        );
       },
     ),
   );
@@ -199,17 +231,12 @@ actionCommand("tap", "Tap an element from a current snapshot")
   .requiredOption("--app <bundleId>", "Expected app")
   .requiredOption("--snapshot <uuid>", "Snapshot ID")
   .requiredOption("--element <id>", "Element ID")
-  .option(
-    "--confirm <consequence>",
-    "Require one local owner confirmation for this commit",
-  )
   .action(
     withErrorHandler(
       async (options: {
         app: string;
         snapshot: string;
         element: string;
-        confirm?: string;
         id?: string;
         wait?: string;
         output?: string;
@@ -220,7 +247,6 @@ actionCommand("tap", "Tap an element from a current snapshot")
             app: options.app,
             snapshotId: options.snapshot,
             elementId: options.element,
-            ...(options.confirm ? { confirmation: options.confirm } : {}),
           },
           options,
         );
@@ -257,17 +283,12 @@ actionCommand("swipe", "Scroll the current app")
   .requiredOption("--app <bundleId>", "Expected app")
   .requiredOption("--snapshot <uuid>", "Snapshot ID")
   .requiredOption("--direction <direction>", "up, down, left or right")
-  .option(
-    "--confirm <consequence>",
-    "Require one local owner confirmation for this commit",
-  )
   .action(
     withErrorHandler(
       async (options: {
         app: string;
         snapshot: string;
         direction: PhoneAction["direction"];
-        confirm?: string;
         id?: string;
         wait?: string;
         output?: string;
@@ -278,7 +299,6 @@ actionCommand("swipe", "Scroll the current app")
             app: options.app,
             snapshotId: options.snapshot,
             direction: options.direction,
-            ...(options.confirm ? { confirmation: options.confirm } : {}),
           },
           options,
         );

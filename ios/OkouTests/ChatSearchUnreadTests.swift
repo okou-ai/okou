@@ -155,6 +155,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.refresh()
     store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
+    store.sidebarInteraction.setOpen(false)
     let conversation = try XCTUnwrap(store.selectedConversation)
     let refresh = Task { await conversation.refresh() }
     addTeardownBlock {
@@ -186,19 +187,185 @@ final class ChatSearchUnreadTests: XCTestCase {
   }
 
   func testNewServerDeliveryCanBeReadAfterManualUnreadWithoutReopening() async throws {
+    try await assertNewDeliveryIsRead(indicatorsFirst: false)
+  }
+
+  func testNewServerDeliveryCanBeReadWhenIndicatorsPublishBeforeRecovery() async throws {
+    try await assertNewDeliveryIsRead(indicatorsFirst: true)
+  }
+
+  func testReadCursorRefreshAwaitsAResidentConversationRefresh() async throws {
+    try await assertNewDeliveryIsRead(indicatorsFirst: true, residentRefresh: true)
+  }
+
+  func testConcurrentReadReconciliationSharesOneMarkRead() async throws {
+    try await assertNewDeliveryIsRead(indicatorsFirst: false, completion: .shared)
+  }
+
+  func testBackgroundCancelsReadReconciliationAfterLateIndicators() async throws {
+    try await assertNewDeliveryIsRead(indicatorsFirst: false, completion: .background)
+  }
+
+  func testFailedAutomaticReadRequiresAnotherRefreshInsteadOfAJoinRetry() async throws {
     let fixture = SearchUnreadFixture()
     let store = fixture.workspace()
-    defer { store.close() }
+    addTeardownBlock { await store.close().value }
     await store.refresh()
     store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
-    await store.selectedConversation?.refresh()
+    store.sidebarInteraction.setOpen(false)
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    await conversation.refresh(waitForCurrent: true)
+    let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
+    await store.setRead(thread, read: false)
+
+    let recoveryStarted = expectation(description: "Recovery waits for the newer indicators")
+    let gate = SearchResponseGate()
+    defer { gate.open() }
+    fixture.state.value.withLock {
+      $0.marker = "2026-10-19T12:01:00Z"
+      $0.failNextRead = true
+      $0.recoveryGate = gate
+      $0.recoveryStarted = { recoveryStarted.fulfill() }
+    }
+    let refresh = Task { await store.refresh([.readCursor]) }
+    addTeardownBlock {
+      refresh.cancel()
+      gate.open()
+      await refresh.value
+    }
+    await fulfillment(of: [recoveryStarted], timeout: 3)
+    await store.list.refreshIndicators()
+    gate.open()
+    await refresh.value
+    XCTAssertNotNil(conversation.readSyncError)
+    XCTAssertTrue(store.list.threads.first { $0.id == thread.id }?.isUnread == true)
+    XCTAssertEqual(fixture.state.value.withLock { $0.writes }, ["read", "unread"])
+
+    await store.refresh([.readCursor])
+    XCTAssertNil(conversation.readSyncError)
+    XCTAssertFalse(store.list.threads.first { $0.id == thread.id }?.isUnread == true)
+    XCTAssertEqual(fixture.state.value.withLock { $0.writes }, ["read", "unread", "read"])
+  }
+
+  private enum ReadCompletion: Equatable { case immediate, shared, background }
+
+  private func assertNewDeliveryIsRead(
+    indicatorsFirst: Bool, residentRefresh: Bool = false, completion: ReadCompletion = .immediate
+  ) async throws {
+    let fixture = SearchUnreadFixture()
+    let store = fixture.workspace()
+    addTeardownBlock { await store.close().value }
+    await store.refresh()
+    store.setPhase(.active)
+    store.selectChat(SearchUnreadFixture.id(1))
+    store.sidebarInteraction.setOpen(false)
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    await conversation.refresh(waitForCurrent: true)
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
     await store.setRead(thread, read: false)
     await store.refresh([.readCursor])
     XCTAssertEqual(fixture.state.value.withLock { $0.writes }, ["read", "unread"])
-    fixture.state.value.withLock { $0.marker = "2026-10-19T12:01:00Z" }
-    await store.refresh([.readCursor])
+
+    let indicatorsStarted = expectation(description: "New unread indicators reached HTTP")
+    let recoveryStarted =
+      indicatorsFirst ? expectation(description: "Conversation recovery reached HTTP") : nil
+    let readStarted =
+      completion == .immediate ? nil : expectation(description: "New mark-read reached HTTP")
+    let readCancelled =
+      completion == .background ? expectation(description: "Background cancelled mark-read") : nil
+    let readFinished =
+      completion == .background ? expectation(description: "Retired HTTP handler finished") : nil
+    let gate = SearchResponseGate()
+    let readGate = SearchResponseGate()
+    defer {
+      gate.open()
+      readGate.open()
+    }
+    fixture.state.value.withLock {
+      $0.marker = "2026-10-19T12:01:00Z"
+      $0.indicatorsStarted = { indicatorsStarted.fulfill() }
+      if indicatorsFirst {
+        $0.recoveryGate = gate
+        $0.recoveryStarted = { recoveryStarted?.fulfill() }
+      } else {
+        $0.indicatorsGate = gate
+      }
+      if completion != .immediate {
+        $0.readGate = readGate
+        $0.readStarted = { readStarted?.fulfill() }
+        $0.readCancelled = { readCancelled?.fulfill() }
+        $0.readFinished = { readFinished?.fulfill() }
+      }
+    }
+    let resident = Task {
+      if residentRefresh { await conversation.refresh() }
+    }
+    addTeardownBlock {
+      resident.cancel()
+      gate.open()
+      await resident.value
+    }
+    if residentRefresh, let recoveryStarted {
+      await fulfillment(of: [recoveryStarted], timeout: 3)
+    }
+    // Capture the business result at the workspace's own completion boundary, before
+    // a resident refresh could conceal an early return by finishing later.
+    let refresh = Task {
+      await store.refresh([.readCursor])
+      return fixture.state.value.withLock { $0.writes }
+    }
+    addTeardownBlock {
+      refresh.cancel()
+      gate.open()
+      readGate.open()
+      _ = await refresh.value
+    }
+    await fulfillment(of: [indicatorsStarted], timeout: 3)
+    if indicatorsFirst {
+      if !residentRefresh, let recoveryStarted {
+        await fulfillment(of: [recoveryStarted], timeout: 3)
+      }
+      await store.list.refreshIndicators()
+      XCTAssertEqual(
+        conversation.thread.unreadAt,
+        ISO8601DateFormatter().date(from: "2026-10-19T12:01:00Z"))
+    } else {
+      // A complete history/recovery operation still sees the manually unread delivery.
+      await conversation.refresh(waitForCurrent: true)
+      XCTAssertEqual(fixture.state.value.withLock { $0.writes }, ["read", "unread"])
+    }
+    gate.open()
+    if let readStarted {
+      await fulfillment(of: [readStarted], timeout: 3)
+      if completion == .shared {
+        let shared = Task.immediate { await conversation.reconcileReadState() }
+        addTeardownBlock {
+          shared.cancel()
+          readGate.open()
+          await shared.value
+        }
+        readGate.open()
+        await shared.value
+      } else if let readCancelled, let readFinished {
+        store.setPhase(.background)
+        await fulfillment(of: [readCancelled], timeout: 3)
+        readGate.open()
+        await fulfillment(of: [readFinished], timeout: 3)
+        _ = await refresh.value
+        // Remote acceptance is not cancellation rollback. The retired response
+        // must not clear the locally confirmed unread state while backgrounded.
+        XCTAssertTrue(store.list.threads.first { $0.id == thread.id }?.isUnread == true)
+        store.setPhase(.active)
+        await store.list.refreshIndicators()
+        await store.refresh([.readCursor])
+      }
+    }
+    let writesAtCompletion = await refresh.value
+    if completion != .background {
+      XCTAssertEqual(writesAtCompletion, ["read", "unread", "read"])
+    }
+    await resident.value
     XCTAssertEqual(fixture.state.value.withLock { $0.writes }, ["read", "unread", "read"])
     XCTAssertFalse(store.list.threads.first { $0.id == thread.id }?.isUnread == true)
   }
@@ -227,6 +394,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     await store.refresh()
     store.setPhase(.active)
     store.selectChat(SearchUnreadFixture.id(1))
+    store.sidebarInteraction.setOpen(false)
     await store.selectedConversation?.refresh()
     let thread = try XCTUnwrap(store.list.threads.first { $0.id == SearchUnreadFixture.id(1) })
     fixture.state.value.withLock { $0.dropUnreadResponse = true }
@@ -303,8 +471,9 @@ final class ChatSearchUnreadTests: XCTestCase {
     }
     await fulfillment(of: [started], timeout: 2)
     let confirmedRead = Task {
-      for await unread in Observations({ store.list.threads.first?.isUnread }) {
-        if unread == false { return }
+      for await unread in Observations({ store.list.threads.first?.isUnread })
+      where unread == false {
+        return
       }
     }
     addTeardownBlock {
@@ -763,7 +932,7 @@ private func searchResponse(content: String) -> ChatHTTPResponse {
   let range = (content as NSString).range(of: "needle")
   let start = range.location == NSNotFound ? 0 : range.location
   let end = range.location == NSNotFound ? min(3, content.utf16.count) : NSMaxRange(range)
-  let text = String(decoding: try! JSONEncoder().encode(content), as: UTF8.self)
+  let text = try! JSONEncoder().encodeString(content)
   return ChatHTTPResponse(
     body: """
       {"results":[{"chatThreadId":"\(SearchUnreadFixture.id(2))","agentName":"Research","matchedMessage":{"chatThreadId":"\(SearchUnreadFixture.id(2))","role":"assistant","content":\(text),"createdAt":"2026-10-19T12:00:00Z","seqId":5,"runId":null},"matchedRanges":[{"start":\(start),"end":\(end)}]}]}
@@ -794,6 +963,7 @@ private final class SearchUnreadFixture: Sendable {
     var marker = SearchUnreadFixture.timestamp
     var bulkAgent: String?
     var failWrites = false
+    var failNextRead = false
     var omitThreadIndicators = false
     var dropUnreadResponse = false
     var writes: [String] = []
@@ -801,6 +971,12 @@ private final class SearchUnreadFixture: Sendable {
     var bulkReadStarted: (@Sendable () -> Void)?
     var readGate: SearchResponseGate?
     var readStarted: (@Sendable () -> Void)?
+    var readCancelled: (@Sendable () -> Void)?
+    var readFinished: (@Sendable () -> Void)?
+    var indicatorsGate: SearchResponseGate?
+    var indicatorsStarted: (@Sendable () -> Void)?
+    var recoveryGate: SearchResponseGate?
+    var recoveryStarted: (@Sendable () -> Void)?
   }
   final class LockedState: Sendable { let value = Mutex(State()) }
   let state: LockedState
@@ -809,20 +985,20 @@ private final class SearchUnreadFixture: Sendable {
     let state = LockedState()
     self.state = state
     http = ChatHTTPFixture { [state] request in
-      if let empty = emptySearchResources(request) { return empty }
+      if request.httpMethod == "GET", let empty = emptySearchResources(request) { return empty }
       let path = request.url?.path ?? ""
-      switch path {
-      case "/api/agents":
+      switch (request.httpMethod, path) {
+      case ("GET", "/api/agents"):
         return ChatHTTPResponse(
           body: """
             [{"agentId":"\(Self.agent)","displayName":"Okou","isDefaultAgent":true},{"agentId":"\(Self.otherAgent)","displayName":"Research","isDefaultAgent":false}]
             """)
 
-      case "/api/feature-switches":
+      case ("GET", "/api/feature-switches"):
         return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
-      case "/api/chat/search":
+      case ("GET", "/api/chat/search"):
         return searchResponse(content: "A matching needle in another agent's conversation")
-      case "/api/chat-threads/snapshot":
+      case ("GET", "/api/chat-threads/snapshot"):
         let threads = (1...40).map { index in
           """
           {"id":"\(Self.id(index))","agentId":"\(index.isMultiple(of: 2) ? Self.otherAgent : Self.agent)","title":"Chat \(index)","createdAt":"\(Self.timestamp)","updatedAt":"\(Self.timestamp)","sortAt":"\(Self.timestamp)","muted":\(index == 3),"archived":\(index == 5)}
@@ -830,9 +1006,17 @@ private final class SearchUnreadFixture: Sendable {
         }.joined(separator: ",")
         return ChatHTTPResponse(
           body: "{\"chatThreads\":[\(threads)],\"latestEventId\":null,\"latestSeqId\":null}")
-      case "/api/chat-threads/events":
+      case ("GET", "/api/chat-threads/events"):
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-      case "/api/indicators":
+      case ("GET", "/api/indicators"):
+        let gate = state.value.withLock { value -> SearchResponseGate? in
+          let gate = value.indicatorsGate
+          value.indicatorsGate = nil
+          value.indicatorsStarted?()
+          value.indicatorsStarted = nil
+          return gate
+        }
+        if let gate { await gate.wait() }
         return state.value.withLock { value in
           let indicators = value.unread.filter { $0 != 1 }.sorted().map {
             "\"\(Self.id($0))\":\"unread\""
@@ -852,7 +1036,7 @@ private final class SearchUnreadFixture: Sendable {
               "{\"agents\":{\(agents)},\"threads\":{\((["\"\(Self.id(1))\":\"active\""] + indicators).joined(separator: ","))},\"unreadAt\":{\(timestamps)}}"
           )
         }
-      case "/api/chat-thread-unreads/mark-read":
+      case ("POST", "/api/chat-thread-unreads/mark-read"):
         let gate = state.value.withLock { value -> SearchResponseGate? in
           let gate = value.bulkReadGate
           value.bulkReadGate = nil
@@ -875,19 +1059,38 @@ private final class SearchUnreadFixture: Sendable {
       default:
         guard path.hasPrefix("/api/chat-threads/") else { throw URLError(.unsupportedURL) }
         let id = String(path.dropFirst("/api/chat-threads/".count).prefix(36))
-        let number = Int(id.suffix(12)) ?? 0
-        if path.hasSuffix("/mark-read") || path.hasSuffix("/mark-unread") {
-          let read = path.hasSuffix("/mark-read")
-          let gate = state.value.withLock { value -> SearchResponseGate? in
-            guard read else { return nil }
-            let gate = value.readGate
-            value.readGate = nil
-            value.readStarted?()
-            value.readStarted = nil
-            return gate
+        guard let number = Int(id.suffix(12)), (1...40).contains(number), id == Self.id(number)
+        else { throw URLError(.unsupportedURL) }
+        let threadPath = "/api/chat-threads/\(id)"
+        switch (request.httpMethod, path) {
+        case ("POST", threadPath + "/mark-read"), ("POST", threadPath + "/mark-unread"):
+          let read = path == threadPath + "/mark-read"
+          let (gate, cancelled, finished) = state.value.withLock { value in
+            let gate = read ? value.readGate : nil
+            let cancelled = read ? value.readCancelled : nil
+            let finished = read ? value.readFinished : nil
+            if read {
+              value.readGate = nil
+              value.readCancelled = nil
+              value.readFinished = nil
+              value.readStarted?()
+              value.readStarted = nil
+            }
+            return (gate, cancelled, finished)
           }
-          if let gate { await gate.wait() }
+          defer { finished?() }
+          if let gate {
+            await withTaskCancellationHandler {
+              await gate.wait()
+            } onCancel: {
+              cancelled?()
+            }
+          }
           let response = state.value.withLock { value in
+            if read && value.failNextRead {
+              value.failNextRead = false
+              return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Try later\"}}")
+            }
             if value.failWrites {
               return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Try later\"}}")
             }
@@ -900,15 +1103,13 @@ private final class SearchUnreadFixture: Sendable {
             throw URLError(.networkConnectionLost)
           }
           return response
-        }
-        if path.hasSuffix("/event-snapshot") {
+        case ("GET", threadPath + "/event-snapshot"):
           return ChatHTTPResponse(
             status: 404,
             body:
               "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}"
           )
-        }
-        if path.hasSuffix("/event-rows") {
+        case ("GET", threadPath + "/event-rows"):
           let after = Int(query(request, "sinceSeqId") ?? "0") ?? 0
           let last = min(161, after + 50)
           let rows =
@@ -923,11 +1124,18 @@ private final class SearchUnreadFixture: Sendable {
             body:
               "{\"rows\":[\(rows)],\"cursor\":{\"lastEventId\":\"\(Self.rowID(last))\",\"lastSeqId\":\(last)},\"hasMore\":\(last < 161)}"
           )
-        }
-        if path == "/api/chat-threads/\(id)" {
+        case ("GET", threadPath):
+          let gate = state.value.withLock { value -> SearchResponseGate? in
+            let gate = value.recoveryGate
+            value.recoveryGate = nil
+            value.recoveryStarted?()
+            value.recoveryStarted = nil
+            return gate
+          }
+          if let gate { await gate.wait() }
           return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
+        default: throw URLError(.unsupportedURL)
         }
-        throw URLError(.unsupportedURL)
       }
     }
   }

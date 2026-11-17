@@ -1,5 +1,6 @@
-import { computed } from "ccstate";
-import { searchParams$ } from "../route.ts";
+import { command, computed, state, type Computed } from "ccstate";
+import { searchParams$, updateSearchParams$ } from "../route.ts";
+import { onRef, waitForToken } from "../utils.ts";
 import {
   agentSuggestionEntries$,
   agentSuggestionListItems$,
@@ -65,3 +66,103 @@ export const forYouDeck$ = computed(async (get) => {
       }),
   };
 });
+
+type ForYouDeck =
+  typeof forYouDeck$ extends Computed<infer Value> ? Awaited<Value> : never;
+type ForYouCard = ForYouDeck["cards"][number];
+type PageDirection = "previous" | "next";
+
+interface Pagination {
+  readonly from: ForYouCard;
+  readonly to: string;
+  readonly direction: PageDirection;
+}
+
+const paginationState$ = state<Pagination | null>(null);
+const cardMinHeightState$ = state(0);
+
+export const forYouPagination$ = computed((get) => {
+  return get(paginationState$);
+});
+
+export const forYouCardMinHeight$ = computed((get) => {
+  return get(cardMinHeightState$);
+});
+
+/** Keep shorter cards from shrinking the stack after a departure unmounts. */
+export const measureForYouCardOnRef$ = onRef<HTMLElement>(
+  command(({ get, set }, card: HTMLElement) => {
+    const height = card.offsetHeight;
+    if (height > get(cardMinHeightState$)) {
+      set(cardMinHeightState$, height);
+    }
+  }),
+);
+
+export const setupForYouPagination$ = command(
+  ({ set }, signal: AbortSignal) => {
+    set(paginationState$, null);
+    set(cardMinHeightState$, 0);
+    window.addEventListener(
+      "resize",
+      () => {
+        set(cardMinHeightState$, 0);
+      },
+      { signal },
+    );
+    signal.addEventListener(
+      "abort",
+      () => {
+        set(paginationState$, null);
+        set(cardMinHeightState$, 0);
+      },
+      { once: true },
+    );
+  },
+);
+
+export const browseForYou$ = command(
+  async (
+    { get, set },
+    id: string,
+    direction: PageDirection,
+    signal: AbortSignal,
+  ) => {
+    const { cards } = await get(forYouDeck$);
+    signal.throwIfAborted();
+    const from = cards[0];
+    if (!from || from.entry.item.id === id) {
+      return;
+    }
+    set(
+      paginationState$,
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? null
+        : { from, to: id, direction },
+    );
+    // Preserve the visit snapshot and native modifier-key navigation.
+    set(updateSearchParams$, new URLSearchParams({ suggestion: id }));
+  },
+);
+
+/** The departing card owns its native animation, including cancellation. */
+export const finishForYouPaginationOnRef$ = onRef(
+  command(async ({ get, set }, card: HTMLElement, signal: AbortSignal) => {
+    const pagination = get(forYouPagination$);
+    const animations = card.getAnimations();
+    await waitForToken(
+      Promise.allSettled(
+        animations.map((animation) => {
+          return animation.finished;
+        }),
+      ),
+      signal,
+    );
+    signal.throwIfAborted();
+    // A rapid second click replaces this departure; its completion cannot
+    // remove the newer outgoing card.
+    if (get(forYouPagination$) === pagination) {
+      set(paginationState$, null);
+    }
+  }),
+);

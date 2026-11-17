@@ -1,6 +1,6 @@
 [package]
 name = "guest-telemetry"
-version = "0.3.206"
+version = "0.3.213"
 edition.workspace = true
 
 [features]
@@ -9,7 +9,6 @@ test-support = []
 [dependencies]
 chrono = { workspace = true, features = ["clock", "std"] }
 guest-contracts.workspace = true
-libc = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 

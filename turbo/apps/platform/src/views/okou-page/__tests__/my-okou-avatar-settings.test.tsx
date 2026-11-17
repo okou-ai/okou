@@ -52,7 +52,6 @@ test.each([
     path,
     featureSwitches: {
       [FeatureSwitchKey.SingleAgent]: true,
-      [FeatureSwitchKey.HomeCapabilities]: true,
     },
   });
 

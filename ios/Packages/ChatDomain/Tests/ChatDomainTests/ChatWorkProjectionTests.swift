@@ -3,32 +3,32 @@ import Foundation
 import XCTest
 
 final class ChatWorkProjectionTests: XCTestCase {
-  func testUsageOnlyFollowsEligibleServerOutputAndDoesNotMoveToAnEmptySteerPhase() throws {
+  func testUsageFollowsVisibleOutcomesAndAnEmptySteerKeepsItsPrecedingAnchor() throws {
     for terminal in [ChatEventType.runFailed, .runCancelled] {
-      let placeholder = try project([
+      let outcome = try project([
         input("ask", at: 0), event("finish", terminal, at: 1),
-        event("usage", .usageRecorded, at: 2),
+        event("usage", .usageRecorded, at: 2)
       ])
-      XCTAssertTrue(placeholder.runUsageAnchors.isEmpty)
-      XCTAssertEqual(placeholder.usageEventIDs, ["run": "usage"])
-      let error = try project([
-        input("ask", at: 0), event("finish", terminal, at: 1, error: "Server outcome"),
-        event("usage", .usageRecorded, at: 2),
-      ])
-      XCTAssertEqual(error.runUsageAnchors, ["run": "finish"])
+      XCTAssertEqual(outcome.runUsageAnchors, ["run": "finish"])
+      XCTAssertEqual(outcome.usageEventIDs, ["run": "usage"])
       let steer = try project([
         input("ask", at: 0), output("answer", at: 1), input("steer", at: 2),
-        event("finish", terminal, at: 3), event("usage", .usageRecorded, at: 4),
+        event("finish", terminal, at: 3), event("usage", .usageRecorded, at: 4)
       ])
-      XCTAssertEqual(steer.runUsageAnchors, ["run": "answer"])
+      XCTAssertEqual(steer.runUsageAnchors, ["run": "finish"])
     }
+    let pendingSteer = try project([
+      input("ask", at: 0), output("answer", at: 1), input("steer", at: 2),
+      event("usage", .usageRecorded, at: 3)
+    ])
+    XCTAssertEqual(pendingSteer.runUsageAnchors, ["run": "answer"])
   }
 
   func testUserInputsSplitOneRunIntoIndependentWorkPhases() throws {
     let history = try project([
       input("ask", at: 0), output("work", at: 10), output("answer", at: 30),
       input("followup", at: 60), output("more-work", at: 70), output("final", at: 90),
-      event("done", .runCompleted, at: 120),
+      event("done", .runCompleted, at: 120)
     ])
     XCTAssertEqual(
       history.messages.map(\.id), ["ask", "work", "answer", "followup", "more-work", "final"])
@@ -59,7 +59,7 @@ final class ChatWorkProjectionTests: XCTestCase {
     let history = try project([
       input("ask", at: 0), output("first", at: 10),
       event("other", .outputMessage, at: 20, runID: "other-run", content: "Other answer"),
-      runless, output("late", at: 30),
+      runless, output("late", at: 30)
     ])
     XCTAssertEqual(history.workSections.map(\.anchorMessageID), ["first", "other", "late"])
     XCTAssertTrue(history.workSections.allSatisfy { $0.hiddenMessageIDs.isEmpty })
@@ -67,21 +67,21 @@ final class ChatWorkProjectionTests: XCTestCase {
     XCTAssertEqual(history.runUsageAnchors, ["run": "late", "other-run": "other"])
   }
 
-  func testFailureOutcomeIsShownOnceAndBecomesReadOnlyAfterTheNextInput() throws {
+  func testOutputErrorsAndRunFailuresStayReadableAfterTheNextInput() throws {
     let rows = [
       input("ask", at: 0), output("progress", at: 10),
       event("error", .outputError, at: 20, error: "Connection lost"),
-      event("failed", .runFailed, at: 21, error: "Connection lost"),
+      event("failed", .runFailed, at: 21, failureReason: "provider_stream_timeout")
     ]
     let failed = try project(rows)
-    XCTAssertEqual(failed.messages.filter { $0.role == .system }.map(\.id), ["failed"])
+    XCTAssertEqual(failed.messages.filter { $0.role == .system }.map(\.id), ["error", "failed"])
     XCTAssertEqual(failed.executionState, .failed)
     let queued = ChatEvent(
       id: "retry", createdAt: date(30), eventType: .inputPrompt,
       payload: .init(
         userMessage: .init(version: 1, parts: [.init(type: "text", text: "Try again")])))
     let retried = try project(rows + [queued])
-    XCTAssertEqual(retried.messages.filter { $0.role == .system }.map(\.id), ["failed"])
+    XCTAssertEqual(retried.messages.filter { $0.role == .system }.map(\.id), ["error", "failed"])
     XCTAssertNil(retried.latestFailureID)
     XCTAssertEqual(retried.executionState, .queued)
   }
@@ -90,7 +90,7 @@ final class ChatWorkProjectionTests: XCTestCase {
     let recovered = try project([
       input("ask", at: 0), output("progress", at: 10),
       event("temporary", .outputError, at: 15, error: "Retrying"), output("answer", at: 20),
-      event("cancelled", .runCancelled, at: 30),
+      event("cancelled", .runCancelled, at: 30)
     ])
     XCTAssertEqual(recovered.workSections.first?.hiddenMessageIDs, ["progress", "temporary"])
     XCTAssertEqual(
@@ -98,21 +98,25 @@ final class ChatWorkProjectionTests: XCTestCase {
     XCTAssertEqual(recovered.workSections.first?.endTime, date(30))
   }
 
-  func testDistinctFailureDetailsArePreserved() throws {
+  func testOutputErrorDetailsAndStructuredRunRecoveryArePreserved() throws {
     let history = try project([
       input("ask", at: 0), output("progress", at: 10),
       event("error", .outputError, at: 20, error: "The provider connection was lost"),
-      event("failed", .runFailed, at: 21, error: "Reconnect the account before retrying"),
+      event(
+        "failed", .runFailed, at: 21,
+        failureReason: "reconnect_required")
     ])
     XCTAssertEqual(history.messages.filter { $0.isError }.map(\.id), ["error", "failed"])
+    XCTAssertEqual(
+      history.messages.last?.failure?.recovery(personalFramework: nil).kind, .settings)
   }
 
   func testRejectedUserInputNeverBecomesHiddenAssistantWork() throws {
     let rejected = ChatEvent(
       id: "rejected", runId: "run", createdAt: date(0), eventType: .inputRejected,
       payload: .init(
-        error: "Not accepted",
-        userMessage: .init(version: 1, parts: [.init(type: "text", text: "Question")])))
+        userMessage: .init(version: 1, parts: [.init(type: "text", text: "Question")])),
+      inputError: "Not accepted")
     let history = try project([rejected, output("progress", at: 10), output("answer", at: 20)])
     XCTAssertTrue(history.messages.contains { $0.id == "rejected" })
     XCTAssertEqual(history.workSections.first?.hiddenMessageIDs, ["progress"])
@@ -130,7 +134,7 @@ final class ChatWorkProjectionTests: XCTestCase {
       id: "revoke", runId: "run", revokesEventId: "stale", createdAt: date(50),
       eventType: .controlRevoke)
     let history = try project([
-      queued, claimed, output("stale", at: 40), revoked, output("answer", at: 60),
+      queued, claimed, output("stale", at: 40), revoked, output("answer", at: 60)
     ])
     XCTAssertEqual(history.messages.map(\.id), ["claimed", "answer"])
     XCTAssertEqual(history.workSections.first?.startTime, date(0))
@@ -155,7 +159,7 @@ final class ChatWorkProjectionTests: XCTestCase {
       id: "recall", revokesEventId: "queued", createdAt: date(13), eventType: .controlRevoke)
     let history = try project([
       input("ask", at: 0), output("work", at: 10), queued, recall, output("answer", at: 20),
-      event("done", .runCompleted, at: 30),
+      event("done", .runCompleted, at: 30)
     ])
     XCTAssertEqual(history.messages.map(\.id), ["ask", "work", "answer"])
     XCTAssertEqual(history.workSections.count, 1)
@@ -181,10 +185,13 @@ final class ChatWorkProjectionTests: XCTestCase {
 
   private func event(
     _ id: String, _ type: ChatEventType, at seconds: TimeInterval, runID: String = "run",
-    content: String? = nil, error: String? = nil
+    content: String? = nil, error: String? = nil, failureReason: String? = nil
   ) -> ChatEvent {
     ChatEvent(
       id: id, runId: runID, createdAt: date(seconds), eventType: type,
-      payload: .init(content: content, error: error))
+      failureReason: failureReason,
+      payload: .init(content: content),
+      inputError: type == .inputRejected ? error : nil,
+      outputError: type == .outputError ? error : nil)
   }
 }

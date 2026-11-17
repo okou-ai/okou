@@ -138,15 +138,6 @@ export const walletPaymentMethodSchema = object({
   })
     .nullable()
     .optional(),
-  // Retain the legacy projection until the App/Runner reader gates in #47624 pass.
-  card: object({
-    brand: string(),
-    last4: string().regex(/^\d{4}$/),
-    expMonth: number().int().min(1).max(12),
-    expYear: number().int(),
-  })
-    .nullable()
-    .optional(),
   bankAccount: object({
     last4: string().regex(/^\d{4}$/),
     bankName: string().nullable().optional(),

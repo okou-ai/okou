@@ -281,7 +281,7 @@ async function feedbackContext(
   if (!runId) {
     throw new Error("Expected the scheduled Suggestions Run");
   }
-  const run = await runs.readRun(fixture.actor, runId);
+  const run = await runs.executionInput(runId);
   const json = run.appendSystemPrompt?.match(/^(\{"asOf":.*\})$/mu)?.[1];
   expect(json).toBeDefined();
   const parsed = feedbackContextSchema.parse(JSON.parse(json ?? ""));
@@ -304,9 +304,6 @@ async function feedbackContext(
 describe("Agent suggestions", () => {
   it("persists read receipts without consuming cards and finds unread cards beyond the displayed snapshot", async () => {
     const fixture = await primaryRun();
-    await updateFeatureSwitchesForUser(context, fixture.actor, {
-      [FeatureSwitchKey.ForYouSources]: true,
-    });
     createRouteMocks(context).clerk.session(
       fixture.actor.userId,
       fixture.actor.orgId,
@@ -365,9 +362,6 @@ describe("Agent suggestions", () => {
 
   it("keeps delivered cards when a source is disabled, persists partial source choices and resumes alerts when enabled", async () => {
     const fixture = await primaryRun();
-    await updateFeatureSwitchesForUser(context, fixture.actor, {
-      [FeatureSwitchKey.ForYouSources]: true,
-    });
     createRouteMocks(context).clerk.session(
       fixture.actor.userId,
       fixture.actor.orgId,
@@ -380,7 +374,7 @@ describe("Agent suggestions", () => {
     const changed = await accept(
       api.updateSources({
         headers: humanHeaders,
-        body: { suggestions: false, offers: false },
+        body: { suggestions: false, offers: false, systemUpdates: false },
       }),
       [200],
     );
@@ -388,6 +382,7 @@ describe("Agent suggestions", () => {
       suggestions: false,
       whatsNew: true,
       offers: false,
+      systemUpdates: false,
     });
     await accept(
       api.updateSources({ headers: humanHeaders, body: { whatsNew: false } }),
@@ -395,7 +390,12 @@ describe("Agent suggestions", () => {
     );
     expect(
       (await accept(client().sources({ headers: humanHeaders }), [200])).body,
-    ).toStrictEqual({ suggestions: false, whatsNew: false, offers: false });
+    ).toStrictEqual({
+      suggestions: false,
+      whatsNew: false,
+      offers: false,
+      systemUpdates: false,
+    });
     expect(
       (await accept(api.summary({ headers: humanHeaders }), [200])).body
         .hasUnread,
@@ -435,9 +435,12 @@ describe("Agent suggestions", () => {
       fixture.actor.userId,
       fixture.actor.orgId,
     );
+    await updateFeatureSwitchesForUser(context, fixture.actor, {
+      [FeatureSwitchKey.AgentSuggestion]: false,
+    });
     await accept(client().summary({ headers: humanHeaders }), [403]);
     await updateFeatureSwitchesForUser(context, fixture.actor, {
-      [FeatureSwitchKey.ForYouSources]: true,
+      [FeatureSwitchKey.AgentSuggestion]: true,
     });
     await accept(client().summary({ headers: {} }), [401]);
     await accept(
@@ -454,7 +457,6 @@ describe("Agent suggestions", () => {
     createRouteMocks(context).clerk.session(other.userId, other.orgId);
     await updateFeatureSwitchesForUser(context, other, {
       [FeatureSwitchKey.AgentSuggestion]: true,
-      [FeatureSwitchKey.ForYouSources]: true,
     });
     await accept(
       client().markRead({
@@ -465,7 +467,12 @@ describe("Agent suggestions", () => {
     );
     expect(
       (await accept(client().sources({ headers: humanHeaders }), [200])).body,
-    ).toStrictEqual({ suggestions: true, whatsNew: true, offers: true });
+    ).toStrictEqual({
+      suggestions: true,
+      whatsNew: true,
+      offers: true,
+      systemUpdates: true,
+    });
     expect(
       (await accept(client().summary({ headers: humanHeaders }), [200])).body
         .hasUnread,
@@ -2113,7 +2120,7 @@ describe("Suggestion feedback context", () => {
       prompt: "Help me with an unrelated task",
     });
     expect(
-      (await runs.readRun(fixture.actor, ordinary.runId)).appendSystemPrompt,
+      (await runs.executionInput(ordinary.runId)).appendSystemPrompt,
     ).not.toContain("# Suggestions feedback context");
     await runs.requestCancelRun(fixture.actor, ordinary.runId, [200]);
     await accept(

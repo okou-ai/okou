@@ -41,7 +41,7 @@ final class ChatThreadReplayTests: XCTestCase {
     for (existing, expected) in [
       ("a1", "a0"), ("a0", "Zz"), ("Zz", "Zy"), ("Z0", "Yzz"),
       ("Y00", "Xzzz"), ("b00", "az"), ("a0V", "a0"),
-      (smallest + "V", smallest + "G"), (smallest + "01", smallest + "00V"),
+      (smallest + "V", smallest + "G"), (smallest + "01", smallest + "00V")
     ] {
       let snapshot = ChatThreadReplay.replay(
         snapshot: [], events: [event(.created, at: 1), event(.pinned, at: 2, pinOrder: existing)])
@@ -56,7 +56,7 @@ final class ChatThreadReplayTests: XCTestCase {
     let cases: [(String?, String?, String)] = [
       (nil, nil, "a0"), (nil, "a0", "Zz"), ("a0", nil, "a1"), ("a0", "a1", "a0V"),
       ("a1", "a2", "a1V"), ("a0V", "a1", "a0l"), ("Zz", "a0", "ZzV"), ("Zz", "a1", "a0"),
-      ("bzz", nil, "c000"), ("a0", "a0V", "a0G"), ("b125", "b129", "b127"),
+      ("bzz", nil, "c000"), ("a0", "a0V", "a0G"), ("b125", "b129", "b127")
     ]
     for (lower, upper, expected) in cases {
       XCTAssertEqual(
@@ -81,7 +81,7 @@ final class ChatThreadReplayTests: XCTestCase {
         event(.created, at: 1), event(.created, thread: replayOtherThread, at: 1),
         event(.created, thread: third, at: 1), event(.pinned, at: 2, pinOrder: "a0"),
         event(.pinned, thread: replayOtherThread, at: 2, pinOrder: "a1"),
-        event(.pinned, thread: third, at: 2, pinOrder: "a2"),
+        event(.pinned, thread: third, at: 2, pinOrder: "a2")
       ])
     func move(_ id: String, _ target: String, _ placement: ChatThreadReplay.PinPlacement)
       throws -> [[String]]
@@ -163,7 +163,7 @@ final class ChatThreadReplayTests: XCTestCase {
         computerUseHostId: "10000000-0000-4000-8000-000000000104", cloudBrowserEnabled: true),
       event(
         .created, at: 10, title: "Original", selectedModel: "claude-opus-5-5",
-        modelSettings: ["claude-opus-5-5": .init(effort: "high")]),
+        modelSettings: ["claude-opus-5-5": .init(effort: "high")])
     ]
     let result = try XCTUnwrap(ChatThreadReplay.replay(snapshot: [], events: events).first)
 
@@ -187,7 +187,7 @@ final class ChatThreadReplayTests: XCTestCase {
         modelSettings: ["claude-opus-5-5": .init(effort: "high")]),
       ChatThread(
         id: replayOtherThread, agentID: replayAgent, title: "Deleted",
-        createdAt: date(0), updatedAt: date(0), sortAt: date(0)),
+        createdAt: date(0), updatedAt: date(0), sortAt: date(0))
     ]
     let events = [
       event(.deleted, thread: replayOtherThread, at: 1),
@@ -196,7 +196,7 @@ final class ChatThreadReplayTests: XCTestCase {
       event(.sortTouched, at: 5),
       event(.pinned, at: 11, pinOrder: "a1"),
       event(.sortTouched, at: 12, pinOrder: "a0"),
-      event(.unarchived, at: 13),
+      event(.unarchived, at: 13)
     ]
     let threads = ChatThreadReplay.replay(snapshot: snapshot, events: events)
     let result = try XCTUnwrap(threads.first)
@@ -216,7 +216,7 @@ final class ChatThreadReplayTests: XCTestCase {
       event(.created, thread: replayOtherThread, at: 0),
       event(.pinned, at: 2, pinOrder: "a1"),
       event(.pinned, thread: replayOtherThread, at: 3, pinOrder: "a2"),
-      event(.sortTouched, thread: replayOtherThread, at: 4, pinOrder: "a0"),
+      event(.sortTouched, thread: replayOtherThread, at: 4, pinOrder: "a0")
     ]
     let replayed = ChatThreadReplay.replay(snapshot: [], events: events)
     let moved = try XCTUnwrap(replayed.first(where: { $0.id == replayOtherThread }))
@@ -233,7 +233,7 @@ final class ChatThreadReplayTests: XCTestCase {
     let events = [
       event(.created, at: 1),
       event(.sortTouched, at: 2, reassignedAgentId: newAgent),
-      event(.sortTouched, at: 3),
+      event(.sortTouched, at: 3)
     ]
     let thread = try XCTUnwrap(ChatThreadReplay.replay(snapshot: [], events: events).first)
 
@@ -250,7 +250,7 @@ final class ChatThreadReplayTests: XCTestCase {
       event(.pinned, at: 2, pinOrder: "a1"),
       event(.sortTouched, at: 3, reassignedAgentId: newAgent, pinOrder: "a0"),
       event(
-        .sortTouched, thread: replayOtherThread, at: 3, reassignedAgentId: newAgent, pinOrder: "a0"),
+        .sortTouched, thread: replayOtherThread, at: 3, reassignedAgentId: newAgent, pinOrder: "a0")
     ]
     let threads = ChatThreadReplay.replay(snapshot: [], events: events)
     let pinned = try XCTUnwrap(threads.first(where: { $0.id == replayThread }))

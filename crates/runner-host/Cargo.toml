@@ -1,11 +1,11 @@
 [package]
 name = "runner-host"
-version = "0.11.11"
+version = "0.11.18"
 edition.workspace = true
 description = "Runner host filesystem, process, registry, control IPC, lock, path, and logging primitives"
 
 [features]
-test-support = ["nix/inotify", "tokio/signal"]
+test-support = ["nix/inotify", "nix/resource", "tokio/signal"]
 
 [dependencies]
 runner-types.workspace = true
@@ -27,7 +27,7 @@ uuid = { workspace = true, features = ["serde", "std", "v4"] }
 [dev-dependencies]
 cli-test-support = { workspace = true, features = ["test-support"] }
 futures-util = { workspace = true, features = ["async-await"] }
-nix = { workspace = true, features = ["inotify"] }
+nix = { workspace = true, features = ["inotify", "resource"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["net", "signal", "test-util"] }
 tracing-subscriber = { workspace = true, features = ["registry"] }

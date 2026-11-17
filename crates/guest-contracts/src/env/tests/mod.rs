@@ -152,8 +152,6 @@ fn run_payload_uses_camel_case_wire_keys() {
         native_continuation: "{}".to_string(),
         secret_values: "secret".to_string(),
         disallowed_tools: "WebFetch".to_string(),
-        tools: "Bash".to_string(),
-        settings: "{}".to_string(),
         artifacts: "[]".to_string(),
         feature_flags: r#"{"flag":true}"#.to_string(),
         codex_runtime_config: r#"{"providerId":"openrouter-codex"}"#.to_string(),
@@ -187,8 +185,6 @@ fn run_payload_fields_returns_logical_names_and_values() {
         native_continuation: "{}".to_string(),
         secret_values: "secret".to_string(),
         disallowed_tools: "WebFetch".to_string(),
-        tools: "Bash".to_string(),
-        settings: "{}".to_string(),
         artifacts: "[]".to_string(),
         feature_flags: r#"{"flag":true}"#.to_string(),
         codex_runtime_config: r#"{"providerId":"openrouter-codex"}"#.to_string(),
@@ -223,14 +219,6 @@ fn run_payload_fields_returns_logical_names_and_values() {
                 value: "WebFetch"
             },
             RunPayloadField {
-                name: TOOLS_RUN_PAYLOAD_FIELD,
-                value: "Bash"
-            },
-            RunPayloadField {
-                name: SETTINGS_RUN_PAYLOAD_FIELD,
-                value: "{}"
-            },
-            RunPayloadField {
                 name: ARTIFACTS_RUN_PAYLOAD_FIELD,
                 value: "[]"
             },
@@ -261,11 +249,14 @@ fn run_payload_fields_returns_logical_names_and_values() {
 #[test]
 fn run_payload_first_nul_field_reports_logical_name() {
     let payload = RunPayload {
-        settings: "bad\0settings".to_string(),
+        append_system_prompt: "bad\0prompt".to_string(),
         ..RunPayload::default()
     };
 
-    assert_eq!(payload.first_nul_field(), Some(SETTINGS_RUN_PAYLOAD_FIELD));
+    assert_eq!(
+        payload.first_nul_field(),
+        Some(APPEND_SYSTEM_PROMPT_RUN_PAYLOAD_FIELD)
+    );
 }
 
 #[test]
@@ -275,8 +266,6 @@ fn run_payload_first_nul_field_accepts_clean_payload() {
         append_system_prompt: "system".to_string(),
         secret_values: "secret".to_string(),
         disallowed_tools: "WebFetch".to_string(),
-        tools: "Bash".to_string(),
-        settings: "{}".to_string(),
         artifacts: "[]".to_string(),
         feature_flags: r#"{"flag":true}"#.to_string(),
         codex_runtime_config: r#"{"providerId":"openrouter-codex"}"#.to_string(),

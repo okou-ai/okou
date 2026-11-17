@@ -8,7 +8,10 @@ from typing import Final, Literal
 from mitmproxy import http
 
 import body_decoding
+import flow_metadata_keys as metadata_keys
 import http_header_syntax
+import usage
+import websocket_handshake
 
 _ACCEPT_ENCODING = "Accept-Encoding"
 _RAW_ACCEPT_ENCODING: Final = b"accept-encoding"
@@ -23,6 +26,7 @@ _MIN_Q_VALUE = Decimal(0)
 _MAX_Q_VALUE = Decimal(1)
 _Q_VALUE_PATTERN = re.compile(r"(?:0(?:\.[0-9]{0,3})?|1(?:\.0{0,3})?)")
 _HTTP_OWS_CHARS = " \t"
+_HTTP_RESPONSE_BODYLESS_METHODS = frozenset(("CONNECT", "HEAD"))
 
 type ResponseEncodingNegotiationOutcome = Literal[
     "already_stream_decodable",
@@ -30,6 +34,51 @@ type ResponseEncodingNegotiationOutcome = Literal[
     "preserved_client_constraints",
     "preserved_work_budget",
 ]
+
+
+def prepare_request(
+    flow: http.HTTPFlow,
+    *,
+    firewall_name: str,
+    billable: bool,
+    websocket_header_work_limit: int,
+) -> None:
+    """Observe upgrades and negotiate inspected HTTP responses before auth.
+
+    The caller owns billing authority, hook timing and probe rollback. This
+    module owns eligibility, header normalization and negotiation observations.
+    """
+    is_websocket_upgrade = websocket_handshake.is_websocket_upgrade_request(
+        flow,
+        websocket_header_work_limit=websocket_header_work_limit,
+    )
+    if is_websocket_upgrade:
+        flow.metadata[metadata_keys.WEBSOCKET_UPGRADE_REQUEST] = True
+    if _expects_http_response_body_usage_inspection(
+        flow,
+        firewall_name,
+        billable=billable,
+        is_websocket_upgrade=is_websocket_upgrade,
+    ):
+        flow.metadata[metadata_keys.RESPONSE_ENCODING_NEGOTIATION] = (
+            normalize_accept_encoding_for_body_inspection(flow.request.headers)
+        )
+
+
+def _expects_http_response_body_usage_inspection(
+    flow: http.HTTPFlow,
+    firewall_name: str,
+    *,
+    billable: bool,
+    is_websocket_upgrade: bool,
+) -> bool:
+    if flow.request.method.upper() in _HTTP_RESPONSE_BODYLESS_METHODS:
+        return False
+    if is_websocket_upgrade:
+        return False
+    if firewall_name.startswith("model-provider:") and billable:
+        return True
+    return billable and usage.has_connector_response_parser(firewall_name)
 
 
 def normalize_accept_encoding_for_body_inspection(

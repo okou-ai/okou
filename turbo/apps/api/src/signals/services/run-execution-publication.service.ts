@@ -8,11 +8,12 @@ import {
   type TemplateGuidanceBundle,
 } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { command } from "ccstate";
-import { record, string } from "zod";
 import { nowDate } from "../../lib/time";
 import { generateSandboxToken } from "../auth/tokens";
-import type { ExecutionContextRun } from "./execution-context";
-import type { ExecutionNetworkPolicyInputs } from "./execution-runtime-context";
+import type {
+  ExecutionContextRun,
+  ExecutionNetworkPolicyInputs,
+} from "./execution-runtime-context";
 import {
   signExecutionContentBundle$,
   type ExecutionContentBundleSignature,
@@ -32,11 +33,10 @@ import {
 export interface ExecutionPublicationRun extends ExecutionContextRun {
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
-  readonly vars: unknown;
-  readonly isFirstRun: boolean | null;
+  readonly isFirstRun: boolean;
 }
 
-export interface ExecutionPackageSelection {
+interface ExecutionPackageSelection {
   readonly workflows: readonly ExecutionWorkflow[];
   readonly instructionsBundle: ContentBundle | null;
   readonly cachedBundleUrls: readonly {
@@ -46,63 +46,23 @@ export interface ExecutionPackageSelection {
   }[];
 }
 
-const runVarsSchema = record(string(), string()).nullable();
-type BaseExecutionContext = Omit<ExecutionContext, "contentBundles">;
-
-function mergeExecutionVars(args: {
-  readonly runVars: Record<string, string> | null;
-  readonly connectorVars: Record<string, string> | null | undefined;
-}): Record<string, string> | null {
-  const merged: Record<string, string> = {};
-  if (args.runVars) {
-    Object.assign(merged, args.runVars);
-  }
-  if (args.connectorVars) {
-    Object.assign(merged, args.connectorVars);
-  }
-  return Object.keys(merged).length > 0 ? merged : null;
-}
-
-function withContentBundleMounts(
-  executionContext: BaseExecutionContext,
-  contentBundles: ExecutionContext["contentBundles"],
-): ExecutionContext {
-  const bundledMountPaths = new Set([
-    ...contentBundles.skills.map((skill) => {
-      return skill.mountPath;
-    }),
-    ...(contentBundles.templates ?? []).map(templateGuidanceMountPath),
-  ]);
-  return {
-    ...executionContext,
-    contentBundles,
-    storageManifest: {
-      storageMounts: (
-        executionContext.storageManifest?.storageMounts ?? []
-      ).filter((mount) => {
-        return (
-          !mount.name.startsWith("custom-skill@") &&
-          !bundledMountPaths.has(mount.mountPath)
-        );
-      }),
-    },
-  };
-}
-
-interface ExecutionContentBundlesInput {
-  readonly executionContext: BaseExecutionContext;
+interface ExecutionPublicationInput {
+  readonly run: ExecutionPublicationRun;
+  readonly reuseKey: string;
+  readonly preparedContext: PreparedExecutionContext;
+  readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
   readonly packages: ExecutionPackageSelection;
   readonly workflowInput: ExecutionWorkflowInput;
-  readonly officialWorkflowBundles: PreparedExecutionContext["officialWorkflowBundles"];
-  readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
-  readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
   readonly bundleUrlCache: ContentBundleUrlCacheContext;
 }
 
 const signExecutionContentBundles$ = command(
   async (
     { set },
-    args: ExecutionContentBundlesInput,
+    args: Pick<
+      ExecutionPublicationInput,
+      "preparedContext" | "packages" | "workflowInput" | "bundleUrlCache"
+    >,
     signal: AbortSignal,
   ): Promise<{
     readonly contentBundles: ExecutionContext["contentBundles"];
@@ -156,9 +116,9 @@ const signExecutionContentBundles$ = command(
           };
         }),
         ...[
-          ...(args.officialWorkflowBundles ?? []),
+          ...args.preparedContext.officialWorkflowBundles,
           // Selected Workflows take precedence over seed skills at the same path.
-          ...args.seedSkillBundles.filter((bundle) => {
+          ...args.preparedContext.seedSkillBundles.filter((bundle) => {
             return !workflowMountPaths.has(bundle.mountPath);
           }),
         ].map((bundle) => {
@@ -176,7 +136,7 @@ const signExecutionContentBundles$ = command(
     );
     signal.throwIfAborted();
     const templates = await Promise.all(
-      (args.templateGuidanceBundles ?? []).map(async (reference) => {
+      args.preparedContext.templateGuidanceBundles.map(async (reference) => {
         const { ownerKind, templateId, beforeMountPaths, ...bundle } =
           reference;
         return {
@@ -205,18 +165,6 @@ const signExecutionContentBundles$ = command(
   },
 );
 
-export const withExecutionContentBundles$ = command(
-  async ({ set }, args: ExecutionContentBundlesInput, signal: AbortSignal) => {
-    const signed = await set(signExecutionContentBundles$, args, signal);
-    signal.throwIfAborted();
-    const executionContext = withContentBundleMounts(
-      args.executionContext,
-      signed.contentBundles,
-    );
-    return { executionContext, cacheWrites: signed.cacheWrites };
-  },
-);
-
 function secretValuesForRunner(
   preparedContext: PreparedExecutionContext,
 ): string[] | null {
@@ -241,18 +189,21 @@ function secretValuesForRunner(
   }
   return secretValues;
 }
+
+type RefreshedExecutionPolicies = Pick<
+  PreparedExecutionContext,
+  "networkPolicies"
+> &
+  Pick<ExecutionContext, "networkPolicyRefreshes">;
+
 const prepareExecutionNetworkPolicyRefreshes$ = command(
   async (
     _context,
     args: {
-      readonly run: ExecutionPublicationRun;
       readonly preparedContext: PreparedExecutionContext;
       readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
     },
-  ): Promise<
-    Pick<ExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
-  > => {
-    assertExecutionConnectorIdentity(args.run, args.preparedContext);
+  ): Promise<RefreshedExecutionPolicies> => {
     const builtinConnectorSlugs = [
       ...new Set(
         args.preparedContext.connectorRuntimeTargets.flatMap((target) => {
@@ -266,9 +217,9 @@ const prepareExecutionNetworkPolicyRefreshes$ = command(
         networkPolicyRefreshes: undefined,
       };
     }
-    if (args.run.agentId === null || args.networkPolicyInputs === null) {
+    if (args.networkPolicyInputs === null) {
       throw new Error(
-        "Connector network policy refresh requires execution inputs and an Agent identity",
+        "Connector network policy refresh requires execution inputs",
       );
     }
     const refreshes = await activeNetworkPolicyRefreshesFromGrants(
@@ -288,30 +239,15 @@ const prepareExecutionNetworkPolicyRefreshes$ = command(
   },
 );
 
-function assertExecutionConnectorIdentity(
-  run: ExecutionPublicationRun,
-  preparedContext: PreparedExecutionContext,
-): void {
-  if (
-    run.agentId === null &&
-    preparedContext.connectorRuntimeTargets.length > 0
-  ) {
-    throw new Error(
-      "Runs without an agent cannot use connector runtime targets",
-    );
-  }
-}
-
-export function executionContextBody(args: {
+function executionContextBody(args: {
   readonly run: ExecutionPublicationRun;
-  readonly reuseKey: string | null;
+  readonly reuseKey: string;
   readonly preparedContext: PreparedExecutionContext;
   readonly secretValues: ExecutionContext["secretValues"];
-  readonly refreshedPolicies: Pick<
-    ExecutionContext,
-    "networkPolicies" | "networkPolicyRefreshes"
-  >;
-}): BaseExecutionContext {
+  readonly refreshedPolicies: RefreshedExecutionPolicies;
+  readonly contentBundles: ExecutionContext["contentBundles"];
+  readonly sandboxToken: string;
+}) {
   const {
     secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
     customWorkflowSelection: _customWorkflowSelection,
@@ -322,76 +258,85 @@ export function executionContextBody(args: {
     featureFlags: _featureFlags,
     ...runnerContext
   } = args.preparedContext;
+  const bundledMountPaths = new Set([
+    ...args.contentBundles.skills.map((skill) => {
+      return skill.mountPath;
+    }),
+    ...(args.contentBundles.templates ?? []).map(templateGuidanceMountPath),
+  ]);
   return {
     ...runnerContext,
-    ...(args.run.isFirstRun === null
-      ? {}
-      : { isFirstRun: args.run.isFirstRun }),
+    contentBundles: args.contentBundles,
+    isFirstRun: args.run.isFirstRun,
     runId: args.run.id,
     reuseKey: args.reuseKey,
     prompt: args.run.prompt,
     appendSystemPrompt: args.run.appendSystemPrompt,
-    vars: mergeExecutionVars({
-      runVars: runVarsSchema.parse(args.run.vars),
-      connectorVars: args.preparedContext.vars,
-    }),
+    vars: { ...args.run.vars, ...args.preparedContext.vars },
     storageManifest: {
-      storageMounts: args.preparedContext.storageMounts.map((storageMount) => {
-        const { orgId: _orgId, userId: _userId, ...mount } = storageMount;
-        return mount;
-      }),
+      storageMounts: args.preparedContext.storageMounts
+        .filter((mount) => {
+          return !bundledMountPaths.has(mount.mountPath);
+        })
+        .map((storageMount) => {
+          const { orgId: _orgId, userId: _userId, ...mount } = storageMount;
+          return mount;
+        }),
     },
-    sandboxToken: generateSandboxToken(
-      args.run.userId,
-      args.run.id,
-      args.run.orgId,
-    ),
+    sandboxToken: args.sandboxToken,
     secretValues: args.secretValues,
     connectorRuntimeTargets: args.preparedContext.connectorRuntimeTargets,
     networkPolicies: args.refreshedPolicies.networkPolicies,
     networkPolicyRefreshes: args.refreshedPolicies.networkPolicyRefreshes,
-  };
+  } satisfies ExecutionContext;
 }
 
+/** Produce one complete Runner request before durable dispatch ownership. */
 export const prepareExecutionPublication$ = command(
-  async (
-    { set },
-    args: {
-      readonly run: ExecutionPublicationRun;
-      readonly preparedContext: PreparedExecutionContext;
-      readonly networkPolicyInputs: ExecutionNetworkPolicyInputs | null;
-    },
-    signal: AbortSignal,
-  ): Promise<{
-    readonly secretValues: ExecutionContext["secretValues"];
-    readonly refreshedPolicies: Pick<
-      ExecutionContext,
-      "networkPolicies" | "networkPolicyRefreshes"
-    >;
-  }> => {
+  async ({ set }, args: ExecutionPublicationInput, signal: AbortSignal) => {
     // Fallible preparation must finish before durable direct dispatch ownership.
     const secretValues = secretValuesForRunner(args.preparedContext);
     signal.throwIfAborted();
     const refreshedPolicies = await set(
       prepareExecutionNetworkPolicyRefreshes$,
       {
-        run: args.run,
         preparedContext: args.preparedContext,
         networkPolicyInputs: args.networkPolicyInputs,
       },
     );
     signal.throwIfAborted();
-    return { secretValues, refreshedPolicies };
+    const sandboxToken = generateSandboxToken(
+      args.run.userId,
+      args.run.id,
+      args.run.orgId,
+    );
+    const signed = await set(signExecutionContentBundles$, args, signal);
+    signal.throwIfAborted();
+    return {
+      executionContext: executionContextBody({
+        run: args.run,
+        reuseKey: args.reuseKey,
+        preparedContext: args.preparedContext,
+        secretValues,
+        refreshedPolicies,
+        contentBundles: signed.contentBundles,
+        sandboxToken,
+      }),
+      cacheWrites: signed.cacheWrites,
+    };
   },
 );
 
 export function executionBundleHashes(
-  context: PreparedExecutionContext,
+  context: Pick<
+    PreparedExecutionContext,
+    "officialWorkflowBundles" | "seedSkillBundles" | "templateGuidanceBundles"
+  >,
 ): string[] {
   return [
-    ...(context.officialWorkflowBundles ?? []),
+    ...context.officialWorkflowBundles,
     ...context.seedSkillBundles,
-    ...(context.templateGuidanceBundles ?? []),
+    ...context.templateGuidanceBundles,
   ].map((bundle) => {
     return bundle.sha256;
   });

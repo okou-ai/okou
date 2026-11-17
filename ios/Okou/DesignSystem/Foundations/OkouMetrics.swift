@@ -104,6 +104,9 @@ enum OkouIconSize {
   static let standard: CGFloat = 20
   static let large: CGFloat = 24
   static let toolbar: CGFloat = 20
+  /// A model company's mark among the composer's toolbar icons. Brand marks are solid, so
+  /// they sit a little smaller than the stroked icons beside them to carry the same weight.
+  static let toolbarMark: CGFloat = 18
   static let badge: CGFloat = 14
   static let accessory: CGFloat = 16
   static let reference: CGFloat = 16

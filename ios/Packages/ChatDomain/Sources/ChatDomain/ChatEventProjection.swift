@@ -43,6 +43,7 @@ public enum ChatEventProjection {
       let isError: Bool
       var userMessage: ChatUserMessage?
       var modelChange: ChatModelChange?
+      var failure: ChatFailure?
       switch row.eventType {
       case .inputPrompt, .inputRejected, .inputAutomation:
         if row.eventType == .inputAutomation && row.payload?.userMessage == nil { continue }
@@ -53,7 +54,7 @@ public enum ChatEventProjection {
         userMessage = document
         attachments = try document.attachments()
         let body = document.displayText
-        text = row.payload?.error.map { body + "\n\n" + $0 } ?? body
+        text = row.inputError.map { body + "\n\n" + $0 } ?? body
         if let run = row.runId.map({ "run:\($0)" })
           ?? document.model.map({ _ in "event:\(row.id)" }),
           run != previousRun
@@ -82,11 +83,13 @@ public enum ChatEventProjection {
         text = "This task failed. Open the chat on the Okou website for details."
         role = .system
         isError = true
+        failure = ChatFailure(id: row.id, runFailureReason: row.failureReason)
       case .outputError:
         text =
-          row.payload?.error ?? "This task failed. Open the chat on the Okou website for details."
+          row.outputError ?? "This task failed. Open the chat on the Okou website for details."
         role = .system
         isError = true
+        failure = ChatFailure(id: row.id, outputError: row.outputError ?? "")
       case .runCancelled:
         text = "Task stopped."
         role = .system
@@ -102,19 +105,15 @@ public enum ChatEventProjection {
         ChatMessage(
           id: row.id, role: role, text: text, attachments: attachments, createdAt: row.createdAt,
           runID: row.runId, isQueued: queuedInputs.contains(row.id), isError: isError,
-          userMessage: userMessage, inputError: role == .user ? row.payload?.error : nil,
+          userMessage: userMessage, inputError: row.inputError,
           modelChange: modelChange,
-          failure: (row.eventType == .runFailed || row.eventType == .outputError)
-            ? ChatFailure(
-              id: row.id, error: row.eventType == .outputError ? row.payload?.error ?? "" : "",
-              reason: row.failureReason, isRunFailure: row.eventType == .runFailed)
-            : nil))
+          failure: failure))
     }
 
     let state: ChatExecutionState
     if recovering {
       state = .recovering
-    } else if !activeRuns.intersection(interrupted).isEmpty {
+    } else if !activeRuns.isDisjoint(with: interrupted) {
       state = .stopping
     } else if !activeRuns.isEmpty {
       state = .running
@@ -185,6 +184,6 @@ public enum ChatEventProjection {
         if let message = visible[row.id] { candidate = message.failure }
       }
     }
-    return candidate.flatMap { $0.isRunFailure || !$0.error.isEmpty ? $0.id : nil }
+    return candidate.flatMap { $0.isRunFailure || $0.outputError?.isEmpty == false ? $0.id : nil }
   }
 }

@@ -21,6 +21,8 @@ import {
   type infer as zInfer,
 } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
+import { workflowRewardCompletedEventInsert } from "./workflow-reward-source-publication";
+import type { MarketingRewardSourceEvent } from "../../lib/marketing-reward-events";
 
 type CompleteBody = zInfer<typeof webhookCompleteContract.complete.body>;
 interface CompletionPublicationInput {
@@ -29,6 +31,7 @@ interface CompletionPublicationInput {
   readonly orgId: string;
   readonly expectedChatThreadId: string | null;
   readonly at: Date;
+  readonly environment: MarketingRewardSourceEvent["environment"];
 }
 
 const completionRunColumns = Object.freeze({
@@ -264,6 +267,24 @@ function terminalCleanup() {
   };
 }
 
+function workflowCompletionSource(
+  input: CompletionPublicationInput,
+  terminalStatus: "completed" | "failed",
+) {
+  return workflowRewardCompletedEventInsert(
+    {
+      orgId: input.orgId,
+      userId: input.userId,
+      runId: input.body.runId,
+      occurredAt: input.at,
+      environment: input.environment,
+    },
+    sql`${terminalStatus === "completed"} AND EXISTS (
+      SELECT 1 FROM completion_decision AS d JOIN completion_changed_run AS changed ON changed.id = d.id
+      WHERE d.status IN ('pending','running') AND d.decision = 'ready')`,
+  );
+}
+
 /** The existing Run/active-owner locks precede every parent write; slot DELETE stays last. */
 export function completionPublicationPlan(input: CompletionPublicationInput) {
   const qb = new QueryBuilder();
@@ -301,6 +322,9 @@ export function completionPublicationPlan(input: CompletionPublicationInput) {
         .$with("completion_changed_run", {})
         .as(mutationPlan(input, terminalStatus)),
       qb.$with("completion_native_thread", {}).as(nativeThreadPublication()),
+      qb
+        .$with("completion_workflow_source", {})
+        .as(workflowCompletionSource(input, terminalStatus)),
       qb
         .$with("completion_terminal_runs", {})
         .as(

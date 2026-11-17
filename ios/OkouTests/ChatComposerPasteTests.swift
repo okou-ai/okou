@@ -72,10 +72,12 @@ final class ChatComposerPasteTests: XCTestCase {
     let png = imageData()
     // Keep PNG byte representations so the production importer must materialize each image.
     let providers = (0..<2).map { _ in
-      let provider = NSItemProvider()
+      let provider = PasteDiagnosticItemProvider()
       provider.registerDataRepresentation(
         forTypeIdentifier: UTType.png.identifier, visibility: .all
-      ) { completion in
+      ) { [weak provider] completion in
+        provider?.record("PNG data requested")
+        defer { provider?.record("PNG data completion returned") }
         completion(png, nil)
         return nil
       }
@@ -83,16 +85,17 @@ final class ChatComposerPasteTests: XCTestCase {
     }
     providers[0].registerDataRepresentation(
       forTypeIdentifier: UTType.utf8PlainText.identifier, visibility: .all
-    ) { completion in
+    ) { [weak provider = providers[0]] completion in
+      provider?.record("text data requested")
+      defer { provider?.record("text data completion returned") }
       completion(Data("pasted".utf8), nil)
       return nil
     }
+    for provider in providers { provider.record("paste invoked") }
     input.paste(itemProviders: providers)
+    for provider in providers { provider.record("paste returned") }
     try await waitForBusinessResult(
-      message: "Mixed paste not ready: draft=\(conversation.draft), "
-        + "items=\(conversation.attachmentDraft.items.count), "
-        + "importing=\(conversation.attachmentDraft.importingCount), "
-        + "error=\(String(describing: conversation.attachmentDraft.error))"
+      message: mixedPasteDiagnostics(conversation, fixture: fixture, providers: providers)
     ) {
       conversation.draft == "Before pasted after"
         && conversation.attachmentDraft.items.count == 2 && conversation.attachmentDraft.isReady
@@ -166,13 +169,14 @@ final class ChatComposerPasteTests: XCTestCase {
     let provider = NSItemProvider()
     provider.registerFileRepresentation(
       forTypeIdentifier: UTType.png.identifier, fileOptions: [], visibility: .all
-    ) {
-      callback in
+    ) { callback in
       started.fulfill()
-      return delivery.hold(onCancel: { cancelled.fulfill() }) {
-        callback(file, false, nil)
-        completed.fulfill()
-      }
+      return delivery.hold(
+        onCancel: { cancelled.fulfill() },
+        {
+          callback(file, false, nil)
+          completed.fulfill()
+        })
     }
     oldWorkspace.newAttachmentDraft.importPastedImages([provider])
     await fulfillment(of: [started], timeout: 3)
@@ -207,15 +211,13 @@ final class ChatComposerPasteTests: XCTestCase {
     let provider = NSItemProvider()
     provider.registerFileRepresentation(
       forTypeIdentifier: UTType.png.identifier, fileOptions: [], visibility: .all
-    ) {
-      callback in
+    ) { callback in
       callback(file, false, nil)
       return Progress(totalUnitCount: 1)
     }
     provider.registerDataRepresentation(
       forTypeIdentifier: UTType.utf8PlainText.identifier, visibility: .all
-    ) {
-      callback in
+    ) { callback in
       started.fulfill()
       return delivery.hold {
         callback(Data("late text".utf8), nil)
@@ -258,8 +260,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let provider = NSItemProvider()
     provider.registerFileRepresentation(
       forTypeIdentifier: UTType.png.identifier, fileOptions: [], visibility: .all
-    ) {
-      callback in
+    ) { callback in
       started.fulfill()
       return delivery.hold {
         callback(file, false, nil)
@@ -437,6 +438,30 @@ final class ChatComposerPasteTests: XCTestCase {
       submit: { await conversation.send() }, refresh: nil)
   }
 
+  private func mixedPasteDiagnostics(
+    _ conversation: ConversationStore, fixture: AttachmentFlowFixture,
+    providers: [PasteDiagnosticItemProvider]
+  ) -> String {
+    let uploads = fixture.state.value.withLock { ($0.preparations.count, $0.uploads) }
+    let states = conversation.attachmentDraft.items.map { item in
+      switch item.state {
+      case .waiting: "waiting"
+      case .uploading(let fraction): "uploading(\(fraction))"
+      case .ready: "ready"
+      case .checking: "checking"
+      case .failed: "failed"
+      }
+    }
+    let timelines = providers.enumerated().map { index, provider in
+      "provider[\(index)] since creation: \(provider.timeline)"
+    }.joined(separator: "\n")
+    // The waiter evaluates this lazily after cancelling and joining its observation.
+    return "Mixed paste not ready (after waiter cleanup): draft=\(conversation.draft), "
+      + "items=\(states), importing=\(conversation.attachmentDraft.importingCount), "
+      + "error=\(String(describing: conversation.attachmentDraft.error)), "
+      + "preparations=\(uploads.0), transfers=\(uploads.1)\n\(timelines)"
+  }
+
   private func imageData() -> Data {
     UIGraphicsImageRenderer(size: CGSize(width: 80, height: 60)).pngData { context in
       UIColor.systemTeal.setFill()
@@ -454,6 +479,35 @@ final class ChatComposerPasteTests: XCTestCase {
   private func textView(in view: UIView) -> ComposerTextView? {
     if let input = view as? ComposerTextView { return input }
     return view.subviews.lazy.compactMap { self.textView(in: $0) }.first
+  }
+}
+
+// NSItemProvider owns its external thread-safety contract; our additional state is mutex-owned.
+private final class PasteDiagnosticItemProvider: NSItemProvider, @unchecked Sendable {
+  private let started = ContinuousClock.now
+  private let events = Mutex<[String]>([])
+
+  func record(_ event: String) {
+    events.withLock { $0.append("\(started.duration(to: .now)): \(event)") }
+  }
+
+  var timeline: String { events.withLock { $0.joined(separator: "; ") } }
+
+  override func loadInPlaceFileRepresentation(
+    forTypeIdentifier typeIdentifier: String,
+    completionHandler: @escaping @Sendable (URL?, Bool, Error?) -> Void
+  ) -> Progress {
+    record("file request invoked: \(typeIdentifier)")
+    let progress = super.loadInPlaceFileRepresentation(
+      forTypeIdentifier: typeIdentifier
+    ) { [weak self] url, inPlace, error in
+      self?.record(
+        "file callback entered: url=\(url != nil), inPlace=\(inPlace), error=\(error != nil)")
+      defer { self?.record("file callback returned") }
+      completionHandler(url, inPlace, error)
+    }
+    record("file request returned")
+    return progress
   }
 }
 

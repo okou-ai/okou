@@ -7,13 +7,16 @@ import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.RequiredUpdate
 import ai.okou.android.api.WorkspaceTokenProvider
+import ai.okou.android.api.generated.AcceptedInput
 import ai.okou.android.api.generated.PersonalInstructions
+import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatComposerService
 import ai.okou.android.chat.ChatListService
 import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testBootstrap
@@ -50,10 +53,16 @@ class SessionModelTest {
 
     private class Resource(val identity: WorkspaceIdentity, val tokens: WorkspaceTokenProvider) :
         WorkspaceSession,
+        ai.okou.android.chat.AssistantRecoveryService by ai.okou.android
+            .TestAssistantRecoveryService(),
         ai.okou.android.chat.RealtimeService by ai.okou.android.TestRealtimeService(),
         ChatListService by TestChatService(),
         ChatComposerService by TestChatComposerService() {
         var closed = false
+
+        override suspend fun sendControl(request: SendRequest): AcceptedInput =
+            error("No control backend in this fixture")
+
         var load: suspend () -> WorkspaceBootstrap = { testBootstrap(identity.workspaceId) }
         var update: suspend () -> Unit = {}
 
@@ -106,6 +115,12 @@ class SessionModelTest {
                 temporary.newFolder(),
                 dispatcher,
             )
+        val controls =
+            RunControlJournalStore(
+                ApplicationProvider.getApplicationContext(),
+                temporary.newFolder(),
+                dispatcher,
+            )
         try {
             val model =
                 ViewModelProvider(
@@ -124,6 +139,7 @@ class SessionModelTest {
                                 cache,
                                 drafts,
                                 journal,
+                                controls,
                                 dispatcher,
                             )
                         }
@@ -135,6 +151,7 @@ class SessionModelTest {
             cache.close()
             drafts.close()
             journal.close()
+            controls.close()
             runCurrent()
             Dispatchers.resetMain()
         }

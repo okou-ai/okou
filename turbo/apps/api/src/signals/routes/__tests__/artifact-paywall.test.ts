@@ -1,12 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { hostRoutes } from "../host";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createHostBddApi } from "./helpers/api-bdd-host";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -72,31 +70,12 @@ async function publish(plan: "free" | "pro") {
   };
 }
 
-async function optIntoPaywall(owner: ApiTestUser) {
-  await createBillingMediaApi(context).updateFeatureSwitches(owner, {
-    [FeatureSwitchKey.FreePlanArtifactPaywall]: true,
-  });
-}
-
 test("a free plan keeps the banner, its address, and App downloads behind an upgrade", async () => {
   const { owner, prepared, delivery } = await publish("free");
   const params = { siteId: prepared.siteId };
-  // Chosen before the paywall reached this workspace.
-  const hidden = await accept(
-    client(owner).updateSiteBanner({
-      headers,
-      params,
-      body: { showBanner: false, expectedRevision: null },
-    }),
-    [200],
-  );
-  expect(hidden.body.showBanner).toBeFalsy();
-
-  await optIntoPaywall(owner);
-
   expect(
     (await accept(client(owner).siteBanner({ headers, params }), [200])).body,
-  ).toMatchObject({ showBanner: true, revision: hidden.body.revision });
+  ).toMatchObject({ showBanner: true, revision: null });
   expect(
     (await accept(client().deliveryAuthorization(delivery), [200])).body,
   ).toMatchObject({
@@ -107,7 +86,7 @@ test("a free plan keeps the banner, its address, and App downloads behind an upg
     client(owner).updateSiteBanner({
       headers,
       params,
-      body: { showBanner: false, expectedRevision: hidden.body.revision },
+      body: { showBanner: false, expectedRevision: null },
     }),
     [402],
   );
@@ -137,7 +116,6 @@ test("a free plan keeps the banner, its address, and App downloads behind an upg
 test("paid plans keep every artifact action with the paywall rolled out", async () => {
   const { owner, prepared, delivery } = await publish("pro");
   const params = { siteId: prepared.siteId };
-  await optIntoPaywall(owner);
 
   await accept(
     client(owner).updateSiteBanner({

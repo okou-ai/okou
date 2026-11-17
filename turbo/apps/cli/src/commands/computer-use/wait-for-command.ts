@@ -1,4 +1,3 @@
-import { setTimeout as delay } from "node:timers/promises";
 import type {
   ComputerUseCommandResponse,
   ComputerUseCommandCreateResponse,
@@ -6,6 +5,7 @@ import type {
 import { getComputerUseCommand } from "../../lib/api/domains/computer-use";
 import {
   createRealtimeNotifier,
+  waitForRealtimeChange,
   type RealtimeNotifier,
 } from "../../lib/realtime-notifier";
 
@@ -42,7 +42,7 @@ export async function waitForComputerUseCommand(
         if (!notifier && created.realtime) {
           notifier = createRealtimeNotifier(created.realtime, signal);
         }
-        await waitForResultChange(notifier, deadline, signal);
+        await waitForRealtimeChange(notifier, deadline, signal);
         continue;
       }
 
@@ -72,20 +72,6 @@ export async function waitForComputerUseCommand(
   throw new Error(
     `Computer-use command timed out: ${commandId}${options.timeoutGuidance ?? ""}`,
   );
-}
-
-async function waitForResultChange(
-  notifier: RealtimeNotifier | undefined,
-  deadline: number,
-  signal: AbortSignal,
-): Promise<void> {
-  const waitMs = Math.max(
-    0,
-    Math.min(notifier?.active ? 2000 : 500, deadline - Date.now()),
-  );
-  // Setup or a disconnected transport must not block fast HTTP completions.
-  if (notifier && !notifier.closed) await notifier.wait(waitMs);
-  else await delay(waitMs, undefined, { signal });
 }
 
 function commandFailureMessage(

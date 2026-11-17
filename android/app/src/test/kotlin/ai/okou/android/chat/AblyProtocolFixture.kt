@@ -28,7 +28,8 @@ internal class AblyProtocolFixture : Closeable {
     private val socket = CompletableDeferred<WebSocket>()
     @Volatile private var activeSocket: WebSocket? = null
     val closed = CompletableDeferred<Unit>()
-    val attachments = Channel<String>(2)
+    val attachments = Channel<String>(8)
+    val detachments = Channel<String>(8)
     val authorizations = Channel<String>(1)
     val nonces = CopyOnWriteArrayList<String>()
     private val listener =
@@ -48,7 +49,14 @@ internal class AblyProtocolFixture : Closeable {
                                 .trySend(frame.getValue("channel").jsonPrimitive.content)
                                 .isSuccess
                         )
-                    12 -> webSocket.send("""{"action":13,"channel":${frame.getValue("channel")}}""")
+                    12 -> {
+                        check(
+                            detachments
+                                .trySend(frame.getValue("channel").jsonPrimitive.content)
+                                .isSuccess
+                        )
+                        webSocket.send("""{"action":13,"channel":${frame.getValue("channel")}}""")
+                    }
                     17 -> {
                         check(
                             authorizations
@@ -149,6 +157,18 @@ internal class AblyProtocolFixture : Closeable {
 
     suspend fun renew() = send("""{"action":17}""")
 
+    suspend fun output(channel: String, name: String, data: String, encoded: Boolean = true) =
+        send(
+            """{"action":15,"channel":${JsonPrimitive(channel)},"messages":[{"name":${JsonPrimitive(name)},"data":${JsonPrimitive(data)}${if (encoded) ",\"encoding\":\"json\"" else ""}}]}"""
+        )
+
+    suspend fun outputBurst(channel: String, name: String, data: List<String>) =
+        send(
+            """{"action":15,"channel":${JsonPrimitive(channel)},"messages":[${data.joinToString(",") {
+            """{"name":${JsonPrimitive(name)},"data":${JsonPrimitive(it)},"encoding":"json"}"""
+        }}]}"""
+        )
+
     suspend fun fail(channel: String) =
         send(
             """{"action":9,"channel":${JsonPrimitive(channel)},"error":{"code":40160,"statusCode":401,"message":"Channel unavailable"}}"""
@@ -162,6 +182,7 @@ internal class AblyProtocolFixture : Closeable {
         activeSocket?.close(1000, "Fixture closed")
         server.close()
         attachments.close()
+        detachments.close()
         authorizations.close()
     }
 }

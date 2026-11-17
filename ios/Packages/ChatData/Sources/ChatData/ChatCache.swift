@@ -243,7 +243,9 @@ public actor ChatCache {
       // An unreadable cache is not a Project list. Rebuild from the canonical
       // snapshot instead of inventing a cursor for the unversioned warm display.
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error("Invalid cached Project baseline: \(error.localizedDescription, privacy: .public)")
+        .error(
+          "event=chat.cache.projects.baseline.invalid error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+        )
       return nil
     }
   }
@@ -568,7 +570,9 @@ public actor ChatCache {
       } catch {
         // A damaged old cache must not reset a newer store created by the NSE.
         Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-          .error("Cannot import previous cache: \(error.localizedDescription, privacy: .public)")
+          .error(
+            "event=chat.cache.import.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
+          )
       }
     }
     for suffix in ["", "-wal", "-shm"] {
@@ -681,10 +685,8 @@ extension SQLiteDatabase {
     )
     let currentVersion: Int
     do {
-      let check = try prepare("PRAGMA quick_check")
-      guard try check.step(), check.optionalText(at: 0) == "ok" else {
-        throw ChatCacheError.corrupt
-      }
+      // Opening the sidebar must not scan unrelated cached chat histories.
+      // Actual reads retain withDatabase's corrupt/not-a-database recovery.
       let query = try prepare("PRAGMA user_version")
       guard try query.step() else { throw ChatCacheError.corrupt }
       currentVersion = try query.integer(at: 0)

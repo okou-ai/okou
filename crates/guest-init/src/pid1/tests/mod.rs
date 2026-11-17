@@ -114,25 +114,18 @@ fn wait_for_child_ready(read_fd: &OwnedFd) {
 }
 
 fn wait_until_waitable(pid: libc::pid_t) -> Result<(), Errno> {
+    use rustix::process::{Pid, WaitId, WaitIdOptions, waitid};
+
+    let pid = Pid::from_raw(pid).ok_or(Errno::EINVAL)?;
     loop {
-        // SAFETY: zeroed siginfo_t is valid for waitid to fill.
-        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
-        // SAFETY: pid is a child created by this test. WNOWAIT observes its
-        // waitable status without reaping it.
-        let result = unsafe {
-            libc::waitid(
-                libc::P_PID,
-                pid as libc::id_t,
-                &mut info,
-                libc::WEXITED | libc::WNOWAIT,
-            )
-        };
-        if result == 0 {
-            return Ok(());
-        }
-        match Errno::last() {
-            Errno::EINTR => {}
-            error => return Err(error),
+        // Observe the test's child without reaping it ahead of PID 1.
+        match waitid(
+            WaitId::Pid(pid),
+            WaitIdOptions::EXITED | WaitIdOptions::NOWAIT,
+        ) {
+            Ok(_) => return Ok(()),
+            Err(rustix::io::Errno::INTR) => continue,
+            Err(error) => return Err(Errno::from_raw(error.raw_os_error())),
         }
     }
 }

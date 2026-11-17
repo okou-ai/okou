@@ -117,6 +117,8 @@ import { chatRemoteAccessContract as OriginalChatRemoteAccessContract } from "..
 import { chatRemoteAccessContract } from "./chat-remote-access";
 import { chatThreadActivitySummaryContract as OriginalChatThreadActivitySummaryContract } from "../contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryContract } from "./chat-thread-activity-summary";
+import { chatThreadPdfFilenameContract as OriginalChatThreadPdfFilenameContract } from "../contracts/chat-thread-pdf-filename";
+import { chatThreadPdfFilenameContract } from "./chat-thread-pdf-filename";
 import {
   chatSearchContract as OriginalChatSearchContract,
   chatThreadArchiveContract as OriginalChatThreadArchiveContract,
@@ -232,6 +234,7 @@ import {
 import { cronCleanupXResourceReadsContract as OriginalCronCleanupXResourceReadsContract } from "../contracts/cron-cleanup-x-resource-reads";
 import { cronCleanupXResourceReadsContract } from "./cron-cleanup-x-resource-reads";
 import {
+  cronAggregateRunPhaseTimingsContract as OriginalCronAggregateRunPhaseTimingsContract,
   cronBrowserReconcileContract as OriginalCronBrowserReconcileContract,
   cronCleanupSandboxesContract as OriginalCronCleanupSandboxesContract,
   cronCleanupSuggestionsContract as OriginalCronCleanupSuggestionsContract,
@@ -263,6 +266,7 @@ import {
   cronTelegramCleanupContract as OriginalCronTelegramCleanupContract,
 } from "../contracts/cron";
 import {
+  cronAggregateRunPhaseTimingsContract,
   cronBrowserReconcileContract,
   cronCleanupSandboxesContract,
   cronCleanupSuggestionsContract,
@@ -356,6 +360,8 @@ import { friendReferralsContract as OriginalFriendReferralsContract } from "../c
 import { friendReferralsContract } from "./friend-referrals";
 import { getStartedHistoryContract as OriginalGetStartedHistoryContract } from "../contracts/get-started-history";
 import { getStartedHistoryContract } from "./get-started-history";
+import { getStartedReceiptContract as OriginalGetStartedReceiptContract } from "../contracts/get-started-receipt";
+import { getStartedReceiptContract } from "./get-started-receipt";
 import {
   cronGetStartedContract as OriginalCronGetStartedContract,
   getStartedContract as OriginalGetStartedContract,
@@ -510,6 +516,14 @@ import { marketingEventsContract as OriginalMarketingEventsContract } from "../c
 import { marketingEventsContract } from "./marketing-events";
 import { marketingHandoffsContract as OriginalMarketingHandoffsContract } from "../contracts/marketing-handoffs";
 import { marketingHandoffsContract } from "./marketing-handoffs";
+import { marketingInvitationSourceContract as OriginalMarketingInvitationSourceContract } from "../contracts/marketing-invitation-source";
+import { marketingInvitationSourceContract } from "./marketing-invitation-source";
+import { marketingRewardProjectionContract as OriginalMarketingRewardProjectionContract } from "../contracts/marketing-reward-projection";
+import { marketingRewardProjectionContract } from "./marketing-reward-projection";
+import { marketingRewardSettlementContract as OriginalMarketingRewardSettlementContract } from "../contracts/marketing-reward-settlement";
+import { marketingRewardSettlementContract } from "./marketing-reward-settlement";
+import { marketingWorkflowSourceContract as OriginalMarketingWorkflowSourceContract } from "../contracts/marketing-workflow-source";
+import { marketingWorkflowSourceContract } from "./marketing-workflow-source";
 import { mcpChatSearchContract as OriginalMcpChatSearchContract } from "../contracts/mcp-chat-search";
 import { mcpChatSearchContract } from "./mcp-chat-search";
 import { mcpConnectorsContract as OriginalMcpConnectorsContract } from "../contracts/mcp-connectors";
@@ -861,6 +875,7 @@ export const clientDescriptorContracts: readonly (readonly [
     chatThreadActivitySummaryContract,
     OriginalChatThreadActivitySummaryContract,
   ],
+  [chatThreadPdfFilenameContract, OriginalChatThreadPdfFilenameContract],
   [chatSearchContract, OriginalChatSearchContract],
   [chatThreadArchiveContract, OriginalChatThreadArchiveContract],
   [chatThreadArtifactsContract, OriginalChatThreadArtifactsContract],
@@ -945,6 +960,10 @@ export const clientDescriptorContracts: readonly (readonly [
   [
     cronCleanupXResourceReadsContract,
     OriginalCronCleanupXResourceReadsContract,
+  ],
+  [
+    cronAggregateRunPhaseTimingsContract,
+    OriginalCronAggregateRunPhaseTimingsContract,
   ],
   [cronBrowserReconcileContract, OriginalCronBrowserReconcileContract],
   [cronCleanupSandboxesContract, OriginalCronCleanupSandboxesContract],
@@ -1053,6 +1072,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [feishuOauthContract, OriginalFeishuOauthContract],
   [friendReferralsContract, OriginalFriendReferralsContract],
   [getStartedHistoryContract, OriginalGetStartedHistoryContract],
+  [getStartedReceiptContract, OriginalGetStartedReceiptContract],
   [cronGetStartedContract, OriginalCronGetStartedContract],
   [getStartedContract, OriginalGetStartedContract],
   [githubAppSetupCallbackContract, OriginalGithubAppSetupCallbackContract],
@@ -1221,6 +1241,19 @@ export const clientDescriptorContracts: readonly (readonly [
   [mailContract, OriginalMailContract],
   [marketingEventsContract, OriginalMarketingEventsContract],
   [marketingHandoffsContract, OriginalMarketingHandoffsContract],
+  [
+    marketingInvitationSourceContract,
+    OriginalMarketingInvitationSourceContract,
+  ],
+  [
+    marketingRewardProjectionContract,
+    OriginalMarketingRewardProjectionContract,
+  ],
+  [
+    marketingRewardSettlementContract,
+    OriginalMarketingRewardSettlementContract,
+  ],
+  [marketingWorkflowSourceContract, OriginalMarketingWorkflowSourceContract],
   [mcpChatSearchContract, OriginalMcpChatSearchContract],
   [mcpConnectorsContract, OriginalMcpConnectorsContract],
   [mcpOAuthContract, OriginalMcpOAuthContract],

@@ -547,6 +547,9 @@ describe("POST /api/image-io/generate", () => {
       await expect(orgCredits(fixture)).resolves.toBe(
         fixture.initialCredits - 42,
       );
+      await expect(
+        runs.readRun(fixture.actor, fixture.runId),
+      ).resolves.toMatchObject({ status: "cancelled", artifactResult: null });
     });
   });
 
@@ -1116,6 +1119,10 @@ describe("POST /api/image-io/generate", () => {
         throw new Error("Expected S3 put body to be a Buffer");
       }
       expect(putBody).toStrictEqual(IMAGE_BYTES);
+
+      await expect(
+        createRunsApi(context).readRun(fixture.actor, fixture.runId),
+      ).resolves.toMatchObject({ artifactResult: "success" });
 
       // The charge is asserted through product surfaces: the settled usage shows
       // up in the user's usage record with image/provider attribution, and the

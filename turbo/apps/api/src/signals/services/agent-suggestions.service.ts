@@ -55,10 +55,7 @@ import {
   withSuggestionConsumeToken,
 } from "./agent-suggestion-consumption-token";
 import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive-nightly";
-import {
-  forYouSourcesEnabled$,
-  readFeedSources$,
-} from "./feed-sources.service";
+import { readFeedSources$ } from "./feed-sources.service";
 
 interface Owner {
   readonly userId: string;
@@ -220,11 +217,9 @@ export const createSuggestion$ = command(
     input: SuggestionCreate,
     signal: AbortSignal,
   ) => {
-    const sourcesEnabled = await get(forYouSourcesEnabled$);
+    const sources = await get(readFeedSources$);
     signal.throwIfAborted();
-    const sources = sourcesEnabled ? await get(readFeedSources$) : null;
-    signal.throwIfAborted();
-    if (sources && !sources.suggestions) {
+    if (!sources.suggestions) {
       return resourceUnavailable(
         "Suggestions are turned off in For you sources. Existing cards remain available.",
       );

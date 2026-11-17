@@ -119,6 +119,38 @@ function loadRunnerExecutionContextFixture(): unknown {
   );
 }
 
+function preparedExecutionContextFixture() {
+  return {
+    cliAgentType: "claude-code",
+    customWorkflowSelection: {
+      agentId: "11111111-1111-4111-8111-111111111111",
+      protectedMountPaths: [],
+    },
+    officialWorkflowBundles: [],
+    seedSkillBundles: [],
+    templateGuidanceBundles: [],
+    storageMounts: [],
+    connectorRuntimeTargets: [],
+    environment: null,
+    platformEnvironment: {},
+    secretValueEnvironmentKeys: null,
+    vars: null,
+    nativeContinuation: {
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: null,
+    },
+    encryptedSecrets: null,
+    secretConnectorMap: null,
+    secretConnectorMetadataMap: null,
+    firewalls: [],
+    networkPolicies: {},
+    featureFlags: {},
+    billableFirewalls: [],
+    disallowedTools: [],
+  };
+}
+
 describe("runner execution context contract", () => {
   it.each([".claude", ".codex", ".pi/agent"])(
     "accepts the X Connector Skill in the %s execution context",
@@ -170,21 +202,12 @@ describe("runner execution context contract", () => {
     "preserves execution environments and captured admission decisions",
     ({ featureFlags }) => {
       const preparedContext = preparedExecutionContextSchema.parse({
+        ...preparedExecutionContextFixture(),
         cliAgentType: "codex",
-        connectorRuntimeTargets: [],
-        storageMounts: [],
-        seedSkillBundles: [],
         environment: {
           USER_VALUE: "user-value",
         },
         platformEnvironment: { OKOU_AGENT_ID: "prepared-agent-id" },
-        secretValueEnvironmentKeys: null,
-        nativeContinuation: {
-          sessionId: null,
-          generationRunId: null,
-          recoveryPrompt: null,
-        },
-        encryptedSecrets: null,
         featureFlags,
       });
       expect(preparedContext.platformEnvironment).toStrictEqual({
@@ -206,23 +229,11 @@ describe("runner execution context contract", () => {
 
 describe("prepared Seed Skill bundle contract", () => {
   const context = {
-    storageMounts: [],
-    seedSkillBundles: [],
-    connectorRuntimeTargets: [],
-    environment: null,
+    ...preparedExecutionContextFixture(),
     platformEnvironment: {
       OKOU_TOKEN: "captured-run-token",
       CUSTOM_PLATFORM_VALUE: "explicit",
     },
-    secretValueEnvironmentKeys: null,
-    nativeContinuation: {
-      sessionId: null,
-      generationRunId: null,
-      recoveryPrompt: null,
-    },
-    encryptedSecrets: null,
-    cliAgentType: "claude-code",
-    disallowedTools: [],
     userTimezone: "Asia/Shanghai",
   };
 
@@ -289,18 +300,7 @@ describe("admitted Workflow selection contract", () => {
 describe("Pi sandbox execution contract", () => {
   const piSessionId = "22222222-2222-4222-8222-222222222222";
   const preparedContext = {
-    storageMounts: [],
-    seedSkillBundles: [],
-    connectorRuntimeTargets: [],
-    environment: null,
-    platformEnvironment: {},
-    secretValueEnvironmentKeys: null,
-    nativeContinuation: {
-      sessionId: null,
-      generationRunId: null,
-      recoveryPrompt: null,
-    },
-    encryptedSecrets: null,
+    ...preparedExecutionContextFixture(),
     cliAgentType: "pi",
   };
   const piPreparedContext = {
@@ -1594,14 +1594,6 @@ describe("runner apiStartTime contract", () => {
   });
 });
 
-describe("runner Claude tool list contracts", () => {
-  it("keeps the runner wire schema tolerant of legacy tool list values", () => {
-    expect(
-      executionContextSchema.shape.tools.safeParse(["Bash,Read"]).success,
-    ).toBe(true);
-  });
-});
-
 describe("native continuation intent", () => {
   it("preserves fresh, resumed and Chat recovery launches", () => {
     for (const intent of [
@@ -1638,21 +1630,7 @@ describe("native continuation intent", () => {
 });
 
 describe("pinned Official Workflow prepared metadata", () => {
-  const context = {
-    storageMounts: [],
-    seedSkillBundles: [],
-    connectorRuntimeTargets: [],
-    environment: null,
-    platformEnvironment: {},
-    secretValueEnvironmentKeys: null,
-    nativeContinuation: {
-      sessionId: null,
-      generationRunId: null,
-      recoveryPrompt: null,
-    },
-    encryptedSecrets: null,
-    cliAgentType: "claude-code",
-  };
+  const context = preparedExecutionContextFixture();
   it("preserves exact descriptors through execution preparation", () => {
     const officialWorkflowBundles = [
       {
@@ -1665,9 +1643,9 @@ describe("pinned Official Workflow prepared metadata", () => {
     expect(
       preparedExecutionContextSchema.parse(prepared).officialWorkflowBundles,
     ).toStrictEqual(officialWorkflowBundles);
-    expect(preparedExecutionContextSchema.parse(context)).not.toHaveProperty(
-      "officialWorkflowBundles",
-    );
+    expect(
+      preparedExecutionContextSchema.parse(context).officialWorkflowBundles,
+    ).toStrictEqual([]);
   });
   it("rejects unsafe destinations and incomplete bundle references", () => {
     for (const reference of [

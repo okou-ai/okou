@@ -32,7 +32,7 @@ final class HistoryWarmingTests: XCTestCase {
     await workspace.refresh([
       .initialSubscriptions, .realtimeResume, .realtimeGap, .computerAccess,
       .runModels, .modelPreference, .indicators,
-      .history(threadID: warmingThreadID), .detail(threadID: warmingThreadID),
+      .history(threadID: warmingThreadID), .detail(threadID: warmingThreadID)
     ])
     workspace.setPhase(.background)
     workspace.setPhase(.active)
@@ -190,13 +190,13 @@ private final class HistoryWarmingFixture {
     let token = try JSONSerialization.data(withJSONObject: [
       "keyName": "fixture.key", "timestamp": Int64(Date().timeIntervalSince1970 * 1000),
       "ttl": 3_600_000, "nonce": "fixture-nonce", "mac": "ZmFrZQ==",
-      "clientId": userID, "capability": "{\"*\":[\"subscribe\"]}",
+      "clientId": userID, "capability": "{\"*\":[\"subscribe\"]}"
     ])
     http = ChatHTTPFixture { request in
       switch (request.httpMethod, request.url?.path) {
       case ("GET", "/api/agents"): return ChatHTTPResponse(body: "[]")
       case ("POST", "/api/realtime/token"):
-        return ChatHTTPResponse(body: String(decoding: token, as: UTF8.self))
+        return ChatHTTPResponse(body: String(data: token, encoding: .utf8)!)
       case ("GET", "/api/chat-threads/snapshot"):
         let title = state.title.withLock { $0 }
         let sequence = title == "Original chat" ? 1 : 2

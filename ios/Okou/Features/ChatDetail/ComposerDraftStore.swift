@@ -13,7 +13,7 @@ final class ComposerDraftStore {
     var baseline: ComposerDraft?
     var dirty: Bool
     var cleared: Bool
-    var consumedVoiceID: UUID? = nil
+    var consumedVoiceID: UUID?
   }
 
   var text: String {
@@ -259,7 +259,7 @@ final class ComposerDraftStore {
       result.parts.append(
         .object([
           "type": .string("file"), "fileId": .string(file.id),
-          "filenameSnapshot": .string(file.filename), "contentType": .string(file.contentType),
+          "filenameSnapshot": .string(file.filename), "contentType": .string(file.contentType)
         ]))
     }
     var persisted = metadata

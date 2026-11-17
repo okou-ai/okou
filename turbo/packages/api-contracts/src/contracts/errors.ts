@@ -917,13 +917,17 @@ export function formatRunErrorForExternalSurface(params: {
   const errorMessage = params.message.trim() || "Run failed";
   const modelProviderType = params.modelProviderType;
   if (params.failureReason !== undefined) {
-    return formatStructuredRunError({
+    const structured = formatStructuredRunError({
       failureReason: params.failureReason,
       framework: params.framework,
       selectedModelLabel: params.selectedModelLabel,
       modelProviderType,
       claudeCodeCredentialRecovery: params.claudeCodeCredentialRecovery,
     });
+    return params.failureReason === "usage_limit" ||
+      params.failureReason === "unsupported_model"
+      ? actionableRunErrorOrDefault(errorMessage, structured)
+      : structured;
   }
 
   if (isAgentExecutionTimeoutRunError(errorMessage)) {
@@ -983,6 +987,32 @@ export function formatRunErrorForExternalSurface(params: {
     : CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
 }
 
+function nativePersonalSubscriptionUsageLimit(message: string): boolean {
+  return (
+    /^you(?:'|’)ve hit your (?:usage|session|weekly|5[- ]hour|five[- ]hour|opus(?:\s+[\w.-]+)?|sonnet(?:\s+[\w.-]+)?|haiku(?:\s+[\w.-]+)?) limit\b/iu.test(
+      message.trim(),
+    ) || isClaudeCodeLimitError(message)
+  );
+}
+
+export function isPersonalSubscriptionUsageLimitFailure(params: {
+  readonly failureReason?: RunFailureReasonToken | null;
+  readonly modelProviderType: string | null | undefined;
+  readonly message: string;
+}): boolean {
+  if (
+    params.modelProviderType !== "codex-oauth-token" &&
+    params.modelProviderType !== "claude-code-oauth-token"
+  ) {
+    return false;
+  }
+  return (
+    params.failureReason === "usage_limit" ||
+    ((params.failureReason === undefined || params.failureReason === null) &&
+      nativePersonalSubscriptionUsageLimit(params.message))
+  );
+}
+
 /** Subscription limits belong to the captured personal account, not Okou billing. */
 export function formatPersonalSubscriptionUsageLimitForExternalSurface(params: {
   readonly failureReason?: RunFailureReasonToken | null;
@@ -1005,6 +1035,6 @@ export function formatPersonalSubscriptionUsageLimitForExternalSurface(params: {
     `Your ${subscription} subscription has reached its usage limit.`,
     "Wait for your subscription allowance to reset, or switch to an available subscription account.",
     `Manage subscriptions: ${params.modelProvidersUrl}`,
-    'After restoring access, reply "continue" in this conversation.',
+    'Switching accounts automatically continues this conversation. If you wait for the allowance to reset, reply "continue" here.',
   ].join("\n\n");
 }

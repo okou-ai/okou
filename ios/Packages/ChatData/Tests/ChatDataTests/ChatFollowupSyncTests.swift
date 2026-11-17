@@ -13,7 +13,7 @@ final class ChatFollowupSyncTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: directory) }
     let tail = Mutex<[String]>([])
     let initial = [
-      try row(1, type: "output.message", content: "Answer"), try row(2, type: "run.completed"),
+      try row(1, type: "output.message", content: "Answer"), try row(2, type: "run.completed")
     ]
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
@@ -65,7 +65,7 @@ final class ChatFollowupSyncTests: XCTestCase {
     tail.withLock {
       $0 += [
         try! row(4, type: "output.message", content: "New answer", run: "next"),
-        try! row(5, type: "run.completed", run: "next"),
+        try! row(5, type: "run.completed", run: "next")
       ]
     }
     let newer = try await restarted.history(threadID: "thread")
@@ -85,7 +85,7 @@ private func row(_ seq: Int, type: String, content: String? = nil, run: String =
   let payload = content.map { ["content": $0] } ?? [:]
   let data = try JSONSerialization.data(withJSONObject: [
     "id": "followup-\(seq)", "chatThreadId": "thread", "seqId": seq, "runId": run,
-    "createdAt": "2026-10-20T00:00:00Z", "eventType": type, "payload": payload,
+    "createdAt": "2026-10-20T00:00:00Z", "eventType": type, "payload": payload
   ])
-  return String(decoding: data, as: UTF8.self)
+  return String(data: data, encoding: .utf8)!
 }

@@ -3,9 +3,8 @@
 //! Reads `/proc/stat` for CPU, `/proc/meminfo` for memory, and uses
 //! descriptor-pinned `libc::fstatvfs` for rootfs/home. Writes JSONL to the metrics log file.
 
-mod disk;
-
 use crate::constants;
+use crate::filesystem;
 use crate::workload_containment::CgroupCpuStatPaths;
 use serde::Serialize;
 use std::fs::File;
@@ -26,9 +25,9 @@ struct MetricsEntry {
     mem_used: u64,
     mem_total: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    rootfs: Option<disk::FilesystemObservation>,
+    rootfs: Option<filesystem::FilesystemObservation>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    home: Option<disk::FilesystemObservation>,
+    home: Option<filesystem::FilesystemObservation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     control_cpu_usage_usec: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -308,7 +307,7 @@ async fn collect_metrics(
 ) -> MetricsEntry {
     let cpu = cpu_tracker.get_cpu_percentages(&sources.proc_stat);
     let (mem_used, mem_total) = get_memory_info();
-    let (rootfs, home) = disk::observe();
+    let (rootfs, home) = filesystem::observe();
     let control_cpu = sources
         .cgroup_cpu_stat
         .as_ref()

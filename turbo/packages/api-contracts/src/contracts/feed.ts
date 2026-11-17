@@ -206,6 +206,7 @@ export const feedSourcesSchema = object({
   suggestions: boolean(),
   whatsNew: boolean(),
   offers: boolean(),
+  systemUpdates: boolean(),
 });
 export type FeedSources = zInfer<typeof feedSourcesSchema>;
 export const suggestionCreateSchema = object({
