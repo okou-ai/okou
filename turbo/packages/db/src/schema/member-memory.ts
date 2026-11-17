@@ -14,7 +14,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
-/** Member-owned authority; the API temporarily mirrors legacy metadata for B/C overlap. */
+/** One authoritative Memory identity per organization member. */
 export const memberMemories = pgTable(
   "member_memories",
   {

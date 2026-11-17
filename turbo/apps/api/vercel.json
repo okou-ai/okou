@@ -113,10 +113,6 @@
       "schedule": "* * * * *"
     },
     {
-      "path": "/api/cron/materialize-pi-resource-indexes",
-      "schedule": "* * * * *"
-    },
-    {
       "path": "/api/cron/computer-use-screenshot-cleanup",
       "schedule": "0 * * * *"
     },
