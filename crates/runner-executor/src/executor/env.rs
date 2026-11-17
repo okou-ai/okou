@@ -843,16 +843,15 @@ pub(super) fn prepare_run_payload_for_run(
         validate_codex_runtime_config_field(config).map_err(RunnerError::Internal)?;
     }
 
-    let mut disallowed_tools = String::new();
-    if effective_cli_framework(&context.cli_agent_type) == EffectiveCliFramework::ClaudeCode
+    let disallowed_tools = if effective_cli_framework(&context.cli_agent_type)
+        == EffectiveCliFramework::ClaudeCode
         && let Some(values) = &context.disallowed_tools
     {
-        disallowed_tools = serialize_claude_tool_env(
-            guest_contracts::env::DISALLOWED_TOOLS_RUN_PAYLOAD_FIELD,
-            values,
-        )?
-        .unwrap_or_default();
-    }
+        validate_disallowed_tools(values).map_err(RunnerError::Internal)?;
+        values.join(",")
+    } else {
+        String::new()
+    };
 
     let payload = guest_contracts::env::RunPayload {
         prompt: context.prompt.clone(),
@@ -1037,42 +1036,27 @@ pub(super) fn insert_claude_code_env(
     }
 }
 
-pub(super) fn serialize_claude_tool_env(
-    env_name: &str,
-    tools: &[String],
-) -> RunnerResult<Option<String>> {
-    if tools.is_empty() {
-        return Ok(None);
-    }
-
-    validate_claude_tool_env_entries(env_name, tools).map_err(RunnerError::Internal)?;
-
-    Ok(Some(tools.join(",")))
-}
-
-pub(super) fn validate_claude_tool_env_entries(
-    env_name: &str,
-    tools: &[String],
-) -> Result<(), String> {
+fn validate_disallowed_tools(tools: &[String]) -> Result<(), String> {
+    let field_name = guest_contracts::env::DISALLOWED_TOOLS_RUN_PAYLOAD_FIELD;
     for (index, tool) in tools.iter().enumerate() {
         if tool.trim().is_empty() {
             return Err(format!(
-                "{env_name} entry at index {index} must not be empty"
+                "{field_name} entry at index {index} must not be empty"
             ));
         }
         if tool.contains(',') {
             return Err(format!(
-                "{env_name} entry at index {index} must not contain commas"
+                "{field_name} entry at index {index} must not contain commas"
             ));
         }
         if tool.contains('\0') {
             return Err(format!(
-                "{env_name} entry at index {index} must not contain NUL bytes"
+                "{field_name} entry at index {index} must not contain NUL bytes"
             ));
         }
         if tool.trim_start().starts_with('-') {
             return Err(format!(
-                "{env_name} entry at index {index} must not start with a hyphen"
+                "{field_name} entry at index {index} must not start with a hyphen"
             ));
         }
     }

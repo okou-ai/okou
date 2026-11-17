@@ -23,7 +23,7 @@ use super::support::{
     api_artifact, api_storage, build_env_for_test, build_env_for_test_result,
     build_env_for_test_with_host_env, context_with_env, minimal_context,
 };
-use crate::error::{RunnerError, RunnerResult};
+use crate::error::RunnerError;
 use runner_types::ids::RunId;
 use runner_types::storage_manifest::StorageManifest;
 use runner_types::types::ExecutionContext;
@@ -1716,19 +1716,6 @@ fn build_env_json_no_disallowed_tools() {
     assert!(payload.disallowed_tools.is_empty());
 }
 
-fn assert_tool_env_error<T: std::fmt::Debug>(
-    result: RunnerResult<T>,
-    env_name: &str,
-    expected: &str,
-) {
-    let message = match result {
-        Err(RunnerError::Internal(message)) => message,
-        other => panic!("expected internal error, got {other:?}"),
-    };
-    assert!(message.contains(env_name), "message: {message}");
-    assert!(message.contains(expected), "message: {message}");
-}
-
 #[test]
 fn build_env_json_rejects_invalid_disallowed_tools_entries() {
     for (tool, expected) in [
@@ -1741,8 +1728,15 @@ fn build_env_json_rejects_invalid_disallowed_tools_entries() {
     ] {
         let mut ctx = minimal_context();
         ctx.disallowed_tools = Some(vec![tool.into()]);
-        let result = build_run_payload_for_run(&ctx);
-        assert_tool_env_error(result, "OKOU_DISALLOWED_TOOLS", expected);
+        let message = match build_run_payload_for_run(&ctx) {
+            Err(RunnerError::Internal(message)) => message,
+            other => panic!("expected internal error, got {other:?}"),
+        };
+        assert!(
+            message.contains("OKOU_DISALLOWED_TOOLS"),
+            "message: {message}"
+        );
+        assert!(message.contains(expected), "message: {message}");
     }
 }
 
