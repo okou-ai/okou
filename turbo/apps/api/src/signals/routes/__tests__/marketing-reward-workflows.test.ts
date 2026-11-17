@@ -133,7 +133,13 @@ test("retains the creator separately from the executor and the complete lineage 
   await flushWaitUntilForTest();
   expect(received).toHaveLength(3);
   const facts = received;
-  expect(facts.map((event) => event.type).sort()).toStrictEqual([
+  expect(
+    facts
+      .map((event) => {
+        return event.type;
+      })
+      .sort(),
+  ).toStrictEqual([
     "workflow.input-queued",
     "workflow.run-completed",
     "workflow.run-created",
@@ -148,12 +154,18 @@ test("retains the creator separately from the executor and the complete lineage 
       sourceEventId: expect.any(String),
     });
   }
-  const queued = facts.find((event) => event.type === "workflow.input-queued");
+  const queued = facts.find((event) => {
+    return event.type === "workflow.input-queued";
+  });
   if (!queued || queued.version !== 4) {
     throw new Error("Expected queued Workflow source");
   }
   for (const type of ["workflow.run-created", "workflow.run-completed"]) {
-    expect(facts.find((event) => event.type === type)).toMatchObject({
+    expect(
+      facts.find((event) => {
+        return event.type === type;
+      }),
+    ).toMatchObject({
       runId: launched.runId,
       sourceEventId: queued.sourceEventId,
     });
@@ -221,11 +233,12 @@ test("continues publishing source facts after the creator has already earned the
     const launched = await invoke(actor, workflowId);
     await completion.complete(actor, launched.runId, group, {});
     await flushWaitUntilForTest();
-    const fact = received.find(
-      (event) =>
+    const fact = received.find((event) => {
+      return (
         event.type === "workflow.run-completed" &&
-        event.runId === launched.runId,
-    );
+        event.runId === launched.runId
+      );
+    });
     if (!fact || fact.type !== "workflow.run-completed") {
       throw new Error("Expected completed owner source");
     }

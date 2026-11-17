@@ -769,7 +769,6 @@ const publishDeviceAuthConnection$ = command(
     { set },
     args: CommitDeviceAuthArgs,
     publication: PreparedBuiltinTokenPublication,
-    signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
     const query = deviceAuthTokenPublicationSql(
@@ -803,14 +802,6 @@ const publishDeviceAuthConnection$ = command(
     if (row.connector === null) {
       throw new Error("Completed device authorization has no connector");
     }
-    set(
-      startMarketingRewardEventDelivery$,
-      {
-        jobId: publication.publication.marketingRewardEventId,
-        handlerVersion: 1,
-      },
-      signal,
-    );
     return committedBuiltinTokenConnection(
       row.connector,
       publication.existing,
@@ -835,7 +826,7 @@ const completeClaimedSession$ = command(
             publication.result.status,
             signal,
           )
-        : await set(publishDeviceAuthConnection$, args, publication, signal);
+        : await set(publishDeviceAuthConnection$, args, publication);
     if (result === null) {
       return {
         result: await set(claimNoLongerCurrentResponse$, args.session, signal),
@@ -844,6 +835,16 @@ const completeClaimedSession$ = command(
     }
     if (signal.aborted) {
       return { result, postCommitAbort: signal.reason };
+    }
+    if (publication.kind === "ready" && result.status === "connected") {
+      set(
+        startMarketingRewardEventDelivery$,
+        {
+          jobId: publication.publication.marketingRewardEventId,
+          handlerVersion: 1,
+        },
+        signal,
+      );
     }
     return { result, postCommitAbort: null };
   },

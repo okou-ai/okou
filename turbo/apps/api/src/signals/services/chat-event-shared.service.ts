@@ -25,11 +25,6 @@ import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 
-export {
-  visibleChatEventCondition,
-  visibleChatEventPredicate,
-} from "./chat-event-visibility.service";
-
 const EXT_MIMETYPE_MAP: Readonly<Record<string, string>> = {
   png: "image/png",
   jpg: "image/jpeg",

@@ -2592,7 +2592,6 @@ const publishTokenConnection$ = command(
   async (
     { set },
     prepared: PreparedBuiltinTokenPublication,
-    signal: AbortSignal,
   ): Promise<BuiltinConnectorTokenConnectionCommitResult> => {
     const db = set(writeDb$);
     const query = builtinTokenConnectionPublicationSql(prepared.publication);
@@ -2633,16 +2632,6 @@ const publishTokenConnection$ = command(
         "Connector account changed while connecting; submit the connection again",
       );
     }
-    if (isOneClickConnectorGrantKind(prepared.publication.grantKind)) {
-      set(
-        startMarketingRewardEventDelivery$,
-        {
-          jobId: prepared.publication.marketingRewardEventId,
-          handlerVersion: 1,
-        },
-        signal,
-      );
-    }
     return committedBuiltinTokenConnection(
       row.connector,
       prepared.existing,
@@ -2679,13 +2668,27 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
     const connectionResult =
       publication.kind === "rejected"
         ? publication.result
-        : await set(publishTokenConnection$, publication, signal);
+        : await set(publishTokenConnection$, publication);
     if (signal.aborted) {
       postCommitAbort = signal.reason;
     }
     if (connectionResult.status !== "connected") {
       throwCapturedAbort(postCommitAbort);
       return connectionResult;
+    }
+    if (
+      !signal.aborted &&
+      publication.kind === "ready" &&
+      isOneClickConnectorGrantKind(publication.publication.grantKind)
+    ) {
+      set(
+        startMarketingRewardEventDelivery$,
+        {
+          jobId: publication.publication.marketingRewardEventId,
+          handlerVersion: 1,
+        },
+        signal,
+      );
     }
     return await set(
       finalizeBuiltinConnectorTokenConnection$,

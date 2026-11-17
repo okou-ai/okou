@@ -217,6 +217,7 @@ export function agentRunById(args: {
         id: agentRuns.id,
         launchSnapshot: agentRuns.launchSnapshot,
         status: agentRuns.status,
+        artifactResult: agentRuns.artifactResult,
         prompt: agentRuns.prompt,
         sandboxId: agentRuns.sandboxId,
         result: agentRuns.result,
@@ -293,6 +294,7 @@ export function agentRunById(args: {
     return {
       runId: run.id,
       status: run.status as RunStatus,
+      artifactResult: run.artifactResult,
       prompt: run.prompt,
       sandboxId: run.sandboxId || undefined,
       result:

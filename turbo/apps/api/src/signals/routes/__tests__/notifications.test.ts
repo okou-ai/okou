@@ -423,7 +423,9 @@ describe("agent mail notifications", () => {
         );
       }),
     );
-    const first = results.find((result) => !result.body.deduplicated)!.body;
+    const first = results.find((result) => {
+      return !result.body.deduplicated;
+    })!.body;
     expect(first).toMatchObject({
       status: "queued",
       channel: "mail",

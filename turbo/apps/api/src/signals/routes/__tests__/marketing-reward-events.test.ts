@@ -340,7 +340,9 @@ test("a rejected OAuth source does not prevent another owner's Slack publication
   enableDelivery();
   await connectGitHub(actor);
   await flushWaitUntilForTest();
-  const rejected = received.filter((event) => event.userId === actor.userId);
+  const rejected = received.filter((event) => {
+    return event.userId === actor.userId;
+  });
   expect(rejected).toHaveLength(1);
   expect(rejected[0]).toMatchObject({
     version: 1,
@@ -356,12 +358,14 @@ test("a rejected OAuth source does not prevent another owner's Slack publication
   // Slack's accepted OAuth creates both its connector fact and workspace fact.
   // Neither request may claim A's already-due rejected GitHub event.
   expect(
-    received.filter((event) => event.userId === actor.userId),
+    received.filter((event) => {
+      return event.userId === actor.userId;
+    }),
   ).toStrictEqual(rejected);
   expect(
-    received.filter(
-      (event) => event.userId === slackActor.userId && event.version === 1,
-    ),
+    received.filter((event) => {
+      return event.userId === slackActor.userId && event.version === 1;
+    }),
   ).toStrictEqual([
     expect.objectContaining({
       type: "connector.oauth-authorized",
@@ -370,7 +374,11 @@ test("a rejected OAuth source does not prevent another owner's Slack publication
       connector: { kind: "builtin", connectorSlug: "slack" },
     }),
   ]);
-  expect(received.filter((event) => event.version === 2)).toStrictEqual([
+  expect(
+    received.filter((event) => {
+      return event.version === 2;
+    }),
+  ).toStrictEqual([
     {
       version: 2,
       id: expect.any(String),

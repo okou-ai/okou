@@ -87,8 +87,12 @@ test("pages original cross-org redemption identities and financial timestamps wi
   }
   expect(
     records
-      .filter((row) => row.actorUserId === userId)
-      .map((row) => row.id)
+      .filter((row) => {
+        return row.actorUserId === userId;
+      })
+      .map((row) => {
+        return row.id;
+      })
       .sort(),
   ).toStrictEqual([first.body.id, second.body.id].sort());
   expect(

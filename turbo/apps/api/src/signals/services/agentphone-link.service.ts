@@ -434,7 +434,11 @@ export const linkAgentPhoneIdentity$ = command(
       .leftJoin(plan.existing, sql`true`)
       .leftJoin(plan.inserted, sql`true`);
     signal.throwIfAborted();
-    if (rows.some((row) => row.inserted !== null)) {
+    if (
+      rows.some((row) => {
+        return row.inserted !== null;
+      })
+    ) {
       set(
         startMarketingRewardEventDelivery$,
         { jobId: plan.marketingRewardEventId, handlerVersion: 2 },

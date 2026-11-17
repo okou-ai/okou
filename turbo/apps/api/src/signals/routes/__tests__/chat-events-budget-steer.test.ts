@@ -240,7 +240,9 @@ describe("run-targeted time budget steering through HTTP", () => {
     expect(
       (
         await chat.listThreadEvents(other.actor, other.active.threadId)
-      ).events.filter((event) => event.eventType === "input.budget"),
+      ).events.filter((event) => {
+        return event.eventType === "input.budget";
+      }),
     ).toHaveLength(0);
     await other.requestBudgetHeartbeat();
     expect(

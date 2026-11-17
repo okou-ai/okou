@@ -3394,9 +3394,11 @@ test("cron recovers a failed approval Workflow without another purchase request 
     fixture.actor,
     fixture.run.threadId,
   );
-  expect(events.filter((event) => event.id === fixture.spend.id)).toHaveLength(
-    1,
-  );
+  expect(
+    events.filter((event) => {
+      return event.id === fixture.spend.id;
+    }),
+  ).toHaveLength(1);
   expect(extraPurchases).toBe(0);
 });
 

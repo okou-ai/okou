@@ -457,10 +457,12 @@ test("one user's failed refresh does not block another owner's notification", as
     await flushWaitUntilForTest();
   }
   expect(publications).toStrictEqual(
-    fixtures.slice(1).map((fixture) => ({
-      channel: `user:${fixture.actor.userId}`,
-      name: "getStartedRewardsChanged",
-    })),
+    fixtures.slice(1).map((fixture) => {
+      return {
+        channel: `user:${fixture.actor.userId}`,
+        name: "getStartedRewardsChanged",
+      };
+    }),
   );
   const first = fixtures[0];
   if (!first) {
