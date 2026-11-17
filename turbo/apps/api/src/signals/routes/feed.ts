@@ -18,25 +18,11 @@ import {
 } from "../services/agent-suggestions.service";
 import { dismissFeedEvent$ } from "../services/feed-events.service";
 import {
-  forYouSourcesEnabled$,
   readFeedSources$,
   updateFeedSources$,
   readFeedSummary$,
   markFeedItemRead$,
 } from "../services/feed-sources.service";
-import { resourceUnavailable } from "../../lib/error";
-
-const forYouAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const owner = await set(suggestionAccess$, signal);
-  if ("status" in owner) {
-    return owner;
-  }
-  const enabled = await get(forYouSourcesEnabled$);
-  signal.throwIfAborted();
-  return enabled
-    ? owner
-    : resourceUnavailable("For you sources are not enabled.");
-});
 
 const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
@@ -123,7 +109,7 @@ export const feedRoutes: readonly RouteEntry[] = [
       { accept: ["session"], requireOrganization: true },
       command(async ({ get, set }, signal: AbortSignal) => {
         set(setResHeader$, "Cache-Control", "no-store");
-        const owner = await set(forYouAccess$, signal);
+        const owner = await set(suggestionAccess$, signal);
         return "status" in owner
           ? owner
           : {
@@ -138,7 +124,7 @@ export const feedRoutes: readonly RouteEntry[] = [
     handler: authRoute(
       { accept: ["session"], requireOrganization: true },
       command(async ({ get, set }, signal: AbortSignal) => {
-        const owner = await set(forYouAccess$, signal);
+        const owner = await set(suggestionAccess$, signal);
         if ("status" in owner) {
           return owner;
         }
@@ -159,7 +145,7 @@ export const feedRoutes: readonly RouteEntry[] = [
       { accept: ["session"], requireOrganization: true },
       command(async ({ get, set }, signal: AbortSignal) => {
         set(setResHeader$, "Cache-Control", "no-store");
-        const owner = await set(forYouAccess$, signal);
+        const owner = await set(suggestionAccess$, signal);
         return "status" in owner
           ? owner
           : {
@@ -174,7 +160,7 @@ export const feedRoutes: readonly RouteEntry[] = [
     handler: authRoute(
       { accept: ["session"], requireOrganization: true },
       command(async ({ get, set }, signal: AbortSignal) => {
-        const owner = await set(forYouAccess$, signal);
+        const owner = await set(suggestionAccess$, signal);
         return "status" in owner
           ? owner
           : await set(

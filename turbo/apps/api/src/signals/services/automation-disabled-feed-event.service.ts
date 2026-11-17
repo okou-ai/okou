@@ -63,11 +63,7 @@ export const prepareAutomationDisabledFeedEvent$ = command(
       )
       .limit(1);
     signal?.throwIfAborted();
-    if (
-      !workflow ||
-      (isFeatureEnabled(FeatureSwitchKey.ForYouSources, context) &&
-        workflow.systemUpdates === false)
-    ) {
+    if (!workflow || workflow.systemUpdates === false) {
       return null;
     }
     return {

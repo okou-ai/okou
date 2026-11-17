@@ -414,8 +414,6 @@
       "resizeChatList": "Größe der Chatliste ändern",
       "searchWorkspace": "Arbeitsbereich durchsuchen",
       "showChatList": "Chatliste anzeigen",
-      "suggestionsWaiting_one": "{{count}} offen",
-      "suggestionsWaiting_other": "{{count}} offen",
       "workspaceSwitcher": {
         "create": "Arbeitsbereich erstellen",
         "creating": "Wird erstellt…",

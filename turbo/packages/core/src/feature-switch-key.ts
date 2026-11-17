@@ -40,7 +40,6 @@ export enum FeatureSwitchKey {
   PresentationConvert = "presentationConvert",
   GoogleSlidesConversion = "googleSlidesConversion",
   AgentSuggestion = "agentSuggestion",
-  ForYouSources = "forYouSources",
   ProactiveLearning = "proactiveLearning",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
   SlashActions = "slashActions",

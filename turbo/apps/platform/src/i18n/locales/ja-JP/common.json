@@ -414,7 +414,6 @@
       "resizeChatList": "チャットリストのサイズを変更する",
       "searchWorkspace": "ワークスペースを検索",
       "showChatList": "チャットリストを表示",
-      "suggestionsWaiting_other": "{{count}} 件が対応待ち",
       "workspaceSwitcher": {
         "create": "ワークスペースの作成",
         "creating": "作成中…",

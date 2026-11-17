@@ -428,9 +428,6 @@
       "resizeChatList": "Redimensionar lista de conversas",
       "searchWorkspace": "Buscar no espaço de trabalho",
       "showChatList": "Mostrar lista de conversas",
-      "suggestionsWaiting_one": "{{count}} pendente",
-      "suggestionsWaiting_many": "{{count}} pendentes",
-      "suggestionsWaiting_other": "{{count}} pendentes",
       "workspaceSwitcher": {
         "create": "Criar espaço de trabalho",
         "creating": "Criando…",
