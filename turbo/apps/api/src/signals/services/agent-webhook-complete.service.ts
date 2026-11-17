@@ -1,3 +1,4 @@
+import { notifyPhoneUseOwner$ } from "./phone-use-notifications.service";
 import { env } from "../../lib/env";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
@@ -448,6 +449,11 @@ export const dispatchCompleteSideEffectsCore$ = command(
           ? input.userId
           : undefined;
     if (shellOwnerId !== undefined) {
+      await set(
+        notifyPhoneUseOwner$,
+        { orgId: input.orgId, userId: shellOwnerId },
+        signal,
+      );
       await publishDesktopShellAuthorizationChangedSafely(shellOwnerId);
       signal.throwIfAborted();
     }

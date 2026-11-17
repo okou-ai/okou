@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { Realtime, type RealtimeChannel } from "ably";
 import { number, object, string } from "zod";
 import type { RealtimeSubscription } from "@okouai/api-contracts/contracts/realtime";
@@ -172,4 +173,18 @@ export function createRealtimeNotifier(
       await ready;
     },
   };
+}
+
+/** Notifications accelerate authoritative reads; bounded reads repair lost hints. */
+export async function waitForRealtimeChange(
+  notifier: RealtimeNotifier | undefined,
+  deadline: number,
+  signal: AbortSignal,
+): Promise<void> {
+  const waitMs = Math.max(
+    0,
+    Math.min(notifier?.active ? 2000 : 500, deadline - Date.now()),
+  );
+  if (notifier && !notifier.closed) await notifier.wait(waitMs);
+  else await delay(waitMs, undefined, { signal });
 }

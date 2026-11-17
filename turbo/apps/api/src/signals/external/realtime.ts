@@ -18,7 +18,12 @@ import {
 } from "@okouai/api-contracts/contracts/realtime";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
 import type { BuiltInGenerationRealtimeSubscription } from "@okouai/api-contracts/contracts/built-in-generation";
-import { phoneUseChannel } from "@okouai/api-contracts/contracts/phone-use";
+import {
+  phoneUseChannel,
+  phoneUseResultChannel,
+  phoneUseResultChangedEvent,
+  phoneUseDevicesChangedEvent,
+} from "@okouai/api-contracts/contracts/phone-use";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -187,6 +192,7 @@ export async function createPlatformRealtimeToken(
     capability[getOrgChannelName(orgId)] = ["subscribe"];
     capability[getUserOrgChannelName(userId, orgId)] = ["subscribe"];
     capability[sessionOutputChannelName(userId, orgId, "*")] = ["subscribe"];
+    capability[`phone-use:${orgId}:${userId}:*`] = ["subscribe"];
     capability[`${computerUseHostChannelScope(userId, orgId)}:*`] = [
       "subscribe",
     ];
@@ -268,7 +274,7 @@ export async function createBuiltInGenerationRealtimeSubscription(
   };
 }
 
-export async function createComputerUseResultSubscription(
+export function createComputerUseResultSubscription(
   target: {
     readonly userId: string;
     readonly orgId: string;
@@ -283,24 +289,40 @@ export async function createComputerUseResultSubscription(
     target.orgId,
     target.commandId,
   );
+  return createResultSubscription(
+    channelName,
+    computerUseCommandResultChangedEvent,
+    target.userId,
+    target.timeoutMs,
+    signal,
+  );
+}
+
+async function createResultSubscription(
+  channelName: string,
+  eventName: string,
+  userId: string,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<RealtimeSubscription | undefined> {
   const request = (async () => {
     return await ablyClient().auth.createTokenRequest({
       capability: { [channelName]: ["subscribe"] },
-      clientId: target.userId,
-      ttl: target.timeoutMs + 60_000,
+      clientId: userId,
+      ttl: timeoutMs + 60_000,
     });
   })();
   const token = await settle(awaitWithSignal(request, signal), signal);
   if (!token.ok) {
     // #38733: notification delivery is optional; the created operation remains readable.
-    L.warn("Unable to issue computer-use result subscription", {
-      commandId: target.commandId,
+    L.warn("Unable to issue result subscription", {
+      channelName,
     });
     return undefined;
   }
   return {
     channelName,
-    eventName: computerUseCommandResultChangedEvent,
+    eventName,
     tokenRequest: token.value,
   };
 }
@@ -858,11 +880,60 @@ export async function phoneUseDeviceIsPresent(
   }
   return result.value.items.length > 0;
 }
-export async function publishPhoneUseHint(
+export function publishPhoneUseHint(
   channel: string,
   signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  waitUntil(
+    tapError(
+      ablyClient().channels.get(channel).publish("commands.changed", {}),
+      (error) => {
+        L.warn("Unable to publish phone command change", { channel, error });
+      },
+    ),
+  );
+  return Promise.resolve();
+}
+
+export function createPhoneUseResultSubscription(
+  target: { orgId: string; userId: string; id: string },
+  signal: AbortSignal,
 ) {
-  signal.throwIfAborted();
-  await ablyClient().channels.get(channel).publish("commands.changed", {});
-  signal.throwIfAborted();
+  return createResultSubscription(
+    phoneUseResultChannel(target.orgId, target.userId, target.id),
+    phoneUseResultChangedEvent,
+    target.userId,
+    300_000,
+    signal,
+  );
+}
+
+export function publishPhoneUseResultChanged(target: {
+  orgId: string;
+  userId: string;
+  id: string;
+}): void {
+  const channelName = phoneUseResultChannel(
+    target.orgId,
+    target.userId,
+    target.id,
+  );
+  waitUntil(
+    tapError(
+      ablyClient()
+        .channels.get(channelName)
+        .publish(phoneUseResultChangedEvent, null),
+      (error) => {
+        L.warn("Unable to publish phone result change", { channelName, error });
+      },
+    ),
+  );
+}
+
+export function publishPhoneUseDevicesChanged(target: {
+  orgId: string;
+  userId: string;
+}): Promise<void> {
+  return publishChatDatabaseSignal(target, phoneUseDevicesChangedEvent);
 }

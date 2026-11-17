@@ -128,7 +128,34 @@ function invokeAuthCallback(
 
 class FakeChannel {
   presenceEntered = false;
+  private readonly presenceListeners = new Set<
+    (message: { action: string; clientId: string; data?: unknown }) => void
+  >();
   readonly presence = {
+    get: (): Promise<[]> => {
+      return Promise.resolve([]);
+    },
+    subscribe: async (
+      listener: (message: {
+        action: string;
+        clientId: string;
+        data?: unknown;
+      }) => void,
+    ) => {
+      this.presenceListeners.add(listener);
+      if (this.attachOnSubscribe) {
+        await this.attach();
+      }
+    },
+    unsubscribe: (
+      listener: (message: {
+        action: string;
+        clientId: string;
+        data?: unknown;
+      }) => void,
+    ) => {
+      this.presenceListeners.delete(listener);
+    },
     enter: async (): Promise<void> => {
       await this.attach();
       this.presenceEntered = true;
@@ -162,6 +189,15 @@ class FakeChannel {
     }
   }
 
+  triggerPresence(action: string, clientId: string, data: unknown): void {
+    for (const listener of this.presenceListeners) {
+      listener({ action, clientId, data });
+    }
+  }
+  hasPresenceSubscription(): boolean {
+    return this.presenceListeners.size > 0;
+  }
+
   hasSubscription(topic: string): boolean {
     return (this.subscriptions.get(topic)?.size ?? 0) > 0;
   }
@@ -172,6 +208,7 @@ class FakeChannel {
 
   clear(): void {
     this.presenceEntered = false;
+    this.presenceListeners.clear();
     this.subscriptions.clear();
     this.channelSubscriptions.clear();
     this.transition("detached");
@@ -541,6 +578,7 @@ export const XHRPolling = Symbol("XHRPolling");
 
 function isSharedDatabaseRealtimeTopic(topic: string): boolean {
   return (
+    topic === "phoneUseDevicesChanged" ||
     topic === "agentSuggestionsChanged" ||
     topic === "chatIndicatorsChanged" ||
     topic === "chatThreadReadCursorUpdated" ||
@@ -994,3 +1032,41 @@ export function resetAblySubscriptions(): void {
 
 export type RealtimeChannel = FakeChannel;
 export type InboundMessage = { name: string; data: unknown };
+
+/** A native device's external Presence stream, independent of API lifecycle writes. */
+export function triggerPhonePresence(
+  deviceId: string,
+  generation: number,
+  action: string,
+  readyUntil?: string,
+): void {
+  for (const realtime of realtimeInstances) {
+    for (const [name, channel] of realtime.namedChannels()) {
+      if (
+        name.startsWith("phone-use:") &&
+        name.endsWith(`:${deviceId}:${generation}`)
+      ) {
+        channel.triggerPresence(action, name.split(":")[2] ?? "", {
+          readyUntil,
+        });
+      }
+    }
+  }
+}
+export function hasPhonePresenceSubscription(
+  deviceId: string,
+  generation: number,
+): boolean {
+  for (const realtime of realtimeInstances) {
+    for (const [name, channel] of realtime.namedChannels()) {
+      if (
+        name.startsWith("phone-use:") &&
+        name.endsWith(`:${deviceId}:${generation}`) &&
+        channel.hasPresenceSubscription()
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
