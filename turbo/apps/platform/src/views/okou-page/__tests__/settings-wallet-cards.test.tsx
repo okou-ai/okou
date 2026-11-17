@@ -25,7 +25,7 @@ const everyday = Object.freeze<WalletPaymentMethod>({
   name: "Visa",
   nickname: "Everyday",
   isDefault: true,
-  card: { brand: "visa", last4: "4242", expMonth: 2, expYear: 2028 },
+  cardSummary: { brand: "visa", last4: "4242" },
 });
 const business = Object.freeze<WalletPaymentMethod>({
   id: "pm_business",
@@ -33,7 +33,7 @@ const business = Object.freeze<WalletPaymentMethod>({
   name: "Mastercard",
   nickname: "Business",
   isDefault: false,
-  card: { brand: "mastercard", last4: "4444", expMonth: 8, expYear: 2029 },
+  cardSummary: { brand: "mastercard", last4: "4444" },
 });
 const bank = Object.freeze<WalletPaymentMethod>({
   id: "pm_bank",
@@ -114,12 +114,15 @@ test("shows Link CARD methods with the default first and one management action i
   expect(rows).toHaveLength(2);
   expect(within(rows[0]!).getByText("Everyday")).toBeInTheDocument();
   expect(within(rows[0]!).getByText("Default")).toBeInTheDocument();
-  expect(within(rows[0]!).getByText("Expires 02/2028")).toBeInTheDocument();
+  expect(within(rows[0]!).getByText("visa")).toBeInTheDocument();
+  expect(within(rows[0]!).getByText(/4242/)).toBeInTheDocument();
   expect(within(rows[0]!).getByRole("presentation")).toHaveAttribute(
     "src",
     expect.stringMatching(/\/card-brands\/visa-[a-f0-9]+\.svg$/u),
   );
   expect(within(rows[1]!).getByText("Business")).toBeInTheDocument();
+  expect(within(rows[1]!).getByText("mastercard")).toBeInTheDocument();
+  expect(within(rows[1]!).getByText(/4444/)).toBeInTheDocument();
   expect(within(rows[1]!).getByRole("presentation")).toHaveAttribute(
     "src",
     expect.stringMatching(/\/card-brands\/mastercard-[a-f0-9]+\.svg$/u),
@@ -136,34 +139,6 @@ test("shows Link CARD methods with the default first and one management action i
   );
   expect(manageCards(region)).toHaveAttribute("target", "_blank");
   expect(manageCards(region)).toHaveAttribute("rel", "noopener noreferrer");
-});
-
-test("shows card brand and tail digits when Link no longer provides saved-card expiry", async () => {
-  context.mocks.api(walletUserContract.paymentMethods, ({ respond }) => {
-    return respond(200, {
-      data: [
-        {
-          ...everyday,
-          card: undefined,
-          cardSummary: { brand: "visa", last4: "4242" },
-        },
-      ],
-    });
-  });
-  await openWallet();
-  const region = await screen.findByRole("region", {
-    name: "Your cards in Link",
-  });
-  await within(region).findByText("Everyday");
-  expect(within(region).getByText("Default")).toBeInTheDocument();
-  expect(within(region).getByText("visa")).toBeInTheDocument();
-  expect(within(region).getByText(/4242/)).toBeInTheDocument();
-  expect(within(region).getByRole("presentation")).toHaveAttribute(
-    "src",
-    expect.stringMatching(/\/card-brands\/visa-[a-f0-9]+\.svg$/u),
-  );
-  expect(within(region).queryByText(/Expires/)).not.toBeInTheDocument();
-  expect(manageCards(region)).toBeInTheDocument();
 });
 
 test("uses the provider name when card details are absent and does not invent a default", async () => {
@@ -186,7 +161,6 @@ test("uses the provider name when card details are absent and does not invent a 
   });
   await within(region).findByText("Saved card");
   expect(within(region).queryByText("Default")).not.toBeInTheDocument();
-  expect(within(region).queryByText(/Expires/)).not.toBeInTheDocument();
   expect(within(region).queryByRole("presentation")).not.toBeInTheDocument();
   expect(within(region).getAllByRole("listitem")).toHaveLength(1);
   expect(manageCards(region)).toBeInTheDocument();
@@ -196,10 +170,13 @@ test("keeps cards usable when the brand is unknown or its artwork fails to load"
   context.mocks.api(walletUserContract.paymentMethods, ({ respond }) => {
     return respond(200, {
       data: [
-        { ...everyday, card: { ...everyday.card!, brand: "VISA" } },
+        {
+          ...everyday,
+          cardSummary: { ...everyday.cardSummary!, brand: "VISA" },
+        },
         {
           ...business,
-          card: { ...business.card!, brand: "unknown" },
+          cardSummary: { ...business.cardSummary!, brand: "unknown" },
         },
       ],
     });
@@ -219,10 +196,12 @@ test("keeps cards usable when the brand is unknown or its artwork fails to load"
   expect(icon).not.toBeVisible();
   expect(within(rows[0]!).getByText("Everyday")).toBeInTheDocument();
   expect(within(rows[0]!).getByText("Default")).toBeInTheDocument();
-  expect(within(rows[0]!).getByText("Expires 02/2028")).toBeInTheDocument();
+  expect(within(rows[0]!).getByText("VISA")).toBeInTheDocument();
+  expect(within(rows[0]!).getByText(/4242/)).toBeInTheDocument();
   expect(within(rows[1]!).queryByRole("presentation")).not.toBeInTheDocument();
   expect(within(rows[1]!).getByText("Business")).toBeInTheDocument();
-  expect(within(rows[1]!).getByText("Expires 08/2029")).toBeInTheDocument();
+  expect(within(rows[1]!).getByText("unknown")).toBeInTheDocument();
+  expect(within(rows[1]!).getByText(/4444/)).toBeInTheDocument();
   expect(manageCards(region)).toBeInTheDocument();
 });
 

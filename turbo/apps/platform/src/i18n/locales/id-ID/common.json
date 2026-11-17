@@ -6161,7 +6161,6 @@
         "default": "Default",
         "description": "Tambahkan kartu atau ubah kartu default di dompet Link Anda.",
         "empty": "Belum ada kartu di dompet Link Anda",
-        "expires": "Berlaku hingga {{date}}",
         "loadError": "Kartu Anda tidak dapat dimuat.",
         "loading": "Memuat kartu",
         "manage": "Kelola kartu",

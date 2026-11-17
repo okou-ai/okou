@@ -6161,7 +6161,6 @@
         "default": "默认",
         "description": "在 Link 钱包中添加卡片或更改默认卡片。",
         "empty": "你的 Link 钱包中暂无卡片",
-        "expires": "有效期至 {{date}}",
         "loadError": "无法加载卡片。",
         "loading": "正在加载卡片",
         "manage": "管理卡片",
