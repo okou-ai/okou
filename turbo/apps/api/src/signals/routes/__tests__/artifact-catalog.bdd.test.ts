@@ -838,6 +838,73 @@ describe("GET /api/artifacts/catalog", () => {
     });
   }, 180_000);
 
+  it("lists native PPTX files as presentations while retaining file-backed detail and deletion", async () => {
+    const owner = await catalogActor("Native PowerPoint catalog owner");
+    const filenames = ["quarterly-review.pptx", "BOARD-UPDATE.PPTX"];
+    for (const filename of filenames) {
+      await uploadFile({
+        owner,
+        prompt: `Publish ${filename}`,
+        filename,
+        contentType: "application/octet-stream",
+      });
+    }
+    await uploadFile({
+      owner,
+      prompt: "Publish supporting notes",
+      filename: "supporting-notes.pdf",
+      contentType: "application/pdf",
+    });
+
+    const presentations = await chat.listArtifactCatalog(owner.actor, {
+      kind: "presentation",
+      includeKinds: "true",
+    });
+    expect(
+      presentations.artifacts
+        .map((entry) => {
+          return entry.title;
+        })
+        .sort(),
+    ).toStrictEqual(filenames.slice().sort());
+    expect(presentations.availableKinds?.slice().sort()).toStrictEqual([
+      "file",
+      "presentation",
+    ]);
+    const files = await chat.listArtifactCatalog(owner.actor, { kind: "file" });
+    expect(files.artifacts).toStrictEqual([
+      expect.objectContaining({ kind: "file", title: "supporting-notes.pdf" }),
+    ]);
+
+    for (const entry of presentations.artifacts) {
+      expect(entry.kind).toBe("presentation");
+      const detail = await chat.getArtifactCatalogEntry(owner.actor, entry.id);
+      expect(detail).toMatchObject({
+        kind: "file",
+        file: { filename: entry.title, url: entry.sourceUrl },
+      });
+      await accept(
+        setupApp({ context, routes: artifactCatalogRoutes })(
+          artifactCatalogContract,
+        ).delete({
+          headers: authenticateSharedThread(owner.actor),
+          params: { artifactId: entry.id },
+        }),
+        [200],
+      );
+    }
+    await expect(
+      chat.listArtifactCatalog(owner.actor, {
+        kind: "presentation",
+        includeKinds: "true",
+      }),
+    ).resolves.toStrictEqual({
+      artifacts: [],
+      nextCursor: null,
+      availableKinds: ["file"],
+    });
+  });
+
   it("keeps completed file lists and catalog filters scoped to their owning thread", async () => {
     const owner = await catalogActor("File association owner");
     const outsider = await catalogActor("File association outsider");

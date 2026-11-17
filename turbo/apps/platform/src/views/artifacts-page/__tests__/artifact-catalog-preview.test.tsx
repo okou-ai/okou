@@ -177,6 +177,65 @@ test("A binary can be downloaded from its preview", async () => {
   });
 });
 
+test("A native PPTX in Presentations keeps its Office preview and original download", async () => {
+  const browser = context.mocks.browser.blobDownload();
+  const filename = "quarterly-review.pptx";
+  const url = `https://artifacts.example.com/${filename}`;
+  const contentType =
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, {
+      artifacts: [artifact({ kind: "presentation", title: filename })],
+      nextCursor: null,
+      availableKinds: ["presentation"],
+    });
+  });
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(200, {
+      ...artifact({ title: filename }),
+      kind: "file",
+      file: {
+        id: "f0000000-0000-4000-a000-000000000002",
+        filename,
+        contentType,
+        size: 2048,
+        url,
+        previewImageUrl: null,
+      },
+    });
+  });
+  context.mocks.http.get(url, () => {
+    return HttpResponse.text("PowerPoint bytes", {
+      headers: { "Content-Type": contentType },
+    });
+  });
+
+  await setupArtifactCatalogPage(context);
+
+  const card = await findArtifactAction(filename);
+  expect(getButtonByName("Show presentation artifacts")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  click(card);
+  const viewer = await screen.findByTestId("attachment-lightbox");
+  const frame = await within(viewer).findByTitle(`${filename} preview`);
+  expect(new URL(frame.getAttribute("src")!).searchParams.get("src")).toBe(url);
+  click(getButtonByName("Download options", viewer));
+  const menu = await screen.findByRole("menu");
+  const download = queryAllByRoleFast("menuitem", menu).find((item) => {
+    return item.textContent?.trim() === "Download";
+  });
+  if (!download) {
+    throw new Error("Expected the original PowerPoint download action");
+  }
+  click(download);
+  await waitFor(() => {
+    expect(browser.downloads).toHaveLength(1);
+  });
+  expect(browser.downloads[0]).toMatchObject({ filename, url });
+});
+
 test("Opening a text artifact shows its content on demand", async () => {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {

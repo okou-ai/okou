@@ -18,6 +18,7 @@ import {
   isNotNull,
   ne,
   notExists,
+  notLike,
   or,
   lt,
   lte,
@@ -198,16 +199,22 @@ function catalogArtifactKind(
     : kind;
 }
 
-function artifactCatalogEffectiveKind(): SQL {
-  // Summary metadata is optional independently of creating-thread ownership.
-  // An absent display projection retains the base kind (or the shared snapshot
-  // kind encoded in its logical key), exactly as toArtifactSummary does.
-  return sql`coalesce(${artifacts.displayKind}, case
+function artifactCatalogEffectiveKind() {
+  // Native PPTX files belong to Presentations without changing their file-backed
+  // storage or detail contract. Derive this on reads so existing files move too.
+  // Other summaries retain their display projection or base-kind fallback.
+  return sql`case
     when ${artifacts.kind} = 'file'
-      and ${artifacts.logicalKey} like 'shared-thread:%'
-    then 'shared-thread'
-    else ${artifacts.kind}
-  end)`;
+      and ${artifacts.logicalKey} not like 'shared-thread:%'
+      and lower(${artifacts.title}) like '%.pptx'
+    then 'presentation'
+    else coalesce(${artifacts.displayKind}, case
+      when ${artifacts.kind} = 'file'
+        and ${artifacts.logicalKey} like 'shared-thread:%'
+      then 'shared-thread'
+      else ${artifacts.kind}
+    end)
+  end`.mapWith(zodEnumDriverValueDecoder(zEnum(ARTIFACT_CATALOG_KINDS)));
 }
 
 function artifactCatalogKindFilter(kind: ArtifactCatalogKind): SQL {
@@ -1357,7 +1364,7 @@ export const listArtifactCatalog$ = command(
         entityId: artifacts.entityId,
         kind: artifacts.kind,
         logicalKey: artifacts.logicalKey,
-        displayKind: artifacts.displayKind,
+        displayKind: artifactCatalogEffectiveKind(),
         aliasUrl: artifacts.aliasUrl,
         sourceUrl: artifacts.sourceUrl,
         videoSourceUrl: artifacts.videoSourceUrl,
@@ -1388,9 +1395,7 @@ export const listArtifactCatalog$ = command(
       args.includeKinds === "true"
         ? await db
             .selectDistinct({
-              kind: artifactCatalogEffectiveKind().mapWith(
-                zodEnumDriverValueDecoder(zEnum(ARTIFACT_CATALOG_KINDS)),
-              ),
+              kind: artifactCatalogEffectiveKind(),
             })
             .from(artifacts)
             .where(scopeFilter)
@@ -1434,7 +1439,8 @@ function artifactCatalogIdentityFilter(args: GetArtifactCatalogEntryArgs) {
       return or(
         eq(artifacts.projectionFileId, args.artifactId),
         and(
-          artifactCatalogKindFilter("file"),
+          eq(artifacts.kind, "file"),
+          notLike(artifacts.logicalKey, "shared-thread:%"),
           eq(artifacts.entityId, args.artifactId),
         ),
         and(
