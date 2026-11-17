@@ -182,14 +182,14 @@ test("Artifact link icons follow the file rather than its label or URL parameter
   ).toBeInTheDocument();
 });
 
-test("HTML presentations use artifact metadata for hosted and private links", async () => {
+test("HTML links keep website icons for presentations and ordinary sites", async () => {
   const hostedDeckUrl = "https://quarterly-deck.sites.vm7.io/";
   const privateDeckUrl = "/artifacts/a1b2c3d4e5.html";
   const websiteUrl = "https://ordinary-site.sites.vm7.io/";
   const unmarkedHtmlUrl = publicArtifactUrl("slides.html");
   const links = [
-    ["Quarterly overview", `${hostedDeckUrl}#/2`, "presentation"],
-    ["Private overview", `${privateDeckUrl}#slide-3`, "presentation"],
+    ["Quarterly overview", `${hostedDeckUrl}#/2`, "website"],
+    ["Private overview", `${privateDeckUrl}#slide-3`, "website"],
     ["Company website", websiteUrl, "website"],
     ["Unmarked HTML", unmarkedHtmlUrl, "website"],
   ] as const;
