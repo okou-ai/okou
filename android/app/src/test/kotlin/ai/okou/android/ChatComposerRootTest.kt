@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
+import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ComposerPersistence
 import android.content.Intent
@@ -123,6 +124,21 @@ class ChatComposerRootTest {
         assertStorageFailure()
         compose.onNodeWithText("Try again").performClick()
         assertStorageFailure()
+        val chats =
+            compose.runOnIdle {
+                checkNotNull(
+                        ViewModelProvider(checkNotNull(activity))[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready
+                    )
+                    .chats
+            }
+        // Finish the real HTTP warm and cache write before opening the unselected conversation.
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { chats.warming.state.value.phase == ChatReadPhase.Ready }
+        }
+        assertEquals(0, app.fixture.chats.readRequests.get())
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Personal chat").performClick()
         compose.waitUntil(10_000) {
