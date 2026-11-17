@@ -11,13 +11,19 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
   private var cornerRadius: CGFloat {
     isExpanded ? 28 : OkouControl.composerCompactHeight / 2
   }
+  /// Each 44 pt action is centred on its corner's arc, so the toolbar is concentric with the
+  /// surface: a control sits as far from the side as from the bottom, on both sides, and in
+  /// the open composer `+` lines up with the text. Flush to the sides, `+` sat closer to the
+  /// edge than the text, and send twice as close to the side as to the bottom.
+  private var toolbarInset: CGFloat { cornerRadius - actionSize / 2 }
+  private var textInset: CGFloat { toolbarInset + (actionSize - OkouIconSize.toolbar) / 2 }
 
   var body: some View {
     content()
-      .padding(.leading, isExpanded ? 18 : actionSize + OkouSpace.sm)
+      .padding(.leading, isExpanded ? textInset : actionSize + OkouSpace.sm)
       // Only the primary action shares the compact input's line. Hidden expansion
       // controls keep their toolbar geometry without reserving space in the editor.
-      .padding(.trailing, isExpanded ? 18 : actionSize + OkouSpace.sm)
+      .padding(.trailing, isExpanded ? textInset : actionSize + OkouSpace.sm)
       .padding(.top, isExpanded ? 17 : OkouSpace.six)
       .padding(.bottom, isExpanded ? 62 : OkouSpace.six)
       .frame(
@@ -27,7 +33,7 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
       .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
       .overlay(alignment: .bottomLeading) {
         leading()
-          .padding(.bottom, isExpanded ? OkouSpace.six : 0)
+          .padding([.leading, .bottom], toolbarInset)
       }
       .overlay(alignment: .bottomTrailing) {
         trailing()
@@ -35,7 +41,7 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
           // position while the keyboard raises the surface.
           .geometryGroup()
           .padding(.leading, isExpanded ? actionSize + OkouSpace.xs : 0)
-          .padding(.bottom, isExpanded ? OkouSpace.six : 0)
+          .padding([.trailing, .bottom], toolbarInset)
       }
   }
 }
