@@ -5,6 +5,69 @@ configured `Template-artifact/main` presentation runbooks. Build and publish
 tooling must come from the same dispatched Okou commit. The production workflow
 serializes publications; never rerun a publisher pinned to retired tooling.
 
+## Formats and CI updates
+
+The same `publish-presentation-template-archives.yml` workflow publishes either
+family independently. Its `format` choice defaults to `html`:
+
+| Format | Configuration                                | Source directory               | Archive roots and resource IDs                             |
+| ------ | -------------------------------------------- | ------------------------------ | ---------------------------------------------------------- |
+| `html` | `../presentation-template-release.json`      | `Template-Presentation`        | Existing style roots and `template:html-ppt-*-runbook` IDs |
+| `pptx` | `../presentation-template-release-pptx.json` | `Template-Presentation-Native` | `*-native` roots and `template:pptx-*-runbook` IDs         |
+
+Each configuration contains 23 packages. HTML configuration, hash namespaces and
+historical digest-pinned downloads are unchanged. Native hash namespaces are
+independent; their `storageId` values do not create or resolve Storage rows.
+The native build checks the generator, type declarations, locked npm manifests
+and default JSON palette, not HTML layout/CSS files. Bloom retains its original
+nested `assets/bloom/palettes.json`; the other native packages use the flat
+`assets/palettes.json`. The build archives the complete tracked native package
+without conversion or rewriting its contents.
+
+Updates follow the existing manual CI release model, not an automatic publication
+on every source push. Dispatch from Okou `main`, select the format, and inspect the
+recorded Template-artifact commit and verified bundle before approving production.
+The publish job downloads that same bundle, verifies it again, then advances only
+the selected resources. Both configurations are bundled with the same dispatched
+tooling. Build, verify and publish commands accept `--format html|pptx`; omitting
+it retains HTML, and a bundle from the other format is rejected.
+
+For the **first native publication**, also select `initialize_missing_heads=true`.
+This explicit option is restricted to PPTX and defaults to false. The production
+database must already include `1561_presentation_pptx_resource_heads.sql`, and the
+serving API/CLI must recognize the native resource IDs. For PPTX the CI cutover
+gate additionally checks both serving API commits against the native config's
+main-owned `readerPreparationCommit`, without changing HTML's reader floor or
+the global rollback policy. Only approve the initial publication after verifying
+those prerequisites and the bundle's source commit.
+Subsequent native updates leave initialization disabled. Missing HEADs then fail
+for reconciliation instead of being silently reconstructed.
+
+For example, after the publisher changes are merged to main:
+
+```bash
+gh workflow run publish-presentation-template-archives.yml \
+  --repo okou-ai/okou --ref main \
+  -f format=pptx -f initialize_missing_heads=true
+```
+
+This dispatch still requires the normal production approval. For later native
+updates use `-f initialize_missing_heads=false`; for HTML updates select
+`-f format=html`. Neither operation updates the other format's HEADs.
+
+A local build/verify rehearsal uses the same format explicitly:
+
+```bash
+node .github/scripts/release/publish-presentation-template-archives.mjs build \
+  --format pptx --source-dir /path/to/checkout/Template-Presentation-Native \
+  --source-commit <full-source-commit> --output-dir /tmp/native-bundle
+node .github/scripts/release/publish-presentation-template-archives.mjs verify \
+  --format pptx --output-dir /tmp/native-bundle
+```
+
+These commands need Node.js and the dependencies described below. A local bundle
+is not a production publication or proof of successful PowerPoint generation.
+
 ## Independent publication
 
 Publication writes only the private bucket's
@@ -19,12 +82,14 @@ bundle. A missing PUT response is resolved with one GET, without replaying the
 mutation. Conflicting objects or immutable metadata fail instead of being
 replaced. Original packages are not repacked.
 
-The independent HEAD is published last using its observed digest and PostgreSQL
-`xmin`. This rejects concurrent changes even when a competing writer restores
-the original digest. Publication uses conditional statements, without
-transactions, explicit row locks or coordination records. There is no
-all-template atomic snapshot: an interruption can leave verified immutable
-candidates or some resources already published.
+The independent HEAD is published last. Existing HEADs use their observed digest
+and PostgreSQL `xmin`, rejecting concurrent changes even when a competing writer
+restores the original digest. Explicit native initialization observes absence,
+registers verified archive metadata, then conditionally inserts the HEAD. A
+competing initial publisher wins rather than being overwritten. Publication uses
+conditional statements, without transactions, explicit row locks or coordination
+records. There is no all-template atomic snapshot: an interruption can leave
+verified immutable candidates or some resources already published.
 
 Investigate uncertain results before rerunning. Reuse the **same verified
 bundle**, rather than rebuilding mutable source, to finish a partial publication.
@@ -82,7 +147,9 @@ native account endpoint or a loopback HTTP object fixture. SDK requests use one
 attempt and bounded deadlines.
 
 The database role needs SELECT on `registry_resource_archives` and
-`registry_resource_heads`, INSERT on the former, and UPDATE on the latter. It
+`registry_resource_heads`, INSERT on the former, and UPDATE on the latter.
+Explicit first-time native initialization additionally needs INSERT on
+`registry_resource_heads`. The publisher does not grant those privileges. It
 needs no legacy-table privileges or archive UPDATE/DELETE privilege. Do not
 create roles, revoke shared privileges or grant production privileges as part of
 deploying this code.

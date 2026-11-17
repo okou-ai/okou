@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "readerPreparationCommit": "b342805293be679b34781d7ff4811669feccbb77",
+  "source": {
+    "repository": "okou-ai/Template-artifact",
+    "ref": "main",
+    "directory": "Template-Presentation-Native"
+  },
+  "templates": [
+    {
+      "slug": "bloom-native",
+      "resourceId": "template:pptx-bloom-runbook",
+      "defaultColorSystem": "carnival",
+      "storageId": "f8bda3ed-8d8f-5a17-9147-f3d86ff86b5e"
+    },
+    {
+      "slug": "blueprint-academy-native",
+      "resourceId": "template:pptx-blueprint-academy-runbook",
+      "defaultColorSystem": "forest_editorial",
+      "storageId": "7c051ebc-28e0-5d86-a936-26e63b52e54a"
+    },
+    {
+      "slug": "botane-organic-native",
+      "resourceId": "template:pptx-botane-organic-runbook",
+      "defaultColorSystem": "mauve_dusk",
+      "storageId": "5769c7c7-2bbc-5f6e-972b-02a15dcc8311"
+    },
+    {
+      "slug": "business-data-native",
+      "resourceId": "template:pptx-business-data-runbook",
+      "defaultColorSystem": "berry_pop",
+      "storageId": "4cccdf0b-0af8-561b-831b-4ce28fa97efa"
+    },
+    {
+      "slug": "crayon-native",
+      "resourceId": "template:pptx-crayon-runbook",
+      "defaultColorSystem": "prism",
+      "storageId": "297e04c0-58b6-5c1f-b464-3a2e341673ef"
+    },
+    {
+      "slug": "creative-agency-native",
+      "resourceId": "template:pptx-creative-agency-runbook",
+      "defaultColorSystem": "coral_studio",
+      "storageId": "045ad91c-c2e9-5f94-b688-64b9f4864116"
+    },
+    {
+      "slug": "data-report-native",
+      "resourceId": "template:pptx-data-report-runbook",
+      "defaultColorSystem": "prism",
+      "storageId": "4a64b3fa-4336-53c7-9778-55c54db12c63"
+    },
+    {
+      "slug": "editorial-magazine-native",
+      "resourceId": "template:pptx-editorial-magazine-runbook",
+      "defaultColorSystem": "warm_sand",
+      "storageId": "06b6e132-8170-548d-8e91-cabe8077e454"
+    },
+    {
+      "slug": "landing-consulting-native",
+      "resourceId": "template:pptx-landing-consulting-runbook",
+      "defaultColorSystem": "pop_art",
+      "storageId": "159c0591-f4b6-5169-8fae-76be190a1c81"
+    },
+    {
+      "slug": "lumina-native",
+      "resourceId": "template:pptx-lumina-runbook",
+      "defaultColorSystem": "prism",
+      "storageId": "e0aa97a0-676d-57ff-818b-c51b50b57a91"
+    },
+    {
+      "slug": "meridian-native",
+      "resourceId": "template:pptx-meridian-runbook",
+      "defaultColorSystem": "slate_corporate",
+      "storageId": "6376a53f-285a-5e09-ba36-73af5464b4ac"
+    },
+    {
+      "slug": "mosaic-geometric-native",
+      "resourceId": "template:pptx-mosaic-geometric-runbook",
+      "defaultColorSystem": "carnival",
+      "storageId": "23bc0e3e-d316-521d-8780-612ca1952dd3"
+    },
+    {
+      "slug": "neo-brutalism-native",
+      "resourceId": "template:pptx-neo-brutalism-runbook",
+      "defaultColorSystem": "mono_ink",
+      "storageId": "0ac56cc6-45ad-5eb2-b777-68964bf15b8b"
+    },
+    {
+      "slug": "nocturne-native",
+      "resourceId": "template:pptx-nocturne-runbook",
+      "defaultColorSystem": "midnight_mono",
+      "storageId": "80f1aa8e-fad9-5f70-a39f-503f02b8560f"
+    },
+    {
+      "slug": "pixel-glitch-native",
+      "resourceId": "template:pptx-pixel-glitch-runbook",
+      "defaultColorSystem": "bauhaus_primary",
+      "storageId": "670dd7aa-9566-5321-b2c4-f820da70d0f8"
+    },
+    {
+      "slug": "playful-launch-native",
+      "resourceId": "template:pptx-playful-launch-runbook",
+      "defaultColorSystem": "carnival",
+      "storageId": "3e76af8e-f750-545a-a21d-58fc834d6cac"
+    },
+    {
+      "slug": "playful-pop-native",
+      "resourceId": "template:pptx-playful-pop-runbook",
+      "defaultColorSystem": "pop_art",
+      "storageId": "55c2b633-76cd-573b-8adf-939e033ab8d2"
+    },
+    {
+      "slug": "prospectus-native",
+      "resourceId": "template:pptx-prospectus-runbook",
+      "defaultColorSystem": "slate_corporate",
+      "storageId": "26d04601-0999-5f96-a73b-9cdbde19428a"
+    },
+    {
+      "slug": "schoolhouse-native",
+      "resourceId": "template:pptx-schoolhouse-runbook",
+      "defaultColorSystem": "bauhaus_primary",
+      "storageId": "84dcebea-f592-5376-8892-e814d2d69431"
+    },
+    {
+      "slug": "sticker-scrapbook-native",
+      "resourceId": "template:pptx-sticker-scrapbook-runbook",
+      "defaultColorSystem": "prism",
+      "storageId": "5f4ef35d-4843-5795-8bac-1b1eb484f731"
+    },
+    {
+      "slug": "strata-native",
+      "resourceId": "template:pptx-strata-runbook",
+      "defaultColorSystem": "mono_ink",
+      "storageId": "8e41bce2-c260-5f28-ade6-5bb11520ff07"
+    },
+    {
+      "slug": "taped-consulting-native",
+      "resourceId": "template:pptx-taped-consulting-runbook",
+      "defaultColorSystem": "slate_corporate",
+      "storageId": "6849dc95-ce5a-5df1-95a2-d9feb92c2295"
+    },
+    {
+      "slug": "vantage-native",
+      "resourceId": "template:pptx-vantage-runbook",
+      "defaultColorSystem": "slate_corporate",
+      "storageId": "ff725dd1-0bf3-502b-8d52-1c1b74a563dc"
+    }
+  ]
+}
