@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.249.35](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.34...runner-rs-v0.249.35) (2026-11-17)
+
+
+### Bug Fixes
+
+* **runner:** finish response inspection before native connection close ([#48224](https://github.com/okou-ai/okou/issues/48224)) ([ef207eb](https://github.com/okou-ai/okou/commit/ef207eba3382b061c414d118a0cf81b293a9e9af))
+
+
+### Refactoring
+
+* **python:** give streamed body capture one state owner ([#48215](https://github.com/okou-ai/okou/issues/48215)) ([135a178](https://github.com/okou-ai/okou/commit/135a178e3ad4fa1893dd4764fb7b712df2c6cdc4))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.34](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.33...runner-rs-v0.249.34) (2026-11-17)
 
 ### Release Dependencies

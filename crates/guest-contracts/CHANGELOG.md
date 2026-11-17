@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.16](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.15...guest-contracts-v0.32.16) (2026-11-17)
+
+
+### Refactoring
+
+* **runner:** remove unused execution overrides ([#48162](https://github.com/okou-ai/okou/issues/48162)) ([1f0afc6](https://github.com/okou-ai/okou/commit/1f0afc6aa21f773b54c1d64b540280698e58f699))
+
 ## [0.32.15](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.14...guest-contracts-v0.32.15) (2026-11-17)
 
 
