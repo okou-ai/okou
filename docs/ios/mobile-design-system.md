@@ -643,7 +643,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 
 | Component         | Use / states                                                                                                                                                                                             |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OkouSearchBar`   | Shared 44 pt clear glass capsule with the Lucide `search` glyph in placeholder grey; wraps the sidebar's search prompt or the search page's native input                                                 |
+| `OkouSearchBar`   | Shared 44 pt clear glass capsule with the Lucide `search` glyph in placeholder grey; wraps a static search prompt or the search page's native input                                                      |
 | `OkouSearchPage`  | A large native sheet with a fixed search field, one-action trailing close, pinned filters on a solid header, transparent list rows and one empty state centred above the keyboard. Catalog: Search sheet |
 | `OkouSearchField` | Native text editing focused once during presentation, with IME composition and selection preserved; keyboard Search ends editing without closing the page                                                |
 
@@ -801,8 +801,9 @@ feature; the catalog shows each one.
   logo beside its name and the system check on the current one, as the web's switcher
   lists them; a menu draws images, not views, so `OkouWorkspaceMenuLogos` draws each
   tile once (28 pt, `OkouAvatarSize.menu`) with the logo's own rounded corners. A thumb-reach bottom bar: the account's own photo
-  (`OkouProfileAvatar`, 44 pt) opens Settings on the left, a search capsule fills the
-  middle, and new chat is the prominent circle on the right.
+  (`OkouProfileAvatar`, 44 pt) opens Settings on the left, a "New Message" capsule with
+  `square-pen` fills the middle, and search is the glass circle on the right. Both actions
+  retain the existing native new-chat navigation and search sheet.
 - **Sidebar order**: the header's one menu holds the chat filter (the web's Inbox — All
   chats without archiving — / Unread / Archived / Muted), then Mark all read and New project,
   so the list starts 12 pt below the header. Projects come first, oldest first, as the web

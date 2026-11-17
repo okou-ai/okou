@@ -635,8 +635,7 @@ struct ChatSidebarView: View {
     .disabled(store.list.updatingThreads.contains(thread.id) || store.list.markingAgentRead)
   }
 
-  /// Thumb-reach bar: the account (settings) on the left, search in the middle, and the one
-  /// primary action, a new chat, on the right.
+  /// Thumb-reach bar: settings on the left, a new-message capsule, and search on the right.
   private var footer: some View {
     HStack(spacing: OkouSpace.md) {
       Button {
@@ -663,21 +662,27 @@ struct ChatSidebarView: View {
         .preferredColorScheme(colorScheme)
       }
       Button {
-        store.search.present()
-      } label: {
-        OkouSearchBar(prompt: "Search chats")
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("Search chats")
-      .accessibilityIdentifier("search-chats")
-      Button {
         newChat()
       } label: {
-        OkouToolbarIcon("square-pen")
+        Label("New Message", okouSymbol: "square-pen")
+          .font(.okou(.body))
+          .foregroundStyle(OkouColor.placeholder)
+          .lineLimit(1)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, OkouSpace.lg)
+          .modifier(OkouGlassControl(shape: .capsule))
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel("New Message")
+      .accessibilityIdentifier("new-chat")
+      Button {
+        store.search.present()
+      } label: {
+        OkouToolbarIcon("search")
           .modifier(OkouGlassControl(shape: .circle))
       }
-      .accessibilityLabel("New chat")
-      .accessibilityIdentifier("new-chat")
+      .accessibilityLabel("Search chats")
+      .accessibilityIdentifier("search-chats")
     }
     .buttonStyle(.plain)
     .frame(height: OkouControl.minimumTarget + OkouSpace.md)
