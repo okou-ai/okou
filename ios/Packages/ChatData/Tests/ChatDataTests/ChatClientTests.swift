@@ -388,7 +388,8 @@ final class ChatClientTests: XCTestCase {
     XCTAssertTrue(paths.contains("/api/chat-threads/\(fixtureThread)/event-rows?3"))
   }
 
-  private static func rebaseHistorySnapshot(generation current: Int) -> ChatHTTPResponse {
+  nonisolated private static func rebaseHistorySnapshot(generation current: Int) -> ChatHTTPResponse
+  {
     if current == 1 {
       return ChatHTTPResponse(
         body: eventJSON(seq: 1, type: "input.prompt", payload: userPayload("Old question"))
