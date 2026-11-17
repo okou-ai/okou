@@ -20,6 +20,8 @@ struct ComposerAddSheet: View {
   @Environment(\.dismiss) private var dismiss
   @State private var library = RecentPhotoLibrary()
   @State private var picked: [String] = []
+  @State private var cameraAvailable = false
+  @State private var scannerAvailable = false
 
   var body: some View {
     NavigationStack {
@@ -29,7 +31,7 @@ struct ComposerAddSheet: View {
           VStack(spacing: 0) {
             OkouActionRow("All photos", icon: "images") { choose(.photos) }
               .accessibilityIdentifier("composer-photos")
-            if ComposerDocumentScanner.isAvailable {
+            if scannerAvailable {
               OkouActionRow("Scan Document", icon: "scan-text") { choose(.scan) }
             }
             OkouActionRow("Choose Files", icon: "folder") { choose(.files) }
@@ -67,7 +69,11 @@ struct ComposerAddSheet: View {
           .accessibilityIdentifier("composer-add-photos")
         }
       }
-      .task { await library.load() }
+      .task {
+        cameraAvailable = ComposerCamera.isAvailable
+        scannerAvailable = ComposerDocumentScanner.isAvailable
+        await library.load()
+      }
     }
     .presentationDetents([.medium, .large])
     .presentationDragIndicator(.visible)
@@ -77,28 +83,32 @@ struct ComposerAddSheet: View {
   /// Camera first, then the latest photos when the library is open to Okou; every photo is
   /// the first row under the strip, through the system picker.
   private var strip: some View {
-    OkouChipRail {
-      Button {
-        choose(.camera)
-      } label: {
-        OkouActionTile(title: "Camera", icon: "camera")
-      }
-      .buttonStyle(.plain)
-      .disabled(!ComposerCamera.isAvailable)
-      .opacity(ComposerCamera.isAvailable ? 1 : 0.4)
-      .accessibilityIdentifier("composer-camera")
-      ForEach(library.recent, id: \.localIdentifier) { asset in
-        RecentPhotoTile(
-          asset: asset, library: library, isSelected: picked.contains(asset.localIdentifier)
-        ) {
-          if let index = picked.firstIndex(of: asset.localIdentifier) {
-            picked.remove(at: index)
-          } else {
-            picked.append(asset.localIdentifier)
+    ScrollView(.horizontal) {
+      LazyHStack(spacing: OkouSpace.sm) {
+        Button {
+          choose(.camera)
+        } label: {
+          OkouActionTile(title: "Camera", icon: "camera")
+        }
+        .buttonStyle(.plain)
+        .disabled(!cameraAvailable)
+        .opacity(cameraAvailable ? 1 : 0.4)
+        .accessibilityIdentifier("composer-camera")
+        ForEach(library.recent, id: \.localIdentifier) { asset in
+          RecentPhotoTile(
+            asset: asset, library: library, isSelected: picked.contains(asset.localIdentifier)
+          ) {
+            if let index = picked.firstIndex(of: asset.localIdentifier) {
+              picked.remove(at: index)
+            } else {
+              picked.append(asset.localIdentifier)
+            }
           }
         }
       }
+      .padding(.horizontal, OkouSpace.lg)
     }
+    .scrollIndicators(.hidden)
     .frame(height: OkouControl.mediaTile)
   }
 
@@ -155,19 +165,34 @@ private struct RecentPhotoTile: View {
 @MainActor @Observable
 final class RecentPhotoLibrary {
   private(set) var recent: [PHAsset] = []
-  @ObservationIgnored private let images = PhotoLibraryImageManager()
+  @ObservationIgnored private var images: PhotoLibraryImageManager?
 
   func load() async {
+    let snapshot = await Self.readRecentPhotos()
+    guard !Task.isCancelled else { return }
+    images = snapshot.images
+    recent = snapshot.assets
+  }
+
+  /// PhotoKit's synchronous setup and fetch must not hold up the sheet's first frames.
+  /// A sending result transfers the immutable assets to this presentation's main-actor owner.
+  @concurrent
+  private nonisolated static func readRecentPhotos() async -> sending (
+    assets: [PHAsset], images: PhotoLibraryImageManager?
+  ) {
+    guard !Task.isCancelled else { return ([], nil) }
     var status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     if status == .notDetermined {
       status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
     }
-    guard !Task.isCancelled, status == .authorized || status == .limited else { return }
+    guard !Task.isCancelled, status == .authorized || status == .limited else { return ([], nil) }
     let options = PHFetchOptions()
     options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
     options.fetchLimit = 24
     let result = PHAsset.fetchAssets(with: .image, options: options)
-    recent = result.objects(at: IndexSet(integersIn: 0..<result.count))
+    return (
+      result.objects(at: IndexSet(integersIn: 0..<result.count)), PhotoLibraryImageManager()
+    )
   }
 
   /// The picked photos, in the order they were picked.
@@ -182,6 +207,7 @@ final class RecentPhotoLibrary {
   }
 
   func thumbnail(for asset: PHAsset, side: CGFloat) async -> UIImage? {
+    guard let images else { return nil }
     let options = PHImageRequestOptions()
     options.deliveryMode = .highQualityFormat
     options.resizeMode = .fast
