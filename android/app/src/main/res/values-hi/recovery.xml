@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recovery_loading">रिकवरी विकल्प लोड हो रहे हैं…</string>
+    <string name="recovery_read_failed">रिकवरी विकल्प उपलब्ध नहीं हैं।</string>
+    <string name="recovery_continue">जारी रखें</string>
+    <string name="recovery_reset">उपयोग रीसेट करके जारी रखें (एक रीसेट क्रेडिट लगेगा)</string>
+    <string name="recovery_reset_unknown">मूल रीसेट की पुष्टि नहीं हुई है। अपने आप दोबारा कोशिश नहीं होगी।</string>
+    <string name="recovery_reset_retry">मूल रीसेट दोबारा आजमाएँ</string>
+    <string name="recovery_needs_changes">जारी रखने से पहले मॉडल, खाते की सेटिंग या बातचीत बदलें।</string>
+    <string name="recovery_billing">वर्कस्पेस क्रेडिट: %1$s। बिलिंग जाँचें।</string>
+    <string name="recovery_no_credit">पिछली रीसेट कोशिश में कोई क्रेडिट उपलब्ध नहीं था।</string>
+    <string name="recovery_submitted">जारी रखने का अनुरोध स्वीकार हुआ। इतिहास की प्रतीक्षा है।</string>
+    <string name="recovery_failed">रिकवरी पूरी नहीं हुई। दोबारा कोशिश से पहले मूल कार्रवाई जाँचें।</string>
+    <string name="recovery_credits">रीसेट क्रेडिट: %1$d</string>
+</resources>

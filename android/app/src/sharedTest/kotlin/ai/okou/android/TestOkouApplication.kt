@@ -89,6 +89,8 @@ open class TestOkouApplication : OkouApplication() {
     var composerService: ChatComposerService = TestChatComposerService()
     var journalStore: ComposerJournalStore? = null
     var controlService: RunControlService? = null
+    var recoveryService: ai.okou.android.chat.AssistantRecoveryService =
+        TestAssistantRecoveryService()
     var controlJournalStore: RunControlJournalStore? = null
     override val runControlJournal
         get() = controlJournalStore ?: super.runControlJournal
@@ -121,6 +123,7 @@ open class TestOkouApplication : OkouApplication() {
         fun stored() = preferences.getOrPut(key) { testBootstrap(identity.workspaceId).preferences }
         return object :
             WorkspaceSession,
+            ai.okou.android.chat.AssistantRecoveryService by recoveryService,
             RealtimeService by realtimeService,
             ChatListService by chatService,
             ChatComposerService by composerService {

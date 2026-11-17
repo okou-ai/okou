@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recovery_loading">Chargement des options de reprise…</string>
+    <string name="recovery_read_failed">Les options de reprise sont indisponibles.</string>
+    <string name="recovery_continue">Continuer</string>
+    <string name="recovery_reset">Réinitialiser et continuer (utilise un crédit)</string>
+    <string name="recovery_reset_unknown">La réinitialisation initiale reste non confirmée. Aucun nouvel essai automatique.</string>
+    <string name="recovery_reset_retry">Réessayer la réinitialisation initiale</string>
+    <string name="recovery_needs_changes">Modifiez le modèle, le compte ou la conversation avant de continuer.</string>
+    <string name="recovery_billing">Crédits de l’espace : %1$s. Vérifiez la facturation.</string>
+    <string name="recovery_no_credit">Aucun crédit disponible lors de la dernière réinitialisation.</string>
+    <string name="recovery_submitted">Suite acceptée. En attente de l’historique.</string>
+    <string name="recovery_failed">La reprise est incomplète. Vérifiez l’opération initiale avant de réessayer.</string>
+    <string name="recovery_credits">Crédits de réinitialisation : %1$d</string>
+</resources>

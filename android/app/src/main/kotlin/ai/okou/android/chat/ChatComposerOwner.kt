@@ -3,6 +3,7 @@ package ai.okou.android.chat
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.CanonicalInteger1
 import ai.okou.android.api.generated.CreateThreadRequest
+import ai.okou.android.api.generated.ResetSubscriptionResultOutcome
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.SendRequestVariant1UserMessage
 import ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant1
@@ -20,6 +21,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /** Main-thread transaction owner shared by attached workspace presentation controllers. */
@@ -33,10 +35,11 @@ internal class ChatComposerOwner(
         val authorized: () -> Boolean,
         val onFailure: (Exception) -> Unit,
         val accepted: (String) -> Unit,
+        val recovery: AssistantRecoveryModel? = null,
     ) {
         var retired = false
 
-        fun current() = !retired && authorized()
+        fun current() = !retired && scope.isActive && authorized()
     }
 
     private class Operation(
@@ -45,7 +48,10 @@ internal class ChatComposerOwner(
         val checking: Boolean = false,
     ) {
         var job: Job? = null
+        var unsentReset: UnsentReset? = null
     }
+
+    private class UnsentReset(val previous: ComposerRecovery?, val prepared: ComposerRecovery)
 
     private val mutable = MutableStateFlow(ComposerState())
     val uiState = mutable.asStateFlow()
@@ -73,6 +79,7 @@ internal class ChatComposerOwner(
             .filter { it.connection === connection }
             .toList()
             .forEach { op ->
+                restoreUnsentReset(op)
                 operations.remove(op.key)
                 mutable.value =
                     mutable.value.copy(busy = operations.keys.toSet(), checking = checkingTargets())
@@ -93,9 +100,12 @@ internal class ChatComposerOwner(
 
     private fun replace(journal: ComposerJournal) {
         val ticket = ++revision
-        val pending = store.persist(identity, journal)
+        val value =
+            if (journal.entries.values.any { it.recovery != null }) journal.copy(format = 2)
+            else journal
+        val pending = store.persist(identity, value)
         mutable.value =
-            mutable.value.copy(journal = journal, persistence = ComposerPersistence.Pending)
+            mutable.value.copy(journal = value, persistence = ComposerPersistence.Pending)
         localScope.launch {
             val result =
                 try {
@@ -122,7 +132,8 @@ internal class ChatComposerOwner(
                 value.text.isEmpty() &&
                     value.pending == null &&
                     value.receipt == null &&
-                    value.createdThreadId == null
+                    value.createdThreadId == null &&
+                    value.recovery == null
             )
                 journal.entries - key
             else journal.entries + (key to value)
@@ -284,6 +295,159 @@ internal class ChatComposerOwner(
         begin(connection, target.key)?.let(::dispatch)
     }
 
+    private suspend fun durableRecovery(op: Operation, attempt: ComposerRecovery) {
+        val saved = store.load(identity)
+        requireCurrent(op)
+        if (
+            !saved.durable ||
+                saved.journal.entries[op.key]?.recovery != attempt ||
+                mutable.value.journal?.entries?.get(op.key)?.recovery != attempt
+        )
+            throw IOException("Exact recovery intent is not durable")
+    }
+
+    private fun prepareRecovery(op: Operation, attempt: ComposerRecovery) {
+        val entry = mutable.value.journal?.entries?.get(op.key) ?: ComposerEntry()
+        put(op.key, entry.copy(recovery = attempt))
+        if (attempt.reset != null && attempt.reset != entry.recovery?.reset)
+            op.unsentReset = UnsentReset(entry.recovery, attempt)
+    }
+
+    private fun restoreUnsentReset(op: Operation) {
+        val unsent = op.unsentReset ?: return
+        op.unsentReset = null
+        val entry = mutable.value.journal?.entries?.get(op.key) ?: return
+        if (entry.recovery == unsent.prepared) put(op.key, entry.copy(recovery = unsent.previous))
+    }
+
+    fun recover(connection: Connection, target: ComposerTarget, failureId: String, reset: Boolean) {
+        val recovery = connection.recovery ?: return
+        val selected =
+            recovery.selection()?.takeIf {
+                it.failureId == failureId &&
+                    it.threadId == target.threadId &&
+                    it.agentId == target.agentId
+            } ?: return
+        val state = mutable.value
+        if (
+            state.journal == null ||
+                state.persistence == ComposerPersistence.Failed ||
+                state.entry(target).pending != null
+        )
+            return
+        val previous = state.entry(target).recovery
+        val generation = recovery.generation
+        val displayed = recovery.uiState.value.data?.takeIf { it.selection == selected }
+        val expectedAccount =
+            previous?.takeIf { it.selection == selected && it.outcome == null }?.reset?.accountId
+                ?: displayed?.resetAccount?.id
+        if (reset && expectedAccount == null) return
+        if (previous?.submitted == true && previous.selection == selected) return
+        if (previous?.reset != null && previous.outcome == null && previous.selection != selected)
+            return
+        val op = begin(connection, target.key) ?: return
+        op.job =
+            connection.scope.launch {
+                try {
+                    val data = recovery.validate(selected, generation)
+                    requireCurrent(op)
+                    if (!data.classification.canContinue) throw RecoveryUnavailable()
+                    if (reset && data.account?.id != expectedAccount) throw RecoveryUnavailable()
+                    var attempt =
+                        mutable.value.entry(target).recovery?.takeIf { it.selection == selected }
+                    if (
+                        attempt?.reset != null &&
+                            attempt.outcome != null &&
+                            attempt.reset.accountId != data.account?.id
+                    ) {
+                        // The previous reset is settled and no input was dispatched. A fresh
+                        // displayed account choice starts its own intent, never inherits that
+                        // reset.
+                        if (displayed == null || displayed.account?.id != data.account?.id)
+                            throw RecoveryUnavailable()
+                        attempt = null
+                    }
+                    if (attempt == null) {
+                        if (reset && data.resetAccount == null) throw RecoveryUnavailable()
+                        attempt = newRecovery(data, reset)
+                        prepareRecovery(op, attempt)
+                    } else if (
+                        reset &&
+                            (attempt.reset == null ||
+                                attempt.outcome == ResetSubscriptionResultOutcome.NOCREDIT)
+                    ) {
+                        // A new explicit choice is safe before input dispatch when no reset was
+                        // attempted or noCredit definitively spent nothing. Keep the input UUIDs.
+                        if (data.resetAccount == null) throw RecoveryUnavailable()
+                        attempt = attempt.copy(reset = newRecoveryReset(data), outcome = null)
+                        prepareRecovery(op, attempt)
+                    }
+                    durableRecovery(op, attempt)
+                    val resetIntent = attempt.reset
+                    if (resetIntent != null && attempt.outcome == null) {
+                        if (
+                            !reset ||
+                                data.account?.id != resetIntent.accountId ||
+                                data.classification.kind != FailureKind.Usage ||
+                                data.classification.framework != RecoveryFramework.Codex ||
+                                data.classification.limit == RecoveryLimit.Model
+                        )
+                            throw RecoveryUnavailable()
+                        recovery.requireWritable(selected, generation)
+                        // From this call onward the outcome may be unknown. Never restore the
+                        // previous intent after a reset could have reached the provider.
+                        op.unsentReset = null
+                        val result =
+                            recovery.service.resetSubscription(
+                                resetIntent.accountId,
+                                resetIntent.idempotencyKey,
+                            )
+                        requireCurrent(op)
+                        attempt = attempt.copy(outcome = result.outcome)
+                        put(op.key, mutable.value.entry(target).copy(recovery = attempt))
+                        durableRecovery(op, attempt)
+                    }
+                    if (reset && attempt.outcome == ResetSubscriptionResultOutcome.NOCREDIT)
+                        return@launch
+                    val current = recovery.validate(selected, generation)
+                    requireCurrent(op)
+                    if (
+                        !current.classification.canContinue ||
+                            mutable.value.entry(target).pending != null ||
+                            attempt.reset != null && current.account?.id != attempt.reset.accountId
+                    )
+                        throw RecoveryUnavailable()
+                    val pending =
+                        PendingText(
+                            checkNotNull(attempt.send.clientEventId),
+                            selected.threadId,
+                            null,
+                            attempt.send,
+                            TextStage.Prepared,
+                        )
+                    put(op.key, mutable.value.entry(target).copy(pending = pending, receipt = null))
+                    deliver(op, selected, generation)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    fail(op, error)
+                } finally {
+                    finish(op)
+                }
+            }
+    }
+
+    fun reconcileRecovery(connection: Connection, checkpoint: HistoryCheckpoint) {
+        if (!connection.current()) return
+        val key = "thread:${checkpoint.threadId}"
+        val entry = mutable.value.journal?.entries?.get(key) ?: return
+        val recovery = entry.recovery ?: return
+        if (!recovery.submitted || entry.pending != null) return
+        val id = recovery.send.clientEventId
+        if (checkpoint.rows.any { it.id == id || it.revokesId == id })
+            put(key, entry.copy(recovery = null))
+    }
+
     private suspend fun durable(op: Operation, pending: PendingText) {
         val saved = store.load(identity)
         requireCurrent(op)
@@ -307,29 +471,7 @@ internal class ChatComposerOwner(
         op.job =
             op.connection.scope.launch {
                 try {
-                    var pending = checkNotNull(mutable.value.journal?.entries?.get(op.key)?.pending)
-                    if (
-                        pending.create != null &&
-                            pending.stage in setOf(TextStage.Prepared, TextStage.Creating)
-                    ) {
-                        pending = stage(op, pending, TextStage.Creating)
-                        durable(op, pending)
-                        val result =
-                            op.connection.service.createThread(checkNotNull(pending.create))
-                        requireCurrent(op)
-                        if (
-                            result.id != pending.threadId ||
-                                result.projectId != pending.create.projectId
-                        )
-                            throw ApiFailure.IncompatibleResponse()
-                        pending = stage(op, pending, TextStage.Created)
-                    }
-                    pending = stage(op, pending, TextStage.Sending)
-                    durable(op, pending)
-                    val result = op.connection.service.sendInput(pending.send)
-                    requireCurrent(op)
-                    if (result.threadId != pending.threadId) throw ApiFailure.IncompatibleResponse()
-                    settle(op, pending, TextDisposition.Accepted)
+                    deliver(op)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -338,6 +480,64 @@ internal class ChatComposerOwner(
                     finish(op)
                 }
             }
+    }
+
+    private suspend fun deliver(
+        op: Operation,
+        validated: RecoverySelection? = null,
+        generation: Long? = null,
+    ) {
+        var pending = checkNotNull(mutable.value.journal?.entries?.get(op.key)?.pending)
+        val recoveryAttempt =
+            mutable.value.journal?.entries?.get(op.key)?.recovery?.takeIf {
+                it.send.clientEventId == pending.eventId
+            }
+        val recoveryGeneration = generation ?: op.connection.recovery?.generation
+        if (recoveryAttempt != null) {
+            if (pending.stage == TextStage.Sending) {
+                val observed = op.connection.service.observeInput(pending.threadId, pending.eventId)
+                requireCurrent(op)
+                if (observed.threadId != pending.threadId || observed.eventId != pending.eventId)
+                    throw ApiFailure.IncompatibleResponse()
+                if (observed.disposition != null) {
+                    settle(op, pending, observed.disposition)
+                    return
+                }
+            }
+            val recovery = op.connection.recovery ?: throw RecoveryUnavailable()
+            if (validated != recoveryAttempt.selection) {
+                val context =
+                    recovery.validate(recoveryAttempt.selection, checkNotNull(recoveryGeneration))
+                if (
+                    !context.classification.canContinue ||
+                        recoveryAttempt.reset != null &&
+                            context.account?.id != recoveryAttempt.reset.accountId
+                )
+                    throw RecoveryUnavailable()
+            }
+            requireCurrent(op)
+        }
+        if (
+            pending.create != null && pending.stage in setOf(TextStage.Prepared, TextStage.Creating)
+        ) {
+            pending = stage(op, pending, TextStage.Creating)
+            durable(op, pending)
+            val result = op.connection.service.createThread(checkNotNull(pending.create))
+            requireCurrent(op)
+            if (result.id != pending.threadId || result.projectId != pending.create.projectId)
+                throw ApiFailure.IncompatibleResponse()
+            pending = stage(op, pending, TextStage.Created)
+        }
+        pending = stage(op, pending, TextStage.Sending)
+        durable(op, pending)
+        recoveryAttempt?.let {
+            checkNotNull(op.connection.recovery)
+                .requireWritable(it.selection, checkNotNull(recoveryGeneration))
+        }
+        val result = op.connection.service.sendInput(pending.send)
+        requireCurrent(op)
+        if (result.threadId != pending.threadId) throw ApiFailure.IncompatibleResponse()
+        settle(op, pending, TextDisposition.Accepted)
     }
 
     fun observe(connection: Connection, target: ComposerTarget) {
@@ -393,11 +593,19 @@ internal class ChatComposerOwner(
                 pending = null,
                 receipt = TextReceipt(pending.threadId, pending.eventId, disposition),
                 createdThreadId = null,
+                recovery =
+                    entry.recovery?.let {
+                        if (it.send.clientEventId == pending.eventId) it.copy(submitted = true)
+                        else it
+                    },
             )
         // Retain meaningful input, plus this one delivery receipt; do not accumulate read history.
         val meaningful =
             journal.entries.filterValues {
-                it.text.isNotEmpty() || it.pending != null || it.createdThreadId != null
+                it.text.isNotEmpty() ||
+                    it.pending != null ||
+                    it.createdThreadId != null ||
+                    it.recovery != null
             }
         var entries = (meaningful - op.key) + (destination to value)
         if (pending.create != null)
@@ -417,6 +625,17 @@ internal class ChatComposerOwner(
 
     private fun fail(op: Operation, error: Exception) {
         if (current(op)) {
+            if (error is RecoveryUnavailable) {
+                val entry = mutable.value.journal?.entries?.get(op.key)
+                val pending = entry?.pending
+                // Prepared proves no input dispatch began. Retain the recovery/reset identity,
+                // but do not strand ordinary editing behind an obsolete unsent input.
+                if (
+                    pending?.stage == TextStage.Prepared &&
+                        pending.eventId == entry.recovery?.send?.clientEventId
+                )
+                    put(op.key, entry.copy(pending = null))
+            }
             report(op.connection, error)
             mutable.value = mutable.value.copy(failed = mutable.value.failed + op.key)
         }
@@ -424,6 +643,7 @@ internal class ChatComposerOwner(
 
     private fun finish(op: Operation) {
         if (operations[op.key] === op) {
+            restoreUnsentReset(op)
             operations.remove(op.key)
             mutable.value =
                 mutable.value.copy(busy = operations.keys.toSet(), checking = checkingTargets())

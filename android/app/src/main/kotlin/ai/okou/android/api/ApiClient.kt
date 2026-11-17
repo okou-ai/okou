@@ -181,6 +181,22 @@ class ApiClient(
 
     suspend fun onboardingStatus() = execute { reads.onboardingStatus(it) }
 
+    suspend fun recoveryCatalog() = execute { reads.recoveryCatalog(it) }
+
+    suspend fun recoveryModels() = execute { reads.recoveryModels(it) }
+
+    suspend fun recoverySubscriptions() = execute { reads.recoverySubscriptions(it) }
+
+    suspend fun recoveryBilling() = execute { reads.recoveryBilling(it) }
+
+    suspend fun resetSubscription(accountId: String, idempotencyKey: String) = execute {
+        api.resetSubscription(
+            it,
+            accountId,
+            ai.okou.android.api.generated.ResetSubscriptionRequest(idempotencyKey),
+        )
+    }
+
     suspend fun projectSnapshot(): ProjectSnapshot = execute { reads.projectSnapshot(it) }
 
     suspend fun projectEvents(since: Long): ProjectEvents = execute {
