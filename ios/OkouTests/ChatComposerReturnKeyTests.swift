@@ -233,7 +233,9 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     return "Chat reference suggestions after native readiness wait: "
       + "agent=\(String(describing: workspace.selectedAgentID)); "
       + "threads=\(workspace.list.threads.count); "
-      + "listError=\(String(describing: workspace.list.error)); "
+      + "threadsLoaded=\(workspace.list.hasLoadedThreads); "
+      + "workspaceError=\(String(describing: workspace.error)); "
+      + "listActionOrSyncError=\(String(describing: workspace.list.error)); "
       + "draft=\(String(reflecting: workspace.newChatDraft)); "
       + "ownsEditor=\(input.mentionEditor === workspace.newComposer.editor); "
       + "requests=\(paths); " + mentionState(input, in: host)
