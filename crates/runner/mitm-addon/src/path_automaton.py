@@ -6,6 +6,7 @@ from itertools import groupby
 from typing import NamedTuple
 
 from firewall_matching.patterns import (
+    ParsedSegment,
     SegmentLiteral,
     SegmentParam,
     _compiled_rule_path_is_valid,
@@ -19,6 +20,7 @@ from path_language import (
     MAX_PATH_CHARACTERS,
     AnalysisLimitError,
     Edge,
+    InvalidPathError,
     PathGraph,
     WorkBudget,
     is_literal_path_language,
@@ -273,12 +275,18 @@ def match_graph(graph: PathGraph, nfa: PatternNfa) -> MatchProof:
     return MatchProof(possible, possible and not rejected)
 
 
-def pattern_tokens(pattern: str) -> tuple[int, ...]:
-    compiled = compile_path_pattern(pattern)
-    if compiled is None or not _compiled_rule_path_is_valid(compiled):
-        raise ValueError("invalid source path pattern")
-    tokens: list[int] = [_SLASH]
-    for index, segment in enumerate(compiled.segments):
+def append_source_path_segments(
+    tokens: list[int],
+    segments: tuple[ParsedSegment, ...],
+    *,
+    invalid_segment_message: str | None,
+) -> None:
+    """Append the shared encoding, retaining caller-owned slash and error policies.
+
+    A message rejects an invalid segment immediately; None preserves the rule
+    encoder's no-else policy after its independent complete grammar validation.
+    """
+    for index, segment in enumerate(segments):
         if index:
             tokens.append(_SLASH)
         if isinstance(segment, SegmentLiteral):
@@ -289,6 +297,16 @@ def pattern_tokens(pattern: str) -> tuple[int, ...]:
                 _PLUS if segment.greedy == "+" else _STAR if segment.greedy == "*" else _PARAM
             )
             tokens.extend(segment.suffix.encode("utf-8"))
+        elif invalid_segment_message is not None:
+            raise InvalidPathError(invalid_segment_message)
+
+
+def pattern_tokens(pattern: str) -> tuple[int, ...]:
+    compiled = compile_path_pattern(pattern)
+    if compiled is None or not _compiled_rule_path_is_valid(compiled):
+        raise ValueError("invalid source path pattern")
+    tokens: list[int] = [_SLASH]
+    append_source_path_segments(tokens, compiled.segments, invalid_segment_message=None)
     return tuple(tokens)
 
 

@@ -48,6 +48,7 @@ from path_automaton import (
     PathAnalysis,
     PathCompiler,
     SelectionCandidate,
+    append_source_path_segments,
     certifies_selection,
 )
 from path_language import (
@@ -1036,17 +1037,11 @@ def _base_analysis_tokens(base: _CompiledBase, raw_path: str) -> tuple[int, ...]
     if not base.has_params:
         return None
     tokens: list[int] = [47] if base.parts.path else []
-    for index, segment in enumerate(base.path_segments):
-        if index:
-            tokens.append(47)
-        if isinstance(segment, SegmentLiteral):
-            tokens.extend(segment.value.encode("utf-8"))
-        elif isinstance(segment, SegmentParam):
-            tokens.extend(segment.prefix.encode("utf-8"))
-            tokens.append(-2 if segment.greedy == "+" else -3 if segment.greedy == "*" else -1)
-            tokens.extend(segment.suffix.encode("utf-8"))
-        else:
-            raise InvalidPathError("compiled base lost its path grammar")
+    append_source_path_segments(
+        tokens,
+        base.path_segments,
+        invalid_segment_message="compiled base lost its path grammar",
+    )
     if raw_path.endswith("/"):
         tokens.append(47)
     return tuple(tokens)
