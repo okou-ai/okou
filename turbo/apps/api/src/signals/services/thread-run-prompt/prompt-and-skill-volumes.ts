@@ -65,6 +65,7 @@ function createIntegrationPrompts(
     featureSwitches$,
     framework$,
     singleAgent$,
+    threadContext.projectContext$,
   );
   return {
     web: webPrompt$,
@@ -227,7 +228,7 @@ export function createPromptAndSkillVolumesSignals(
     featureSwitches$,
   );
   const { computerUsePrompt$, phoneUsePrompt$ } = deviceUsePrompts;
-  const rotatedPrompt$ = createRotatedPrompt(pickedEvent$);
+  const rotatedPrompt$ = createRotatedPrompt(threadContext.incompleteContext$);
   const connectors$ = createConnectorsContext(
     authorizedConnectors$,
     singleAgent$,

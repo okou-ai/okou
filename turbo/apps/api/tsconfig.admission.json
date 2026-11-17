@@ -163,6 +163,7 @@
     "src/signals/services/thread-connector-environment.signals.ts",
     "src/signals/services/thread-workflow-context.signals.ts",
     "src/signals/services/thread-model.signals.ts",
+    "src/signals/services/thread-project-context.service.ts",
     "src/signals/services/thread-run-prompt/**/*.ts",
     "src/signals/services/thread-run-context.service.ts",
     "src/signals/services/thread-automation-context.service.ts",

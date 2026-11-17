@@ -76,8 +76,10 @@ graph interfaces across boundaries. Read-only computed factory inputs follow
 the separate graph-construction allowance above.
 
 **Picked-event context — `ThreadContext`:**
-`createThreadContext(bootstrap, pickedEvent$)` builds the read-only computed
-collection for one selected event. Bootstrap keeps identity-scoped reads;
+`createThreadContext(bootstrap, pickedEvent$, chatThreadId)` builds the read-only
+computed collection for one claimed Thread and its selected event. Bootstrap keeps
+identity-scoped reads. Sources that need only the owned Thread identity can start
+independently of input selection; event-specific sources retain that dependency.
 ThreadContext owns thread/session facts, integration contexts, template selection
 and model routing. The picked event carries the thread snapshot already read by
 the request/pick path, so consumers do not issue another thread query. Identity
@@ -90,8 +92,9 @@ only declare computeds and verified computed bundles.
 Keep the three inputs distinct: consumers receive bootstrap, the picked event,
 and ThreadContext directly. Do not re-export bootstrap nodes or picked-event
 fields through ThreadContext; derive any required projections at the consumer.
-ThreadContext exposes facts that require event-specific resolution, such as
-session reads, channel contexts and execution-identity selection.
+ThreadContext exposes resolved Thread and event facts, such as access overrides,
+session reads, channel contexts and execution-identity selection. Entry points
+start independent sources explicitly; consumers join only the sources they need.
 
 Build the owning graph before commands execute. Do not call `command()` inside
 another command callback, including indirectly through a factory. Private nodes

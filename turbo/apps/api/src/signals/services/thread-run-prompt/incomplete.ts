@@ -379,7 +379,7 @@ function createIncompleteRounds(
   });
 }
 
-/** Private continuation material; the claim graph reads createRotatedPrompt. */
+/** Thread-owned continuation material, shared by early acquisition and Prompt. */
 export function createIncompletePrompt(
   pickedEvent$: Computed<Promise<IncompletePromptEvent | null>>,
 ): Computed<Promise<string>> {

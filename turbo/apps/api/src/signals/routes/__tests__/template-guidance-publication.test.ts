@@ -11,6 +11,8 @@ import { readTemplateGuidanceBundle } from "@okouai/core/template-guidance-bundl
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
+import { mockEnv } from "../../../lib/env";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { userTemplatesRoutes } from "../user-templates";
 import { presentationTemplatesRoutes } from "../presentation-templates";
@@ -161,6 +163,96 @@ function executionFiles(
 }
 
 describe.each(ownerKinds)("%s bundle publication", (kind) => {
+  it("uses the FIFO head's template when a later send supplies a different prefetch candidate", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    let waitingThreadId: string | undefined;
+    const owner = await publicChatActor(context, {
+      beforeRuns: async (actor) => {
+        if (waitingThreadId) {
+          await chat.chat.deleteThread(actor, waitingThreadId);
+          await flushWaitUntilForTest();
+        }
+      },
+    });
+    const fixture = await owner.run(() => {
+      return Promise.resolve(installS3Fixture(context));
+    });
+    const templates: string[] = [];
+    for (const revision of ["head", "later"]) {
+      const published = await owner.run(async () => {
+        return await publish(
+          kind,
+          await uploadInputs(owner.actor, fixture, tarGz(guidance(revision))),
+        );
+      });
+      if (published.status !== 200) {
+        throw new Error("Expected a published template");
+      }
+      templates.push(published.body.id);
+    }
+    const [headId, laterId] = templates;
+    if (!headId || !laterId) {
+      throw new Error("Expected two distinct template selections");
+    }
+    const blocker = await owner.sendChatRun(owner.actor, {
+      agentId: owner.agentId,
+      prompt: "Occupy the organization slot",
+    });
+    const blockerExecution = await owner.runExecution(blocker.runId);
+    const thread = await owner.run(() => {
+      return chat.chat.createThread(owner.actor, { agentId: owner.agentId });
+    });
+    waitingThreadId = thread.id;
+    const head = await owner.sendWaitingChatInput(owner.actor, {
+      agentId: owner.agentId,
+      threadId: thread.id,
+      prompt: "Use the head template",
+      template: selection(kind, headId),
+    });
+    await flushWaitUntilForTest();
+    // Free capacity without triggering a pick; the next send must pick the
+    // already queued head with that send's different request context.
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "0");
+    const later = await owner.sendWaitingChatInput(owner.actor, {
+      agentId: owner.agentId,
+      threadId: head.threadId,
+      prompt: "Use the later template",
+      template: selection(kind, laterId),
+    });
+    await flushWaitUntilForTest();
+    const firstRun = await head.launchedRun();
+    const first = await owner.runExecution(firstRun.runId);
+    expect(
+      executionFiles(fixture, first.execution, kind, headId),
+    ).toStrictEqual(guidance("head"));
+    await owner.run(() => {
+      return chat.cancelChatRun(
+        owner.actor,
+        firstRun.runId,
+        first.sandboxHeaders,
+      );
+    });
+    await flushWaitUntilForTest();
+    const secondRun = await later.launchedRun();
+    const second = await owner.runExecution(secondRun.runId);
+    expect(
+      executionFiles(fixture, second.execution, kind, laterId),
+    ).toStrictEqual(guidance("later"));
+    await owner.run(async () => {
+      await chat.cancelChatRun(
+        owner.actor,
+        secondRun.runId,
+        second.sandboxHeaders,
+      );
+      await chat.cancelChatRun(
+        owner.actor,
+        blocker.runId,
+        blockerExecution.sandboxHeaders,
+      );
+    });
+    waitingThreadId = undefined;
+  });
+
   it.each([
     { framework: "claude-code", model: "claude-fable-5-1" },
     { framework: "codex", model: "gpt-6-luna" },

@@ -4,7 +4,11 @@ import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  createChatEventsFixture,
+  userMessages,
+} from "./helpers/chat-events-fixture";
+import { publicChatActor } from "./helpers/public-chat-actor";
 
 const context = testContext();
 const {
@@ -17,6 +21,104 @@ const {
 } = createChatEventsFixture(context);
 
 describe("chat send authorization, validation and cancellation", () => {
+  it("launches an uppercase client UUID and accepts its lowercase retry as the same input", async () => {
+    const owner = await publicChatActor(context);
+    const clientEventId = randomUUID().toUpperCase();
+    const canonicalId = clientEventId.toLowerCase();
+    const input = {
+      agentId: owner.agentId,
+      clientEventId,
+      prompt: "Use the same input identity across preparation and retry",
+    };
+    const sent = await owner.run(() => {
+      return chat.requestSendEvent(owner.actor, input, [201]);
+    });
+    if (sent.status !== 201) {
+      throw new Error("Expected the input to be accepted");
+    }
+    await flushWaitUntilForTest();
+    const messages = await chat.listThreadEvents(
+      owner.actor,
+      sent.body.threadId,
+    );
+    const launched = userMessages(messages.events).find((message) => {
+      return message.revokesEventId === canonicalId;
+    });
+    if (!launched?.runId) {
+      throw new Error("Expected the uppercase UUID input to launch a Run");
+    }
+    const runId = launched.runId;
+    const execution = await owner.runExecution(runId);
+    await owner.run(() => {
+      return chat.requestSendEvent(
+        owner.actor,
+        {
+          ...input,
+          threadId: sent.body.threadId,
+          clientEventId: canonicalId,
+        },
+        [201],
+      );
+    });
+    await flushWaitUntilForTest();
+    const retried = await chat.listThreadEvents(
+      owner.actor,
+      sent.body.threadId,
+    );
+    expect(
+      userMessages(retried.events).filter((message) => {
+        return message.revokesEventId === canonicalId;
+      }),
+    ).toMatchObject([{ runId }]);
+    await owner.run(() => {
+      return cancelChatRun(owner.actor, runId, execution.sandboxHeaders);
+    });
+  });
+
+  it("rejects invalid model settings before resolving unavailable attachments", async () => {
+    const { actor, agentId } = await entitledNativeChatActor();
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: "claude-fable-5-1",
+    });
+    const before = await chat.listThreadEvents(actor, thread.id);
+    const fileId = randomUUID();
+    context.mocks.s3.send.mockRejectedValue(
+      new Error("attachment unavailable"),
+    );
+    const rejected = await requestSendEventRaw(actor, {
+      agentId,
+      threadId: thread.id,
+      prompt: "Reject before attachment preparation",
+      runOptions: { reasoningEffort: "xhigh" },
+      userMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "file",
+            fileId,
+            filenameSnapshot: "missing.txt",
+            contentType: "text/plain",
+          },
+        ],
+      },
+      hasTextContent: true,
+    });
+    expect(rejected).toStrictEqual({
+      status: 400,
+      body: {
+        error: {
+          code: "BAD_REQUEST",
+          message: "Reasoning effort is not supported by the selected model",
+        },
+      },
+    });
+    await expect(flushWaitUntilForTest()).resolves.toBeUndefined();
+    expect(
+      (await chat.listThreadEvents(actor, thread.id)).events,
+    ).toStrictEqual(before.events);
+  });
+
   it("does not enqueue when the caller aborts during attachment lookup", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     const thread = await chat.createThread(actor, { agentId });
