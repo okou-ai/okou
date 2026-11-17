@@ -2,10 +2,25 @@ import { createHash } from "node:crypto";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
-const CONFIG_URL = new URL(
-  "../presentation-template-release.json",
-  import.meta.url,
-);
+const CONFIGURATIONS = new Map([
+  [
+    "html",
+    {
+      url: new URL("../presentation-template-release.json", import.meta.url),
+      directory: "Template-Presentation",
+    },
+  ],
+  [
+    "pptx",
+    {
+      url: new URL(
+        "../presentation-template-release-pptx.json",
+        import.meta.url,
+      ),
+      directory: "Template-Presentation-Native",
+    },
+  ],
+]);
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 export const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 
@@ -35,12 +50,12 @@ export function assertSha256(value, label) {
   }
 }
 
-function validateConfigShape(config) {
+function validateConfigShape(config, directory) {
   if (
     config.schemaVersion !== 1 ||
     config.source?.repository !== "okou-ai/Template-artifact" ||
     config.source?.ref !== "main" ||
-    config.source?.directory !== "Template-Presentation" ||
+    config.source?.directory !== directory ||
     !Array.isArray(config.templates) ||
     config.templates.length === 0
   ) {
@@ -48,14 +63,21 @@ function validateConfigShape(config) {
   }
 }
 
-function validateRelease(release) {
+function validateRelease(release, outputFormat) {
+  const resourceMatches =
+    outputFormat === "pptx"
+      ? typeof release.slug === "string" &&
+        release.slug.endsWith("-native") &&
+        release.resourceId ===
+          `template:pptx-${release.slug.slice(0, -"-native".length)}-runbook`
+      : /^template:html-ppt-[a-z0-9]+(?:-[a-z0-9]+)*-runbook$/.test(
+          release.resourceId,
+        );
   const valid =
     typeof release.slug === "string" &&
     /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(release.slug) &&
     typeof release.resourceId === "string" &&
-    /^template:html-ppt-[a-z0-9]+(?:-[a-z0-9]+)*-runbook$/.test(
-      release.resourceId,
-    ) &&
+    resourceMatches &&
     typeof release.defaultColorSystem === "string" &&
     /^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(release.defaultColorSystem) &&
     typeof release.storageId === "string" &&
@@ -66,9 +88,22 @@ function validateRelease(release) {
   }
 }
 
-export async function loadConfig() {
-  const config = await readJson(CONFIG_URL);
-  validateConfigShape(config);
+export async function loadConfig(outputFormat = "html") {
+  const selected = CONFIGURATIONS.get(outputFormat);
+  if (!selected) {
+    throw new Error(`Unsupported presentation output format: ${outputFormat}`);
+  }
+  const config = await readJson(selected.url);
+  validateConfigShape(config, selected.directory);
+  if (
+    outputFormat === "pptx" &&
+    (typeof config.readerPreparationCommit !== "string" ||
+      !COMMIT_PATTERN.test(config.readerPreparationCommit))
+  ) {
+    throw new Error(
+      "Native presentation reader requirement must be a full commit SHA",
+    );
+  }
   assertUnique(
     config.templates.map((release) => release.slug),
     "Template slugs",
@@ -81,7 +116,9 @@ export async function loadConfig() {
     config.templates.map((release) => release.storageId),
     "Template storage ids",
   );
-  config.templates.forEach(validateRelease);
+  for (const release of config.templates) {
+    validateRelease(release, outputFormat);
+  }
   return config;
 }
 

@@ -66,20 +66,28 @@ function logPublishedReleases(releases, state) {
   for (const release of releases) {
     const current = state.get(release.slug);
     writeLine(
-      `PUBLISHED ${release.slug} resource=${release.resourceId} version=${release.newVersionId} sha256=${release.newSha256} previousVersion=${current.previousVersionId}`,
+      `PUBLISHED ${release.slug} resource=${release.resourceId} version=${release.newVersionId} sha256=${release.newSha256} previousVersion=${current.previousVersionId} firstPublication=${current.head === null}`,
     );
   }
 }
 
-export async function publishBundle(outputDir) {
-  const { config, publication } = await verifyBundle(outputDir);
+export async function publishBundle(
+  outputDir,
+  { outputFormat = "html", initializeMissingHeads = false } = {},
+) {
+  if (initializeMissingHeads && outputFormat !== "pptx") {
+    throw new Error("--initialize-missing-heads requires --format pptx");
+  }
+  const { config, publication } = await verifyBundle(outputDir, outputFormat);
   const releases = releasesForPublication(config, publication);
   const { bucket, client } = createRegistryR2Client();
   let sql;
 
   try {
     sql = createDatabaseClient(requiredEnv("DATABASE_URL"));
-    const state = await loadPublicationState(sql, releases);
+    const state = await loadPublicationState(sql, releases, {
+      initializeMissingHeads,
+    });
     await uploadPackages({
       bucket,
       client,
