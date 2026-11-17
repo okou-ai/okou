@@ -832,12 +832,13 @@ async fn complete_execution(
     let failure_message = state
         .failure_message
         .map(|message| masker.mask_string(message));
-    failure_diagnostics::refine_disk_full_failure_for_config(
-        config,
-        exit_code,
-        failure_message.as_deref(),
-        &mut state.failure_diagnostic,
-    );
+    if let Some(diagnostic) = state.failure_diagnostic.as_mut() {
+        failure_diagnostics::refine_disk_full_failure(
+            exit_code,
+            failure_message.as_deref(),
+            diagnostic,
+        );
+    }
     if let Some(message) = failure_message.as_deref() {
         failure_diagnostics::write_guest_error_file(
             runtime_paths.finalization_error_file(),

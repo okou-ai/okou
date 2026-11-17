@@ -7,7 +7,7 @@
 
 mod filesystem;
 
-pub use filesystem::refine_disk_full_failure_for_config;
+pub use filesystem::refine_disk_full_failure;
 
 use crate::cli;
 use crate::env;

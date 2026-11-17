@@ -1,5 +1,7 @@
 use super::*;
-use guest_contracts::diagnostics::{AgentFramework, CliTerminationDiagnostic, PromptMetadata};
+use guest_contracts::diagnostics::{
+    AgentFramework, CliTerminationDiagnostic, FailureClass, PromptMetadata,
+};
 
 fn observation(available_bytes: u64, available_inodes: u64) -> FilesystemObservation {
     FilesystemObservation {
@@ -22,6 +24,7 @@ fn diagnostic() -> FailureDiagnostic {
 
 #[test]
 fn selected_terminal_enospc_uses_precise_independent_filesystem_evidence() {
+    let diagnostic = diagnostic();
     let healthy = observation(FULL_AVAILABLE_BYTES + 1, 100);
     let full_bytes = observation(0, 100);
     let low_bytes = observation(FULL_AVAILABLE_BYTES, 100);
@@ -73,7 +76,7 @@ fn selected_terminal_enospc_uses_precise_independent_filesystem_evidence() {
             (None, None, None),
         ] {
             assert_eq!(
-                resolve_disk_full_failure_reason(1, Some(message), None, || (rootfs, home)),
+                resolve_disk_full_failure_reason(1, Some(message), &diagnostic, || (rootfs, home)),
                 expected,
                 "message={message}, rootfs={rootfs:?}, home={home:?}"
             );
@@ -94,13 +97,13 @@ fn only_an_unclassified_selected_terminal_enospc_failure_needs_a_probe() {
     ));
 
     for (exit_code, message, diagnostic) in [
-        (0, Some("tool failed with ENOSPC; recovered"), Some(&base)),
-        (1, None, Some(&base)),
-        (1, Some("provider stream interrupted"), Some(&base)),
-        (1, Some("ENOSPC"), Some(&known_provider)),
-        (124, Some("ENOSPC"), Some(&timeout)),
-        (1, Some("ENOSPC"), Some(&cancellation)),
-        (124, Some("ENOSPC"), Some(&timeout_without_reason)),
+        (0, Some("tool failed with ENOSPC; recovered"), &base),
+        (1, None, &base),
+        (1, Some("provider stream interrupted"), &base),
+        (1, Some("ENOSPC"), &known_provider),
+        (124, Some("ENOSPC"), &timeout),
+        (1, Some("ENOSPC"), &cancellation),
+        (124, Some("ENOSPC"), &timeout_without_reason),
     ] {
         assert_eq!(
             resolve_disk_full_failure_reason(exit_code, message, diagnostic, || {
