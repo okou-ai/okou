@@ -13,6 +13,38 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1143.0](https://github.com/okou-ai/okou/compare/app-v0.1142.1...app-v0.1143.0) (2026-11-17)
+
+
+### Features
+
+* drive phone use through realtime notifications ([#48253](https://github.com/okou-ai/okou/issues/48253)) ([7a71cfe](https://github.com/okou-ai/okou/commit/7a71cfe71674871cae66ddee7d0d12cd0a7f2760))
+* roll out free plan artifact paywall ([#48265](https://github.com/okou-ai/okou/issues/48265)) ([a8c6d85](https://github.com/okou-ai/okou/commit/a8c6d85e09610d0268362ec7db53d7ec8f031fb6))
+
+
+### Bug Fixes
+
+* generate semantic filenames for message pdf downloads ([#48262](https://github.com/okou-ai/okou/issues/48262)) ([d311fd8](https://github.com/okou-ai/okou/commit/d311fd8ca02dc9b2c555e52c2e8112a0fbab002b))
+
+
+### Refactoring
+
+* define client run and activity read models ([#48165](https://github.com/okou-ai/okou/issues/48165)) ([9be7072](https://github.com/okou-ai/okou/commit/9be7072fcdb23c781cc0d68a93dc88fc7b86f8da))
+
+
+### Performance Improvements
+
+* **app:** defer subscription reset tooltip preparation ([#48330](https://github.com/okou-ai/okou/issues/48330)) ([828f4da](https://github.com/okou-ai/okou/commit/828f4da6545b8e6499a9e1d96cb833abdaf87b35))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.83.0
+    * @okouai/core bumped to 8.848.0
+    * @okouai/ui bumped to 1.21.43
+
 ## [0.1142.1](https://github.com/okou-ai/okou/compare/app-v0.1142.0...app-v0.1142.1) (2026-11-17)
 
 

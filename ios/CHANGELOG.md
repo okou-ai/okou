@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.47.3](https://github.com/okou-ai/okou/compare/ios-v0.47.2...ios-v0.47.3) (2026-11-17)
+
+
+### Refactoring
+
+* define client run and activity read models ([#48165](https://github.com/okou-ai/okou/issues/48165)) ([9be7072](https://github.com/okou-ai/okou/commit/9be7072fcdb23c781cc0d68a93dc88fc7b86f8da))
+
 ## [0.47.2](https://github.com/okou-ai/okou/compare/ios-v0.47.1...ios-v0.47.2) (2026-11-17)
 
 

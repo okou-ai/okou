@@ -10,6 +10,32 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.85.0](https://github.com/okou-ai/okou/compare/api-v2.84.1...api-v2.85.0) (2026-11-17)
+
+
+### Features
+
+* **api:** durably refresh marketing reward progress ([#48264](https://github.com/okou-ai/okou/issues/48264)) ([f0eddb0](https://github.com/okou-ai/okou/commit/f0eddb06ec314725bc198c2bbbde7c5bb31a00c2))
+* drive phone use through realtime notifications ([#48253](https://github.com/okou-ai/okou/issues/48253)) ([7a71cfe](https://github.com/okou-ai/okou/commit/7a71cfe71674871cae66ddee7d0d12cd0a7f2760))
+* roll out free plan artifact paywall ([#48265](https://github.com/okou-ai/okou/issues/48265)) ([a8c6d85](https://github.com/okou-ai/okou/commit/a8c6d85e09610d0268362ec7db53d7ec8f031fb6))
+
+
+### Bug Fixes
+
+* **api:** record artifact success separately from run completion ([#48245](https://github.com/okou-ai/okou/issues/48245)) ([d9940ef](https://github.com/okou-ai/okou/commit/d9940efa398db348d91044a76fda715abc5f1dce))
+* **api:** remove outdated model guidance from welcome messages ([#48237](https://github.com/okou-ai/okou/issues/48237)) ([3f547ff](https://github.com/okou-ai/okou/commit/3f547ffdd411027959a59b207f7c968dc649b9c7))
+* generate semantic filenames for message pdf downloads ([#48262](https://github.com/okou-ai/okou/issues/48262)) ([d311fd8](https://github.com/okou-ai/okou/commit/d311fd8ca02dc9b2c555e52c2e8112a0fbab002b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.83.0
+    * @okouai/core bumped to 8.848.0
+    * @okouai/db bumped to 2.43.0
+    * @okouai/pi-agent-runtime bumped to 1.51.149
+
 ## [2.84.1](https://github.com/okou-ai/okou/compare/api-v2.84.0...api-v2.84.1) (2026-11-17)
 
 
