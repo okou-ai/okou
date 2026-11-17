@@ -537,9 +537,16 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     let mut saw_local_plan = false;
     let mut saw_local_multi_change = false;
     let mut saw_local_image = false;
-    let reader = BufReader::new(std::fs::File::open(runtime.paths.agent_log_file())?);
-    for line in reader.lines() {
-        let event: Value = serde_json::from_str(&line?)?;
+    let mut reader = BufReader::with_capacity(
+        1024 * 1024,
+        std::fs::File::open(runtime.paths.agent_log_file())?,
+    );
+    let mut line = String::new();
+    while {
+        line.clear();
+        reader.read_line(&mut line)? != 0
+    } {
+        let event: Value = serde_json::from_str(&line)?;
         let item_id = event.pointer("/item/id").and_then(Value::as_str);
         if let Some(index) = original_collaborations
             .iter()
@@ -587,6 +594,8 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
             saw_local_image = true;
         }
     }
+    drop(reader);
+    drop(line);
     for (seen, original) in saw_local_collaborations
         .into_iter()
         .zip(&original_collaborations)
