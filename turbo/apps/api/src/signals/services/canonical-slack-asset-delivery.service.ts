@@ -135,7 +135,9 @@ function sharedSlackFileResult(
   if (
     info.kind !== "ok" ||
     info.file?.id !== row.externalId ||
-    info.file.size !== row.sizeBytes ||
+    // Slack can strip image metadata after accepting the verified upload bytes.
+    typeof info.file.size !== "number" ||
+    info.file.size <= 0 ||
     ![
       ...(info.file.channels ?? []),
       ...(info.file.groups ?? []),
