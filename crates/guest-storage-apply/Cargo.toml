@@ -21,7 +21,7 @@ tempfile = { workspace = true, features = ["getrandom"] }
 guest-telemetry.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-nix = { workspace = true, features = ["fs"] }
+nix = { workspace = true, features = ["fs", "time"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rustix = { workspace = true, features = ["event", "fs", "std"] }
