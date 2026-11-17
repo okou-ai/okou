@@ -7,6 +7,17 @@ import type { ClientDescriptor } from "./types";
 export const marketingInvitationSourceContract: ClientDescriptor<
   typeof OriginalMarketingInvitationSourceContract
 > = {
+  observeClaim: {
+    method: "GET",
+    path: "/api/internal/marketing/get-started/invitation-claims/:claimId",
+    statuses: {
+      200: true,
+      401: true,
+      404: true,
+      500: true,
+      503: true,
+    },
+  },
   observe: {
     method: "GET",
     path: "/api/internal/marketing/get-started/invitation-sources/:eventId",
