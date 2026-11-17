@@ -3,25 +3,31 @@ import Foundation
 import XCTest
 
 final class ChatWorkProjectionTests: XCTestCase {
-  func testUsageOnlyFollowsEligibleServerOutputAndDoesNotMoveToAnEmptySteerPhase() throws {
+  func testUsageFollowsVisibleOutcomesIndependentlyOfRetainedDiagnostics() throws {
     for terminal in [ChatEventType.runFailed, .runCancelled] {
-      let placeholder = try project([
+      let outcome = try project([
         input("ask", at: 0), event("finish", terminal, at: 1),
         event("usage", .usageRecorded, at: 2),
       ])
-      XCTAssertTrue(placeholder.runUsageAnchors.isEmpty)
-      XCTAssertEqual(placeholder.usageEventIDs, ["run": "usage"])
-      let error = try project([
-        input("ask", at: 0), event("finish", terminal, at: 1, error: "Server outcome"),
+      XCTAssertEqual(outcome.runUsageAnchors, ["run": "finish"])
+      XCTAssertEqual(outcome.usageEventIDs, ["run": "usage"])
+      let retained = try project([
+        input("ask", at: 0),
+        event("finish", terminal, at: 1, content: "Private outcome", error: "Private diagnostic"),
         event("usage", .usageRecorded, at: 2),
       ])
-      XCTAssertEqual(error.runUsageAnchors, ["run": "finish"])
+      XCTAssertEqual(outcome, retained)
       let steer = try project([
         input("ask", at: 0), output("answer", at: 1), input("steer", at: 2),
         event("finish", terminal, at: 3), event("usage", .usageRecorded, at: 4),
       ])
-      XCTAssertEqual(steer.runUsageAnchors, ["run": "answer"])
+      XCTAssertEqual(steer.runUsageAnchors, ["run": "finish"])
     }
+    let pendingSteer = try project([
+      input("ask", at: 0), output("answer", at: 1), input("steer", at: 2),
+      event("usage", .usageRecorded, at: 3),
+    ])
+    XCTAssertEqual(pendingSteer.runUsageAnchors, ["run": "answer"])
   }
 
   func testUserInputsSplitOneRunIntoIndependentWorkPhases() throws {
@@ -70,8 +76,12 @@ final class ChatWorkProjectionTests: XCTestCase {
   func testFailureOutcomeIsShownOnceAndBecomesReadOnlyAfterTheNextInput() throws {
     let rows = [
       input("ask", at: 0), output("progress", at: 10),
-      event("error", .outputError, at: 20, error: "Connection lost"),
-      event("failed", .runFailed, at: 21, error: "Connection lost"),
+      event(
+        "first-failure", .runFailed, at: 20, error: "First private diagnostic",
+        failureReason: "provider_stream_timeout"),
+      event(
+        "failed", .runFailed, at: 21, error: "Different private diagnostic",
+        failureReason: "provider_stream_timeout"),
     ]
     let failed = try project(rows)
     XCTAssertEqual(failed.messages.filter { $0.role == .system }.map(\.id), ["failed"])
@@ -98,13 +108,18 @@ final class ChatWorkProjectionTests: XCTestCase {
     XCTAssertEqual(recovered.workSections.first?.endTime, date(30))
   }
 
-  func testDistinctFailureDetailsArePreserved() throws {
+  func testOutputErrorsAndDistinctFailureCausesArePreserved() throws {
     let history = try project([
       input("ask", at: 0), output("progress", at: 10),
       event("error", .outputError, at: 20, error: "The provider connection was lost"),
-      event("failed", .runFailed, at: 21, error: "Reconnect the account before retrying"),
+      event(
+        "failed", .runFailed, at: 21, error: "Same private diagnostic",
+        failureReason: "provider_stream_timeout"),
+      event(
+        "reconnect", .runFailed, at: 22, error: "Same private diagnostic",
+        failureReason: "reconnect_required"),
     ])
-    XCTAssertEqual(history.messages.filter { $0.isError }.map(\.id), ["error", "failed"])
+    XCTAssertEqual(history.messages.filter { $0.isError }.map(\.id), ["error", "failed", "reconnect"])
   }
 
   func testRejectedUserInputNeverBecomesHiddenAssistantWork() throws {
@@ -181,10 +196,11 @@ final class ChatWorkProjectionTests: XCTestCase {
 
   private func event(
     _ id: String, _ type: ChatEventType, at seconds: TimeInterval, runID: String = "run",
-    content: String? = nil, error: String? = nil
+    content: String? = nil, error: String? = nil, failureReason: String? = nil
   ) -> ChatEvent {
     ChatEvent(
       id: id, runId: runID, createdAt: date(seconds), eventType: type,
+      failureReason: failureReason,
       payload: .init(content: content, error: error))
   }
 }

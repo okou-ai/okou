@@ -59,9 +59,8 @@ enum ChatWorkProjection {
         latestStatusIDs = Set(
           trailing.reversed().filter { row in
             guard let message = byID[row.id] else { return false }
-            // Retained legacy text identifies repeated presentation only; recovery uses the reason.
-            let outcome = row.payload?.error ?? message.text
-            return seen.insert("\(message.isError):\(outcome)").inserted
+            let outcome = row.eventType == .runFailed ? row.failureReason ?? "unknown" : message.text
+            return seen.insert("\(row.eventType.rawValue):\(outcome)").inserted
           }.map(\.id))
         historicalFailureIDs.formUnion(latestStatusIDs.filter { byID[$0]?.failure != nil })
       }
@@ -92,14 +91,9 @@ enum ChatWorkProjection {
       let assistant = phase.events.filter {
         visibleIDs.contains($0.id) && byID[$0.id]?.role != .user
       }
-      // Match PWA's last eligible assistant group. Local lifecycle placeholders
-      // alone are not server output; a later steer must not move an older total.
-      guard let runID = phase.runID,
-        assistant.contains(where: {
-          $0.eventType == .outputMessage || $0.payload?.error?.isEmpty == false
-        }),
-        let anchor = assistant.last
-      else { continue }
+      // A visible terminal fact is an outcome even without diagnostic text.
+      // A steer without output leaves the preceding phase's anchor intact.
+      guard let runID = phase.runID, let anchor = assistant.last else { continue }
       usageAnchors[runID] = anchor.id
     }
     return (visibleMessages, sections, usageAnchors)

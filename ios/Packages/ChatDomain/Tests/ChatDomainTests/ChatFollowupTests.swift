@@ -137,6 +137,26 @@ final class ChatFollowupTests: XCTestCase {
     XCTAssertNil(try project(completed + [interrupt, followups(15)]).recommendedFollowups)
   }
 
+  func testRunOutcomesRetireRecommendationsIndependentlyOfRetainedDiagnostics() throws {
+    let payloads: [ChatEvent.Payload?] = [
+      nil, .init(content: "Private outcome", error: "Private diagnostic"),
+    ]
+    for payload in payloads {
+      for terminal in [ChatEventType.runFailed, .runCancelled] {
+        let outcome = ChatEvent(
+          id: "10", runId: "run", createdAt: Date(timeIntervalSince1970: 10),
+          eventType: terminal, payload: payload)
+        XCTAssertNil(
+          try project(completed + [followups(4), outcome, followups(11)]).recommendedFollowups)
+      }
+      let completion = ChatEvent(
+        id: "10", runId: "run", createdAt: Date(timeIntervalSince1970: 10),
+        eventType: .runCompleted, payload: payload)
+      XCTAssertEqual(
+        try project(completed + [followups(4), completion]).recommendedFollowups?.eventID, "4")
+    }
+  }
+
   private var completed: [ChatEvent] {
     [event(1, .inputPrompt), event(2, .outputMessage, content: "Answer"), event(3, .runCompleted)]
   }
