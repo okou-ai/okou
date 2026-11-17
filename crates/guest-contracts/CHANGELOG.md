@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.15](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.14...guest-contracts-v0.32.15) (2026-11-17)
+
+
+### Refactoring
+
+* use typed resource usage sampling ([#48150](https://github.com/okou-ai/okou/issues/48150)) ([5eef290](https://github.com/okou-ai/okou/commit/5eef290885295b75469ba5966dfd01a1f1e55af5))
+
 ## [0.32.14](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.13...guest-contracts-v0.32.14) (2026-11-17)
 
 ## [0.32.13](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.12...guest-contracts-v0.32.13) (2026-11-16)
