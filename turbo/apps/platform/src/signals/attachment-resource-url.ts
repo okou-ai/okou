@@ -228,10 +228,35 @@ export function createAttachmentPreviewSignals(
       resolveArtifactImageTransformOrigin(),
     );
   });
+  const imageUrl$ = computed(async (get) => {
+    const source = await get(resourceUrl$);
+    const token = await get(presignedToken$);
+    const type = (contentType ?? token?.contentType)
+      ?.split(";")[0]
+      ?.trim()
+      .toLowerCase();
+    const genericType =
+      !type || type === "application/octet-stream" || type === "image/*";
+    const isHeic =
+      type === "image/heic" ||
+      (genericType &&
+        URL.canParse(source) &&
+        /\.heic$/iu.test(new URL(source).pathname));
+    // Convert HEIC for browsers without a native decoder, at its original
+    // dimensions rather than the thumbnail size. Downloads keep resourceUrl$.
+    return isHeic
+      ? r2ImageTransformUrl(
+          source,
+          { contentType: "image/heic" },
+          resolveArtifactImageTransformOrigin(),
+        )
+      : source;
+  });
   return {
     linkUrl$: resourceUrl$,
     presignedToken$,
     resourceUrl$,
+    imageUrl$,
     shareUrl$,
     artifactShareIdentity$,
     thumbnailUrl$,
@@ -244,6 +269,7 @@ export type AttachmentPreviewSignals = ReturnType<
 
 interface AttachmentPreviewSource {
   readonly url: string;
+  readonly contentType?: string;
   readonly preview?: AttachmentPreviewSignals;
 }
 
@@ -255,7 +281,12 @@ interface AttachmentPreviewSource {
 export function attachmentPreviewSignalsFor(
   source: AttachmentPreviewSource,
 ): AttachmentPreviewSignals {
-  return source.preview ?? createAttachmentPreviewSignals(source.url);
+  return (
+    source.preview ??
+    createAttachmentPreviewSignals(source.url, {
+      contentType: source.contentType,
+    })
+  );
 }
 
 interface AttachmentPreviewRegistry {
@@ -284,6 +315,7 @@ export function createAttachmentPreviewRegistry(): AttachmentPreviewRegistry {
       }
       const preview = attachmentPreviewSignalsFor({
         url,
+        contentType: source.contentType,
         ...(source.preview ? { preview: source.preview } : {}),
       });
       const next = new Map(previews);
