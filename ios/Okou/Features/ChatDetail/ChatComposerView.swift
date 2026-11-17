@@ -19,7 +19,6 @@ struct ChatComposerView: View {
   let refresh: (@MainActor () async -> Void)?
 
   var modelSelection: ChatModelSelectionStore? = nil
-  var showsModelSelection = true
   var connectorSelection: ComposerConnectorStore? = nil
   var mentionSource: ComposerMentionSource? = nil
   var workflowSource: ComposerWorkflowSource? = nil
@@ -82,7 +81,7 @@ struct ChatComposerView: View {
   private var replacesSendWithMic: Bool {
     !hasContent && !canStop && draftState?.voice != nil && (!expandsInput || voiceActive)
   }
-  private var showsModelPicker: Bool { expandsInput && !voiceActive && showsModelSelection }
+  private var showsModelPicker: Bool { expandsInput && !voiceActive }
   private var showsVoiceInput: Bool {
     replacesSendWithMic || (expandsInput && !voiceActive)
   }
@@ -224,7 +223,7 @@ struct ChatComposerView: View {
           HStack(spacing: OkouSpace.xs) {
             // The model, mic and send are already side by side when the text editor opens,
             // so none of them moves or falls in on its own as the keyboard raises the surface.
-            if let modelSelection, showsModelSelection {
+            if let modelSelection {
               ChatModelPickerButton(selection: modelSelection, action: { showsModels = true })
                 .disabled(needsUpgrade)
                 .opacity(showsModelPicker ? 1 : 0)

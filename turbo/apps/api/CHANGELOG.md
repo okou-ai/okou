@@ -10,6 +10,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.79.2](https://github.com/okou-ai/okou/compare/api-v2.79.1...api-v2.79.2) (2026-11-17)
+
+
+### Refactoring
+
+* **api:** build complete execution requests in publication ([#48065](https://github.com/okou-ai/okou/issues/48065)) ([bba6568](https://github.com/okou-ai/okou/commit/bba65683295e470256cba42f0ce6c8457972fd98))
+
+## [2.79.1](https://github.com/okou-ai/okou/compare/api-v2.79.0...api-v2.79.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **api:** deliver canonical slack file bytes on the server ([#48047](https://github.com/okou-ai/okou/issues/48047)) ([b94750b](https://github.com/okou-ai/okou/commit/b94750b39f87264646854948b0cfac50f1585a14))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.76.1
+    * @okouai/core bumped to 8.847.0
+    * @okouai/db bumped to 2.41.1
+    * @okouai/pi-agent-runtime bumped to 1.51.142
+
 ## [2.79.0](https://github.com/okou-ai/okou/compare/api-v2.78.0...api-v2.79.0) (2026-11-17)
 
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.847.0](https://github.com/okou-ai/okou/compare/core-v8.846.0...core-v8.847.0) (2026-11-17)
+
+
+### Features
+
+* **core:** enable home capabilities for everyone ([#48000](https://github.com/okou-ai/okou/issues/48000)) ([5df5fc2](https://github.com/okou-ai/okou/commit/5df5fc264b933fdb4aa8210740221f921e6232d7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.76.1
+
 ## [8.846.0](https://github.com/okou-ai/okou/compare/core-v8.845.0...core-v8.846.0) (2026-11-17)
 
 

@@ -24,8 +24,7 @@ pub fn safe_log_metadata(metadata: &Metadata<'_>) -> bool {
         "ts_dataplane",
         "ts_transport",
         "ts_dns",
-        "ts_netstack_smoltcp_core",
-        "ts_netstack_smoltcp_socket",
+        "ts_netstack_smoltcp",
     ]
     .iter()
     .any(|prefix| {

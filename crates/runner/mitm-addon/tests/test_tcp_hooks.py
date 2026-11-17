@@ -101,7 +101,7 @@ class TestTcpStart:
 
 
 class TestTcpLog:
-    def test_logs_tcp_connection(self, registry_file, tmp_path, mitm_ctx, real_tcp_flow):
+    def test_logs_tcp_connection(self, tmp_path, mitm_ctx, real_tcp_flow):
         flow = real_tcp_flow(client_ip="10.200.0.1")
         log_path = str(tmp_path / "network.jsonl")
         flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "run-abc-123"
@@ -123,7 +123,7 @@ class TestTcpLog:
         assert "error" not in entry
         assert_utc_millisecond_timestamp(entry["timestamp"])
 
-    def test_logs_tcp_error(self, registry_file, tmp_path, mitm_ctx, real_tcp_flow):
+    def test_logs_tcp_error(self, tmp_path, mitm_ctx, real_tcp_flow):
         flow = real_tcp_flow(client_ip="10.200.0.1")
         log_path = str(tmp_path / "network.jsonl")
         flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "run-abc-123"

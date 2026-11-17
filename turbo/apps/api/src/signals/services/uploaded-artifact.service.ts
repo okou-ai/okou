@@ -23,6 +23,7 @@ import {
   completePrivateArtifact$,
   privateArtifactRecord$,
   privateArtifactUrl,
+  type PrivateArtifactUploadProtocol,
 } from "./private-artifact-storage.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 
@@ -40,6 +41,7 @@ export const allocateUploadedArtifact$ = command(
       readonly purpose?: "artifact";
       readonly id?: string;
       readonly variant?: string;
+      readonly uploadProtocol?: PrivateArtifactUploadProtocol;
     },
     signal: AbortSignal,
   ) => {

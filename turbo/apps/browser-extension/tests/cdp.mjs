@@ -51,6 +51,9 @@ export async function openWire(endpoint) {
     commands,
     listeners,
     request(method, params = {}, sessionId) {
+      // WebSocket.send discards messages after close without rejecting them.
+      if (socket.readyState !== WebSocket.OPEN)
+        return Promise.reject(new Error("Owned CDP connection closed"));
       const id = ++sequence;
       commands.push({ method, sessionId });
       return new Promise((resolve, reject) => {

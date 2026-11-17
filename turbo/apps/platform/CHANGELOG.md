@@ -13,6 +13,34 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1141.1](https://github.com/okou-ai/okou/compare/app-v0.1141.0...app-v0.1141.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **app:** keep chart selections inline and clear accepted drafts ([#48045](https://github.com/okou-ai/okou/issues/48045)) ([70d643f](https://github.com/okou-ai/okou/commit/70d643faea0dd89455eb79c9bc3258c55c7ceaaf))
+
+## [0.1141.0](https://github.com/okou-ai/okou/compare/app-v0.1140.0...app-v0.1141.0) (2026-11-17)
+
+
+### Features
+
+* **core:** enable home capabilities for everyone ([#48000](https://github.com/okou-ai/okou/issues/48000)) ([5df5fc2](https://github.com/okou-ai/okou/commit/5df5fc264b933fdb4aa8210740221f921e6232d7))
+
+
+### Bug Fixes
+
+* **browser:** drain original input before viewer shutdown ([#48044](https://github.com/okou-ai/okou/issues/48044)) ([361c5d6](https://github.com/okou-ai/okou/commit/361c5d6aa4c71b15b004bd48a67bd3fb9ee66404))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.76.1
+    * @okouai/core bumped to 8.847.0
+    * @okouai/ui bumped to 1.21.36
+
 ## [0.1140.0](https://github.com/okou-ai/okou/compare/app-v0.1139.0...app-v0.1140.0) (2026-11-17)
 
 
