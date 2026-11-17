@@ -1,5 +1,6 @@
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { marketingRewardSettlementContract } from "@okouai/api-contracts/contracts/marketing-reward-settlement";
+import { marketingRewardProjectionContract } from "@okouai/api-contracts/contracts/marketing-reward-projection";
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
 import { randomUUID } from "node:crypto";
 import { http, HttpResponse } from "msw";
@@ -12,6 +13,7 @@ import { server } from "../../../mocks/server";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { getStartedRoutes } from "../get-started";
 import { marketingRewardSettlementRoutes } from "../marketing-reward-settlement";
+import { marketingRewardProjectionRoutes } from "../marketing-reward-projection";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   campaignRequest,
@@ -147,6 +149,28 @@ test("recovers the original check-in day and financial receipt after a lost sour
     grantedAt: first.grantedAt,
     expiresAt: first.expiresAt,
   });
+  const projectionSecret =
+    "checkin-projection-service-1234567890123456789012345";
+  mockEnv("MARKETING_REWARDS_PROJECTION_SECRET", projectionSecret);
+  const projection = setupApp({
+    context,
+    routes: marketingRewardProjectionRoutes,
+  })(marketingRewardProjectionContract);
+  const refresh = () => {
+    return accept(
+      projection.notify({
+        body: { version: 1, intent, receipt: original.receipt },
+        headers: { authorization: `Bearer ${projectionSecret}` },
+      }),
+      [200],
+    );
+  };
+  const notification = (await refresh()).body;
+  expect(notification).toMatchObject({
+    intentId: intent.id,
+    receiptId: first.id,
+  });
+  expect((await refresh()).body).toStrictEqual(notification);
   expect(
     (
       await financial.settle({
