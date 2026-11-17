@@ -47,6 +47,7 @@ import {
 import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread$ } from "./agent-run-callback.service";
 import { dispatchCancelSideEffects$ } from "./run-cancel.service";
 import { cleanupExpiredExportJobs$ } from "./user-export-cleanup.service";
+import { cleanupStaleRunnerState$ } from "./runner-state-cleanup.service";
 
 const L = logger("CronCleanupSandboxes");
 
@@ -572,6 +573,21 @@ export const cleanupSandboxes$ = command(
   async ({ set }, signal: AbortSignal): Promise<CleanupSandboxesResult> => {
     const db = set(writeDb$);
     const currentTime = now();
+    const runnerCleanup = await settle(
+      set(
+        cleanupStaleRunnerState$,
+        { runnerGroup: null, at: new Date(currentTime) },
+        signal,
+      ),
+      signal,
+    );
+    if (!runnerCleanup.ok) {
+      // Registry reclamation must not prevent Run timeout and queue recovery.
+      // The next scheduled maintenance pass retries the same stale rows.
+      L.error("Failed to clean stale Runner registrations", {
+        error: errorMessage(runnerCleanup.error),
+      });
+    }
     const cutoffs = {
       running: new Date(currentTime - HEARTBEAT_TIMEOUT_MS),
       debug: new Date(currentTime - DEBUG_HEARTBEAT_TIMEOUT_MS),

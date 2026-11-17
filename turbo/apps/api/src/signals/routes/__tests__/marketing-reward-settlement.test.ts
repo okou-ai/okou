@@ -162,11 +162,6 @@ async function completedWorkflow(
 }
 
 test("authenticates the dedicated financial capability and binds the immutable environment and terms before lookup", async () => {
-  await setupApp({
-    context,
-    routes: marketingRewardSettlementRoutes,
-    isolatePg: true,
-  });
   const api = client();
   const body = missingIntent();
   for (const credential of [

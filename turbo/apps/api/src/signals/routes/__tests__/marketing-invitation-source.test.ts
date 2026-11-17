@@ -72,11 +72,6 @@ async function invited() {
 }
 
 test("authenticates the dedicated capability before reading any retained invitation or its provider", async () => {
-  await setupApp({
-    context,
-    routes: marketingInvitationSourceRoutes,
-    isolatePg: true,
-  });
   const params = { eventId: randomUUID() };
   for (const credential of [
     "clerk-session",

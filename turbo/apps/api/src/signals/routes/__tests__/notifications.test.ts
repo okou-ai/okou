@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { notificationsContract } from "@okouai/api-contracts/contracts/notifications";
 import { cronDrainEmailOutboxContract } from "@okouai/api-contracts/contracts/cron";
@@ -8,6 +9,8 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
+import { server } from "../../../mocks/server";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { notificationsRoutes } from "../notifications";
 import { cronDrainEmailOutboxRoutes } from "../cron-drain-email-outbox";
@@ -161,13 +164,91 @@ describe("agent mail notifications", () => {
     ).toBe("sent");
 
     mockNow(drainTime + 2000);
+    // A newly queued reply for another owner must not claim this now-due retry.
+    // Use the real inbound provider flow; the rejection reply has its own outbox ID.
+    const other = createBddApi(context).user({
+      email: `disposable-${randomUUID()}@mailinator.com`,
+      orgId: createUniqueStaffOrgIdFixture(),
+    });
+    mockClerkUsers(context, [
+      {
+        id: other.userId,
+        primaryEmailAddressId: "other-primary",
+        emailAddresses: [
+          {
+            id: "other-primary",
+            emailAddress: other.email,
+            verification: { status: "verified" },
+          },
+        ],
+        firstName: "Other",
+        lastName: "Owner",
+        imageUrl: null,
+      },
+    ]);
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [
+        { role: "org:admin", organization: { id: other.orgId, name: "Other" } },
+        {
+          role: "org:admin",
+          organization: { id: createUniqueStaffOrgIdFixture(), name: "Second" },
+        },
+      ],
+      totalCount: 2,
+    });
+    mockEnv("RESEND_WEBHOOK_SECRET", "whsec_test");
+    const emailId = randomUUID();
+    server.use(
+      http.get(`https://api.resend.com/emails/receiving/${emailId}`, () => {
+        return HttpResponse.json({
+          id: emailId,
+          from: other.email,
+          to: ["okou@okou.io"],
+          message_id: `<${emailId}@mailinator.com>`,
+          subject: "A separate owner's request",
+          text: "Please handle my request",
+          html: null,
+          headers: {},
+          authentication: { spf: "pass", dkim: "pass", dmarc: "pass" },
+          attachments: [],
+        });
+      }),
+    );
+    const webhook = createWebhookCallbackApi(context);
+    const inbound = {
+      type: "email.received",
+      data: { email_id: emailId, to: ["okou@okou.io"] },
+    };
+    await webhook.requestResendInboundWebhook(
+      inbound,
+      webhook.signedResendWebhookHeaders(inbound),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(3);
+    expect(context.mocks.resend.send.mock.calls[2]?.[0]).toMatchObject({
+      to: other.email,
+      text: expect.stringContaining("did not pass our security checks"),
+    });
+    expect(
+      (
+        await accept(
+          client().get({
+            headers: fixture.headers,
+            params: { id: first.body.notificationId },
+          }),
+          [200],
+        )
+      ).body.status,
+    ).toBe("queued");
+
     const retried = await accept(
       drain.drain({ headers: { authorization: "Bearer test-cron-secret" } }),
       [200],
     );
     expect(retried.body.drained).toBe(1);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(3);
-    expect(context.mocks.resend.send.mock.calls[2]).toStrictEqual(firstAttempt);
+    expect(context.mocks.resend.send).toHaveBeenCalledTimes(4);
+    expect(context.mocks.resend.send.mock.calls[3]).toStrictEqual(firstAttempt);
     expect(
       (
         await accept(

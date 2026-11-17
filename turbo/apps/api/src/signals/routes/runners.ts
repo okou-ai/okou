@@ -43,8 +43,7 @@ import {
 import { notifyRunningChatRunOfPendingInput$ } from "../services/chat-thread-queue-drain.service";
 import { connectorRunnerFirewallCatalog$ } from "../services/connector-runner-firewall-catalog.service";
 import { resolveConnectorRuntimeTargets$ } from "../services/connector-runtime-sync.service";
-
-const STALE_RUNNER_THRESHOLD_MS = 5 * 60 * 1000;
+import { cleanupStaleRunnerState$ } from "../services/runner-state-cleanup.service";
 
 const unauthorizedNotAuthenticated = Object.freeze({
   status: 401 as const,
@@ -218,14 +217,11 @@ const heartbeatInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     });
   signal.throwIfAborted();
 
-  await db
-    .delete(runnerState)
-    .where(
-      lt(
-        runnerState.lastSeenAt,
-        new Date(currentDate.getTime() - STALE_RUNNER_THRESHOLD_MS),
-      ),
-    );
+  await set(
+    cleanupStaleRunnerState$,
+    { runnerGroup: body.data.group, at: currentDate },
+    signal,
+  );
   signal.throwIfAborted();
 
   return { status: 200 as const, body: { ok: true as const } };

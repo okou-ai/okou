@@ -107,11 +107,6 @@ async function invokedWorkflow() {
 }
 
 test("requires the dedicated read-only capability before resolving a retained source", async () => {
-  await setupApp({
-    context,
-    routes: marketingWorkflowSourceRoutes,
-    isolatePg: true,
-  });
   const api = client();
   const params = { eventId: randomUUID() };
   for (const credential of [

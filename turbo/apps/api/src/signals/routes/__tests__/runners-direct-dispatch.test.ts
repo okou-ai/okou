@@ -270,6 +270,36 @@ test("recovers interrupted delivery through the ordinary Run heartbeat timeout",
     prompt: "Continue after interrupted delivery recovered",
   });
   expect(next.status).toBe("running");
+
+  const input = await f.api.executionInput(next.runId);
+  await completePublicClaudeRun(
+    context,
+    next,
+    { authorization: `Bearer ${input.sandboxToken}` },
+    "Recovered before scheduled Runner reclamation.",
+  );
+  mockNow(clock + 5 * 60_000 + 1);
+  await accept(
+    setupApp({ context, routes: cronCleanupSandboxesRoutes })(
+      cronCleanupSandboxesContract,
+    ).cleanup({
+      headers: { authorization: `Bearer ${env("CRON_SECRET")}` },
+    }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+  // Rewind inside dispatch freshness: rejection now proves scheduled registry
+  // reclamation, rather than merely the dispatcher's three-minute cutoff.
+  mockNow(clock + 121_000);
+  const retired = await f.api.createThreadRun(f.actor, {
+    agentId: f.agentId,
+    threadId: sent.body.threadId,
+    prompt: "The expired serving process has been reclaimed",
+  });
+  expect(retired).toMatchObject({
+    status: "failed",
+    error: "No eligible serving Runner is available",
+  });
 });
 
 test.each(["lost", "process", "generation", "run"] as const)(
@@ -474,9 +504,39 @@ test.each([
   });
 });
 
+test("keeps another group's serving process when a heartbeat observes a later clock", async () => {
+  const f = await launchFixture();
+  const clock = now();
+  mockNow(clock);
+  onTestFinished(clearMockNow);
+  const identity = await f.api.registerDirectRunner(f.group);
+
+  // A different group's heartbeat cannot retire this group's receiver. Return
+  // to its clock before dispatch so freshness and reclamation are distinguished.
+  mockNow(clock + 5 * 60_000 + 1);
+  await f.api.registerDirectRunner(`vm0/other-${randomUUID()}`);
+  mockNow(clock);
+  const run = await f.api.createThreadRun(f.actor, {
+    agentId: f.agentId,
+    prompt: "Use this group's serving process",
+  });
+  expect(run.status).toBe("running");
+  expect(
+    (await f.api.requestRunRunner(f.actor, run.runId, [200])).body,
+  ).toMatchObject({
+    runnerId: identity.runnerId,
+    runnerHeartbeatGeneration: identity.heartbeatGeneration,
+  });
+  const input = await f.api.executionInput(run.runId);
+  await completePublicClaudeRun(
+    context,
+    run,
+    { authorization: `Bearer ${input.sandboxToken}` },
+    "The owning group retained its serving process.",
+  );
+});
+
 test("selects a fresh serving process after stale, unavailable and untrusted-host observations", async () => {
-  // The three-minute shift can prune another case's still-fresh receiver.
-  await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
   const f = await launchFixture();
   const clock = now();
   mockNow(clock);

@@ -160,7 +160,7 @@ function archive(fixture: Fixture, url: string | null | undefined) {
 test("exports PATCH-created drafts with owned thread timestamps and absent draft nulls", async () => {
   const owner = actor();
   const peer = actor(owner.orgId);
-  const app = await setupApp({ context, routes, isolatePg: true });
+  const app = setupApp({ context, routes });
   const fixture = initialize(app, [owner, peer]);
   const agentId = await ownedAgent(fixture, owner);
   const threads = [];
@@ -218,7 +218,6 @@ test("exports PATCH-created drafts with owned thread timestamps and absent draft
     [204],
   );
   const jobId = await startExport(fixture, owner);
-  await process(fixture);
   const ready = await status(fixture, owner);
   expect(ready.job).toMatchObject({
     id: jobId,
@@ -344,7 +343,6 @@ test("publishes an owned ZIP while isolating peers and preserving replay", async
   });
   expect(new Set(accepted).size).toBe(1);
   await flushWaitUntilForTest();
-  await process(fixture);
   const ready = await status(fixture, owner);
   expect(ready.job).toMatchObject({
     id: accepted[0],
@@ -383,7 +381,7 @@ test("publishes an owned ZIP while isolating peers and preserving replay", async
 
 test("publishes the exact owned memory bytes committed by a genuine Runner execution", async () => {
   const owner = actor();
-  const app = await setupApp({ context, routes, isolatePg: true });
+  const app = setupApp({ context, routes });
   const fixture = initialize(app, [owner]);
   const carrier = createPublicRunnerMemory(context, owner);
   await carrier.run(async () => {
@@ -444,7 +442,6 @@ test("publishes the exact owned memory bytes committed by a genuine Runner execu
     storage.seedObject(prepared.body.uploads.manifest.key, manifest);
     const exporting = { ...fixture, storage };
     const jobId = await startExport(exporting, owner);
-    await process(exporting);
     const ready = await status(exporting, owner);
     expect(ready.job).toMatchObject({ id: jobId, status: "completed" });
     const zip = archive(exporting, ready.job?.downloadUrl);
@@ -477,7 +474,7 @@ test.each([
   "exports completed Runner history across $name without losing rows",
   async ({ count, size, firstSize, firstCharacter }) => {
     const owner = actor();
-    const app = await setupApp({ context, routes, isolatePg: true });
+    const app = setupApp({ context, routes });
     const fixture = initialize(app, [owner]);
     const carrier = createPublicRunnerMemory(context, owner);
     await carrier.run(async () => {
@@ -582,7 +579,6 @@ test.each([
       });
       const exporting = { ...fixture, storage };
       const jobId = await startExport(exporting, owner);
-      await process(exporting);
       const ready = await status(exporting, owner);
       expect(ready.job).toMatchObject({
         id: jobId,
@@ -637,7 +633,7 @@ test.each([
 test("exports only the subject's personal Instructions, independently of shared Agent ownership", async () => {
   const owner = actor();
   const peer = actor(owner.orgId);
-  const app = await setupApp({ context, routes, isolatePg: true });
+  const app = setupApp({ context, routes });
   const fixture = initialize(app, [owner, peer]);
   for (const user of [owner, peer]) {
     await updateFeatureSwitchesForUser(context, user, { singleAgent: true });
@@ -653,7 +649,6 @@ test("exports only the subject's personal Instructions, independently of shared 
     );
   }
   const jobId = await startExport(fixture, owner);
-  await process(fixture);
   const ready = await status(fixture, owner);
   expect(ready.job).toMatchObject({
     id: jobId,

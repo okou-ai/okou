@@ -336,7 +336,7 @@ async function postNotionWebhook(
   return { status: response.status, body: response.body };
 }
 
-/** Exercise Notion's one-time provider handshake in the case-owned database. */
+/** Exercise Notion's one-time provider handshake. */
 async function verifyNotionWebhook(
   client = setupApp({ context, routes: webhooksNotionRoutes })(
     webhookNotionContract,
@@ -353,6 +353,36 @@ async function verifyNotionWebhook(
     body: {
       success: true,
       kind: "verification",
+      pending: 0,
+      refreshed: 0,
+      duplicates: 0,
+    },
+  });
+}
+
+/** Reuse the shared provider authority while each scenario owns its Notion pages. */
+async function prepareSharedNotionWebhook(
+  client: Parameters<typeof postNotionWebhook>[1],
+): Promise<void> {
+  const event = notionPageEvent({
+    entities: newNotionEntities(),
+    type: "page.moved",
+    timestamp: "2026-07-13T04:00:00.000Z",
+  });
+  const signedEvent = {
+    rawBody: event.rawBody,
+    signature: notionSignature(event.rawBody),
+  };
+  let readiness = await postNotionWebhook(signedEvent, client);
+  if (readiness.status === 503) {
+    await verifyNotionWebhook(client);
+    readiness = await postNotionWebhook(signedEvent, client);
+  }
+  expect(readiness).toStrictEqual({
+    status: 200,
+    body: {
+      success: true,
+      kind: "event",
       pending: 0,
       refreshed: 0,
       duplicates: 0,
@@ -621,13 +651,12 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   it("enqueues page content updated events for a database scope", async () => {
-    const app = await setupApp({
+    const app = setupApp({
       context,
       routes: webhooksNotionRoutes,
-      isolatePg: true,
     });
     const webhook = app(webhookNotionContract);
-    await verifyNotionWebhook(webhook);
+    await prepareSharedNotionWebhook(webhook);
     const scenario = await setupFixture();
     const { workflowId, entities } = scenario;
     await connectNotion(scenario);
@@ -745,13 +774,12 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   it("refreshes pending child page creation after a content update", async () => {
-    const app = await setupApp({
+    const app = setupApp({
       context,
       routes: webhooksNotionRoutes,
-      isolatePg: true,
     });
     const webhook = app(webhookNotionContract);
-    await verifyNotionWebhook(webhook);
+    await prepareSharedNotionWebhook(webhook);
     const scenario = await setupFixture();
     const { workflowId, entities } = scenario;
     await connectNotion(scenario);
@@ -817,13 +845,12 @@ describe("POST /api/webhooks/notion", () => {
   });
 
   it("refreshes pending database item creation after a content update", async () => {
-    const app = await setupApp({
+    const app = setupApp({
       context,
       routes: webhooksNotionRoutes,
-      isolatePg: true,
     });
     const webhook = app(webhookNotionContract);
-    await verifyNotionWebhook(webhook);
+    await prepareSharedNotionWebhook(webhook);
     const scenario = await setupFixture();
     const { workflowId, entities } = scenario;
     await connectNotion(scenario);

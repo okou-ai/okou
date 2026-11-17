@@ -443,12 +443,7 @@ describe("email-native signup", () => {
   );
 
   it("refuses email-native signup for a disposable address", async () => {
-    const sender = "test@mailinator.com";
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
+    const sender = `disposable-${randomUUID()}@mailinator.com`;
     const actor = bdd.user({
       email: sender,
       orgId: createUniqueStaffOrgIdFixture(),
@@ -2470,7 +2465,7 @@ describe("Email integration", () => {
   });
 
   it("preserves workspace-selection links for existing accounts and resumes the original request only once", async () => {
-    const sender = "yuma@vm0.ai";
+    const sender = `signup-${randomUUID()}@vm0.ai`;
     const actor = bdd.user({
       email: sender,
       orgId: createUniqueStaffOrgIdFixture(),

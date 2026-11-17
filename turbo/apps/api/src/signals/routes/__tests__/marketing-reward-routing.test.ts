@@ -53,7 +53,6 @@ function financialClient() {
 }
 
 test("keeps unselected users on App and recovers a selected check-in from the App ledger after a lost Marketing response", async () => {
-  await setupApp({ context, routes: getStartedRoutes, isolatePg: true });
   const api = setupApp({ context, routes: getStartedRoutes })(
     getStartedContract,
   );
