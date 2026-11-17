@@ -2477,7 +2477,12 @@ export function createThreadClaimRunObjects(
     const event = await get(pickedEvent$);
     // Automation resource admission retains its budget/target ordering.
     if (event && event.contextType !== "automation") {
-      await get(preparedPromptAndSkillVolumes$);
+      // The prompt demands selection only after catalog preparation. Start its
+      // account inputs independently at this picked-input boundary.
+      await Promise.all([
+        get(preparedPromptAndSkillVolumes$),
+        get(threadContext.connectorSelection$),
+      ]);
     }
   });
   const connectorAdmission$ = createConnectorAdmissionSignals(
