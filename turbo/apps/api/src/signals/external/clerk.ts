@@ -9,7 +9,7 @@ import {
 } from "@clerk/backend/errors";
 import { verifyWebhook } from "@clerk/backend/webhooks";
 import { delay } from "signal-timers";
-import { array, number, object, string, union, url } from "zod";
+import { array, number, object, string, union, url, enum as zEnum } from "zod";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { singleton } from "../../lib/singleton";
 import { env } from "../../lib/env";
@@ -416,7 +416,7 @@ const computerUseMembershipsSchema = object({
   ),
 });
 
-async function readComputerUseAuthorityResource(
+async function readClerkAuthorityResource(
   path: string,
   signal: AbortSignal,
 ): Promise<unknown> {
@@ -466,6 +466,62 @@ async function readComputerUseAuthorityResource(
   return await response.json();
 }
 
+const invitationAuthoritySchema = object({
+  id: string().min(1),
+  organization_id: string().min(1),
+  status: zEnum(["pending", "accepted", "revoked", "expired"]),
+  expires_at: number().int().nonnegative().max(8_640_000_000_000_000),
+});
+
+/** Exact point read; provider-owned expiry is never inferred from local creation time. */
+export async function readClerkInvitationAuthority(
+  orgId: string,
+  invitationId: string,
+  signal: AbortSignal,
+) {
+  const deadline = AbortSignal.timeout(3000);
+  const readSignal = AbortSignal.any([signal, deadline]);
+  const result = await settleIncludingAbort(async () => {
+    const body = await readClerkAuthorityResource(
+      `organizations/${encodeURIComponent(orgId)}/invitations/${encodeURIComponent(invitationId)}`,
+      readSignal,
+    );
+    if (body === undefined) {
+      return undefined;
+    }
+    const invitation = invitationAuthoritySchema.parse(body);
+    if (
+      invitation.id !== invitationId ||
+      invitation.organization_id !== orgId
+    ) {
+      throw new Error("Clerk invitation has different ownership");
+    }
+    return {
+      status: invitation.status,
+      expiresAt: new Date(invitation.expires_at).toISOString(),
+    };
+  });
+  signal.throwIfAborted();
+  if (deadline.aborted) {
+    throw new ClerkReadUnavailableError(
+      null,
+      deadline.reason,
+      "deadline_exceeded",
+    );
+  }
+  if (!result.ok) {
+    if (
+      isClerkAPIResponseError(result.error) &&
+      result.error.status >= 500 &&
+      result.error.status <= 599
+    ) {
+      throw new ClerkReadUnavailableError(result.error.status, result.error);
+    }
+    throw result.error;
+  }
+  return result.value;
+}
+
 /** The SDK cannot cancel reads; these two authority reads share a real HTTP deadline. */
 export async function verifyClerkComputerUseSession(
   identity: {
@@ -482,7 +538,7 @@ export async function verifyClerkComputerUseSession(
   const result = await settleIncludingAbort(async () => {
     const sessionBody = await retryClerkRead(
       () => {
-        return readComputerUseAuthorityResource(
+        return readClerkAuthorityResource(
           `sessions/${encodeURIComponent(identity.sessionId)}`,
           readSignal,
         );
@@ -504,7 +560,7 @@ export async function verifyClerkComputerUseSession(
     const query = new URLSearchParams({ user_id: identity.userId, limit: "1" });
     const membershipsBody = await retryClerkRead(
       () => {
-        return readComputerUseAuthorityResource(
+        return readClerkAuthorityResource(
           `organizations/${encodeURIComponent(identity.orgId)}/memberships?${query}`,
           readSignal,
         );

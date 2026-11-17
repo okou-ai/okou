@@ -644,18 +644,12 @@ def configure_response_stream(
     response_parser = setup.parser
     needs_buffered_fallback = setup.needs_buffered_fallback
     retain_body = flow_metadata.should_capture_body(flow.metadata) or needs_buffered_fallback
-    buf = bytearray() if retain_body else None
-    buffer_state = {"truncated": False} if retain_body else None
+    capture = stream_capture.StreamCapture() if retain_body else None
 
     def stream_and_observe(chunk: bytes) -> bytes:
         metrics["total_bytes"] += len(chunk)
-        if (
-            buf is not None
-            and buffer_state is not None
-            and not buffer_state["truncated"]
-            and stream_capture.append_captured_chunk(buf, chunk, limit=STREAM_BUFFER_LIMIT)
-        ):
-            buffer_state["truncated"] = True
+        if capture is not None:
+            capture.append(chunk, limit=STREAM_BUFFER_LIMIT)
         if response_parser is not None:
             response_parser(chunk)
             run_usage.observe(flow, flow.metadata.get(metadata_keys.MODEL_PROVIDER_USAGE))
@@ -663,9 +657,8 @@ def configure_response_stream(
 
     flow.response.stream = stream_and_observe
     flow.metadata[metadata_keys.RESPONSE_STREAM_STATE] = metrics
-    if buf is not None and buffer_state is not None:
-        flow.metadata[metadata_keys.STREAM_BUFFER] = buf
-        flow.metadata[metadata_keys.STREAM_BUFFER_STATE] = buffer_state
+    if capture is not None:
+        flow.metadata[metadata_keys.RESPONSE_STREAM_CAPTURE] = capture
     flow.metadata[_RESPONSE_STREAM_CALLBACK] = stream_and_observe
 
 

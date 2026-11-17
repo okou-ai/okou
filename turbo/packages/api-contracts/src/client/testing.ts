@@ -514,6 +514,8 @@ import { marketingEventsContract as OriginalMarketingEventsContract } from "../c
 import { marketingEventsContract } from "./marketing-events";
 import { marketingHandoffsContract as OriginalMarketingHandoffsContract } from "../contracts/marketing-handoffs";
 import { marketingHandoffsContract } from "./marketing-handoffs";
+import { marketingInvitationSourceContract as OriginalMarketingInvitationSourceContract } from "../contracts/marketing-invitation-source";
+import { marketingInvitationSourceContract } from "./marketing-invitation-source";
 import { marketingRewardProjectionContract as OriginalMarketingRewardProjectionContract } from "../contracts/marketing-reward-projection";
 import { marketingRewardProjectionContract } from "./marketing-reward-projection";
 import { marketingRewardSettlementContract as OriginalMarketingRewardSettlementContract } from "../contracts/marketing-reward-settlement";
@@ -1236,6 +1238,10 @@ export const clientDescriptorContracts: readonly (readonly [
   [mailContract, OriginalMailContract],
   [marketingEventsContract, OriginalMarketingEventsContract],
   [marketingHandoffsContract, OriginalMarketingHandoffsContract],
+  [
+    marketingInvitationSourceContract,
+    OriginalMarketingInvitationSourceContract,
+  ],
   [
     marketingRewardProjectionContract,
     OriginalMarketingRewardProjectionContract,

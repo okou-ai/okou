@@ -1058,8 +1058,12 @@
       "allowAll_other": "Conceder los {{count}} permisos",
       "allowed": "Permisos concedidos",
       "allowedCount": "{{allowed}} de {{total}} permisos concedidos",
+      "alreadyAllowed_one": "{{count}} ya permitido",
+      "alreadyAllowed_many": "{{count}} ya permitidos",
+      "alreadyAllowed_other": "{{count}} ya permitidos",
       "alwaysNote": "Estos permisos seguirán concedidos hasta que los cambies o revoques.",
       "continued": "La conversación ha continuado.",
+      "continuedShort": "Chat reanudado",
       "continueFailed": "Se han concedido los permisos, pero no se ha podido continuar la conversación.",
       "details": "Ver detalles de los permisos",
       "dismissed": "No se ha cambiado ningún permiso.",
@@ -1069,6 +1073,9 @@
       "myOkouScopeNote": "Se aplica a tu uso de Okou en este espacio de trabajo, no solo a la tarea actual.",
       "myOkouSharedScopeNote": "Se aplica a este conector en tus chats de este espacio de trabajo. Tus compañeros tienen sus propios permisos.",
       "notNow": "Ahora no",
+      "pending_one": "{{count}} permiso por permitir",
+      "pending_many": "{{count}} permisos por permitir",
+      "pending_other": "{{count}} permisos por permitir",
       "review": "Revisar permisos",
       "scopeNote": "Se aplica a este agente, no solo a la tarea actual.",
       "sharedScopeNote": "Se aplica a este conector en todos tus chats y agentes.",
@@ -1543,6 +1550,7 @@
           "action": "Registrar visita",
           "description": "Registra tu visita una vez al día. Se reinicia a las 00:00 UTC.",
           "name": "Entrar cada día",
+          "pendingDescription": "Tu registro diario se ha guardado. Los créditos se actualizarán tras la confirmación.",
           "unit": "al día"
         },
         "connector": {
@@ -2396,10 +2404,10 @@
       "loading": "Cargando teléfonos…",
       "noPhones": "No hay teléfonos en línea",
       "openApp": "Abrir Okou iOS Use",
-      "openAppDescription": "Instala la versión de desarrollo en tu iPhone, inicia sesión con la misma cuenta y espacio de trabajo, e inicia una ventana de control.",
+      "openAppDescription": "Instala la versión de desarrollo en tu iPhone, inicia sesión con la misma cuenta y espacio de trabajo y selecciona Go online.",
       "setupDescription": "Permite que Okou use tu iPhone desde este chat.",
       "startTask": "Enviar tu próxima tarea",
-      "startTaskDescription": "Tras autorizar el acceso, envía un mensaje nuevo aquí. Mantén activa la ventana de control en tu teléfono.",
+      "startTaskDescription": "Tras permitir el acceso, envía un nuevo mensaje aquí. Mantén tu iPhone en línea y desbloqueado.",
       "yourPhone": "Tu teléfono"
     },
     "promptDocumentTitle": "Prompt",
@@ -2975,13 +2983,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "Acceso de {{account}}",
+    "accountsInChat": "Elige qué cuentas están activadas en este chat.",
     "enableByDefault": "Activar {{account}} de forma predeterminada",
-    "enabledAccounts": "{{value}} activas",
     "manageAccounts": "Gestionar cuentas",
-    "noEnabledAccount": "Ninguna cuenta está activa en este chat",
     "permissions": "Permisos",
     "permissionsDescription": "Estas reglas se aplican a este conector en todos tus chats y cuentas.",
-    "settingsDescription": "Elige las cuentas activas por defecto."
+    "settingsDescription": "Elige qué cuentas de {{connector}} puede usar Okou en tus chats. Puedes cambiar el acceso en cada chat.",
+    "totalAccounts": "{{value}} cuentas"
   },
   "connectors": {
     "access": {

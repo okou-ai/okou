@@ -10,6 +10,7 @@ export enum FeatureSwitchKey {
   EmailIntegration = "emailIntegration",
   PresentationOutputFormat = "presentationOutputFormat",
   SingleAgent = "singleAgent",
+  ProjectTitleReveal = "projectTitleReveal",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
   ConnectorChatAccountAccess = "connectorChatAccountAccess",
   FeatureGuides = "featureGuides",

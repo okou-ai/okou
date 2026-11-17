@@ -161,7 +161,6 @@ _STALE_FIREWALL_AUTHORIZATION_METADATA_KEYS = (
 )
 
 _AUTH_BASE_BODYLESS_METHODS = frozenset(("GET", "HEAD"))
-_HTTP_RESPONSE_BODYLESS_METHODS = frozenset(("CONNECT", "HEAD"))
 _WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT = 8 * 1024
 
 
@@ -1367,7 +1366,12 @@ async def _try_firewall_request_stream_from_headers(
         fall_back()
         return
 
-    _maybe_normalize_accept_encoding_for_body_inspection(flow, allow, sandbox_info)
+    response_encoding_negotiation.prepare_request(
+        flow,
+        firewall_name=allow.name,
+        billable=is_billable_firewall(allow.name, sandbox_info),
+        websocket_header_work_limit=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
+    )
     _start_request_timing(flow)
     expected_run_id = flow_metadata.run_id(flow.metadata)
     expected_request = request_authority.capture_firewall_request_identity(flow)
@@ -1792,7 +1796,12 @@ async def request(flow: http.HTTPFlow) -> None:
                     error=host_policy_error,
                 )
                 return
-            _maybe_normalize_accept_encoding_for_body_inspection(flow, allow, sandbox_info)
+            response_encoding_negotiation.prepare_request(
+                flow,
+                firewall_name=allow.name,
+                billable=is_billable_firewall(allow.name, sandbox_info),
+                websocket_header_work_limit=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
+            )
             run_usage.admit(flow, namespace=allow.name)
             terminal_usage.track_flow_if_needed(
                 flow,
@@ -1858,48 +1867,6 @@ async def request(flow: http.HTTPFlow) -> None:
     finally:
         aws_sigv4_flow.release_inspection(flow)
         request_classification.pop_cached_classification(flow)
-
-
-def _maybe_normalize_accept_encoding_for_body_inspection(
-    flow: http.HTTPFlow,
-    allow: matching.FirewallAllow,
-    sandbox_info: dict,
-) -> None:
-    is_websocket_upgrade = websocket_handshake.is_websocket_upgrade_request(
-        flow,
-        websocket_header_work_limit=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-    )
-    if is_websocket_upgrade:
-        flow.metadata[metadata_keys.WEBSOCKET_UPGRADE_REQUEST] = True
-    if _expects_http_response_body_usage_inspection(
-        flow,
-        allow,
-        sandbox_info,
-        is_websocket_upgrade=is_websocket_upgrade,
-    ):
-        flow.metadata[metadata_keys.RESPONSE_ENCODING_NEGOTIATION] = (
-            response_encoding_negotiation.normalize_accept_encoding_for_body_inspection(
-                flow.request.headers
-            )
-        )
-
-
-def _expects_http_response_body_usage_inspection(
-    flow: http.HTTPFlow,
-    allow: matching.FirewallAllow,
-    sandbox_info: dict,
-    *,
-    is_websocket_upgrade: bool,
-) -> bool:
-    if flow.request.method.upper() in _HTTP_RESPONSE_BODYLESS_METHODS:
-        return False
-    if is_websocket_upgrade:
-        return False
-    if allow.name.startswith("model-provider:") and is_billable_firewall(allow.name, sandbox_info):
-        return True
-    return is_billable_firewall(allow.name, sandbox_info) and usage.has_connector_response_parser(
-        allow.name
-    )
 
 
 # ============================================================================

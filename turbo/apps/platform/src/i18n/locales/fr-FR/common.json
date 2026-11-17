@@ -1058,8 +1058,12 @@
       "allowAll_other": "Accorder les {{count}} autorisations",
       "allowed": "Autorisations accordées",
       "allowedCount": "{{allowed}} autorisations accordées sur {{total}}",
+      "alreadyAllowed_one": "{{count}} déjà accordée",
+      "alreadyAllowed_many": "{{count}} déjà accordées",
+      "alreadyAllowed_other": "{{count}} déjà accordées",
       "alwaysNote": "Ces autorisations restent accordées jusqu’à ce que vous les modifiiez ou les révoquiez.",
       "continued": "La conversation a repris.",
+      "continuedShort": "Conversation reprise",
       "continueFailed": "Les autorisations ont été accordées, mais la conversation n’a pas pu reprendre.",
       "details": "Voir le détail des autorisations",
       "dismissed": "Aucune autorisation n’a été modifiée.",
@@ -1069,6 +1073,9 @@
       "myOkouScopeNote": "S'applique à votre utilisation d'Okou dans cet espace de travail, pas seulement à la tâche en cours.",
       "myOkouSharedScopeNote": "S'applique à ce connecteur dans vos chats de cet espace de travail. Vos collègues ont leurs propres autorisations.",
       "notNow": "Pas maintenant",
+      "pending_one": "{{count}} autorisation à accorder",
+      "pending_many": "{{count}} autorisations à accorder",
+      "pending_other": "{{count}} autorisations à accorder",
       "review": "Examiner les autorisations",
       "scopeNote": "S’applique à cet agent, pas uniquement à la tâche en cours.",
       "sharedScopeNote": "S’applique à ce connecteur dans tous vos chats et agents.",
@@ -1543,6 +1550,7 @@
           "action": "Valider ma présence",
           "description": "Validez votre présence une fois par jour. Réinitialisation à 00:00 UTC.",
           "name": "Se connecter chaque jour",
+          "pendingDescription": "Votre pointage quotidien a été enregistré. Les crédits seront mis à jour après confirmation.",
           "unit": "par jour"
         },
         "connector": {
@@ -2396,10 +2404,10 @@
       "loading": "Chargement des téléphones…",
       "noPhones": "Aucun téléphone en ligne",
       "openApp": "Ouvrir Okou iOS Use",
-      "openAppDescription": "Installez la version de développement sur votre iPhone, connectez-vous avec le même compte et espace de travail, puis démarrez une fenêtre de contrôle.",
+      "openAppDescription": "Installez la version de développement sur votre iPhone, connectez-vous avec le même compte et espace de travail, puis sélectionnez Go online.",
       "setupDescription": "Autorisez Okou à utiliser votre iPhone dans cette discussion.",
       "startTask": "Envoyer votre prochaine tâche",
-      "startTaskDescription": "Après avoir autorisé l’accès, envoyez un nouveau message ici. Gardez la fenêtre de contrôle active sur votre téléphone.",
+      "startTaskDescription": "Après avoir autorisé l’accès, envoyez un nouveau message ici. Gardez votre iPhone en ligne et déverrouillé.",
       "yourPhone": "Votre téléphone"
     },
     "promptDocumentTitle": "Prompt",
@@ -2975,13 +2983,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "Accès de {{account}}",
+    "accountsInChat": "Choisissez les comptes activés dans cette conversation.",
     "enableByDefault": "Activer {{account}} par défaut",
-    "enabledAccounts": "{{value}} actifs",
     "manageAccounts": "Gérer les comptes",
-    "noEnabledAccount": "Aucun compte actif pour cette discussion",
     "permissions": "Autorisations",
     "permissionsDescription": "Ces règles s’appliquent à ce connecteur dans toutes vos discussions et tous vos comptes.",
-    "settingsDescription": "Choisissez les comptes actifs par défaut."
+    "settingsDescription": "Choisissez les comptes {{connector}} qu’Okou peut utiliser dans vos conversations. Vous pouvez modifier l’accès dans chaque conversation.",
+    "totalAccounts": "{{value}} comptes"
   },
   "connectors": {
     "access": {

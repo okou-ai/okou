@@ -1036,8 +1036,10 @@
       "allowAll_other": "Berikan semua {{count}} izin",
       "allowed": "Izin diberikan",
       "allowedCount": "{{allowed}} dari {{total}} izin diberikan",
+      "alreadyAllowed_other": "{{count}} sudah diizinkan",
       "alwaysNote": "Izin ini tetap berlaku sampai Anda mengubah atau mencabutnya.",
       "continued": "Percakapan telah dilanjutkan.",
+      "continuedShort": "Chat dilanjutkan",
       "continueFailed": "Izin telah diberikan, tetapi percakapan tidak dapat dilanjutkan.",
       "details": "Lihat detail izin",
       "dismissed": "Tidak ada izin yang diubah.",
@@ -1047,6 +1049,7 @@
       "myOkouScopeNote": "Berlaku untuk penggunaan Okou Anda di ruang kerja ini, bukan hanya tugas saat ini.",
       "myOkouSharedScopeNote": "Berlaku untuk konektor ini di seluruh chat Anda dalam ruang kerja ini. Rekan tim memiliki izin sendiri.",
       "notNow": "Tidak sekarang",
+      "pending_other": "{{count}} izin untuk disetujui",
       "review": "Tinjau izin",
       "scopeNote": "Berlaku untuk agen ini, bukan hanya tugas saat ini.",
       "sharedScopeNote": "Berlaku untuk konektor ini di semua chat dan agen Anda.",
@@ -1518,6 +1521,7 @@
           "action": "Check in",
           "description": "Check in sekali sehari. Direset pukul 00:00 UTC.",
           "name": "Check in setiap hari",
+          "pendingDescription": "Check-in Anda telah disimpan. Kredit akan diperbarui setelah dikonfirmasi.",
           "unit": "per hari"
         },
         "connector": {
@@ -2353,10 +2357,10 @@
       "loading": "Memuat ponsel…",
       "noPhones": "Tidak ada ponsel online",
       "openApp": "Buka Okou iOS Use",
-      "openAppDescription": "Instal build pengembangan di iPhone, masuk dengan akun dan ruang kerja yang sama, lalu mulai jendela kontrol.",
+      "openAppDescription": "Instal build pengembangan di iPhone, masuk dengan akun dan ruang kerja yang sama, lalu pilih Go online.",
       "setupDescription": "Izinkan Okou menggunakan iPhone Anda dari obrolan ini.",
       "startTask": "Kirim tugas berikutnya",
-      "startTaskDescription": "Setelah mengizinkan akses, kirim pesan baru di sini. Biarkan jendela kontrol tetap aktif di ponsel Anda.",
+      "startTaskDescription": "Setelah mengizinkan akses, kirim pesan baru di sini. Pastikan iPhone tetap online dan tidak terkunci.",
       "yourPhone": "Ponsel Anda"
     },
     "promptDocumentTitle": "Prompt",
@@ -2914,13 +2918,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "Akses {{account}}",
+    "accountsInChat": "Pilih akun yang aktif dalam chat ini.",
     "enableByDefault": "Aktifkan {{account}} secara default",
-    "enabledAccounts": "{{value}} aktif",
     "manageAccounts": "Kelola akun",
-    "noEnabledAccount": "Tidak ada akun aktif untuk chat ini",
     "permissions": "Izin",
     "permissionsDescription": "Aturan ini berlaku untuk konektor ini di semua chat dan akun Anda.",
-    "settingsDescription": "Pilih akun yang aktif secara default."
+    "settingsDescription": "Pilih akun {{connector}} yang dapat digunakan Okou di chat Anda. Anda dapat mengubah akses di setiap chat.",
+    "totalAccounts": "{{value}} akun"
   },
   "connectors": {
     "access": {

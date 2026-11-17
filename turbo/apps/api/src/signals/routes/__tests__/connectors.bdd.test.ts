@@ -8204,14 +8204,24 @@ describe("CONN-02: test-oauth auth-code journey", () => {
       fixture,
       "test-oauth",
     );
-    const manualAuth = await manualConsumer.resolve("TEST_OAUTH_API_TOKEN");
+    const manualAuth = await accept(
+      manualConsumer.resolve("TEST_OAUTH_API_TOKEN"),
+      [200],
+    );
     expect(manualAuth.body).toMatchObject({
       headers: {
         Authorization:
           "Bearer fresh-test-oauth-api-token:bdd-successful-replacement-token:bdd-successful-replacement-input",
       },
     });
+    const canonicalAuth = await accept(
+      manualConsumer.resolve("TEST_OAUTH_TOKEN"),
+      [200],
+    );
+    expect(canonicalAuth.body.headers).toStrictEqual(manualAuth.body.headers);
     expect(manualConsumer.execution.environment).toMatchObject({
+      TEST_OAUTH_TOKEN: "fixture-test-oauth-token",
+      TEST_OAUTH_API_TOKEN: "fixture-test-oauth-token",
       TEST_OAUTH_TENANT_ID: "bdd-successful-replacement-tenant",
     });
     await manualConsumer.cancel();

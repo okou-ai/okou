@@ -184,7 +184,9 @@ test("Manage each saved account's default availability independently", async () 
   await expect(toggle("Work")).resolves.toBeChecked();
   await expect(toggle("Personal")).resolves.toBeChecked();
   expect(
-    within(manager).getByText("Choose which accounts are on by default."),
+    within(manager).getByText(
+      "Choose which GitHub accounts Okou can use across your chats. You can change access in each chat.",
+    ),
   ).toBeInTheDocument();
   click(await toggle("Work"));
   await expect(toggle("Work")).resolves.not.toBeChecked();

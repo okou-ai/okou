@@ -239,6 +239,12 @@ case "${1:-}" in
       [ "${MOCK_RUNNER_STEER_ENDPOINTS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "45b537a596a153a91b76c3bc7223187840f52775" ]; then
       [ "${MOCK_VIDEO_GENERATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "ae54ad44b0650b497e9e272349498571c0235ba2" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_MEMBER_MEMORY_DUAL_WRITER_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_MEMBER_MEMORY_DUAL_WRITER_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "66e1cae65d0468a50149f0dafab9d0d35abd0819" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_RUN_REFERENCE_PREPARATION_ON_MAIN:-1}" = "1" ]
@@ -489,6 +495,11 @@ case "${1:-}" in
     if [[ "$*" == *rollback-floors/content-bundle-reference-only-api* ]]; then
       [ "${MOCK_CONTENT_BUNDLE_REFERENCE_API_AVAILABLE:-1}" = "1" ] || exit 1
       printf '%s\n' "${MOCK_CONTENT_BUNDLE_REFERENCE_API_COMMIT-$MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR}"
+      exit 0
+    fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/member-memory-dual-writer" ]; then
+      [ "${MOCK_MEMBER_MEMORY_DUAL_WRITER_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_MEMBER_MEMORY_DUAL_WRITER_COMMIT-ae54ad44b0650b497e9e272349498571c0235ba2}"
       exit 0
     fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/run-reference-preparation" ]; then
@@ -2496,6 +2507,22 @@ for expectation in \
   [ ! -s "${tmp_dir}/teams-upload-v2-cli.output" ] || fail "v1 Teams Runner must not publish outputs"
   if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
     fail "v1 Teams Runner must reject before Runner artifact or host access"
+  fi
+done
+
+
+for memory_case in \
+  "MOCK_MEMBER_MEMORY_DUAL_WRITER_AVAILABLE=0|Cannot read the member Memory dual-writer rollback floor from main" \
+  "MOCK_MEMBER_MEMORY_DUAL_WRITER_COMMIT=|Missing or invalid member Memory dual-writer rollback floor" \
+  "MOCK_MEMBER_MEMORY_DUAL_WRITER_COMMIT=invalid|Missing or invalid member Memory dual-writer rollback floor" \
+  "MOCK_MEMBER_MEMORY_DUAL_WRITER_ON_MAIN=0|Member Memory dual-writer rollback floor is not on main" \
+  "MOCK_MEMBER_MEMORY_DUAL_WRITER_VALID=0|Rollback target predates the member Memory dual writer"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${memory_case#*|}" \
+    run_resolver "${tmp_dir}/memory-policy.output" "${memory_case%%|*}"
+  [ ! -s "${tmp_dir}/memory-policy.output" ] || fail "invalid Memory floor must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Memory floor must reject before provider or host access"
   fi
 done
 

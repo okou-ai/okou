@@ -1036,8 +1036,10 @@
       "allowAll_other": "권한 {{count}}개 모두 허용",
       "allowed": "권한이 허용되었습니다",
       "allowedCount": "권한 {{total}}개 중 {{allowed}}개 허용됨",
+      "alreadyAllowed_other": "{{count}}개 허용됨",
       "alwaysNote": "이 권한은 변경하거나 철회할 때까지 허용된 상태로 유지됩니다.",
       "continued": "대화가 재개되었습니다.",
+      "continuedShort": "채팅이 계속됨",
       "continueFailed": "권한은 허용되었지만 대화를 재개하지 못했습니다.",
       "details": "권한 세부 정보 보기",
       "dismissed": "변경된 권한이 없습니다.",
@@ -1047,6 +1049,7 @@
       "myOkouScopeNote": "현재 작업뿐 아니라 이 워크스페이스에서 내 Okou 사용에 적용됩니다.",
       "myOkouSharedScopeNote": "이 워크스페이스의 내 모든 채팅에서 이 커넥터에 적용됩니다. 팀원의 권한은 각자 독립적입니다.",
       "notNow": "나중에",
+      "pending_other": "허용할 권한 {{count}}개",
       "review": "권한 검토",
       "scopeNote": "현재 작업뿐 아니라 이 에이전트에 적용됩니다.",
       "sharedScopeNote": "이 커넥터의 권한은 모든 채팅과 에이전트에 적용됩니다.",
@@ -1518,6 +1521,7 @@
           "action": "출석하기",
           "description": "하루에 한 번 출석하세요. UTC 00:00에 초기화됩니다.",
           "name": "매일 출석하기",
+          "pendingDescription": "체크인이 저장되었습니다. 확인 후 크레딧이 반영됩니다.",
           "unit": "하루당"
         },
         "connector": {
@@ -2353,10 +2357,10 @@
       "loading": "휴대폰 불러오는 중…",
       "noPhones": "온라인 휴대폰 없음",
       "openApp": "Okou iOS Use 열기",
-      "openAppDescription": "iPhone에 개발 빌드를 설치하고 같은 계정과 워크스페이스로 로그인한 다음 제어 창을 시작하세요.",
+      "openAppDescription": "iPhone에 개발 빌드를 설치하고 같은 계정과 워크스페이스로 로그인한 다음 Go online을 선택하세요.",
       "setupDescription": "이 채팅에서 Okou가 iPhone을 사용하도록 허용합니다.",
       "startTask": "다음 작업 보내기",
-      "startTaskDescription": "허용 후 여기에 새 메시지를 보내세요. 휴대폰의 제어 창을 활성 상태로 유지하세요.",
+      "startTaskDescription": "접근을 허용한 후 여기에 새 메시지를 보내세요. iPhone을 온라인 상태로 유지하고 잠금을 해제해 두세요.",
       "yourPhone": "내 휴대폰"
     },
     "promptDocumentTitle": "프롬프트",
@@ -2914,13 +2918,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "{{account}} 접근",
+    "accountsInChat": "이 채팅에서 켤 계정을 선택하세요.",
     "enableByDefault": "{{account}} 기본 활성화",
-    "enabledAccounts": "{{value}}개 활성화",
     "manageAccounts": "계정 관리",
-    "noEnabledAccount": "이 채팅에서 활성화된 계정이 없습니다",
     "permissions": "권한",
     "permissionsDescription": "이 규칙은 모든 채팅과 계정에서 이 커넥터에 적용됩니다.",
-    "settingsDescription": "기본으로 활성화할 계정을 선택하세요."
+    "settingsDescription": "Okou가 채팅에서 사용할 수 있는 {{connector}} 계정을 선택하세요. 각 채팅에서 액세스를 변경할 수 있습니다.",
+    "totalAccounts": "계정 {{value}}개"
   },
   "connectors": {
     "access": {

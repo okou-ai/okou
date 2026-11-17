@@ -10,6 +10,7 @@ import mitm_addon
 import platform_api
 import platform_api_url
 import request_classification
+import request_streaming
 import upstream_admission
 import upstream_destination_binding
 from body_limits import STREAM_BUFFER_LIMIT
@@ -627,7 +628,7 @@ async def test_api_allow_unknown_body_length_retargets_unconnected_upstream(
         assert mitm_addon.requestheaders(flow) is None
 
         assert callable(flow.request.stream)
-        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is None
         assert flow.server_conn.address == ("api.okou.ai", 443)
 
         await mitm_addon.request(flow)

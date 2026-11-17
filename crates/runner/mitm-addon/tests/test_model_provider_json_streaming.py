@@ -15,6 +15,7 @@ from mitmproxy.test import tutils
 import flow_metadata_keys as metadata_keys
 import logging_utils
 import mitm_addon
+import stream_capture
 from body_limits import (
     STREAM_BUFFER_LIMIT,
     STREAM_DECODE_CHUNK_LIMIT,
@@ -37,6 +38,7 @@ from tests.model_provider_response_helpers import (
     standard_success_payload,
 )
 from tests.repeated_bytes_helpers import repeat_bytes
+from tests.stream_buffer_helpers import response_stream_capture
 from usage.quantities import MAX_USAGE_QUANTITY
 
 
@@ -81,8 +83,7 @@ class TestModelProviderJsonStreaming:
 
         assert "model_json_usage_finish" in flow.metadata
         assert metadata_keys.MODEL_PROVIDER_USAGE not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     def test_json_source_diagnostic_records_aggregate_admission_without_secrets(
         self,
@@ -181,8 +182,8 @@ class TestModelProviderJsonStreaming:
         mitm_addon.responseheaders(flow)
         assert flow.response.status_code == 429
         assert response_stream(flow)(body) == body
-        assert flow.metadata[metadata_keys.STREAM_BUFFER] == body
-        assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE]["truncated"] is False
+        assert response_stream_capture(flow).buffer == body
+        assert response_stream_capture(flow).truncated is False
 
         webhook = run_response(flow, self._usage_webhook_api)
 
@@ -209,8 +210,7 @@ class TestModelProviderJsonStreaming:
         callback(b"x" * (STREAM_BUFFER_LIMIT + 4096))
         asyncio.run(mitm_addon.responseinspection(flow))
         callback(b'"}],"usage":{"input_tokens":50,"output_tokens":200}}')
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
         webhook = run_response(flow, self._usage_webhook_api)
 
@@ -473,8 +473,7 @@ class TestModelProviderJsonStreaming:
         mitm_addon.responseheaders(flow)
         assert "model_json_usage_finish" in flow.metadata
         response_stream(flow)(compressed)
-        assert metadata_keys.STREAM_BUFFER in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is not None
 
         webhook = run_response(flow, self._usage_webhook_api)
 
@@ -518,8 +517,8 @@ class TestModelProviderJsonStreaming:
         mitm_addon.responseheaders(flow)
         assert "model_json_usage_finish" in flow.metadata
         response_stream(flow)(compressed)
-        assert len(flow.metadata[metadata_keys.STREAM_BUFFER]) == STREAM_BUFFER_LIMIT
-        assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE]["truncated"] is True
+        assert len(response_stream_capture(flow).buffer) == STREAM_BUFFER_LIMIT
+        assert response_stream_capture(flow).truncated is True
 
         webhook = run_response(flow, self._usage_webhook_api)
 
@@ -670,8 +669,7 @@ class TestModelProviderJsonStreaming:
         midpoint = len(compressed) // 2
         response_stream(flow)(compressed[:midpoint])
         response_stream(flow)(compressed[midpoint:])
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
         webhook = run_response(flow, self._usage_webhook_api)
 
@@ -747,7 +745,7 @@ class TestModelProviderJsonStreaming:
 
         assert webhook.request_count == 0
         assert metadata_keys.MODEL_PROVIDER_USAGE not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     def test_full_pipeline_model_json_ignores_usage_array_shape(self, tmp_path, real_flow):
         """usage fields inside array elements must not be treated as usage object fields."""

@@ -18,6 +18,7 @@ import codex_model_catalog_cache as catalog_cache
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import request_classification
+import request_streaming
 import upstream_destination_binding
 from tests.codex_model_catalog_cache_helpers import (
     CATALOG_BODY,
@@ -988,8 +989,8 @@ async def test_catalog_wait_revalidates_only_provider_continuation(
     assert "_codex_model_catalog_cache_state" not in follower.metadata
     assert "_codex_model_catalog_cache_telemetry" not in follower.metadata
     assert mitm_addon._FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS not in follower.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in follower.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in follower.metadata
+    assert request_streaming.captured_request_stream_body(follower) is None
+    assert request_streaming.streamed_request_size(follower) is None
 
 
 @pytest.mark.parametrize("entry_point", ["request", "requestheaders"])
@@ -1164,8 +1165,8 @@ async def test_cancelled_requestheaders_catalog_follower_releases_usage_tracking
     assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY not in follower.metadata
     assert mitm_addon._FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS not in follower.metadata
     assert metadata_keys.HTTP_REQUEST_START_MONOTONIC not in follower.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in follower.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in follower.metadata
+    assert request_streaming.captured_request_stream_body(follower) is None
+    assert request_streaming.streamed_request_size(follower) is None
 
 
 async def test_network_log_contains_bounded_encoding_telemetry_and_cleanup(

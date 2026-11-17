@@ -1036,8 +1036,10 @@
       "allowAll_other": "{{count}} 件すべての権限を許可",
       "allowed": "権限を許可しました",
       "allowedCount": "{{total}} 件中 {{allowed}} 件の権限を許可済み",
+      "alreadyAllowed_other": "{{count}} 件許可済み",
       "alwaysNote": "これらの権限は、変更または取り消すまで許可されたままになります。",
       "continued": "会話を再開しました。",
+      "continuedShort": "チャットを再開しました",
       "continueFailed": "権限は許可されましたが、会話を再開できませんでした。",
       "details": "権限の詳細を表示",
       "dismissed": "権限は変更されませんでした。",
@@ -1047,6 +1049,7 @@
       "myOkouScopeNote": "現在のタスクだけでなく、このワークスペースでのあなたのOkouの利用に適用されます。",
       "myOkouSharedScopeNote": "このワークスペース内のあなたのチャット全体で、このコネクタに適用されます。チームメンバーの権限はそれぞれ独立しています。",
       "notNow": "今はしない",
+      "pending_other": "{{count}} 件の権限を許可",
       "review": "権限を確認",
       "scopeNote": "現在のタスクだけでなく、このエージェントに適用されます。",
       "sharedScopeNote": "このコネクタの権限は、すべてのチャットとエージェントに適用されます。",
@@ -1518,6 +1521,7 @@
           "action": "チェックイン",
           "description": "1日1回チェックイン。UTC 00:00にリセットされます。",
           "name": "毎日チェックイン",
+          "pendingDescription": "チェックインを保存しました。確認後にクレジットが反映されます。",
           "unit": "1日あたり"
         },
         "connector": {
@@ -2353,10 +2357,10 @@
       "loading": "読み込み中…",
       "noPhones": "オンラインのスマートフォンはありません",
       "openApp": "Okou iOS Use を開く",
-      "openAppDescription": "iPhone に開発版をインストールし、同じアカウントとワークスペースでサインインして、操作ウィンドウを開始してください。",
+      "openAppDescription": "iPhone に開発版をインストールし、同じアカウントとワークスペースでサインインして、Go online を選択してください。",
       "setupDescription": "このチャットで Okou に iPhone の操作を許可します。",
       "startTask": "次のタスクを送信",
-      "startTaskDescription": "許可後、ここに新しいメッセージを送信してください。スマートフォンの操作ウィンドウを有効に保ってください。",
+      "startTaskDescription": "アクセスを許可したら、ここで新しいメッセージを送信してください。iPhone をオンラインにして、ロックを解除したままにしてください。",
       "yourPhone": "あなたのスマートフォン"
     },
     "promptDocumentTitle": "プロンプト",
@@ -2914,13 +2918,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "{{account}} のアクセス",
+    "accountsInChat": "このチャットで有効にするアカウントを選択します。",
     "enableByDefault": "{{account}} を既定で有効にする",
-    "enabledAccounts": "{{value}} 件が有効",
     "manageAccounts": "アカウントを管理",
-    "noEnabledAccount": "このチャットで有効なアカウントはありません",
     "permissions": "権限",
     "permissionsDescription": "このルールは、すべてのチャットとアカウントでこのコネクタに適用されます。",
-    "settingsDescription": "既定で有効にするアカウントを選択します。"
+    "settingsDescription": "チャットでOkouが使用できる{{connector}}アカウントを選択します。アクセスはチャットごとに変更できます。",
+    "totalAccounts": "{{value}} 個のアカウント"
   },
   "connectors": {
     "access": {

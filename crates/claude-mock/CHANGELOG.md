@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.22.116](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.115...claude-mock-v0.22.116) (2026-11-17)
+
+## [0.22.115](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.114...claude-mock-v0.22.115) (2026-11-17)
+
+
+### Refactoring
+
+* **runner:** remove unused execution overrides ([#48162](https://github.com/okou-ai/okou/issues/48162)) ([1f0afc6](https://github.com/okou-ai/okou/commit/1f0afc6aa21f773b54c1d64b540280698e58f699))
+
 ## [0.22.114](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.113...claude-mock-v0.22.114) (2026-11-17)
 
 ## [0.22.113](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.112...claude-mock-v0.22.113) (2026-11-17)

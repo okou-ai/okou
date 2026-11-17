@@ -8,7 +8,19 @@ import {
 } from "ccstate-react";
 import type { Element, Root } from "hast";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
-import { File, Image, Loader2, Video } from "lucide-react";
+import {
+  AudioLines,
+  File,
+  FileArchive,
+  FileCode2,
+  FileText,
+  Globe,
+  Image,
+  Loader2,
+  Presentation,
+  Table2,
+  Video,
+} from "lucide-react";
 import type { ComponentPropsWithoutRef, CSSProperties, ReactNode } from "react";
 import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { useTranslation } from "react-i18next";
@@ -21,12 +33,13 @@ import {
   parseMarkdownTree,
 } from "../../lib/markdown/pipeline.ts";
 import { parseChatThreadLink } from "../../lib/chat-thread-link.ts";
+import { artifactDownloadType } from "../../lib/artifact-download-type.ts";
 import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts";
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
 import { openThreadMailDraft$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import type {
-  ArtifactKind,
+  ArtifactDescriptor,
   ArtifactSignals,
 } from "../../signals/chat-page/artifact-card-signals.ts";
 import type { HostedSiteCard } from "../../signals/hosted-site-card.ts";
@@ -229,23 +242,58 @@ function MediaImage({
   );
 }
 
-function ArtifactLinkIcon({ kind }: { readonly kind: ArtifactKind }) {
-  const iconProps = {
-    "aria-hidden": true,
-    className: "mr-1 inline-block align-[-0.1em]",
-    size: 14,
-  };
-  if (kind === "image") {
-    return (
-      <Image {...iconProps} data-testid="markdown-artifact-link-icon-image" />
-    );
-  }
-  if (kind === "video") {
-    return (
-      <Video {...iconProps} data-testid="markdown-artifact-link-icon-video" />
-    );
-  }
-  return <File {...iconProps} data-testid="markdown-artifact-link-icon-file" />;
+const ARTIFACT_LINK_ICONS = {
+  image: Image,
+  video: Video,
+  website: Globe,
+  document: FileText,
+  spreadsheet: Table2,
+  presentation: Presentation,
+  audio: AudioLines,
+  code: FileCode2,
+  archive: FileArchive,
+  file: File,
+} as const;
+const CODE_FILE_RE =
+  /\.(?:[cm]?[jt]sx?|py|pyi|ipynb|rb|php|go|rs|java|kts?|swift|c|cpp|h|hpp|cs|sh|bash|zsh|sql|css|scss|sass|less|vue|svelte|jsonc?|jsonl|ndjson|xml|ya?ml|toml)$/iu;
+const CODE_CONTENT_TYPE_RE =
+  /^(?:application|text)\/(?:[a-z0-9.+-]+\+)?(?:json|javascript|ecmascript|typescript|xml|yaml|x-yaml|toml|sql|css|x-python|x-ruby|x-sh|x-shellscript)$/iu;
+
+function ArtifactLinkIcon({
+  artifact,
+}: {
+  readonly artifact: ArtifactDescriptor;
+}) {
+  const fileType = artifactDownloadType({
+    filename: artifact.filename,
+    contentType: artifact.contentType,
+    previewKind: artifact.kind,
+  });
+  const isCode =
+    (fileType === "document" || fileType === "other") &&
+    (artifact.kind === "json" ||
+      CODE_FILE_RE.test(artifact.filename) ||
+      CODE_CONTENT_TYPE_RE.test(
+        artifact.contentType?.split(";", 1)[0]?.trim() ?? "",
+      ));
+  const iconKind = isCode
+    ? "code"
+    : fileType === "pdf"
+      ? "document"
+      : fileType === "html"
+        ? "website"
+        : fileType === "other"
+          ? "file"
+          : fileType;
+  const Icon = ARTIFACT_LINK_ICONS[iconKind];
+  return (
+    <Icon
+      aria-hidden="true"
+      className="mr-1 inline-block align-[-0.1em]"
+      size={14}
+      data-testid={`markdown-artifact-link-icon-${iconKind}`}
+    />
+  );
 }
 
 function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
@@ -277,7 +325,7 @@ function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
       }}
     >
       {card?.kind === "artifact" && (
-        <ArtifactLinkIcon kind={card.signals.kind} />
+        <ArtifactLinkIcon artifact={card.signals} />
       )}
       {children}
     </PlainLink>

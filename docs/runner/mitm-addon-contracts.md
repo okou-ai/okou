@@ -91,6 +91,16 @@ at most 65,535 wire bytes per read. Unrelated loop work and other connections ca
 continue while inspection yields. There is no detached addon parser task or
 cross-thread reporting owner.
 
+Native full-close commands for the current reader's own connection wait for that
+read's registered inspection checkpoints. HTTP/1 can emit end-of-message and a
+nonpersistent connection close while its HTTP stream is still paused on an
+inspection hook; immediately executing that close would cancel the reader and
+abandon a complete response. One reader-owned close intent is executed after the
+out-of-lock hook join. Half-closes and closes from other tasks or for other
+connections keep native behavior. If external cancellation interrupts the join,
+the intent is discarded: native teardown already owns connection closure, and a
+second cancellation must not interrupt its `ConnectionClosed` delivery.
+
 Response/error completion joins the same pending owner before finalization and
 cleanup. Cancellation or abandonment closes retained iterators, publishes
 explicit unparsed state and logs an inspection-interruption underbilling risk;
@@ -129,6 +139,11 @@ and request-admitted usage tracking with explicit encoding constraints.
 native HTTP stream hooks and fixture-owned TCP peers for these paths to verify
 fairness, byte forwarding and read backpressure. These tests do not claim
 production latency or a production load soak.
+`tests/test_mitmproxy_response_close.py` additionally drives the native HTTP/1
+parser's same-read data/end-of-message/close sequence. It verifies complete X
+resource and model JSON/SSE accounting, unchanged body bytes, immediate external
+cancellation and native transport cleanup, including responses with no deferred
+inspection work.
 
 ### Responses WebSocket message inspection
 

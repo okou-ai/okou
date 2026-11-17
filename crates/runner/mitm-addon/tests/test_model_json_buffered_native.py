@@ -20,6 +20,7 @@ import mitm_addon
 import response_streaming
 import run_usage
 import runner_control
+import stream_capture
 import usage
 from tests.control_helpers import exchange, status_request
 from tests.flow_helpers import response_stream
@@ -247,7 +248,7 @@ async def test_native_terminal_hook_owns_inspection_until_completion_or_cancella
             }
     assert flow.response is not None
     assert flow.response.stream is False
-    assert metadata_keys.STREAM_BUFFER not in flow.metadata
+    assert stream_capture.captured_response_stream_body(flow) is None
     assert "_response_inspection" not in flow.metadata
 
 
@@ -292,6 +293,6 @@ async def test_interrupted_capture_only_observes_fully_validated_document(
     assert result["complete"] is False
     assert webhook.usage_events() == []
     assert metadata_keys.MODEL_PROVIDER_USAGE not in flow.metadata
-    assert metadata_keys.STREAM_BUFFER not in flow.metadata
+    assert stream_capture.captured_response_stream_body(flow) is None
     assert not response_streaming.has_pending_response_inspection(flow)
     assert usage.delivery_snapshot()["flows"] == 0

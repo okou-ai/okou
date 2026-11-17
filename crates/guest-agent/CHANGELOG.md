@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.109.98](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.97...guest-agent-v0.109.98) (2026-11-17)
+
+
+### Bug Fixes
+
+* **guest-agent:** classify disk exhaustion before completion ([#48222](https://github.com/okou-ai/okou/issues/48222)) ([2ba7427](https://github.com/okou-ai/okou/commit/2ba742774dce0ce2d76c4a2064fb78e75af0dcf3))
+
+## [0.109.97](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.96...guest-agent-v0.109.97) (2026-11-17)
+
+
+### Refactoring
+
+* **runner:** remove unused execution overrides ([#48162](https://github.com/okou-ai/okou/issues/48162)) ([1f0afc6](https://github.com/okou-ai/okou/commit/1f0afc6aa21f773b54c1d64b540280698e58f699))
+
 ## [0.109.96](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.95...guest-agent-v0.109.96) (2026-11-17)
 
 ## [0.109.95](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.94...guest-agent-v0.109.95) (2026-11-17)

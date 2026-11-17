@@ -13,6 +13,7 @@ import firewall_auth_client as auth_client
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import request_classification
+import request_streaming
 import upstream_destination_binding
 from body_limits import STREAM_BUFFER_LIMIT
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
@@ -65,7 +66,7 @@ async def test_capture_enabled_firewall_allow_header_auth_installs_request_strea
         await await_requestheaders_result(requestheaders_result)
 
         assert callable(flow.request.stream)
-        assert metadata_keys.REQUEST_STREAM_BUFFER in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is not None
         assert flow.request.headers["Authorization"] == "Bearer resolved"
         assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
         assert flow.metadata[metadata_keys.FIREWALL_BASE] == "https://api.github.com"

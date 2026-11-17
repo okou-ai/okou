@@ -1,5 +1,28 @@
 # Changelog
 
+## [8.847.5](https://github.com/okou-ai/okou/compare/core-v8.847.4...core-v8.847.5) (2026-11-17)
+
+
+### Bug Fixes
+
+* **app:** match project titles to thread overflow behavior ([#48220](https://github.com/okou-ai/okou/issues/48220)) ([96b2fc7](https://github.com/okou-ai/okou/commit/96b2fc71b22699ef6cd56c3229a762aa2887e19b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.81.0
+
+## [8.847.4](https://github.com/okou-ai/okou/compare/core-v8.847.3...core-v8.847.4) (2026-11-17)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.80.0
+
 ## [8.847.3](https://github.com/okou-ai/okou/compare/core-v8.847.2...core-v8.847.3) (2026-11-17)
 
 

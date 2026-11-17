@@ -96,7 +96,6 @@ export const phoneDeviceSchema = object({
   appVersion: string(),
   generation: number().int(),
   online: boolean(),
-  ready: boolean(),
   lastSeenAt: string(),
 });
 export type PhoneDevice = zInfer<typeof phoneDeviceSchema>;

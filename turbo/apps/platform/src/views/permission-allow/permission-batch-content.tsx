@@ -12,7 +12,11 @@ import {
   DialogTitle,
   DialogTrigger,
   IconButton,
-  cn,
+  Skeleton,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { AlertCircle, Check, Loader2, ShieldCheck, X } from "lucide-react";
@@ -248,6 +252,7 @@ function BatchPermissionDetails({ batch }: BatchViewProps) {
   const {
     complete,
     loadFailed,
+    ready,
     allowedCount,
     descriptor,
     groups,
@@ -265,6 +270,14 @@ function BatchPermissionDetails({ batch }: BatchViewProps) {
           )}
         </p>
       )}
+      {!ready && !complete && !loadFailed && (
+        <LoadingSkeleton
+          variant="text"
+          label={t(($) => {
+            return $.authorization.permissionBatch.loading;
+          })}
+        />
+      )}
       <p className="text-sm text-muted-foreground">
         {t(($) => {
           return singleAgent
@@ -276,6 +289,9 @@ function BatchPermissionDetails({ batch }: BatchViewProps) {
               : $.authorization.permissionBatch.scopeNote;
         })}
       </p>
+      {groups.length === 0 && !ready && !loadFailed && (
+        <BatchPermissionSkeleton batch={batch} />
+      )}
       {groups.map(({ connector, items }) => {
         return (
           <section
@@ -334,6 +350,53 @@ function BatchPermissionDetails({ batch }: BatchViewProps) {
   );
 }
 
+function BatchPermissionSkeleton({ batch }: BatchViewProps) {
+  const connectorSlugs = [
+    ...new Set(
+      batch.descriptor.items.map((item) => {
+        return item.connectorSlug;
+      }),
+    ),
+  ];
+  return connectorSlugs.map((slug) => {
+    return (
+      <section
+        key={slug}
+        aria-hidden="true"
+        className="flex flex-col gap-3 rounded-lg border border-border px-4 py-3"
+      >
+        <div className="flex items-center gap-2 border-b border-border/70 pb-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-muted/40">
+            <Skeleton className="size-5" />
+          </span>
+          <Skeleton className="h-3 w-24" />
+        </div>
+        <ul className="flex flex-col gap-3">
+          {batch.descriptor.items
+            .filter((item) => {
+              return item.connectorSlug === slug;
+            })
+            .map((item) => {
+              return (
+                <li
+                  key={item.permission}
+                  className="flex min-w-0 flex-col items-start gap-1"
+                >
+                  <span className="flex h-[22px] items-center">
+                    <Skeleton className="h-4 w-28 max-w-full" />
+                  </span>
+                  <span className="flex h-5 w-full items-center">
+                    <Skeleton className="h-3.5 w-3/4" />
+                  </span>
+                </li>
+              );
+            })}
+        </ul>
+      </section>
+    );
+  });
+}
+
 function BatchFeedback({ batch }: BatchViewProps) {
   const { t } = useTranslation();
   const {
@@ -349,15 +412,6 @@ function BatchFeedback({ batch }: BatchViewProps) {
   } = batch;
   return (
     <>
-      {!allowed && !ready && !loadFailed && (
-        <Loader2
-          aria-label={t(($) => {
-            return $.authorization.permissionBatch.loading;
-          })}
-          size={20}
-          className="animate-spin self-center text-muted-foreground"
-        />
-      )}
       {!allowed && (loadFailed || (ready && !complete)) && (
         <p role="alert" className="text-sm text-destructive">
           {t(($) => {
@@ -365,7 +419,7 @@ function BatchFeedback({ batch }: BatchViewProps) {
           })}
         </p>
       )}
-      {!allowed && complete && (
+      {!allowed && (complete || (!ready && !loadFailed)) && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 px-3 py-2">
           <span className="text-sm font-medium text-foreground">
             {t(($) => {
@@ -374,7 +428,7 @@ function BatchFeedback({ batch }: BatchViewProps) {
           </span>
           <PermissionGrantDurationSelect
             value={expiresIn}
-            disabled={busy || loadFailed}
+            disabled={busy || loadFailed || !complete}
             onValueChange={setExpiresIn}
             ariaLabel={t(($) => {
               return $.authorization.permission.durationLabel;
@@ -464,23 +518,9 @@ function BatchActions({
   );
 }
 
-function BatchCardDescription({
-  batch,
-  failed,
-}: BatchViewProps & { failed: boolean }) {
+function BatchCardError({ batch }: BatchViewProps) {
   const { t } = useTranslation();
-  const {
-    allowed,
-    allowedCount,
-    callbackFailed,
-    complete,
-    continued,
-    descriptor,
-    groups,
-    loadFailed,
-    ready,
-    saveFailed,
-  } = batch;
+  const { callbackFailed, complete, loadFailed, ready } = batch;
   const description =
     loadFailed || (ready && !complete)
       ? t(($) => {
@@ -490,44 +530,122 @@ function BatchCardDescription({
         ? t(($) => {
             return $.authorization.permissionBatch.continueFailed;
           })
-        : saveFailed && !allowed
-          ? t(($) => {
-              return $.authorization.permission.errors.updateFailed;
-            })
-          : !ready
-            ? t(($) => {
-                return $.authorization.permissionBatch.loading;
-              })
-            : continued && allowed
-              ? t(($) => {
-                  return $.authorization.permissionBatch.continued;
-                })
-              : [
-                  t(
-                    ($) => {
-                      return $.authorization.permissionBatch.allowedCount;
-                    },
-                    { allowed: allowedCount, total: descriptor.items.length },
-                  ),
-                  groups
-                    .map(({ connector }) => {
-                      return connector.label;
-                    })
-                    .join(", "),
-                ].join(" · ");
+        : t(($) => {
+            return $.authorization.permission.errors.updateFailed;
+          });
   return (
-    <p
-      className={cn(
-        "mt-0.5 line-clamp-2 text-sm leading-5",
-        failed ? "text-destructive" : "text-muted-foreground",
-      )}
-    >
-      {!ready && !failed ? (
-        <LoadingSkeleton variant="text" label={description} />
-      ) : (
-        description
-      )}
+    <p role="alert" className="line-clamp-2 text-sm leading-5 text-destructive">
+      {description}
     </p>
+  );
+}
+
+function BatchCardLogos({ batch }: BatchViewProps) {
+  const slugs = [
+    ...new Set(
+      batch.descriptor.items.map((item) => {
+        return item.connectorSlug;
+      }),
+    ),
+  ];
+  const labels = slugs
+    .map((slug) => {
+      return (
+        batch.metadata.find((connector) => {
+          return connector.connectorSlug === slug;
+        })?.label ?? slug
+      );
+    })
+    .join(", ");
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          type="button"
+          aria-label={labels}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {slugs.slice(0, 3).map((slug) => {
+            const connector = batch.metadata.find((entry) => {
+              return entry.connectorSlug === slug;
+            });
+            return (
+              <span
+                key={slug}
+                aria-hidden="true"
+                className="flex size-5 items-center justify-center"
+              >
+                {connector ? (
+                  <ConnectorIcon icon={connector.icon} size={18} />
+                ) : (
+                  <Skeleton className="size-[18px]" />
+                )}
+              </span>
+            );
+          })}
+          {slugs.length > 3 && (
+            <span className="rounded bg-muted px-1 text-xs leading-5 text-muted-foreground">
+              +{slugs.length - 3}
+            </span>
+          )}
+        </TooltipTrigger>
+        <TooltipContent role="tooltip">{labels}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+function BatchCardStatus({ batch }: BatchViewProps) {
+  const { t } = useTranslation();
+  const { ready, busy, allowed, allowedCount, descriptor, continued } = batch;
+  return (
+    <>
+      <div className="truncate text-[0.9375rem] font-medium leading-5 text-foreground">
+        {!ready ? (
+          <LoadingSkeleton
+            variant="text"
+            label={t(($) => {
+              return $.authorization.permissionBatch.loading;
+            })}
+          />
+        ) : busy ? (
+          t(($) => {
+            return $.authorization.permission.saving;
+          })
+        ) : allowed ? (
+          t(($) => {
+            return $.authorization.permissionBatch.allowed;
+          })
+        ) : (
+          t(
+            ($) => {
+              return $.authorization.permissionBatch.pending;
+            },
+            { count: descriptor.items.length - allowedCount },
+          )
+        )}
+      </div>
+      <div className="mt-0.5 flex h-5 min-w-0 items-center gap-2 text-sm leading-5 text-muted-foreground">
+        <BatchCardLogos batch={batch} />
+        {((allowed && continued) || (!allowed && allowedCount > 0)) && (
+          <>
+            <span aria-hidden="true">·</span>
+            <span className="truncate">
+              {allowed
+                ? t(($) => {
+                    return $.authorization.permissionBatch.continuedShort;
+                  })
+                : t(
+                    ($) => {
+                      return $.authorization.permissionBatch.alreadyAllowed;
+                    },
+                    { count: allowedCount },
+                  )}
+            </span>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -549,7 +667,7 @@ function BatchCardSummary({ batch }: BatchViewProps) {
     callbackFailed;
   return (
     <div className="flex h-full w-full flex-col justify-between gap-3 px-4 py-3 text-left @[640px]:flex-row @[640px]:items-center">
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3 @[640px]:flex-1">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-muted-foreground">
           {failed ? (
             <AlertCircle size={22} className="text-destructive" />
@@ -562,16 +680,11 @@ function BatchCardSummary({ batch }: BatchViewProps) {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[0.9375rem] font-medium leading-5 text-foreground">
-            {allowed
-              ? t(($) => {
-                  return $.authorization.permissionBatch.allowed;
-                })
-              : t(($) => {
-                  return $.authorization.permissionBatch.title;
-                })}
-          </div>
-          <BatchCardDescription batch={batch} failed={failed} />
+          {failed ? (
+            <BatchCardError batch={batch} />
+          ) : (
+            <BatchCardStatus batch={batch} />
+          )}
         </div>
       </div>
       <DialogTrigger

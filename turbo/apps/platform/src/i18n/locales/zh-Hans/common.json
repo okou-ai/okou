@@ -1036,8 +1036,10 @@
       "allowAll_other": "允许全部 {{count}} 项权限",
       "allowed": "权限已允许",
       "allowedCount": "已允许 {{allowed}} / {{total}} 项权限",
+      "alreadyAllowed_other": "已允许 {{count}} 项",
       "alwaysNote": "这些权限会持续允许，直到你更改或撤销为止。",
       "continued": "对话已继续。",
+      "continuedShort": "对话已继续",
       "continueFailed": "权限已允许，但未能继续对话。",
       "details": "查看权限详情",
       "dismissed": "未更改任何权限。",
@@ -1047,6 +1049,7 @@
       "myOkouScopeNote": "适用于你在本工作区使用 Okou，不限于当前任务。",
       "myOkouSharedScopeNote": "适用于你在本工作区所有聊天中使用此连接器。同事的授权各自独立。",
       "notNow": "暂不允许",
+      "pending_other": "待允许 {{count}} 项权限",
       "review": "查看并授权",
       "scopeNote": "适用于此智能体，而不仅限于当前任务。",
       "sharedScopeNote": "此连接器的权限由你的所有聊天和智能体共用。",
@@ -1518,6 +1521,7 @@
           "action": "签到",
           "description": "每天签到一次，UTC 00:00 重置。",
           "name": "每日签到",
+          "pendingDescription": "签到已保存，确认后积分会自动更新。",
           "unit": "每天"
         },
         "connector": {
@@ -2353,10 +2357,10 @@
       "loading": "正在加载手机…",
       "noPhones": "暂无在线手机",
       "openApp": "打开 Okou iOS Use",
-      "openAppDescription": "在 iPhone 上安装开发版，使用相同账号和工作区登录，并开启控制窗口。",
+      "openAppDescription": "在 iPhone 上安装开发版，使用相同账号和工作区登录，然后点击 Go online 上线。",
       "setupDescription": "授权 Okou 在当前对话中使用你的 iPhone。",
       "startTask": "发送下一个任务",
-      "startTaskDescription": "完成授权后，在这里发送一条新消息。请保持手机上的控制窗口有效。",
+      "startTaskDescription": "授权后，在这里发送一条新消息。保持 iPhone 在线且处于解锁状态。",
       "yourPhone": "你的手机"
     },
     "promptDocumentTitle": "提示词",
@@ -2914,13 +2918,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "{{account}} 的访问权限",
+    "accountsInChat": "选择在此对话中开启哪些账号。",
     "enableByDefault": "默认启用 {{account}}",
-    "enabledAccounts": "{{value}} 个已启用",
     "manageAccounts": "管理账号",
-    "noEnabledAccount": "当前聊天未启用任何账号",
     "permissions": "权限",
     "permissionsDescription": "这些规则适用于你所有聊天和账号中的此连接器。",
-    "settingsDescription": "选择默认启用的账号。"
+    "settingsDescription": "选择 Okou 可以在你的对话中使用哪些 {{connector}} 账号。你可以在每个对话中单独调整。",
+    "totalAccounts": "{{value}} 个账号"
   },
   "connectors": {
     "access": {

@@ -160,7 +160,7 @@ def later_for_iteration_failure(flow, manager, rows):
         for _row in rows:
             metadata = flow.metadata
         metadata = {}
-    return metadata["request_stream_buffer"]
+    return metadata["request_stream_capture"]
 
 
 def later_while_test_failure(flow, manager, condition):
@@ -178,7 +178,7 @@ async def later_async_iteration_failure(flow, manager, rows):
         async for _row in rows:
             metadata = flow.metadata
         metadata = {}
-    return metadata["stream_buffer_state"]
+    return metadata["response_stream_capture"]
 
 
 def later_with_item_failure_is_suppressible(flow, outer_manager):

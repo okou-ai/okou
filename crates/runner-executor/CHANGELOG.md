@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.21.47](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.46...runner-executor-v0.21.47) (2026-11-17)
+
+## [0.21.46](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.45...runner-executor-v0.21.46) (2026-11-17)
+
+
+### Refactoring
+
+* **runner:** remove unused execution overrides ([#48162](https://github.com/okou-ai/okou/issues/48162)) ([1f0afc6](https://github.com/okou-ai/okou/commit/1f0afc6aa21f773b54c1d64b540280698e58f699))
+
 ## [0.21.45](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.44...runner-executor-v0.21.45) (2026-11-17)
 
 ## [0.21.44](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.43...runner-executor-v0.21.44) (2026-11-17)

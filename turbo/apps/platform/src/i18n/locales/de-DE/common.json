@@ -1038,8 +1038,11 @@
       "allowAll_other": "Alle {{count}} Berechtigungen erlauben",
       "allowed": "Berechtigungen erlaubt",
       "allowedCount": "{{allowed}} von {{total}} Berechtigungen erlaubt",
+      "alreadyAllowed_one": "{{count}} bereits erlaubt",
+      "alreadyAllowed_other": "{{count}} bereits erlaubt",
       "alwaysNote": "Diese Berechtigungen bleiben erlaubt, bis du sie änderst oder widerrufst.",
       "continued": "Die Unterhaltung wurde fortgesetzt.",
+      "continuedShort": "Chat fortgesetzt",
       "continueFailed": "Die Berechtigungen wurden erlaubt, aber die Unterhaltung konnte nicht fortgesetzt werden.",
       "details": "Berechtigungsdetails anzeigen",
       "dismissed": "Es wurden keine Berechtigungen geändert.",
@@ -1049,6 +1052,8 @@
       "myOkouScopeNote": "Gilt für deine Nutzung von Okou in diesem Workspace, nicht nur für die aktuelle Aufgabe.",
       "myOkouSharedScopeNote": "Gilt für diesen Connector in deinen Chats in diesem Workspace. Deine Teammitglieder haben eigene Berechtigungen.",
       "notNow": "Nicht jetzt",
+      "pending_one": "{{count}} Berechtigung ausstehend",
+      "pending_other": "{{count}} Berechtigungen ausstehend",
       "review": "Berechtigungen prüfen",
       "scopeNote": "Gilt für diesen Agenten, nicht nur für die aktuelle Aufgabe.",
       "sharedScopeNote": "Die Berechtigungen für diesen Connector gelten für alle deine Chats und Agenten.",
@@ -1520,6 +1525,7 @@
           "action": "Einchecken",
           "description": "Einmal täglich einchecken. Neuer Tag um 00:00 UTC.",
           "name": "Täglich einchecken",
+          "pendingDescription": "Dein Check-in wurde gespeichert. Die Credits werden nach der Bestätigung aktualisiert.",
           "unit": "pro Tag"
         },
         "connector": {
@@ -2360,10 +2366,10 @@
       "loading": "Smartphones werden geladen…",
       "noPhones": "Keine Smartphones online",
       "openApp": "Okou iOS Use öffnen",
-      "openAppDescription": "Installiere den Entwicklungsbuild auf deinem iPhone, melde dich mit demselben Konto und Workspace an und starte ein Steuerungsfenster.",
+      "openAppDescription": "Installiere den Entwicklungsbuild auf deinem iPhone, melde dich mit demselben Konto und Workspace an und wähle Go online.",
       "setupDescription": "Erlaube Okou, dein iPhone in diesem Chat zu verwenden.",
       "startTask": "Deine nächste Aufgabe senden",
-      "startTaskDescription": "Sende nach der Freigabe hier eine neue Nachricht. Halte das Steuerungsfenster auf deinem Smartphone aktiv.",
+      "startTaskDescription": "Sende nach der Freigabe eine neue Nachricht hier. Halte dein iPhone online und entsperrt.",
       "yourPhone": "Dein Smartphone"
     },
     "promptDocumentTitle": "Prompt",
@@ -2927,13 +2933,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "Zugriff für {{account}}",
+    "accountsInChat": "Wähle, welche Konten in diesem Chat aktiviert sind.",
     "enableByDefault": "{{account}} standardmäßig aktivieren",
-    "enabledAccounts": "{{value}} aktiviert",
     "manageAccounts": "Konten verwalten",
-    "noEnabledAccount": "Für diesen Chat ist kein Konto aktiviert",
     "permissions": "Berechtigungen",
     "permissionsDescription": "Diese Regeln gelten für diesen Connector in allen deinen Chats und Konten.",
-    "settingsDescription": "Wähle die standardmäßig aktivierten Konten."
+    "settingsDescription": "Wähle, welche {{connector}}-Konten Okou in deinen Chats verwenden darf. Du kannst den Zugriff in jedem Chat ändern.",
+    "totalAccounts": "{{value}} Konten"
   },
   "connectors": {
     "access": {

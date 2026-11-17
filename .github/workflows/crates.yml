@@ -1018,6 +1018,13 @@ jobs:
           cargo test --manifest-path crates/Cargo.toml --profile local --locked -j1 \
             -p guest-agent --test bootstrap_contracts bootstrap_cases::home_reuse_cleanup \
             -- --ignored --test-threads=1
+      - name: Verify first completion with an exhausted private home filesystem
+        shell: bash
+        run: |
+          cargo test --manifest-path crates/Cargo.toml --profile local --locked -j1 \
+            -p guest-agent --bin guest-agent \
+            tests::disk_failure::first_completion_attributes_disk_full_without_writable_diagnostics \
+            -- --ignored --exact --test-threads=1
       - name: Report peak memory
         if: always()
         continue-on-error: true

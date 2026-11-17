@@ -1038,8 +1038,11 @@
       "allowAll_other": "Allow all {{count}} permissions",
       "allowed": "Permissions allowed",
       "allowedCount": "{{allowed}} of {{total}} permissions allowed",
+      "alreadyAllowed_one": "{{count}} already allowed",
+      "alreadyAllowed_other": "{{count}} already allowed",
       "alwaysNote": "These permissions stay allowed until you change or revoke them.",
       "continued": "The chat has continued.",
+      "continuedShort": "Chat continued",
       "continueFailed": "Permissions allowed, but could not continue.",
       "details": "View permission details",
       "dismissed": "No permissions were changed.",
@@ -1049,6 +1052,8 @@
       "myOkouScopeNote": "Applies to your use of Okou in this workspace, not only the current task.",
       "myOkouSharedScopeNote": "Applies to this connector across your chats in this workspace. Your teammates have their own permissions.",
       "notNow": "Not now",
+      "pending_one": "{{count}} permission to allow",
+      "pending_other": "{{count}} permissions to allow",
       "review": "Review permissions",
       "scopeNote": "Applies to this agent, not only the current task.",
       "sharedScopeNote": "Applies to this connector across all your chats and agents.",
@@ -1520,6 +1525,7 @@
           "action": "Check in",
           "description": "Check in once a day. Resets at 00:00 UTC.",
           "name": "Check in daily",
+          "pendingDescription": "Your check-in was saved. Credits will update after confirmation.",
           "unit": "a day"
         },
         "connector": {
@@ -2360,10 +2366,10 @@
       "loading": "Loading phones…",
       "noPhones": "No phones online",
       "openApp": "Open Okou iOS Use",
-      "openAppDescription": "Install the development build on your iPhone, sign in with the same account and workspace, and start a control window.",
+      "openAppDescription": "Install the development build on your iPhone, sign in with the same account and workspace, and select Go online.",
       "setupDescription": "Allow Okou to use your iPhone from this chat.",
       "startTask": "Send your next task",
-      "startTaskDescription": "After allowing access, send a new message here. Keep the control window active on your phone.",
+      "startTaskDescription": "After allowing access, send a new message here. Keep your iPhone online and unlocked.",
       "yourPhone": "Your phone"
     },
     "promptDocumentTitle": "Prompt",
@@ -2927,13 +2933,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "{{account}} access",
+    "accountsInChat": "Choose which accounts are on in this chat.",
     "enableByDefault": "Enable {{account}} by default",
-    "enabledAccounts": "{{value}} enabled",
     "manageAccounts": "Manage accounts",
-    "noEnabledAccount": "No account is on for this chat",
     "permissions": "Permissions",
     "permissionsDescription": "These rules apply to this connector across your chats and accounts.",
-    "settingsDescription": "Choose which accounts are on by default."
+    "settingsDescription": "Choose which {{connector}} accounts Okou can use across your chats. You can change access in each chat.",
+    "totalAccounts": "{{value}} accounts"
   },
   "connectors": {
     "access": {

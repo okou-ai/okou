@@ -1058,8 +1058,12 @@
       "allowAll_other": "Concedi tutte le {{count}} autorizzazioni",
       "allowed": "Autorizzazioni concesse",
       "allowedCount": "{{allowed}} autorizzazioni concesse su {{total}}",
+      "alreadyAllowed_one": "{{count}} già consentita",
+      "alreadyAllowed_many": "{{count}} già consentite",
+      "alreadyAllowed_other": "{{count}} già consentite",
       "alwaysNote": "Queste autorizzazioni restano concesse finché non le modifichi o le revochi.",
       "continued": "La conversazione è ripresa.",
+      "continuedShort": "Chat ripresa",
       "continueFailed": "Le autorizzazioni sono state concesse, ma non è stato possibile riprendere la conversazione.",
       "details": "Visualizza i dettagli delle autorizzazioni",
       "dismissed": "Nessuna autorizzazione è stata modificata.",
@@ -1069,6 +1073,9 @@
       "myOkouScopeNote": "Si applica al tuo uso di Okou in questo spazio di lavoro, non solo all’attività corrente.",
       "myOkouSharedScopeNote": "Si applica a questo connettore nelle tue chat di questo spazio di lavoro. I colleghi hanno le proprie autorizzazioni.",
       "notNow": "Non ora",
+      "pending_one": "{{count}} autorizzazione da consentire",
+      "pending_many": "{{count}} autorizzazioni da consentire",
+      "pending_other": "{{count}} autorizzazioni da consentire",
       "review": "Esamina autorizzazioni",
       "scopeNote": "Si applica a questo agente, non solo all’attività corrente.",
       "sharedScopeNote": "Si applica a questo connettore in tutte le tue chat e i tuoi agenti.",
@@ -1543,6 +1550,7 @@
           "action": "Fai check-in",
           "description": "Fai check-in una volta al giorno. Si reimposta alle 00:00 UTC.",
           "name": "Accedi ogni giorno",
+          "pendingDescription": "Il tuo check-in è stato salvato. I crediti verranno aggiornati dopo la conferma.",
           "unit": "al giorno"
         },
         "connector": {
@@ -2396,10 +2404,10 @@
       "loading": "Caricamento telefoni…",
       "noPhones": "Nessun telefono online",
       "openApp": "Apri Okou iOS Use",
-      "openAppDescription": "Installa la build di sviluppo sul tuo iPhone, accedi con lo stesso account e spazio di lavoro e avvia una finestra di controllo.",
+      "openAppDescription": "Installa la build di sviluppo sul tuo iPhone, accedi con lo stesso account e spazio di lavoro e seleziona Go online.",
       "setupDescription": "Consenti a Okou di usare il tuo iPhone da questa chat.",
       "startTask": "Invia la prossima attività",
-      "startTaskDescription": "Dopo aver autorizzato l’accesso, invia un nuovo messaggio qui. Mantieni attiva la finestra di controllo sul telefono.",
+      "startTaskDescription": "Dopo aver consentito l’accesso, invia un nuovo messaggio qui. Mantieni il tuo iPhone online e sbloccato.",
       "yourPhone": "Il tuo telefono"
     },
     "promptDocumentTitle": "Prompt",
@@ -2975,13 +2983,13 @@
   },
   "connectorChatAccess": {
     "accountAccess": "Accesso di {{account}}",
+    "accountsInChat": "Scegli quali account sono attivi in questa chat.",
     "enableByDefault": "Attiva {{account}} per impostazione predefinita",
-    "enabledAccounts": "{{value}} attivi",
     "manageAccounts": "Gestisci account",
-    "noEnabledAccount": "Nessun account attivo per questa chat",
     "permissions": "Autorizzazioni",
     "permissionsDescription": "Queste regole si applicano a questo connettore in tutte le tue chat e account.",
-    "settingsDescription": "Scegli gli account attivi per impostazione predefinita."
+    "settingsDescription": "Scegli quali account {{connector}} Okou può usare nelle tue chat. Puoi modificare l’accesso in ogni chat.",
+    "totalAccounts": "{{value}} account"
   },
   "connectors": {
     "access": {

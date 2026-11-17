@@ -537,6 +537,14 @@ fn failure_diagnostic_serializes_output_token_limit_reason() {
 fn failure_reason_maps_exhaustively_to_the_public_completion_contract() {
     for (reason, expected) in [
         (FailureReason::SessionHistoryLimit, "session_history_limit"),
+        (
+            FailureReason::GuestRootFilesystemFull,
+            "guest_root_filesystem_full",
+        ),
+        (
+            FailureReason::GuestHomeFilesystemFull,
+            "guest_home_filesystem_full",
+        ),
         (FailureReason::ExecutionTimeout, "execution_timeout"),
         (FailureReason::InsufficientCredits, "insufficient_credits"),
         (

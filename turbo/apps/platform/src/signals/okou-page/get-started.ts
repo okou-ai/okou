@@ -1,4 +1,6 @@
 import { command, computed, state } from "ccstate";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { i18n } from "../../i18n/index.ts";
 import type { AgentPhoneLinkStatusResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import type { SlackOrgStatus } from "@okouai/api-contracts/contracts/integrations-slack";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/validators/get-started";
@@ -31,16 +33,10 @@ export interface GetStartedQuest {
   readonly rewardTarget: "user" | "org";
 }
 
-/**
- * The quests whose reward is decided by the review worker rather than by the
- * act itself.
- *
- * `processGetStartedClaims` leases exactly these keys, so a claim of theirs
- * sitting in `pending` means a reviewer still holds it. Everything else is
- * granted inside the transaction that completes it and never waits.
- */
-const REVIEWED_QUEST_KEYS: ReadonlySet<GetStartedQuestKey> = new Set([
+/** These actions can be saved before their financial confirmation arrives. */
+const PENDING_QUEST_KEYS: ReadonlySet<GetStartedQuestKey> = new Set([
   "workflow",
+  "checkin",
 ]);
 
 const reloadVersion$ = state(0);
@@ -139,7 +135,7 @@ export const getStartedQuests$ = computed(
       // as the hourly worker took to reach the claim the user had just earned.
       if (
         status === "todo" &&
-        REVIEWED_QUEST_KEYS.has(quest.key) &&
+        PENDING_QUEST_KEYS.has(quest.key) &&
         quest.pendingCount > 0
       ) {
         status = "inReview";
@@ -269,11 +265,11 @@ export const setCheckinClaimedOpen$ = command(({ set }, open: boolean) => {
 
 export const checkInGetStarted$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    await accept(
+    const result = await accept(
       get(apiClient$)(getStartedContract).checkin({
         fetchOptions: { signal },
       }),
-      [200],
+      [200, 202],
       signal,
     );
     signal.throwIfAborted();
@@ -283,7 +279,15 @@ export const checkInGetStarted$ = command(
       set(reloadAccountMenuCreditBalances$, signal),
     ]);
     signal.throwIfAborted();
-    set(internalCheckinClaimedOpen$, true);
+    if (result.status === 200 && result.body.status === "granted") {
+      set(internalCheckinClaimedOpen$, true);
+    } else {
+      toast.info(
+        i18n.t(($) => {
+          return $.chat.agentPage.getStarted.checkin.pendingDescription;
+        }),
+      );
+    }
   },
 );
 
