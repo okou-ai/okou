@@ -51,8 +51,10 @@ final class IdentityPresentation {
     let profile = read("profile")
     profile.configure(hasProfileImage ? profileURL : nil)
     // Resolve only local bytes before presenting the sidebar. Network reads follow below.
-    await logo.restore()
-    await profile.restore()
+    async let cachedLogo: Void = logo.restore()
+    async let cachedProfile: Void = profile.restore()
+    await cachedLogo
+    await cachedProfile
     guard !closed, !Task.isCancelled, preparationID == preparation else { return }
     preparedWorkspaceID = workspaceID
     logo.refresh()

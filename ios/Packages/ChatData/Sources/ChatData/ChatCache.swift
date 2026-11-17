@@ -685,10 +685,8 @@ extension SQLiteDatabase {
     )
     let currentVersion: Int
     do {
-      let check = try prepare("PRAGMA quick_check")
-      guard try check.step(), check.optionalText(at: 0) == "ok" else {
-        throw ChatCacheError.corrupt
-      }
+      // Opening the sidebar must not scan unrelated cached chat histories.
+      // Actual reads retain withDatabase's corrupt/not-a-database recovery.
       let query = try prepare("PRAGMA user_version")
       guard try query.step() else { throw ChatCacheError.corrupt }
       currentVersion = try query.integer(at: 0)
