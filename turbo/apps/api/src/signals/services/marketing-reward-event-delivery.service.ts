@@ -18,6 +18,7 @@ import {
   MARKETING_REWARD_LINK_EVENT_HANDLER_VERSION,
   MARKETING_REWARD_INVITATION_EVENT_HANDLER_VERSION,
   MARKETING_REWARD_WORKFLOW_EVENT_HANDLER_VERSION,
+  MARKETING_REWARD_CHECKIN_EVENT_HANDLER_VERSION,
 } from "./marketing-reward-event-publication";
 
 const requestEventReceipt$ = command(
@@ -71,7 +72,7 @@ const deliverEventVersion$ = command(
     args: {
       readonly origin: string;
       readonly secret: string;
-      readonly handlerVersion: 1 | 2 | 3 | 4;
+      readonly handlerVersion: 1 | 2 | 3 | 4 | 5;
     },
     signal: AbortSignal,
   ): Promise<{ readonly processed: number }> => {
@@ -169,6 +170,7 @@ export const deliverMarketingRewardEvents$ = command(
           MARKETING_REWARD_LINK_EVENT_HANDLER_VERSION,
           MARKETING_REWARD_INVITATION_EVENT_HANDLER_VERSION,
           MARKETING_REWARD_WORKFLOW_EVENT_HANDLER_VERSION,
+          MARKETING_REWARD_CHECKIN_EVENT_HANDLER_VERSION,
         ] as const
       ).map((handlerVersion) => {
         return set(
