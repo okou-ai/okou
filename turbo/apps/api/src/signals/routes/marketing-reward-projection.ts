@@ -14,6 +14,7 @@ import { enqueueBackgroundJob$ } from "../services/background-job-command.servic
 import { resolveMarketingRewardIntent$ } from "../services/marketing-reward-settlement.service";
 import { marketingRewardReceipt } from "../services/marketing-reward-receipt";
 import { MARKETING_REWARD_PROJECTION_JOB_KIND } from "../services/marketing-reward-projection.service";
+import { marketingRewardProgressRoute } from "./marketing-reward-progress";
 
 const namespace = "d3f5d0e4-76eb-45b5-a34e-620b5804297b";
 const body$ = bodyResultOf(marketingRewardProjectionContract.notify);
@@ -118,6 +119,7 @@ const queueProjection$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const marketingRewardProjectionRoutes: readonly RouteEntry[] = [
+  marketingRewardProgressRoute,
   {
     route: marketingRewardProjectionContract.notify,
     handler: queueProjection$,
