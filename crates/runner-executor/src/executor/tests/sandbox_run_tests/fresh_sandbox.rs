@@ -1846,8 +1846,6 @@ async fn execute_inner_writes_user_env_file_and_starts_agent_with_bootstrap_env_
         guest_contracts::env::APPEND_SYSTEM_PROMPT_RUN_PAYLOAD_FIELD,
         guest_contracts::env::SECRET_VALUES_RUN_PAYLOAD_FIELD,
         guest_contracts::env::DISALLOWED_TOOLS_RUN_PAYLOAD_FIELD,
-        guest_contracts::env::TOOLS_RUN_PAYLOAD_FIELD,
-        guest_contracts::env::SETTINGS_RUN_PAYLOAD_FIELD,
         guest_contracts::env::ARTIFACTS_RUN_PAYLOAD_FIELD,
         guest_contracts::env::FEATURE_FLAGS_RUN_PAYLOAD_FIELD,
     ] {
@@ -2357,13 +2355,13 @@ async fn execute_job_model_provider_env_validation_failure_returns_run_failure()
 }
 
 #[tokio::test]
-async fn execute_job_claude_tool_validation_failure_skips_sandbox_create() {
+async fn execute_job_claude_disallowed_tool_validation_failure_skips_sandbox_create() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let mut ctx = minimal_context();
-    ctx.tools = Some(vec!["Bash,Read".into()]);
+    ctx.disallowed_tools = Some(vec!["Bash,Read".into()]);
 
     let cancel = tokio_util::sync::CancellationToken::new();
     let (outcome, _telemetry) = execute_job(
@@ -2381,7 +2379,7 @@ async fn execute_job_claude_tool_validation_failure_skips_sandbox_create() {
 
     assert_eq!(outcome.exit_code(), 1);
     let error = outcome.error().unwrap();
-    assert!(error.contains("OKOU_TOOLS"));
+    assert!(error.contains("OKOU_DISALLOWED_TOOLS"));
     assert!(error.contains("must not contain commas"));
     assert!(outcome.sandbox.is_none());
     assert!(
@@ -2399,7 +2397,6 @@ async fn execute_job_codex_ignores_claude_tool_validation() {
     let mut ctx = minimal_context();
     ctx.cli_agent_type = "codex".into();
     ctx.disallowed_tools = Some(vec!["".into()]);
-    ctx.tools = Some(vec!["Bash,Read".into()]);
 
     let cancel = tokio_util::sync::CancellationToken::new();
     let (outcome, _telemetry) = execute_job(

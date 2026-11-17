@@ -118,10 +118,6 @@ pub struct ExecutionContext {
     pub connector_runtime_targets: Vec<ConnectorRuntimeTargetRegistration>,
     #[serde(default)]
     pub disallowed_tools: Option<Vec<String>>,
-    #[serde(default)]
-    pub tools: Option<Vec<String>>,
-    #[serde(default)]
-    pub settings: Option<String>,
     // Feature flags evaluated at job creation time (all switch states for user/org)
     #[serde(default)]
     pub feature_flags: Option<HashMap<String, bool>>,

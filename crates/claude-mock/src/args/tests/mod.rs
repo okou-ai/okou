@@ -129,16 +129,6 @@ fn parse_args_append_system_prompt_skipped() {
 }
 
 #[test]
-fn parse_args_settings_skipped() {
-    let args: Vec<String> = vec!["--settings", r#"{"permissions":{}}"#, "echo hi"]
-        .into_iter()
-        .map(String::from)
-        .collect();
-    let result = parse_args(&args);
-    assert_eq!(result.prompt, "echo hi");
-}
-
-#[test]
 fn parse_args_effort_skipped() {
     let args: Vec<String> = vec!["--effort", "low", "echo hi"]
         .into_iter()
@@ -149,15 +139,8 @@ fn parse_args_effort_skipped() {
 }
 
 #[test]
-fn parse_args_settings_missing_value() {
-    let args: Vec<String> = vec!["--settings".to_string()];
-    let result = parse_args(&args);
-    assert!(result.prompt.is_empty());
-}
-
-#[test]
 fn parse_args_value_flag_consumes_flag_like_value() {
-    let args: Vec<String> = vec!["--settings", "--print", "echo hi"]
+    let args: Vec<String> = vec!["--effort", "--print", "echo hi"]
         .into_iter()
         .map(String::from)
         .collect();
@@ -173,16 +156,6 @@ fn parse_args_last_remaining_is_prompt() {
         .collect();
     let result = parse_args(&args);
     assert_eq!(result.prompt, "third");
-}
-
-#[test]
-fn parse_args_tools_with_separator() {
-    let args: Vec<String> = vec!["--tools", "Bash", "Read", "--", "echo hello"]
-        .into_iter()
-        .map(String::from)
-        .collect();
-    let result = parse_args(&args);
-    assert_eq!(result.prompt, "echo hello");
 }
 
 #[test]
