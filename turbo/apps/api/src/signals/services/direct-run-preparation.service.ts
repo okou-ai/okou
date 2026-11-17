@@ -56,11 +56,14 @@ const packageSelectionSchema = object({
 export function createDirectRunPreparation(
   input$: Computed<Promise<AdmittedRunLaunch>>,
 ) {
-  const prepared$ = createExecutionContext(input$);
+  const { prepared$, packageContext$ } = createExecutionContext(input$);
   const packages$ = computed(async (get) => {
-    const [input, prepared] = await Promise.all([get(input$), get(prepared$)]);
+    const [input, packageContext] = await Promise.all([
+      get(input$),
+      get(packageContext$),
+    ]);
     const db = get(rawSqlReadDb$);
-    const selection = executionWorkflowInput(prepared.context);
+    const selection = executionWorkflowInput(packageContext);
     const cache = get(contentBundleUrlCacheContext$);
     // Read the admitted identity and its authorized packages in one snapshot.
     const rows = await db.execute(sql`WITH admitted_run AS MATERIALIZED (
@@ -75,7 +78,7 @@ export function createDirectRunPreparation(
       NOT EXISTS(SELECT 1 FROM ${chatEvents} WHERE ${and(eq(chatEvents.chatThreadId, input.run.chatThreadId), isNotNull(chatEvents.runId), ne(chatEvents.runId, input.run.id))}) AS "isFirstRun",
       (SELECT documents FROM workflow_selection) AS workflows,
       (SELECT "instructionsBundle" FROM selected_agent) AS "instructionsBundle",
-      ${contentBundleUrlCacheSnapshotSql(cache, executionBundleHashes(prepared.context))} AS "cachedBundleUrls"`);
+      ${contentBundleUrlCacheSnapshotSql(cache, executionBundleHashes(packageContext))} AS "cachedBundleUrls"`);
     const [row] = parseRawRows(packageSelectionSchema, rows);
     if (!row?.available) {
       throw new Error(
