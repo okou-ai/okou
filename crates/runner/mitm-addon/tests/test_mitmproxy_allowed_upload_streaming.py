@@ -29,7 +29,6 @@ from mitmproxy.proxy.layers.http._events import (
 from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook, HttpRequestHook
 from mitmproxy.test import taddons, tutils
 
-import flow_metadata_keys as metadata_keys
 import mitm_addon
 import request_streaming
 import usage
@@ -241,7 +240,6 @@ async def test_allowed_upload_forwards_before_eof_with_bounded_retention(
                 assert len(captured.buffer) <= STREAM_BUFFER_LIMIT
             else:
                 assert captured is None
-                assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
 
         assert forwarded_size == upload_size
         assert request_streaming.streamed_request_size(flow) == upload_size
@@ -259,8 +257,8 @@ async def test_allowed_upload_forwards_before_eof_with_bounded_retention(
         assert entry["request_body_truncated"] is True
     else:
         assert not any(key.startswith("request_body") for key in entry)
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
     assert flow.request.stream is False
 
 
@@ -309,7 +307,7 @@ async def test_uncaptured_billable_upload_preserves_usage(
     [entry] = read_jsonl_entries_after_flush(tmp_path / "net.jsonl")
     assert entry["request_size"] == len(body)
     assert not any(key.startswith("request_body") for key in entry)
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
     assert flow.request.stream is False
 
 
@@ -384,5 +382,5 @@ async def test_uncaptured_unknown_length_tweet_keeps_bounded_billing_refinement(
     [entry] = read_jsonl_entries_after_flush(tmp_path / "net.jsonl")
     assert entry["request_size"] == len(body)
     assert not any(key.startswith("request_body") for key in entry)
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
     assert flow.request.stream is False

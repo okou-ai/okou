@@ -6,6 +6,7 @@ from mitmproxy.test import tutils
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import response_streaming
+import stream_capture
 from tests.flow_helpers import header_map, response_stream
 
 
@@ -31,8 +32,7 @@ class TestReleaseResponseStreamState:
         assert flow.response.stream is external_stream
         assert "_response_stream_callback" not in flow.metadata
         assert metadata_keys.RESPONSE_STREAM_STATE not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     @pytest.mark.parametrize(
         (
@@ -126,8 +126,7 @@ class TestReleaseResponseStreamState:
         assert finish_key not in flow.metadata
         assert "connector_response_report_on_interruption" not in flow.metadata
         assert metadata_keys.RESPONSE_STREAM_STATE not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
         assert flow.response.stream is False
 
     def test_unconfigured_flow_is_noop(self, real_flow):
@@ -158,8 +157,7 @@ class TestReleaseResponseStreamState:
         assert flow.response.stream is False
         assert "_response_stream_callback" not in flow.metadata
         assert metadata_keys.RESPONSE_STREAM_STATE not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     def test_release_after_response_is_removed_still_drops_metadata(self, real_flow):
         flow = real_flow(with_response=False, host="api.anthropic.com")
@@ -180,6 +178,5 @@ class TestReleaseResponseStreamState:
         assert flow.response is None
         assert "_response_stream_callback" not in flow.metadata
         assert metadata_keys.RESPONSE_STREAM_STATE not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
         assert "model_json_usage_finish" not in flow.metadata

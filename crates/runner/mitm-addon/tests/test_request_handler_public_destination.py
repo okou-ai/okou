@@ -16,6 +16,7 @@ import flow_metadata_keys as metadata_keys
 import mitm_addon
 import public_destination
 import request_classification
+import request_streaming
 import upstream_destination_binding
 from body_limits import STREAM_BUFFER_LIMIT
 from tests.aws_sigv4_helpers import resolved_aws_sigv4_credentials
@@ -1479,7 +1480,7 @@ async def test_public_destination_requestheaders_blocks_before_early_auth(
 
     auth_fetch.assert_not_called()
     assert flow.request.stream is False
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
     [proxy_log_entry] = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
     assert proxy_log_entry["type"] == "public_destination"
 
@@ -1508,6 +1509,6 @@ async def test_public_destination_requestheaders_kills_unknown_length_before_ear
 
     auth_fetch.assert_not_called()
     assert flow.request.stream is False
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
     [proxy_log_entry] = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
     assert proxy_log_entry["type"] == "public_destination"

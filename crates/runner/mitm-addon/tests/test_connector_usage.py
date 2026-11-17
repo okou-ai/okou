@@ -4,6 +4,7 @@ import pytest
 
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import stream_capture
 from tests.flow_helpers import header_map, response_stream
 from tests.repeated_bytes_helpers import repeat_bytes
 from tests.x_flow_helpers import make_x_response_flow
@@ -34,8 +35,7 @@ class TestXStreamPathRouting:
 
         assert metadata_keys.X_NDJSON_STATE in flow.metadata
         assert "connector_response_finish" in flow.metadata
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     def test_absolute_form_request_target_registers_ndjson_parser_from_original_url(
         self, real_flow
@@ -76,8 +76,7 @@ class TestXStreamPathRouting:
 
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
         assert "connector_response_finish" in flow.metadata
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     def test_stream_error_response_does_not_retain_body_prefix(self, real_flow):
         flow = make_x_response_flow(
@@ -92,8 +91,7 @@ class TestXStreamPathRouting:
         assert "connector_response_finish" not in flow.metadata
         callback = response_stream(flow)
         callback(repeat_bytes(b'{"title":"Unauthorized","detail":"', b"x", 200 * 1024, b'"}'))
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     @pytest.mark.parametrize("path", ["/2/tweets", "/2/tweets/search/stream"])
     @pytest.mark.parametrize("firewall_billable", [False, None])
@@ -113,8 +111,7 @@ class TestXStreamPathRouting:
 
         assert "connector_response_finish" not in flow.metadata
         assert metadata_keys.X_NDJSON_STATE not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     def test_brotli_stream_path_registers_response_body_parser(self, real_flow, mitm_ctx):
         flow = self._make_x_response_flow(real_flow, "/2/tweets/search/stream")
@@ -129,8 +126,7 @@ class TestXStreamPathRouting:
         assert callable(response_stream(flow))
         assert metadata_keys.X_NDJSON_STATE in flow.metadata
         assert "connector_response_finish" in flow.metadata
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     def test_unregistered_parser_factory_does_not_require_original_url(self, real_flow):
         flow = self._make_x_response_flow(real_flow, "/2/tweets/search/stream")

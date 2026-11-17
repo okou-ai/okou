@@ -11,6 +11,7 @@ from tests.jsonl_log_helpers import (
     read_jsonl_entries_after_flush,
     read_jsonl_text_after_flush,
 )
+from tests.stream_buffer_helpers import response_stream_capture
 from tests.x_connector_usage.helpers import XUsageHarness
 from tests.x_flow_helpers import make_x_usage_flow
 
@@ -30,8 +31,8 @@ class TestConnectorUsageDispatcher:
         body = b'{"data":[{"id":"1","text":"hi"}]}'
         flow = self._make_x_flow(real_flow, tmp_path, body=body)
 
-        assert flow.metadata[metadata_keys.STREAM_BUFFER] == bytearray(body)
-        assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE] == {"truncated": False}
+        assert response_stream_capture(flow).buffer == bytearray(body)
+        assert response_stream_capture(flow).truncated is False
 
     def test_skips_for_model_provider(self, tmp_path, real_flow):
         """Model-provider flows go through report_model_provider_usage instead.

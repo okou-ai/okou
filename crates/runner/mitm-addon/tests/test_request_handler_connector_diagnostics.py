@@ -397,7 +397,7 @@ async def test_shared_base_requestheaders_diagnoses_before_stream_safe_auth(
     assert flow.request.stream is False
     assert "Authorization" not in flow.request.headers
     assert "X-Okou-Connector-Intent" not in flow.request.headers
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
     assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY not in flow.metadata
 
 
