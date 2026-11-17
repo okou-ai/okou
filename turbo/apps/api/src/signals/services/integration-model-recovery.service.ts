@@ -1,4 +1,3 @@
-import { isPersonalSubscriptionUsageLimitFailure } from "@okouai/api-contracts/contracts/errors";
 import { command, computed } from "ccstate";
 import {
   and,
@@ -107,13 +106,12 @@ const loadIntegrationModelRecovery$ = command(
     }
     const [event] = await get(db$)
       .select({
+        eventType: chatEvents.eventType,
         threadId: chatThreads.id,
         selectedModel: chatThreads.selectedModel,
         updatedAt: sql`${chatThreads.updatedAt}::text`.mapWith(pgTextDecoder),
         failureReason: chatEvents.failureReason,
         runFailureReason: agentRuns.failureReason,
-        runError: agentRuns.error,
-        runModelProvider: agentRuns.modelProvider,
         payload: chatEvents.payload,
       })
       .from(chatEvents)
@@ -155,6 +153,7 @@ const loadIntegrationModelRecovery$ = command(
     }
     const reason = event.runFailureReason ?? event.failureReason;
     const admissionModelError =
+      event.eventType === "output.error" &&
       reason === null &&
       ([
         "NO_MODEL_PROVIDER",
@@ -167,12 +166,7 @@ const loadIntegrationModelRecovery$ = command(
         ));
     if (
       !(reason !== null && MODEL_FAILURES.includes(reason)) &&
-      !admissionModelError &&
-      !isPersonalSubscriptionUsageLimitFailure({
-        failureReason: reason,
-        modelProviderType: event.runModelProvider,
-        message: event.runError ?? event.payload?.content ?? "",
-      })
+      !admissionModelError
     ) {
       return null;
     }
@@ -199,10 +193,21 @@ const loadIntegrationModelRecovery$ = command(
 export const integrationModelRecoveryForDelivery$ = command(
   async (
     { set },
-    args: ModelRecoveryIdentity & { readonly error: string | null },
+    args: ModelRecoveryIdentity &
+      (
+        | { readonly admissionFailure: true }
+        | {
+            readonly runFailureId: string | null;
+            readonly error: string | null;
+          }
+      ),
     signal: AbortSignal,
   ) => {
-    if (!args.error) {
+    if (
+      !("admissionFailure" in args) &&
+      args.runFailureId === null &&
+      !args.error
+    ) {
       return null;
     }
     const result = await settle(

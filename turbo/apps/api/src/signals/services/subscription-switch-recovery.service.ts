@@ -1,4 +1,3 @@
-import { isPersonalSubscriptionUsageLimitFailure } from "@okouai/api-contracts/contracts/errors";
 import type { PersonalSubscriptionProviderType } from "./model-provider-account.service";
 import { command, computed } from "ccstate";
 import {
@@ -10,7 +9,6 @@ import {
   isNull,
   ne,
   notExists,
-  or,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { agents } from "@okouai/db/schema/agent";
@@ -47,8 +45,6 @@ export function subscriptionSwitchRecoveries(
         selectedModel: chatThreads.selectedModel,
         accountId: modelProviderAccounts.id,
         failureReason: agentRuns.failureReason,
-        error: agentRuns.error,
-        type: modelProviderAccounts.type,
       })
       .from(chatEvents)
       .innerJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
@@ -100,16 +96,13 @@ export function subscriptionSwitchRecoveries(
             "email",
             "agentphone",
           ]),
-          or(
-            inArray(agentRuns.failureReason, [
-              "usage_limit",
-              "invalid_api_key",
-              "invalid_credentials",
-              "reconnect_required",
-              "account_verification_required",
-            ]),
-            isNull(agentRuns.failureReason),
-          ),
+          inArray(agentRuns.failureReason, [
+            "usage_limit",
+            "invalid_api_key",
+            "invalid_credentials",
+            "reconnect_required",
+            "account_verification_required",
+          ]),
           eq(chatThreads.userId, args.userId),
           eq(agents.orgId, args.orgId),
           eq(chatThreads.archived, false),
@@ -130,25 +123,7 @@ export function subscriptionSwitchRecoveries(
           unchangedFailedIntegrationConversation(),
         ),
       );
-    return rows
-      .filter((row) => {
-        return (
-          row.failureReason !== null ||
-          isPersonalSubscriptionUsageLimitFailure({
-            failureReason: row.failureReason,
-            modelProviderType: row.type,
-            message: row.error ?? "",
-          })
-        );
-      })
-      .map(({ eventId, selectedModel, accountId, failureReason }) => {
-        return {
-          eventId,
-          selectedModel,
-          accountId,
-          failureReason: failureReason ?? "usage_limit",
-        };
-      });
+    return rows;
   });
 }
 

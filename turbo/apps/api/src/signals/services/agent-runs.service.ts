@@ -4,7 +4,7 @@ import {
   modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
-import { formatRunBalanceError } from "@okouai/api-contracts/contracts/run-balance-errors";
+import { publicRunFailureReason } from "../../lib/run-failure";
 import { isOrgTier, type OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import type {
   ConcurrencyMemberUsage,
@@ -221,7 +221,6 @@ export function agentRunById(args: {
         prompt: agentRuns.prompt,
         sandboxId: agentRuns.sandboxId,
         result: agentRuns.result,
-        error: agentRuns.error,
         failureReason: agentRuns.failureReason,
         createdAt: agentRuns.createdAt,
         startedAt: agentRuns.startedAt,
@@ -301,12 +300,11 @@ export function agentRunById(args: {
         run.result === null
           ? undefined
           : (run.result as GetRunResponse["result"]),
-      error: run.error
-        ? (formatRunBalanceError({
-            failureReason: run.failureReason,
-            modelProvider: run.modelProvider,
-          }) ?? run.error)
-        : undefined,
+      failureReason: publicRunFailureReason(
+        run.status,
+        run.failureReason,
+        run.modelProvider,
+      ),
       createdAt: run.createdAt.toISOString(),
       startedAt: run.startedAt?.toISOString(),
       completedAt: run.completedAt?.toISOString(),

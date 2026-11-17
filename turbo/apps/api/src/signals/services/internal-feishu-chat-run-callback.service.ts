@@ -40,6 +40,7 @@ import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
+  canonicalChatEventRunFailureId,
 } from "./canonical-chat-event-read.service";
 import {
   feishuInstallationAvailabilityReadPlan,
@@ -133,6 +134,7 @@ const loadFeishuChatDeliveryContext$ = command(
       .select({
         content: canonicalChatEventContent(),
         error: canonicalChatEventError(),
+        runFailureId: canonicalChatEventRunFailureId(),
       })
       .from(chatEvents)
       .where(
@@ -192,6 +194,7 @@ const loadFeishuChatDeliveryContext$ = command(
       run,
       messageContent: event.content,
       messageError: event.error,
+      runFailureId: event.runFailureId,
       binding,
     };
   },
@@ -308,7 +311,7 @@ export const deliverFeishuChatAdmissionFailure$ = command(
     );
     const recovery = await set(
       integrationModelRecoveryForDelivery$,
-      { ...args, eventId: args.chatEventId, error: "admission_error" },
+      { ...args, eventId: args.chatEventId, admissionFailure: true },
       signal,
     );
     const message = buildFeishuAgentResponseMessage({
@@ -411,6 +414,7 @@ const buildFeishuChatReplyMessage$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly eventId: string;
+      readonly runFailureId: string | null;
       readonly content: string;
       readonly error: string | null;
       readonly runId: string;
@@ -448,11 +452,14 @@ const deliverClaimedFeishuChatCallback$ = command(
     signal: AbortSignal,
   ): Promise<"delivered" | "skipped_revoked"> => {
     const db = set(writeDb$);
-    const { payload, run, messageContent, messageError, binding } = await set(
-      loadFeishuChatDeliveryContext$,
-      args,
-      signal,
-    );
+    const {
+      payload,
+      run,
+      messageContent,
+      messageError,
+      runFailureId,
+      binding,
+    } = await set(loadFeishuChatDeliveryContext$, args, signal);
     if (!binding) {
       return "skipped_revoked";
     }
@@ -471,6 +478,7 @@ const deliverClaimedFeishuChatCallback$ = command(
         eventId: payload.chatEventId,
         content: messageContent,
         error: messageError,
+        runFailureId,
         defaultAgentId: binding.defaultAgentId ?? undefined,
         replyToMention:
           payload.replyInThread && mentionerCount > 1

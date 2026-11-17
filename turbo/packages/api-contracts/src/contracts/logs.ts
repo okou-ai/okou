@@ -88,9 +88,7 @@ const logsListResponseSchema = object({
 /**
  * Log detail response schema
  */
-const logDetailSchema = activityDetailSchema.extend({
-  error: string().nullable().optional(),
-});
+const logDetailSchema = activityDetailSchema;
 
 /**
  * Logs list contract

@@ -108,7 +108,6 @@ const getRunResponseSchema = object({
   })
     .passthrough()
     .optional(),
-  error: string().optional(),
   failureReason: knownRunFailureReasonSchema.optional(),
   createdAt: string(),
   startedAt: string().optional(),
@@ -161,7 +160,6 @@ const runResultSchema = object({
 const runStateSchema = object({
   status: runStatusSchema,
   result: runResultSchema.optional(),
-  error: string().optional(),
   failureReason: knownRunFailureReasonSchema.optional(),
   lastEventSequence: eventSequenceNumberSchema.optional(),
 });

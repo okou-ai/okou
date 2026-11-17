@@ -170,7 +170,7 @@ export function createDirectRunDispatchPreparation(
       if (!prepared.ok) {
         const terminal = await set(
           failUnacceptedRun$,
-          failureInput(input, null, "Run execution preparation failed"),
+          failureInput(input, null),
           signal,
         );
         return {
@@ -198,17 +198,13 @@ function remainingDelivery(window: DeliveryWindow): number {
     window.monotonicDeadline - performance.now(),
   );
 }
-function failureInput(
-  input: AdmittedRunLaunch,
-  owner: DirectRunTarget | null,
-  error: string,
-) {
+function failureInput(input: AdmittedRunLaunch, owner: DirectRunTarget | null) {
   return {
     runId: input.run.id,
     userId: input.run.userId,
     orgId: input.run.orgId,
     owner,
-    error,
+    failureReason: "unknown" as const,
   };
 }
 
@@ -298,7 +294,6 @@ export const dispatchPreparedRun$ = command(
     const input = args.input;
     let owner: DirectRunTarget | null = null;
     let uncertain = false;
-    let reason = "Run execution preparation failed";
     const outcome = await settleIncludingAbort(async () => {
       const { executionContext, fleet } = args;
       // A queued input's latency marker can originate in an earlier invocation.
@@ -313,13 +308,8 @@ export const dispatchPreparedRun$ = command(
         monotonicDeadline: performance.now() + Math.max(0, notAfter - now()),
       };
       const token = `${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`;
-      reason =
-        fleet.candidates.length === 0
-          ? "No eligible serving Runner is available"
-          : "Every eligible Runner refused this Run";
       for (const target of fleet.candidates) {
         if (remainingDelivery(window) <= 0) {
-          reason = "Run delivery window expired before acceptance";
           break;
         }
         const body = JSON.stringify({
@@ -330,7 +320,6 @@ export const dispatchPreparedRun$ = command(
           executionContext,
         });
         if (Buffer.byteLength(body, "utf8") > RUNNER_DISPATCH_MAX_BODY_BYTES) {
-          reason = "Run execution input exceeds the 4 MiB Runner intake limit";
           break;
         }
         const selected = await set(
@@ -346,7 +335,6 @@ export const dispatchPreparedRun$ = command(
           signal,
         );
         if (!selected) {
-          reason = "Run is no longer available for dispatch";
           break;
         }
         const firstOwner = owner === null;
@@ -390,7 +378,7 @@ export const dispatchPreparedRun$ = command(
         if (delivery === "stopped") {
           const terminal = await set(
             failUnacceptedRun$,
-            failureInput(input, owner, reason),
+            failureInput(input, owner),
             signal,
           );
           return { kind: "stopped" as const, terminal, failure: undefined };
@@ -398,7 +386,7 @@ export const dispatchPreparedRun$ = command(
       }
       const terminal = await set(
         failUnacceptedRun$,
-        failureInput(input, owner, reason),
+        failureInput(input, owner),
         signal,
       );
       return { kind: "failed" as const, terminal, failure: undefined };
@@ -412,7 +400,7 @@ export const dispatchPreparedRun$ = command(
     }
     const terminal = await set(
       failUnacceptedRun$,
-      failureInput(input, owner, "Run delivery failed"),
+      failureInput(input, owner),
       signal,
     );
     return {

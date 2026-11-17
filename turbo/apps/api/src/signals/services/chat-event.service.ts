@@ -9,7 +9,10 @@ import {
   chatEventTypeSchema,
   isValidChatEventRevocation,
 } from "@okouai/api-contracts/contracts/chat-events";
-import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import {
+  normalizeRunFailureReason,
+  type RunFailureReasonToken,
+} from "@okouai/api-contracts/contracts/run-failure-reasons";
 import type { ChatFeishuMessageFiles } from "@okouai/db/jsonb-contracts/chat-feishu-context";
 import type {
   ChatSlackMentionDisplayNames,
@@ -326,7 +329,6 @@ type RunFailedEvent = ChatEventIdentity & {
   readonly eventType: "run.failed";
   readonly runId: string;
   readonly content?: string | null;
-  readonly error?: string;
   readonly failureReason?: RunFailureReasonToken;
 };
 
@@ -334,7 +336,6 @@ type RunCancelledEvent = ChatEventIdentity & {
   readonly eventType: "run.cancelled";
   readonly runId: string;
   readonly content?: string | null;
-  readonly error?: string;
 };
 
 type ControlInterruptEvent = Omit<ChatEventIdentity, "runId"> & {
@@ -802,7 +803,9 @@ function canonicalChatEventValues(
     modelSelection:
       "modelSelection" in values ? values.modelSelection : undefined,
     failureReason:
-      values.eventType === "run.failed" ? values.failureReason : undefined,
+      values.eventType === "run.failed"
+        ? normalizeRunFailureReason(values.failureReason)
+        : undefined,
     requiredOfficialWorkflowIds:
       "requiredOfficialWorkflowIds" in values
         ? values.requiredOfficialWorkflowIds
@@ -876,9 +879,8 @@ export function assistantErrorEventInsertSql(
       eventType: assistantErrorEventType(input.lifecycleEvent),
       content: displayErrorMessage,
       runId: input.runId,
-      error: displayErrorMessage,
-      ...(input.lifecycleEvent === "failed" && input.failureReason !== null
-        ? { failureReason: input.failureReason }
+      ...(input.lifecycleEvent === "failed"
+        ? { failureReason: normalizeRunFailureReason(input.failureReason) }
         : {}),
     },
     "run-lifecycle",

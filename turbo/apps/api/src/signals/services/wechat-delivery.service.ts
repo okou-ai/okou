@@ -24,6 +24,7 @@ import { writeDb$ } from "../external/db";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
+  canonicalChatEventRunFailureId,
 } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
@@ -53,6 +54,7 @@ const formatWechatReply$ = command(
       readonly agentId: string;
       readonly runId: string | null;
       readonly chatEventId: string;
+      readonly runFailureId?: string | null;
       readonly content: string;
       readonly error: string | null;
     },
@@ -97,6 +99,7 @@ export const sendWechatChatReply$ = command(
         agentId: agents.id,
         content: canonicalChatEventContent(),
         error: canonicalChatEventError(),
+        runFailureId: canonicalChatEventRunFailureId(),
         runId: chatEvents.runId,
       })
       .from(wechatConnections)

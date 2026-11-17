@@ -72,6 +72,7 @@
     "src/lib/marketing-metadata.ts",
     "src/lib/marketing-reward-events.ts",
     "src/lib/pg-errors.ts",
+    "src/lib/run-failure.ts",
     "src/lib/sql-span-name.ts",
     "src/lib/time.ts",
     "src/signals/context/root.ts",

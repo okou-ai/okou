@@ -29,6 +29,9 @@ import { cronSnapshotChatEventsRoutes } from "../cron-snapshot-chat-events";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRouteMocks } from "./helpers/route-test";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { CHAT_RUN_USAGE_LIMIT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 
 const context = testContext();
 
@@ -86,6 +89,171 @@ function mockSnapshotStorage(
 }
 
 describe("cron snapshot chat events", () => {
+  it("keeps r1 snapshots readable and immutable as failed-run history grows", async () => {
+    const app = await setupApp({
+      context,
+      routes: [
+        ...cronProjectChatEventSearchRoutes,
+        ...cronSnapshotChatEventsRoutes,
+        ...chatThreadRoutes,
+      ],
+      isolatePg: true,
+    });
+    const owned = await publicChatActor(context);
+    await owned.run(async () => {
+      const run = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Archive a provider usage-limit failure",
+      });
+      const execution = await owned.executionInput(run.runId);
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        {
+          runId: run.runId,
+          exitCode: 1,
+          failureReason: "usage_limit",
+          error: "Private quota details https://private.invalid/token",
+        },
+        { authorization: `Bearer ${execution.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const chat = createChatFilesBddApi(context);
+      const rows = await chat.listThreadEventRows(owned.actor, run.threadId);
+      expect(rows).toContainEqual(
+        expect.objectContaining({
+          runId: run.runId,
+          eventType: "run.failed",
+          failureReason: "usage_limit",
+          payload: {
+            content: CHAT_RUN_USAGE_LIMIT_MESSAGE,
+          },
+        }),
+      );
+      const objects = mockSnapshotStorage();
+      const headers = { authorization: "Bearer test-cron-secret" };
+      await accept(
+        app(cronProjectChatEventSearchContract).project({ headers }),
+        [200],
+      );
+      await accept(
+        app(cronSnapshotChatEventsContract).snapshot({ headers }),
+        [200],
+      );
+      createRouteMocks(context).clerk.session(
+        owned.actor.userId,
+        owned.actor.orgId,
+        owned.actor.orgRole,
+      );
+      const snapshot = await accept(
+        app(chatThreadEventsContract).snapshot({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: run.threadId },
+        }),
+        [200],
+      );
+      expect(snapshot.body.url).toContain("-r1-");
+      const downloaded = await fetch(snapshot.body.url);
+      expect(downloaded.status).toBe(200);
+      const originalText = await downloaded.text();
+      const archived = originalText
+        .trimEnd()
+        .split("\n")
+        .map((line) => {
+          return chatEventRowSchema.parse(JSON.parse(line));
+        });
+      expect(archived).toStrictEqual(rows);
+      const originalObjects = new Map(
+        [...objects].map(([key, body]) => {
+          return [key, Buffer.from(body)];
+        }),
+      );
+      await accept(
+        app(cronSnapshotChatEventsContract).snapshot({ headers }),
+        [200],
+      );
+      for (const [key, body] of originalObjects) {
+        expect(objects.get(key)).toStrictEqual(body);
+      }
+
+      const clientEventId = randomUUID();
+      await chat.requestSendEvent(
+        owned.actor,
+        {
+          agentId: owned.agentId,
+          threadId: run.threadId,
+          clientEventId,
+          prompt: "Continue after the archived failure",
+        },
+        [201],
+      );
+      await flushWaitUntilForTest();
+      const followUp = (
+        await chat.listThreadEventRows(owned.actor, run.threadId, snapshot.body)
+      ).find((row) => {
+        return (
+          row.eventType === "input.prompt" &&
+          row.revokesEventId === clientEventId
+        );
+      });
+      if (followUp?.runId === undefined || followUp.runId === null) {
+        throw new Error("Expected the follow-up input to launch a run");
+      }
+      const followUpExecution = await owned.executionInput(followUp.runId);
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        {
+          runId: followUp.runId,
+          exitCode: 1,
+          failureReason: "usage_limit",
+          error: "Private follow-up diagnostics",
+        },
+        { authorization: `Bearer ${followUpExecution.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const tailRows = await chat.listThreadEventRows(
+        owned.actor,
+        run.threadId,
+        snapshot.body,
+      );
+      await accept(
+        app(cronProjectChatEventSearchContract).project({ headers }),
+        [200],
+      );
+      await accept(
+        app(cronSnapshotChatEventsContract).snapshot({ headers }),
+        [200],
+      );
+      createRouteMocks(context).clerk.session(
+        owned.actor.userId,
+        owned.actor.orgId,
+        owned.actor.orgRole,
+      );
+      const advanced = await accept(
+        app(chatThreadEventsContract).snapshot({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: run.threadId },
+        }),
+        [200],
+      );
+      expect(advanced.body.url).toContain("-r1-");
+      expect(advanced.body.lastSeqId).toBeGreaterThan(snapshot.body.lastSeqId);
+      const advancedDownload = await fetch(advanced.body.url);
+      expect(advancedDownload.status).toBe(200);
+      const advancedText = await advancedDownload.text();
+      expect(advancedText.startsWith(originalText)).toBeTruthy();
+      const advancedRows = advancedText
+        .trimEnd()
+        .split("\n")
+        .map((line) => {
+          return chatEventRowSchema.parse(JSON.parse(line));
+        });
+      expect(advancedRows).toStrictEqual([...archived, ...tailRows]);
+      for (const [key, body] of originalObjects) {
+        expect(objects.get(key)).toStrictEqual(body);
+      }
+    });
+  });
+
   it("requires the cron secret", async () => {
     const response = await accept(
       snapshotCronClient().snapshot({ headers: {} }),

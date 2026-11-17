@@ -1,5 +1,5 @@
 import { computed, type Computed } from "ccstate";
-import { formatRunBalanceError } from "@okouai/api-contracts/contracts/run-balance-errors";
+import { publicRunFailureReason } from "../../lib/run-failure";
 import {
   triggerSourceSchema,
   type LogDetail,
@@ -369,12 +369,11 @@ export function logDetail(
       status: run.status as LogStatus,
       prompt: run.prompt,
       appendSystemPrompt: snapshot?.appendSystemPrompt ?? null,
-      error: run.error
-        ? (formatRunBalanceError({
-            failureReason: run.failureReason,
-            modelProvider,
-          }) ?? run.error)
-        : null,
+      failureReason: publicRunFailureReason(
+        run.status,
+        run.failureReason,
+        modelProvider,
+      ),
       createdAt: run.createdAt.toISOString(),
       startedAt: run.startedAt?.toISOString() ?? null,
       completedAt: run.completedAt?.toISOString() ?? null,

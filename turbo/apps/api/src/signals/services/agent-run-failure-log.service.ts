@@ -26,7 +26,6 @@ export interface AgentRunFailureLogSnapshot {
 interface LogAgentRunFailureInput {
   readonly runId: string;
   readonly exitCode: number;
-  readonly error?: string;
   readonly failureReason?: RunFailureReasonToken;
   readonly run: AgentRunFailureLogSnapshot;
 }
@@ -160,7 +159,6 @@ export function logAgentRunFailure(input: LogAgentRunFailureInput): void {
   const fields = {
     runId: input.runId,
     exitCode: input.exitCode,
-    error: input.error,
     failureReason: input.failureReason,
     ...evidence,
   };

@@ -22,10 +22,22 @@ import { enqueueEmailText$ } from "./email-channel-delivery.service";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
+  canonicalChatEventRunFailureId,
 } from "./canonical-chat-event-read.service";
 import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
 
 const OUTPUT_NAMESPACE = "8dc52243-b606-4bd3-b633-5aa9c0c6c5db";
+
+const emailChatSourceColumns = Object.freeze({
+  sender: emailChannelMessages.sender,
+  messageId: emailChannelMessages.messageId,
+  subject: emailChannelMessages.subject,
+  references: emailChannelMessages.references,
+  routeId: emailChatThreadRoutes.id,
+  content: canonicalChatEventContent(),
+  error: canonicalChatEventError(),
+  runFailureId: canonicalChatEventRunFailureId(),
+});
 
 export const deliverEmailChatAdmissionFailure$ = command(
   async (
@@ -41,15 +53,7 @@ export const deliverEmailChatAdmissionFailure$ = command(
   ) => {
     const db = set(writeDb$);
     const [source] = await db
-      .select({
-        sender: emailChannelMessages.sender,
-        messageId: emailChannelMessages.messageId,
-        subject: emailChannelMessages.subject,
-        references: emailChannelMessages.references,
-        routeId: emailChatThreadRoutes.id,
-        content: canonicalChatEventContent(),
-        error: canonicalChatEventError(),
-      })
+      .select(emailChatSourceColumns)
       .from(emailChannelMessages)
       .innerJoin(
         emailChatThreadRoutes,
@@ -112,6 +116,7 @@ export const deliverEmailChatAdmissionFailure$ = command(
         userId: args.userId,
         content: source.content,
         error: source.error,
+        runFailureId: source.runFailureId,
         chatEventId: args.chatEventId,
       },
       signal,

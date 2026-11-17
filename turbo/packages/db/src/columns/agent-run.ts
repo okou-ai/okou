@@ -84,7 +84,6 @@ export function agentRunColumns() {
     // has been reported. The barrier is active only while the Run is cancelled.
     cancellationRecoveryCompleted: boolean("cancellation_recovery_completed"),
     result: jsonb("result").$type<AgentRunResult>(),
-    error: text("error"),
     failureReason: text("failure_reason").$type<RunFailureReasonToken>(),
     lastEventSequence: integer("last_event_sequence"),
     orgId: text("org_id").notNull(),

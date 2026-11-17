@@ -313,11 +313,7 @@ const clientRunFailedEventSchema = chatEventBaseSchema.extend({
   runLifecycleEvent: literal("failed"),
 });
 
-const runFailedEventSchema = clientRunFailedEventSchema
-  .extend({
-    error: string().optional(),
-  })
-  .strict();
+const runFailedEventSchema = clientRunFailedEventSchema.strict();
 
 const clientRunCancelledEventSchema = chatEventBaseSchema.extend({
   eventType: literal("run.cancelled"),
@@ -325,11 +321,7 @@ const clientRunCancelledEventSchema = chatEventBaseSchema.extend({
   runLifecycleEvent: literal("cancelled"),
 });
 
-const runCancelledEventSchema = clientRunCancelledEventSchema
-  .extend({
-    error: string().optional(),
-  })
-  .strict();
+const runCancelledEventSchema = clientRunCancelledEventSchema.strict();
 
 const controlInterruptEventSchema = chatEventBaseSchema
   .extend({

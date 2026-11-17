@@ -151,7 +151,7 @@ export interface ChatThreadForRunRow {
 
 export interface ChatRunInfo {
   readonly prompt: string;
-  readonly error: string | null;
+  readonly status: string;
   readonly failureReason: RunFailureReasonToken | null;
   readonly modelProvider: string | null;
   readonly lastEventSequence: number | null;
@@ -175,7 +175,7 @@ export const loadTerminalChatCallback$ = command(
     const [run] = await db
       .select({
         prompt: agentRuns.prompt,
-        error: agentRuns.error,
+        status: agentRuns.status,
         failureReason: agentRuns.failureReason,
         modelProvider: agentRuns.modelProvider,
         lastEventSequence: agentRuns.lastEventSequence,
