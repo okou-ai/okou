@@ -398,7 +398,7 @@ class AssistantRecoveryModelTest {
             f.history.uiState.first { it.phase == HistoryPhase.Ready }
             val nextFailure = UUID.randomUUID().toString()
             val nextRun = UUID.randomUUID().toString()
-            val earlier = f.remote.rows.get().map { it.wire.toString() }.toTypedArray()
+            val earlier = f.remote.rows.get().map(HistoryEvent::archiveJson).toTypedArray()
             f.remote.set(
                 *earlier,
                 RecoveryApiFixture.input(3, run = nextRun),
@@ -753,7 +753,22 @@ class AssistantRecoveryModelTest {
         }
         val input = RecoveryApiFixture.input()
         val failure = RecoveryApiFixture.failure()
-        assertEquals(RecoveryApiFixture.FAILURE, latest(input, failure)?.id)
+        assertEquals(
+            AssistantFailure.Run(RecoveryApiFixture.FAILURE, "usage_limit"),
+            latest(input, failure),
+        )
+        assertEquals(
+            AssistantFailure.Output("output", "Ordinary output error"),
+            latest(
+                input,
+                historyEventWire(
+                    "output",
+                    3,
+                    type = "output.error",
+                    payload = """{"error":"Ordinary output error"}""",
+                ),
+            ),
+        )
         assertNull(latest(input, failure, RecoveryApiFixture.input(3)))
         assertEquals(
             RecoveryApiFixture.FAILURE,
@@ -792,29 +807,22 @@ class AssistantRecoveryModelTest {
                 "future_reason",
             )) {
             assertFalse(
-                classifyFailure(
-                        AssistantFailure("id", "You've hit your usage limit", reason, true),
-                        RecoveryFramework.Codex,
-                    )
+                classifyFailure(AssistantFailure.Run("id", reason), RecoveryFramework.Codex)
                     .canContinue
             )
         }
         assertTrue(
-            classifyFailure(
-                    AssistantFailure("id", "Provider diagnostic", "provider_server_error", true),
-                    null,
-                )
-                .canContinue
+            classifyFailure(AssistantFailure.Run("id", "provider_server_error"), null).canContinue
         )
         val model =
             classifyFailure(
-                AssistantFailure("id", "You've hit your usage limit for gpt-5", null, false),
+                AssistantFailure.Output("id", "You've hit your usage limit for gpt-5"),
                 RecoveryFramework.Codex,
             )
         assertEquals(RecoveryLimit.Model, model.limit)
         for (space in listOf('\u00a0', '\u2009', '\ufeff')) {
             val diagnostic = "You've${space}hit your usage limit"
-            val failure = AssistantFailure("id", diagnostic, null, false)
+            val failure = AssistantFailure.Output("id", diagnostic)
             assertEquals(FailureKind.Usage, classifyFailure(failure, RecoveryFramework.Codex).kind)
             assertEquals(diagnostic, failure.error)
         }
