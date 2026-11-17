@@ -14,6 +14,7 @@ import {
   detachBrowser,
 } from "../reporting.ts";
 import {
+  abortAfter,
   createDeferredPromise,
   isAbortError,
   Reason,
@@ -1651,6 +1652,17 @@ type RetirementReceiptsContext = ControllerContext<
   | "wake$"
 >;
 
+const detachAttached$ = command((_, attached: AttachedSelection) => {
+  if (attached.frames !== attached.client) {
+    attached.frames.notify("Target.detachFromTarget", {
+      sessionId: attached.frameSessionId,
+    });
+  }
+  attached.client.notify("Target.detachFromTarget", {
+    sessionId: attached.sessionId,
+  });
+});
+
 function createRetirementReceiptsGraph(
   context: RetirementReceiptsContext,
   links$: ControllerDependencies<"imageEvent$">,
@@ -1734,16 +1746,6 @@ function createRetirementReceiptsGraph(
       }
     },
   );
-  const detachAttached$ = command((_, attached: AttachedSelection) => {
-    if (attached.frames !== attached.client) {
-      attached.frames.notify("Target.detachFromTarget", {
-        sessionId: attached.frameSessionId,
-      });
-    }
-    attached.client.notify("Target.detachFromTarget", {
-      sessionId: attached.sessionId,
-    });
-  });
   const finishRetirement$ = command(
     async (
       { get, set },
@@ -1760,18 +1762,25 @@ function createRetirementReceiptsGraph(
         ),
         set(selected.stream.dispose$, selected.attached.frames.signal),
       ]);
-      signal.throwIfAborted();
+      // Local owner cancellation cannot erase an already-settled original
+      // input failure while independent capture cleanup is still unwinding.
+      if (signal.aborted) {
+        if (input.status === "rejected") {
+          throw input.reason;
+        }
+        signal.throwIfAborted();
+      }
       // Once closing begins, the transport close owns session detachment.
       if (!get(closingState$)) {
         set(detachAttached$, selected.attached);
       }
       set(reconcileRetirement$, retirement, { input, capture });
-      signal.throwIfAborted();
       // The fence retains uncertainty; the existing detached owner reports the
       // original input failure only after detachment and waiter publication.
       if (input.status === "rejected") {
         throw input.reason;
       }
+      signal.throwIfAborted();
     },
   );
   return {
@@ -4883,24 +4892,84 @@ function createSettingsGraph(
   return { ...display, ...selection, ...authority, rejectFavicon$ };
 }
 
-function createDisposalGraph(
+function createDisposalInputDrain(
   context: ControllerContext<
-    | "clientState$"
-    | "closedState$"
-    | "closingState$"
-    | "connectedState$"
-    | "disconnectingState$"
     | "disposedState$"
-    | "framesState$"
-    | "model"
-    | "nativeState$"
+    | "disconnectingState$"
     | "readinessFailure$"
-    | "resetOwner$"
     | "retirements$"
-    | "sink"
-    | "waitEvent$"
-    | "wake$"
   >,
+) {
+  const resetWait$ = resetSignal();
+  const settleInput$ = command(({ get, set }) => {
+    return Promise.allSettled(
+      [...get(context.retirements$).values()]
+        .filter((retirement) => {
+          return !retirement.receipts;
+        })
+        .map(({ session }) => {
+          return set(session.input.settle$, session.attached.client.signal);
+        }),
+    );
+  });
+  const drainInput$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      if (
+        !get(context.disposedState$) ||
+        get(context.disconnectingState$) ||
+        get(context.readinessFailure$)
+      ) {
+        return;
+      }
+      if (!get(context.retirements$).size) {
+        return;
+      }
+      // This local grace owns only the wait, never the original input effects.
+      const wait = set(resetWait$, signal);
+      const expired = createDeferredPromise<void>(
+        { rejection: "owner" },
+        abortAfter(1000, wait),
+      );
+      using _wait = {
+        [Symbol.dispose]: () => {
+          if (!expired.settled()) {
+            expired.resolve();
+          }
+          set(resetWait$, AbortSignal.abort());
+        },
+      };
+      // Retirement retains/reports input failures. Capture and bridge cleanup
+      // must not delay this join or prevent transport close when the grace ends.
+      await Promise.race([
+        set(settleInput$),
+        Promise.allSettled([expired.promise]),
+      ]);
+      signal.throwIfAborted();
+    },
+  );
+  return { drainInput$, settleInput$ };
+}
+
+type DisposalContext = ControllerContext<
+  | "clientState$"
+  | "closedState$"
+  | "closingState$"
+  | "connectedState$"
+  | "disconnectingState$"
+  | "disposedState$"
+  | "framesState$"
+  | "model"
+  | "nativeState$"
+  | "readinessFailure$"
+  | "resetOwner$"
+  | "retirements$"
+  | "sink"
+  | "waitEvent$"
+  | "wake$"
+>;
+
+function createDisposalGraph(
+  context: DisposalContext,
   links$: ControllerDependencies<
     "detachAttached$" | "discovery$" | "displayGraph$" | "retireCurrent$"
   >,
@@ -4923,13 +4992,15 @@ function createDisposalGraph(
     waitEvent$,
   } = context;
   const resetClosing$ = resetSignal();
+  const input = createDisposalInputDrain(context);
   const closeTransport$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       const [result] = await Promise.allSettled([
         (async () => {
-          // Retirement wrote its input releases when it began, so detaching
-          // now follows them on the wire. The peer can vanish at any moment, so
-          // closing never waits for their acknowledgement.
+          // Normal disposal gives original input receipts a bounded chance to
+          // settle before detachment. Failed resources still close immediately.
+          await set(input.drainInput$, signal);
+          signal.throwIfAborted();
           for (const retirement of get(retirements$).values()) {
             if (!retirement.receipts) {
               set(get(links$).detachAttached$, retirement.session.attached);
@@ -4958,7 +5029,16 @@ function createDisposalGraph(
           const nativeClosed = native?.close(reason);
           get(framesState$)?.close(fault);
           get(clientState$)?.close(fault);
-          await nativeClosed;
+          // Closed wires have rejected every pending request. Join their local
+          // input continuations before owner cancellation can replace the cause;
+          // this no longer waits for any peer acknowledgement.
+          const [nativeCleanup] = await Promise.allSettled([
+            nativeClosed,
+            set(input.settleInput$),
+          ]);
+          if (nativeCleanup.status === "rejected") {
+            throw nativeCleanup.reason;
+          }
         })(),
       ]);
       signal.throwIfAborted();
