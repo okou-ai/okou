@@ -48,7 +48,7 @@ test("prepares queued inputs from current membership while preserving an already
     prompt: "Start the work",
   });
   const execution = await fixture.runExecution(first.runId);
-  const initial = await fixture.api.readRun(actor, first.runId);
+  const initial = execution.execution;
   expect(initial.appendSystemPrompt).toContain("currently unassigned");
   const id = operation();
   await accept(
@@ -151,7 +151,7 @@ test("prepares queued inputs from current membership while preserving an already
     [200],
   );
   expect(
-    (await fixture.api.readRun(actor, first.runId)).appendSystemPrompt,
+    (await fixture.api.executionInput(first.runId)).appendSystemPrompt,
   ).toBe(initial.appendSystemPrompt);
   await fixture.cancelChatRun(actor, first.runId, execution.sandboxHeaders);
   await flushWaitUntilForTest();
@@ -170,7 +170,7 @@ test("prepares queued inputs from current membership while preserving an already
   if (!nextId) {
     throw new Error("Queued Project input did not create a Run");
   }
-  const next = await fixture.api.readRun(actor, nextId);
+  const next = await fixture.api.executionInput(nextId);
   expect(next.appendSystemPrompt).toContain(`PROJECT_ID=${latestId}`);
   expect(next.appendSystemPrompt).not.toContain(`Current Project: "Launch"`);
   expect(next.appendSystemPrompt).toContain("Current research");
@@ -184,7 +184,7 @@ test("prepares queued inputs from current membership while preserving an already
     }),
     [204],
   );
-  expect((await fixture.api.readRun(actor, nextId)).appendSystemPrompt).toBe(
+  expect((await fixture.api.executionInput(nextId)).appendSystemPrompt).toBe(
     next.appendSystemPrompt,
   );
 });

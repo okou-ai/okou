@@ -12,6 +12,7 @@ import body_decoding
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import response_streaming
+import stream_capture
 import usage
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
@@ -76,7 +77,7 @@ async def test_supported_page_yields_without_publishing_partial_usage(
         await mitm_addon.responseinspection(flow)
         assert await heartbeat == (True, None, [])
         assert metadata_keys.X_JSON_STATE not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
         assert response_streaming.streamed_response_size(flow) == len(wire)
         assert response_stream(flow)(b"") == b""
         assert mitm_addon.response(flow) is None

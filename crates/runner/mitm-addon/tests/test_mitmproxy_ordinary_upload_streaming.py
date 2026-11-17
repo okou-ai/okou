@@ -17,10 +17,12 @@ from mitmproxy.test import taddons
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import request_classification
+import request_streaming
 from body_limits import STREAM_BUFFER_LIMIT
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.mitmproxy_http_framing_helpers import start_http_layer
 from tests.request_handler_helpers import _sandbox_without_firewalls, _write_registry
+from tests.stream_buffer_helpers import request_stream_capture
 
 _HOST = "example.com"
 _CHUNK_SIZE = 64 * 1024
@@ -137,15 +139,11 @@ async def test_ordinary_upload_forwards_before_eof_with_bounded_retention(
             assert complete is request_complete
             assert any(isinstance(cmd, HttpRequestHook) for cmd in observed) is request_complete
             assert flow.request.raw_content is None
-            assert flow.metadata[metadata_keys.REQUEST_STREAM_BUFFER_STATE]["total_bytes"] == (
-                forwarded_size
-            )
+            assert request_streaming.streamed_request_size(flow) == (forwarded_size)
             if capture_body:
-                assert (
-                    len(flow.metadata[metadata_keys.REQUEST_STREAM_BUFFER]) <= STREAM_BUFFER_LIMIT
-                )
+                assert len(request_stream_capture(flow).buffer) <= STREAM_BUFFER_LIMIT
             else:
-                assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+                assert request_streaming.captured_request_stream_body(flow) is None
 
         if framing == "chunked":
             observed = await _drive_http_event(
@@ -157,8 +155,8 @@ async def test_ordinary_upload_forwards_before_eof_with_bounded_retention(
         assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
         assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY not in flow.metadata
         if capture_body:
-            assert len(flow.metadata[metadata_keys.REQUEST_STREAM_BUFFER]) == STREAM_BUFFER_LIMIT
-            assert flow.metadata[metadata_keys.REQUEST_STREAM_BUFFER_STATE]["truncated"] is True
+            assert len(request_stream_capture(flow).buffer) == STREAM_BUFFER_LIMIT
+            assert request_stream_capture(flow).truncated is True
 
         response_wire = (
             peer.send(h11.Response(status_code=200, headers=[(b"Content-Length", b"2")]))
@@ -184,8 +182,8 @@ async def test_ordinary_upload_forwards_before_eof_with_bounded_retention(
     if not capture_body:
         assert "request_body" not in entry
     assert flow.request.stream is False
-    assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.captured_request_stream_body(flow) is None
+    assert request_streaming.streamed_request_size(flow) is None
     assert metadata_keys.REQUEST_STREAM_COMPLETE not in flow.metadata
     assert metadata_keys.HTTP_REQUEST_START_MONOTONIC not in flow.metadata
 
@@ -217,7 +215,7 @@ async def test_interrupted_no_capture_upload_logs_partial_size_and_releases_stat
             addon_context, http_layer, events.DataReceived(client, chunk)
         )
         assert _receive_upstream(observed, peer) == (chunk, False)
-        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is None
         client.state = connection.ConnectionState.CLOSED
         await _drive_http_event(addon_context, http_layer, events.ConnectionClosed(client))
 
@@ -227,7 +225,7 @@ async def test_interrupted_no_capture_upload_logs_partial_size_and_releases_stat
     assert flow.error is not None
     assert flow.request.stream is False
     assert flow.request.raw_content is None
-    assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
+    assert request_streaming.streamed_request_size(flow) is None
     assert metadata_keys.REQUEST_STREAM_COMPLETE not in flow.metadata
     assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY not in flow.metadata
     assert metadata_keys.HTTP_REQUEST_START_MONOTONIC not in flow.metadata

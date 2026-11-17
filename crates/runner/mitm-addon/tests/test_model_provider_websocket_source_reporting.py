@@ -9,6 +9,7 @@ from mitmproxy import http
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import model_websocket_usage
+import stream_capture
 import usage
 from tests.jsonl_log_helpers import jsonl_exists_after_flush, read_jsonl_entries_after_flush
 from tests.model_provider_flow_helpers import (
@@ -163,8 +164,7 @@ class TestModelProviderWebSocketSourceReporting:
         assert model_websocket_usage.is_enabled(flow)
         assert "model_json_usage_finish" not in flow.metadata
         assert "model_sse_usage_finish" not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
         terminal_frame = json.dumps(
             {

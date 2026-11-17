@@ -108,7 +108,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       expect(
         execution.execution.platformEnvironment[DISABLED_PAID_TOOLS_ENV_VAR],
       ).toBe(initiallyDisabled ? '["image-generation"]' : "[]");
-      const originalPrompt = (await api.readRun(actor, active.runId))
+      const originalPrompt = (await api.executionInput(active.runId))
         .appendSystemPrompt;
       const eventId = randomUUID();
       const request =
@@ -172,7 +172,7 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       await expect(
         api.nextSteerableInput(execution.execution.sandboxToken, active.runId),
       ).resolves.toStrictEqual(second);
-      expect((await api.readRun(actor, active.runId)).appendSystemPrompt).toBe(
+      expect((await api.executionInput(active.runId)).appendSystemPrompt).toBe(
         originalPrompt,
       );
       await api.declareSteeredInput(

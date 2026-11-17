@@ -25,7 +25,6 @@ const CLERK_AUTH_APPEARANCE_BASE = {
   options: {
     elevation: "raised",
     socialButtonsPlacement: "top",
-    socialButtonsVariant: "blockButton",
   },
   elements: {
     // Center hosted dialogs inside the safe viewport. Keep Clerk's vertical

@@ -17,5 +17,5 @@ static_starred_mapping_keys.py:24: use metadata_keys.SANDBOX_RUN_ID for flow.met
 static_starred_mapping_keys.py:27: use metadata_keys.CAPTURE_BODY for flow.metadata access
 static_starred_mapping_keys.py:29: use metadata_keys.CAPTURE_BODY for flow.metadata access
 static_starred_mapping_keys.py:32: use metadata_keys.MODEL_USAGE_PROVIDER for flow.metadata access
-static_starred_mapping_keys.py:33: use metadata_keys.STREAM_BUFFER for flow.metadata access
+static_starred_mapping_keys.py:33: use metadata_keys.RESPONSE_STREAM_CAPTURE for flow.metadata access
 static_starred_mapping_keys.py:35: use metadata_keys.REQUEST_STREAM_COMPLETE for flow.metadata access

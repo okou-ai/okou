@@ -23,7 +23,7 @@ use super::support::{
     api_artifact, api_storage, build_env_for_test, build_env_for_test_result,
     build_env_for_test_with_host_env, context_with_env, minimal_context,
 };
-use crate::error::{RunnerError, RunnerResult};
+use crate::error::RunnerError;
 use runner_types::ids::RunId;
 use runner_types::storage_manifest::StorageManifest;
 use runner_types::types::ExecutionContext;
@@ -378,30 +378,6 @@ fn execution_context_validation_rejects_append_system_prompt_nul_before_sandbox(
 }
 
 #[test]
-fn execution_context_validation_rejects_claude_settings_nul_before_sandbox() {
-    let secret = "{\"hooks\":\"bad\0value\"}";
-    let mut ctx = minimal_context();
-    ctx.settings = Some(secret.into());
-
-    let error = validate_context_for_test(&ctx).unwrap_err();
-
-    assert!(error.contains("run payload"));
-    assert!(error.contains("NUL byte"));
-    assert!(error.contains("OKOU_SETTINGS"));
-    assert!(!error.contains(secret));
-}
-
-#[test]
-fn execution_context_validation_ignores_codex_settings_nul_before_sandbox() {
-    let mut ctx = minimal_context();
-    ctx.cli_agent_type = "codex".into();
-    ctx.settings = Some("{\"hooks\":\"bad\0value\"}".into());
-
-    assert!(validate_context_for_test(&ctx).is_ok());
-    assert!(build_run_payload_for_run(&ctx).unwrap().settings.is_empty());
-}
-
-#[test]
 fn execution_context_validation_accepts_raw_secret_value_nul_before_sandbox() {
     let mut ctx = minimal_context();
     ctx.secret_values = Some(vec!["secret\0value".into()]);
@@ -409,17 +385,6 @@ fn execution_context_validation_accepts_raw_secret_value_nul_before_sandbox() {
     assert!(validate_context_for_test(&ctx).is_ok());
     let payload = build_run_payload_for_run(&ctx).unwrap();
     assert!(!payload.secret_values.contains('\0'));
-}
-
-#[test]
-fn execution_context_validation_rejects_tool_nul_before_sandbox() {
-    let mut ctx = minimal_context();
-    ctx.tools = Some(vec!["Bash\0Read".into()]);
-
-    let error = validate_context_for_test(&ctx).unwrap_err();
-
-    assert!(error.contains("OKOU_TOOLS"));
-    assert!(error.contains("NUL"));
 }
 
 #[test]
@@ -542,8 +507,6 @@ fn build_env_json_custom_cli_agent_type() {
 fn build_env_json_claude_code_gets_only_claude_framework_env() {
     let mut ctx = minimal_context();
     ctx.disallowed_tools = Some(vec!["CronCreate".into(), "CronDelete".into()]);
-    ctx.tools = Some(vec!["Bash".into(), "Edit".into()]);
-    ctx.settings = Some(r#"{"hooks":{}}"#.into());
 
     let env = build_env_for_test_with_host_env(
         &ctx,
@@ -558,8 +521,6 @@ fn build_env_json_claude_code_gets_only_claude_framework_env() {
     assert_eq!(env.get("USE_MOCK_CLAUDE").unwrap(), "true");
     let payload = build_run_payload_for_run(&ctx).unwrap();
     assert_eq!(payload.disallowed_tools, "CronCreate,CronDelete");
-    assert_eq!(payload.tools, "Bash,Edit");
-    assert_eq!(payload.settings, r#"{"hooks":{}}"#);
     assert!(!env.contains_key("USE_MOCK_CODEX"));
 }
 
@@ -588,8 +549,6 @@ fn build_env_json_unknown_framework_preserves_claude_compatible_env() {
     let mut ctx = minimal_context();
     ctx.cli_agent_type = "custom-agent".into();
     ctx.disallowed_tools = Some(vec!["CronCreate".into()]);
-    ctx.tools = Some(vec!["Bash".into()]);
-    ctx.settings = Some(r#"{"hooks":{}}"#.into());
 
     let env = build_env_for_test_with_host_env(
         &ctx,
@@ -605,8 +564,6 @@ fn build_env_json_unknown_framework_preserves_claude_compatible_env() {
     assert_eq!(env.get("USE_MOCK_CLAUDE").unwrap(), "true");
     let payload = build_run_payload_for_run(&ctx).unwrap();
     assert_eq!(payload.disallowed_tools, "CronCreate");
-    assert_eq!(payload.tools, "Bash");
-    assert_eq!(payload.settings, r#"{"hooks":{}}"#);
     assert!(!env.contains_key("USE_MOCK_CODEX"));
 }
 
@@ -656,8 +613,6 @@ fn emitted_bootstrap_env_keys_classify_as_runner_owned() {
     ctx.append_system_prompt = Some("Use terse answers.".into());
     ctx.local_resume_session_id = Some("sess-123".into());
     ctx.disallowed_tools = Some(vec!["CronCreate".into()]);
-    ctx.tools = Some(vec!["Bash".into()]);
-    ctx.settings = Some(r#"{"hooks":{}}"#.into());
     ctx.feature_flags = Some(HashMap::from([("runnerEnvKeyTest".into(), true)]));
     ctx.storage_manifest = Some(StorageManifest {
         storages: vec![],
@@ -1762,42 +1717,6 @@ fn build_env_json_no_disallowed_tools() {
 }
 
 #[test]
-fn build_env_json_with_tools() {
-    let mut ctx = minimal_context();
-    ctx.tools = Some(vec!["Bash".into(), "Edit".into()]);
-    let payload = build_run_payload_for_run(&ctx).unwrap();
-    assert_eq!(payload.tools, "Bash,Edit");
-}
-
-#[test]
-fn build_env_json_empty_tools_omitted() {
-    let mut ctx = minimal_context();
-    ctx.tools = Some(vec![]);
-    let payload = build_run_payload_for_run(&ctx).unwrap();
-    assert!(payload.tools.is_empty());
-}
-
-#[test]
-fn build_env_json_no_tools() {
-    let ctx = minimal_context();
-    let payload = build_run_payload_for_run(&ctx).unwrap();
-    assert!(payload.tools.is_empty());
-}
-
-fn assert_tool_env_error<T: std::fmt::Debug>(
-    result: RunnerResult<T>,
-    env_name: &str,
-    expected: &str,
-) {
-    let message = match result {
-        Err(RunnerError::Internal(message)) => message,
-        other => panic!("expected internal error, got {other:?}"),
-    };
-    assert!(message.contains(env_name), "message: {message}");
-    assert!(message.contains(expected), "message: {message}");
-}
-
-#[test]
 fn build_env_json_rejects_invalid_disallowed_tools_entries() {
     for (tool, expected) in [
         ("", "must not be empty"),
@@ -1809,60 +1728,25 @@ fn build_env_json_rejects_invalid_disallowed_tools_entries() {
     ] {
         let mut ctx = minimal_context();
         ctx.disallowed_tools = Some(vec![tool.into()]);
-        let result = build_run_payload_for_run(&ctx);
-        assert_tool_env_error(result, "OKOU_DISALLOWED_TOOLS", expected);
+        let message = match build_run_payload_for_run(&ctx) {
+            Err(RunnerError::Internal(message)) => message,
+            other => panic!("expected internal error, got {other:?}"),
+        };
+        assert!(
+            message.contains("OKOU_DISALLOWED_TOOLS"),
+            "message: {message}"
+        );
+        assert!(message.contains(expected), "message: {message}");
     }
 }
 
 #[test]
-fn build_env_json_rejects_invalid_tools_entries() {
-    for (tool, expected) in [
-        ("", "must not be empty"),
-        ("   ", "must not be empty"),
-        ("Bash,Read", "must not contain commas"),
-        ("Bash\0Read", "must not contain NUL bytes"),
-        ("--help", "must not start with a hyphen"),
-        (" -x", "must not start with a hyphen"),
-    ] {
-        let mut ctx = minimal_context();
-        ctx.tools = Some(vec![tool.into()]);
-        let result = build_run_payload_for_run(&ctx);
-        assert_tool_env_error(result, "OKOU_TOOLS", expected);
-    }
-}
-
-#[test]
-fn build_env_json_codex_ignores_claude_tool_lists() {
+fn build_env_json_codex_ignores_disallowed_tools() {
     let mut ctx = minimal_context();
     ctx.cli_agent_type = "codex".into();
     ctx.disallowed_tools = Some(vec!["".into()]);
-    ctx.tools = Some(vec!["Bash,Read".into()]);
     let payload = build_run_payload_for_run(&ctx).unwrap();
     assert!(payload.disallowed_tools.is_empty());
-    assert!(payload.tools.is_empty());
-}
-
-#[test]
-fn build_env_json_with_settings() {
-    let mut ctx = minimal_context();
-    ctx.settings = Some(r#"{"hooks":{}}"#.into());
-    let payload = build_run_payload_for_run(&ctx).unwrap();
-    assert_eq!(payload.settings, r#"{"hooks":{}}"#);
-}
-
-#[test]
-fn build_env_json_empty_settings_omitted() {
-    let mut ctx = minimal_context();
-    ctx.settings = Some("".into());
-    let payload = build_run_payload_for_run(&ctx).unwrap();
-    assert!(payload.settings.is_empty());
-}
-
-#[test]
-fn build_env_json_no_settings() {
-    let ctx = minimal_context();
-    let payload = build_run_payload_for_run(&ctx).unwrap();
-    assert!(payload.settings.is_empty());
 }
 
 #[test]

@@ -439,7 +439,7 @@ describe("CHAT-02: shared user message queue", () => {
       href: `/chats/${source.threadId}#run-${source.runId}`,
     });
 
-    const forwardedRun = await api.readRun(actor, forwardedRunId);
+    const forwardedRun = await api.executionInput(forwardedRunId);
     const forwardedSystemPrompt = forwardedRun.appendSystemPrompt ?? "";
     expect(
       forwardedSystemPrompt.match(/^# Current User Info$/gmu),
@@ -537,7 +537,7 @@ describe("CHAT-02: shared user message queue", () => {
       firstTargetThread.id,
       firstEventId,
     );
-    const firstTargetRun = await api.readRun(actor, firstTargetRunId);
+    const firstTargetRun = await api.executionInput(firstTargetRunId);
     const firstTargetSystemPrompt = firstTargetRun.appendSystemPrompt ?? "";
     expect(firstTargetSystemPrompt).toContain("# This Run's Trigger");
     expect(firstTargetSystemPrompt).toContain(`SOURCE_RUN_ID: ${source.runId}`);
@@ -554,7 +554,7 @@ describe("CHAT-02: shared user message queue", () => {
     expect(firstTargetSystemPrompt).toContain(
       `okou search "${source.runId}" --source agent-session`,
     );
-    const sourceRun = await api.readRun(actor, source.runId);
+    const sourceRun = await api.executionInput(source.runId);
     expect(sourceRun.appendSystemPrompt ?? "").not.toContain(
       "# This Run's Trigger",
     );
@@ -816,7 +816,7 @@ describe("CHAT-02: shared user message queue", () => {
     if (!rotatedRunId) {
       throw new Error("Expected the rotated agent prompt to be promoted");
     }
-    const rotatedRun = await api.readRun(actor, rotatedRunId);
+    const rotatedRun = await api.executionInput(rotatedRunId);
     const rotatedSystemPrompt = rotatedRun.appendSystemPrompt ?? "";
     expect(rotatedSystemPrompt).toContain("# This Run's Trigger");
     expect(rotatedSystemPrompt).toContain(`SOURCE_RUN_ID: ${source.runId}`);
@@ -883,7 +883,7 @@ describe("CHAT-02: shared user message queue", () => {
     if (!incompleteRunId) {
       throw new Error("Expected the incomplete agent prompt to be promoted");
     }
-    const incompleteRun = await api.readRun(actor, incompleteRunId);
+    const incompleteRun = await api.executionInput(incompleteRunId);
     const incompleteSystemPrompt = incompleteRun.appendSystemPrompt ?? "";
     expect(incompleteSystemPrompt).toContain(incompletePrompt);
     expect(incompleteSystemPrompt).toContain("# Incomplete Rounds Context");
@@ -1191,7 +1191,7 @@ describe("CHAT-02: shared user message queue", () => {
       throw new Error("Expected the queued template message to auto-send");
     }
 
-    const run = await api.readRun(actor, queuedRunId);
+    const run = await api.executionInput(queuedRunId);
     const inlineMarker = `[Template #1: ${style.title} (illustration)]`;
     expect(run.prompt).toBe(
       `Create an image.\nAspect ratio: 1:1.\n\nRestyle with ${inlineMarker} at claim`,
@@ -1491,7 +1491,7 @@ describe("CHAT-02: shared user message queue", () => {
       }),
     ).toBeTruthy();
 
-    const followUp = await api.readRun(actor, promoted.runId);
+    const followUp = await api.executionInput(promoted.runId);
     expect(followUp.prompt).toContain("queue-first waits for the anchor");
     expect(followUp.appendSystemPrompt ?? "").not.toContain(
       "queue-first message to recall",

@@ -20,7 +20,7 @@ from tests.body_decode_helpers import (
     track_zstd_decompressor,
 )
 from tests.flow_helpers import response_stream
-from tests.stream_buffer_helpers import set_response_stream_buffer
+from tests.stream_buffer_helpers import response_stream_capture, set_response_stream_buffer
 
 
 class TestDecompression:
@@ -309,8 +309,8 @@ class TestDecompression:
         flow.metadata[metadata_keys.CAPTURE_BODY] = True
         mitm_addon.responseheaders(flow)
         assert response_stream(flow)(compressed) == compressed
-        assert len(flow.metadata[metadata_keys.STREAM_BUFFER]) == STREAM_BUFFER_LIMIT
-        assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE]["truncated"] is True
+        assert len(response_stream_capture(flow).buffer) == STREAM_BUFFER_LIMIT
+        assert response_stream_capture(flow).truncated is True
 
         entry = {}
         add_capture_fields(flow, entry)

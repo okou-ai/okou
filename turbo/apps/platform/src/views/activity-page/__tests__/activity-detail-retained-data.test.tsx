@@ -35,7 +35,7 @@ function logDetail(): LogDetail {
     triggerSource: "web",
     status: "completed",
     prompt: "Export checkout diagnostics",
-    appendSystemPrompt: null,
+    appendSystemPrompt: "Use the captured diagnostic context",
     error: null,
     createdAt: "2026-03-10T14:56:00Z",
     startedAt: "2026-03-10T14:56:01Z",
@@ -53,13 +53,13 @@ function directProviderLogDetail(): LogDetail {
 
 function runContext(): RunContextResponse {
   return {
-    prompt: "Export checkout diagnostics",
-    appendSystemPrompt: null,
+    prompt: "Captured diagnostic prompt",
+    appendSystemPrompt: "Use the captured diagnostic context",
     runId: RUN_ID,
     sessionId: "session-1",
     cliAgentType: "codex",
-    secretNames: [],
-    vars: null,
+    secretNames: ["OKOU_TOKEN", "GITLAB_TOKEN"],
+    vars: { REGION: "launch-region", EMPTY: "" },
     environment: {},
     firewalls: [],
     networkPolicies: null,
@@ -174,9 +174,14 @@ test("A user can download all retained diagnostics for an older activity", async
     id: RUN_ID,
     displayName: "Checkout Export",
     framework: "codex",
+    appendSystemPrompt: "Use the captured diagnostic context",
   });
   expect(downloaded.context).toMatchObject({
     runId: RUN_ID,
+    prompt: "Captured diagnostic prompt",
+    appendSystemPrompt: "Use the captured diagnostic context",
+    vars: { REGION: "launch-region", EMPTY: "" },
+    secretNames: ["OKOU_TOKEN", "GITLAB_TOKEN"],
     storageMounts: runContext().storageMounts,
   });
   expect(downloaded.networkLogs).toStrictEqual([networkLog()]);

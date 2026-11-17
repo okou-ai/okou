@@ -9,6 +9,7 @@ import body_decoding
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import response_streaming
+import stream_capture
 import usage
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
@@ -57,7 +58,7 @@ async def test_small_wire_callback_yields_before_complete_document_usage(
         assert await heartbeat == (True, None, [])
         # Even fully inspected selected fields remain private until EOF validation.
         assert metadata_keys.MODEL_PROVIDER_USAGE not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
         assert response_streaming.streamed_response_size(flow) == len(wire)
         assert response_stream(flow)(b"") == b""
         assert mitm_addon.response(flow) is None

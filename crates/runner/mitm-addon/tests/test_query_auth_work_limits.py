@@ -18,6 +18,7 @@ import firewall_auth_cache
 import flow_metadata_keys as metadata_keys
 import managed_upload
 import mitm_addon
+import request_streaming
 from tests.firewall_auth_helpers import firewall_auth_success
 from tests.mitmproxy_http_framing_helpers import CLIENT_IP, start_http_layer
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
@@ -233,7 +234,7 @@ async def test_native_query_auth_work_boundary(tmp_path, real_flow, query_io, ho
         assert flow.error is None
         assert managed_upload.get(flow) is None
         assert not native.streams
-        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+        assert request_streaming.captured_request_stream_body(flow) is None
         if rejected and hook_phase == "requestheaders":
             assert flow.request.raw_content is None
             assert flow.request.stream is False

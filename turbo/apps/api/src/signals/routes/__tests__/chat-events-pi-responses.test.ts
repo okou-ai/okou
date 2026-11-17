@@ -338,7 +338,7 @@ describe("CHAT-02: model-first routing", () => {
     ).resolves.toBe(firstSessionId);
 
     for (const runId of [fast.runId, returned.runId]) {
-      const run = await api.readRun(actor, runId);
+      const run = await api.executionInput(runId);
       const appendSystemPrompt = run.appendSystemPrompt ?? "";
       for (const turn of [...prompts, ...answers]) {
         expect(appendSystemPrompt).not.toContain(turn);

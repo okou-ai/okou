@@ -8,6 +8,7 @@ from mitmproxy.test import tutils
 import body_decoding
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import stream_capture
 from tests.flow_helpers import header_map, response_stream
 from tests.jsonl_log_helpers import jsonl_exists_after_flush, read_jsonl_entries_after_flush
 from tests.x_flow_helpers import make_x_pipeline_flow
@@ -118,8 +119,7 @@ class TestResponseEncodingInspectionRisk:
         assert response_stream(flow)(upstream_chunk) == (b"" if rejected else upstream_chunk)
         assert flow.response is not None
         assert flow.response.status_code == (502 if rejected else 200)
-        assert (metadata_keys.STREAM_BUFFER in flow.metadata) is buffered_fallback
-        assert (metadata_keys.STREAM_BUFFER_STATE in flow.metadata) is buffered_fallback
+        assert (stream_capture.captured_response_stream_body(flow) is not None) is buffered_fallback
 
     def test_unknown_encoding_value_is_not_persisted(self, real_flow, tmp_path, mitm_ctx) -> None:
         flow = self._model_flow(
@@ -138,8 +138,7 @@ class TestResponseEncodingInspectionRisk:
         assert flow.response is not None
         assert flow.response.status_code == 502
         assert response_stream(flow)(b"unknown-encoding-body") == b""
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     @pytest.mark.parametrize("content_encoding", ["gzip", "br"])
     def test_stream_safe_model_response_keeps_parser_without_risk(
@@ -223,8 +222,7 @@ class TestResponseEncodingInspectionRisk:
         assert flow.response is not None
         assert flow.response.status_code == 502
         assert response_stream(flow)(b"uninspectable-model-response") == b""
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     @pytest.mark.parametrize(
         ("request_method", "response_status"),
@@ -254,8 +252,7 @@ class TestResponseEncodingInspectionRisk:
             mitm_addon.responseheaders(flow)
 
         assert not jsonl_exists_after_flush(tmp_path / "proxy.jsonl")
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     def test_successful_billable_connector_uses_bounded_fallback_without_encoding_risk(
         self, real_flow, tmp_path, mitm_ctx
@@ -270,8 +267,7 @@ class TestResponseEncodingInspectionRisk:
         assert flow.response.status_code == 200
         upstream_chunk = b"bounded-json-fallback"
         assert response_stream(flow)(upstream_chunk) == upstream_chunk
-        assert metadata_keys.STREAM_BUFFER in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is not None
 
     @pytest.mark.parametrize(
         "negotiation_outcome",
@@ -299,8 +295,7 @@ class TestResponseEncodingInspectionRisk:
         assert flow.response is not None
         assert flow.response.status_code == 502
         assert response_stream(flow)(b"unknown-connector-encoding") == b""
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     def test_billable_connector_stream_rejects_non_streamable_encoding(
         self,
@@ -328,8 +323,7 @@ class TestResponseEncodingInspectionRisk:
         assert flow.response is not None
         assert flow.response.status_code == 502
         assert response_stream(flow)(b"compressed-ndjson") == b""
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
 
     @pytest.mark.parametrize(
         ("firewall_name", "firewall_billable", "response_status"),
@@ -364,5 +358,4 @@ class TestResponseEncodingInspectionRisk:
         assert not jsonl_exists_after_flush(tmp_path / "proxy.jsonl")
         assert flow.response is not None
         assert flow.response.status_code == response_status
-        assert metadata_keys.STREAM_BUFFER not in flow.metadata
-        assert metadata_keys.STREAM_BUFFER_STATE not in flow.metadata
+        assert stream_capture.captured_response_stream_body(flow) is None
