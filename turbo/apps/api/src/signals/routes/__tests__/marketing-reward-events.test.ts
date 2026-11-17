@@ -53,7 +53,9 @@ async function connectGitHub(actor: ApiTestUser) {
   mockGitHubConnectorOAuth();
   const start = await connectors.startOauth(actor, "github", "oauth");
   const state = new URL(start.authorizationUrl).searchParams.get("state");
-  if (!state) throw new Error("Expected OAuth state");
+  if (!state) {
+    throw new Error("Expected OAuth state");
+  }
   await connectors.completeOauthCallback("github", {
     code: randomUUID(),
     state,
@@ -169,22 +171,27 @@ test("retains facts after mismatched receipts or rejection and never forwards th
     http.post(path, async ({ request }) => {
       const event = marketingRewardOAuthEventSchema.parse(await request.json());
       received.push(event);
-      if (received.length === 1)
+      if (received.length === 1) {
         return HttpResponse.json({ ...receipt(event), hash: "0".repeat(64) });
-      if (received.length === 2)
+      }
+      if (received.length === 2) {
         return HttpResponse.json({
           ...receipt(event),
           environment: "production",
         });
-      if (received.length === 3)
+      }
+      if (received.length === 3) {
         return HttpResponse.json({ ...receipt(event), eventId: randomUUID() });
-      if (received.length === 4)
+      }
+      if (received.length === 4) {
         return HttpResponse.json({ error: "conflict" }, { status: 409 });
-      if (received.length === 5)
+      }
+      if (received.length === 5) {
         return new HttpResponse(null, {
           status: 307,
           headers: { location: "https://untrusted.example.test/collect" },
         });
+      }
       return HttpResponse.json(receipt(event));
     }),
   );
@@ -192,8 +199,10 @@ test("retains facts after mismatched receipts or rejection and never forwards th
     expect((await cron()).processed).toBe(1);
   }
   expect(received).toHaveLength(6);
-  expect(followedRedirect).toBe(false);
-  for (const event of received) expect(event).toStrictEqual(received[0]);
+  expect(followedRedirect).toBeFalsy();
+  for (const event of received) {
+    expect(event).toStrictEqual(received[0]);
+  }
   expect((await cron()).processed).toBe(0);
 });
 
@@ -233,7 +242,9 @@ test("records custom OAuth connection identity without publishing its provider c
     await connectors.startCustomConnectorOAuth2(actor, custom.id),
   );
   const state = authorization.searchParams.get("state");
-  if (!state) throw new Error("Expected custom OAuth state");
+  if (!state) {
+    throw new Error("Expected custom OAuth state");
+  }
   await connectors.completeCustomConnectorOAuth2Callback({
     code: "source-test-code",
     state,
@@ -270,7 +281,9 @@ test("does not publish manual credentials or a declined OAuth authorization as a
   mockGitHubConnectorOAuth();
   const start = await connectors.startOauth(actor, "github", "oauth");
   const state = new URL(start.authorizationUrl).searchParams.get("state");
-  if (!state) throw new Error("Expected OAuth state");
+  if (!state) {
+    throw new Error("Expected OAuth state");
+  }
   await connectors.completeOauthCallback("github", {
     error: "access_denied",
     state,

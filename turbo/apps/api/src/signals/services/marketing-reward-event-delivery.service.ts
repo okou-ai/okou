@@ -71,7 +71,9 @@ export const deliverMarketingRewardEvents$ = command(
   ): Promise<{ readonly processed: number }> => {
     const origin = env("MARKETING_REWARDS_EVENTS_ORIGIN");
     const secret = env("MARKETING_REWARDS_EVENTS_SECRET");
-    if (!origin && !secret) return { processed: 0 };
+    if (!origin && !secret) {
+      return { processed: 0 };
+    }
     if (!origin || !secret) {
       throw new Error(
         "Marketing reward event delivery is partially configured",
@@ -88,7 +90,9 @@ export const deliverMarketingRewardEvents$ = command(
         signal,
       );
       signal.throwIfAborted();
-      if (!job) break;
+      if (!job) {
+        break;
+      }
       const event = marketingRewardOAuthEventSchema.parse(job.input);
       if (
         event.id !== job.id ||
