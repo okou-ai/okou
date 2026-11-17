@@ -9,11 +9,12 @@ import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature
 
 import { mockApi } from "../msw-contract.ts";
 import { server } from "../server.ts";
+import { DEFAULT_SWITCH_OVERRIDES } from "./api-feature-switches.ts";
 
 export function setMockFeatureSwitches(
   switches: Partial<Record<string, boolean>>,
 ): void {
-  const sanitized: Record<string, boolean> = {};
+  const sanitized: Record<string, boolean> = { ...DEFAULT_SWITCH_OVERRIDES };
   for (const [key, value] of Object.entries(switches)) {
     if (value !== undefined) {
       sanitized[key] = value;
