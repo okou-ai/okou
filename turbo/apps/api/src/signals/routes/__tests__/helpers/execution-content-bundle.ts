@@ -13,10 +13,10 @@ export function readExecutionContentBundle(
   const url = new URL(reference.downloadUrl);
   expect(url.protocol).toBe("https:");
   // A cached URL can come from a different valid external signer fixture.
-  // The object identity is stable; the fixture's query-only URL shape is not.
+  // Its object can be the key alone or include a bucket/path prefix.
   const objectPath =
     url.searchParams.get("object") ?? decodeURIComponent(url.pathname);
-  expect(objectPath.endsWith(`/${key}`)).toBeTruthy();
+  expect(`/${objectPath}`.endsWith(`/${key}`)).toBeTruthy();
   const archive = objects.get(key) ?? seededSkillBundleArchive(key);
   if (!archive) {
     throw new Error("Execution content bundle was not published to S3");

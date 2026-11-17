@@ -347,7 +347,10 @@ export const prepareExecutionPublication$ = command(
 );
 
 export function executionBundleHashes(
-  context: PreparedExecutionContext,
+  context: Pick<
+    PreparedExecutionContext,
+    "officialWorkflowBundles" | "seedSkillBundles" | "templateGuidanceBundles"
+  >,
 ): string[] {
   return [
     ...context.officialWorkflowBundles,

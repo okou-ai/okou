@@ -139,7 +139,7 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
     modelEnvironment$,
     platform$,
   );
-  return createExecutionPreparedContext(input$, {
+  const prepared$ = createExecutionPreparedContext(input$, {
     model$,
     preferences$,
     packages$,
@@ -148,6 +148,7 @@ export function createExecutionRuntimeContext(input$: ExecutionInput$) {
     connectorTiming$: connectors.timing$,
     networkPolicyInputs$,
   });
+  return { prepared$, packageContext$: packages$ };
 }
 
 function createExecutionStorage(input$: ExecutionInput$) {
@@ -404,7 +405,7 @@ function createExecutionPackages(
     sources.signals.authorizedConnectors$,
   );
   return computed(async (get) => {
-    const { run } = await get(input$);
+    const { run, facts } = await get(input$);
     const framework = run.framework;
     const skillRoot =
       framework === "pi"
@@ -428,9 +429,10 @@ function createExecutionPackages(
       ]),
       skillRoot,
     );
+    const storage = await get(storage$);
     const winners = normalizeMountOverlay([
       ...volumes,
-      ...(await get(storage$)).storageMounts,
+      ...storage.storageMounts,
     ]);
     const seedSkillBundles = winners.flatMap((volume) => {
       return "contentBundle" in volume
@@ -449,7 +451,14 @@ function createExecutionPackages(
           ]
         : [];
     });
-    return { seedSkillBundles, templateGuidanceBundles, skillRoot };
+    return {
+      cliAgentType: framework,
+      customWorkflowSelection: facts.customWorkflowSelection,
+      storageMounts: storage.storageMounts,
+      officialWorkflowBundles: executionOfficialBundles(run, skillRoot),
+      seedSkillBundles,
+      templateGuidanceBundles,
+    };
   });
 }
 
@@ -624,10 +633,7 @@ function createExecutionPreparedContext(
       userTimezone: preferences.timezone,
       captureNetworkBodies: facts.captureNetworkBodies ? true : undefined,
       seedSkillBundles: packages.seedSkillBundles,
-      officialWorkflowBundles: executionOfficialBundles(
-        run,
-        packages.skillRoot,
-      ),
+      officialWorkflowBundles: packages.officialWorkflowBundles,
       templateGuidanceBundles: packages.templateGuidanceBundles,
     };
     return {

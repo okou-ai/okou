@@ -41,12 +41,13 @@ export function createExecutionContext(
     }>
   >,
 ) {
-  const runtime$ = createExecutionRuntimeContext(input$);
-  return computed(async (get) => {
-    const runtime = await get(runtime$);
+  const runtime = createExecutionRuntimeContext(input$);
+  const prepared$ = computed(async (get) => {
+    const prepared = await get(runtime.prepared$);
     return {
-      ...runtime,
-      context: preparedExecutionContextSchema.parse(runtime.context),
+      ...prepared,
+      context: preparedExecutionContextSchema.parse(prepared.context),
     };
   });
+  return { prepared$, packageContext$: runtime.packageContext$ };
 }
