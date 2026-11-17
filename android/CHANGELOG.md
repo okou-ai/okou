@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/okou-ai/okou/compare/android-v0.19.1...android-v0.20.0) (2026-11-17)
+
+
+### Features
+
+* add independent project sorting ([#48352](https://github.com/okou-ai/okou/issues/48352)) ([5ace277](https://github.com/okou-ai/okou/commit/5ace277384c9a3e0da65abdbf87a89fea3311d85))
+
 ## [0.19.1](https://github.com/okou-ai/okou/compare/android-v0.19.0...android-v0.19.1) (2026-11-17)
 
 

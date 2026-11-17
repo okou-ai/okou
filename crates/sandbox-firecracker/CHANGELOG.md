@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.53.115](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.114...sandbox-firecracker-v0.53.115) (2026-11-17)
+
+
+### Refactoring
+
+* use typed extended attribute operations ([#48421](https://github.com/okou-ai/okou/issues/48421)) ([6b3377e](https://github.com/okou-ai/okou/commit/6b3377e7ac70cd97e7aed16fabffe3df20778bd6))
+
+
+### Performance Improvements
+
+* **runner:** stop idle parking after local drain ([#48404](https://github.com/okou-ai/okou/issues/48404)) ([ffb675d](https://github.com/okou-ai/okou/commit/ffb675d9c3427d2ab8fd90bb4a68c0d34ce85137))
+
 ## [0.53.114](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.113...sandbox-firecracker-v0.53.114) (2026-11-17)
 
 

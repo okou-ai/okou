@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.37](https://github.com/okou-ai/okou/compare/sandbox-v0.28.36...sandbox-v0.28.37) (2026-11-17)
+
+
+### Performance Improvements
+
+* **runner:** stop idle parking after local drain ([#48404](https://github.com/okou-ai/okou/issues/48404)) ([ffb675d](https://github.com/okou-ai/okou/commit/ffb675d9c3427d2ab8fd90bb4a68c0d34ce85137))
+
 ## [0.28.36](https://github.com/okou-ai/okou/compare/sandbox-v0.28.35...sandbox-v0.28.36) (2026-11-17)
 
 

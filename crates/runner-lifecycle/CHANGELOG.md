@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.120](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.119...runner-lifecycle-v0.17.120) (2026-11-17)
+
+
+### Performance Improvements
+
+* **runner:** stop idle parking after local drain ([#48404](https://github.com/okou-ai/okou/issues/48404)) ([ffb675d](https://github.com/okou-ai/okou/commit/ffb675d9c3427d2ab8fd90bb4a68c0d34ce85137))
+
 ## [0.17.119](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.118...runner-lifecycle-v0.17.119) (2026-11-17)
 
 ## [0.17.118](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.117...runner-lifecycle-v0.17.118) (2026-11-17)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.24](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.23...runner-supervisor-v0.25.24) (2026-11-17)
+
+
+### Performance Improvements
+
+* **runner:** stop idle parking after local drain ([#48404](https://github.com/okou-ai/okou/issues/48404)) ([ffb675d](https://github.com/okou-ai/okou/commit/ffb675d9c3427d2ab8fd90bb4a68c0d34ce85137))
+
 ## [0.25.23](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.22...runner-supervisor-v0.25.23) (2026-11-17)
 
 ## [0.25.22](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.25.21...runner-supervisor-v0.25.22) (2026-11-17)

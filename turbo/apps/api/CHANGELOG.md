@@ -10,6 +10,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.87.0](https://github.com/okou-ai/okou/compare/api-v2.86.0...api-v2.87.0) (2026-11-17)
+
+
+### Features
+
+* add independent project sorting ([#48352](https://github.com/okou-ai/okou/issues/48352)) ([5ace277](https://github.com/okou-ai/okou/commit/5ace277384c9a3e0da65abdbf87a89fea3311d85))
+
+
+### Refactoring
+
+* activate structured run failures with retained storage ([#47844](https://github.com/okou-ai/okou/issues/47844)) ([fdb91d8](https://github.com/okou-ai/okou/commit/fdb91d8fea44a0be90036ebd9d6c25210eb5baa2))
+* **api:** resolve managed model keys at firewall auth ([#48410](https://github.com/okou-ai/okou/issues/48410)) ([7b9fc81](https://github.com/okou-ai/okou/commit/7b9fc81233caa9800f895d3df38ea9f65bf69454))
+* **memory:** retire legacy memory compatibility runtime ([#48363](https://github.com/okou-ai/okou/issues/48363)) ([7a30ea0](https://github.com/okou-ai/okou/commit/7a30ea0ee45da9dabdda7167d9c60e5b91496b7e))
+
+
+### Performance Improvements
+
+* **api:** start input prefetch from minimum dependencies ([#48266](https://github.com/okou-ai/okou/issues/48266)) ([cf2e300](https://github.com/okou-ai/okou/commit/cf2e3002da39bba2419fb7811e60323baea66458))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.84.0
+    * @okouai/core bumped to 8.849.0
+    * @okouai/db bumped to 2.44.0
+    * @okouai/pi-agent-runtime bumped to 1.51.151
+
 ## [2.86.0](https://github.com/okou-ai/okou/compare/api-v2.85.0...api-v2.86.0) (2026-11-17)
 
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.849.0](https://github.com/okou-ai/okou/compare/core-v8.848.1...core-v8.849.0) (2026-11-17)
+
+
+### Features
+
+* add independent project sorting ([#48352](https://github.com/okou-ai/okou/issues/48352)) ([5ace277](https://github.com/okou-ai/okou/commit/5ace277384c9a3e0da65abdbf87a89fea3311d85))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.84.0
+
 ## [8.848.1](https://github.com/okou-ai/okou/compare/core-v8.848.0...core-v8.848.1) (2026-11-17)
 
 
