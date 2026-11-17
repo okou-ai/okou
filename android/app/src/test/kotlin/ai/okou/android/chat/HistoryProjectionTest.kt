@@ -90,6 +90,7 @@ class HistoryProjectionTest {
         assertEquals(HistoryExecution.Cancelled, stopped.execution)
         assertEquals(1, stopped.messages.count { it.status == "run.cancelled" })
         assertTrue(stopped.messages.flatMap { it.blocks }.any { it.text == "Partial reply" })
+        assertTrue(stopped.messages.flatMap { it.blocks }.any { it.text == "Run cancelled" })
 
         val terminal =
             event("terminal", 4, "run.cancelled", payload = """{"error":"Stopped by user"}""")

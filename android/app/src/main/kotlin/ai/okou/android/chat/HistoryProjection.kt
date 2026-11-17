@@ -62,7 +62,6 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         checkpoint.rows.filter { it.type == "input.automation" }.mapTo(hashSetOf()) { it.id }
     val rows = checkpoint.rows.filter { it.id !in revoked }
     val terminals = rows.filter { it.terminal }.mapNotNullTo(hashSetOf()) { it.runId }
-    val cancellations = rows.filter { it.type == "run.cancelled" }.associateBy { it.runId }
     val interrupted =
         rows.filter { it.type == "control.interrupt" }.mapNotNullTo(hashSetOf()) { it.runId }
     val pending =
@@ -97,11 +96,7 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
             visible.filter { it.id in queued }
     val messages =
         ordered.mapNotNull { row ->
-            // Keep Web's stable interruption identity/position while preserving the real
-            // cancellation's content when its terminal row eventually arrives.
-            val payload =
-                (if (row.type == "control.interrupt") cancellations[row.runId] ?: row else row)
-                    .payload
+            val payload = row.payload
             val blocks = mutableListOf<HistoryBlock>()
             val role =
                 when (row.type) {
@@ -151,14 +146,14 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                         }
                         HistoryRole.System
                     }
-                    "run.cancelled" -> {
-                        blocks.add(HistoryBlock(HistoryBlockKind.Text, "Run cancelled"))
-                        HistoryRole.Assistant
-                    }
-                    "run.completed",
+                    "run.cancelled",
                     "control.interrupt" -> {
                         if (row.type == "control.interrupt" && row.runId == null)
                             return@mapNotNull null
+                        blocks.add(HistoryBlock(HistoryBlockKind.Text, "Run cancelled"))
+                        HistoryRole.Assistant
+                    }
+                    "run.completed" -> {
                         payload?.text("content")?.let {
                             blocks.add(HistoryBlock(HistoryBlockKind.Text, it))
                         }
