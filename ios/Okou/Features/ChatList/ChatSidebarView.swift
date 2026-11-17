@@ -118,6 +118,10 @@ struct ChatSidebarView: View {
         }
       }
     }
+    // The first snapshot establishes the list; subsequent membership changes animate.
+    .transaction(value: store.list.hasLoadedThreads) { transaction in
+      transaction.animation = nil
+    }
     .transaction(value: threadRowIDs) { transaction in
       transaction.animation = reduceMotion ? nil : OkouMotion.transition
       // Keep removed content invisible until the native list finishes closing its space.

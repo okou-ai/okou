@@ -43,6 +43,8 @@ final class WorkspaceStore {
   private(set) var fork: ChatForkStore?
   private(set) var threadPreview: ChatThreadPreviewResources?
   let sidebarInteraction = SidebarInteraction()
+  /// Mount the sidebar with its cached chats, Projects and disclosure restored together.
+  private(set) var hasRestoredSidebar = false
   private var chatLinkRequestID = UUID()
   @ObservationIgnored private var chatLinkThreadID: String?
   @ObservationIgnored private let selectedThread = CCState.State<String?>(nil)
@@ -232,6 +234,7 @@ final class WorkspaceStore {
     await projects.restore()
     guard canContinueStartup(generation) else { return }
     prepareDefaultDraft(from: list.agents)
+    hasRestoredSidebar = true
     await withTaskCancellationHandler {
       async let navigation: Void = refreshNavigation()
       let realtime = RealtimeService(
