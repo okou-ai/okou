@@ -513,7 +513,6 @@
       "deleting": "Deleting…",
       "description": "This removes the artifact and disables its Okou links. Copies already downloaded or saved to other services will remain.",
       "hostedDescription": "This takes the website and all its published versions offline. Copies saved to other services will remain.",
-      "menu": "More actions for {{title}}",
       "sharedDescription": "Delete this shared chat from your artifacts. Its shared link will stop working. Your original chat will stay available.",
       "success": "Artifact deleted",
       "title": "Delete {{title}}?"

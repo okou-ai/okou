@@ -528,7 +528,6 @@
       "deleting": "Eliminazione…",
       "description": "L’artefatto verrà rimosso e i suoi link Okou verranno disattivati. Le copie già scaricate o salvate in altri servizi rimarranno disponibili.",
       "hostedDescription": "Il sito e tutte le versioni pubblicate verranno messi offline. Le copie salvate in altri servizi rimarranno disponibili.",
-      "menu": "Altre azioni per {{title}}",
       "sharedDescription": "Elimina questa conversazione condivisa dai tuoi artefatti. Il suo link di condivisione smetterà di funzionare. La conversazione originale resterà disponibile.",
       "success": "Artefatto eliminato",
       "title": "Eliminare {{title}}?"

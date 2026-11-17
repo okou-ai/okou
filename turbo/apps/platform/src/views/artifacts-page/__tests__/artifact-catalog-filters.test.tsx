@@ -143,7 +143,6 @@ test.each([false, true])(
     expect(conversation).toHaveAttribute("rel", "noopener noreferrer");
     expect(listItem).toHaveRole("listitem");
     expect(listItem.parentElement).toHaveRole("list");
-    expect(queryAllByRoleFast("button", listItem)).toHaveLength(0);
   },
 );
 
