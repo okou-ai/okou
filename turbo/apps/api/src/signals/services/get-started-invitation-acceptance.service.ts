@@ -1,5 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { command } from "ccstate";
+import { sql } from "drizzle-orm";
+import { env } from "../../lib/env";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -15,6 +18,7 @@ import {
 } from "./get-started-member-reward";
 import { slackRewardIneligibleValues } from "./slack-installation-reward";
 import { ensureGetStartedRewardWallet$ } from "./get-started-wallet.service";
+import { marketingRewardInvitationEventInsert } from "./marketing-reward-event-publication";
 import {
   acceptedInvitationClaimQuery,
   acceptedInvitationPurchaseQuery,
@@ -52,10 +56,51 @@ const publishAcceptedReward$ = command(
         rewardSlot: plan.slot,
         at: plan.at,
         acceptance: plan.acceptance,
+        invitationEvent: {
+          id: randomUUID(),
+          environment: env("ENV"),
+          type: "invitation.accepted",
+          occurredAt: plan.acceptance.completedAt.toISOString(),
+        },
       }),
     );
     signal.throwIfAborted();
     return rowCount;
+  },
+);
+
+const publishUnfundedAcceptance$ = command(
+  async (
+    { set },
+    args: {
+      readonly claim: GetStartedClaimRow;
+      readonly acceptance: ReturnType<typeof invitationAcceptanceValues>;
+      readonly reason: string;
+      readonly at: Date;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const accepted = db
+      .update(getStartedClaims)
+      .set({
+        ...slackRewardIneligibleValues(args.reason, args.at),
+        ...args.acceptance,
+      })
+      .where(unresolvedClaimWhere(args.claim))
+      .returning();
+    await db.execute(
+      sql`WITH accepted_invitation AS (${accepted.getSQL()}) ${marketingRewardInvitationEventInsert(
+        {
+          id: randomUUID(),
+          environment: env("ENV"),
+          type: "invitation.accepted",
+          occurredAt: args.acceptance.completedAt.toISOString(),
+        },
+        sql`SELECT * FROM accepted_invitation`,
+      )}`,
+    );
+    signal.throwIfAborted();
   },
 );
 
@@ -104,10 +149,11 @@ export const acceptGetStartedInvitation$ = command(
     const at = nowDate();
     const acceptance = invitationAcceptanceValues(args, claim.invitationId, at);
     if (claim.beneficiaryUserId === args.userId) {
-      await db
-        .update(getStartedClaims)
-        .set(slackRewardIneligibleValues("self_invitation", at))
-        .where(unresolvedClaimWhere(claim));
+      await set(
+        publishUnfundedAcceptance$,
+        { claim, acceptance, reason: "self_invitation", at },
+        signal,
+      );
       signal.throwIfAborted();
       return;
     }
@@ -122,13 +168,11 @@ export const acceptGetStartedInvitation$ = command(
       awards,
     );
     if (availability.kind === "ineligible") {
-      await db
-        .update(getStartedClaims)
-        .set({
-          ...slackRewardIneligibleValues(availability.reason, at),
-          ...acceptance,
-        })
-        .where(unresolvedClaimWhere(claim));
+      await set(
+        publishUnfundedAcceptance$,
+        { claim, acceptance, reason: availability.reason, at },
+        signal,
+      );
       signal.throwIfAborted();
       return;
     }

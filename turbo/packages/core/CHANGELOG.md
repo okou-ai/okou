@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.846.0](https://github.com/okou-ai/okou/compare/core-v8.845.0...core-v8.846.0) (2026-11-17)
+
+
+### Features
+
+* **my-okou:** preserve initialized members and enable new-member defaults ([#47051](https://github.com/okou-ai/okou/issues/47051)) ([cf1c9e5](https://github.com/okou-ai/okou/commit/cf1c9e53c2076c58bd6bb85d51dedbd62c30b6d1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.76.0
+
 ## [8.845.0](https://github.com/okou-ai/okou/compare/core-v8.844.3...core-v8.845.0) (2026-11-16)
 
 

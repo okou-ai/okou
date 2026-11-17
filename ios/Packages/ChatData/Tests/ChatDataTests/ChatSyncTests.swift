@@ -15,8 +15,11 @@ final class ChatSyncTests: XCTestCase {
       {"id":"\(syncEventID(1))","chatThreadId":"\(syncThreadID)","runId":"\(syncRunID)","seqId":1,"createdAt":"2026-10-20T00:00:00Z","eventType":"run.failed","failureReason":"execution_timeout","payload":null}
       """
     let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET", let path = request.url?.path,
+        [syncPath, syncPath + "/event-snapshot", syncPath + "/event-rows"].contains(path)
+      else { throw URLError(.unsupportedURL) }
       if offline.withLock({ $0 }) { throw URLError(.notConnectedToInternet) }
-      switch request.url?.path {
+      switch path {
       case syncPath + "/event-snapshot": return syncMissingSnapshot()
       case syncPath + "/event-rows":
         return syncSequence(request) == 0

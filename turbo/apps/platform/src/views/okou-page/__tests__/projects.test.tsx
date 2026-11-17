@@ -2443,7 +2443,10 @@ test("The composer's + menu starts a new chat in a Project and keeps the message
     context,
     path: `/agents/${ordinary.agentId}/chat`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.Projects]: true,
+      [FeatureSwitchKey.HomeCapabilities]: false,
+    },
   });
   await fill(
     await screen.findByRole("textbox", { name: "Message" }),
@@ -2708,6 +2711,7 @@ test("Without Projects the new chat's + menu and toolbar stay as they were", asy
     context,
     path: `/agents/${ordinary.agentId}/chat`,
     ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
   await screen.findByRole("textbox", { name: "Message" });
   const menu = await openComposerProjectMenu();

@@ -113,7 +113,9 @@ struct ComposerVoiceInputTray: View {
             .foregroundStyle(OkouColor.primaryForeground)
             .padding(.horizontal, OkouSpace.xs)
         }
-        .buttonStyle(.glassProminent)
+        // A solid fill: the recording bar under it is already glass.
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
         .tint(OkouColor.primary)
         .disabled(!voice.canUseRecording)
         .accessibilityLabel(voice.phase == .recording ? "Finish recording" : "Use recording")

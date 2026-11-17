@@ -283,7 +283,7 @@ export const readActiveNetworkPolicyRefreshes$ = command(
   },
 );
 
-/** Captured sources can outlive a temporary grant while Claim is prepared. */
+/** Captured sources can outlive a temporary grant while a Run is prepared. */
 export async function activeNetworkPolicyRefreshesFromGrants(
   args: {
     readonly catalog: ConnectorServerFirewallMetadataCatalog;

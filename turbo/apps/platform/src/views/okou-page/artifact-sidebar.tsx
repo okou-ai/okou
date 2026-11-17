@@ -228,7 +228,11 @@ export function ArtifactSidebarContent({
   useTranslation();
   const fullscreen = fullscreenState.active;
   const toggleFullscreen = fullscreenState.toggle;
-  const resource = useLastLoadable(artifactRef.resourceUrl$);
+  const resource = useLastLoadable(
+    artifactRef.kind === "image"
+      ? artifactRef.imageUrl$
+      : artifactRef.resourceUrl$,
+  );
   const resourceUrl = resource.state === "hasData" ? resource.data : null;
   const shareUrl = useLastResolved(artifactRef.shareUrl$);
   const refinedToolbar =

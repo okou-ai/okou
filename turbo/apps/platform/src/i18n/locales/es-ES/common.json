@@ -6246,7 +6246,6 @@
         "default": "Predeterminada",
         "description": "Añade una tarjeta o cambia la predeterminada en tu cartera de Link.",
         "empty": "Aún no hay tarjetas en tu cartera de Link",
-        "expires": "Vence en {{date}}",
         "loadError": "No se han podido cargar tus tarjetas.",
         "loading": "Cargando tarjetas",
         "manage": "Gestionar tarjetas",

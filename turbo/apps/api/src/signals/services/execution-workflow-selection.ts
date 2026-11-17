@@ -55,8 +55,16 @@ export interface ExecutionWorkflowInput {
   readonly skillRoot: string;
 }
 
+type WorkflowSelectionContext = Pick<
+  PreparedExecutionContext,
+  | "cliAgentType"
+  | "customWorkflowSelection"
+  | "officialWorkflowBundles"
+  | "storageMounts"
+>;
+
 function officialWorkflowSelection(
-  context: PreparedExecutionContext,
+  context: WorkflowSelectionContext,
   skillRoot: string,
 ): ExecutionWorkflowInput["selection"] {
   const officialPaths = context.officialWorkflowBundles.map((bundle) => {
@@ -87,7 +95,7 @@ function officialWorkflowSelection(
 }
 
 export function executionWorkflowInput(
-  context: PreparedExecutionContext,
+  context: WorkflowSelectionContext,
 ): ExecutionWorkflowInput {
   const skillRoot =
     context.cliAgentType === "pi"

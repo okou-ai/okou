@@ -306,6 +306,7 @@ function createCatalogSelectionSignals(
       }
       const registered = set(previews.register$, {
         url: source.url,
+        contentType: source.contentType,
         ...(preview ? { preview } : {}),
       });
       if (get(internalSelectedArtifactId$) === artifactId) {

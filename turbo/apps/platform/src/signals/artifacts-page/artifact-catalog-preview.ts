@@ -32,6 +32,10 @@ export function createCatalogArtifactPreviewSignals(
     const preview = get(artifactCatalog.selectedArtifactPreview$);
     return preview ? await get(preview.resourceUrl$) : null;
   });
+  const imageUrl$ = computed(async (get) => {
+    const preview = get(artifactCatalog.selectedArtifactPreview$);
+    return preview ? await get(preview.imageUrl$) : null;
+  });
   const shareUrl$ = computed(async (get) => {
     const preview = get(artifactCatalog.selectedArtifactPreview$);
     return preview ? await get(preview.shareUrl$) : null;
@@ -53,6 +57,7 @@ export function createCatalogArtifactPreviewSignals(
   });
   return {
     resourceUrl$,
+    imageUrl$,
     shareUrl$,
     text$,
     markdownTree$: createMarkdownPreviewTree(text$, openDiagram$),

@@ -6178,7 +6178,6 @@
         "default": "Default",
         "description": "Add a card or change your default in your Link wallet.",
         "empty": "No cards in your Link wallet yet",
-        "expires": "Expires {{date}}",
         "loadError": "Couldn’t load your cards.",
         "loading": "Loading cards",
         "manage": "Manage cards",

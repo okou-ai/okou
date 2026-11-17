@@ -435,8 +435,10 @@ async fn artifact_snapshot_enforces_traversal_entry_limit_before_storage_api_cal
         std::fs::create_dir(&parent).unwrap();
         let source = parent.join("source");
         make_fifo(&source).unwrap();
+        let mut link = parent.join("l00000");
         for link_index in 0..links_per_parent {
-            std::fs::hard_link(&source, parent.join(format!("l{link_index:05}"))).unwrap();
+            link.set_file_name(format!("l{link_index:05}"));
+            std::fs::hard_link(&source, &link).unwrap();
         }
     }
 

@@ -68,9 +68,46 @@ export type MarketingRewardLinkEvent = zInfer<
   typeof marketingRewardLinkEventSchema
 >;
 
+const invitationIdentity = Object.freeze({
+  version: literal(3),
+  id: uuid(),
+  environment,
+});
+const invitationSource = Object.freeze({
+  claimId: uuid(),
+  sourceKey: string().min(1).max(256),
+  invitationId: string().min(1).max(256),
+});
+const marketingRewardInvitationEventSchema = discriminatedUnion("type", [
+  object({
+    ...invitationIdentity,
+    type: literal("invitation.attributed"),
+    ...linkedSourceOwnership,
+    ...invitationSource,
+  }).strict(),
+  object({
+    ...invitationIdentity,
+    type: literal("invitation.revoked"),
+    ...linkedSourceOwnership,
+    ...invitationSource,
+  }).strict(),
+  object({
+    ...invitationIdentity,
+    type: literal("invitation.accepted"),
+    ...linkedSourceOwnership,
+    ...invitationSource,
+    invitationId: invitationSource.invitationId.nullable(),
+    inviteeUserId: string().min(1).max(256),
+  }).strict(),
+]);
+export type MarketingRewardInvitationEvent = zInfer<
+  typeof marketingRewardInvitationEventSchema
+>;
+
 export const marketingRewardSourceEventSchema = union([
   marketingRewardOAuthEventSchema,
   marketingRewardLinkEventSchema,
+  marketingRewardInvitationEventSchema,
 ]);
 export type MarketingRewardSourceEvent = zInfer<
   typeof marketingRewardSourceEventSchema

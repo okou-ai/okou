@@ -987,7 +987,7 @@ test("Suggestion options start in the default Agent after visiting a secondary A
     path: `/agents/${secondary}/chat`,
     featureSwitches: features,
   });
-  expect(button("Workflow")).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Workflow" })).toBeInTheDocument();
   click(link(suggestionPath));
   await screen.findByText(makeSuggestion().content.title);
   expect(pathname()).toBe(suggestionPath);

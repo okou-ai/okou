@@ -6246,7 +6246,6 @@
         "default": "Predefinita",
         "description": "Aggiungi una carta o cambia quella predefinita nel tuo portafoglio Link.",
         "empty": "Non ci sono ancora carte nel tuo portafoglio Link",
-        "expires": "Scadenza {{date}}",
         "loadError": "Impossibile caricare le carte.",
         "loading": "Caricamento delle carte",
         "manage": "Gestisci carte",

@@ -400,28 +400,7 @@ describe("okou wallet", () => {
     );
   });
 
-  it("reads saved method metadata and filters unexpected credentials", async () => {
-    const method = {
-      id: "pm_fixture",
-      type: "card",
-      name: "Visa",
-      isDefault: true,
-      card: { brand: "visa", last4: "4242", expMonth: 12, expYear: 2030 },
-    };
-    server.use(
-      http.get(`${origin}/api/wallet/payment-methods/pm_fixture`, () => {
-        return HttpResponse.json({
-          ...method,
-          card: { ...method.card, number: "private-pan", cvc: "private-cvc" },
-          access_token: "private-token",
-        });
-      }),
-    );
-    await run(["payment-methods", "get", "pm_fixture", "--json"]);
-    expect(output.mock.calls).toStrictEqual([[JSON.stringify(method)]]);
-  });
-
-  it("reads saved-card summaries without expiry through list and get", async () => {
+  it("reads saved-card summaries through list and get without exposing credentials", async () => {
     const method = {
       id: "pm_summary",
       type: "CARD",
@@ -431,6 +410,7 @@ describe("okou wallet", () => {
     };
     const providerMethod = {
       ...method,
+      access_token: "private-token",
       cardSummary: {
         ...method.cardSummary,
         number: "private-pan",

@@ -6246,7 +6246,6 @@
         "default": "Padrão",
         "description": "Adicione um cartão ou altere o padrão na sua carteira Link.",
         "empty": "Ainda não há cartões na sua carteira Link",
-        "expires": "Validade {{date}}",
         "loadError": "Não foi possível carregar seus cartões.",
         "loading": "Carregando cartões",
         "manage": "Gerenciar cartões",

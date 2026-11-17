@@ -5,6 +5,7 @@ import {
   type UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
 import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -73,6 +74,7 @@ async function openSlashMenu(path = `/agents/${AGENT_ID}/chat`) {
   await setupPage({
     context,
     path,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: false },
   });
   const editor = await findComposerEditor();
   await fill(editor, "Keep my brief /");

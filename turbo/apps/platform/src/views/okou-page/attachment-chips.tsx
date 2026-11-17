@@ -693,7 +693,7 @@ function ArtifactDialogImageBody({
   preview: Extract<AttachmentLightboxState, { kind: "image" }>;
 }) {
   const { t } = useTranslation();
-  const resource = useLoadable(preview.resourceUrl$);
+  const resource = useLoadable(preview.imageUrl$);
   const resourceUrl = resource.state === "hasData" ? resource.data : null;
   // Marks live on the draft rather than in the file, so the viewer has to draw
   // them too — otherwise reopening an annotated image shows a clean picture.

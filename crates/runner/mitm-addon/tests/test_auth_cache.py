@@ -664,7 +664,7 @@ class TestFirewallHeaderCache:
 
 
 class TestGetFirewallHeaders:
-    async def test_cache_miss_fetches_and_caches(self, headers):
+    async def test_cache_miss_fetches_and_caches(self):
         mock_headers = {"Authorization": "Bearer fresh-token"}
         mock_result = firewall_auth_success(headers=mock_headers)
         encrypted = "iv:tag:data"
@@ -697,20 +697,7 @@ class TestGetFirewallHeaders:
         assert cached_headers(cache_key)
         assert require_cached_headers(cache_key).headers == mock_headers
 
-    async def test_cache_hit_returns_cached(self, headers):
-        cache_key = auth_cache_key(api_id="https://api.github.com")
-        cached_headers = {"Authorization": "Bearer cached-token"}
-        set_cached_headers(cache_key, headers=cached_headers)
-
-        mock_fetch = AsyncMock()
-        with patch.object(auth_cache, "fetch_firewall_headers", mock_fetch):
-            headers = await auth_cache.get_firewall_headers(cache_key, firewall_auth_request())
-
-        assert headers["headers"] == cached_headers
-        assert headers["cache_hit"] is True
-        mock_fetch.assert_not_called()
-
-    async def test_cache_hit_with_valid_ttl_returns_cached(self, headers):
+    async def test_cache_hit_with_valid_ttl_returns_cached(self):
         """Cached entry with expiresAt in the future should be returned without fetching."""
         cache_key = auth_cache_key()
         cached_headers = {"Authorization": "Bearer valid-token"}
@@ -728,7 +715,7 @@ class TestGetFirewallHeaders:
         assert headers["cache_hit"] is True
         mock_fetch.assert_not_called()
 
-    async def test_expired_cache_entry_triggers_refetch(self, headers):
+    async def test_expired_cache_entry_triggers_refetch(self):
         """An expired entry is a cache miss and is replaced after a successful refetch."""
         cache_key = auth_cache_key()
         set_cached_headers(
@@ -789,7 +776,7 @@ class TestGetFirewallHeaders:
         successful_fetch.assert_awaited_once()
         assert require_cached_headers(cache_key).headers == fresh_headers
 
-    async def test_cache_with_null_expires_at_never_evicts(self, headers):
+    async def test_cache_with_null_expires_at_never_evicts(self):
         """Cached entry with expiresAt=None (non-expiring) should never be evicted by TTL."""
         cache_key = auth_cache_key()
         cached_headers = {"Authorization": "Bearer permanent-token"}
@@ -803,7 +790,7 @@ class TestGetFirewallHeaders:
         assert headers["cache_hit"] is True
         mock_fetch.assert_not_called()
 
-    async def test_billable_cache_hit_requires_valid_expiry(self, headers):
+    async def test_billable_cache_hit_requires_valid_expiry(self):
         cache_key = auth_cache_key()
         cached_headers = {"Authorization": "Bearer cached-token"}
         set_cached_headers(cache_key, headers=cached_headers, expires_at=time.time() + 30)
@@ -844,7 +831,7 @@ class TestGetFirewallHeaders:
             pytest.param(10**400, id="oversized-integer"),
         ],
     )
-    async def test_cache_with_invalid_expiry_refetches(self, headers, expiry):
+    async def test_cache_with_invalid_expiry_refetches(self, expiry):
         cache_key = auth_cache_key()
         set_cached_headers(
             cache_key,
@@ -863,7 +850,7 @@ class TestGetFirewallHeaders:
         assert headers["cache_hit"] is False
         mock_fetch.assert_called_once()
 
-    async def test_billable_cache_without_expiry_refetches(self, headers):
+    async def test_billable_cache_without_expiry_refetches(self):
         cache_key = auth_cache_key()
         set_cached_headers(
             cache_key,
@@ -888,7 +875,7 @@ class TestGetFirewallHeaders:
         assert mock_fetch.call_args.args[0].firewall_billable is True
         assert require_cached_headers(cache_key).expires_at == expires_at
 
-    async def test_billable_cache_with_expired_expiry_refetches(self, headers):
+    async def test_billable_cache_with_expired_expiry_refetches(self):
         cache_key = auth_cache_key()
         set_cached_headers(
             cache_key,

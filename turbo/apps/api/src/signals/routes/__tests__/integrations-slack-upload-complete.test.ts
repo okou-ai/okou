@@ -615,16 +615,35 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     ).toHaveBeenCalledTimes(1);
   });
 
-  it("rechecks destination access after server byte transfer", async () => {
+  it("rechecks destination access after server byte transfer and recovers after restoration", async () => {
     const fixture = createUploadFixture();
     const upload = await pendingCanonicalUpload(fixture);
+    const received: string[] = [];
     server.use(
-      http.post("https://files.slack.com/upload/v1/materialized", () => {
-        mockSharedSlackConversations([]);
-        return new HttpResponse("OK");
-      }),
+      http.post(
+        "https://files.slack.com/upload/v1/materialized",
+        async ({ request }) => {
+          received.push(await request.text());
+          mockSharedSlackConversations([]);
+          return new HttpResponse("OK");
+        },
+      ),
     );
-    sharedServerFileInfo();
+    context.mocks.slack.files.info.mockResolvedValue({
+      ok: true,
+      file: {
+        id: "F-MATERIALIZED",
+        size: 42,
+        channels: [],
+        permalink: "https://slack.example/files/F-MATERIALIZED",
+        url_private_download:
+          "https://files.slack.com/files-pri/F-MATERIALIZED",
+      },
+    });
+    context.mocks.slack.files.completeUploadExternal.mockImplementation(() => {
+      sharedServerFileInfo();
+      return Promise.resolve({ ok: true });
+    });
     const client = setupApp({
       context,
       routes: integrationsSlackUploadMaterializeRoutes,
@@ -636,6 +655,18 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     expect(
       context.mocks.slack.files.completeUploadExternal,
     ).not.toHaveBeenCalled();
+    mockSharedSlackConversations();
+    const retried = await fixture.run(() => {
+      return accept(client.deliver(upload.request), [200]);
+    });
+    expect(retried.body.delivery.status).toBe("delivered");
+    expect(received).toStrictEqual(["a".repeat(42)]);
+    expect(
+      context.mocks.slack.files.getUploadURLExternal,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      context.mocks.slack.files.completeUploadExternal,
+    ).toHaveBeenCalledTimes(1);
   });
 
   it("rejects corrupted canonical bytes before contacting Slack's upload host", async () => {
