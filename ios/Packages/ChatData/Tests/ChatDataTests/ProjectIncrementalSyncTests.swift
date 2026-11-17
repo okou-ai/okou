@@ -13,12 +13,13 @@ final class ProjectIncrementalSyncTests: XCTestCase {
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/projects/snapshot":
-        return ChatHTTPResponse(body: """
-          {"projects":[
-          {"id":"\(projectID(101))","name":"Old","createdAt":"2026-11-13T00:00:00Z","updatedAt":"2026-11-13T00:00:00Z"},
-          {"id":"\(projectID(102))","name":"Later","sortOrder":null,"createdAt":"2026-11-14T00:00:00Z","updatedAt":"2026-11-14T00:00:00Z"}
-          ],"latestEventId":"\(projectID(1))","latestSeqId":1}
-          """)
+        return ChatHTTPResponse(
+          body: """
+            {"projects":[
+            {"id":"\(projectID(101))","name":"Old","createdAt":"2026-11-13T00:00:00Z","updatedAt":"2026-11-13T00:00:00Z"},
+            {"id":"\(projectID(102))","name":"Later","sortOrder":null,"createdAt":"2026-11-14T00:00:00Z","updatedAt":"2026-11-14T00:00:00Z"}
+            ],"latestEventId":"\(projectID(1))","latestSeqId":1}
+            """)
       case "/api/projects/events":
         guard changed.withLock({ $0 }), projectCursor(request) == 1 else {
           return projectPage([])

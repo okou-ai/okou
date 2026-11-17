@@ -27,7 +27,8 @@ public struct ChatProject: Codable, Equatable, Identifiable, Sendable {
   private var effectiveSortOrder: String {
     if let sortOrder { return sortOrder }
     let milliseconds = String(Int64((createdAt.timeIntervalSince1970 * 1000).rounded(.down)))
-    return "a0" + String(repeating: "0", count: max(0, 17 - milliseconds.count)) + milliseconds + "1"
+    return "a0" + String(repeating: "0", count: max(0, 17 - milliseconds.count)) + milliseconds
+      + "1"
   }
 }
 
