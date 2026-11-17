@@ -214,6 +214,34 @@ func mentionInputStatus(_ input: ComposerTextView) -> String {
 }
 
 @MainActor
+func mentionState(_ input: ComposerTextView, in host: UIView) -> String {
+  let editor = input.mentionEditor
+  let table = mentionTable(in: host)
+  let rows = table.map { table in
+    (0..<table.numberOfSections).map { table.numberOfRows(inSection: $0) }
+  }
+  return mentionInputStatus(input) + "; "
+    + "editable=\(input.isEditable); structured=\(input.usesStructuredDocument); "
+    + "applyingDocument=\(input.isApplyingDocument); "
+    + "hosted=\(mentionInputs(in: host).contains { $0 === input }); "
+    + "caret=\(input.selectedRange); "
+    + "query=\(String(reflecting: editor?.mentionQuery)); "
+    + "source=\(editor?.mentionSource != nil); "
+    + "sourceAgent=\(String(describing: editor?.mentionSource?.agentID)); "
+    + "sourceThreads=\(String(describing: editor?.mentionSource?.threads.count)); "
+    + "candidates=\(String(describing: editor?.mentionSuggestions.map(\.referenceID))); "
+    + "selected=\(String(describing: editor?.selectedMentionIndex)); "
+    + "commands=\(String(describing: input.keyCommands?.map { "\(String(reflecting: $0.input))/\($0.modifierFlags.rawValue)" })); "
+    + "table=\(table != nil); tableAttached=\(table?.window != nil); "
+    + "tableInHostWindow=\(host.window != nil && table?.window === host.window); "
+    + "tableHidden=\(String(describing: table?.isHidden)); "
+    + "tableBounds=\(String(describing: table?.bounds)); "
+    + "tableContentSize=\(String(describing: table?.contentSize)); "
+    + "rows=\(String(describing: rows)); "
+    + "visible=\(String(describing: table?.visibleCells.map(\.accessibilityLabel)))"
+}
+
+@MainActor
 func mentionTable(in view: UIView) -> UITableView? {
   if let table = view as? UITableView, table.accessibilityIdentifier == "mention-suggestions" {
     return table

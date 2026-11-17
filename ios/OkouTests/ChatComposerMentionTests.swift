@@ -287,31 +287,6 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertEqual(sends[0].clientEventId, sends[1].clientEventId)
   }
 
-  private func mentionState(_ input: ComposerTextView, in host: UIView) -> String {
-    let editor = input.mentionEditor
-    let table = mentionTable(in: host)
-    let rows = table.map { table in
-      (0..<table.numberOfSections).map { table.numberOfRows(inSection: $0) }
-    }
-    return "focus=\(input.isFirstResponder); current=\(input.isCurrent()); "
-      + "editable=\(input.isEditable); structured=\(input.usesStructuredDocument); "
-      + "applyingDocument=\(input.isApplyingDocument); "
-      + "attached=\(input.window != nil); hosted=\(mentionInputs(in: host).contains { $0 === input }); "
-      + "keyWindow=\(String(describing: input.window?.isKeyWindow)); "
-      + "scene=\(String(describing: input.window?.windowScene?.activationState.rawValue)); "
-      + "boundFocus=\(String(describing: (input.delegate as? ChatComposerTextInput.Coordinator)?.input.isFocused)); "
-      + "text=\(String(reflecting: input.text)); caret=\(input.selectedRange); "
-      + "marked=\(input.markedTextRange != nil); settling=\(input.isSettlingComposition); "
-      + "query=\(String(reflecting: editor?.mentionQuery)); "
-      + "source=\(editor?.mentionSource != nil); "
-      + "candidates=\(String(describing: editor?.mentionSuggestions.count)); "
-      + "selected=\(String(describing: editor?.selectedMentionIndex)); "
-      + "commands=\(String(describing: input.keyCommands?.map { "\(String(reflecting: $0.input))/\($0.modifierFlags.rawValue)" })); "
-      + "table=\(table != nil); tableAttached=\(table?.window != nil); "
-      + "rows=\(String(describing: rows)); "
-      + "visible=\(String(describing: table?.visibleCells.map(\.accessibilityLabel)))"
-  }
-
   private func mentionKey(
     _ key: String, input: ComposerTextView, host: UIView,
     file: StaticString = #filePath, line: UInt = #line
