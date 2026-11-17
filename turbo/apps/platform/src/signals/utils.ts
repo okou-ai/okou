@@ -704,3 +704,23 @@ export function throttleCommand<T, Args extends unknown[]>(
     );
   });
 }
+
+/** Replace a one-shot protocol deadline; its parent owns every renewal. */
+export function createDeadline(parent: AbortSignal) {
+  let controller: AbortController | undefined;
+  const cancel = () => {
+    controller?.abort();
+    controller = undefined;
+  };
+  return {
+    cancel,
+    schedule(callback: () => void, milliseconds: number) {
+      cancel();
+      parent.throwIfAborted();
+      controller = new AbortController();
+      timeout(callback, milliseconds, {
+        signal: AbortSignal.any([parent, controller.signal]),
+      });
+    },
+  };
+}

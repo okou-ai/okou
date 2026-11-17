@@ -1412,7 +1412,28 @@ export const clientContractImportManifest = [
   {
     module: "phone-use",
     contracts: ["phoneUseContract"],
-    bindings: [],
+    bindings: [
+      {
+        name: "phoneUseChannel",
+        source: "validators/phone-use",
+        imported: "phoneUseChannel",
+      },
+      {
+        name: "phoneUseDevicesChangedEvent",
+        source: "validators/phone-use",
+        imported: "phoneUseDevicesChangedEvent",
+      },
+      {
+        name: "phoneUseResultChangedEvent",
+        source: "validators/phone-use",
+        imported: "phoneUseResultChangedEvent",
+      },
+      {
+        name: "phoneUseResultChannel",
+        source: "validators/phone-use",
+        imported: "phoneUseResultChannel",
+      },
+    ],
   },
   {
     module: "presentation-templates",

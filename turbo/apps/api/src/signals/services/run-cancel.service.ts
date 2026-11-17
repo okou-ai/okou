@@ -15,6 +15,8 @@ import type { CancelRunResult } from "./agent-run-terminal-transition.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
 import { settleDataRouterRun$ } from "./data-router-billing.service";
 
+import { notifyPhoneUseOwner$ } from "./phone-use-notifications.service";
+
 const L = logger("RunCancel");
 
 export function shouldDispatchCancelSideEffects(
@@ -97,6 +99,7 @@ export const dispatchCancelSideEffects$ = command(
     if (!shouldDispatchCancelSideEffects(result)) {
       return;
     }
+    await set(notifyPhoneUseOwner$, result, signal);
     const recoveryRedrive = result.alreadyCancelled;
     if (result.chatThreadId !== null) {
       await publishDesktopShellAuthorizationChangedSafely(result.userId);

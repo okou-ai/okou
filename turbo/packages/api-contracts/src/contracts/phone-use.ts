@@ -13,7 +13,14 @@ import {
 } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { ablyTokenRequestSchema } from "./realtime";
+import { ablyTokenRequestSchema, realtimeSubscriptionSchema } from "./realtime";
+
+export {
+  phoneUseDevicesChangedEvent,
+  phoneUseResultChangedEvent,
+  phoneUseResultChannel,
+  phoneUseChannel,
+} from "../validators/phone-use";
 
 export const phoneActionSchema = object({
   kind: zEnum([
@@ -89,6 +96,9 @@ export const phoneOperationSchema = object({
   createdAt: string(),
   expiresAt: string(),
 });
+export const phoneOperationResponseSchema = phoneOperationSchema.extend({
+  realtime: realtimeSubscriptionSchema.optional(),
+});
 export const phoneDeviceSchema = object({
   id: uuid(),
   displayName: string(),
@@ -149,7 +159,10 @@ export const phoneUseContract = c.router({
     path: "/api/phone-use/devices/:deviceId/heartbeat",
     pathParams: devicePath,
     body: authority.extend({ ready: boolean() }),
-    responses: { ...errors, 200: object({ ok: literal(true) }) },
+    responses: {
+      ...errors,
+      200: object({ ok: literal(true), readyUntil: string() }),
+    },
   },
   disconnect: {
     ...base,
@@ -208,14 +221,15 @@ export const phoneUseContract = c.router({
     method: "POST",
     path: "/api/phone-use/operations",
     body: object({ id: uuid(), action: phoneActionSchema }),
-    responses: { ...errors, 200: phoneOperationSchema },
+    responses: { ...errors, 200: phoneOperationResponseSchema },
   },
   get: {
     ...base,
     method: "GET",
     path: "/api/phone-use/operations/:operationId",
+    query: object({ realtime: literal("true").optional() }).optional(),
     pathParams: object({ operationId: uuid() }),
-    responses: { ...errors, 200: phoneOperationSchema },
+    responses: { ...errors, 200: phoneOperationResponseSchema },
   },
   screenshot: {
     ...base,
@@ -233,6 +247,7 @@ export const phoneUseContract = c.router({
       threadId: uuid().optional(),
       activeRunId: uuid().optional(),
       activeGrantId: uuid().optional(),
+      stateOnly: boolean().optional(),
     }),
     responses: {
       ...errors,
@@ -257,14 +272,9 @@ export const phoneUseContract = c.router({
     path: "/api/phone-use/devices/:deviceId/complete",
     pathParams: devicePath,
     body: authority.extend({ operationId: uuid(), result: phoneResultSchema }),
-    responses: { ...errors, 200: object({ ok: literal(true) }) },
+    responses: {
+      ...errors,
+      200: object({ ok: literal(true), expiresAt: string().optional() }),
+    },
   },
 });
-export function phoneUseChannel(
-  orgId: string,
-  userId: string,
-  deviceId: string,
-  generation: number,
-) {
-  return `phone-use:${orgId}:${userId}:${deviceId}:${generation}`;
-}
