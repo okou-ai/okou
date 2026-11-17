@@ -317,13 +317,6 @@ describe.each<Kind>(["agent", "thread"])("conditional %s drafts", (kind) => {
     for (const body of [
       { draft: empty },
       { expected: { draftUserMessage: saved.draftUserMessage }, draft: empty },
-      {
-        expected: saved,
-        draft: {
-          draftUserMessage: null,
-          draftAttachments: saved.draftAttachments,
-        },
-      },
     ]) {
       const response = await raw(path, {
         method: "PUT",
@@ -335,6 +328,26 @@ describe.each<Kind>(["agent", "thread"])("conditional %s drafts", (kind) => {
       });
       expect(response.status).toBe(400);
     }
+    // The TypeScript contract can express this cross-field validation error.
+    // Only missing/partial request shapes above need the raw request helper.
+    const args = {
+      params: target(kind, value),
+      headers: headers(value.actor),
+      body: {
+        expected: saved,
+        draft: {
+          draftUserMessage: null,
+          draftAttachments: saved.draftAttachments,
+        },
+      },
+    };
+    const client = setupApp({ context, routes });
+    await accept(
+      kind === "agent"
+        ? client(agentDraftContract).replace(args)
+        : client(chatThreadDraftContract).replace(args),
+      [400],
+    );
     await expect(read(kind, value)).resolves.toStrictEqual(saved);
   });
 });
