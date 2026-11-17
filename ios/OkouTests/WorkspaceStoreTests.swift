@@ -986,6 +986,7 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertTrue(unread.withLock { $0 })
 
     store.selectedThreadID = storeThreadID
+    store.sidebarInteraction.setOpen(false)
     await store.conversation(for: storeThreadID)?.refresh()
     XCTAssertNil(store.list.threads.first?.indicator)
     XCTAssertNil(store.conversation(for: storeThreadID)?.error)
