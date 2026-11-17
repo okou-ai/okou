@@ -532,6 +532,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       context.mocks.s3.getSignedUrl.mockResolvedValue(
         "https://r2.example.com/hosted-sites/download?sig=bdd",
       );
+      await fixture.initialize();
       const listed = await api.readHostedSiteFiles(actor, first.publicSlug);
       expect(listed).toMatchObject({
         siteId: first.siteId,
@@ -590,7 +591,6 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
         site: `${site}-pending`,
         title: `${site}-pending`,
       });
-      await fixture.initialize();
       await fixture.suspend();
       const suspendedComplete = await api.requestCompleteHostedSite(
         actor,

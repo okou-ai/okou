@@ -581,6 +581,7 @@ test("redeployment preserves an explicit policy for both aliases and immutable a
 
 test("issued download grants stop working after a policy revision changes", async () => {
   const { owner, api, prepared, revision } = await publish();
+  await createRunsApi(context).grantProEntitlement(owner);
   const policy = await accept(
     client(owner).updateSiteVisibility({
       headers,
@@ -688,6 +689,7 @@ test("anonymous OG metadata stops exposing a Site after it becomes private", asy
 
 test("private downloads remain controlled and stop after deletion", async () => {
   const { owner, api, input, prepared, revision } = await publish();
+  await createRunsApi(context).grantProEntitlement(owner);
   await accept(
     client(owner).updateSiteVisibility({
       headers,
