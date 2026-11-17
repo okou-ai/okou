@@ -15,8 +15,11 @@ use std::{
     time::Instant,
 };
 use tokio::io::{AsyncRead, AsyncWrite, DuplexStream, ReadBuf};
-use ts_netstack_smoltcp_core::{Config, HasChannel, Netstack, Request, smoltcp};
-use ts_netstack_smoltcp_socket::{CreateSocket, TcpStream};
+use ts_netstack_smoltcp::{
+    netcore::{Config, HasChannel, Netstack, Request},
+    netsock::{CreateSocket, TcpStream},
+    smoltcp,
+};
 use ts_packet::PacketMut;
 
 use super::{Failure, peers::Binding};
@@ -24,7 +27,8 @@ use super::{Failure, peers::Binding};
 const BYTE_CAPACITY: usize = 64 * 1024;
 const FRAME_CAPACITY: usize = 64;
 const MTU: usize = 1280;
-type Connect = Pin<Box<dyn Future<Output = Result<TcpStream, ts_netstack_smoltcp_core::Error>>>>;
+type Connect =
+    Pin<Box<dyn Future<Output = Result<TcpStream, ts_netstack_smoltcp::netcore::Error>>>>;
 type Bridge = Pin<Box<dyn Future<Output = io::Result<(u64, u64)>>>>;
 type Command = Pin<Box<dyn Future<Output = Option<Request>>>>;
 
