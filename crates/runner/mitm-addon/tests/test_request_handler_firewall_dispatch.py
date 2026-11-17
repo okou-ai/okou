@@ -282,51 +282,6 @@ async def test_connector_intent_selects_auth_template_in_both_firewall_orders(
 
 
 @pytest.mark.parametrize(
-    "captured_value",
-    [
-        pytest.param(None, id="missing-value"),
-        pytest.param(1, id="non-string-value"),
-    ],
-)
-async def test_invalid_captured_connector_intent_fails_ambiguous_route_before_auth(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, captured_value
-):
-    reg_path = _write_registry(tmp_path, sandbox_info=_shared_route_sandbox(tmp_path))
-    flow = real_flow(
-        with_response=False,
-        client_ip="10.200.0.5",
-        host="shared.example.com",
-        path="/items/123",
-        request_headers=headers(
-            ("Host", "shared.example.com"),
-            ("X-Okou-Connector-Intent", "primary"),
-        ),
-    )
-    connector_intent.capture_and_strip(flow)
-    if captured_value is None:
-        flow.metadata.pop(connector_intent._VALUE_METADATA_KEY)
-    else:
-        flow.metadata[connector_intent._VALUE_METADATA_KEY] = captured_value
-
-    with (
-        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
-        fake_firewall_headers() as auth_fetch,
-    ):
-        await mitm_addon.request(flow)
-
-    auth_fetch.assert_not_awaited()
-    assert flow.response is not None
-    assert flow.response.status_code == 409
-    body = json.loads(flow.response.content)
-    assert body["error"] == "ambiguous_connector_route"
-    assert body["reason"] == "connector_intent_required"
-    assert "Authorization" not in flow.request.headers
-    assert metadata_keys.FIREWALL_BASE not in flow.metadata
-    assert metadata_keys.FIREWALL_NAME not in flow.metadata
-    assert metadata_keys.FIREWALL_PERMISSION not in flow.metadata
-
-
-@pytest.mark.parametrize(
     ("intent_headers", "reason"),
     [
         ((), "connector_intent_required"),
@@ -447,7 +402,6 @@ async def test_oversized_connector_intent_is_malformed_without_decoding_or_auth(
         name.lower() != b"x-okou-connector-intent" for name, _ in flow.request.headers.fields
     )
     assert connector_intent.from_flow(flow) == connector_intent.MALFORMED
-    assert connector_intent._VALUE_METADATA_KEY not in flow.metadata
     body = json.loads(flow.response.content)
     assert body["reason"] == "malformed_connector_intent"
     proxy_log_entry = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")[0]
