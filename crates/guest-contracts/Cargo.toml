@@ -21,6 +21,7 @@ tempfile = { workspace = true, features = ["getrandom"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 cli-test-support = { workspace = true, features = ["test-support"] }
+nix = { workspace = true, features = ["resource"] }
 
 [lints]
 workspace = true
