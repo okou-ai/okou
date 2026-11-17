@@ -91,6 +91,30 @@ test("round-trips original launch variables and real secret names through diagno
   );
 });
 
+test("reads captured diagnostics through uppercase Run UUID paths", async () => {
+  const f = await diagnosticFixture();
+  const run = await f.launch();
+  const captured = f.snapshots.get(run.runId);
+  if (!captured) {
+    throw new Error("Expected the provider to receive diagnostic capture");
+  }
+  const appendSystemPrompt = "Captured instructions for the admitted Run";
+  f.snapshots.set(run.runId, { ...captured, appendSystemPrompt });
+  const requestedRunId = run.runId.toUpperCase();
+  const reads = createRunReadsApi(context);
+
+  expect(
+    (await reads.requestReadLogById(f.actor, requestedRunId, [200])).body,
+  ).toMatchObject({ id: run.runId, appendSystemPrompt });
+  expect(
+    (await f.api.requestRunContext(f.actor, requestedRunId, [200])).body,
+  ).toMatchObject({
+    prompt: "Business prompt retained independently of diagnostics",
+    appendSystemPrompt,
+    vars: { OKOU_AGENT_ID: f.agentId },
+  });
+});
+
 test("distinguishes captured empty values from historically unavailable diagnostic fields", async () => {
   const f = await diagnosticFixture();
   const run = await f.launch();

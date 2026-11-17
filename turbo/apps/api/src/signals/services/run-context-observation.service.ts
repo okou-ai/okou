@@ -25,8 +25,9 @@ export function runContextObservation(args: {
       return null;
     }
     const dataset = getDatasetName("run-context");
+    // SQL UUID identity ignores case; captured Run IDs use lowercase strings.
     const apl = `['${dataset}']
-| where runId == "${escapeAplString(args.runId)}"
+| where runId == "${escapeAplString(args.runId.toLowerCase())}"
 | sort by _time desc
 | limit 1`;
     const createdAtMs = run.createdAt.getTime();
