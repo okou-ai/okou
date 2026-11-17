@@ -8,7 +8,7 @@ import { parseRawRows } from "../../lib/db-raw-rows";
 import { rawSqlReadDb$ } from "../external/db";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { agentInstructionsSelectionSql } from "./execution-instructions-selection";
-import { createExecutionContext } from "./execution-context";
+import { createExecutionRuntimeContext } from "./execution-runtime-context";
 import { contentBundleAvailableCondition } from "./execution-content-bundle";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -56,7 +56,7 @@ const packageSelectionSchema = object({
 export function createDirectRunPreparation(
   input$: Computed<Promise<AdmittedRunLaunch>>,
 ) {
-  const { prepared$, packageContext$ } = createExecutionContext(input$);
+  const { prepared$, packageContext$ } = createExecutionRuntimeContext(input$);
   const packages$ = computed(async (get) => {
     const [input, packageContext] = await Promise.all([
       get(input$),
