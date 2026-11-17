@@ -314,11 +314,9 @@ fn mkfifo(path: &Path) -> std::io::Result<()> {
 
     let path = CString::new(path.as_os_str().as_bytes())
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
-    // SAFETY: `path` is a valid NUL-terminated path and `mkfifo` does not
-    // retain the pointer after returning.
-    let result = unsafe { libc::mkfifo(path.as_ptr(), 0o600) };
-    if result < 0 {
-        return Err(std::io::Error::last_os_error());
-    }
-    Ok(())
+    nix::unistd::mkfifo(
+        path.as_c_str(),
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .map_err(std::io::Error::from)
 }

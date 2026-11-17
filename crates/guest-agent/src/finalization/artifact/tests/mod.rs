@@ -64,13 +64,11 @@ fn assert_artifact_hash_failure(telemetry_path: &std::path::Path, expected_error
 fn make_fifo(path: &std::path::Path) -> std::io::Result<()> {
     let path = CString::new(path.as_os_str().as_bytes())
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidInput, error))?;
-    // SAFETY: `path` is a NUL-terminated filesystem path owned for the call.
-    let result = unsafe { libc::mkfifo(path.as_ptr(), 0o600) };
-    if result == 0 {
-        Ok(())
-    } else {
-        Err(std::io::Error::last_os_error())
-    }
+    nix::unistd::mkfifo(
+        path.as_c_str(),
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+    )
+    .map_err(std::io::Error::from)
 }
 
 #[cfg(target_os = "linux")]

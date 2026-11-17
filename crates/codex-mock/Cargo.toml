@@ -16,6 +16,7 @@ cli-test-support = { workspace = true, features = ["test-support"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 
 [target.'cfg(unix)'.dev-dependencies]
+nix = { workspace = true, features = ["fs"] }
 rustix = { workspace = true, features = ["process", "std"] }
 
 [lints]
