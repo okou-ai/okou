@@ -1,4 +1,12 @@
-import { SYSTEM_ORG_ID } from "@okouai/core/storage-names";
+import {
+  memberMemories,
+  memoryVersions,
+} from "@okouai/db/schema/member-memory";
+import { isMemberMemoryIdentity } from "./member-memory-records";
+import {
+  MEMORY_ARTIFACT_NAME,
+  SYSTEM_ORG_ID,
+} from "@okouai/core/storage-names";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import type { PersistedStorageMount } from "@okouai/db/types";
@@ -195,7 +203,12 @@ export function createAcceptedExecutionStorageObjects(
         versionId: sql`${storageVersions.id}`,
         s3Key: sql`${storageVersions.s3Key}`,
       });
-      const rows = await get(db$)
+      const db = get(db$);
+      const legacyMounts = [...unique.values()].filter((mount) => {
+        return !isMemberMemoryIdentity(mount);
+      });
+      const memoryMounts = [...unique.values()].filter(isMemberMemoryIdentity);
+      const legacyQuery = db
         .select({
           storageId: storageVersions.storageId,
           versionId: storageVersions.id,
@@ -218,7 +231,7 @@ export function createAcceptedExecutionStorageObjects(
         )
         .where(
           or(
-            ...[...unique.values()].map((mount) => {
+            ...legacyMounts.map((mount) => {
               return and(
                 eq(storageVersions.id, mount.versionId),
                 eq(storages.id, mount.storageId),
@@ -229,6 +242,52 @@ export function createAcceptedExecutionStorageObjects(
             }),
           ),
         );
+      const memoryCacheKey = storageVersionCacheKeySql({
+        orgId: sql`${memberMemories.orgId}`,
+        versionId: sql`${memoryVersions.id}`,
+        s3Key: sql`${memoryVersions.objectPrefix}`,
+      });
+      const memoryQuery = db
+        .select({
+          storageId: memoryVersions.memoryId,
+          versionId: memoryVersions.id,
+          s3Key: memoryVersions.objectPrefix,
+          archiveSize: memoryVersions.archiveSize,
+          fileCount: memoryVersions.fileCount,
+          orgId: memberMemories.orgId,
+          userId: memberMemories.userId,
+          name: sql`${MEMORY_ARTIFACT_NAME}`.mapWith(memberMemories.userId),
+          cacheKey: systemStoragePresignedUrlCache.cacheKey,
+          cacheScope: systemStoragePresignedUrlCache.scope,
+          presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+          expiresAt: systemStoragePresignedUrlCache.expiresAt,
+        })
+        .from(memoryVersions)
+        .innerJoin(
+          memberMemories,
+          eq(memberMemories.id, memoryVersions.memoryId),
+        )
+        .leftJoin(
+          systemStoragePresignedUrlCache,
+          eq(systemStoragePresignedUrlCache.cacheKey, memoryCacheKey),
+        )
+        .where(
+          or(
+            ...memoryMounts.map((mount) => {
+              return and(
+                eq(memoryVersions.id, mount.versionId),
+                eq(memberMemories.id, mount.storageId),
+                eq(memberMemories.orgId, mount.orgId),
+                eq(memberMemories.userId, mount.userId),
+              );
+            }),
+          ),
+        );
+      const rows = await (legacyMounts.length > 0
+        ? memoryMounts.length > 0
+          ? legacyQuery.unionAll(memoryQuery)
+          : legacyQuery
+        : memoryQuery);
       const found = new Set(
         rows.map((row) => {
           return mountKey({ ...row, mountPath: "" });

@@ -3403,6 +3403,13 @@
       "when": 1794880308395,
       "tag": "1564_preserve_initialized_single_agent_members",
       "breakpoints": true
+    },
+    {
+      "idx": 1565,
+      "version": "7",
+      "when": 1794903288573,
+      "tag": "1565_reconcile_member_memory_authority",
+      "breakpoints": true
     }
   ]
 }
