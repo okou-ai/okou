@@ -180,7 +180,7 @@ struct ChatComposerView: View {
                 state: state, inputID: inputID, isFocused: $isFocused,
                 acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
                 showsTrailingParagraph: showsTrailingFeedbackInput,
-                expanded: expandsInput,
+                expanded: showsEditingLayout,
                 returnKeyPreference: returnKeyPreference,
                 canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
               )
@@ -194,7 +194,7 @@ struct ChatComposerView: View {
                 isCurrent: { attachments.inputID == inputID },
                 pasteImages: attachments.importPastedImages,
                 placeholder: resolvedPlaceholder,
-                expanded: expandsInput,
+                expanded: showsEditingLayout,
                 returnKeyPreference: returnKeyPreference,
                 canSendFromKeyboard: canSendFromKeyboard, submitFromKeyboard: sendFromKeyboard
               )
