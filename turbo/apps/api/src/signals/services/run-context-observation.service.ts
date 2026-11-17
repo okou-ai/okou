@@ -12,16 +12,24 @@ const RUN_CONTEXT_QUERY_PADDING_MS = 60 * 60 * 1000;
 /** Diagnostic callers authorize the Run before querying its captured inputs. */
 export function runContextObservation(args: {
   readonly runId: string;
-  readonly createdAt: Date;
-  readonly startedAt: Date | null;
+  readonly run: Computed<
+    Promise<{
+      readonly createdAt: Date;
+      readonly startedAt: Date | null;
+    } | null>
+  >;
 }): Computed<Promise<NormalizedRunContextSnapshot | null>> {
   return computed(async (get) => {
+    const run = await get(args.run);
+    if (!run) {
+      return null;
+    }
     const dataset = getDatasetName("run-context");
     const apl = `['${dataset}']
 | where runId == "${escapeAplString(args.runId)}"
 | sort by _time desc
 | limit 1`;
-    const createdAtMs = args.createdAt.getTime();
+    const createdAtMs = run.createdAt.getTime();
     const results = await get(
       queryAxiom(apl, {
         // A late snapshot must become visible after a previously empty result.
@@ -31,7 +39,7 @@ export function runContextObservation(args: {
         ).toISOString(),
         // Include dispatch after a long queue, not just the original creation.
         endTime: new Date(
-          Math.max(createdAtMs, args.startedAt?.getTime() ?? createdAtMs) +
+          Math.max(createdAtMs, run.startedAt?.getTime() ?? createdAtMs) +
             RUN_CONTEXT_QUERY_PADDING_MS,
         ).toISOString(),
       }),

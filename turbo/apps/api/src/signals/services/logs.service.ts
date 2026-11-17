@@ -300,7 +300,7 @@ interface LogDetailParams {
 export function logDetail(
   params: LogDetailParams,
 ): Computed<Promise<LogDetail | null>> {
-  return computed(async (get): Promise<LogDetail | null> => {
+  const detail$ = computed(async (get) => {
     const db = get(db$);
 
     const [result] = await db
@@ -326,6 +326,15 @@ export function logDetail(
       )
       .limit(1);
 
+    return result ?? null;
+  });
+  const run$ = computed(async (get) => {
+    return (await get(detail$))?.run ?? null;
+  });
+  const snapshot$ = runContextObservation({ runId: params.runId, run: run$ });
+
+  return computed(async (get): Promise<LogDetail | null> => {
+    const result = await get(detail$);
     if (!result) {
       return null;
     }
@@ -340,15 +349,7 @@ export function logDetail(
       modelRuntimeProvider,
       modelRuntimeModel,
     } = result;
-    const snapshot = await tapError(
-      get(
-        runContextObservation({
-          runId: params.runId,
-          createdAt: run.createdAt,
-          startedAt: run.startedAt,
-        }),
-      ),
-    );
+    const snapshot = await tapError(get(snapshot$));
     const framework =
       snapshot?.cliAgentType ?? run.launchSnapshot?.framework ?? null;
 

@@ -58,7 +58,7 @@ export function runContext(
   userId: string,
   orgId: string,
 ): Computed<Promise<RunContextResult>> {
-  return computed(async (get): Promise<RunContextResult> => {
+  const run$ = computed(async (get) => {
     const db = get(db$);
 
     const [run] = await db
@@ -76,11 +76,17 @@ export function runContext(
       )
       .limit(1);
 
+    return run ?? null;
+  });
+  const snapshot$ = runContextObservation({ runId, run: run$ });
+
+  return computed(async (get): Promise<RunContextResult> => {
+    const run = await get(run$);
     if (!run) {
       return { kind: "not-found" };
     }
 
-    const snapshot = await get(runContextObservation({ runId, ...run }));
+    const snapshot = await get(snapshot$);
     if (!snapshot || snapshot.prompt === undefined) {
       return { kind: "no-snapshot" };
     }
