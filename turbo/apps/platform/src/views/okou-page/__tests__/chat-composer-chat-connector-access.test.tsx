@@ -281,10 +281,20 @@ async function chooseAccess(
   account: string,
   value: string,
 ) {
-  await user.click(
-    await screen.findByRole("combobox", { name: `${account} access` }),
+  const control = await screen.findByRole("switch", {
+    name: `${account} access`,
+  });
+  expect(control).toHaveAttribute(
+    "aria-checked",
+    value === "On" ? "false" : "true",
   );
-  await user.click(await screen.findByRole("option", { name: value }));
+  await user.click(control);
+  await waitFor(() => {
+    expect(control).toHaveAttribute(
+      "aria-checked",
+      value === "On" ? "true" : "false",
+    );
+  });
 }
 
 async function openDirectory(user: ReturnType<typeof userEvent.setup>) {
@@ -345,7 +355,7 @@ test.each([false, true])(
     await expect(
       findFastControl("button", "Deny", savedPermission),
     ).resolves.toHaveAttribute("aria-pressed", "true");
-    await user.keyboard("{Escape}");
+    await user.keyboard("{Escape}{Escape}");
     await waitFor(() => {
       expect(
         screen.queryByRole("dialog", { name: "GitHub permissions" }),
@@ -392,7 +402,7 @@ test("Account navigation retains computer controls, Remote access and Add connec
   const trigger = await findFastControl("button", "Connectors");
   click(await openMenu());
   const popup = await screen.findByRole("dialog", { name: "Connectors" });
-  await within(popup).findByRole("combobox", { name: "Work access" });
+  await screen.findByRole("switch", { name: "Work access" });
   expect(
     within(popup).getByRole("switch", { name: "Cloud browser" }),
   ).toBeEnabled();
@@ -401,13 +411,13 @@ test("Account navigation retains computer controls, Remote access and Add connec
   click(await within(popup).findByText("Remote access"));
   const remote = await screen.findByRole("dialog", { name: "Remote access" });
   await within(remote).findByRole("combobox", { name: "SSH Build host" });
-  await user.keyboard("{Escape}");
+  await user.keyboard("{Escape}{Escape}");
   await waitFor(() => {
     expect(trigger).toHaveFocus();
   });
   click(await openMenu());
   const reopened = await screen.findByRole("dialog", { name: "Connectors" });
-  await within(reopened).findByRole("combobox", { name: "Work access" });
+  await screen.findByRole("switch", { name: "Work access" });
   click(await findFastControl("button", "Add connectors", reopened));
   await screen.findByRole("heading", { name: "Connectors" });
   await screen.findByPlaceholderText("Find connectors...");
@@ -518,9 +528,9 @@ test("Finish a saved Chat allowance after closing and reopening its menu", async
   });
   await setup();
   click(await openMenu());
-  await chooseAccess(user, "Work", "Off");
+  await user.click(await screen.findByRole("switch", { name: "Work access" }));
   await committed.promise;
-  await user.keyboard("{Escape}");
+  await user.keyboard("{Escape}{Escape}");
   await waitFor(() => {
     return expect(
       screen.queryByRole("dialog", { name: "Connectors" }),
@@ -546,9 +556,9 @@ test("Release a pending account save and its cached state when leaving the Chat"
   });
   await setup();
   click(await openMenu());
-  await chooseAccess(user, "Work", "Off");
+  await user.click(await screen.findByRole("switch", { name: "Work access" }));
   const requestSignal = await started.promise;
-  await user.keyboard("{Escape}");
+  await user.keyboard("{Escape}{Escape}");
   click(await findFastControl("button", "New chat"));
   await waitFor(() => {
     expect(window.location.pathname).toBe(`/agents/${SCOUT_AGENT_ID}/chat`);
@@ -559,7 +569,7 @@ test("Release a pending account save and its cached state when leaving the Chat"
   await expect(openMenu()).resolves.toHaveTextContent("2 enabled");
 });
 
-test("Persist per-account allowance and inheritance across menu reopening", async () => {
+test("Persist explicit per-account switches across menu reopening", async () => {
   const user = userEvent.setup({ delay: null });
   installAccess();
   await setup();
@@ -568,20 +578,20 @@ test("Persist per-account allowance and inheritance across menu reopening", asyn
   await user.click(row);
   await chooseAccess(user, "Personal", "Off");
   await expect(
-    screen.findByRole("combobox", { name: "Personal access" }),
-  ).resolves.toHaveTextContent("Off");
-  await user.keyboard("{Escape}");
+    screen.findByRole("switch", { name: "Personal access" }),
+  ).resolves.not.toBeChecked();
+  await user.keyboard("{Escape}{Escape}");
   const reopened = await openMenu();
   expect(reopened).toHaveTextContent("1 enabled");
   await user.click(reopened);
   await expect(
-    screen.findByRole("combobox", { name: "Personal access" }),
-  ).resolves.toHaveTextContent("Off");
-  await chooseAccess(user, "Personal", "Default (On)");
+    screen.findByRole("switch", { name: "Personal access" }),
+  ).resolves.not.toBeChecked();
+  await chooseAccess(user, "Personal", "On");
   await expect(
-    screen.findByRole("combobox", { name: "Personal access" }),
-  ).resolves.toHaveTextContent("Default (On)");
-  await user.keyboard("{Escape}");
+    screen.findByRole("switch", { name: "Personal access" }),
+  ).resolves.toBeChecked();
+  await user.keyboard("{Escape}{Escape}");
   await expect(openMenu()).resolves.toHaveTextContent("2 enabled");
 });
 
@@ -635,7 +645,7 @@ test.each([
     installAccess({ custom, noPermissions: true });
     await setup();
     await user.click(await openMenu(label));
-    await screen.findByRole("combobox", { name: "Work access" });
+    await screen.findByRole("switch", { name: "Work access" });
     expect(
       queryAllByRoleFast("button").filter((button) => {
         return button.textContent?.trim() === "Permissions";
@@ -680,13 +690,13 @@ test("Preserve the internally resolved account when enabling several accounts be
   await user.click(await openMenu());
   await chooseAccess(user, "Personal", "On");
   await expect(
-    screen.findByRole("combobox", { name: "Personal access" }),
-  ).resolves.toHaveTextContent("On");
+    screen.findByRole("switch", { name: "Personal access" }),
+  ).resolves.toBeChecked();
   await chooseAccess(user, "Work", "On");
   await expect(
-    screen.findByRole("combobox", { name: "Work access" }),
-  ).resolves.toHaveTextContent("On");
-  await user.keyboard("{Escape}");
+    screen.findByRole("switch", { name: "Work access" }),
+  ).resolves.toBeChecked();
+  await user.keyboard("{Escape}{Escape}");
   await fill(await findComposer(), "Use my personal GitHub account");
   click(await findFastControl("button", "Send"));
   await waitFor(() => {
@@ -722,11 +732,11 @@ test.each([false, true])(
     await setup(path);
     await user.click(await openMenu());
     await expect(
-      screen.findByRole("combobox", { name: "Personal access" }),
-    ).resolves.toHaveTextContent("Default (Off)");
+      screen.findByRole("switch", { name: "Personal access" }),
+    ).resolves.not.toBeChecked();
     await chooseAccess(user, "Personal", "On");
     await chooseAccess(user, "Work", "Off");
-    await user.keyboard("{Escape}");
+    await user.keyboard("{Escape}{Escape}");
     const composer = await findComposer();
     await fill(composer, "Use my personal GitHub account");
     click(await findFastControl("button", "Send"));

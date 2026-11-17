@@ -3287,13 +3287,14 @@
   },
   "connectorChatAccess": {
     "accountAccess": "{{account}} 접근",
+    "accountsInChat": "이 채팅에서 켤 계정을 선택하세요.",
     "enableByDefault": "{{account}} 기본 활성화",
     "enabledAccounts": "{{value}}개 활성화",
     "manageAccounts": "계정 관리",
     "noEnabledAccount": "이 채팅에서 활성화된 계정이 없습니다",
     "permissions": "권한",
     "permissionsDescription": "이 규칙은 모든 채팅과 계정에서 이 커넥터에 적용됩니다.",
-    "settingsDescription": "기본으로 활성화할 계정을 선택하세요."
+    "settingsDescription": "Okou가 채팅에서 사용할 수 있는 {{connector}} 계정을 선택하세요. 각 채팅에서 액세스를 변경할 수 있습니다."
   },
   "connectors": {
     "access": {

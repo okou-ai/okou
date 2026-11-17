@@ -802,9 +802,12 @@ function ConnectorAccountManagerHeader({
           </DialogTitle>
           <DialogDescription>
             {chatAccess
-              ? t(($) => {
-                  return $.connectorChatAccess.settingsDescription;
-                })
+              ? t(
+                  ($) => {
+                    return $.connectorChatAccess.settingsDescription;
+                  },
+                  { connector: connectorLabel },
+                )
               : t(($) => {
                   return $.connectors.accounts.managerDescription;
                 })}

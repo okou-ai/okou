@@ -6,13 +6,18 @@ import { connectorAccountExternalIdentity } from "@okouai/api-contracts/validato
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
+import { ChevronRight, SlidersHorizontal, Users } from "lucide-react";
 import {
-  ChevronLeft,
-  ChevronRight,
-  SlidersHorizontal,
-  Users,
-} from "lucide-react";
-import { Button, buttonVariants, cn, Input, PopoverClose } from "@okouai/ui";
+  Button,
+  buttonVariants,
+  cn,
+  Input,
+  Popover,
+  PopoverClose,
+  PopoverContent,
+  PopoverTrigger,
+  Switch,
+} from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
   ChatConnectorOverview,
@@ -21,9 +26,7 @@ import type {
 import { connectorAccountTargetKey } from "../../signals/okou-page/connector-accounts.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { AccessChoiceSelect } from "./remote-access-controls.tsx";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
-import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
 import { Link } from "../router/link.tsx";
@@ -34,16 +37,11 @@ function ChatAccountChoiceRow({
   access,
   busy,
   onChange,
-  popupFocus,
 }: {
   readonly account: ConnectorAccountConnection;
   readonly access: ChatConnectorAccess["accounts"][number];
   readonly busy: boolean;
-  readonly onChange: (enabled: boolean | null) => Promise<void>;
-  readonly popupFocus: {
-    readonly remember: (popup: HTMLDivElement) => void;
-    readonly restore: () => false;
-  };
+  readonly onChange: (enabled: boolean) => Promise<void>;
 }) {
   const { t } = useTranslation();
   const name = useConnectorAccountLabel()(account);
@@ -67,25 +65,31 @@ function ChatAccountChoiceRow({
           )}
         </span>
       </div>
-      <AccessChoiceSelect
-        ariaLabel={t(
-          ($) => {
-            return $.connectorChatAccess.accountAccess;
-          },
-          { account: name },
-        )}
-        defaultEnabled={access.defaultEnabled}
-        value={
-          access.overrideEnabled === null
-            ? "default"
-            : access.overrideEnabled
-              ? "on"
-              : "off"
-        }
-        readOnly={busy}
-        onChange={onChange}
-        popupFocus={popupFocus}
-      />
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="text-sm text-foreground">
+          {t(($) => {
+            return access.enabled
+              ? $.chat.remoteAccess.on
+              : $.chat.remoteAccess.off;
+          })}
+        </span>
+        <Switch
+          size="compact"
+          aria-label={t(
+            ($) => {
+              return $.connectorChatAccess.accountAccess;
+            },
+            { account: name },
+          )}
+          checked={access.enabled}
+          readOnly={busy}
+          aria-busy={busy || undefined}
+          className="data-checked:bg-foreground data-checked:hover:bg-foreground/90 aria-readonly:opacity-50"
+          onCheckedChange={(enabled) => {
+            detach(onChange(enabled), Reason.DomCallback);
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -99,8 +103,6 @@ function ChatAccountChoices({
 }) {
   const { t } = useTranslation();
   const accounts = signals.connector.chatAccess;
-  const rememberSelectFocus = useSet(accounts.navigation.rememberSelectFocus$);
-  const restoreSelectFocus = useSet(accounts.navigation.restoreSelectFocus$);
   const list = useLoadable(accounts.list.accounts$);
   const current = useLoadable(accounts.current$);
   const previous = useLastResolved(accounts.list.accounts$);
@@ -155,14 +157,6 @@ function ChatAccountChoices({
               account={account}
               access={access}
               busy={busy}
-              popupFocus={{
-                remember: (popup) => {
-                  rememberSelectFocus(account.id, popup);
-                },
-                restore: () => {
-                  return restoreSelectFocus(account.id);
-                },
-              }}
               onChange={(enabled) => {
                 return override(account.id, enabled, signal);
               }}
@@ -211,44 +205,78 @@ function ChatAccountChoices({
 }
 
 function ConnectorOverviewRow({
+  signals,
   entry,
-  onOpen,
 }: {
+  readonly signals: ComposerSignals;
   readonly entry: ChatConnectorOverview;
-  readonly onOpen: () => void;
 }) {
   const { t } = useTranslation();
+  const target = useGet(signals.connector.chatAccess.target$);
+  const openTarget = useSet(signals.connector.chatAccess.openTarget$);
+  const closeTarget = useSet(signals.connector.chatAccess.closeTarget$);
+  const restoreFocus = useSet(
+    signals.connector.chatAccess.navigation.restoreFocus$,
+  );
+  const permissions = useGet(signals.connector.chatAccess.permissions$);
+  const signal = useGet(pageSignal$);
+  const open =
+    target !== null &&
+    connectorAccountTargetKey(target.target) ===
+      connectorAccountTargetKey(entry.target);
   return (
-    <button
-      type="button"
-      data-connector-target={connectorAccountTargetKey(entry.target)}
-      onClick={onOpen}
-      className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left hover:bg-state-hover"
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) {
+          openTarget(entry, signal);
+        } else if (open) {
+          closeTarget();
+        }
+      }}
     >
-      {entry.target.kind === "builtin" ? (
-        <ConnectorIcon icon={entry.icon ?? undefined} size={20} />
-      ) : (
-        <CustomConnectorIcon
-          id={entry.target.customConnectorId}
-          displayName={entry.label}
-          size={20}
-        />
-      )}
-      <span className="min-w-0 flex-1 truncate text-sm">{entry.label}</span>
-      <span className="shrink-0 text-xs text-muted-foreground">
-        {t(
-          ($) => {
-            return $.connectorChatAccess.enabledAccounts;
-          },
-          {
-            value: entry.access.accounts.filter((account) => {
-              return account.enabled;
-            }).length,
-          },
+      <PopoverTrigger
+        data-connector-target={connectorAccountTargetKey(entry.target)}
+        className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left hover:bg-state-hover data-popup-open:bg-gray-50"
+      >
+        {entry.target.kind === "builtin" ? (
+          <ConnectorIcon icon={entry.icon ?? undefined} size={20} />
+        ) : (
+          <CustomConnectorIcon
+            id={entry.target.customConnectorId}
+            displayName={entry.label}
+            size={20}
+          />
         )}
-      </span>
-      <ChevronRight size={14} className="shrink-0 text-muted-foreground" />
-    </button>
+        <span className="min-w-0 flex-1 truncate text-sm">{entry.label}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {t(
+            ($) => {
+              return $.connectorChatAccess.enabledAccounts;
+            },
+            {
+              value: entry.access.accounts.filter((account) => {
+                return account.enabled;
+              }).length,
+            },
+          )}
+        </span>
+        <ChevronRight size={14} className="shrink-0 text-muted-foreground" />
+      </PopoverTrigger>
+      <PopoverContent
+        side="right"
+        align="start"
+        sideOffset={8}
+        collisionAvoidance={{ fallbackAxisSide: "end" }}
+        finalFocus={() => {
+          return permissions !== null ? false : restoreFocus(entry.target);
+        }}
+        aria-label={entry.label}
+        className="flex max-h-[min(25rem,var(--available-height))] w-88 max-w-[var(--available-width)] flex-col overflow-hidden p-0"
+      >
+        {open && <ChatConnectorAccountPanel signals={signals} entry={entry} />}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -259,19 +287,12 @@ function ChatConnectorOverviewList({
   readonly signals: ComposerSignals;
   readonly entries: readonly ChatConnectorOverview[];
 }) {
-  const open = useSet(signals.connector.chatAccess.openTarget$);
-  const signal = useGet(pageSignal$);
   return (
     <div className="p-1">
       {entries.map((entry) => {
         return (
           <div role="listitem" key={connectorAccountTargetKey(entry.target)}>
-            <ConnectorOverviewRow
-              entry={entry}
-              onOpen={() => {
-                open(entry, signal);
-              }}
-            />
+            <ConnectorOverviewRow signals={signals} entry={entry} />
           </div>
         );
       })}
@@ -290,6 +311,7 @@ function AccountPanelFooter({
 }) {
   const { t } = useTranslation();
   const permissions = useSet(signals.connector.chatAccess.setPermissions$);
+  const setPopoverOpen = useSet(signals.connector.setPopoverOpen$);
   const permissionTarget =
     target.target.kind === "builtin" && target.hasPermissions
       ? { target: target.target, label: target.label }
@@ -305,6 +327,7 @@ function AccountPanelFooter({
               disabled={!savedAccounts}
               onClick={() => {
                 permissions(permissionTarget);
+                setPopoverOpen(false);
               }}
             >
               <SlidersHorizontal
@@ -371,55 +394,33 @@ function ChatConnectorOverviewRetry({
 
 function ChatConnectorAccountPanel({
   signals,
-  target,
   entry,
-  unavailable,
 }: {
   readonly signals: ComposerSignals;
-  readonly target: ChatConnectorMenuTarget;
-  readonly entry: ChatConnectorOverview | undefined;
-  readonly unavailable: boolean;
+  readonly entry: ChatConnectorOverview;
 }) {
   const { t } = useTranslation();
-  const back = useSet(signals.connector.chatAccess.closeTarget$);
   return (
     <>
-      <div className="flex shrink-0 items-center gap-2 px-3 py-2.5">
-        <IconTooltipButton
-          aria-label={t(($) => {
-            return $.chat.connectors.back;
-          })}
-          className="rounded-md p-1 text-muted-foreground hover:bg-state-hover"
-          onClick={() => {
-            back();
-          }}
-        >
-          <ChevronLeft size={16} />
-        </IconTooltipButton>
-        <span className="min-w-0 truncate text-sm font-medium">
-          {target.label}
-        </span>
-      </div>
-      {entry ? (
-        <ChatAccountChoices signals={signals} entry={entry} />
-      ) : unavailable ? (
-        <p className="px-3 py-2 text-sm text-muted-foreground">
+      <div className="shrink-0 border-b border-border/50 px-3 py-3">
+        <p className="truncate text-sm font-medium">{entry.label}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
           {t(($) => {
-            return $.connectors.accounts.accountsUnavailable;
+            return $.connectorChatAccess.accountsInChat;
           })}
         </p>
-      ) : (
-        <LoadingSkeleton
-          className="px-3 py-2"
-          label={t(($) => {
-            return $.connectors.accounts.loading;
-          })}
-        />
-      )}
+      </div>
+      <div
+        role="group"
+        aria-label={entry.label}
+        className="min-h-0 flex-1 overflow-y-auto py-2"
+      >
+        <ChatAccountChoices signals={signals} entry={entry} />
+      </div>
       <AccountPanelFooter
         signals={signals}
-        target={target}
-        savedAccounts={Boolean(entry?.access.accounts.length)}
+        target={entry}
+        savedAccounts={entry.access.accounts.length > 0}
       />
     </>
   );
@@ -441,7 +442,6 @@ export function ChatConnectorMenu({
   const failed =
     overview.state === "hasError" || notifications.state === "hasError";
   const previous = useLastResolved(accounts.overview$);
-  const target = useGet(accounts.target$);
   const setViewport = useSet(accounts.navigation.setViewport$);
   const ui = useGet(signals.connector.connectorUiState$);
   const searchConnectors = useSet(signals.connector.searchConnectors$);
@@ -456,20 +456,12 @@ export function ChatConnectorMenu({
             .includes(ui.popoverSearch.toLowerCase());
         })
       : entries;
-  const active = target
-    ? entries.find((entry) => {
-        return (
-          connectorAccountTargetKey(entry.target) ===
-          connectorAccountTargetKey(target.target)
-        );
-      })
-    : undefined;
   return (
     <ComposerConnectorMenuShell
       loading={overview.state === "loading" && !previous}
-      hasContent={entries.length > 0 || target !== null || failed}
+      hasContent={entries.length > 0 || failed}
       error={
-        failed && !target
+        failed
           ? t(($) => {
               return $.connectors.accounts.accountsUnavailable;
             })
@@ -480,28 +472,11 @@ export function ChatConnectorMenu({
       onSearchChange={searchConnectors}
       onOpenAddDialog={onOpenAddDialog}
       footer={footer}
-      contentRole={target ? "group" : "list"}
-      contentLabel={target?.label}
-      contentKey={
-        target
-          ? connectorAccountTargetKey(target.target)
-          : `overview:${ui.popoverSearch}`
-      }
+      contentKey={`overview:${ui.popoverSearch}`}
       contentRef={setViewport}
     >
-      {target ? (
-        <ChatConnectorAccountPanel
-          signals={signals}
-          target={target}
-          entry={active}
-          unavailable={overview.state !== "loading"}
-        />
-      ) : (
-        <>
-          <ChatConnectorOverviewRetry signals={signals} failed={failed} />
-          <ChatConnectorOverviewList signals={signals} entries={filtered} />
-        </>
-      )}
+      <ChatConnectorOverviewRetry signals={signals} failed={failed} />
+      <ChatConnectorOverviewList signals={signals} entries={filtered} />
     </ComposerConnectorMenuShell>
   );
 }

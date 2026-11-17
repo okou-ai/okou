@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
@@ -486,11 +486,11 @@ test("Load full readiness only for an opened panel's selected off-page account",
   const row = await findFastControl("button", "GitHub2 enabled", popup);
   expect(details).toBe(0);
   click(row);
-  const access = await within(popup).findByRole("combobox", {
+  const access = await screen.findByRole("switch", {
     name: "Off-page current access",
   });
-  expect(access).toHaveTextContent("Default (On)");
-  expect(within(popup).getByText("Reconnect required")).toBeInTheDocument();
+  expect(access).toBeChecked();
+  expect(screen.getByText("Reconnect required")).toBeInTheDocument();
   expect(details).toBe(1);
 });
 

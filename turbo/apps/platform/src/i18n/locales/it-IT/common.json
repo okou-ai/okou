@@ -3348,13 +3348,14 @@
   },
   "connectorChatAccess": {
     "accountAccess": "Accesso di {{account}}",
+    "accountsInChat": "Scegli quali account sono attivi in questa chat.",
     "enableByDefault": "Attiva {{account}} per impostazione predefinita",
     "enabledAccounts": "{{value}} attivi",
     "manageAccounts": "Gestisci account",
     "noEnabledAccount": "Nessun account attivo per questa chat",
     "permissions": "Autorizzazioni",
     "permissionsDescription": "Queste regole si applicano a questo connettore in tutte le tue chat e account.",
-    "settingsDescription": "Scegli gli account attivi per impostazione predefinita."
+    "settingsDescription": "Scegli quali account {{connector}} Okou può usare nelle tue chat. Puoi modificare l’accesso in ogni chat."
   },
   "connectors": {
     "access": {
