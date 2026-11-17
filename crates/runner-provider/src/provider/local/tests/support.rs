@@ -238,7 +238,6 @@ fn job_request_json(job_id: RunId, prompt: &str, options: JobOptions<'_>) -> Vec
         profile: options.profile.map(String::from),
         reuse_key: options.reuse_key.map(String::from),
         session_id: options.session_id.map(String::from),
-        feature_flags: None,
         active_input: options.active_input,
     };
     serde_json::to_vec(&req).unwrap()
@@ -261,7 +260,6 @@ pub(super) fn write_job_with_environments(
         profile: Some(crate::profile::DEFAULT_PROFILE.into()),
         reuse_key: None,
         session_id: None,
-        feature_flags: None,
         active_input: None,
     };
     let json = serde_json::to_vec(&req).unwrap();

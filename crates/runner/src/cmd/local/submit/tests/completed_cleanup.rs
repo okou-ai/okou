@@ -24,7 +24,6 @@ async fn submit_returns_failure_for_nonzero_job_response() {
             profile: None,
             chat_thread_id: None,
             session_id: None,
-            feature_flags: vec![],
             env: vec![],
             secret_env: vec![],
             timeout: 5,

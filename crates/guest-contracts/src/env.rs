@@ -255,12 +255,6 @@ pub enum RunArtifactMissingRootPolicy {
     PreserveParentVersion,
 }
 
-/// Logical run-payload field name for the JSON map of feature flag names to
-/// enabled states.
-///
-/// Unset or empty means there are no feature flags.
-pub const FEATURE_FLAGS_RUN_PAYLOAD_FIELD: &str = "OKOU_FEATURE_FLAGS";
-
 /// Logical run-payload field name for API-owned Codex runtime metadata.
 pub const CODEX_RUNTIME_CONFIG_RUN_PAYLOAD_FIELD: &str = "OKOU_CODEX_RUNTIME_CONFIG";
 
@@ -358,7 +352,7 @@ pub struct RunPayload {
     /// Optional extra system prompt text.
     #[serde(default)]
     pub append_system_prompt: String,
-    /// Serialized native continuation intent; empty for captured legacy work.
+    /// Serialized native continuation intent; empty for independent local jobs.
     #[serde(default)]
     pub native_continuation: String,
     /// Sensitive values used by the guest-agent masker.
@@ -370,9 +364,6 @@ pub struct RunPayload {
     /// JSON array describing artifact mounts prepared by the runner.
     #[serde(default)]
     pub artifacts: String,
-    /// JSON map of feature flag names to enabled states.
-    #[serde(default)]
-    pub feature_flags: String,
     /// JSON object describing API-owned Codex provider/runtime metadata.
     #[serde(default)]
     pub codex_runtime_config: String,
@@ -398,7 +389,7 @@ pub struct RunPayloadField<'a> {
 
 impl RunPayload {
     /// Return all logical string fields carried by this run payload.
-    pub fn fields(&self) -> [RunPayloadField<'_>; 11] {
+    pub fn fields(&self) -> [RunPayloadField<'_>; 10] {
         let Self {
             prompt,
             append_system_prompt,
@@ -406,7 +397,6 @@ impl RunPayload {
             secret_values,
             disallowed_tools,
             artifacts,
-            feature_flags,
             codex_runtime_config,
             pi_launch_config,
             pi_model_config,
@@ -437,10 +427,6 @@ impl RunPayload {
             RunPayloadField {
                 name: ARTIFACTS_RUN_PAYLOAD_FIELD,
                 value: artifacts,
-            },
-            RunPayloadField {
-                name: FEATURE_FLAGS_RUN_PAYLOAD_FIELD,
-                value: feature_flags,
             },
             RunPayloadField {
                 name: CODEX_RUNTIME_CONFIG_RUN_PAYLOAD_FIELD,

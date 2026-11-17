@@ -153,7 +153,6 @@ pub(super) fn submit_args_for_test() -> SubmitArgs {
         profile: None,
         chat_thread_id: None,
         session_id: None,
-        feature_flags: vec![],
         env: vec![],
         secret_env: vec![],
         timeout: 1,
@@ -187,7 +186,7 @@ async fn submit_rendezvous_surfaces_submit_error_before_deadline() {
     let dir = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(dir.path().to_path_buf());
     let mut args = submit_args_for_test();
-    args.feature_flags = vec!["missing-equals".to_owned()];
+    args.env = vec!["missing-equals".to_owned()];
     args.timeout = super::super::MAX_LOCAL_SUBMIT_TIMEOUT_SECS;
 
     let result = run_submit_and_write_result_with_timeout(
@@ -208,6 +207,6 @@ async fn submit_rendezvous_surfaces_submit_error_before_deadline() {
         error.contains("local submit failed during test rendezvous"),
         "got: {error}"
     );
-    assert!(error.contains("expected key=value"), "got: {error}");
+    assert!(error.contains("expected KEY=VALUE"), "got: {error}");
     assert!(!error.contains("timed out"), "got: {error}");
 }

@@ -41,7 +41,6 @@ MEMORY_SESSION_ID="e2e-process-containment-memory"
 if ! MEMORY_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$MEMORY_CHAT_THREAD_ID" \
   --session-id "$MEMORY_SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt '@parallel-shell-tool-oom' \
   --active-input 'after=1s,text=memory-pressure-control'); then
   printf '%s\n' "$MEMORY_RESULT"
@@ -65,7 +64,6 @@ echo "--- Pressure: prove tool-group OOM preserved sandbox reuse ---"
 MEMORY_REUSE_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$MEMORY_CHAT_THREAD_ID" \
   --session-id "$MEMORY_SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt 'true') \
   || fail "memory-pressure recovery did not preserve safe sandbox reuse"
 printf '%s\n' "$MEMORY_REUSE_RESULT"
@@ -78,7 +76,6 @@ GLOBAL_MEMORY_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
 if GLOBAL_MEMORY_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$GLOBAL_MEMORY_THREAD_ID" \
   --session-id e2e-process-containment-global-memory \
-  --feature-flag sandboxReuse=true \
   --prompt '@guest-wide-tool-oom-injected'); then
   :
 else
@@ -104,7 +101,7 @@ require_contained_tool_oom "$GLOBAL_MEMORY_LOG" "Guest-wide tool OOM was not cla
 GLOBAL_REUSE_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$GLOBAL_MEMORY_THREAD_ID" \
   --session-id e2e-process-containment-global-memory \
-  --feature-flag sandboxReuse=true --prompt 'true') \
+  --prompt 'true') \
   || fail "Guest-wide OOM did not preserve subsequent execution"
 printf '%s\n' "$GLOBAL_REUSE_RESULT"
 GLOBAL_REUSE_JSON=$(awk '/^\{/{line=$0} END{print line}' <<< "$GLOBAL_REUSE_RESULT")
@@ -128,7 +125,7 @@ for TASK_SCOPE in workload guest; do
   fi
   if ! TASK_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
     --chat-thread-id "$TASK_THREAD_ID" --session-id "$TASK_SESSION_ID" \
-    --feature-flag sandboxReuse=true --prompt "$TASK_OOM_PROMPT"); then
+    --prompt "$TASK_OOM_PROMPT"); then
     printf '%s\n' "$TASK_RESULT" >&2
     fail "nested task ${TASK_SCOPE} OOM did not preserve the main runtime"
   fi
@@ -144,7 +141,7 @@ for TASK_SCOPE in workload guest; do
   require_contained_tool_oom "$TASK_LOG" "nested task ${TASK_SCOPE} OOM was not classified as contained"
   TASK_REUSE_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
     --chat-thread-id "$TASK_THREAD_ID" --session-id "$TASK_SESSION_ID" \
-    --feature-flag sandboxReuse=true --prompt 'true') \
+    --prompt 'true') \
     || fail "task OOM did not preserve subsequent session execution"
   printf '%s\n' "$TASK_REUSE_RESULT"
   TASK_REUSE_JSON=$(awk '/^\{/{line=$0} END{print line}' <<< "$TASK_REUSE_RESULT")
@@ -227,7 +224,6 @@ PROMPT
 PID_RESULT=$("$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$PID_CHAT_THREAD_ID" \
   --session-id "$PID_SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt "$PID_PROMPT" \
   --active-input 'after=1s,text=pid-pressure-control') \
   || fail "PID-pressure workload did not finalize"
@@ -245,7 +241,6 @@ echo "--- Pressure: prove PID-exhaustion cleanup preserved sandbox reuse ---"
 "$PROCESS_CONTAINMENT_SUBMIT" "$BIN_DIR" --group "$GROUP" \
   --chat-thread-id "$PID_CHAT_THREAD_ID" \
   --session-id "$PID_SESSION_ID" \
-  --feature-flag sandboxReuse=true \
   --prompt 'test -f /tmp/vm0-process-containment/pid-pressure-sandbox' \
   || fail "PID-pressure cleanup did not preserve safe sandbox reuse"
 

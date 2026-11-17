@@ -613,7 +613,6 @@ fn emitted_bootstrap_env_keys_classify_as_runner_owned() {
     ctx.append_system_prompt = Some("Use terse answers.".into());
     ctx.local_resume_session_id = Some("sess-123".into());
     ctx.disallowed_tools = Some(vec!["CronCreate".into()]);
-    ctx.feature_flags = Some(HashMap::from([("runnerEnvKeyTest".into(), true)]));
     ctx.storage_manifest = Some(StorageManifest {
         storages: vec![],
         artifacts: vec![api_artifact(
@@ -1747,35 +1746,6 @@ fn build_env_json_codex_ignores_disallowed_tools() {
     ctx.disallowed_tools = Some(vec!["".into()]);
     let payload = build_run_payload_for_run(&ctx).unwrap();
     assert!(payload.disallowed_tools.is_empty());
-}
-
-#[test]
-fn build_env_json_with_feature_flags() {
-    let mut ctx = minimal_context();
-    let mut flags = HashMap::new();
-    flags.insert("computerUse".into(), true);
-    flags.insert("audioOutput".into(), false);
-    ctx.feature_flags = Some(flags);
-    let payload = build_run_payload_for_run(&ctx).unwrap();
-    let raw = &payload.feature_flags;
-    let parsed: HashMap<String, bool> = serde_json::from_str(raw).unwrap();
-    assert_eq!(parsed.get("computerUse"), Some(&true));
-    assert_eq!(parsed.get("audioOutput"), Some(&false));
-}
-
-#[test]
-fn build_env_json_empty_feature_flags_omitted() {
-    let mut ctx = minimal_context();
-    ctx.feature_flags = Some(HashMap::new());
-    let payload = build_run_payload_for_run(&ctx).unwrap();
-    assert!(payload.feature_flags.is_empty());
-}
-
-#[test]
-fn build_env_json_no_feature_flags() {
-    let ctx = minimal_context();
-    let payload = build_run_payload_for_run(&ctx).unwrap();
-    assert!(payload.feature_flags.is_empty());
 }
 
 #[tokio::test]

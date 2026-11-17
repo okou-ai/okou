@@ -37,7 +37,6 @@ pub fn execution_context_for_test(run_id: RunId) -> ExecutionContext {
         network_policy_refreshes: None,
         connector_runtime_targets: Vec::new(),
         disallowed_tools: None,
-        feature_flags: None,
         billable_firewalls: vec![],
         model_usage_provider: None,
         model_usage_long_context_min_total_input_tokens: None,

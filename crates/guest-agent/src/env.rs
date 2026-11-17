@@ -367,7 +367,7 @@ pub struct GuestConfig {
     /// system prompt; non-empty content is transferred through the selected
     /// CLI's launch payload or private prompt file.
     pub append_system_prompt: String,
-    /// Native-only continuation intent from the current API claim.
+    /// Native continuation intent supplied by the API for this Run.
     pub native_continuation: Option<guest_contracts::env::NativeContinuation>,
     /// Optional Vercel protection-bypass secret from
     /// [`guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV`]. A non-empty
@@ -450,10 +450,6 @@ pub struct GuestConfig {
     /// [`guest_contracts::env::RunPayload`]. Empty input produces an empty
     /// vector; finalization uses the entries for artifact snapshots.
     pub artifacts: Vec<ArtifactEnv>,
-    /// Feature flags parsed from the JSON object in
-    /// [`guest_contracts::env::RunPayload`]. Empty input produces an empty map
-    /// keyed by flag name with boolean enabled states.
-    pub feature_flags: HashMap<String, bool>,
     /// JSON object containing API-owned Codex provider and runtime metadata
     /// from [`guest_contracts::env::RunPayload`]. The value is parsed for
     /// Codex startup configuration and is otherwise retained in its wire form.
@@ -545,12 +541,6 @@ impl GuestConfig {
                 guest_contracts::env::ARTIFACTS_RUN_PAYLOAD_FIELD
             )
         })?;
-        let feature_flags = parse_feature_flags_value(&payload.feature_flags).map_err(|e| {
-            format!(
-                "parse {} JSON: {e}",
-                guest_contracts::env::FEATURE_FLAGS_RUN_PAYLOAD_FIELD
-            )
-        })?;
 
         Ok(Self {
             run_id: raw.run_id,
@@ -601,7 +591,6 @@ impl GuestConfig {
             claude_config_dir,
             codex_home_dir,
             artifacts,
-            feature_flags,
             codex_runtime_config: payload.codex_runtime_config,
             pi_launch_config: payload.pi_launch_config,
             pi_model_config: payload.pi_model_config,
@@ -668,13 +657,6 @@ fn parse_artifacts_value(raw: &str) -> Result<Vec<ArtifactEnv>, serde_json::Erro
     }
     serde_json::from_str::<Vec<guest_contracts::env::RunArtifact>>(raw)
         .map(|artifacts| artifacts.into_iter().map(ArtifactEnv::from).collect())
-}
-
-fn parse_feature_flags_value(raw: &str) -> Result<HashMap<String, bool>, serde_json::Error> {
-    if raw.is_empty() {
-        return Ok(HashMap::new());
-    }
-    serde_json::from_str(raw)
 }
 
 #[derive(Clone, Copy)]

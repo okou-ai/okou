@@ -55,9 +55,6 @@ pub struct SubmitArgs {
     /// Provider-native session ID to resume
     #[arg(long)]
     session_id: Option<String>,
-    /// Feature flags (repeatable, format: key=value, e.g. --feature-flag myFlag=true)
-    #[arg(long = "feature-flag")]
-    feature_flags: Vec<String>,
     /// Ordinary environment variables to pass to the local job (KEY=VALUE)
     #[arg(long = "env")]
     env: Vec<String>,
@@ -280,7 +277,6 @@ impl SubmitPlan {
             profile,
             chat_thread_id,
             session_id,
-            feature_flags,
             env,
             secret_env,
             timeout,
@@ -297,7 +293,6 @@ impl SubmitPlan {
             None => crate::profile::DEFAULT_PROFILE.to_owned(),
         };
 
-        let feature_flags = Self::parse_feature_flags(&feature_flags)?;
         let environment = Self::parse_env_entries("--env", &env)?;
         let secret_environment = Self::parse_env_entries("--secret-env", &secret_env)?;
         Self::validate_disjoint_env_keys(&environment, &secret_environment)?;
@@ -325,7 +320,6 @@ impl SubmitPlan {
             profile: Some(profile.clone()),
             reuse_key: chat_thread_id.map(|thread_id| format!("thread:{thread_id}")),
             session_id,
-            feature_flags,
             active_input: (!active_inputs.is_empty()).then_some(true),
         };
 
@@ -456,26 +450,6 @@ impl SubmitPlan {
             )));
         }
         Ok(Duration::from_secs(timeout))
-    }
-
-    fn parse_feature_flags(flags: &[String]) -> RunnerResult<Option<HashMap<String, bool>>> {
-        if flags.is_empty() {
-            return Ok(None);
-        }
-
-        let mut map = HashMap::new();
-        for flag in flags {
-            let (key, value) = flag.split_once('=').ok_or_else(|| {
-                RunnerError::Config(format!("invalid feature flag (expected key=value): {flag}"))
-            })?;
-            let bool_val = value.parse::<bool>().map_err(|_| {
-                RunnerError::Config(format!(
-                    "invalid feature flag value (expected true/false): {flag}"
-                ))
-            })?;
-            map.insert(key.to_string(), bool_val);
-        }
-        Ok(Some(map))
     }
 
     fn parse_env_entries(

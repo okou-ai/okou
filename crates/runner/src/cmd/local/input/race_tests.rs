@@ -53,7 +53,6 @@ impl Fixture {
             profile: Some(PROFILE.into()),
             reuse_key: None,
             session_id: None,
-            feature_flags: None,
             active_input: Some(true),
         };
         let path = local_queue::job_path(&group_dir, PROFILE, run_id).unwrap();

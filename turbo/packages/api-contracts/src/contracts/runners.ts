@@ -975,8 +975,6 @@ const executionContextObjectSchema = object({
   connectorRuntimeTargets: connectorRuntimeTargetsSchema,
   // Tools to disable in Claude CLI (passed as --disallowed-tools)
   disallowedTools: array(string()).optional(),
-  // Feature flags evaluated at job creation time (all switch states for user/org)
-  featureFlags: record(string(), boolean()).optional(),
   billableFirewalls: array(string()).optional(),
   // Provider the proxy reports model token usage under: a Built-in route's
   // `usage_pricing` provider (possibly an alias of the actual model), else the
