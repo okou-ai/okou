@@ -500,6 +500,9 @@ final class ComposerTextView: UITextView {
     // A responder handoff can synchronously write another editor's focus binding.
     // Record SwiftUI's intent here; native readiness applies it after the update.
     wantsFocus = focused
+    if focused, let navigationPresentation, !navigationPresentation.allowsFocus {
+      navigationPresentation.deferFocus(self)
+    }
   }
 
   override func didMoveToWindow() {

@@ -800,6 +800,9 @@ feature; the catalog shows each one.
   expanded layout through departure. Cancelled interactive return restores the
   same editor and selection through UIKit's transition coordinator. Keep system
   keyboard safe-area avoidance as the geometry owner rather than adding keyboard offsets.
+  A temporary, noninteractive native snapshot holds the departing page's contents
+  until navigation completes or rolls back, so keyboard dismissal cannot recenter
+  its greeting or move its composer independently. The live editor stays mounted.
 - **Sidebar layout**: the workspace switcher top left, and top right one 44 pt glass capsule
   that groups the chat list menu (Lucide `list-filter`) on the left and back to the chat
   (`arrow-right`, toward the page it returns to; "Close sidebar" for VoiceOver) on the right,

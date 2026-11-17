@@ -19,7 +19,7 @@ final class ChatComposerFocusTests: XCTestCase {
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
 
     // Attachment alone must not let the retained page steal the keyboard.
-    input.setFocused(true)
+    input.prepareFocus(true)
     XCTAssertFalse(input.isFirstResponder)
     presentation.appear()
     try await eventually { input.isFirstResponder }

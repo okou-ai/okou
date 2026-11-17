@@ -9,6 +9,11 @@ struct NewChatGreeting: View {
   let text: String
   @State private var revealed = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.workspaceChatPresentation) private var presentation
+
+  private var canReveal: Bool {
+    presentation.map { $0.allowsFocus && !$0.isTransitioning } ?? true
+  }
 
   var body: some View {
     let words = text.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
@@ -32,7 +37,8 @@ struct NewChatGreeting: View {
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(text)
     }
-    .onAppear {
+    .onChange(of: canReveal, initial: true) { _, ready in
+      guard ready else { return }
       if reduceMotion {
         revealed = true
       } else {

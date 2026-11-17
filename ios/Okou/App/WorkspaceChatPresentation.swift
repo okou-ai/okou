@@ -67,6 +67,7 @@ extension EnvironmentValues {
 
 final class WorkspaceChatHostingController: UIHostingController<AnyView> {
   let presentation: WorkspaceChatPresentation
+  private var departureSnapshot: UIView?
 
   init(presentation: WorkspaceChatPresentation) {
     self.presentation = presentation
@@ -75,6 +76,27 @@ final class WorkspaceChatHostingController: UIHostingController<AnyView> {
 
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+  func beginDeparture() {
+    guard departureSnapshot == nil, viewIfLoaded?.window != nil,
+      let snapshot = view.snapshotView(afterScreenUpdates: false)
+    else { return }
+    // UIKit still moves the page and keyboard. Hold only the departing page's contents
+    // so keyboard safe-area changes cannot recenter it during an interactive return.
+    snapshot.frame = view.bounds
+    snapshot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    snapshot.isUserInteractionEnabled = false
+    snapshot.accessibilityElementsHidden = true
+    view.addSubview(snapshot)
+    departureSnapshot = snapshot
+  }
+
+  func finishDeparture() {
+    guard let departureSnapshot else { return }
+    view.layoutIfNeeded()
+    departureSnapshot.removeFromSuperview()
+    self.departureSnapshot = nil
+  }
 
   override func viewIsAppearing(_ animated: Bool) {
     super.viewIsAppearing(animated)

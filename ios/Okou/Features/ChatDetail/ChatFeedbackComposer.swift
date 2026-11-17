@@ -58,7 +58,7 @@ struct ChatFeedbackComposer: View {
                     },
                     set: { state.editBlock(block.id, text: $0) }),
                   isFocused: Binding(
-                    get: { focusedBlock == block.id },
+                    get: { (state.focusRequest?.blockID ?? focusedBlock) == block.id },
                     set: { focused in
                       if focused {
                         focusedBlock = block.id

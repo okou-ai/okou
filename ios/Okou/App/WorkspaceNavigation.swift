@@ -39,6 +39,7 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
   ) {
     navigation.applySelection = nil
     navigation.delegate = nil
+    coordinator.chat.finishDeparture()
     coordinator.uninstallPopGestures()
     coordinator.sidebar.setTransitioning(false)
   }
@@ -102,6 +103,7 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
       let showsSidebar = viewController === list
       transitionTarget = showsSidebar
       sidebar.setTransitioning(true)
+      if showsSidebar { chat.beginDeparture() }
       presentation.beginTransition(showsChat: !showsSidebar)
       let transition = navigationController.transitionCoordinator
       transition?.notifyWhenInteractionChanges { [weak self] context in
@@ -127,6 +129,7 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
       transitionTarget = nil
       // UIKit reports the actual surviving page, including cancelled and unanimated transitions.
       presentation.finishTransition(showsChat: !showsSidebar)
+      chat.finishDeparture()
       sidebar.setTransitioning(false)
       navigationController.view.setNeedsLayout()
     }
