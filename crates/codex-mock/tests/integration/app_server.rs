@@ -279,7 +279,13 @@ fn read_linux_process_stat(pid: u32) -> std::io::Result<Option<LinuxProcessStat>
     let stat_path = format!("/proc/{pid}/stat");
     let stat = match std::fs::read_to_string(&stat_path) {
         Ok(stat) => stat,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        // The task can be reaped after opening its stat file but before reading it.
+        Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound
+                || error.raw_os_error() == Some(libc::ESRCH) =>
+        {
+            return Ok(None);
+        }
         Err(error) => return Err(error),
     };
     let (_command, fields_text) = stat.rsplit_once(") ").ok_or_else(|| {
