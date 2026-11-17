@@ -1,6 +1,6 @@
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -398,22 +398,128 @@ test("The For you row's count follows committed suggestion changes", async () =>
   );
   expect(emptyCount).toBeInTheDocument();
 });
-test("Each For you visit loads new suggestions", async () => {
-  const [first, second] = numberedSuggestions(2);
-  const pool = mockPool([first]);
-  await openSuggestions();
-  await screen.findByText(first.content.title);
-  click(link("/agents"));
-  await screen.findByRole("heading", { name: "Agents" });
-  pool.publish(second);
+test.each(["notification", "reconnect"] as const)(
+  "For you opens background-updated cards after an Ably %s without waiting for another request",
+  async (delivery) => {
+    const [first, second] = numberedSuggestions(2);
+    const pool = mockPool([first]);
+    await setupPage({
+      context,
+      path: suggestionPath,
+      featureSwitches: features,
+      sharedWorkerTestTransport: "message-port",
+    });
+    await screen.findByText(first.content.title);
+    await waitFor(() => {
+      expect(
+        context.mocks.ably.hasSubscription(SUGGESTIONS_TOPIC),
+      ).toBeTruthy();
+    });
+    click(link("/agents"));
+    await screen.findByRole("heading", { name: "Agents" });
+    pool.publish(second);
+    if (delivery === "notification") {
+      notifySuggestionsChanged();
+    } else {
+      context.mocks.ably.triggerSharedWorkerConnectionState("suspended");
+      context.mocks.ably.triggerSharedWorkerReconnect();
+    }
+    await within(link(suggestionPath)).findByLabelText("2 waiting");
+    const response = context.mocks.deferred<void>();
+    context.mocks.api(feedContract.list, async ({ respond }) => {
+      await response.promise;
+      return respond(200, { items: [first, second] });
+    });
+    click(link(suggestionPath));
+    await screen.findByText("2 to go");
+    click(link(`/for-you?suggestion=${second.id}`));
+    const card = await screen.findByRole("article", {
+      name: second.content.title,
+    });
+    expect(card).toBeInTheDocument();
+    response.resolve();
+  },
+);
+
+test("For you preloads details when its sidebar shows an unread dot", async () => {
+  const suggestion = makeSuggestion();
+  mockPool([suggestion]);
+  const preloaded = context.mocks.deferred<void>();
+  context.mocks.api(feedContract.list, ({ respond }) => {
+    preloaded.resolve();
+    return respond(200, { items: [suggestion] });
+  });
+  await setupPage({ context, path: homePath, featureSwitches: sourceFeatures });
+  await within(link(suggestionPath)).findByText("Unread");
+  await preloaded.promise;
+  const response = context.mocks.deferred<void>();
+  context.mocks.api(feedContract.list, async ({ respond }) => {
+    await response.promise;
+    return respond(200, { items: [suggestion] });
+  });
   click(link(suggestionPath));
-  await screen.findByText("2 to go");
-  click(link(`/for-you?suggestion=${second.id}`));
   const card = await screen.findByRole("article", {
-    name: second.content.title,
+    name: suggestion.content.title,
+  });
+  expect(card).toBeInTheDocument();
+  response.resolve();
+});
+
+test("For you retries a failed preloaded feed", async () => {
+  const suggestion = makeSuggestion();
+  mockPool([suggestion]);
+  let failed = true;
+  context.mocks.api(feedContract.list, ({ respond }) => {
+    return failed
+      ? respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "Unavailable" },
+        })
+      : respond(200, { items: [suggestion] });
+  });
+  await openSuggestions();
+  await screen.findByRole("alert");
+  failed = false;
+  click(button("Try again"));
+  const card = await screen.findByRole("article", {
+    name: suggestion.content.title,
   });
   expect(card).toBeInTheDocument();
 });
+
+test.each(["account", "workspace"] as const)(
+  "For you opens the new owner's cards after an active %s change",
+  async (scope) => {
+    const [first, second] = numberedSuggestions(2);
+    mockPool([first]);
+    await openSuggestions();
+    await screen.findByRole("article", { name: first.content.title });
+    click(link("/agents"));
+    await screen.findByRole("heading", { name: "Agents" });
+    mockPool([second]);
+    const clerk = context.mocks.clerk();
+    act(() => {
+      if (scope === "account") {
+        clerk.user(
+          { id: "other-feed-user", fullName: "Other User" },
+          { id: "other-feed-session", token: "other-token" },
+        );
+      } else {
+        clerk.organization({
+          activeOrg: { id: "other-feed-org", name: "Other Workspace" },
+          memberships: [{ id: "other-feed-org" }],
+        });
+      }
+      clerk.stateChanged();
+    });
+    await screen.findByRole("heading", { name: "Agents" });
+    click(link(suggestionPath));
+    const card = await screen.findByRole("article", {
+      name: second.content.title,
+    });
+    expect(card).toBeInTheDocument();
+    expect(screen.queryByText(first.content.title)).not.toBeInTheDocument();
+  },
+);
 test("Choosing an action sends it to a new thread and keeps the homepage draft", async () => {
   const selected = makeOption({ id: "prepare", label: "Prepare response" });
   const suggestion = {
