@@ -616,15 +616,15 @@ describe("recurring automation auto-disable platform feed events", () => {
       }
       mockNow(new Date(before.nextRunAt));
       await runs.registerDirectRunner(scenario.runnerGroup);
-      await expect(
-        accept(
-          app(cronExecuteWorkflowAutomationsContract).execute({
-            headers: { authorization: `Bearer ${CRON_SECRET}` },
-          }),
-          [200],
-        ),
-      ).rejects.toThrow("Run execution preparation failed");
-      await flushWaitUntilForTest();
+      await accept(
+        app(cronExecuteWorkflowAutomationsContract).execute({
+          headers: { authorization: `Bearer ${CRON_SECRET}` },
+        }),
+        [200],
+      );
+      await expect(flushWaitUntilForTest()).rejects.toThrow(
+        "Run execution preparation failed",
+      );
       expect((await readAutomation(scenario)).enabled).toBe(failure < 3);
     }
     const delivered = await inbox(scenario.actor);
