@@ -1,12 +1,12 @@
 #if STAGING
-  import ClerkKit
   import Foundation
   import OSLog
   import Synchronization
   import UIKit
 
   /// Temporary, credential-free correlation for the Clerk refresh investigation.
-  final class ClerkRefreshDiagnostics: Sendable {
+  @MainActor
+  final class ClerkRefreshDiagnostics {
     enum Source: String, Sendable {
       case sdk = "sdk.runtime"
       case startup = "app.startup"
@@ -22,21 +22,27 @@
       var refreshID: String?
     }
 
-    @TaskLocal static var source: Source = .other
-    @TaskLocal static var context: Context?
+    nonisolated static let source = TaskLocal<Source>(wrappedValue: .other)
+    nonisolated static let context = TaskLocal<Context?>(wrappedValue: nil)
 
     private struct Lifecycle: Sendable {
       var cycle = 0
       var phase = "launch"
     }
 
-    let id = UUID().uuidString
-    private let lifecycle = Mutex(Lifecycle())
-    private let observers = Mutex<[NSObjectProtocol]>([])
-    private let log = Logger(subsystem: "ai.okou.ios", category: "Authentication")
+    nonisolated let id = UUID().uuidString
+    private nonisolated let lifecycle = Mutex(Lifecycle())
+    private var observers: [NSObjectProtocol] = []
+    private nonisolated let log = Logger(subsystem: "ai.okou.ios", category: "Authentication")
 
-    @MainActor
     init() {
+      startObserving()
+    }
+
+    isolated deinit { close() }
+
+    func startObserving() {
+      guard observers.isEmpty else { return }
       let events: [(Notification.Name, String)] = [
         (UIApplication.willEnterForegroundNotification, "will-enter-foreground"),
         (UIApplication.didBecomeActiveNotification, "did-become-active"),
@@ -57,32 +63,27 @@
             "event=auth.client.lifecycle owner=\(self.id, privacy: .public) cycle=\(snapshot.cycle) phase=\(phase, privacy: .public)"
           )
         }
-        observers.withLock { $0.append(observer) }
+        observers.append(observer)
       }
     }
 
-    deinit {
-      observers.withLock { tokens in
-        for token in tokens { NotificationCenter.default.removeObserver(token) }
-      }
-    }
-
-    var middleware: Clerk.Options.MiddlewareConfig {
-      .init(request: [RequestTrace(owner: self)], response: [ResponseTrace(owner: self)])
+    func close() {
+      for token in observers { NotificationCenter.default.removeObserver(token) }
+      observers.removeAll()
     }
 
     func record(_ operation: String, refreshID: UUID) {
       let snapshot = lifecycle.withLock { $0 }
       let refresh = refreshID.uuidString
       log.info(
-        "event=auth.client.trace operation=\(operation, privacy: .public) owner=\(self.id, privacy: .public) cycle=\(snapshot.cycle) phase=\(snapshot.phase, privacy: .public) source=\(Self.source.rawValue, privacy: .public) refresh_id=\(refresh, privacy: .public)"
+        "event=auth.client.trace operation=\(operation, privacy: .public) owner=\(self.id, privacy: .public) cycle=\(snapshot.cycle) phase=\(snapshot.phase, privacy: .public) source=\(Self.source.wrappedValue.rawValue, privacy: .public) refresh_id=\(refresh, privacy: .public)"
       )
     }
 
-    private func prepare(_ request: inout URLRequest) {
+    nonisolated func prepare(_ request: inout URLRequest) {
       guard request.httpMethod == "GET", request.url?.path == "/v1/client" else { return }
       let snapshot = lifecycle.withLock { $0 }
-      let context = Self.context
+      let context = Self.context.wrappedValue
       let requestID = UUID().uuidString
       let source = context?.source.rawValue ?? "unmarked"
       let caller: String
@@ -112,29 +113,12 @@
       )
     }
 
-    private func received(_ response: HTTPURLResponse, for request: URLRequest) {
+    nonisolated func received(_ response: HTTPURLResponse, for request: URLRequest) {
       guard let requestID = request.value(forHTTPHeaderField: "X-Okou-Clerk-Request-Id")
       else { return }
       log.info(
         "event=auth.client.request.received owner=\(self.id, privacy: .public) request_id=\(requestID, privacy: .public) status=\(response.statusCode)"
       )
-    }
-
-    private struct RequestTrace: ClerkRequestMiddleware {
-      let owner: ClerkRefreshDiagnostics
-
-      func prepare(_ request: inout URLRequest) async throws {
-        owner.prepare(&request)
-      }
-    }
-
-    private struct ResponseTrace: ClerkResponseMiddleware {
-      let owner: ClerkRefreshDiagnostics
-
-      func validate(_ response: HTTPURLResponse, data _: Data, for request: URLRequest) async throws
-      {
-        owner.received(response, for: request)
-      }
     }
   }
 #endif

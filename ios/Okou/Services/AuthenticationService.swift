@@ -107,7 +107,7 @@ final class AuthenticationService {
     #if STAGING
       let diagnostics = ClerkRefreshDiagnostics()
       refreshDiagnostics = diagnostics
-      clerk = ClerkRefreshDiagnostics.$context.withValue(
+      clerk = ClerkRefreshDiagnostics.context.withValue(
         .init(source: .sdk, owner: diagnostics.id)
       ) {
         Clerk.configure(
@@ -235,7 +235,13 @@ final class AuthenticationService {
   /// Own this long-lived subscription with the app's root `.task`.
   func start() async {
     guard let clerk else { return }
+    #if STAGING
+      refreshDiagnostics?.startObserving()
+    #endif
     defer {
+      #if STAGING
+        refreshDiagnostics?.close()
+      #endif
       clientRefreshTask?.identity.cancel()
       clientRefreshTask?.task.cancel()
       clientRefreshTask = nil
@@ -291,7 +297,7 @@ final class AuthenticationService {
 
   #if STAGING
     func refresh(diagnosticSource: ClerkRefreshDiagnostics.Source) async {
-      await ClerkRefreshDiagnostics.$source.withValue(diagnosticSource) { await refresh() }
+      await ClerkRefreshDiagnostics.source.withValue(diagnosticSource) { await refresh() }
     }
   #endif
 
@@ -307,12 +313,13 @@ final class AuthenticationService {
       refreshDiagnostics?.record("started", refreshID: id)
       let context = refreshDiagnostics.map {
         ClerkRefreshDiagnostics.Context(
-          source: ClerkRefreshDiagnostics.source, owner: $0.id, refreshID: id.uuidString)
+          source: ClerkRefreshDiagnostics.source.wrappedValue, owner: $0.id,
+          refreshID: id.uuidString)
       }
     #endif
     let identity = Task {
       #if STAGING
-        return await ClerkRefreshDiagnostics.$context.withValue(context) {
+        return await ClerkRefreshDiagnostics.context.withValue(context) {
           await self.restoreSession()
         }
       #else
@@ -558,7 +565,7 @@ final class AuthenticationService {
     let presentedScope = presentationScopeID
     if resolvedWorkspaceIdentity != workspaceIdentity {
       #if STAGING
-        let task = ClerkRefreshDiagnostics.$source.withValue(.accessToken) {
+        let task = ClerkRefreshDiagnostics.source.withValue(.accessToken) {
           beginClientRefresh()
         }
         let result = await task.value
@@ -622,3 +629,27 @@ final class AuthenticationService {
     await previous?.close(removeFiles: true)
   }
 }
+
+#if STAGING
+  extension ClerkRefreshDiagnostics {
+    var middleware: Clerk.Options.MiddlewareConfig {
+      .init(request: [RequestTrace(owner: self)], response: [ResponseTrace(owner: self)])
+    }
+
+    private struct RequestTrace: ClerkRequestMiddleware {
+      let owner: ClerkRefreshDiagnostics
+
+      func prepare(_ request: inout URLRequest) async throws {
+        owner.prepare(&request)
+      }
+    }
+
+    private struct ResponseTrace: ClerkResponseMiddleware {
+      let owner: ClerkRefreshDiagnostics
+
+      func validate(_ value: HTTPURLResponse, data _: Data, for request: URLRequest) async throws {
+        owner.received(value, for: request)
+      }
+    }
+  }
+#endif
