@@ -338,10 +338,10 @@
   public ai.okou.android.chat.HistoryEvent decode(java.lang.String);
 }
 -keep,allowobfuscation class ai.okou.android.chat.HistoryEvent {
+  public java.lang.String archiveJson$app();
   public java.lang.String getId();
   public long getSeqId();
   public java.lang.String getThreadId();
-  public kotlinx.serialization.json.JsonObject getWire();
   ai.okou.android.chat.HistoryEvent$Companion Companion;
 }
 -keep,allowobfuscation class ai.okou.android.chat.HistoryMessage {

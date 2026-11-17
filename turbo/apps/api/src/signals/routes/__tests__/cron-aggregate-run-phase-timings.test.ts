@@ -12,13 +12,21 @@ import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { cronAggregateRunPhaseTimingsRoutes } from "../cron-aggregate-run-phase-timings";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { createHostBddApi } from "./helpers/api-bdd-host";
+import {
+  hostedTextFile,
+  installHostedUploadTransport,
+  uploadHostedTextFiles,
+} from "./helpers/api-bdd-host-files";
+import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { completePublicClaudeRun } from "./helpers/public-native-run";
 
 const context = testContext();
 const CUTOFF = "2026-11-16T00:00:00.000Z";
 const headers = Object.freeze({ authorization: "Bearer test-cron-secret" });
-const PREFIX = "telemetry/run-phase-timings/v1/";
+const PREFIX = "telemetry/run-phase-timings/v2/";
 
 function client() {
   return setupApp({ context, routes: cronAggregateRunPhaseTimingsRoutes })(
@@ -86,8 +94,9 @@ function objectStorage(conflict = false) {
   return { objects, writes };
 }
 
-async function completedRunMarks() {
-  let clock = Date.parse("2026-11-14T16:00:00.000Z");
+async function completedRunMarks(publishArtifact = true) {
+  const startedAt = Date.parse("2026-11-14T16:00:00.000Z");
+  let clock = startedAt;
   const owned = await publicChatActor(context, {
     clockTime: () => {
       return clock;
@@ -102,7 +111,27 @@ async function completedRunMarks() {
     });
   });
   const execution = await owned.executionInput(run.runId);
-  clock += 10_000;
+  if (publishArtifact) {
+    clock += 3000;
+    await owned.run(async () => {
+      const storage = createChatCallbacksApi(context).acceptChatObjectStorage();
+      installHostedUploadTransport(context, storage);
+      const host = createHostBddApi(context);
+      const publisher = { bearerToken: okouTokenFromExecution(execution) };
+      const content = "<main>A published report</main>";
+      const prepared = await host.prepareHostedSite(publisher, {
+        site: `phase-${run.runId.slice(0, 8)}`,
+        title: "Phase report",
+        artifactKind: "hosted-site",
+        spaFallback: false,
+        visibility: "public",
+        files: [hostedTextFile("/index.html", content)],
+      });
+      await uploadHostedTextFiles(prepared, { "/index.html": content });
+      await host.completeHostedSite(publisher, prepared.deploymentId);
+    });
+  }
+  clock = startedAt + 10_000;
   await owned.run(() => {
     return completePublicClaudeRun(
       context,
@@ -258,6 +287,35 @@ describe("daily Run phase aggregation cron", () => {
       }),
     ).toHaveLength(writesBeforeLoss);
     expect(storage.objects.get(key)?.body).toBe(before.body);
+  });
+
+  it("filters completed metrics by the stored result and retains marked-Run diagnostics", async () => {
+    const artifact = await completedRunMarks();
+    const text = await completedRunMarks(false);
+    mockNow(new Date(CUTOFF));
+    phaseSource([...artifact, ...text]);
+    const storage = objectStorage();
+    await accept(client().aggregate({ headers }), [200]);
+    const stored = storage.objects.get(
+      `test-user-storages/${PREFIX}2026-11-15.json`,
+    );
+    if (!stored) {
+      throw new Error("Missing completed partition");
+    }
+    const report = runPhaseTimingRollupSchema.parse(JSON.parse(stored.body));
+    expect(report.metricCohort).toStrictEqual({
+      status: "completed",
+      artifactResult: "success",
+    });
+    expect(report.counts).toMatchObject({ markedRuns: 2, completed: 2 });
+    const group = report.groups.find((entry) => {
+      return entry.generationKind === "report" && entry.status === "completed";
+    });
+    expect(group).toMatchObject({
+      runs: 1,
+      metrics: { total: { count: 1, minMs: 10_000 } },
+    });
+    expect(report.groups).toHaveLength(44);
   });
 
   it.each(["prior research", "tied skip"])(

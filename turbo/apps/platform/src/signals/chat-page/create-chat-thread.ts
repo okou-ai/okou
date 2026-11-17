@@ -22,7 +22,7 @@ import type {
   ChatThreadDraft,
   FeedbackNotePart,
   GenerationTemplateRequest,
-  ChatEvent as PersistedChatEvent,
+  ClientChatEvent as PersistedChatEvent,
   ResolvedAttachFile,
   UserMessageDocument,
   UserMessageInputDocument,

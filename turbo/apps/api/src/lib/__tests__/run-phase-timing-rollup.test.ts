@@ -22,6 +22,7 @@ function run(id = RUN_A, status = "completed"): RunPhaseTimingMetadata {
     userId: "user_a",
     orgId: "org_a",
     status,
+    artifactResult: "success",
     startedAt: START,
     completedAt: END,
   };
@@ -245,6 +246,33 @@ describe("Run phase timing rollup", () => {
     );
     expect(group(day, "image", "cancelled").runs).toBe(1);
     expect(group(day, "image", "timeout").runs).toBe(1);
+  });
+
+  it("filters completed metrics by the recorded artifact result without removing raw diagnostics", () => {
+    const day = rollup(
+      [
+        generation("2026-11-14T16:00:01.000Z", true, RUN_A),
+        generation("2026-11-14T16:00:02.000Z", true, RUN_B, "report"),
+        generation("2026-11-14T16:00:03.000Z", true, RUN_C, "report"),
+      ],
+      [run(), { ...run(RUN_B), artifactResult: null }, run(RUN_C, "failed")],
+    );
+    expect(day.metricCohort).toStrictEqual({
+      status: "completed",
+      artifactResult: "success",
+    });
+    expect(day.counts).toMatchObject({
+      markedRuns: 3,
+      completed: 2,
+      failed: 1,
+    });
+    expect(group(day).metrics.total.count).toBe(1);
+    expect(group(day, "report")).toMatchObject({
+      runs: 0,
+      metrics: { total: { count: 0, minMs: null } },
+    });
+    expect(group(day, "report", "failed").metrics.total.count).toBe(1);
+    expect(day.groups).toHaveLength(44);
   });
 
   it("excludes unknown Runs, mismatched owners, malformed records and late marks", () => {

@@ -151,11 +151,12 @@ final class WorkspaceStartupTests: XCTestCase {
     await previous.projects.expand(projectID)?.value
     XCTAssertNil(previous.list.error)
     await previous.close().value
+    await cache.close()
 
     holdNavigation.withLock { $0 = true }
     holdCatchUp.withLock { $0 = true }
     let store = WorkspaceStore(
-      client: fixture.client, webURL: fixture.baseURL, cache: cache,
+      client: fixture.client, webURL: fixture.baseURL, cache: cacheDirectory.cache(scope: scope),
       projectDisclosure: ProjectDisclosureStorage(scope: scope, directory: cacheDirectory.url))
     defer { store.close() }
     store.startNewChat()

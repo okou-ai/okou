@@ -1,7 +1,35 @@
-import { object, string, union, number, tuple, enum as zEnum } from "zod";
+import {
+  array,
+  object,
+  string,
+  union,
+  number,
+  tuple,
+  enum as zEnum,
+} from "zod";
 import { renderKotlinFiles, renderKotlinTypes } from "../generate";
 
 describe("selected Kotlin wire generation", () => {
+  it("retains explicitly raw envelopes as JSON values inside typed responses", () => {
+    const row = object({ id: string(), payload: object({ text: string() }) });
+    const source = renderKotlinTypes([
+      {
+        name: "Page",
+        direction: "output",
+        schema: object({ rows: array(row), cursor: string() }),
+      },
+      {
+        name: "RawRow",
+        direction: "output",
+        schema: row,
+        representation: "raw-object",
+      },
+    ]);
+    expect(source).toContain("val `rows`: List<Map<String, JsonElement>>");
+    expect(source).toContain("val `cursor`: String");
+    expect(source).toContain("typealias RawRow = Map<String, JsonElement>");
+  });
+
   it("preserves fixed tuple position types", () => {
     const source = renderKotlinTypes([
       {

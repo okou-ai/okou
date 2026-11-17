@@ -29,6 +29,8 @@ public struct ChatEvent: Sendable {
   public let eventType: ChatEventType
   public let failureReason: String?
   public let payload: Payload?
+  public let inputError: String?
+  public let outputError: String?
 
   public init(
     id: String,
@@ -37,7 +39,9 @@ public struct ChatEvent: Sendable {
     createdAt: Date,
     eventType: ChatEventType,
     failureReason: String? = nil,
-    payload: Payload? = nil
+    payload: Payload? = nil,
+    inputError: String? = nil,
+    outputError: String? = nil
   ) {
     self.id = id
     self.runId = runId
@@ -45,21 +49,20 @@ public struct ChatEvent: Sendable {
     self.createdAt = createdAt
     self.eventType = eventType
     self.failureReason = failureReason
-    self.payload = payload
+    self.payload = eventType.isTerminal ? nil : payload
+    self.inputError = eventType == .inputRejected ? inputError : nil
+    self.outputError = eventType == .outputError ? outputError : nil
   }
 
   public struct Payload: Decodable, Sendable {
     public let content: String?
-    public let error: String?
     public let userMessage: UserMessage?
 
     public init(
       content: String? = nil,
-      error: String? = nil,
       userMessage: UserMessage? = nil
     ) {
       self.content = content
-      self.error = error
       self.userMessage = userMessage
     }
   }

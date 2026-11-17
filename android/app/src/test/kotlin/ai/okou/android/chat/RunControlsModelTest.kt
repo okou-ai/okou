@@ -105,9 +105,7 @@ class RunControlsModelTest {
                     val selected = rows.get().filter { it.threadId == id }
                     val since = request.requestUrl?.queryParameter("sinceSeqId")?.toLong() ?: 0
                     val tail =
-                        selected
-                            .filter { it.seqId > since }
-                            .joinToString(",") { it.wire.toString() }
+                        selected.filter { it.seqId > since }.joinToString(",") { it.archiveJson() }
                     val last = selected.lastOrNull()
                     jsonResponse(
                         """{"rows":[$tail],"cursor":{"lastEventId":${last?.let { "\"${it.id}\"" } ?: "null"},"lastSeqId":${last?.seqId ?: 0}},"hasMore":false}"""

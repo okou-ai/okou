@@ -139,9 +139,11 @@ struct AssistantFailureCard: View {
           OkouLoadErrorRow(message: error)
         }
       }
-      if state.failure.error != copy.description && !state.failure.error.isEmpty {
+      if let outputError = state.failure.outputError,
+        outputError != copy.description && !outputError.isEmpty
+      {
         DisclosureGroup("Details") {
-          Text(state.failure.error).font(.okou(.footnote)).textSelection(.enabled)
+          Text(outputError).font(.okou(.footnote)).textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .font(.okou(.footnote))
@@ -243,6 +245,7 @@ struct AssistantFailureCard: View {
 enum AssistantFailureCopy {
   static func content(_ state: AssistantFailureState) -> (title: String, description: String) {
     let recovery = state.recovery
+    let outputError = state.failure.outputError ?? ""
     if recovery.kind == .billing {
       guard let billing = state.billing else {
         return state.isCurrent
@@ -274,9 +277,9 @@ enum AssistantFailureCopy {
           ? "" : "You can continue when your usage limit resets, or switch models now."
       )
     }
-    if recovery.kind == .subscription { return ("This run couldn't finish", state.failure.error) }
+    if recovery.kind == .subscription { return ("This run couldn't finish", outputError) }
     if !state.failure.isRunFailure, recovery.kind == .unknown,
-      state.failure.error.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      outputError.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         == "run cancelled"
     {
       return ("Run paused — resume anytime.", "")
@@ -318,10 +321,10 @@ enum AssistantFailureCopy {
     default:
       return (
         "This run couldn't finish",
-        state.failure.error.isEmpty
+        outputError.isEmpty
           ? "Open the chat on the Okou website for details."
-          : state.failure.error.count <= 240 && !state.failure.error.contains("\n")
-            ? state.failure.error : ""
+          : outputError.count <= 240 && !outputError.contains("\n")
+            ? outputError : ""
       )
     }
   }

@@ -224,8 +224,10 @@ final class WorkspaceStore {
         list.cancelNavigationPublication()
       }
     }
-    await list.restoreCached()
-    await projects.restore()
+    async let cachedList: Void = list.restoreCached()
+    async let cachedProjects: Void = projects.restore()
+    await cachedList
+    await cachedProjects
     guard canContinueStartup(generation) else { return }
     prepareDefaultDraft(from: list.agents)
     hasRestoredSidebar = true

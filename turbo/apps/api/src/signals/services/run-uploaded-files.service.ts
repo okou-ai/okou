@@ -4,7 +4,7 @@ import {
   linkLayoutSegment,
   type LinkLayout,
 } from "@okouai/api-contracts/contracts/link-layout";
-import { and, eq, exists, isNotNull, sql } from "drizzle-orm";
+import { and, eq, exists, isNotNull, isNull, sql } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   RUN_UPLOADED_FILE_SOURCES,
@@ -26,6 +26,7 @@ import {
 
 interface RecordWebUploadedFileArgs {
   readonly runId: string | undefined;
+  readonly purpose?: "artifact";
   readonly externalId: string;
   readonly userId: string;
   readonly orgId: string | null | undefined;
@@ -101,6 +102,7 @@ const L = logger("RunUploadedFiles");
 
 interface RecordRunUploadedFileArgs {
   readonly runId: string;
+  readonly purpose?: "artifact";
   readonly source: RunUploadedFileSource;
   readonly externalId: string;
   readonly file: Pick<
@@ -211,6 +213,21 @@ const recordRunUploadedFile$ = command(
     );
     if (result.ok) {
       const [row] = result.value;
+      if (row && args.purpose === "artifact" && args.file.orgId) {
+        await db
+          .update(agentRuns)
+          .set({ artifactResult: "success" })
+          .where(
+            and(
+              eq(agentRuns.id, args.runId),
+              eq(agentRuns.userId, args.file.userId),
+              eq(agentRuns.orgId, args.file.orgId),
+              eq(agentRuns.status, "running"),
+              isNull(agentRuns.artifactResult),
+            ),
+          );
+        signal.throwIfAborted();
+      }
       return row;
     }
     if (!isForeignKeyViolation(result.error)) {
@@ -253,6 +270,7 @@ export const recordHostedSiteArtifact$ = command(
         runId: args.runId,
         source,
         externalId,
+        purpose: "artifact",
         file: {
           userId: args.userId,
           orgId: args.orgId,
@@ -327,6 +345,7 @@ export const recordWebUploadedFile$ = command(
         runId: args.runId,
         source,
         externalId: args.externalId,
+        purpose: args.purpose,
         file: {
           userId: args.userId,
           orgId: args.orgId ?? null,

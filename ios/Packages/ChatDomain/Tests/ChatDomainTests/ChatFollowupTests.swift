@@ -118,7 +118,7 @@ final class ChatFollowupTests: XCTestCase {
   func testErrorTailReplacesRecommendationsButLateOldErrorsDoNotHideTheLatestRun() throws {
     let error = ChatEvent(
       id: "10", runId: "run", createdAt: .now, eventType: .outputError,
-      payload: .init(error: "Failure details"))
+      outputError: "Failure details")
     XCTAssertNil(
       try project(completed + [followups(4), error, followups(11)]).recommendedFollowups)
     let newer = [
@@ -137,24 +137,17 @@ final class ChatFollowupTests: XCTestCase {
     XCTAssertNil(try project(completed + [interrupt, followups(15)]).recommendedFollowups)
   }
 
-  func testRunOutcomesRetireRecommendationsIndependentlyOfRetainedDiagnostics() throws {
-    let payloads: [ChatEvent.Payload?] = [
-      nil, .init(content: "Private outcome", error: "Private diagnostic")
-    ]
-    for payload in payloads {
-      for terminal in [ChatEventType.runFailed, .runCancelled] {
-        let outcome = ChatEvent(
-          id: "10", runId: "run", createdAt: Date(timeIntervalSince1970: 10),
-          eventType: terminal, payload: payload)
-        XCTAssertNil(
-          try project(completed + [followups(4), outcome, followups(11)]).recommendedFollowups)
-      }
-      let completion = ChatEvent(
-        id: "10", runId: "run", createdAt: Date(timeIntervalSince1970: 10),
-        eventType: .runCompleted, payload: payload)
-      XCTAssertEqual(
-        try project(completed + [followups(4), completion]).recommendedFollowups?.eventID, "4")
+  func testRunOutcomesRetireRecommendationsWhileCompletionKeepsTheirSource() throws {
+    for terminal in [ChatEventType.runFailed, .runCancelled] {
+      let outcome = ChatEvent(
+        id: "10", runId: "run", createdAt: Date(timeIntervalSince1970: 10), eventType: terminal)
+      XCTAssertNil(
+        try project(completed + [followups(4), outcome, followups(11)]).recommendedFollowups)
     }
+    let completion = ChatEvent(
+      id: "10", runId: "run", createdAt: Date(timeIntervalSince1970: 10), eventType: .runCompleted)
+    XCTAssertEqual(
+      try project(completed + [followups(4), completion]).recommendedFollowups?.eventID, "4")
   }
 
   private var completed: [ChatEvent] {

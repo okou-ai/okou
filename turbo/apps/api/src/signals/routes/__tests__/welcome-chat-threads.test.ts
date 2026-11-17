@@ -229,7 +229,6 @@ describe("POST /api/welcome-chat-threads", () => {
       "## ⚙️ Workflows other teams have already built here",
       "## 🛠️ Make it yours",
       "## 💬 I can work where your team already talks",
-      "## 💸 Mind which model I run on",
       "## 📸 A walkthrough in real screenshots",
       "[invite your teammates]",
       "[read the docs]",
@@ -247,7 +246,6 @@ describe("POST /api/welcome-chat-threads", () => {
       "- [Weekly growth report]",
       "Open **Template** in the chat composer",
       "**Give a job its own agent.**",
-      "**Start cheap**",
       // Prompts are copyable blocks rather than links, because an inline link
       // collapses into a chip.
       "```\nFind the creators talking about",
@@ -347,11 +345,7 @@ describe("POST /api/welcome-chat-threads", () => {
       expect(content).toContain(
         "![coastal-hotel-example](<https://coastal-hotel-example.okou.app>)",
       );
-      for (const filename of [
-        "slack-scene.png",
-        "telegram-scene.png",
-        "model-tiers.png",
-      ]) {
+      for (const filename of ["slack-scene.png", "telegram-scene.png"]) {
         expect(content).toContain(`${WELCOME_SCENE_BASE}/${filename}`);
       }
       for (const filename of [

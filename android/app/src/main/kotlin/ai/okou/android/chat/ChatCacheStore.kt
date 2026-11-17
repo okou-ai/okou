@@ -234,13 +234,7 @@ internal constructor(
                         )
                         dao.putHistoryEvents(
                             rows.map {
-                                HistoryEventRecord(
-                                    key,
-                                    threadId,
-                                    it.id,
-                                    it.seqId,
-                                    it.wire.toString(),
-                                )
+                                HistoryEventRecord(key, threadId, it.id, it.seqId, it.archiveJson())
                             }
                         )
                         written.add(threadId)
@@ -311,13 +305,7 @@ internal constructor(
                         checkpoint.rows
                             .filter { replacement || it.seqId > checkNotNull(stored).seqId }
                             .map {
-                                HistoryEventRecord(
-                                    key,
-                                    threadId,
-                                    it.id,
-                                    it.seqId,
-                                    it.wire.toString(),
-                                )
+                                HistoryEventRecord(key, threadId, it.id, it.seqId, it.archiveJson())
                             }
                     )
                     written = true

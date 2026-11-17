@@ -8,11 +8,23 @@ import XCTest
 
 @MainActor
 final class ChatSyncTests: XCTestCase {
-  func testCanonicalFailureReasonSurvivesHTTPAndOfflineCacheWithoutErrorText() async throws {
+  func testStructuredRunAndOrdinaryErrorsSurviveHTTPAndOfflineCache() async throws {
+    for payload in ["null", #"{"error":"private diagnostic"}"#] {
+      try await assertCanonicalFailureSurvivesHTTPAndOfflineCache(payload: payload)
+    }
+  }
+
+  private func assertCanonicalFailureSurvivesHTTPAndOfflineCache(payload: String) async throws {
     let directory = CacheTestDirectory(owner: self)
     let offline = Mutex(false)
     let row = """
-      {"id":"\(syncEventID(1))","chatThreadId":"\(syncThreadID)","runId":"\(syncRunID)","seqId":1,"createdAt":"2026-10-20T00:00:00Z","eventType":"run.failed","failureReason":"execution_timeout","payload":null}
+      {"id":"\(syncEventID(3))","chatThreadId":"\(syncThreadID)","runId":"\(syncRunID)","seqId":3,"createdAt":"2026-10-20T00:00:00Z","eventType":"run.failed","failureReason":"execution_timeout","payload":\(payload)}
+      """
+    let rejection = """
+      {"id":"\(syncEventID(1))","chatThreadId":"\(syncThreadID)","runId":"\(syncRunID)","seqId":1,"createdAt":"2026-10-20T00:00:00Z","eventType":"input.rejected","payload":{"error":"Input rejected","userMessage":{"version":1,"parts":[{"type":"text","text":"Question"}]}}}
+      """
+    let outputError = """
+      {"id":"\(syncEventID(2))","chatThreadId":"\(syncThreadID)","runId":"\(syncRunID)","seqId":2,"createdAt":"2026-10-20T00:00:00Z","eventType":"output.error","payload":{"error":"Ordinary output error"}}
       """
     let fixture = ChatHTTPFixture { request in
       guard request.httpMethod == "GET", let path = request.url?.path,
@@ -23,7 +35,7 @@ final class ChatSyncTests: XCTestCase {
       case syncPath + "/event-snapshot": return syncMissingSnapshot()
       case syncPath + "/event-rows":
         return syncSequence(request) == 0
-          ? syncPage([row], cursor: 1) : syncPage([], cursor: 1)
+          ? syncPage([rejection, outputError, row], cursor: 3) : syncPage([], cursor: 3)
       case syncPath: return ChatHTTPResponse(body: #"{"cancellationRecoveryPending":false}"#)
       default: throw URLError(.unsupportedURL)
       }
@@ -31,14 +43,22 @@ final class ChatSyncTests: XCTestCase {
     let scope = syncScope(fixture)
     let service = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
     let history = try await service.history(threadID: syncThreadID)
-    XCTAssertEqual(history.latestFailureID, syncEventID(1))
-    XCTAssertEqual(history.messages.first?.failure?.reason, "execution_timeout")
-    XCTAssertEqual(history.messages.first?.failure?.recovery(personalFramework: nil).kind, .timeout)
+    XCTAssertEqual(history.latestFailureID, syncEventID(3))
+    XCTAssertEqual(history.messages.first?.inputError, "Input rejected")
+    XCTAssertEqual(history.messages[1].failure?.outputError, "Ordinary output error")
+    XCTAssertEqual(history.messages.last?.failure?.reason, "execution_timeout")
+    XCTAssertEqual(history.messages.last?.failure?.recovery(personalFramework: nil).kind, .timeout)
     offline.withLock { $0 = true }
     let reopened = ChatSync(client: fixture.client, cache: directory.cache(scope: scope))
     let cached = await reopened.cachedHistory(threadID: syncThreadID)
     XCTAssertEqual(cached?.latestFailureID, history.latestFailureID)
-    XCTAssertEqual(cached?.messages.first?.failure?.reason, "execution_timeout")
+    XCTAssertEqual(cached?.messages.last?.failure?.reason, "execution_timeout")
+    XCTAssertEqual(cached, history)
+    let stored = try await directory.cache(scope: scope).loadHistory(threadID: syncThreadID)
+    let retained = try XCTUnwrap(stored?.rows.last?.data)
+    XCTAssertEqual(
+      try JSONSerialization.jsonObject(with: retained) as? NSDictionary,
+      try JSONSerialization.jsonObject(with: Data(row.utf8)) as? NSDictionary)
   }
 
   func testExtensionTailBecomesVisibleToAResidentReaderBeforeAnyForegroundRequest() async throws {
