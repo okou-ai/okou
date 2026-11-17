@@ -306,7 +306,6 @@ async def test_fresh_hit_changes_count_bound_eviction_order(real_flow):
 
 
 async def test_byte_bound_evicts_least_recent_entries(real_flow):
-    catalog_cache.reset_for_tests()
     large_padding = "x" * (catalog_validation.MAX_ENTRY_BYTES - 64)
     large_body = json.dumps({"models": [], "padding": large_padding}).encode()
     assert len(large_body) <= catalog_validation.MAX_ENTRY_BYTES
