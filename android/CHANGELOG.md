@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/okou-ai/okou/compare/android-v0.18.0...android-v0.18.1) (2026-11-17)
+
+
+### Refactoring
+
+* prepare structured run failure clients ([#48006](https://github.com/okou-ai/okou/issues/48006)) ([4839506](https://github.com/okou-ai/okou/commit/483950651b69db523f06a72f7cf2490c913ff8ab))
+
 ## [0.18.0](https://github.com/okou-ai/okou/compare/android-v0.17.0...android-v0.18.0) (2026-11-17)
 
 

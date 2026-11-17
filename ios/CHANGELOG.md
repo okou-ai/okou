@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.47.0](https://github.com/okou-ai/okou/compare/ios-v0.46.2...ios-v0.47.0) (2026-11-17)
+
+
+### Features
+
+* **ios:** reject duplicate branch conditions ([#48141](https://github.com/okou-ai/okou/issues/48141)) ([e081fac](https://github.com/okou-ai/okou/commit/e081fac3a340d260c94717be23735e14f60ed2ad))
+
+
+### Refactoring
+
+* prepare structured run failure clients ([#48006](https://github.com/okou-ai/okou/issues/48006)) ([4839506](https://github.com/okou-ai/okou/commit/483950651b69db523f06a72f7cf2490c913ff8ab))
+
 ## [0.46.2](https://github.com/okou-ai/okou/compare/ios-v0.46.1...ios-v0.46.2) (2026-11-17)
 
 
