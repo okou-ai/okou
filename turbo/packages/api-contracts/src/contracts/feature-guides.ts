@@ -112,6 +112,24 @@ export const featureGuideContentSchema = object({
 export type FeatureGuideContent = zInfer<typeof featureGuideContentSchema>;
 export type FeatureGuideMedia = zInfer<typeof featureGuideMediaSchema>;
 
+const audienceIdentitySchema = string().trim().min(1).max(255);
+export const featureGuideAudienceSchema = object({
+  orgIds: array(audienceIdentitySchema).min(1).max(1000).optional(),
+  users: array(
+    object({
+      orgId: audienceIdentitySchema,
+      userId: audienceIdentitySchema,
+    }).strict(),
+  )
+    .min(1)
+    .max(1000)
+    .optional(),
+})
+  .strict()
+  .refine((audience) => {
+    return Boolean(audience.orgIds?.length || audience.users?.length);
+  }, "A targeted audience must include an organization or an organization member");
+
 export const featureGuideEditionSchema = object({
   id: editionIdSchema,
   revisionId: uuid(),
@@ -122,6 +140,8 @@ export type FeatureGuideEdition = zInfer<typeof featureGuideEditionSchema>;
 export const importFeatureGuideSchema = object({
   editionId: editionIdSchema,
   content: featureGuideContentSchema,
+  // Omission preserves delivery to everyone with FeatureGuides enabled.
+  audience: featureGuideAudienceSchema.optional(),
   startsAt: iso.datetime(),
   expiresAt: iso.datetime().nullable(),
 })
@@ -154,7 +174,8 @@ export const featureGuidesContract = c.router({
       }),
       ...errors,
     },
-    summary: "Get the current published feature guide unless already seen",
+    summary:
+      "Get the latest published feature guide for the current audience unless already seen",
   },
   seen: {
     method: "POST",

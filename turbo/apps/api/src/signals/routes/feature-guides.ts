@@ -13,7 +13,7 @@ import type { RouteEntry } from "../route-entry";
 import { createUserFeatureSwitchContext } from "../services/feature-switches.service";
 import {
   acknowledgeableFeatureGuideRevision,
-  currentFeatureGuide$,
+  currentFeatureGuide,
   featureGuideReceipt,
   featureGuideRevision,
   importFeatureGuide$,
@@ -21,11 +21,11 @@ import {
   publishFeatureGuide$,
 } from "../services/feature-guides.service";
 
-const switchContext$ = createUserFeatureSwitchContext(
-  computed((get) => {
-    return Promise.resolve(get(organizationAuthContext$));
-  }),
-);
+const viewer$ = computed((get) => {
+  return get(organizationAuthContext$);
+});
+const switchContext$ = createUserFeatureSwitchContext(viewer$);
+const currentFeatureGuide$ = currentFeatureGuide(viewer$);
 const enabled$ = computed(async (get) => {
   return isFeatureEnabled(
     FeatureSwitchKey.FeatureGuides,
@@ -71,7 +71,11 @@ const seenRevision$ = acknowledgeableFeatureGuideRevision(
   computed(async (get) => {
     const body = await get(seenBody$);
     return body.ok
-      ? { ...get(seenParams$), revisionId: body.data.revisionId }
+      ? {
+          ...get(seenParams$),
+          ...get(viewer$),
+          revisionId: body.data.revisionId,
+        }
       : null;
   }),
 );
