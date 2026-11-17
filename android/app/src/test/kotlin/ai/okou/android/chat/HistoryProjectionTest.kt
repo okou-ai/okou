@@ -13,7 +13,7 @@ class HistoryProjectionTest {
             listOf("null", """{"content":"private diagnostic","error":"private diagnostic"}""")) {
             val failed = transcript(event("failed", 1, "run.failed", payload = payload))
             assertEquals(HistoryExecution.Failed, failed.execution)
-            assertTrue(failed.messages.flatMap { it.blocks }.any { it.text == "Run failed" })
+            assertEquals("run.failed", failed.messages.single().status)
             assertFalse(
                 failed.messages.flatMap { it.blocks }.any { it.text.contains("private diagnostic") }
             )
@@ -90,14 +90,12 @@ class HistoryProjectionTest {
         assertEquals(HistoryExecution.Cancelled, stopped.execution)
         assertEquals(1, stopped.messages.count { it.status == "run.cancelled" })
         assertTrue(stopped.messages.flatMap { it.blocks }.any { it.text == "Partial reply" })
-        assertTrue(stopped.messages.flatMap { it.blocks }.any { it.text == "Run cancelled" })
 
         val terminal =
             event("terminal", 4, "run.cancelled", payload = """{"error":"Stopped by user"}""")
         val confirmed = transcript(prompt, partial, interrupt, terminal)
         assertEquals(HistoryExecution.Cancelled, confirmed.execution)
         assertEquals(1, confirmed.messages.count { it.status == "run.cancelled" })
-        assertTrue(confirmed.messages.flatMap { it.blocks }.any { it.text == "Run cancelled" })
 
         val completed = event("completed", 3, "run.completed")
         val lateInterrupt = event("late-interrupt", 4, "control.interrupt")
