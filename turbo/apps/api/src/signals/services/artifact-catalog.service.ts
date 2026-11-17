@@ -25,6 +25,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import {
+  ARTIFACT_CATALOG_KINDS,
   chatArtifactCatalogChangedEvent,
   type ArtifactCatalogKind,
   type ArtifactDetail,
@@ -49,7 +50,7 @@ import {
   runUploadedFiles,
   type CanonicalAssetClassification,
 } from "@okouai/db/schema/run-uploaded-file";
-import { object, string, type infer as zInfer } from "zod";
+import { object, string, enum as zEnum, type infer as zInfer } from "zod";
 
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
@@ -59,6 +60,7 @@ import {
   pgIntegerDecoder,
   pgBooleanDecoder,
   pgTextDecoder,
+  zodEnumDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
@@ -196,19 +198,20 @@ function catalogArtifactKind(
     : kind;
 }
 
-function artifactCatalogKindFilter(kind: ArtifactCatalogKind): SQL {
+function artifactCatalogEffectiveKind(): SQL {
   // Summary metadata is optional independently of creating-thread ownership.
   // An absent display projection retains the base kind (or the shared snapshot
   // kind encoded in its logical key), exactly as toArtifactSummary does.
-  return eq(
-    sql`coalesce(${artifacts.displayKind}, case
-      when ${artifacts.kind} = 'file'
-        and ${artifacts.logicalKey} like 'shared-thread:%'
-      then 'shared-thread'
-      else ${artifacts.kind}
-    end)`,
-    kind,
-  );
+  return sql`coalesce(${artifacts.displayKind}, case
+    when ${artifacts.kind} = 'file'
+      and ${artifacts.logicalKey} like 'shared-thread:%'
+    then 'shared-thread'
+    else ${artifacts.kind}
+  end)`;
+}
+
+function artifactCatalogKindFilter(kind: ArtifactCatalogKind): SQL {
+  return eq(artifactCatalogEffectiveKind(), kind);
 }
 
 function hostedArtifactKind(
@@ -1219,11 +1222,13 @@ interface ListArtifactCatalogArgs {
   readonly kind?: ArtifactCatalogKind;
   readonly chatThreadId?: string;
   readonly keyword?: string;
+  readonly includeKinds?: "true";
 }
 
 interface ListArtifactCatalogResult {
   readonly artifacts: readonly ArtifactSummary[];
   readonly nextCursor: string | null;
+  readonly availableKinds?: readonly ArtifactCatalogKind[];
 }
 
 /** Bounded, explicit recovery for pending files, independent of catalog reads. */
@@ -1332,6 +1337,14 @@ export const listArtifactCatalog$ = command(
     const db = get(db$);
     const limit = args.limit ?? ARTIFACT_CATALOG_DEFAULT_LIMIT;
     const cursor = args.cursor ? decodeArtifactCursor(args.cursor) : null;
+    const scopeFilter = and(
+      eq(artifacts.orgId, args.orgId),
+      artifactCatalogOwnerFilter(args.userId),
+      isNull(artifacts.deletedAt),
+      args.chatThreadId
+        ? eq(artifacts.chatThreadId, args.chatThreadId)
+        : undefined,
+    );
     const keywordPattern = args.keyword
       ? `%${args.keyword
           .replaceAll("\\", String.raw`\\`)
@@ -1356,13 +1369,8 @@ export const listArtifactCatalog$ = command(
       .from(artifacts)
       .where(
         and(
-          eq(artifacts.orgId, args.orgId),
-          artifactCatalogOwnerFilter(args.userId),
-          isNull(artifacts.deletedAt),
+          scopeFilter,
           args.kind ? artifactCatalogKindFilter(args.kind) : undefined,
-          args.chatThreadId
-            ? eq(artifacts.chatThreadId, args.chatThreadId)
-            : undefined,
           keywordPattern ? ilike(artifacts.title, keywordPattern) : undefined,
           cursor
             ? lt(
@@ -1376,11 +1384,31 @@ export const listArtifactCatalog$ = command(
       .limit(limit + 1);
     signal.throwIfAborted();
 
+    const kinds =
+      args.includeKinds === "true"
+        ? await db
+            .selectDistinct({
+              kind: artifactCatalogEffectiveKind().mapWith(
+                zodEnumDriverValueDecoder(zEnum(ARTIFACT_CATALOG_KINDS)),
+              ),
+            })
+            .from(artifacts)
+            .where(scopeFilter)
+        : undefined;
+    signal.throwIfAborted();
+
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
     const lastRow = pageRows.at(-1);
     return {
       artifacts: pageRows.map(toArtifactSummary),
+      ...(kinds === undefined
+        ? {}
+        : {
+            availableKinds: kinds.map(({ kind }) => {
+              return kind;
+            }),
+          }),
       nextCursor:
         hasMore && lastRow
           ? encodeArtifactCursor({

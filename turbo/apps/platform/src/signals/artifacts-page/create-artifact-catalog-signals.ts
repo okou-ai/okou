@@ -37,6 +37,16 @@ import {
 const ARTIFACT_CATALOG_PAGE_SIZE = 60;
 const ARTIFACT_CARD_THUMBNAIL_WIDTH_PX = 640;
 
+export const ARTIFACT_KIND_OPTIONS: readonly ArtifactCatalogKind[] = [
+  "presentation",
+  "hosted-site",
+  "image",
+  "video",
+  "avatar",
+  "shared-thread",
+  "file",
+];
+
 export type CatalogArtifact = ArtifactSummary & {
   readonly deletion: ReturnType<typeof createArtifactDeleteMenuSignals>;
   /**
@@ -58,17 +68,20 @@ export interface ArtifactCatalogPage {
 
 interface LoadedArtifactCatalogPage extends ArtifactCatalogPage {
   readonly revision: number;
+  readonly availableKinds?: readonly ArtifactCatalogKind[];
 }
 
 function withThumbnailLoad(
   page: {
     readonly artifacts: readonly ArtifactSummary[];
     readonly nextCursor: string | null;
+    readonly availableKinds?: readonly ArtifactCatalogKind[];
   },
   revision: number,
 ): LoadedArtifactCatalogPage {
   return {
     revision,
+    availableKinds: page.availableKinds,
     artifacts: page.artifacts.map((artifact) => {
       const videoPreview = artifact.videoSourceUrl
         ? createAttachmentPreviewSignals(artifact.videoSourceUrl)
@@ -98,6 +111,7 @@ function withThumbnailLoad(
 }
 
 export interface ArtifactCatalogSignals {
+  readonly availableKinds$: Computed<Promise<readonly ArtifactCatalogKind[]>>;
   readonly selectedKind$: Computed<ArtifactCatalogKind | null>;
   readonly setKind$: Command<void, [ArtifactCatalogKind | null]>;
   readonly reload$: Command<void, []>;
@@ -116,6 +130,7 @@ export interface ArtifactCatalogSignals {
 
 interface CatalogPagingState {
   readonly chatThreadId: string | undefined;
+  readonly includeKinds: boolean;
   readonly kind$: State<ArtifactCatalogKind | null>;
   readonly reloadVersion$: State<number>;
   readonly generation$: State<number>;
@@ -123,6 +138,7 @@ interface CatalogPagingState {
 }
 
 function createCatalogPagingSignals(paging: CatalogPagingState): {
+  readonly firstPage$: Computed<Promise<LoadedArtifactCatalogPage>>;
   readonly catalog$: Computed<Promise<ArtifactCatalogPage>>;
   readonly loadMore$: Command<Promise<void>, [AbortSignal]>;
 } {
@@ -138,6 +154,7 @@ function createCatalogPagingSignals(paging: CatalogPagingState): {
         client.list({
           query: {
             limit: ARTIFACT_CATALOG_PAGE_SIZE,
+            ...(paging.includeKinds ? { includeKinds: "true" as const } : {}),
             ...(kind ? { kind } : {}),
             ...(chatThreadId ? { chatThreadId } : {}),
           },
@@ -219,7 +236,7 @@ function createCatalogPagingSignals(paging: CatalogPagingState): {
     },
   );
 
-  return { catalog$, loadMore$ };
+  return { firstPage$, catalog$, loadMore$ };
 }
 
 function createCatalogSelectionSignals(
@@ -334,7 +351,10 @@ function createCatalogSelectionSignals(
  * closed sidebar reopens on its cache while `reload$` refreshes the first page.
  */
 export function createArtifactCatalogSignals(
-  options: { readonly chatThreadId?: string } = {},
+  options: {
+    readonly chatThreadId?: string;
+    readonly includeKinds?: boolean;
+  } = {},
 ): ArtifactCatalogSignals {
   const internalKind$ = state<ArtifactCatalogKind | null>(null);
   const internalReload$ = state(0);
@@ -365,13 +385,49 @@ export function createArtifactCatalogSignals(
     });
   });
 
-  const { catalog$, loadMore$ } = createCatalogPagingSignals({
+  const { firstPage$, catalog$, loadMore$ } = createCatalogPagingSignals({
     chatThreadId: options.chatThreadId,
+    includeKinds: options.includeKinds ?? false,
     kind$: internalKind$,
     reloadVersion$: internalReload$,
     generation$: internalGeneration$,
     pages$: internalPages$,
   });
+
+  const availableKinds$ = computed(async (get) => {
+    const firstPage = await get(firstPage$);
+    if (firstPage.availableKinds !== undefined) {
+      return firstPage.availableKinds;
+    }
+    // Older APIs omit kind metadata during rollout. Remove these existence
+    // probes once serving and rollback APIs support it, tracked in #48147.
+    const client = get(apiClient$)(artifactCatalogContract);
+    const kinds = await Promise.all(
+      ARTIFACT_KIND_OPTIONS.map(async (kind) => {
+        const result = await accept(
+          client.list({
+            query: {
+              kind,
+              limit: 1,
+              ...(options.chatThreadId
+                ? { chatThreadId: options.chatThreadId }
+                : {}),
+            },
+          }),
+          [200],
+        );
+        return result.body.artifacts.some((artifact) => {
+          return artifact.kind === kind;
+        })
+          ? kind
+          : null;
+      }),
+    );
+    return kinds.filter((kind) => {
+      return kind !== null;
+    });
+  });
+
   const selection = createCatalogSelectionSignals(
     catalog$,
     internalReload$,
@@ -405,6 +461,7 @@ export function createArtifactCatalogSignals(
   );
 
   return {
+    availableKinds$,
     selectedKind$: computed((get) => {
       return get(internalKind$);
     }),

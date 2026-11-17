@@ -27,13 +27,17 @@ import { useTranslation } from "react-i18next";
 import { artifactCatalogSidebar } from "../../signals/artifacts-page/artifact-catalog-instance.ts";
 import {
   artifactCatalog$,
+  availableArtifactCatalogKinds$,
   loadMoreArtifactCatalog$,
   openArtifact$,
   scrollArtifactCardIntoViewRef$,
   selectedArtifactCatalogKind$,
   setArtifactCatalogKind$,
 } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
-import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
+import {
+  ARTIFACT_KIND_OPTIONS,
+  type CatalogArtifact,
+} from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ChatThreadSidebarShell } from "../okou-page/chat-thread-sidebar-shell.tsx";
 import { ArtifactCatalogSidebar } from "./artifact-catalog-sidebar.tsx";
@@ -62,16 +66,6 @@ const ARTIFACT_GALLERY_CLASS_NAME =
   "grid grid-cols-[repeat(auto-fill,minmax(min(100%,240px),1fr))] gap-x-6 gap-y-8";
 
 type ArtifactCatalogAppearance = "card" | "gallery";
-
-const ARTIFACT_KIND_OPTIONS: readonly ArtifactCatalogKind[] = [
-  "presentation",
-  "hosted-site",
-  "image",
-  "video",
-  "avatar",
-  "shared-thread",
-  "file",
-];
 
 type ArtifactDisplayKind =
   ArtifactCatalogKind | ArtifactKind | "document" | "spreadsheet";
@@ -594,13 +588,18 @@ export function ArtifactCatalogEmpty() {
 }
 
 function ArtifactCatalogKindFilter({
+  availableKinds,
   selectedKind,
   onKindChange,
 }: {
+  readonly availableKinds: readonly ArtifactCatalogKind[];
   readonly selectedKind: ArtifactCatalogKind | null;
   readonly onKindChange: (value: ArtifactCatalogKind | null) => void;
 }) {
   const { t } = useTranslation();
+  if (availableKinds.length === 0) {
+    return null;
+  }
   return (
     <div
       className="flex flex-wrap items-center gap-1.5"
@@ -608,7 +607,9 @@ function ArtifactCatalogKindFilter({
         return $.artifacts.catalog.filters.label;
       })}
     >
-      {ARTIFACT_KIND_OPTIONS.map((kind) => {
+      {ARTIFACT_KIND_OPTIONS.filter((kind) => {
+        return availableKinds.includes(kind);
+      }).map((kind) => {
         const selected = kind === selectedKind;
         const label =
           kind === "presentation"
@@ -705,6 +706,7 @@ export function ArtifactCatalogPage({
   const [paging, loadMore] = useLoadableSet(loadMoreArtifactCatalog$);
   const pageSignal = useGet(pageSignal$);
   const catalog = useLoadable(artifactCatalog$);
+  const availableKinds = useLastLoadable(availableArtifactCatalogKinds$);
   const artifacts = catalog.state === "hasData" ? catalog.data.artifacts : [];
   const sharedConversationLayout = selectedKind === "shared-thread";
   const hasMore =
@@ -748,6 +750,9 @@ export function ArtifactCatalogPage({
               </p>
             </div>
             <ArtifactCatalogKindFilter
+              availableKinds={
+                availableKinds.state === "hasData" ? availableKinds.data : []
+              }
               selectedKind={selectedKind}
               onKindChange={setKind}
             />
@@ -761,7 +766,8 @@ export function ArtifactCatalogPage({
           className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-1 sm:px-6 [scrollbar-gutter:stable]"
         >
           <div className="mx-auto flex w-full max-w-[900px] flex-col gap-4">
-            {catalog.state === "hasError" ? (
+            {catalog.state === "hasError" ||
+            availableKinds.state === "hasError" ? (
               <ArtifactCatalogError />
             ) : catalog.state === "loading" ? (
               <ArtifactCatalogSkeleton
