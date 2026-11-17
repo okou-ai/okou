@@ -114,7 +114,7 @@ data class ComposerState(
             (target.key !in busy || target.key in checking) &&
             entry(target).pending == null &&
             entry(target).createdThreadId == null &&
-            entry(target).text.isNotBlank() &&
+            !entry(target).text.isBlankWebDraft() &&
             (if (target.threadId != null) target.agentId != null
             else context == ComposerContext.Ready)
 }

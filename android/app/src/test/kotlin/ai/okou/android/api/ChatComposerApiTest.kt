@@ -16,6 +16,7 @@ import ai.okou.android.chat.plainText
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
@@ -52,7 +53,7 @@ class ChatComposerApiTest {
                 listOf(ServerDraftTarget(CHAT_AGENT, false), ServerDraftTarget(CHAT_PERSONAL, true))
             for (target in targets) {
                 assertEquals("", fixture.service.composerDraft(target).plainText())
-                val text = "Web ↔ Android 你好 👋\n**literal**"
+                val text = "  Web ↔ Android 你好 👋\n**literal**  "
                 fixture.service.saveComposerDraft(target, text)
                 assertEquals(text, fixture.service.composerDraft(target).plainText())
                 val patch = fixture.requests.last { it.method == "PATCH" }
@@ -69,8 +70,19 @@ class ChatComposerApiTest {
                     wire,
                 )
                 assertTrue(patch.getHeader("Authorization")!!.startsWith("Bearer "))
-                fixture.service.saveComposerDraft(target, "")
-                assertEquals("", fixture.service.composerDraft(target).plainText())
+                for (verbatim in listOf("\u001c", "\u200b")) {
+                    fixture.service.saveComposerDraft(target, verbatim)
+                    assertEquals(verbatim, fixture.service.composerDraft(target).plainText())
+                }
+                for (blank in listOf("", " \t\n", "\u00a0\ufeff")) {
+                    fixture.service.saveComposerDraft(target, blank)
+                    assertEquals(
+                        Json.parseToJsonElement(
+                            """{"draftUserMessage":null,"draftAttachments":null}"""
+                        ),
+                        JsonObject(fixture.service.composerDraft(target)),
+                    )
+                }
             }
         }
     }

@@ -175,6 +175,21 @@ class ChatComposerModelTest {
         }
 
     @Test
+    fun webWhitespaceStaysLocalAndDoesNotAuthorizeSend() = check { service, store, create ->
+        val model = create(false, identity)
+        model.open(existing)
+        runCurrent()
+        val whitespace = " \t\n\u00a0\ufeff"
+        model.edit(existing, whitespace)
+        assertFalse(model.uiState.value.canSend(existing))
+        model.send(existing)
+        advanceUntilIdle()
+        assertTrue(service.requests.isEmpty())
+        assertEquals(whitespace, store.load(identity).journal.drafts[existing.key]!!.text)
+        assertEquals("", service.drafts[ServerDraftTarget(CHAT_PERSONAL, true)]!!.plainText())
+    }
+
+    @Test
     fun newerEditsAndClearWaitForOlderPatchWithoutLosingTheirIntent() =
         check { service, _, create ->
             val remote = ServerDraftTarget(CHAT_PERSONAL, true)

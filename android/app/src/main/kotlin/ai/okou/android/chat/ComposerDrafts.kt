@@ -53,10 +53,17 @@ internal fun ComposerDraft.plainText(): String? {
     }
 }
 
+// Match Web's ECMAScript String.trim set; Kotlin isBlank differs for BOM and control characters.
+internal fun String.isBlankWebDraft() = all {
+    it in '\u0009'..'\u000d' ||
+        it in '\u2000'..'\u200a' ||
+        it in " \u00a0\u1680\u2028\u2029\u202f\u205f\u3000\ufeff"
+}
+
 internal fun plainDraftDocument(text: String): JsonObject = buildJsonObject {
     put(
         "draftUserMessage",
-        if (text.isEmpty()) JsonNull
+        if (text.isBlankWebDraft()) JsonNull
         else
             buildJsonObject {
                 put("version", JsonPrimitive(1))
