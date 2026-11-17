@@ -10,6 +10,36 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.79.0](https://github.com/okou-ai/okou/compare/api-v2.78.0...api-v2.79.0) (2026-11-17)
+
+
+### Features
+
+* **api:** persist marketing reward invitation source events ([#48038](https://github.com/okou-ai/okou/issues/48038)) ([1a0090d](https://github.com/okou-ai/okou/commit/1a0090dd00ee6cc9e53f8768f8be30b317ba888d))
+* **api:** persist marketing reward link source events ([#47991](https://github.com/okou-ai/okou/issues/47991)) ([599e4df](https://github.com/okou-ai/okou/commit/599e4dfd4d619cd6921157c14cd0d52133cbe1e6))
+* **my-okou:** preserve initialized members and enable new-member defaults ([#47051](https://github.com/okou-ai/okou/issues/47051)) ([cf1c9e5](https://github.com/okou-ai/okou/commit/cf1c9e53c2076c58bd6bb85d51dedbd62c30b6d1))
+
+
+### Refactoring
+
+* **api:** require complete run preparation facts ([#47955](https://github.com/okou-ai/okou/issues/47955)) ([b916d05](https://github.com/okou-ai/okou/commit/b916d05c76c4412d29b3dce3d9eb702dab89a29b))
+
+
+### Performance Improvements
+
+* **api:** overlap package selection with runtime preparation ([#47997](https://github.com/okou-ai/okou/issues/47997)) ([ac83c22](https://github.com/okou-ai/okou/commit/ac83c220322c3342e117d4020899dcda56e466aa))
+* **api:** publish signed url cache outside runner delivery ([#47999](https://github.com/okou-ai/okou/issues/47999)) ([1977242](https://github.com/okou-ai/okou/commit/1977242528586fefd74eb8541bf1ff6b149473fc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.76.0
+    * @okouai/core bumped to 8.846.0
+    * @okouai/db bumped to 2.41.0
+    * @okouai/pi-agent-runtime bumped to 1.51.141
+
 ## [2.78.0](https://github.com/okou-ai/okou/compare/api-v2.77.0...api-v2.78.0) (2026-11-17)
 
 

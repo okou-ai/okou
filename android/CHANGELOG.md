@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.17.0](https://github.com/okou-ai/okou/compare/android-v0.16.0...android-v0.17.0) (2026-11-17)
+
+
+### Features
+
+* **android:** align conversation reads and history warming with web ([#47910](https://github.com/okou-ai/okou/issues/47910)) ([8e92fed](https://github.com/okou-ai/okou/commit/8e92fedbb8a32f2360f6093247c469398758b026))
+
+
+### Bug Fixes
+
+* **android:** reject unversioned composer journals ([#47962](https://github.com/okou-ai/okou/issues/47962)) ([48323f3](https://github.com/okou-ai/okou/commit/48323f361f67379838d2f58df219980cd57a83f5))
+
 ## [0.16.0](https://github.com/okou-ai/okou/compare/android-v0.15.0...android-v0.16.0) (2026-11-16)
 
 

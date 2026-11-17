@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1140.0](https://github.com/okou-ai/okou/compare/app-v0.1139.0...app-v0.1140.0) (2026-11-17)
+
+
+### Features
+
+* **my-okou:** preserve initialized members and enable new-member defaults ([#47051](https://github.com/okou-ai/okou/issues/47051)) ([cf1c9e5](https://github.com/okou-ai/okou/commit/cf1c9e53c2076c58bd6bb85d51dedbd62c30b6d1))
+
+
+### Bug Fixes
+
+* **app:** highlight tools button while its panel is open ([#48002](https://github.com/okou-ai/okou/issues/48002)) ([f1896f1](https://github.com/okou-ai/okou/commit/f1896f1330d52a223f36c06f0204b0dea43db4db))
+* **app:** render heic photos in full image previews ([#48043](https://github.com/okou-ai/okou/issues/48043)) ([e42c4a4](https://github.com/okou-ai/okou/commit/e42c4a4d759cc86ef5c380721d9a099930c13988))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.76.0
+    * @okouai/core bumped to 8.846.0
+    * @okouai/ui bumped to 1.21.35
+
 ## [0.1139.0](https://github.com/okou-ai/okou/compare/app-v0.1138.0...app-v0.1139.0) (2026-11-17)
 
 
