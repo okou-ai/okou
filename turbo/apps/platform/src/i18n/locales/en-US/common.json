@@ -3303,7 +3303,6 @@
     "accountsInChat": "Choose which accounts are on in this chat.",
     "enableByDefault": "Enable {{account}} by default",
     "manageAccounts": "Manage accounts",
-    "noEnabledAccount": "No account is on for this chat",
     "permissions": "Permissions",
     "permissionsDescription": "These rules apply to this connector across your chats and accounts.",
     "settingsDescription": "Choose which {{connector}} accounts Okou can use across your chats. You can change access in each chat.",

@@ -3351,7 +3351,6 @@
     "accountsInChat": "Escolha quais contas ficam ativadas neste chat.",
     "enableByDefault": "Ativar {{account}} por padrão",
     "manageAccounts": "Gerenciar contas",
-    "noEnabledAccount": "Nenhuma conta está ativa neste chat",
     "permissions": "Permissões",
     "permissionsDescription": "Estas regras se aplicam a este conector em todos os seus chats e contas.",
     "settingsDescription": "Escolha quais contas do {{connector}} o Okou pode usar nos seus chats. Você pode alterar o acesso em cada chat.",

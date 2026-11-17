@@ -3303,7 +3303,6 @@
     "accountsInChat": "Wähle, welche Konten in diesem Chat aktiviert sind.",
     "enableByDefault": "{{account}} standardmäßig aktivieren",
     "manageAccounts": "Konten verwalten",
-    "noEnabledAccount": "Für diesen Chat ist kein Konto aktiviert",
     "permissions": "Berechtigungen",
     "permissionsDescription": "Diese Regeln gelten für diesen Connector in allen deinen Chats und Konten.",
     "settingsDescription": "Wähle, welche {{connector}}-Konten Okou in deinen Chats verwenden darf. Du kannst den Zugriff in jedem Chat ändern.",

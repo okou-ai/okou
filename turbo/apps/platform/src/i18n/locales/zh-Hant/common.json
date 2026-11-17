@@ -3290,7 +3290,6 @@
     "accountsInChat": "選擇在此對話中開啟哪些帳號。",
     "enableByDefault": "預設啟用 {{account}}",
     "manageAccounts": "管理帳號",
-    "noEnabledAccount": "目前聊天未啟用任何帳號",
     "permissions": "權限",
     "permissionsDescription": "這些規則適用於你所有聊天和帳號中的此連接器。",
     "settingsDescription": "選擇 Okou 可以在你的對話中使用哪些 {{connector}} 帳號。你可以在每個對話中單獨調整。",

@@ -3290,7 +3290,6 @@
     "accountsInChat": "Pilih akun yang aktif dalam chat ini.",
     "enableByDefault": "Aktifkan {{account}} secara default",
     "manageAccounts": "Kelola akun",
-    "noEnabledAccount": "Tidak ada akun aktif untuk chat ini",
     "permissions": "Izin",
     "permissionsDescription": "Aturan ini berlaku untuk konektor ini di semua chat dan akun Anda.",
     "settingsDescription": "Pilih akun {{connector}} yang dapat digunakan Okou di chat Anda. Anda dapat mengubah akses di setiap chat.",

@@ -345,7 +345,12 @@ test.each([false, true])(
     const row = await openMenu();
     expect(row).toHaveTextContent("2 accounts");
     click(row);
-    await screen.findByText("No account is on for this chat");
+    await expect(
+      screen.findByRole("switch", { name: "Work access" }),
+    ).resolves.not.toBeChecked();
+    expect(
+      screen.getByRole("switch", { name: "Personal access" }),
+    ).not.toBeChecked();
     click(await findFastControl("button", "Permissions"));
     const saved = await screen.findByRole("dialog", {
       name: "GitHub permissions",
@@ -621,7 +626,12 @@ test.each([{ label: "GitHub", custom: false }])(
     const row = await openMenu(label);
     expect(row).toHaveTextContent("2 accounts");
     await user.click(row);
-    await screen.findByText("No account is on for this chat");
+    await expect(
+      screen.findByRole("switch", { name: "Work access" }),
+    ).resolves.not.toBeChecked();
+    expect(
+      screen.getByRole("switch", { name: "Personal access" }),
+    ).not.toBeChecked();
     await user.click(await findFastControl("button", "Permissions"));
     const dialog = await screen.findByRole("dialog", {
       name: `${label} permissions`,
@@ -639,7 +649,12 @@ test.each([{ label: "GitHub", custom: false }])(
     const reopened = await openMenu(label);
     expect(reopened).toHaveTextContent("2 accounts");
     await user.click(reopened);
-    await screen.findByText("No account is on for this chat");
+    await expect(
+      screen.findByRole("switch", { name: "Work access" }),
+    ).resolves.not.toBeChecked();
+    expect(
+      screen.getByRole("switch", { name: "Personal access" }),
+    ).not.toBeChecked();
     await user.click(await findFastControl("button", "Permissions"));
     const savedDialog = await screen.findByRole("dialog", {
       name: `${label} permissions`,

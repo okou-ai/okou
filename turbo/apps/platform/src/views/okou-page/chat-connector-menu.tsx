@@ -193,13 +193,6 @@ function ChatAccountChoices({
           })}
         </Button>
       )}
-      {!entry.access.available && (
-        <p className="px-3 py-2 text-xs text-muted-foreground">
-          {t(($) => {
-            return $.connectorChatAccess.noEnabledAccount;
-          })}
-        </p>
-      )}
     </>
   );
 }
