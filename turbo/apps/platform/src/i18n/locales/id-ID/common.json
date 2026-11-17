@@ -1521,6 +1521,7 @@
           "action": "Check in",
           "description": "Check in sekali sehari. Direset pukul 00:00 UTC.",
           "name": "Check in setiap hari",
+          "pendingDescription": "Check-in Anda telah disimpan. Kredit akan diperbarui setelah dikonfirmasi.",
           "unit": "per hari"
         },
         "connector": {

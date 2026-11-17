@@ -1550,6 +1550,7 @@
           "action": "Valider ma présence",
           "description": "Validez votre présence une fois par jour. Réinitialisation à 00:00 UTC.",
           "name": "Se connecter chaque jour",
+          "pendingDescription": "Votre pointage quotidien a été enregistré. Les crédits seront mis à jour après confirmation.",
           "unit": "par jour"
         },
         "connector": {
