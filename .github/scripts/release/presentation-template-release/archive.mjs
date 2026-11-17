@@ -4,7 +4,7 @@ import path from "node:path";
 
 import * as tar from "tar";
 
-import { listFiles, sha256 } from "./shared.mjs";
+import { listFiles, readJson, sha256 } from "./shared.mjs";
 
 export function registryArchiveDescriptor(archive) {
   const digest = sha256(archive);
@@ -39,7 +39,23 @@ export async function withExtractedArchive(archivePath, prefix, operation) {
   }
 }
 
+function nativePaletteManifest(release) {
+  return release.resourceId === "template:pptx-bloom-runbook"
+    ? { relativePath: "assets/bloom/palettes.json", wrapped: true }
+    : { relativePath: "assets/palettes.json", wrapped: false };
+}
+
 function requiredTemplateFiles(release) {
+  if (release.resourceId.startsWith("template:pptx-")) {
+    return [
+      "SKILL.md",
+      "deck.types.ts",
+      nativePaletteManifest(release).relativePath,
+      "scripts/generate.mjs",
+      "scripts/package.json",
+      "scripts/package-lock.json",
+    ];
+  }
   return [
     "SKILL.md",
     "design-system.md",
@@ -96,6 +112,21 @@ export async function inspectTemplateDirectory(templateDir, release, label) {
     throw new Error(
       `${release.slug} ${label}: SKILL.md is too short to be guidance`,
     );
+  }
+
+  if (release.resourceId.startsWith("template:pptx-")) {
+    const manifest = nativePaletteManifest(release);
+    const data = await readJson(path.join(templateDir, manifest.relativePath));
+    const palettes = manifest.wrapped ? data.palettes : data;
+    if (!Object.hasOwn(palettes, release.defaultColorSystem)) {
+      throw new Error(
+        `${release.slug} ${label}: default palette ${release.defaultColorSystem} is missing`,
+      );
+    }
+    return {
+      skillBytes: skill.length,
+      colorSystemCount: Object.keys(palettes).length,
+    };
   }
 
   const relativePaths = await listFiles(templateDir);

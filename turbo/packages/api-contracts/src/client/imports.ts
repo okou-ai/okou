@@ -1216,6 +1216,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "marketing-reward-projection",
+    contracts: ["marketingRewardProjectionContract"],
+    bindings: [],
+  },
+  {
     module: "marketing-reward-settlement",
     contracts: ["marketingRewardSettlementContract"],
     bindings: [],

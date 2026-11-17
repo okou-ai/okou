@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.80.0](https://github.com/okou-ai/okou/compare/api-v2.79.2...api-v2.80.0) (2026-11-17)
+
+
+### Features
+
+* **api:** settle source-proven marketing rewards ([#48079](https://github.com/okou-ai/okou/issues/48079)) ([95e2816](https://github.com/okou-ai/okou/commit/95e2816dd55eef02f025b55699e01bc0b1f16f8f))
+
+
+### Refactoring
+
+* remove for you sources feature switch ([#48074](https://github.com/okou-ai/okou/issues/48074)) ([335f7b5](https://github.com/okou-ai/okou/commit/335f7b5c0410626867316382e92753d219e1e937))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.77.0
+    * @okouai/core bumped to 8.847.1
+    * @okouai/db bumped to 2.41.2
+    * @okouai/pi-agent-runtime bumped to 1.51.143
+
 ## [2.79.2](https://github.com/okou-ai/okou/compare/api-v2.79.1...api-v2.79.2) (2026-11-17)
 
 

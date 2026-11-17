@@ -1,3 +1,4 @@
+import { marketingRewardReceipt } from "../services/marketing-reward-receipt";
 import { marketingRewardSettlementContract } from "@okouai/api-contracts/contracts/marketing-reward-settlement";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { command } from "ccstate";
@@ -81,25 +82,7 @@ function rewardIntentHandler(apply: boolean) {
           version: 1 as const,
           environment: env("ENV"),
           intentId: intent.id,
-          receipt: {
-            id: claim.id,
-            orgId: claim.orgId,
-            actorUserId: claim.actorUserId,
-            beneficiaryUserId: claim.beneficiaryUserId,
-            questKey: claim.questKey,
-            sourceKey: claim.sourceKey,
-            rewardKey: claim.rewardKey,
-            rewardSlot: claim.rewardSlot,
-            rewardTarget: claim.rewardTarget,
-            rewardAmount: claim.rewardAmount,
-            reason: claim.reason,
-            status,
-            memberCreditGrantId: claim.memberCreditGrantId,
-            orgCreditRecordId: claim.orgCreditRecordId,
-            grantedAt: claim.grantedAt?.toISOString() ?? null,
-            expiresAt: claim.expiresAt?.toISOString() ?? null,
-            createdAt: claim.createdAt.toISOString(),
-          },
+          receipt: { ...marketingRewardReceipt(claim), status },
         },
       };
     }

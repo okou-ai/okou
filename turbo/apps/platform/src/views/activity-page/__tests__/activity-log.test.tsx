@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { expect, test } from "vitest";
+import { CHAT_RUN_USAGE_LIMIT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -94,6 +95,39 @@ function mockActivity(
 function openActivity(): Promise<void> {
   return setupPage({ context, path: "/activities/" + RUN_ID });
 }
+
+test.each([
+  {
+    error: "retained private diagnostic",
+    expected: "Oops, something went wrong.",
+  },
+  {
+    failureReason: "usage_limit" as const,
+    expected: CHAT_RUN_USAGE_LIMIT_MESSAGE,
+  },
+])(
+  "Failed activities accept old and new responses without displaying diagnostics: $expected",
+  async ({ expected, ...fields }) => {
+    context.mocks.api(logsByIdContract.getById, ({ respond }) => {
+      const detail = makeLogDetail("failed");
+      delete detail.error;
+      return respond(200, { ...detail, ...fields });
+    });
+    context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
+      return respond(200, {
+        events: [],
+        hasMore: false,
+        status: "failed",
+        lastEventSequence: null,
+      });
+    });
+    await openActivity();
+    await expect(screen.findByText(expected)).resolves.toBeInTheDocument();
+    expect(
+      screen.queryByText("retained private diagnostic"),
+    ).not.toBeInTheDocument();
+  },
+);
 
 function summaryForText(
   text: string,

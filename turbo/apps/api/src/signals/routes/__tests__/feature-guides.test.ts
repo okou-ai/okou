@@ -180,7 +180,7 @@ test("filters bound items by effective switches and leaves empty bindings unrest
           {
             ...item,
             featureId: "projects",
-            featureSwitch: FeatureSwitchKey.Projects,
+            featureSwitch: FeatureSwitchKey.SingleAgent,
           },
           {
             ...item,
@@ -192,7 +192,7 @@ test("filters bound items by effective switches and leaves empty bindings unrest
     },
   });
   await publish(prepared);
-  // Projects is available to staff through the registry audience.
+  // My Okou is available by default; a retained member can keep it disabled.
   await enable();
   await expect(current()).resolves.toMatchObject({
     content: { items: prepared.input.content.items.slice(0, 4) },
@@ -200,14 +200,15 @@ test("filters bound items by effective switches and leaves empty bindings unrest
 
   await identity();
   await enable();
+  await enable(false, FeatureSwitchKey.SingleAgent);
   await expect(current()).resolves.toMatchObject({
     content: { items: prepared.input.content.items.slice(0, 3) },
   });
-  await enable(true, FeatureSwitchKey.Projects);
+  await enable(true, FeatureSwitchKey.SingleAgent);
   await expect(current()).resolves.toMatchObject({
     content: { items: prepared.input.content.items.slice(0, 4) },
   });
-  await enable(false, FeatureSwitchKey.Projects);
+  await enable(false, FeatureSwitchKey.SingleAgent);
   await expect(current()).resolves.toMatchObject({
     content: { items: prepared.input.content.items.slice(0, 3) },
   });
@@ -229,13 +230,14 @@ test("suppresses an entirely gated edition without revealing a backlog or consum
     content: {
       ...input.content,
       items: input.content.items.map((item) => {
-        return { ...item, featureSwitch: FeatureSwitchKey.Projects };
+        return { ...item, featureSwitch: FeatureSwitchKey.SingleAgent };
       }),
     },
   });
   await publish(prepared);
   await identity();
   await enable();
+  await enable(false, FeatureSwitchKey.SingleAgent);
   await expect(current()).resolves.toBeNull();
   mockOptionalEnv("ENV", "preview");
   const preview = await accept(
@@ -243,7 +245,7 @@ test("suppresses an entirely gated edition without revealing a backlog or consum
     [200],
   );
   expect(preview.body.edition).toBeNull();
-  await enable(true, FeatureSwitchKey.Projects);
+  await enable(true, FeatureSwitchKey.SingleAgent);
   await expect(current()).resolves.toMatchObject({
     id: prepared.editionId,
     content: prepared.input.content,
@@ -256,9 +258,9 @@ test("suppresses an entirely gated edition without revealing a backlog or consum
     }),
     [200],
   );
-  await enable(false, FeatureSwitchKey.Projects);
+  await enable(false, FeatureSwitchKey.SingleAgent);
   await expect(current()).resolves.toBeNull();
-  await enable(true, FeatureSwitchKey.Projects);
+  await enable(true, FeatureSwitchKey.SingleAgent);
   await expect(current()).resolves.toBeNull();
 });
 
@@ -586,7 +588,7 @@ test("keeps drafts immutable and publishes only the selected revision", async ()
         content: {
           ...prepared.input.content,
           items: prepared.input.content.items.map((item) => {
-            return { ...item, featureSwitch: FeatureSwitchKey.Projects };
+            return { ...item, featureSwitch: FeatureSwitchKey.SingleAgent };
           }),
         },
       },

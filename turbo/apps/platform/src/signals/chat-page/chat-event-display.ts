@@ -5,21 +5,18 @@ import {
 import { hasChatEventBodyContent } from "./chat-event-body-blocks.ts";
 import type { EnrichedChatEvent } from "./chat-event.ts";
 import type { ChatEvent, ChatInputEvent } from "./chat-event-types.ts";
-import { formatRunErrorForExternalSurface } from "@okouai/api-contracts/contracts/errors";
-import { normalizeRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import { formatChatRunFailure } from "@okouai/api-contracts/contracts/errors";
 
 export function chatEventDisplayError(event: ChatEvent): string | undefined {
   if (event.eventType === "run.failed") {
-    return formatRunErrorForExternalSurface({
-      code: "RUN_FAILED",
-      message: "",
-      failureReason: normalizeRunFailureReason(event.failureReason),
-    });
+    return formatChatRunFailure(event.failureReason);
+  }
+  if (event.eventType === "run.cancelled") {
+    return "Run cancelled";
   }
   if (
     event.eventType === "input.rejected" ||
-    event.eventType === "output.error" ||
-    event.eventType === "run.cancelled"
+    event.eventType === "output.error"
   ) {
     return event.error;
   }

@@ -35,12 +35,16 @@ if (
     "Registry publication integration requires an isolated local DATABASE_URL",
   );
 }
-const config = JSON.parse(
-  await readFile(
-    path.join(releaseDir, "presentation-template-release.json"),
-    "utf8",
-  ),
-);
+const configs = new Map();
+for (const [format, file] of [
+  ["html", "presentation-template-release.json"],
+  ["pptx", "presentation-template-release-pptx.json"],
+]) {
+  configs.set(
+    format,
+    JSON.parse(await readFile(path.join(releaseDir, file), "utf8")),
+  );
+}
 const root = await mkdtemp(path.join(tmpdir(), "registry-publication-"));
 const admin = postgres(databaseUrl, { max: 1, onnotice: () => {} });
 const objects = new Map();
@@ -55,14 +59,15 @@ async function handleRequest(request, response) {
       const chunks = [];
       for await (const chunk of request) chunks.push(chunk);
       assert.equal(request.headers["if-none-match"], "*");
-      if (objects.has(key)) {
+      const exists = objects.has(key);
+      if (!exists) objects.set(key, Buffer.concat(chunks));
+      if (interceptPut && (await interceptPut(key, request))) return;
+      if (exists) {
         response
           .writeHead(412)
           .end("<Error><Code>PreconditionFailed</Code></Error>");
         return;
       }
-      objects.set(key, Buffer.concat(chunks));
-      if (interceptPut && (await interceptPut(key, request))) return;
       response.writeHead(200).end();
       return;
     }
@@ -105,6 +110,7 @@ for (const entry of await readdir(
 for (const file of [
   "publish-presentation-template-archives.mjs",
   "presentation-template-release.json",
+  "presentation-template-release-pptx.json",
 ]) {
   await cp(path.join(releaseDir, file), path.join(toolDir, file));
 }
@@ -129,29 +135,93 @@ const run = (args, env = baseEnv) => {
   });
 };
 
-async function build(label) {
+async function build(label, outputFormat = "html") {
   const source = path.join(root, `source-${label}`);
   const output = path.join(root, `output-${label}`);
-  for (const release of config.templates) {
+  for (const release of configs.get(outputFormat).templates) {
     const dir = path.join(source, release.slug);
-    await mkdir(path.join(dir, "layouts"), { recursive: true });
-    await mkdir(path.join(dir, "color-systems"), { recursive: true });
+    await mkdir(dir, { recursive: true });
     await writeFile(
       path.join(dir, "SKILL.md"),
       `# ${label}\n${"Presentation guidance.\n".repeat(100)}`,
     );
-    await writeFile(path.join(dir, "design-system.md"), "# Design system\n");
-    await writeFile(
-      path.join(dir, "layouts/shared-shell.html"),
-      `<link href="../color-systems/${release.defaultColorSystem}.css">`,
-    );
-    await writeFile(
-      path.join(dir, `color-systems/${release.defaultColorSystem}.css`),
-      ":root { --background: white; }",
-    );
+    if (outputFormat === "pptx") {
+      const bloom = release.resourceId === "template:pptx-bloom-runbook";
+      const palettePath = bloom
+        ? "assets/bloom/palettes.json"
+        : "assets/palettes.json";
+      await mkdir(path.dirname(path.join(dir, palettePath)), {
+        recursive: true,
+      });
+      await mkdir(path.join(dir, "scripts"));
+      await writeFile(
+        path.join(dir, "deck.types.ts"),
+        "export interface Deck { title: string; slides: unknown[]; }\n",
+      );
+      const palettes = {
+        [release.defaultColorSystem]: {
+          bg: "#FFFFFF",
+          surface: "#FFFFFF",
+          ink: "#1A1A1A",
+          accent: "#2C5BD6",
+        },
+      };
+      await writeFile(
+        path.join(dir, palettePath),
+        JSON.stringify(
+          bloom
+            ? { defaultPalette: release.defaultColorSystem, palettes }
+            : palettes,
+        ),
+      );
+      await writeFile(
+        path.join(dir, "scripts/generate.mjs"),
+        'throw new Error("Publication fixture does not generate decks");\n',
+      );
+      const runtime = {
+        name: `${release.slug}-pptx-runtime`,
+        version: "1.0.0",
+        private: true,
+        engines: { node: ">=22.18.0" },
+      };
+      await writeFile(
+        path.join(dir, "scripts/package.json"),
+        JSON.stringify(runtime),
+      );
+      await writeFile(
+        path.join(dir, "scripts/package-lock.json"),
+        JSON.stringify({
+          name: runtime.name,
+          version: runtime.version,
+          lockfileVersion: 3,
+          requires: true,
+          packages: {
+            "": {
+              name: runtime.name,
+              version: runtime.version,
+              engines: runtime.engines,
+            },
+          },
+        }),
+      );
+    } else {
+      await mkdir(path.join(dir, "layouts"));
+      await mkdir(path.join(dir, "color-systems"));
+      await writeFile(path.join(dir, "design-system.md"), "# Design system\n");
+      await writeFile(
+        path.join(dir, "layouts/shared-shell.html"),
+        `<link href="../color-systems/${release.defaultColorSystem}.css">`,
+      );
+      await writeFile(
+        path.join(dir, `color-systems/${release.defaultColorSystem}.css`),
+        ":root { --background: white; }",
+      );
+    }
   }
   await run([
     "build",
+    "--format",
+    outputFormat,
     "--source-dir",
     source,
     "--source-commit",
@@ -161,6 +231,7 @@ async function build(label) {
   ]);
   return {
     output,
+    outputFormat,
     publication: JSON.parse(
       await readFile(path.join(output, "publication.json"), "utf8"),
     ),
@@ -176,7 +247,10 @@ async function legacyState(sql) {
   };
 }
 
-async function fixture(initial, writableHeads = true) {
+async function fixture(
+  initial,
+  { updateHeads = true, initializeHeads = false } = {},
+) {
   objects.clear();
   interceptPut = undefined;
   const schema = `registry_pub_${randomUUID().replaceAll("-", "")}`;
@@ -193,14 +267,16 @@ async function fixture(initial, writableHeads = true) {
     id varchar(64) PRIMARY KEY, storage_id uuid NOT NULL REFERENCES storages(id) ON DELETE CASCADE,
     s3_key text NOT NULL, size bigint NOT NULL, archive_size bigint NOT NULL, file_count integer NOT NULL,
     message text, created_by text);`);
-  const migration = await readFile(
-    path.join(
-      packageDir,
-      "src/migrations/1519_registry_resource_bundle_preparation.sql",
-    ),
-    "utf8",
-  );
-  await sql.unsafe(migration.replaceAll('"public".', `"${schema}".`));
+  for (const file of [
+    "1519_registry_resource_bundle_preparation.sql",
+    "1561_presentation_pptx_resource_heads.sql",
+  ]) {
+    const migration = await readFile(
+      path.join(packageDir, "src/migrations", file),
+      "utf8",
+    );
+    await sql.unsafe(migration.replaceAll('"public".', `"${schema}".`));
+  }
   for (const pkg of initial.publication.packages) {
     const prefix = `__system__/${pkg.storageId}`;
     const key = `${prefix}/${pkg.versionId}`;
@@ -234,8 +310,11 @@ async function fixture(initial, writableHeads = true) {
     await admin`GRANT SELECT ON ${admin(`${schema}.${table}`)} TO ${admin(role)}`;
   }
   await admin`GRANT INSERT ON ${admin(`${schema}.registry_resource_archives`)} TO ${admin(role)}`;
-  if (writableHeads) {
+  if (updateHeads) {
     await admin`GRANT UPDATE ON ${admin(`${schema}.registry_resource_heads`)} TO ${admin(role)}`;
+  }
+  if (initializeHeads) {
+    await admin`GRANT INSERT ON ${admin(`${schema}.registry_resource_heads`)} TO ${admin(role)}`;
   }
   url.username = role;
   url.password = "registry-publication-fixture";
@@ -252,6 +331,29 @@ async function fixture(initial, writableHeads = true) {
 async function heads(sql) {
   return await sql`SELECT resource_id, sha256, xmin::text, updated_at
     FROM registry_resource_heads ORDER BY resource_id`;
+}
+
+function publishArgs(bundle, initializeMissingHeads = false) {
+  return [
+    "publish",
+    "--format",
+    bundle.outputFormat,
+    "--output-dir",
+    bundle.output,
+    ...(initializeMissingHeads ? ["--initialize-missing-heads"] : []),
+  ];
+}
+
+async function registryState(sql, bundle) {
+  const resourceIds = bundle.publication.packages.map((pkg) => {
+    return pkg.resourceId;
+  });
+  return {
+    heads: await sql`SELECT *, xmin::text FROM registry_resource_heads
+      WHERE resource_id IN ${sql(resourceIds)} ORDER BY resource_id`,
+    archives: await sql`SELECT *, xmin::text FROM registry_resource_archives
+      WHERE resource_id IN ${sql(resourceIds)} ORDER BY resource_id, sha256`,
+  };
 }
 
 async function verifyLegacy(f) {
@@ -281,9 +383,26 @@ async function verify(f, bundle) {
 }
 
 try {
+  const contract = await exec(
+    process.execPath,
+    [
+      "--test",
+      path.resolve(
+        releaseDir,
+        "../__tests__/publish-presentation-template-archives.test.mjs",
+      ),
+    ],
+    {
+      env: { ...baseEnv, PRESENTATION_TEMPLATE_RELEASE_TOOL: tool },
+      maxBuffer: 2 * 1024 * 1024,
+    },
+  );
+  console.log(contract.stdout.trimEnd());
   const initial = await build("initial");
   const next = await build("next");
   const newer = await build("newer");
+  const nativeInitial = await build("native-initial", "pptx");
+  const nativeNext = await build("native-next", "pptx");
   const firstKey = `private/${next.publication.packages[0].registryArchive.objectKey}`;
   const f = await fixture(initial);
   try {
@@ -332,7 +451,7 @@ try {
     await conflict.sql.end();
   }
 
-  const interrupted = await fixture(initial, false);
+  const interrupted = await fixture(initial, { updateHeads: false });
   try {
     const before = await heads(interrupted.sql);
     await assert.rejects(
@@ -467,6 +586,226 @@ try {
     );
   } finally {
     await aba.sql.end();
+  }
+
+  const native = await fixture(initial, {
+    updateHeads: false,
+    initializeHeads: true,
+  });
+  try {
+    const htmlBefore = await registryState(native.sql, initial);
+    const originalObjects = new Map(objects);
+    await assert.rejects(
+      run(
+        ["publish", "--output-dir", next.output, "--initialize-missing-heads"],
+        native.env,
+      ),
+      (error) => {
+        return /--initialize-missing-heads requires --format pptx/.test(
+          error.stderr,
+        );
+      },
+    );
+    await assert.rejects(
+      run(publishArgs(nativeInitial), native.env),
+      (error) => {
+        return /registry HEAD is missing; reconcile before publication/.test(
+          error.stderr,
+        );
+      },
+    );
+    const unpublished = await registryState(native.sql, nativeInitial);
+    assert.equal(unpublished.heads.length, 0);
+    assert.equal(unpublished.archives.length, 0);
+    assert.deepEqual(objects, originalObjects);
+    assert.deepEqual(await registryState(native.sql, initial), htmlBefore);
+
+    const result = await run(publishArgs(nativeInitial, true), native.env);
+    const receipts = result.stdout.split("\n").filter((line) => {
+      return line.startsWith("PUBLISHED ");
+    });
+    assert.equal(receipts.length, nativeInitial.publication.packages.length);
+    assert.ok(
+      receipts.every((line) => {
+        return line.endsWith("previousVersion=null firstPublication=true");
+      }),
+    );
+    await verify(native, nativeInitial);
+    const registered = await registryState(native.sql, nativeInitial);
+    const retainedObjects = new Map(objects);
+    await admin`REVOKE INSERT ON ${admin(`${native.schema}.registry_resource_heads`)} FROM ${admin(native.role)}`;
+    await run(publishArgs(nativeInitial), native.env);
+    assert.deepEqual(
+      await registryState(native.sql, nativeInitial),
+      registered,
+    );
+    assert.deepEqual(objects, retainedObjects);
+    await admin`GRANT UPDATE ON ${admin(`${native.schema}.registry_resource_heads`)} TO ${admin(native.role)}`;
+    await run(publishArgs(nativeNext), native.env);
+    await verify(native, nativeNext);
+    await verify(native, initial);
+    assert.deepEqual(await registryState(native.sql, initial), htmlBefore);
+    console.log(
+      "PASS native opt-in first publication with INSERT-only HEAD grants, null previous-version receipts, metadata-stable rerun and UPDATE-only native/HTML isolation",
+    );
+  } finally {
+    await native.sql.end();
+  }
+
+  const nativeInterrupted = await fixture(initial, { updateHeads: false });
+  try {
+    const htmlBefore = await registryState(nativeInterrupted.sql, initial);
+    await assert.rejects(
+      run(publishArgs(nativeInitial, true), nativeInterrupted.env),
+      (error) => {
+        return /permission denied/.test(error.stderr);
+      },
+    );
+    const partial = await registryState(nativeInterrupted.sql, nativeInitial);
+    assert.equal(partial.heads.length, 0);
+    assert.equal(partial.archives.length, 1);
+    const [firstPackage, secondPackage] = nativeInitial.publication.packages;
+    assert.equal(partial.archives[0].resource_id, firstPackage.resourceId);
+    const retainedObjects = new Map(objects);
+    await admin`GRANT INSERT ON ${admin(`${nativeInterrupted.schema}.registry_resource_heads`)} TO ${admin(nativeInterrupted.role)}`;
+    // An independently registered conflicting candidate must not be rewritten
+    // by a retry, even after an earlier package has published successfully.
+    await nativeInterrupted.sql`INSERT INTO registry_resource_archives
+      (resource_id,sha256,archive_bytes,version_id,file_count,total_bytes)
+      VALUES (${secondPackage.resourceId},${secondPackage.archive.sha256},${secondPackage.archive.byteSize},${secondPackage.versionId},${secondPackage.fileCount},${secondPackage.totalSize + 1})`;
+    const conflicting = await registryState(
+      nativeInterrupted.sql,
+      nativeInitial,
+    );
+    await assert.rejects(
+      run(publishArgs(nativeInitial, true), nativeInterrupted.env),
+      (error) => {
+        return /immutable registry archive metadata conflicts/.test(
+          error.stderr,
+        );
+      },
+    );
+    const mixed = await registryState(nativeInterrupted.sql, nativeInitial);
+    assert.equal(mixed.heads.length, 1);
+    assert.equal(mixed.heads[0].resource_id, firstPackage.resourceId);
+    assert.equal(mixed.heads[0].sha256, firstPackage.archive.sha256);
+    assert.deepEqual(mixed.archives, conflicting.archives);
+    assert.deepEqual(objects, retainedObjects);
+    await verifyLegacy(nativeInterrupted);
+    // Repair only this fixture's conflicting candidate, then retry the exact
+    // bundle against its now-mixed existing and absent native HEADs.
+    await nativeInterrupted.sql`UPDATE registry_resource_archives
+      SET total_bytes = ${secondPackage.totalSize}
+      WHERE resource_id = ${secondPackage.resourceId} AND sha256 = ${secondPackage.archive.sha256}`;
+    await run(publishArgs(nativeInitial, true), nativeInterrupted.env);
+    const completed = await registryState(nativeInterrupted.sql, nativeInitial);
+    assert.deepEqual(
+      completed.heads.find((head) => {
+        return head.resource_id === firstPackage.resourceId;
+      }),
+      mixed.heads[0],
+    );
+    assert.deepEqual(
+      completed.archives.find((archive) => {
+        return archive.resource_id === firstPackage.resourceId;
+      }),
+      partial.archives[0],
+    );
+    assert.deepEqual(objects, retainedObjects);
+    await verify(nativeInterrupted, nativeInitial);
+    await verify(nativeInterrupted, initial);
+    assert.deepEqual(
+      await registryState(nativeInterrupted.sql, initial),
+      htmlBefore,
+    );
+    console.log(
+      "PASS raw native INSERT denial, immutable metadata conflict and same-bundle partial initialization retry preserve prior HEAD/xmin and archive metadata",
+    );
+  } finally {
+    await nativeInterrupted.sql.end();
+  }
+
+  for (const winner of [nativeInitial, nativeNext]) {
+    const nativeConcurrent = await fixture(initial, { updateHeads: false });
+    try {
+      const htmlBefore = await registryState(nativeConcurrent.sql, initial);
+      // Leave a verified immutable archive registered without a HEAD, so the
+      // stale retry reaches INSERT arbitration rather than failing registration.
+      await assert.rejects(
+        run(publishArgs(nativeInitial, true), nativeConcurrent.env),
+        (error) => {
+          return /permission denied/.test(error.stderr);
+        },
+      );
+      await admin`GRANT INSERT ON ${admin(`${nativeConcurrent.schema}.registry_resource_heads`)} TO ${admin(nativeConcurrent.role)}`;
+      const firstNativeKey = `private/${nativeInitial.publication.packages[0].registryArchive.objectKey}`;
+      let releaseFirst;
+      let observedFirst;
+      let paused = false;
+      const firstObserved = new Promise((resolve) => {
+        observedFirst = resolve;
+      });
+      const firstReleased = new Promise((resolve) => {
+        releaseFirst = resolve;
+      });
+      interceptPut = async (key) => {
+        if (key !== firstNativeKey || paused) return false;
+        paused = true;
+        observedFirst();
+        await firstReleased;
+        return false;
+      };
+      const outcome = run(
+        publishArgs(nativeInitial, true),
+        nativeConcurrent.env,
+      ).then(
+        () => {
+          return { succeeded: true };
+        },
+        (error) => {
+          return { succeeded: false, error };
+        },
+      );
+      let completed;
+      try {
+        await Promise.race([
+          firstObserved,
+          outcome.then((result) => {
+            if (!result.succeeded) throw result.error;
+            throw new Error(
+              "Native publisher did not reach the object boundary",
+            );
+          }),
+        ]);
+        await run(publishArgs(winner, true), nativeConcurrent.env);
+        await verify(nativeConcurrent, winner);
+        completed = await registryState(nativeConcurrent.sql, winner);
+      } finally {
+        releaseFirst();
+        await outcome;
+      }
+      const result = await outcome;
+      assert.equal(result.succeeded, false);
+      assert.match(
+        result.error.stderr,
+        /registry HEAD publication conflicted with another writer/,
+      );
+      assert.deepEqual(
+        await registryState(nativeConcurrent.sql, winner),
+        completed,
+      );
+      await verify(nativeConcurrent, winner);
+      await verify(nativeConcurrent, initial);
+      assert.deepEqual(
+        await registryState(nativeConcurrent.sql, initial),
+        htmlBefore,
+      );
+      console.log(
+        `PASS competing native first publisher (${winner === nativeInitial ? "same digest" : "different digest"}) wins INSERT arbitration without stale overwrite or compensation of its HEAD/xmin`,
+      );
+    } finally {
+      await nativeConcurrent.sql.end();
+    }
   }
 } finally {
   interceptPut = undefined;

@@ -46,6 +46,8 @@ on:
         required: false
       MARKETING_REWARDS_SETTLEMENT_SECRET:
         required: false
+      MARKETING_REWARDS_PROJECTION_SECRET:
+        required: false
       MARKETING_REWARDS_EVENTS_SECRET:
         required: false
       NEON_API_KEY:

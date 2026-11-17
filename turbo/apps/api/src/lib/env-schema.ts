@@ -100,6 +100,7 @@ function serviceEnvSchema() {
     MARKETING_REWARDS_EXPORT_SECRET: string().min(32).optional(),
     MARKETING_REWARDS_RECEIPT_SECRET: string().min(32).optional(),
     MARKETING_REWARDS_SETTLEMENT_SECRET: string().min(32).optional(),
+    MARKETING_REWARDS_PROJECTION_SECRET: string().min(32).optional(),
     MARKETING_REWARDS_EVENTS_SECRET: string().min(32).optional(),
     MARKETING_REWARDS_EVENTS_ORIGIN: url()
       .refine((value) => {

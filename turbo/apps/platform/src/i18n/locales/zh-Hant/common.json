@@ -74,29 +74,12 @@
       },
       "downloadRawData": "下載原始資料",
       "errorGuidance": {
-        "computerUseAuthorizationRequired": {
-          "guidance": "請申請一個委託的 Computer Use 授權連結，讓使用者為當前聊天或 Slack 會話選擇一臺 {{assistantName}} Desktop 主機，然後重新發起執行。已有的執行令牌無法就地升級。",
-          "title": "需要 Computer Use 授權"
-        },
         "concurrentRunLimitReached": {
           "guidance": "請等當前執行結束後再發起新的執行。",
           "title": "已達併發執行上限"
         },
-        "creditsDepleted": {
-          "guidance": "請先做積分診斷。只有當前套餐允許時才購買積分，否則返回套餐升級連結。",
-          "title": "積分已用完"
-        },
-        "noModelProvider": {
-          "guidance": "請在設定中連結個人 Claude Code 或 Codex 訂閱。",
-          "title": "此次執行沒有可用的模型提供者"
-        },
         "paidPlanRequired": {
-          "guidance": "當前套餐不支援內建影片生成。",
           "title": "需要付費套餐"
-        },
-        "providerIncompatible": {
-          "guidance": "此會話是用另一種提供方型別建立的。",
-          "title": "提供方不相容"
         },
         "providerTemporarilyUnavailable": {
           "guidance": "模型提供方暫時不可用。",

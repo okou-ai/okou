@@ -633,7 +633,6 @@ describe("ChatEvent semantic projection", () => {
           eventType: "run.cancelled",
           content: "Run cancelled",
           runId: cancellation.runId,
-          error: "Run cancelled",
           runLifecycleEvent: "cancelled",
           createdAt: interrupt.createdAt,
         },

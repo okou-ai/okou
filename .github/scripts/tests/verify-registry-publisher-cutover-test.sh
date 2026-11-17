@@ -18,6 +18,12 @@ reader_commit=$(git -C "$fixture" rev-parse HEAD)
 printf '%s\n' "$reader_commit" >"$fixture/.github/rollback-floors/registry-archive-reader"
 git -C "$fixture" add .
 git -C "$fixture" -c commit.gpgsign=false commit -q -m "reader rollback floor"
+git -C "$fixture" -c commit.gpgsign=false commit -q --allow-empty -m "native presentation reader"
+native_commit=$(git -C "$fixture" rev-parse HEAD)
+printf '{"readerPreparationCommit":"%s"}\n' "$native_commit" > \
+  "$fixture/.github/scripts/release/presentation-template-release-pptx.json"
+git -C "$fixture" add .
+git -C "$fixture" -c commit.gpgsign=false commit -q -m "native reader requirement"
 git -C "$fixture" update-ref refs/remotes/origin/main HEAD
 
 cat >"$root/bin/curl" <<'SH'
@@ -32,8 +38,9 @@ SH
 chmod +x "$root/bin/curl"
 
 run_gate() {
-  env PATH="$root/bin:$PATH" MOCK_READER_COMMIT="$reader_commit" \
-    MOCK_OLD_COMMIT="$old_commit" MOCK_OLD_ORIGIN="${1:-}" \
+  env PATH="$root/bin:$PATH" MOCK_READER_COMMIT="${2:-$reader_commit}" \
+    MOCK_OLD_COMMIT="${3:-$old_commit}" MOCK_OLD_ORIGIN="${1:-}" \
+    PRESENTATION_OUTPUT_FORMAT="${4:-html}" \
     bash "$fixture/.github/scripts/release/verify-registry-publisher-cutover.sh"
 }
 
@@ -45,4 +52,14 @@ for origin in https://api.vm0.ai https://api.okou.ai; do
   fi
   grep -F "${origin} does not serve the independent Registry reader" "$root/failed.err" >/dev/null
 done
-echo "PASS publication accepts compatible readers and rejects an old reader on either API domain"
+echo "PASS HTML publication accepts independent readers and rejects legacy readers on either API domain"
+
+run_gate "" "$native_commit" "$reader_commit" pptx >"$root/native-success"
+for origin in https://api.vm0.ai https://api.okou.ai; do
+  if run_gate "$origin" "$native_commit" "$reader_commit" pptx >"$root/failed.out" 2>"$root/failed.err"; then
+    echo "FAIL: native publication accepted an independent-only reader on $origin" >&2
+    exit 1
+  fi
+  grep -F "${origin} does not serve the native presentation reader" "$root/failed.err" >/dev/null
+done
+echo "PASS PPTX publication requires native-aware readers on both API domains without tightening HTML publication"

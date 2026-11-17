@@ -1,4 +1,6 @@
 import type { ChatEventRow } from "./chat-event-rows";
+import { formatChatRunFailure } from "./errors";
+import { normalizeRunFailureReason } from "./run-failure-reasons";
 import type { ChatEventType } from "./chat-events";
 import type {
   ChatEvent,
@@ -17,19 +19,8 @@ function requiredRowField<T>(
   return value;
 }
 
-/**
- * Projects one decoded canonical row into the public ChatEvent response shape
- * without rewriting its text or re-validating its payload documents. The API
- * validates user-message and usage documents when it writes them, and snapshot
- * publication additionally checks projected rows with `chatEventResponse`.
- * Callers that need a validated public event apply that check themselves. A
- * control.interrupt target is emitted as interruptsRunId, never as run
- * ownership.
- */
-export function chatEventFromRow(row: ChatEventRow): ChatEvent {
-  const payload = row.payload;
-  const content = payload?.content ?? null;
-  const base = {
+function chatEventBase(row: ChatEventRow, content: string | null) {
+  return {
     id: row.id,
     threadId: row.chatThreadId,
     content,
@@ -43,6 +34,50 @@ export function chatEventFromRow(row: ChatEventRow): ChatEvent {
     sequenceNumber: row.runEventSequenceNumber,
     createdAt: row.createdAt,
   };
+}
+
+/** Kept separate from the server's wire projection until #47704 activates it. */
+export function chatEventFromRowForDisplay(row: ChatEventRow): ChatEvent {
+  if (row.eventType !== "run.failed" && row.eventType !== "run.cancelled") {
+    return chatEventFromRow(row);
+  }
+  const failureReason = normalizeRunFailureReason(row.failureReason);
+  const base = chatEventBase(
+    row,
+    row.eventType === "run.failed"
+      ? formatChatRunFailure(failureReason)
+      : "Run cancelled",
+  );
+  const runId = requiredRowField(row.runId, row.eventType, "runId");
+  return row.eventType === "run.failed"
+    ? {
+        ...base,
+        eventType: "run.failed",
+        runId,
+        failureReason,
+        runLifecycleEvent: "failed",
+      }
+    : {
+        ...base,
+        eventType: "run.cancelled",
+        runId,
+        runLifecycleEvent: "cancelled",
+      };
+}
+
+/**
+ * Projects one decoded canonical row into the public ChatEvent response shape
+ * without rewriting its text or re-validating its payload documents. The API
+ * validates user-message and usage documents when it writes them, and snapshot
+ * publication additionally checks projected rows with `chatEventResponse`.
+ * Callers that need a validated public event apply that check themselves. A
+ * control.interrupt target is emitted as interruptsRunId, never as run
+ * ownership.
+ */
+export function chatEventFromRow(row: ChatEventRow): ChatEvent {
+  const payload = row.payload;
+  const content = payload?.content ?? null;
+  const base = chatEventBase(row, content);
   const userMessage = (): UserMessageDocument => {
     return requiredRowField(
       payload?.userMessage ?? null,
