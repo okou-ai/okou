@@ -2052,6 +2052,7 @@ export const storeCustomConnectorOAuth2Connection$ = command(
     }
     const query = customOAuthConnectionPublicationSql({
       ...contractRef,
+      userId: args.userId,
       definitionUpdatedAt: args.definitionUpdatedAt,
       networkSnapshot: args.networkSnapshot,
       providerAdapter: contract.providerAdapter,

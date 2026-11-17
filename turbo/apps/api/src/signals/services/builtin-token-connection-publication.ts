@@ -1,4 +1,9 @@
 import { tokenConnectionWalletClauses } from "./connector-publication-wallet";
+import { randomUUID } from "node:crypto";
+import { isOneClickConnectorGrantKind } from "@okouai/api-contracts/contracts/connector-catalog";
+import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
+import { env } from "../../lib/env";
+import { marketingRewardOAuthEventInsert } from "./marketing-reward-event-publication";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
@@ -31,6 +36,7 @@ import {
 
 interface TokenConnectionPublication extends TokenConnectionMetadataPublication {
   readonly orgId: string;
+  readonly grantKind: ConnectorAuthMethodRuntimeConfig["grant"]["kind"];
   readonly credentials: Parameters<typeof builtinTokenCredentialWrites>[1];
   readonly reconciliation: ReturnType<
     typeof connectorAccountReconciliationIdentity
@@ -194,6 +200,24 @@ export function builtinTokenConnectionPublicationClauses(
     ...credentials.clauses,
     ...projections.clauses,
   ];
+  if (isOneClickConnectorGrantKind(args.grantKind)) {
+    clauses.push(
+      sql`reward_source_event AS (${marketingRewardOAuthEventInsert(
+        {
+          id: randomUUID(),
+          environment: env("ENV"),
+          occurredAt: nowDate().toISOString(),
+          orgId: args.orgId,
+          userId: args.credentials.userId,
+          connector: {
+            kind: "builtin",
+            connectorSlug: args.projection.connectorSlug,
+          },
+        },
+        sql`SELECT id FROM token_connection`,
+      )})`,
+    );
+  }
   if (args.quest !== null) {
     const reward = completedGetStartedQuestPublication(
       args.quest,
