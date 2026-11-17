@@ -1,9 +1,9 @@
 // API response types (matching app API contracts)
 import type {
   LogStatus,
-  LogDetail as ApiLogDetail,
   TriggerSource,
 } from "@okouai/api-contracts/contracts/logs";
+import type { ActivityDetail } from "@okouai/api-contracts/validators/logs";
 import type {
   AgentEventsResponse as ApiAgentEventsResponse,
   RunEvent,
@@ -109,26 +109,7 @@ export function getTriggerSourceLabel(
 }
 
 // Detail response - full log information
-export interface LogDetail {
-  id: string;
-  sessionId: string | null;
-  agentId: string | null;
-  displayName: string | null;
-  framework: string | null;
-  modelProvider: string | null;
-  selectedModel: string | null;
-  modelRuntimeProvider?: string | null;
-  modelRuntimeModel?: string | null;
-  triggerSource: TriggerSource | null;
-  status: LogStatus;
-  prompt: string;
-  appendSystemPrompt: string | null;
-  error?: ApiLogDetail["error"];
-  failureReason?: ApiLogDetail["failureReason"];
-  createdAt: string; // ISO timestamp
-  startedAt: string | null;
-  completedAt: string | null;
-}
+export type LogDetail = ActivityDetail;
 
 export type AgentEvent = RunEvent;
 export type AgentEventsResponse = ApiAgentEventsResponse;

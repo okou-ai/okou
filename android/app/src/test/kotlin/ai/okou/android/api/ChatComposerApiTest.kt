@@ -89,10 +89,7 @@ class ChatComposerApiTest {
                 )) {
                 assertEquals(request.threadId, row.threadId)
                 assertEquals("input.prompt", row.type)
-                assertEquals(
-                    Json.encodeToJsonElement(request.userMessage),
-                    checkNotNull(row.payload).getValue("userMessage"),
-                )
+                assertEquals(Json.encodeToJsonElement(request.userMessage), row.userMessage)
             }
             val caughtUp = fixture.service.historyCatchUp(tails)
             assertEquals(tails.mapValues { emptyList<HistoryEvent>() }, caughtUp.events)

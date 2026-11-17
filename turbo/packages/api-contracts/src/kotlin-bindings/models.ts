@@ -289,13 +289,22 @@ function objectUnionVariants(variants: readonly unknown[]): JsonObject[] {
   });
 }
 
-/** Emits supported selected shapes; opaque JSON is limited to canonical unknown leaves. */
+/** Emits selected typed shapes and explicitly raw transport/cache envelopes. */
 export function renderKotlinModels(
   bindings: readonly KotlinTypeBinding[],
   packageName = defaultKotlinPackage,
   requestTypes: ReadonlySet<string> = new Set(),
 ): string {
   const declarations: string[] = [];
+  const rawObjects = new Set<object>(
+    bindings
+      .filter((binding) => {
+        return binding.representation === "raw-object";
+      })
+      .map((binding) => {
+        return binding.schema;
+      }),
+  );
   const names = new Set<string>();
   let hasEmptyArray = false;
   let hasZero = false;
@@ -713,7 +722,20 @@ ${types
     requestBinding = requestTypes.has(binding.name);
     const name = kotlinTypeName(binding.name);
     const result = render(
-      toJSONSchema(binding.schema, { io: binding.direction }),
+      toJSONSchema(binding.schema, {
+        io: binding.direction,
+        override: ({ zodSchema, jsonSchema }) => {
+          if (rawObjects.has(zodSchema)) {
+            for (const key of Object.keys(jsonSchema)) {
+              delete jsonSchema[key];
+            }
+            Object.assign(jsonSchema, {
+              type: "object",
+              additionalProperties: {},
+            });
+          }
+        },
+      }),
       name,
     );
     if (result !== name) {

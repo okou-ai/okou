@@ -171,7 +171,10 @@ class AssistantRecoveryModel(
             )
         if (!initial.canContinue && initial.kind != FailureKind.Unknown)
             return FailureRecoveryData(selected, failure, initial)
-        if (initial.kind == FailureKind.Unknown && (failure.runFailure || selected.model == null))
+        if (
+            initial.kind == FailureKind.Unknown &&
+                (failure is AssistantFailure.Run || selected.model == null)
+        )
             return FailureRecoveryData(selected, failure, initial)
         val (catalog, models) =
             coroutineScope {

@@ -1,4 +1,4 @@
-import type { ChatEvent as PersistedChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
+import type { ClientChatEvent as PersistedChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 
 type WithoutSeqId<T> = T extends unknown

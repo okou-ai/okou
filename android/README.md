@@ -809,7 +809,11 @@ raw event variants, opaque structured payloads, optional JSON nulls, forbidden
 fields, path escaping and query validation. The production `historySnapshot`,
 `historyRows`, `threadDetail` and `markRead` bindings are installed consumers used
 by the native reader. Their canonical raw event model and event schema version
-are generated alongside the existing list bindings.
+are generated alongside the existing list bindings. Selected raw-row envelopes
+use an explicit JSON-object binding representation so transport and cache retain
+unknown members unchanged. The native history reader decodes its consumed event
+facts and payloads separately; opaque transport data is not a validated business
+model. The canonical route schemas and protocol fixture proofs remain typed.
 
 The test-only `commandfixtures` namespace and `ChatCommandBindingsTest` prove
 canonical thread creation and input submission, including their 201 receipts,
