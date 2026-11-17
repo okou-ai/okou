@@ -27,6 +27,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   var canSendFromKeyboard = false
   var submitFromKeyboard: (@MainActor () -> Void)?
   @Environment(\.isEnabled) private var isEnabled
+  @Environment(\.workspaceChatPresentation) private var presentation
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -60,6 +61,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
         focusRequested: { [weak coordinator] in coordinator?.input.focusRequested?() })
     }
     view.isCurrent = isCurrent
+    view.navigationPresentation = presentation
     view.inputReady = { [weak coordinator = context.coordinator] in
       coordinator?.input.inputReady?()
     }
@@ -204,6 +206,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
       (textView as? ComposerTextView)?.prepareFocus(true)
       if !input.isFocused { input.isFocused = true }
       if let view = textView as? ComposerTextView {
+        view.navigationPresentation?.didFocus(view)
         input.editor?.updateMention(in: view)
         view.updateWorkflows(false)
       }
@@ -280,6 +283,7 @@ final class ComposerTextView: UITextView {
   private var needsReturnKeyReload = false
   private var needsReturnKeySessionRestart = false
   private var wantsFocus = false
+  weak var navigationPresentation: WorkspaceChatPresentation?
   var composerTextAttributes: [NSAttributedString.Key: Any] {
     ComposerAttributedDocument.attributes(
       for: ComposerAttributedDocument.scaledFont(for: traitCollection))
@@ -488,6 +492,10 @@ final class ComposerTextView: UITextView {
     reconcileFocus()
   }
 
+  func resumeFocus() {
+    reconcileFocus()
+  }
+
   func prepareFocus(_ focused: Bool) {
     // A responder handoff can synchronously write another editor's focus binding.
     // Record SwiftUI's intent here; native readiness applies it after the update.
@@ -530,7 +538,13 @@ final class ComposerTextView: UITextView {
   private func reconcileFocus() {
     // SwiftUI can prepare the replacement editor before it has a window.
     guard window != nil else { return }
-    if wantsFocus && isCurrent() && !isFirstResponder { becomeFirstResponder() }
+    if wantsFocus && isCurrent() && !isFirstResponder {
+      if let navigationPresentation, !navigationPresentation.allowsFocus {
+        navigationPresentation.deferFocus(self)
+        return
+      }
+      becomeFirstResponder()
+    }
     if !wantsFocus && isFirstResponder { resignFirstResponder() }
   }
 
