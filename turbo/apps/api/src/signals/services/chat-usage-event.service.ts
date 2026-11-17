@@ -1,7 +1,8 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { command } from "ccstate";
 
 import { writeDb$ } from "../external/db";
-import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+
 import { randomUUID } from "node:crypto";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
@@ -46,11 +47,15 @@ export const maybeEmitRunUsageEvent$ = command(
     if (!inserted) {
       return false;
     }
-    await publishChatThreadMessageCreatedSafely({
-      userId: settled.userId,
-      orgId: settled.orgId,
-      threadId: settled.chatThreadId,
-    });
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        userId: settled.userId,
+        orgId: settled.orgId,
+        threadId: settled.chatThreadId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return true;
   },

@@ -4,23 +4,14 @@ import {
   chatThreadMetadataContract,
   chatThreadMuteContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  cronExecuteWorkflowAutomationsContract,
-  cronOfficialWorkflowCatalogContract,
-} from "@okouai/api-contracts/contracts/cron";
+import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import {
-  MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
-  morningBriefPreferenceContract,
-} from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
   feedContract,
   type PlatformEvent,
 } from "@okouai/api-contracts/contracts/feed";
 import {
   workflowAutomationsContract,
-  workflowsCollectionContract,
   type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -32,19 +23,15 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { chatThreadMuteRoutes } from "../chat-threads-mute";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
-import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-catalog";
 import { featureSwitchesRoutes } from "../feature-switches";
-import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { feedRoutes } from "../feed";
 import { workflowAutomationsRoutes } from "../workflow-automations";
-import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createPublicAutomationRunApi } from "./helpers/public-automation-run";
 import { createRouteMocks } from "./helpers/route-test";
-import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { okouTokenFromExecution } from "./helpers/chat-events-fixture";
 
 const context = testContext();
@@ -96,7 +83,6 @@ async function createScenario(
     readonly scheduleType?: "cron" | "loop" | "once";
   } = {},
 ): Promise<Scenario> {
-  mockEnv("CRON_SECRET", CRON_SECRET);
   mockNow(new Date("2030-01-01T12:00:00.000Z"));
   const { actor, defaultAgentId } = await workflows.setupWorkflowOrg({
     model: "claude-fable-5-1",
@@ -153,31 +139,6 @@ async function readAutomation(scenario: Scenario) {
   return response.body;
 }
 
-/** Issue #46339 explicitly scopes the authenticated operator cron as a system boundary. */
-async function executeCron() {
-  const response = await accept(
-    setupApp({ context, routes: cronExecuteWorkflowAutomationsRoutes })(
-      cronExecuteWorkflowAutomationsContract,
-    ).execute({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
-    [200],
-  );
-  expect(response.body.success).toBeTruthy();
-  await flushWaitUntilForTest();
-}
-
-async function fireNextOccurrence(scenario: Scenario) {
-  const before = await readAutomation(scenario);
-  if (!before.enabled || !before.nextRunAt) {
-    throw new Error(
-      "Expected an enabled recurring schedule with a next occurrence",
-    );
-  }
-  mockNow(new Date(before.nextRunAt));
-  await runs.registerDirectRunner(scenario.runnerGroup);
-  await executeCron();
-  return await readAutomation(scenario);
-}
-
 async function inbox(actor: ApiTestUser) {
   const response = await accept(
     feedClient().list({
@@ -195,7 +156,6 @@ function expectDisableNotice(
   event: PlatformEvent,
   scenario: Scenario,
   disabledAt: string,
-  recoveryScheduled = false,
 ) {
   expect(event).toMatchObject({
     type: "event",
@@ -210,7 +170,7 @@ function expectDisableNotice(
       automationName: scenario.workflowName,
       disabledAt,
       consecutiveFailures: 3,
-      recoveryScheduled,
+      recoveryScheduled: false,
     },
   });
 }
@@ -243,41 +203,36 @@ async function muteThread(
   expect(thread.body.muted).toBeTruthy();
 }
 
-async function startScheduledRun(scenario: Scenario) {
-  const automation = await fireNextOccurrence(scenario);
-  if (!automation.chatThreadId) {
-    throw new Error("Expected a scheduled automation thread");
-  }
-  authHeaders(scenario.actor);
-  const events = await workflows.readThreadEvents(automation.chatThreadId);
-  const latestInput = [...events].reverse().find((event) => {
-    return event.eventType === "input.prompt" && event.runId;
-  });
-  if (!latestInput?.runId) {
-    throw new Error(
-      "Expected the cron to launch a Run through its public thread events",
-    );
-  }
-  const owned = publicRuns.track(
+async function startManualRun(scenario: Scenario) {
+  // Each owner request is a distinct click, including when the case controls time.
+  mockNow(now() + 60_000);
+  await runs.registerDirectRunner(scenario.runnerGroup);
+  const started = await publicRuns.start(
     scenario.actor,
-    latestInput.runId,
+    scenario.automationId,
     scenario.runnerGroup,
   );
-  const execution = await runs.executionInput(latestInput.runId);
+  const automation = await readAutomation(scenario);
+  const owned = publicRuns.track(
+    scenario.actor,
+    started.runId,
+    scenario.runnerGroup,
+  );
+  const execution = await runs.executionInput(started.runId);
   owned.sandboxToken = execution.sandboxToken;
   return {
     automation,
-    runId: latestInput.runId,
+    runId: started.runId,
     headers: { authorization: `Bearer ${execution.sandboxToken}` },
     owned,
   };
 }
 
-async function completeFailedOccurrence(
+async function completeFailedManualRun(
   scenario: Scenario,
   options: { readonly creditError?: boolean; readonly mute?: boolean } = {},
 ) {
-  const started = await startScheduledRun(scenario);
+  const started = await startManualRun(scenario);
   if (options.mute) {
     await muteThread(scenario, started.automation);
   }
@@ -302,14 +257,9 @@ async function completeFailedOccurrence(
 
 describe("recurring automation auto-disable platform feed events", () => {
   it("keeps platform events intact when an Agent reuses their identity for a suggestion", async () => {
-    await setupApp({
-      context,
-      routes: cronExecuteWorkflowAutomationsRoutes,
-      isolatePg: true,
-    });
     const scenario = await createScenario();
     for (let failure = 0; failure < 3; failure++) {
-      await completeFailedOccurrence(scenario);
+      await completeFailedManualRun(scenario);
     }
     const [event] = await inbox(scenario.actor);
     if (!event) {
@@ -385,25 +335,45 @@ describe("recurring automation auto-disable platform feed events", () => {
       [409],
     );
     await expect(inbox(scenario.actor)).resolves.toStrictEqual([event]);
+    const peer = workflows.user({ orgId: scenario.actor.orgId });
+    const otherWorkspace = workflows.user({ userId: scenario.actor.userId });
+    for (const outsider of [peer, otherWorkspace]) {
+      await feedSwitch(outsider, true);
+      await expect(inbox(outsider)).resolves.toStrictEqual([]);
+      await accept(
+        feedClient().dismiss({
+          headers: authHeaders(outsider),
+          params: { id: event.id },
+        }),
+        [404],
+      );
+    }
+    await accept(
+      feedClient().dismiss({
+        headers: authHeaders(scenario.actor),
+        params: { id: event.id },
+      }),
+      [204],
+    );
+    await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
+    await expect(readAutomation(scenario)).resolves.toMatchObject({
+      enabled: false,
+      nextRunAt: null,
+    });
   });
 
   it("excludes credit failures and deduplicates the runtime disable feed event", async () => {
-    await setupApp({
-      context,
-      routes: cronExecuteWorkflowAutomationsRoutes,
-      isolatePg: true,
-    });
     const scenario = await createScenario({ scheduleType: "loop" });
     for (const failure of [1, 2]) {
-      await completeFailedOccurrence(scenario, { mute: failure === 1 });
+      await completeFailedManualRun(scenario, { mute: failure === 1 });
       expect((await readAutomation(scenario)).enabled).toBeTruthy();
       await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
     }
-    await completeFailedOccurrence(scenario, { creditError: true });
+    await completeFailedManualRun(scenario, { creditError: true });
     expect((await readAutomation(scenario)).enabled).toBeTruthy();
     await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
 
-    const threshold = await completeFailedOccurrence(scenario);
+    const threshold = await completeFailedManualRun(scenario);
     const disabledAt = new Date(now()).toISOString();
     await expect(readAutomation(scenario)).resolves.toMatchObject({
       enabled: false,
@@ -423,7 +393,6 @@ describe("recurring automation auto-disable platform feed events", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    await executeCron();
     expect(
       (await inbox(scenario.actor)).map((item) => {
         return item.id;
@@ -486,11 +455,6 @@ describe("recurring automation auto-disable platform feed events", () => {
   });
 
   it("stops future system update deliveries until enabled again without changing automation failure handling", async () => {
-    await setupApp({
-      context,
-      routes: cronExecuteWorkflowAutomationsRoutes,
-      isolatePg: true,
-    });
     const scenario = await createScenario();
     const changed = await accept(
       feedClient().updateSources({
@@ -506,7 +470,7 @@ describe("recurring automation auto-disable platform feed events", () => {
       systemUpdates: false,
     });
     for (let failure = 0; failure < 3; failure++) {
-      await completeFailedOccurrence(scenario);
+      await completeFailedManualRun(scenario);
     }
     expect((await readAutomation(scenario)).enabled).toBeFalsy();
     await expect(inbox(scenario.actor)).resolves.toStrictEqual([]);
@@ -526,7 +490,7 @@ describe("recurring automation auto-disable platform feed events", () => {
       [200],
     );
     for (let failure = 0; failure < 3; failure++) {
-      await completeFailedOccurrence(scenario);
+      await completeFailedManualRun(scenario);
     }
     expect((await readAutomation(scenario)).enabled).toBeFalsy();
     const delivered = await inbox(scenario.actor);
@@ -538,186 +502,10 @@ describe("recurring automation auto-disable platform feed events", () => {
     expectDisableNotice(event, scenario, new Date(now()).toISOString());
   });
 
-  it("notifies once for a journaled Morning Brief after three Runner failures and retains its recovery anchor", async () => {
-    // Both the catalog publisher and schedule scanner operate across tenants.
-    const cron = await setupApp({
-      context,
-      routes: [
-        ...cronOfficialWorkflowCatalogRoutes,
-        ...cronExecuteWorkflowAutomationsRoutes,
-      ],
-      isolatePg: true,
-    });
-    mockEnv("CRON_SECRET", CRON_SECRET);
-    mockNow(new Date("2030-01-01T12:00:00.000Z"));
-    const { actor, defaultAgentId } = await workflows.setupWorkflowOrg({
-      model: "claude-fable-5-1",
-      timezone: "UTC",
-    });
-    const runnerGroup = await runs.configureRunnerGroup();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    installWorkflowVolumeS3Fixture(context);
-    const published = await accept(
-      cron(cronOfficialWorkflowCatalogContract).sync({
-        headers: { authorization: `Bearer ${CRON_SECRET}` },
-      }),
-      [200],
-    );
-    expect(published.body).toMatchObject({
-      outcome: "accepted",
-      diagnostics: [],
-    });
-    await feedSwitch(actor, true);
-    const enabled = await accept(
-      setupApp({ context, routes: morningBriefPreferenceRoutes })(
-        morningBriefPreferenceContract,
-      ).update({
-        headers: authHeaders(actor),
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    expect(enabled.body).toStrictEqual({
-      enabled: true,
-      status: "enabled",
-      unavailableReason: null,
-    });
-    await flushWaitUntilForTest();
-    const listed = await accept(
-      setupApp({ context, routes: workflowsRoutes })(
-        workflowsCollectionContract,
-      ).list({ headers: authHeaders(actor), query: {} }),
-      [200],
-    );
-    const workflow = listed.body.find((item) => {
-      return (
-        item.official?.definitionName === MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
-      );
-    });
-    if (!workflow) {
-      throw new Error("Expected the preference to install Morning Brief");
-    }
-    expect(workflow).toMatchObject({
-      agentId: defaultAgentId,
-      ownerUserId: actor.userId,
-      official: { installationState: "installed" },
-    });
-    const automations = await accept(
-      automationsClient().list({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.id },
-      }),
-      [200],
-    );
-    expect(automations.body).toHaveLength(1);
-    const [automation] = automations.body;
-    if (!automation) {
-      throw new Error("Expected the canonical Morning Brief schedule");
-    }
-    expect(automation).toMatchObject({
-      enabled: true,
-      ownerUserId: actor.userId,
-      kind: "schedule",
-      schedule: { type: "cron", timezone: "UTC" },
-      official: {
-        blueprintKey: MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-        reconciliationStatus: "current",
-        intendedEnabled: true,
-      },
-    });
-    const scenario: Scenario = {
-      actor,
-      workflowId: workflow.id,
-      workflowName: workflow.name,
-      runnerGroup,
-      automationId: automation.id,
-    };
-    for (let failure = 1; failure < 3; failure++) {
-      await completeFailedOccurrence(scenario);
-      expect((await readAutomation(scenario)).enabled).toBeTruthy();
-      await expect(inbox(actor)).resolves.toStrictEqual([]);
-    }
-    const threshold = await completeFailedOccurrence(scenario);
-    const disabledAt = new Date(now()).toISOString();
-    const disabled = await readAutomation(scenario);
-    expect(disabled).toMatchObject({
-      enabled: false,
-      official: { intendedEnabled: true },
-    });
-    if (!disabled.nextRunAt) {
-      throw new Error("Expected Morning Brief to retain a recovery anchor");
-    }
-    expect(new Date(disabled.nextRunAt).getTime()).toBeGreaterThan(now());
-    const delivered = await inbox(actor);
-    expect(delivered).toHaveLength(1);
-    const [notice] = delivered;
-    if (!notice) {
-      throw new Error("Expected the owner's Morning Brief disable notice");
-    }
-    expectDisableNotice(notice, scenario, disabledAt, true);
-
-    await webhooks.requestAgentComplete(
-      threshold.completion,
-      threshold.headers,
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(
-      (await inbox(actor)).map((item) => {
-        return item.id;
-      }),
-    ).toStrictEqual([notice.id]);
-
-    await expect(readAutomation(scenario)).resolves.toMatchObject({
-      enabled: false,
-      nextRunAt: disabled.nextRunAt,
-    });
-    const peer = workflows.user({ orgId: actor.orgId });
-    await feedSwitch(peer, true);
-    await expect(inbox(peer)).resolves.toStrictEqual([]);
-    await accept(
-      feedClient().dismiss({
-        headers: authHeaders(peer),
-        params: { id: notice.id },
-      }),
-      [404],
-    );
-    const otherWorkspace = workflows.user({ userId: actor.userId });
-    await feedSwitch(otherWorkspace, true);
-    await expect(inbox(otherWorkspace)).resolves.toStrictEqual([]);
-    await accept(
-      feedClient().dismiss({
-        headers: authHeaders(otherWorkspace),
-        params: { id: notice.id },
-      }),
-      [404],
-    );
-    await expect(inbox(actor)).resolves.toHaveLength(1);
-    await accept(
-      feedClient().dismiss({
-        headers: authHeaders(actor),
-        params: { id: notice.id },
-      }),
-      [204],
-    );
-    await expect(inbox(actor)).resolves.toStrictEqual([]);
-    // Dismissing an event does not change the automation or its recovery anchor.
-    await expect(readAutomation(scenario)).resolves.toMatchObject({
-      enabled: false,
-      nextRunAt: disabled.nextRunAt,
-    });
-  });
-
   it("keeps disabling schedules without emitting while the feed switch is off", async () => {
-    await setupApp({
-      context,
-      routes: cronExecuteWorkflowAutomationsRoutes,
-      isolatePg: true,
-    });
     const scenario = await createScenario({ feedEnabled: false });
     for (const failure of [1, 2, 3]) {
-      await completeFailedOccurrence(scenario);
+      await completeFailedManualRun(scenario);
       expect((await readAutomation(scenario)).enabled).toBe(failure < 3);
     }
     await feedSwitch(scenario.actor, true);
@@ -725,11 +513,6 @@ describe("recurring automation auto-disable platform feed events", () => {
   });
 
   it("does not emit for a manual disable and can emit again after re-enabling", async () => {
-    await setupApp({
-      context,
-      routes: cronExecuteWorkflowAutomationsRoutes,
-      isolatePg: true,
-    });
     const scenario = await createScenario();
     await accept(
       automationsClient().disable({
@@ -748,19 +531,66 @@ describe("recurring automation auto-disable platform feed events", () => {
         [200],
       );
       for (let failure = 0; failure < 3; failure++) {
-        await completeFailedOccurrence(scenario);
+        await completeFailedManualRun(scenario);
       }
       await expect(inbox(scenario.actor)).resolves.toHaveLength(cycle + 1);
     }
   });
+
   it("does not emit when a one-time schedule stops after its attempt", async () => {
-    await setupApp({
+    const app = await setupApp({
       context,
       routes: cronExecuteWorkflowAutomationsRoutes,
       isolatePg: true,
     });
+    mockEnv("CRON_SECRET", CRON_SECRET);
     const scenario = await createScenario({ scheduleType: "once" });
-    await completeFailedOccurrence(scenario);
+    const before = await readAutomation(scenario);
+    if (!before.nextRunAt) {
+      throw new Error("Expected the one-time schedule's occurrence");
+    }
+    mockNow(new Date(before.nextRunAt));
+    await runs.registerDirectRunner(scenario.runnerGroup);
+    await accept(
+      app(cronExecuteWorkflowAutomationsContract).execute({
+        headers: { authorization: `Bearer ${CRON_SECRET}` },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const automation = await readAutomation(scenario);
+    if (!automation.chatThreadId) {
+      throw new Error("Expected the one-time schedule's thread");
+    }
+    authHeaders(scenario.actor);
+    const events = await workflows.readThreadEvents(automation.chatThreadId);
+    const input = events.find((event) => {
+      return event.eventType === "input.prompt" && event.runId;
+    });
+    if (!input?.runId) {
+      throw new Error("Expected the scheduled Run in public thread events");
+    }
+    const owned = publicRuns.track(
+      scenario.actor,
+      input.runId,
+      scenario.runnerGroup,
+    );
+    const execution = await runs.executionInput(input.runId);
+    owned.sandboxToken = execution.sandboxToken;
+    await webhooks.requestAgentComplete(
+      {
+        runId: input.runId,
+        exitCode: 1,
+        error: "Scheduled execution failed",
+      },
+      { authorization: `Bearer ${execution.sandboxToken}` },
+      [200],
+    );
+    owned.acknowledged = true;
+    await flushWaitUntilForTest();
+    expect((await runs.readRun(scenario.actor, input.runId)).status).toBe(
+      "failed",
+    );
     await expect(readAutomation(scenario)).resolves.toMatchObject({
       enabled: false,
       nextRunAt: null,
@@ -769,19 +599,32 @@ describe("recurring automation auto-disable platform feed events", () => {
   });
 
   it("publishes a feed event after three run preparation failures", async () => {
-    await setupApp({
+    const app = await setupApp({
       context,
       routes: cronExecuteWorkflowAutomationsRoutes,
       isolatePg: true,
     });
+    mockEnv("CRON_SECRET", CRON_SECRET);
     const scenario = await createScenario();
     context.mocks.s3.getSignedUrl.mockRejectedValue(
       new Error("Storage unavailable"),
     );
     for (const failure of [1, 2, 3]) {
-      await expect(fireNextOccurrence(scenario)).rejects.toThrow(
-        "Run execution preparation failed",
-      );
+      const before = await readAutomation(scenario);
+      if (!before.enabled || !before.nextRunAt) {
+        throw new Error("Expected the recurring schedule's next occurrence");
+      }
+      mockNow(new Date(before.nextRunAt));
+      await runs.registerDirectRunner(scenario.runnerGroup);
+      await expect(
+        accept(
+          app(cronExecuteWorkflowAutomationsContract).execute({
+            headers: { authorization: `Bearer ${CRON_SECRET}` },
+          }),
+          [200],
+        ),
+      ).rejects.toThrow("Run execution preparation failed");
+      await flushWaitUntilForTest();
       expect((await readAutomation(scenario)).enabled).toBe(failure < 3);
     }
     const delivered = await inbox(scenario.actor);

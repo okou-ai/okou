@@ -1,3 +1,4 @@
+import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { randomUUID } from "node:crypto";
 import { GET_STARTED_REWARDS } from "@okouai/api-contracts/contracts/get-started";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
@@ -63,11 +64,12 @@ export const linkGetStartedInvitation$ = command(
     { set },
     claimId: string,
     invitationId: string,
-    signal?: AbortSignal,
+    signal: AbortSignal,
   ): Promise<void> => {
-    signal?.throwIfAborted();
+    signal.throwIfAborted();
     const db = set(writeDb$);
     const at = nowDate();
+    const marketingRewardEventId = randomUUID();
     const linked = db
       .update(getStartedClaims)
       .set({ invitationId, updatedAt: at })
@@ -81,7 +83,7 @@ export const linkGetStartedInvitation$ = command(
     await db.execute(
       sql`WITH linked_invitation AS (${linked.getSQL()}) ${marketingRewardInvitationEventInsert(
         {
-          id: randomUUID(),
+          id: marketingRewardEventId,
           environment: env("ENV"),
           type: "invitation.attributed",
           occurredAt: at.toISOString(),
@@ -89,7 +91,12 @@ export const linkGetStartedInvitation$ = command(
         sql`SELECT * FROM linked_invitation`,
       )}`,
     );
-    signal?.throwIfAborted();
+    signal.throwIfAborted();
+    set(
+      startMarketingRewardEventDelivery$,
+      { jobId: marketingRewardEventId, handlerVersion: 3 },
+      signal,
+    );
   },
 );
 
@@ -121,11 +128,12 @@ export const revokeGetStartedInvitation$ = command(
   async (
     { set },
     args: { readonly orgId: string; readonly invitationId: string },
-    signal?: AbortSignal,
+    signal: AbortSignal,
   ): Promise<void> => {
-    signal?.throwIfAborted();
+    signal.throwIfAborted();
     const db = set(writeDb$);
     const at = nowDate();
+    const marketingRewardEventId = randomUUID();
     const revoked = db
       .update(getStartedClaims)
       .set({
@@ -145,7 +153,7 @@ export const revokeGetStartedInvitation$ = command(
     await db.execute(
       sql`WITH revoked_invitation AS (${revoked.getSQL()}) ${marketingRewardInvitationEventInsert(
         {
-          id: randomUUID(),
+          id: marketingRewardEventId,
           environment: env("ENV"),
           type: "invitation.revoked",
           occurredAt: at.toISOString(),
@@ -153,6 +161,11 @@ export const revokeGetStartedInvitation$ = command(
         sql`SELECT * FROM revoked_invitation`,
       )}`,
     );
-    signal?.throwIfAborted();
+    signal.throwIfAborted();
+    set(
+      startMarketingRewardEventDelivery$,
+      { jobId: marketingRewardEventId, handlerVersion: 3 },
+      signal,
+    );
   },
 );

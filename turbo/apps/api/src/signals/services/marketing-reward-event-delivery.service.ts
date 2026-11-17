@@ -6,8 +6,10 @@ import {
   marketingRewardSourceEventSchema,
   type MarketingRewardSourceEvent,
 } from "../../lib/marketing-reward-events";
+import { logger } from "../../lib/log";
+import { waitUntil } from "../context/wait-until";
 import { nowDate } from "../../lib/time";
-import { settle } from "../utils";
+import { settle, tapError } from "../utils";
 import {
   claimBackgroundJob$,
   transitionBackgroundJob$,
@@ -73,6 +75,7 @@ const deliverEventVersion$ = command(
       readonly origin: string;
       readonly secret: string;
       readonly handlerVersion: 1 | 2 | 3 | 4 | 5;
+      readonly jobId?: string;
     },
     signal: AbortSignal,
   ): Promise<{ readonly processed: number }> => {
@@ -83,6 +86,7 @@ const deliverEventVersion$ = command(
         {
           kind: MARKETING_REWARD_EVENT_JOB_KIND,
           handlerVersion: args.handlerVersion,
+          jobId: args.jobId,
         },
         signal,
       );
@@ -150,7 +154,10 @@ const deliverEventVersion$ = command(
 export const deliverMarketingRewardEvents$ = command(
   async (
     { set },
-    _args: Record<string, never>,
+    args: {
+      readonly jobId?: string;
+      readonly handlerVersion?: 1 | 2 | 3 | 4 | 5;
+    },
     signal: AbortSignal,
   ): Promise<{ readonly processed: number }> => {
     const origin = env("MARKETING_REWARDS_EVENTS_ORIGIN");
@@ -172,13 +179,20 @@ export const deliverMarketingRewardEvents$ = command(
           MARKETING_REWARD_WORKFLOW_EVENT_HANDLER_VERSION,
           MARKETING_REWARD_CHECKIN_EVENT_HANDLER_VERSION,
         ] as const
-      ).map((handlerVersion) => {
-        return set(
-          deliverEventVersion$,
-          { origin, secret, handlerVersion },
-          signal,
-        );
-      }),
+      )
+        .filter((handlerVersion) => {
+          return (
+            args.handlerVersion === undefined ||
+            args.handlerVersion === handlerVersion
+          );
+        })
+        .map((handlerVersion) => {
+          return set(
+            deliverEventVersion$,
+            { origin, secret, handlerVersion, jobId: args.jobId },
+            signal,
+          );
+        }),
     );
     signal.throwIfAborted();
     return {
@@ -186,5 +200,29 @@ export const deliverMarketingRewardEvents$ = command(
         return sum + result.processed;
       }, 0),
     };
+  },
+);
+
+/** Attempt the committed source only; the durable queue remains the recovery authority. */
+export const startMarketingRewardEventDelivery$ = command(
+  (
+    { set },
+    args: {
+      readonly jobId: string;
+      readonly handlerVersion: 1 | 2 | 3 | 4 | 5;
+    },
+    signal: AbortSignal,
+  ): void => {
+    waitUntil(
+      tapError(set(deliverMarketingRewardEvents$, args, signal), (error) => {
+        logger("MarketingRewardEventDelivery").warn(
+          "Committed source delivery will recover in background",
+          {
+            jobId: args.jobId,
+            error,
+          },
+        );
+      }),
+    );
   },
 );

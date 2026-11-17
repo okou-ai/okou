@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import type { ChatRecommendedFollowup } from "@okouai/api-contracts/contracts/chat-threads";
 import { serializeChatFollowupsContent } from "@okouai/api-contracts/validators/chat-threads";
 import {
@@ -7,42 +8,27 @@ import {
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import {
-  and,
-  eq,
-  isNotNull,
-  isNull,
-  not,
-  notExists,
-  or,
-  sql,
-  type SQL,
-} from "drizzle-orm";
-import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
 import { settle, settleIncludingAbort } from "../utils";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
-import {
-  publishChatThreadMessageCreatedSafely,
-  publishChatThreadReadCursorUpdatedSafely,
-} from "../external/realtime";
+import { publishChatThreadReadCursorUpdatedSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import {
   assistantEventIdForRunEvent,
   followupsEventIdForRun,
 } from "./assistant-event-id";
 import { chatEventInsertSql, chatEventsInsertSql } from "./chat-event.service";
-import {
-  chatEventTypeIn,
-  runOwnedChatEventCondition,
-} from "./chat-event-type.service";
-import { canonicalChatEventError } from "./canonical-chat-event-read.service";
 import { publishFirstAssistantEventCreatedSafely$ } from "./chat-first-assistant-event-metric.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
+
+export {
+  visibleChatEventCondition,
+  visibleChatEventPredicate,
+} from "./chat-event-visibility.service";
 
 const EXT_MIMETYPE_MAP: Readonly<Record<string, string>> = {
   png: "image/png",
@@ -81,8 +67,6 @@ export const VIDEO_FILENAME_EXTENSIONS = Object.entries(EXT_MIMETYPE_MAP)
   .map(([extension]) => {
     return extension;
   });
-
-const revoker = alias(chatEvents, "revoker");
 
 type InsertAssistantEventItem =
   | {
@@ -223,12 +207,16 @@ export const insertRecommendedFollowupsEvent$ = command(
         signal,
       );
     }
-    await publishChatThreadMessageCreatedSafely({
-      userId: args.userId,
-      orgId: args.orgId,
-      threadId: args.threadId,
-      syncThroughSeqId: inserted.seqId,
-    });
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        userId: args.userId,
+        orgId: args.orgId,
+        threadId: args.threadId,
+        syncThroughSeqId: inserted.seqId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return true;
   },
@@ -444,39 +432,6 @@ export const touchSentChatThreadSort$ = command(
   },
 );
 
-export function visibleChatEventCondition(): SQL | undefined {
-  return visibleChatEventPredicate();
-}
-
-export function visibleChatEventPredicate(): SQL | undefined {
-  const isUserInputEvent = chatEventTypeIn([
-    "input.prompt",
-    "input.automation",
-    "input.rejected",
-    "control.interrupt",
-    "control.revoke",
-  ]);
-  const hasRunOwner = and(
-    isNotNull(chatEvents.runId),
-    runOwnedChatEventCondition(),
-  );
-  return and(
-    notExists(
-      new QueryBuilder()
-        .select({ id: revoker.id })
-        .from(revoker)
-        .where(eq(revoker.revokesEventId, chatEvents.id)),
-    ),
-    or(
-      not(isUserInputEvent),
-      hasRunOwner,
-      isNull(chatEvents.revokesEventId),
-      isNotNull(canonicalChatEventError()),
-    ),
-    not(chatEventTypeIn(["control.interrupt"])),
-  );
-}
-
 interface AppendAssistantEventRowsResult {
   readonly insertedRowCount: number;
   readonly shouldAttemptFirstAssistantEventClaim: boolean;
@@ -571,11 +526,15 @@ export const insertAssistantEvents$ = command(
           signal,
         );
       } else {
-        await publishChatThreadMessageCreatedSafely({
-          userId: args.userId,
-          orgId: args.orgId,
-          threadId: args.threadId,
-        });
+        await set(
+          publishChatThreadMessageCreated$,
+          {
+            userId: args.userId,
+            orgId: args.orgId,
+            threadId: args.threadId,
+          },
+          signal,
+        );
         signal.throwIfAborted();
       }
     }

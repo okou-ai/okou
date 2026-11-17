@@ -1545,6 +1545,7 @@ describe("GET /api/artifacts/catalog", () => {
 
     const member = bdd.user({ orgId: actor.orgId });
     const otherOrg = bdd.user({ userId: actor.userId });
+    await api.grantProEntitlement(otherOrg);
     for (const unauthorized of [member, otherOrg]) {
       await host.requestHostedSiteDeployments(unauthorized, site, [404]);
       // Published website files are public; management and completion are not.

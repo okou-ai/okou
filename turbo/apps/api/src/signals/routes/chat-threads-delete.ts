@@ -15,6 +15,7 @@ import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { deleteChatThread$ } from "../services/chat-thread.service";
 import { reconcileBrowsers$ } from "../services/browser-reconcile.service";
+import { cleanupBrowserScreenshots$ } from "../services/browser-screenshot-cleanup.service";
 import { dispatchCancelSideEffects$ } from "../services/run-cancel.service";
 import { tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
@@ -74,6 +75,11 @@ const deleteAndCleanUp$ = command(
 
     await set(reconcileBrowsers$, args, signal);
     signal.throwIfAborted();
+    await set(
+      cleanupBrowserScreenshots$,
+      { limit: 20, chatThreadId: args.threadId },
+      signal,
+    );
 
     await publishThreadListChanged({ userId: args.userId, orgId: args.orgId });
     signal.throwIfAborted();

@@ -1,3 +1,5 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import {
   AUTO_SELECTED_MODEL,
   isAutoSelectedModel,
@@ -77,7 +79,6 @@ import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-s
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import {
-  publishChatThreadMessageCreatedSafely,
   publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
@@ -175,7 +176,10 @@ import {
   type ChatAgentRunSourceAnnotation,
 } from "./chat-user-message.service";
 import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
-import { workflowRewardQueuedEventInsert } from "./workflow-reward-source-publication";
+import {
+  workflowRewardQueuedEventInsert,
+  workflowRewardSourceEventId,
+} from "./workflow-reward-source-publication";
 import { env } from "../../lib/env";
 import type { ModelCatalog } from "./model-catalog.service";
 import { isCatalogFastServiceTierSupported } from "./model-route-capabilities.service";
@@ -2269,6 +2273,16 @@ const appendNormalSendInput$ = command(
     if (row.createdAt === null || row.seqId === null) {
       throw new Error("Normal chat input publication is incomplete");
     }
+    if (args.getStartedWorkflowId) {
+      set(
+        startMarketingRewardEventDelivery$,
+        {
+          jobId: workflowRewardSourceEventId("queued", row.id),
+          handlerVersion: 4,
+        },
+        signal,
+      );
+    }
     const enqueueCommit = { eventId: row.id, committedAt: now() };
     let publishedLease: PublishedChatThreadLease | undefined;
     if (row.claimId === claimId) {
@@ -2459,11 +2473,15 @@ const publishEnqueuedNormalSend$ = command(
     }
     await set(normalSendThreadTouch$, args, thread, touchedAt, signal);
     signal.throwIfAborted();
-    await publishChatEventCreated({
-      userId: args.userId,
-      orgId: args.orgId,
-      threadId: thread.threadId,
-    });
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        userId: args.userId,
+        orgId: args.orgId,
+        threadId: thread.threadId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     await publishThreadListChangedSafely({
       userId: args.userId,
@@ -3219,13 +3237,7 @@ export const appendInterruptUserMessage$ = command(
     return { ok: true, createdAt: resolved.createdAt };
   },
 );
-async function publishChatEventCreated(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly threadId: string;
-}): Promise<void> {
-  await publishChatThreadMessageCreatedSafely(args);
-}
+
 const assertOwnedThread$ = command(
   async (
     { get, set },
@@ -3294,11 +3306,15 @@ const handleRecallSend$ = command(
     if (!result.ok) {
       return badRequestMessage(result.message);
     }
-    await publishChatEventCreated({
-      userId: args.userId,
-      orgId: args.orgId,
-      threadId: args.body.threadId,
-    });
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        userId: args.userId,
+        orgId: args.orgId,
+        threadId: args.body.threadId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     return {
       status: 201 as const,
@@ -3343,11 +3359,15 @@ const handleInterruptSend$ = command(
     if (!result.ok) {
       return badRequestMessage(result.message);
     }
-    await publishChatEventCreated({
-      userId: args.userId,
-      orgId: args.orgId,
-      threadId: args.body.threadId,
-    });
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        userId: args.userId,
+        orgId: args.orgId,
+        threadId: args.body.threadId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     const cancelResult = await set(
       cancelRun$,

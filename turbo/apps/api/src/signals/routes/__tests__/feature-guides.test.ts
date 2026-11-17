@@ -542,12 +542,8 @@ test("a seen edition does not reveal an older backlog and a new edition can appe
 });
 
 test("keeps drafts immutable and publishes only the selected revision", async () => {
-  await setupApp({
-    context,
-    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
-    isolatePg: true,
-  });
-  const prepared = await prepare();
+  const viewer = await identity();
+  const prepared = await prepare(draft({ audience: { users: [viewer] } }));
   const repeated = await accept(
     clients().guide.import({ headers, body: prepared.input }),
     [200],
@@ -573,7 +569,7 @@ test("keeps drafts immutable and publishes only the selected revision", async ()
   );
   expect(changed.body.revisionId).not.toBe(prepared.revisionId);
   await publish(prepared);
-  await identity();
+  signIn(viewer);
   await enable();
   await expect(current()).resolves.toMatchObject({
     revisionId: prepared.revisionId,
@@ -588,6 +584,7 @@ test("keeps drafts immutable and publishes only the selected revision", async ()
     }),
     [200],
   );
+  signIn(viewer);
   await expect(current()).resolves.toBeNull();
 });
 

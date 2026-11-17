@@ -13,6 +13,7 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createHostBddApi } from "./helpers/api-bdd-host";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createRouteMocks } from "./helpers/route-test";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
 const headers = { authorization: "Bearer clerk-session" } as const;
@@ -187,6 +188,7 @@ async function publish() {
 
 test("site banners default on and persist independently of visibility and redeployment", async () => {
   const { owner, api, input, prepared, request, revision } = await publish();
+  await createRunsApi(context).grantProEntitlement(owner);
   const delivery = {
     ...request,
     query: { ...request.query, presentation: "banner" as const },
@@ -579,6 +581,7 @@ test("redeployment preserves an explicit policy for both aliases and immutable a
 
 test("issued download grants stop working after a policy revision changes", async () => {
   const { owner, api, prepared, revision } = await publish();
+  await createRunsApi(context).grantProEntitlement(owner);
   const policy = await accept(
     client(owner).updateSiteVisibility({
       headers,
@@ -686,6 +689,7 @@ test("anonymous OG metadata stops exposing a Site after it becomes private", asy
 
 test("private downloads remain controlled and stop after deletion", async () => {
   const { owner, api, input, prepared, revision } = await publish();
+  await createRunsApi(context).grantProEntitlement(owner);
   await accept(
     client(owner).updateSiteVisibility({
       headers,

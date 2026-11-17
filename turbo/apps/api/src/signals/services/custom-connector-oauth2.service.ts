@@ -1,3 +1,4 @@
+import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { customOAuthConnectionPublicationSql } from "./custom-oauth-connection-publication";
@@ -6,7 +7,7 @@ import { safeSqlStateCode } from "../../lib/pg-errors";
 import { CUSTOM_CONNECTOR_GET_STARTED_SOURCE_KEY } from "./get-started-rewards.service";
 import { feishuPlatformFromTokenUrl } from "@okouai/core/feishu-platform";
 import { Buffer } from "node:buffer";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
 import { and, count, eq, exists, gte, inArray, sql } from "drizzle-orm";
@@ -2050,7 +2051,9 @@ export const storeCustomConnectorOAuth2Connection$ = command(
         "Custom OAuth reconnect has no observed account revision",
       );
     }
+    const marketingRewardEventId = randomUUID();
     const query = customOAuthConnectionPublicationSql({
+      marketingRewardEventId,
       ...contractRef,
       userId: args.userId,
       definitionUpdatedAt: args.definitionUpdatedAt,
@@ -2098,6 +2101,11 @@ export const storeCustomConnectorOAuth2Connection$ = command(
       if (published.connection_id === null) {
         throw new Error("Custom OAuth publication did not return its account");
       }
+      set(
+        startMarketingRewardEventDelivery$,
+        { jobId: marketingRewardEventId, handlerVersion: 1 },
+        signal,
+      );
       return { kind: "stored", connectionId: published.connection_id };
     })();
   },

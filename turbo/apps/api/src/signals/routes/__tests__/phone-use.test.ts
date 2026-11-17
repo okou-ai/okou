@@ -502,6 +502,20 @@ test(
         [403],
       );
     });
+    context.mocks.ably.createTokenRequest.mockImplementation((options) => {
+      const params = options as {
+        capability: Record<string, string[]>;
+        clientId: string;
+      };
+      return Promise.resolve({
+        keyName: "phone.key",
+        timestamp: 1,
+        nonce: "nonce",
+        mac: "mac",
+        capability: JSON.stringify(params.capability),
+        clientId: params.clientId,
+      });
+    });
     const id = randomUUID();
     const action = {
       kind: "tap" as const,
@@ -522,6 +536,32 @@ test(
       deviceId: device.body.id,
       status: "queued",
     });
+    expect(submitted.body.realtime).toMatchObject({
+      channelName: `phone-use-result:${orgId}:${actor.userId}:${id}`,
+      eventName: "resultChanged",
+      tokenRequest: {
+        capability: JSON.stringify({
+          [`phone-use-result:${orgId}:${actor.userId}:${id}`]: ["subscribe"],
+        }),
+      },
+    });
+    const subscription = await scenario.run(() => {
+      return accept(
+        client.get({
+          headers: agentHeaders,
+          params: { operationId: id },
+          query: { realtime: "true" },
+        }),
+        [200],
+      );
+    });
+    expect(subscription.body.realtime?.channelName).toBe(
+      submitted.body.realtime?.channelName,
+    );
+    // A lost wakeup must not make retrying the same command identity fail.
+    context.mocks.ably.publish.mockRejectedValueOnce(
+      new Error("Notification unavailable"),
+    );
     const duplicate = await scenario.run(() => {
       return accept(
         client.create({ headers: agentHeaders, body: { id, action } }),

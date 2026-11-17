@@ -7,6 +7,7 @@ import {
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
+import { notifyPhoneUseOwner$ } from "./phone-use-notifications.service";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -200,6 +201,9 @@ export const updateUserFeatureSwitches$ = command(
     if (args.switches[FeatureSwitchKey.DesktopShell] === false) {
       await set(retireQueuedShellCommands$, args, signal);
     }
+    if (args.switches[FeatureSwitchKey.PhoneUse] !== undefined) {
+      await set(notifyPhoneUseOwner$, args, signal);
+    }
     const context = await set(
       loadUserFeatureSwitchContext$,
       args.orgId,
@@ -244,5 +248,6 @@ export const deleteUserFeatureSwitches$ = command(
       .where(and(orgCondition, eq(userFeatureSwitches.switches, {})));
     signal.throwIfAborted();
     await set(retireQueuedShellCommands$, args, signal);
+    await set(notifyPhoneUseOwner$, args, signal);
   },
 );

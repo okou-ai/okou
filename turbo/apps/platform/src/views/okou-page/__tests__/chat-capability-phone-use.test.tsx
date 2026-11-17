@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   phoneUseContract,
+  phoneUseDevicesChangedEvent,
   type PhoneDevice,
   type PhoneUseSelection,
 } from "@okouai/api-contracts/contracts/phone-use";
@@ -39,7 +40,11 @@ function phone(online = true): PhoneDevice {
 async function setup(
   enabled: boolean,
   accountAccess = true,
-  options: { path?: string; onSend?: () => void } = {},
+  options: {
+    path?: string;
+    onSend?: () => void;
+    transport?: "direct" | "message-port";
+  } = {},
 ) {
   installRunChat({ onSendRequest: options.onSend });
   context.mocks.api(remotesContract.overview, ({ respond }) => {
@@ -55,6 +60,7 @@ async function setup(
     context,
     path: options.path ?? NEW_CHAT_PATH,
     locale: "en-US",
+    sharedWorkerTestTransport: options.transport,
     featureSwitches: {
       [FeatureSwitchKey.PhoneUse]: enabled,
       [FeatureSwitchKey.ConnectorChatAccountAccess]: accountAccess,
@@ -93,9 +99,11 @@ test.each([true, false])(
     expect(within(phones).getByText("Owner iPhone")).toBeVisible();
     expect(within(phones).queryByText("Offline iPhone")).toBeNull();
     devices = [phone(false), offline];
-    await userEvent.keyboard("{Escape}");
-    click(await findButton("Connectors"));
+    context.mocks.ably.trigger(phoneUseDevicesChangedEvent);
     await screen.findByText("No phones online");
+    devices = [phone(), offline];
+    context.mocks.ably.trigger(phoneUseDevicesChangedEvent);
+    await screen.findByRole("switch", { name: /Owner iPhone/u });
   },
 );
 
@@ -325,3 +333,28 @@ test("Rejected phone consent preserves the new-chat draft and never starts its R
     screen.findByRole("switch", { name: /^Owner iPhone/u }),
   ).resolves.toBeChecked();
 });
+
+test.each(["leave", "expired readiness"])(
+  "Refresh an open phone menu after %s on its native channel",
+  async (event) => {
+    let online = true;
+    context.mocks.api(phoneUseContract.devices, ({ respond }) => {
+      return respond(200, { devices: [phone(online)] });
+    });
+    await setup(true, true, { transport: "message-port" });
+    await screen.findByRole("switch", { name: /Owner iPhone/u });
+    await waitFor(() => {
+      expect(
+        context.mocks.ably.hasPhonePresenceSubscription(phone().id, 1),
+      ).toBeTruthy();
+    });
+    online = false;
+    context.mocks.ably.triggerPhonePresence(
+      phone().id,
+      1,
+      event === "leave" ? "leave" : "update",
+      "2000-01-01T00:00:00.000Z",
+    );
+    await screen.findByText("No phones online");
+  },
+);

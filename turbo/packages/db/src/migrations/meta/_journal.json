@@ -3410,6 +3410,13 @@
       "when": 1794903288573,
       "tag": "1565_reconcile_member_memory_authority",
       "breakpoints": true
+    },
+    {
+      "idx": 1566,
+      "version": "7",
+      "when": 1794915808815,
+      "tag": "1566_monotonic_chat_search_publication",
+      "breakpoints": true
     }
   ]
 }

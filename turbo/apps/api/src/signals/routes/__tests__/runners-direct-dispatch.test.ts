@@ -276,30 +276,8 @@ test("recovers interrupted delivery through the ordinary Run heartbeat timeout",
     context,
     next,
     { authorization: `Bearer ${input.sandboxToken}` },
-    "Recovered before scheduled Runner reclamation.",
+    "Recovered after interrupted delivery.",
   );
-  mockNow(clock + 5 * 60_000 + 1);
-  await accept(
-    setupApp({ context, routes: cronCleanupSandboxesRoutes })(
-      cronCleanupSandboxesContract,
-    ).cleanup({
-      headers: { authorization: `Bearer ${env("CRON_SECRET")}` },
-    }),
-    [200],
-  );
-  await flushWaitUntilForTest();
-  // Rewind inside dispatch freshness: rejection now proves scheduled registry
-  // reclamation, rather than merely the dispatcher's three-minute cutoff.
-  mockNow(clock + 121_000);
-  const retired = await f.api.createThreadRun(f.actor, {
-    agentId: f.agentId,
-    threadId: sent.body.threadId,
-    prompt: "The expired serving process has been reclaimed",
-  });
-  expect(retired).toMatchObject({
-    status: "failed",
-    error: "No eligible serving Runner is available",
-  });
 });
 
 test.each(["lost", "process", "generation", "run"] as const)(

@@ -1,3 +1,4 @@
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { randomUUID } from "node:crypto";
 import { marketingInvitationSourceContract } from "@okouai/api-contracts/contracts/marketing-invitation-source";
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
@@ -33,7 +34,7 @@ function client() {
 }
 
 async function invited() {
-  const consumer = marketingRewardConsumer(context);
+  const consumer = marketingRewardConsumer();
   const actor = bdd.user();
   await bdd.completeOnboarding(actor);
   mocks.clerk.session(actor.userId, actor.orgId);
@@ -48,7 +49,7 @@ async function invited() {
     }),
     [200],
   );
-  await consumer.deliver();
+  await flushWaitUntilForTest();
   const source = consumer.received.find((event) => {
     return event.type === "invitation.attributed";
   });
@@ -58,6 +59,7 @@ async function invited() {
   return {
     actor,
     source,
+    consumer,
     url: `https://api.clerk.com/v1/organizations/${actor.orgId}/invitations/${invitationId}`,
     provider: {
       id: invitationId,
@@ -109,11 +111,6 @@ test("authenticates the dedicated capability before reading any retained invitat
 });
 
 test("reads original claim provenance separately from event identity and never treats provider acceptance as an award", async () => {
-  await setupApp({
-    context,
-    routes: marketingInvitationSourceRoutes,
-    isolatePg: true,
-  });
   mockNow(new Date("2026-11-17T09:00:00.000Z"));
   const fixture = await invited();
   const params = { claimId: fixture.source.claimId };
@@ -192,11 +189,6 @@ test("reads original claim provenance separately from event identity and never t
 });
 
 test("returns the provider's exact status and expiry with the original inviter while omitting invitation secrets and personal content", async () => {
-  await setupApp({
-    context,
-    routes: marketingInvitationSourceRoutes,
-    isolatePg: true,
-  });
   mockNow(new Date("2026-11-17T08:10:00.000Z"));
   const fixture = await invited();
   server.use(
@@ -256,14 +248,31 @@ test("returns the provider's exact status and expiry with the original inviter w
       },
     ),
   ).toMatchObject({ claimedCount: 0, pendingCount: 1 });
+  context.mocks.clerk.organizations.revokeOrganizationInvitation.mockResolvedValueOnce(
+    {},
+  );
+  mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
+  await accept(
+    setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).revoke({
+      headers: { authorization: "Bearer clerk-session" },
+      body: { invitationId: fixture.source.invitationId },
+    }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+  expect(fixture.consumer.received).toContainEqual(
+    expect.objectContaining({
+      version: 3,
+      type: "invitation.revoked",
+      orgId: fixture.actor.orgId,
+      userId: fixture.actor.userId,
+      claimId: fixture.source.claimId,
+      invitationId: fixture.source.invitationId,
+    }),
+  );
 });
 
 test("represents an exact provider miss as unavailable while keeping provider failures and ownership mismatches visible", async () => {
-  await setupApp({
-    context,
-    routes: marketingInvitationSourceRoutes,
-    isolatePg: true,
-  });
   const fixture = await invited();
   const params = { eventId: fixture.source.id };
   server.use(

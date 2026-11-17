@@ -35,6 +35,10 @@ import {
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { runnerAuth$ } from "../auth/runner-auth";
 import type { RouteEntry } from "../route-entry";
+import {
+  RUN_TIME_BUDGET_STEER_AT_MS,
+  steerRunNearTimeBudget$,
+} from "../services/cron-steer-run-time-budget.service";
 import { dispatchProgressCallbacks$ } from "../services/agent-run-callbacks.service";
 import { hasAgentPhoneTypingTargetForRun$ } from "../services/agent-event-consumer-agentphone-typing.service";
 import { DISCORD_TYPING_REFRESH_INTERVAL_SECONDS } from "../services/discord-run-typing.service";
@@ -42,7 +46,7 @@ import {
   WECHAT_TYPING_REFRESH_INTERVAL_SECONDS,
   hasWechatTypingTargetForRun$,
 } from "../services/wechat-thread-typing.service";
-import { settle } from "../utils";
+import { settle, tapError } from "../utils";
 import {
   recordRunnerUsageBatch$,
   RunnerUsageRunMissingError,
@@ -509,7 +513,11 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   signal.throwIfAborted();
   const result = await db
-    .select({ triggerSource: agentRuns.triggerSource })
+    .select({
+      triggerSource: agentRuns.triggerSource,
+      chatThreadId: agentRuns.chatThreadId,
+      startedAt: agentRuns.startedAt,
+    })
     .from(agentRuns)
     .where(
       and(
@@ -522,6 +530,33 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   if (result.length === 0) {
     return notFound("Agent run not found");
+  }
+
+  const run = result[0];
+  if (
+    run?.chatThreadId &&
+    run.startedAt &&
+    run.triggerSource &&
+    heartbeatAt.getTime() - run.startedAt.getTime() >=
+      RUN_TIME_BUDGET_STEER_AT_MS
+  ) {
+    // A healthy Run should receive its warning even when the fleet cron is late.
+    // Eligibility and the deterministic event ID are rechecked by the append.
+    waitUntil(
+      tapError(
+        set(
+          steerRunNearTimeBudget$,
+          { runId: body.runId, chatThreadId: run.chatThreadId },
+          signal,
+        ),
+        (error) => {
+          L.warn("Run heartbeat budget warning failed", {
+            runId: body.runId,
+            error,
+          });
+        },
+      ),
+    );
   }
 
   const typingRefreshIntervalSeconds = await settle(

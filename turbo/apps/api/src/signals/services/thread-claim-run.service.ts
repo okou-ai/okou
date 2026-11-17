@@ -1,3 +1,5 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
 import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/staff-single-agent-migration";
 import { buildEmailPrompt } from "./email-prompt";
@@ -76,7 +78,6 @@ import { monotonicNow, now, nowDate, nowDateSql } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import {
   publishChatIndicatorsChangedSafely,
-  publishChatThreadMessageCreatedSafely,
   publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
@@ -116,7 +117,7 @@ import type {
   QueuedUserMessageContextType,
   QueueFirstRunAssociation,
 } from "./chat-queued-event.service";
-import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
+import { finalizeClaimedRunUserMessage$ } from "./chat-run-event.service";
 import { randomUUID } from "node:crypto";
 import {
   chatThreadEventSequences,
@@ -1190,7 +1191,7 @@ export function createThreadClaimRunObjects(
   });
   const publishChatQueueHeadConsumed$ = command(
     async (
-      _context,
+      { set },
       head: {
         readonly chatThreadId: string;
         readonly orgId: string;
@@ -1199,11 +1200,15 @@ export function createThreadClaimRunObjects(
       signal: AbortSignal,
     ): Promise<void> => {
       signal.throwIfAborted();
-      await publishChatThreadMessageCreatedSafely({
-        userId: head.userId,
-        orgId: head.orgId,
-        threadId: head.chatThreadId,
-      });
+      await set(
+        publishChatThreadMessageCreated$,
+        {
+          userId: head.userId,
+          orgId: head.orgId,
+          threadId: head.chatThreadId,
+        },
+        signal,
+      );
       signal.throwIfAborted();
       await publishThreadListChangedSafely({
         userId: head.userId,
@@ -3809,11 +3814,15 @@ export function createThreadClaimRunObjects(
           signal,
         );
       } else {
-        await finalizeClaimedRunUserMessage({
-          orgId: launched.orgId,
-          threadId: launched.threadId,
-          userId: launched.userId,
-        });
+        await set(
+          finalizeClaimedRunUserMessage$,
+          {
+            orgId: launched.orgId,
+            threadId: launched.threadId,
+            userId: launched.userId,
+          },
+          signal,
+        );
         signal.throwIfAborted();
         const database = set(writeDb$);
         const lastRunFields = () => {
@@ -4897,6 +4906,7 @@ const pendingLaunchRowSchema = discriminatedUnion("kind", [
     createdAt: pgTimestampWithoutTimezoneToDateSchema,
     boundThreadId: string().nullable(),
     billingAttributionId: string().nullable(),
+    marketingRewardEventId: uuid().nullable(),
   }),
   object({ kind: literal("official") }),
   object({ kind: literal("plan") }),
@@ -5019,6 +5029,7 @@ function pendingAtomicLaunchPlan(
       WHEN EXISTS (SELECT 1 FROM ${context.insertedRun}) THEN 'pending'
       ELSE 'claim-lost' END AS kind,
       (SELECT ${attribution.runId} FROM ${attribution}) AS "billingAttributionId",
+      (SELECT id FROM launch_workflow_source) AS "marketingRewardEventId",
       (SELECT ${returnedCteColumn(context.insertedRun, "id")} FROM ${context.insertedRun}) AS "runId",
       (SELECT ${returnedCteColumn(context.insertedRun, "created_at")} FROM ${context.insertedRun})::text AS "createdAt",
       ${returnedCteId(context.updatedThread)} AS "boundThreadId"
@@ -5232,6 +5243,14 @@ const commitThreadLaunch$ = command(
           prepared.context,
           outcome.value[0],
         );
+        const committed = outcome.value[0];
+        if (committed?.kind === "pending" && committed.marketingRewardEventId) {
+          set(
+            startMarketingRewardEventDelivery$,
+            { jobId: committed.marketingRewardEventId, handlerVersion: 4 },
+            signal,
+          );
+        }
         timing.recordDuration(
           "api_dispatch_persist_atomic_launch_materialize",
           "nested",

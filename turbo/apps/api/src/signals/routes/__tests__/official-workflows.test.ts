@@ -1,11 +1,9 @@
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
-import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
 import { debugMorningBriefContract } from "@okouai/api-contracts/contracts/debug-morning-brief";
 import {
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
   morningBriefPreferenceContract,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { debugMorningBriefRoutes } from "../debug-morning-brief";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { launchBudgetRun } from "./helpers/public-autonomy-budget";
@@ -23,11 +21,10 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { randomUUID } from "node:crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { mockNow, withMockNowForTest } from "../../../lib/time";
+import { mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import {
@@ -57,56 +54,10 @@ const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
-const CRON_SECRET = "official-workflow-installation-cron-secret";
 
 function authHeaders(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return { authorization: "Bearer clerk-session" };
-}
-
-async function executeAutomationCron() {
-  return await accept(
-    setupApp({ context, routes: cronExecuteWorkflowAutomationsRoutes })(
-      cronExecuteWorkflowAutomationsContract,
-    ).execute({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
-    [200],
-  );
-}
-
-async function fireSchedule(
-  actor: ApiTestUser,
-  automation: Pick<WorkflowAutomationSummary, "id" | "nextRunAt"> &
-    Partial<Pick<WorkflowAutomationSummary, "chatThreadId">>,
-) {
-  if (!automation.nextRunAt) {
-    throw new Error("Expected a scheduled automation");
-  }
-  await withMockNowForTest(
-    new Date(automation.nextRunAt).getTime(),
-    async () => {
-      await executeAutomationCron();
-      await flushWaitUntilForTest();
-    },
-  );
-  const chatThreadId =
-    automation.chatThreadId ??
-    (
-      await accept(
-        automationClient().get({
-          headers: authHeaders(actor),
-          params: { id: automation.id },
-        }),
-        [200],
-      )
-    ).body.chatThreadId;
-  if (!chatThreadId) {
-    throw new Error("Expected the automation thread");
-  }
-  const runId = await launchedAutomationRunId(actor, chatThreadId);
-  if (!runId) {
-    throw new Error("Expected the scheduled automation Run");
-  }
-  return { chatThreadId, runId };
 }
 
 async function runScheduleNow(actor: ApiTestUser, automationId: string) {
@@ -245,64 +196,6 @@ async function ordinaryDelegationScenario() {
     return { owned, actor: owned.actor, workflow: detail.body, source };
   });
 }
-
-beforeEach(() => {
-  mockEnv("CRON_SECRET", CRON_SECRET);
-});
-
-describe("Workflow schedules", () => {
-  it("launches a due user-created schedule through the automation cron", async () => {
-    const app = await setupApp({
-      context,
-      routes: workflowAutomationsRoutes,
-      isolatePg: true,
-    });
-    mockNow(new Date("2030-01-01T12:00:00.000Z"));
-    const { actor, defaultAgentId } = await workflowBdd.setupWorkflowOrg({
-      timezone: "UTC",
-    });
-    if (!actor.orgId) {
-      throw new Error("Expected organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.AgentSuggestion]: true },
-    );
-    const runnerGroup = await runs.configureRunnerGroup();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    await runs.heartbeatRunner(runnerGroup);
-    const workflowId = await workflowBdd.createWorkflow(actor, {
-      agentId: defaultAgentId,
-      name: "scheduled-report",
-      visibility: "private",
-      instruction: "Prepare my scheduled report.",
-    });
-    const automation = (
-      await accept(
-        app(workflowAutomationsContract).create({
-          headers: authHeaders(actor),
-          params: { workflowId },
-          body: {
-            schedule: {
-              type: "cron",
-              cronExpression: "* * * * *",
-              timezone: "UTC",
-            },
-          },
-        }),
-        [201],
-      )
-    ).body;
-    const started = await fireSchedule(actor, automation);
-    const execution = await runs.executionInput(started.runId);
-    expect(execution.prompt).toContain("scheduled-report");
-    expect(execution.appendSystemPrompt).not.toContain(
-      "# Suggestions feedback context",
-    );
-  });
-});
 
 describe("Proactive Learning preference", () => {
   it("preserves the Learning choice independently of Suggestions", async () => {

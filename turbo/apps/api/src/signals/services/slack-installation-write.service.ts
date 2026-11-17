@@ -9,7 +9,11 @@ import { writeDb$ } from "../external/db";
 import { pendingSlackRewardSql } from "./slack-installation-reward";
 import { ensureGetStartedRewardWallet$ } from "./get-started-wallet.service";
 import { settleSlackWorkspaceRewards$ } from "./slack-reward.service";
-import { marketingRewardLinkEventInsert } from "./marketing-reward-event-publication";
+import {
+  MARKETING_REWARD_LINK_EVENT_HANDLER_VERSION,
+  marketingRewardLinkEventInsert,
+} from "./marketing-reward-event-publication";
+import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 
 type SlackInstallation = typeof slackOrgInstallations.$inferSelect;
 interface SlackInstallationFields {
@@ -85,6 +89,7 @@ const commitSlackInstallation$ = command(
   ): Promise<SlackInstallation> => {
     const db = set(writeDb$);
     const at = nowDate();
+    const sourceEventId = randomUUID();
     const installed = db.$with("published_slack_installation").as(
       db
         .insert(slackOrgInstallations)
@@ -124,7 +129,7 @@ const commitSlackInstallation$ = command(
     const sourceEvent = db.$with("slack_installation_source_event", {}).as(
       marketingRewardLinkEventInsert(
         {
-          id: randomUUID(),
+          id: sourceEventId,
           environment: env("ENV"),
           type: "slack.oauth-authorized",
           occurredAt: at.toISOString(),
@@ -149,6 +154,14 @@ const commitSlackInstallation$ = command(
     if (!installation) {
       throw new Error("Slack installation upsert did not return a row");
     }
+    set(
+      startMarketingRewardEventDelivery$,
+      {
+        jobId: sourceEventId,
+        handlerVersion: MARKETING_REWARD_LINK_EVENT_HANDLER_VERSION,
+      },
+      signal,
+    );
     return installation;
   },
 );

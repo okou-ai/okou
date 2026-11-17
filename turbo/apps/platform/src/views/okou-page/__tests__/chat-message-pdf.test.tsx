@@ -9,6 +9,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
+import { chatThreadPdfFilenameContract } from "@okouai/api-contracts/contracts/chat-thread-pdf-filename";
 import {
   artifactReferencePath,
   artifactReferencesContract,
@@ -31,6 +32,7 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 const context = testContext();
 const THREAD_ID = "b0000000-0000-4000-a000-000000000951";
 const ANSWER = "The launch plan has three phases.";
+const ASSISTANT_EVENT_ID = "b0000000-0000-4000-a000-000000000954";
 
 function button(name: string): HTMLElement {
   const result = queryAllByRoleFast("button").find((element) => {
@@ -60,19 +62,41 @@ async function setupPdfChat(
   loadFont: (request: Request) => Response | Promise<Response> = () => {
     return HttpResponse.arrayBuffer(new ArrayBuffer(8));
   },
+  filenameResponse: Response | "pending" = HttpResponse.json("Launch-plan"),
 ) {
+  const filenameAborted = context.mocks.deferred<void>();
+  context.mocks.http.post(
+    `*${chatThreadPdfFilenameContract.generate.path}`,
+    async ({ request, params, signal, never }) => {
+      expect(params.threadId).toBe(THREAD_ID);
+      await expect(request.json()).resolves.toStrictEqual({
+        eventIds: [ASSISTANT_EVENT_ID],
+      });
+      if (filenameResponse === "pending") {
+        signal.addEventListener(
+          "abort",
+          () => {
+            filenameAborted.resolve();
+          },
+          { once: true },
+        );
+        return never();
+      }
+      return filenameResponse;
+    },
+  );
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     chatEvents: [
       {
-        id: "pdf-user-prompt",
+        id: "b0000000-0000-4000-a000-000000000953",
         role: "user",
         content: "Summarize the launch plan",
         runId: "pdf-run",
         createdAt: "2026-08-01T10:00:00Z",
       },
       {
-        id: "pdf-assistant-response",
+        id: ASSISTANT_EVENT_ID,
         role: "assistant",
         content,
         runId: "pdf-run",
@@ -94,6 +118,7 @@ async function setupPdfChat(
   await waitFor(() => {
     expect(button("Generate PDF")).toBeInTheDocument();
   });
+  return { filenameAborted: filenameAborted.promise };
 }
 
 test("Generate first, then offer a native PDF download whose bytes survive repeated clicks", async () => {
@@ -113,7 +138,7 @@ test("Generate first, then offer a native PDF download whose bytes survive repea
   const pdf = new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" });
   response.resolve({ ok: true, blob: pdf });
   await waitFor(() => {
-    expect(downloadLink()).toHaveAttribute("download", "okou-message.pdf");
+    expect(downloadLink()).toHaveAttribute("download", "Launch-plan.pdf");
   });
   const link = downloadLink();
   expect(link).toHaveFocus();
@@ -134,6 +159,63 @@ test("Generate first, then offer a native PDF download whose bytes survive repea
     expect(location.pathname).not.toBe(`/chats/${THREAD_ID}`);
   });
   expect(browser.blobForUrl(url)).toBeNull();
+});
+
+test.each([
+  {
+    name: "empty model result",
+    response: () => {
+      return HttpResponse.json("");
+    },
+  },
+  {
+    name: "older API",
+    response: () => {
+      return new HttpResponse(null, { status: 404 });
+    },
+  },
+  {
+    name: "network failure",
+    response: () => {
+      return HttpResponse.error();
+    },
+  },
+])(
+  "PDF downloads keep their default filename after $name",
+  async ({ response }) => {
+    const pdf = new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" });
+    context.mocks.browser.dedicatedWorker(() => {
+      return Promise.resolve({
+        ok: true,
+        blob: pdf,
+      } satisfies PdfWorkerResponse);
+    });
+    const browser = context.mocks.browser.blobDownload();
+    await setupPdfChat(ANSWER, undefined, response());
+
+    click(button("Generate PDF"));
+    await waitFor(() => {
+      expect(downloadLink()).toHaveAttribute("download", "okou-message.pdf");
+    });
+    expect(browser.blobForUrl(downloadLink().href)).toBe(pdf);
+  },
+);
+
+test("A stalled naming request falls back without blocking the generated PDF", async () => {
+  const pdf = new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" });
+  context.mocks.browser.dedicatedWorker(() => {
+    return Promise.resolve({ ok: true, blob: pdf } satisfies PdfWorkerResponse);
+  });
+  const browser = context.mocks.browser.blobDownload();
+  const naming = await setupPdfChat(ANSWER, undefined, "pending");
+
+  click(button("Generate PDF"));
+  // Synchronize with the optional naming deadline cancelling its request.
+  await naming.filenameAborted;
+  await waitFor(() => {
+    expect(downloadLink()).toHaveAttribute("download", "okou-message.pdf");
+  });
+  expect(browser.blobForUrl(downloadLink().href)).toBe(pdf);
 });
 
 test("A generation error is visible and the PDF action can be retried", async () => {

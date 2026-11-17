@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
@@ -25,7 +26,7 @@ import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+
 import { createSlackClient } from "../external/slack-message-client";
 import { tapError } from "../utils";
 import { cancelRun$ } from "./agent-run-cancellation.service";
@@ -237,16 +238,20 @@ const cancelSlackSessionRuns$ = command(
 
 const publishStoppedSlackSession$ = command(
   async (
-    _,
+    { set },
     scope: SlackSessionStopScope,
     signal: AbortSignal,
   ): Promise<void> => {
     for (const route of scope.routes) {
-      await publishChatThreadMessageCreatedSafely({
-        userId: scope.userId,
-        orgId: scope.orgId,
-        threadId: route.chatThreadId,
-      });
+      await set(
+        publishChatThreadMessageCreated$,
+        {
+          userId: scope.userId,
+          orgId: scope.orgId,
+          threadId: route.chatThreadId,
+        },
+        signal,
+      );
       signal.throwIfAborted();
     }
   },

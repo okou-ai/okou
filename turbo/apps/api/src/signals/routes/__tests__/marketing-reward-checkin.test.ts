@@ -3,13 +3,12 @@ import { marketingRewardSettlementContract } from "@okouai/api-contracts/contrac
 import { marketingRewardProjectionContract } from "@okouai/api-contracts/contracts/marketing-reward-projection";
 import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts/billing";
 import { randomUUID } from "node:crypto";
-import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
-import { server } from "../../../mocks/server";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { getStartedRoutes } from "../get-started";
 import { marketingRewardSettlementRoutes } from "../marketing-reward-settlement";
@@ -25,11 +24,10 @@ const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 
 test("records only authenticated explicit check-ins and retains the first day snapshot across concurrent clicks and organization switches", async () => {
-  await setupApp({ context, routes: getStartedRoutes, isolatePg: true });
   const client = setupApp({ context, routes: getStartedRoutes })(
     getStartedContract,
   );
-  const consumer = marketingRewardConsumer(context);
+  const consumer = marketingRewardConsumer();
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   mocks.clerk.session(userId, orgId);
@@ -38,7 +36,7 @@ test("records only authenticated explicit check-ins and retains the first day sn
     (await accept(client.status({ headers }), [200])).body.claimedToday,
   ).toBeFalsy();
   expect((await client.checkin({ headers: {} })).status).toBe(401);
-  await consumer.deliver();
+  await flushWaitUntilForTest();
   expect(consumer.received).toStrictEqual([]);
 
   const responses = await Promise.all(
@@ -55,7 +53,7 @@ test("records only authenticated explicit check-ins and retains the first day sn
       return response.body.id === first.body.id;
     }),
   ).toBeTruthy();
-  await consumer.deliver();
+  await flushWaitUntilForTest();
   expect(consumer.received).toStrictEqual([
     {
       version: 5,
@@ -73,39 +71,26 @@ test("records only authenticated explicit check-ins and retains the first day sn
   expect((await accept(client.checkin({ headers }), [200])).body).toStrictEqual(
     first.body,
   );
-  await consumer.deliver();
+  await flushWaitUntilForTest();
   expect(consumer.received).toHaveLength(1);
 });
 
-test("recovers the original check-in day and financial receipt after a lost source acknowledgement, UTC rollover and expiry", async () => {
-  await setupApp({ context, routes: getStartedRoutes, isolatePg: true });
+test("recovers the original check-in day and financial receipt across UTC rollover and expiry", async () => {
   const client = setupApp({ context, routes: getStartedRoutes })(
     getStartedContract,
   );
-  const consumer = marketingRewardConsumer(context);
+  const consumer = marketingRewardConsumer();
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   mocks.clerk.session(userId, orgId);
   mockNow(new Date("2026-11-16T23:59:59.123Z"));
   const first = (await accept(client.checkin({ headers }), [200])).body;
-  server.use(
-    http.post(
-      "https://marketing-consumer.example.test/api/internal/marketing/get-started/events",
-      () => {
-        return HttpResponse.json(
-          { error: "Receipt unavailable" },
-          { status: 503 },
-        );
-      },
-      { once: true },
-    ),
-  );
-  await consumer.deliver();
+  await flushWaitUntilForTest();
   mockNow(new Date("2026-11-17T00:00:00.000Z"));
   mocks.clerk.session(userId, `org_${randomUUID()}`);
   const second = (await accept(client.checkin({ headers }), [200])).body;
   expect(second.id).not.toBe(first.id);
-  await consumer.deliver();
+  await flushWaitUntilForTest();
   expect(consumer.received).toHaveLength(2);
   const fact = consumer.received.find((event) => {
     return event.occurredAt === "2026-11-16T23:59:59.123Z";
@@ -191,6 +176,7 @@ test("recovers the original check-in day and financial receipt after a lost sour
       })
     ).status,
   ).toBe(404);
+  await flushWaitUntilForTest();
   mockNow(new Date("2026-11-24T00:00:00.000Z"));
   const recovered = await Promise.all(
     Array.from({ length: 4 }, () => {

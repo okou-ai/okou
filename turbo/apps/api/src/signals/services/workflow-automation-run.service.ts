@@ -1,3 +1,5 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { synchronizeOfficialWorkflowThread$ } from "./official-workflow-thread.service";
 import {
@@ -7,7 +9,7 @@ import {
 } from "./chat-input-model.service";
 import { command } from "ccstate";
 import { db$, writeDb$ } from "../external/db";
-import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+
 import { safeSync, settle, settleIncludingAbort } from "../utils";
 import { waitUntil } from "../context/wait-until";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
@@ -97,11 +99,15 @@ export const publishEnqueuedWorkflowInput$ = command(
       ),
     );
     signal.throwIfAborted();
-    await publishChatThreadMessageCreatedSafely({
-      userId: input.userId,
-      orgId: input.orgId,
-      threadId: input.chatThreadId,
-    });
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        userId: input.userId,
+        orgId: input.orgId,
+        threadId: input.chatThreadId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!picked.ok) {
       throw picked.error;
@@ -446,6 +452,45 @@ function workflowRewardSource({ args, plan }: PreparedWorkflowInputCommit) {
   };
 }
 
+function recordWorkflowInputCommitTiming({
+  timing,
+  startedAt,
+  executionStartedAt,
+  tickCount,
+}: {
+  readonly timing: ApiDispatchTimingCollector;
+  readonly startedAt: number;
+  readonly executionStartedAt: number;
+  readonly tickCount: number | undefined;
+}) {
+  safeSync(() => {
+    const finishedAt = now();
+    const dimensions =
+      tickCount === undefined
+        ? undefined
+        : {
+            workflow_pending_tick_target_count_bucket:
+              workflowPendingTickTargetCountBucket(tickCount),
+          };
+    // Keep the historical total metric; leaf timings no longer describe
+    // separate round trips in this atomic statement.
+    timing.recordElapsed(
+      "api_dispatch_workflow_enqueue_transaction",
+      "nested",
+      startedAt,
+      finishedAt,
+      dimensions,
+    );
+    timing.recordElapsed(
+      "api_dispatch_workflow_enqueue_transaction_callback",
+      "nested",
+      executionStartedAt,
+      finishedAt,
+      dimensions,
+    );
+  });
+}
+
 const commitWorkflowInput$ = command(
   async (
     { set },
@@ -514,33 +559,20 @@ const commitWorkflowInput$ = command(
           throw new Error("Workflow queue commit returned no accepted input");
         }
         tickCount = row.tickCount;
+        if (row.marketingRewardEventId) {
+          set(
+            startMarketingRewardEventDelivery$,
+            { jobId: row.marketingRewardEventId, handlerVersion: 4 },
+            signal,
+          );
+        }
         return row.eventId;
       })().finally(() => {
-        safeSync(() => {
-          const finishedAt = now();
-          const dimensions =
-            tickCount === undefined
-              ? undefined
-              : {
-                  workflow_pending_tick_target_count_bucket:
-                    workflowPendingTickTargetCountBucket(tickCount),
-                };
-          // Keep the historical total metric; leaf timings no longer describe
-          // separate round trips in this atomic statement.
-          timing.recordElapsed(
-            "api_dispatch_workflow_enqueue_transaction",
-            "nested",
-            startedAt,
-            finishedAt,
-            dimensions,
-          );
-          timing.recordElapsed(
-            "api_dispatch_workflow_enqueue_transaction_callback",
-            "nested",
-            executionStartedAt,
-            finishedAt,
-            dimensions,
-          );
+        recordWorkflowInputCommitTiming({
+          timing,
+          startedAt,
+          executionStartedAt,
+          tickCount,
         });
       }),
     );

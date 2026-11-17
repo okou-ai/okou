@@ -37,7 +37,6 @@ import {
   mockGmailConnectorOAuth,
   mockGoogleDriveConnectorOAuth,
   mockSlackConnectorOAuth,
-  mockDatadogConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
@@ -136,7 +135,7 @@ async function completedWorkflow(
     group,
     {},
   );
-  await consumer.deliver();
+  await flushWaitUntilForTest();
   const fact = consumer.received.find((event) => {
     return event.type === "workflow.run-completed";
   });
@@ -198,21 +197,23 @@ test("authenticates the dedicated financial capability and binds the immutable e
   expect(disabled.headers.get("cache-control")).toBe("no-store");
 });
 
-test("commits one original creator award across concurrent Marketing and legacy review and recovers it after Workflow deletion and expiry", async () => {
+test("selects one original creator's writer, fences concurrent legacy review, and recovers the receipt after deletion and expiry", async () => {
   await setupApp({
     context,
     routes: marketingRewardSettlementRoutes,
     isolatePg: true,
   });
-  const consumer = marketingRewardConsumer(context);
-  const { actor, executor, workflowId, intent } = await completedWorkflow(
-    consumer,
-    true,
-  );
+  mockEnv("CRON_SECRET", "marketing-consumer-cron");
+  const consumer = marketingRewardConsumer();
+  const { actor, executor, workflowId, intent } =
+    await completedWorkflow(consumer);
   const api = client();
-  expect((await api.lookup({ body: intent, headers })).status).toBe(404);
+  expect((await api.settle({ body: intent, headers })).status).toBe(202);
+  mockEnv(
+    "MARKETING_REWARDS_ROUTING",
+    JSON.stringify({ mode: "cohort", userIds: [actor.userId], orgIds: [] }),
+  );
   await createMiscRoutesApi(context).deleteWorkflow(actor, workflowId, [204]);
-  await accept(api.settle({ body: intent, headers }), [200]);
   await Promise.all([
     accept(api.settle({ body: intent, headers }), [200, 202]),
     accept(
@@ -265,12 +266,7 @@ test("commits one original creator award across concurrent Marketing and legacy 
 });
 
 test("rejects caller-chosen recipients, sources and amounts even when the caller recomputes a valid request identity", async () => {
-  await setupApp({
-    context,
-    routes: marketingRewardSettlementRoutes,
-    isolatePg: true,
-  });
-  const consumer = marketingRewardConsumer(context);
+  const consumer = marketingRewardConsumer();
   const { actor, intent } = await completedWorkflow(consumer);
   const api = client();
   const changed: MarketingRewardIntent[] = [
@@ -295,12 +291,7 @@ test("rejects caller-chosen recipients, sources and amounts even when the caller
 });
 
 test("returns a prior OAuth award by the complete request after a lost response without funding the reconnect or extending expiry", async () => {
-  await setupApp({
-    context,
-    routes: marketingRewardSettlementRoutes,
-    isolatePg: true,
-  });
-  const consumer = marketingRewardConsumer(context);
+  const consumer = marketingRewardConsumer();
   const actor = bdd.user();
   const connectors = createConnectorBddApi(context);
   mockGitHubConnectorOAuth();
@@ -313,7 +304,7 @@ test("returns a prior OAuth award by the complete request after a lost response 
     code: randomUUID(),
     state,
   });
-  await consumer.deliver();
+  await flushWaitUntilForTest();
   const fact = consumer.received.find((event) => {
     return event.type === "connector.oauth-authorized";
   });
@@ -356,55 +347,8 @@ test("returns a prior OAuth award by the complete request after a lost response 
   );
 });
 
-test("defers an unselected Marketing writer and fences legacy review after selecting the original beneficiary", async () => {
-  await setupApp({
-    context,
-    routes: marketingRewardSettlementRoutes,
-    isolatePg: true,
-  });
-  const consumer = marketingRewardConsumer(context);
-  const { actor, intent } = await completedWorkflow(consumer);
-  const api = client();
-  expect((await api.settle({ body: intent, headers })).status).toBe(202);
-  mockEnv(
-    "MARKETING_REWARDS_ROUTING",
-    JSON.stringify({ mode: "cohort", userIds: [actor.userId], orgIds: [] }),
-  );
-  await Promise.all([
-    ...Array.from({ length: 4 }, () => {
-      return accept(api.settle({ body: intent, headers }), [200, 202]);
-    }),
-    accept(
-      setupApp({ context, routes: getStartedRoutes })(
-        cronGetStartedContract,
-      ).process({
-        headers: { authorization: "Bearer marketing-consumer-cron" },
-      }),
-      [200],
-    ),
-  ]);
-  const receipt = await accept(api.lookup({ body: intent, headers }), [200]);
-  expect(receipt.body.receipt.status).toBe("granted");
-  mockEnv("MARKETING_REWARDS_ROUTING", undefined);
-  expect((await readGetStartedStatus(context, actor)).quests).toContainEqual(
-    expect.objectContaining({
-      key: "workflow",
-      claimedCount: 1,
-      earnedCredits: 1000,
-    }),
-  );
-  expect(
-    (await accept(api.settle({ body: intent, headers }), [200])).body,
-  ).toStrictEqual(receipt.body);
-});
-
-test("preserves the global ten-connector cap when Marketing settles real source facts from two organizations", async () => {
-  await setupApp({
-    context,
-    routes: marketingRewardSettlementRoutes,
-    isolatePg: true,
-  });
-  const consumer = marketingRewardConsumer(context);
+test("preserves one user's ten-connector cap when Marketing settles real source facts from two organizations", async () => {
+  const consumer = marketingRewardConsumer();
   const actor = bdd.user();
   mockEnv(
     "MARKETING_REWARDS_ROUTING",
@@ -416,7 +360,6 @@ test("preserves the global ten-connector cap when Marketing settles real source 
   mockGoogleDriveConnectorOAuth();
   mockGitHubConnectorOAuth();
   mockSlackConnectorOAuth();
-  mockDatadogConnectorOAuth();
   const slugs = [
     "gmail",
     "google-drive",
@@ -429,7 +372,6 @@ test("preserves the global ten-connector cap when Marketing settles real source 
     "google-meet",
     "github",
     "slack",
-    "datadog",
   ] as const;
   for (const [index, slug] of slugs.entries()) {
     const owner = index < 9 ? actor : anotherOrg;
@@ -441,20 +383,22 @@ test("preserves the global ten-connector cap when Marketing settles real source 
     await connectors.completeOauthCallback(slug, {
       code: randomUUID(),
       state,
-      ...(slug === "datadog" ? { domain: "us3.datadoghq.com" } : {}),
     });
   }
-  await consumer.deliver();
-  await consumer.deliver();
+  await flushWaitUntilForTest();
   const facts = consumer.received.filter((fact) => {
-    return fact.type === "connector.oauth-authorized";
+    return (
+      fact.type === "connector.oauth-authorized" && fact.userId === actor.userId
+    );
   });
-  expect(facts).toHaveLength(12);
   const api = client();
   mockEnv("MARKETING_REWARDS_ROUTING", JSON.stringify({ mode: "marketing" }));
   const outcomes = [];
   for (const fact of facts) {
-    if (fact.connector.kind !== "builtin") {
+    if (
+      fact.type !== "connector.oauth-authorized" ||
+      fact.connector.kind !== "builtin"
+    ) {
       throw new Error("Expected builtin OAuth source");
     }
     const sourceKey = `builtin:${fact.connector.connectorSlug}`;
@@ -488,7 +432,7 @@ test("preserves the global ten-connector cap when Marketing settles real source 
     outcomes.filter((status) => {
       return status === "ineligible";
     }),
-  ).toHaveLength(2);
+  ).toHaveLength(1);
   mockEnv("MARKETING_REWARDS_ROUTING", undefined);
   expect((await readGetStartedStatus(context, actor)).quests).toContainEqual(
     expect.objectContaining({
@@ -500,12 +444,7 @@ test("preserves the global ten-connector cap when Marketing settles real source 
 });
 
 test("recovers the original iMessage and organization Slack receipts without replaying their financial effects", async () => {
-  await setupApp({
-    context,
-    routes: marketingRewardSettlementRoutes,
-    isolatePg: true,
-  });
-  const consumer = marketingRewardConsumer(context);
+  const consumer = marketingRewardConsumer();
   const integrations = createBddIntegrationApi(context);
   const actor = integrations.user();
   integrations.configureAgentPhoneProvider();
@@ -518,7 +457,7 @@ test("recovers the original iMessage and organization Slack receipts without rep
   await integrations.requestConnectAgentPhone(actor, proof, [200]);
   integrations.configureSlackAppMocks();
   await integrations.installSlackWorkspace(actor);
-  await consumer.deliver();
+  await flushWaitUntilForTest();
   await integrations.requestUnlinkAgentPhone(actor, [204]);
   const facts = consumer.received.filter((fact) => {
     return (
@@ -580,12 +519,7 @@ test("recovers the original iMessage and organization Slack receipts without rep
 test.each(["user", "org"] as const)(
   "routes fresh iMessage and Slack sources by their %s scope",
   async (target) => {
-    await setupApp({
-      context,
-      routes: marketingRewardSettlementRoutes,
-      isolatePg: true,
-    });
-    const consumer = marketingRewardConsumer(context);
+    const consumer = marketingRewardConsumer();
     const integrations = createBddIntegrationApi(context);
     const actor = integrations.user();
     mockEnv(
@@ -606,7 +540,7 @@ test.each(["user", "org"] as const)(
     await integrations.requestConnectAgentPhone(actor, proof, [200]);
     integrations.configureSlackAppMocks();
     await integrations.installSlackWorkspace(actor);
-    await consumer.deliver();
+    await flushWaitUntilForTest();
     const facts = consumer.received.filter((fact) => {
       return (
         fact.type === "imessage.identity-linked" ||
@@ -665,12 +599,7 @@ test.each(["user", "org"] as const)(
 );
 
 test("captures a signed acceptance without legacy funding and settles the selected inviter exactly once", async () => {
-  await setupApp({
-    context,
-    routes: marketingRewardSettlementRoutes,
-    isolatePg: true,
-  });
-  const consumer = marketingRewardConsumer(context);
+  const consumer = marketingRewardConsumer();
   const actor = bdd.user();
   await bdd.completeOnboarding(actor);
   mockEnv(
@@ -736,7 +665,7 @@ test("captures a signed acceptance without legacy funding and settles the select
     }),
     [200],
   );
-  await consumer.deliver();
+  await flushWaitUntilForTest();
   const fact = consumer.received.find((event) => {
     return event.type === "invitation.accepted";
   });

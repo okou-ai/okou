@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import { feedContract } from "@okouai/api-contracts/contracts/feed";
+import { feedRoutes } from "../feed";
 import {
   cronExecuteWorkflowAutomationsContract,
   cronOfficialWorkflowCatalogContract,
@@ -26,7 +29,10 @@ import { workflowsRoutes } from "../workflows";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { publicChatActor } from "./helpers/public-chat-actor";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import {
+  createChatEventsFixture,
+  okouTokenFromExecution,
+} from "./helpers/chat-events-fixture";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -35,10 +41,299 @@ import { readExecutionContentBundle } from "./helpers/execution-content-bundle";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-catalog";
 
 const context = testContext();
+
+async function saveOwnedFeedback(
+  owned: Awaited<ReturnType<typeof publicChatActor>>,
+  title: string,
+  reason: string,
+) {
+  const fixture = createChatEventsFixture(context);
+  const orgId = owned.actor.orgId;
+  if (!orgId) {
+    throw new Error("Expected a feedback owner workspace");
+  }
+  owned.ownsFeatureSwitches();
+  await owned.run(() => {
+    return updateFeatureSwitchesForUser(
+      context,
+      { ...owned.actor, orgId },
+      { [FeatureSwitchKey.AgentSuggestion]: true },
+    );
+  });
+  const { defaultAgentId } = await owned.run(() => {
+    return fixture.bdd.readOnboardingStatus(owned.actor);
+  });
+  if (!defaultAgentId) {
+    throw new Error("Expected the owner's default Agent");
+  }
+  mockOptionalEnv("RUNNER_DEFAULT_GROUP", owned.runnerGroup);
+  await owned.run(() => {
+    return createRunsApi(context).registerDirectRunner(owned.runnerGroup);
+  });
+  const ordinary = await owned.sendChatRun(owned.actor, {
+    agentId: defaultAgentId,
+    model: owned.model,
+    prompt: "Review the owner's current suggestions",
+  });
+  const { execution, sandboxHeaders } = await owned.runExecution(
+    ordinary.runId,
+  );
+  expect(execution.appendSystemPrompt).not.toContain(
+    "# Suggestions feedback context",
+  );
+  const api = setupApp({ context, routes: feedRoutes })(feedContract);
+  const id = randomUUID();
+  const feedbackId = randomUUID();
+  const rationale = "Review the owner's pending decision";
+  const headers = { authorization: "Bearer clerk-session" };
+  await owned.run(async () => {
+    await accept(
+      api.create({
+        headers: {
+          authorization: `Bearer ${okouTokenFromExecution(execution)}`,
+        },
+        body: {
+          id,
+          type: "suggestion",
+          priority: 0,
+          content: {
+            title,
+            rationale,
+            options: [
+              {
+                id: "review",
+                label: "Review",
+                description: "Review this decision",
+                threadId: null,
+                draft: {
+                  draftUserMessage: {
+                    version: 1,
+                    parts: [{ type: "text", text: "Review this decision" }],
+                  },
+                  draftAttachments: null,
+                },
+              },
+            ],
+            customOption: {
+              id: "custom",
+              threadId: null,
+              draft: {
+                draftUserMessage: {
+                  version: 1,
+                  parts: [{ type: "feedback", quote: rationale, note: [] }],
+                },
+                draftAttachments: null,
+              },
+            },
+          },
+        },
+      }),
+      [200],
+    );
+    createRouteMocks(context).clerk.session(
+      owned.actor.userId,
+      orgId,
+      owned.actor.orgRole,
+    );
+    await accept(
+      api.feedback({
+        headers,
+        params: { id },
+        body: {
+          id: feedbackId,
+          kind: "less_like_this",
+          targetId: null,
+          note: "Initial preference",
+        },
+      }),
+      [200],
+    );
+    await accept(
+      api.feedback({
+        headers,
+        params: { id },
+        body: {
+          id: randomUUID(),
+          kind: "reason",
+          targetId: feedbackId,
+          note: reason,
+        },
+      }),
+      [200],
+    );
+    await fixture.failChatRun(ordinary.runId, sandboxHeaders, "Feedback saved");
+    await flushWaitUntilForTest();
+  });
+  return { kind: "less_like_this", title, rationale, reason };
+}
+
+async function prepareForeignFeedback(
+  definitionName: string,
+  failUpload: boolean,
+) {
+  if (definitionName !== "agent-suggestions" || failUpload) {
+    return;
+  }
+  const foreign = await publicChatActor(context);
+  await saveOwnedFeedback(
+    foreign,
+    "Another workspace's private decision",
+    "Private foreign workspace preference",
+  );
+  const peer = await publicChatActor(context);
+  await saveOwnedFeedback(
+    peer,
+    "Another member's private decision",
+    "Private same-workspace preference",
+  );
+  return peer.actor.orgId;
+}
+
+function expectFeedbackContext(
+  prompt: string | null | undefined,
+  curatesSuggestions: boolean,
+  expectedFeedback: readonly Awaited<ReturnType<typeof saveOwnedFeedback>>[],
+) {
+  if (curatesSuggestions) {
+    expect(prompt).toContain("# Suggestions feedback context");
+    const json = prompt?.match(/^(\{"asOf":.*\})$/mu)?.[1];
+    expect(json).toBeDefined();
+    const injected: unknown = JSON.parse(json ?? "null");
+    expect(injected).toMatchObject({
+      complete: true,
+      feedback: expectedFeedback,
+    });
+  } else {
+    expect(prompt).not.toContain("# Suggestions feedback context");
+  }
+}
+
+async function expectPublishedMorningBriefRecovery(
+  owned: Awaited<ReturnType<typeof publicChatActor>>,
+  automationId: string,
+  workflowId: string,
+) {
+  const fixture = createChatEventsFixture(context);
+  const app = setupApp({
+    context,
+    routes: [
+      ...cronExecuteWorkflowAutomationsRoutes,
+      ...workflowAutomationsRoutes,
+      ...feedRoutes,
+    ],
+  });
+  const headers = { authorization: "Bearer clerk-session" };
+  async function readAutomation() {
+    return (
+      await accept(
+        app(workflowAutomationsContract).get({
+          headers,
+          params: { id: automationId },
+        }),
+        [200],
+      )
+    ).body;
+  }
+  const failures: {
+    runId: string;
+    headers: { authorization: string };
+    completedAt: string;
+  }[] = [];
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const before = await readAutomation();
+    if (!before.enabled || !before.nextRunAt) {
+      throw new Error("Expected the published Morning Brief's next occurrence");
+    }
+    failures.push(
+      await withMockNowForTest(Date.parse(before.nextRunAt), async () => {
+        await createRunsApi(context).registerDirectRunner(owned.runnerGroup);
+        await accept(
+          app(cronExecuteWorkflowAutomationsContract).execute({
+            headers: {
+              authorization: "Bearer official-workflow-catalog-cron-secret",
+            },
+          }),
+          [200],
+        );
+        await flushWaitUntilForTest();
+        const current = await readAutomation();
+        if (!current.chatThreadId) {
+          throw new Error("Expected the published Morning Brief's thread");
+        }
+        const events = await createChatFilesBddApi(context).listThreadEventRows(
+          owned.actor,
+          current.chatThreadId,
+        );
+        const runId = [...events].reverse().find((event) => {
+          return event.eventType === "input.prompt" && event.runId;
+        })?.runId;
+        if (!runId) {
+          throw new Error("Expected the next Morning Brief Run");
+        }
+        const { sandboxHeaders } = await owned.runExecution(runId);
+        await fixture.failChatRun(
+          runId,
+          sandboxHeaders,
+          "Morning Brief execution failed",
+        );
+        await flushWaitUntilForTest();
+        return {
+          runId,
+          headers: sandboxHeaders,
+          completedAt: before.nextRunAt!,
+        };
+      }),
+    );
+  }
+  const threshold = failures.at(-1);
+  if (!threshold) {
+    throw new Error("Expected the third Morning Brief failure");
+  }
+  const disabled = await readAutomation();
+  expect(disabled).toMatchObject({
+    enabled: false,
+    official: { intendedEnabled: true },
+  });
+  expect(Date.parse(disabled.nextRunAt ?? "")).toBeGreaterThan(
+    Date.parse(threshold.completedAt),
+  );
+  const delivered = await accept(
+    app(feedContract).list({ headers, query: { type: "event" } }),
+    [200],
+  );
+  expect(delivered.body.items).toStrictEqual([
+    expect.objectContaining({
+      type: "event",
+      content: expect.objectContaining({
+        eventType: "automation-disabled",
+        automationId,
+        workflowId,
+        workspaceId: owned.actor.orgId,
+        consecutiveFailures: 3,
+        recoveryScheduled: true,
+      }),
+    }),
+  ]);
+  await fixture.failChatRun(
+    threshold.runId,
+    threshold.headers,
+    "Morning Brief execution failed",
+  );
+  await flushWaitUntilForTest();
+  const repeated = await accept(
+    app(feedContract).list({ headers, query: { type: "event" } }),
+    [200],
+  );
+  expect(repeated.body.items).toStrictEqual(delivered.body.items);
+  await expect(readAutomation()).resolves.toMatchObject({
+    enabled: false,
+    nextRunAt: disabled.nextRunAt,
+  });
+}
 
 function expectScopeGuidance(
   instruction: string | null | undefined,
@@ -157,8 +452,11 @@ test.each(scenarios)(
         ...workflowsRoutes,
       ],
     });
-    const owned = await publicChatActor(context);
+    const peerOrgId = await prepareForeignFeedback(definitionName, failUpload);
     const fixture = createChatEventsFixture(context);
+    const owned = await publicChatActor(context, {
+      actor: peerOrgId ? fixture.bdd.user({ orgId: peerOrgId }) : undefined,
+    });
     const s3 = installWorkflowVolumeS3Fixture(context);
     const cronHeaders = {
       authorization: "Bearer official-workflow-catalog-cron-secret",
@@ -253,6 +551,18 @@ test.each(scenarios)(
       return accept<Awaited<typeof request>, 200>(request, [200]);
     });
     expect(enabled.body).toMatchObject({ enabled: true, status: "enabled" });
+    const expectedFeedback: Awaited<ReturnType<typeof saveOwnedFeedback>>[] =
+      [];
+    if (definitionName === "agent-suggestions") {
+      expectedFeedback.push(
+        await saveOwnedFeedback(
+          owned,
+          "Review the launch decision",
+          "A teammate owns these reviews",
+        ),
+      );
+    }
+    createRouteMocks(context).clerk.session(actor.userId, orgId, actor.orgRole);
     const workflows = await owned.run(() => {
       return accept(
         app(workflowsCollectionContract).list({ headers, query: {} }),
@@ -338,18 +648,11 @@ test.each(scenarios)(
     }
     const runId = launched.runId;
     const { execution, sandboxHeaders } = await owned.runExecution(runId);
-    if (curatesSuggestions) {
-      expect(execution.appendSystemPrompt).toContain(
-        "# Suggestions feedback context",
-      );
-      expect(execution.appendSystemPrompt).toContain(
-        '"complete":true,"feedback":[]',
-      );
-    } else {
-      expect(execution.appendSystemPrompt).not.toContain(
-        "# Suggestions feedback context",
-      );
-    }
+    expectFeedbackContext(
+      execution.appendSystemPrompt,
+      curatesSuggestions,
+      expectedFeedback,
+    );
     const bundle = execution.contentBundles.skills.find((skill) => {
       return skill.mountPath.endsWith(`/${definitionName}`);
     });
@@ -366,14 +669,23 @@ test.each(scenarios)(
       detail.body.fileContents,
       !curatesSuggestions,
     );
-    await owned.run(() => {
-      return fixture.failChatRun(
-        runId,
-        sandboxHeaders,
-        "Official Workflow inspected",
-      );
+    await withMockNowForTest(Date.parse(automation.nextRunAt), async () => {
+      await owned.run(() => {
+        return fixture.failChatRun(
+          runId,
+          sandboxHeaders,
+          "Official Workflow inspected",
+        );
+      });
+      await owned.run(flushWaitUntilForTest);
     });
-    await owned.run(flushWaitUntilForTest);
+    if (definitionName === "morning-brief") {
+      await expectPublishedMorningBriefRecovery(
+        owned,
+        automation.id,
+        workflow.id,
+      );
+    }
     async function finishConcurrentSuggestions() {
       const suggestions = workflows.body.find((item) => {
         return item.official?.definitionName === "agent-suggestions";

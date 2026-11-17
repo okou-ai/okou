@@ -114,30 +114,42 @@ const retireBrowserScreenshot$ = command(
  * survives replacement, deletion and interrupted storage/share retirement.
  */
 export const cleanupBrowserScreenshots$ = command(
-  async ({ set }, limit: number, signal: AbortSignal) => {
+  async (
+    { set },
+    selection: { readonly limit: number; readonly chatThreadId: string | null },
+    signal: AbortSignal,
+  ) => {
     signal.throwIfAborted();
     const db = set(writeDb$);
     const pending = await db
       .select()
       .from(browserSessionScreenshotDeletions)
       .where(
-        notExists(
-          db
-            .select({ id: browserChatSessions.chatThreadId })
-            .from(browserChatSessions)
-            .where(
-              eq(
-                browserChatSessions.screenshotObjectKey,
-                browserSessionScreenshotDeletions.objectKey,
+        and(
+          selection.chatThreadId === null
+            ? undefined
+            : eq(
+                browserSessionScreenshotDeletions.chatThreadId,
+                selection.chatThreadId,
               ),
-            ),
+          notExists(
+            db
+              .select({ id: browserChatSessions.chatThreadId })
+              .from(browserChatSessions)
+              .where(
+                eq(
+                  browserChatSessions.screenshotObjectKey,
+                  browserSessionScreenshotDeletions.objectKey,
+                ),
+              ),
+          ),
         ),
       )
       .orderBy(
         asc(browserSessionScreenshotDeletions.createdAt),
         asc(browserSessionScreenshotDeletions.objectKey),
       )
-      .limit(limit);
+      .limit(selection.limit);
     signal.throwIfAborted();
 
     let cleaned = 0;

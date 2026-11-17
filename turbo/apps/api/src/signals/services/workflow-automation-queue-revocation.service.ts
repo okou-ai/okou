@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { agents } from "@okouai/db/schema/agent";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import {
@@ -11,7 +12,7 @@ import { and, asc, eq, notExists } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { writeDb$ } from "../external/db";
-import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+
 import { canonicalChatInputModelSelection } from "./canonical-chat-event-read.service";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { chatEventReplacementInsertSql } from "./chat-event.service";
@@ -88,11 +89,15 @@ export const revokeDeletedWorkflowAutomationInputs$ = command(
       }
     }
     for (const [threadId, userId] of changedThreads) {
-      await publishChatThreadMessageCreatedSafely({
-        orgId: args.orgId,
-        userId,
-        threadId,
-      });
+      await set(
+        publishChatThreadMessageCreated$,
+        {
+          orgId: args.orgId,
+          userId,
+          threadId,
+        },
+        signal,
+      );
       signal.throwIfAborted();
     }
   },

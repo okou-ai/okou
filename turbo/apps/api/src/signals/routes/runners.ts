@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "../services/chat-event-publication.service";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
@@ -31,10 +32,7 @@ import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
 import { authorization$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
-import {
-  createRunnerGroupRealtimeToken,
-  publishChatThreadMessageCreatedSafely,
-} from "../external/realtime";
+import { createRunnerGroupRealtimeToken } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
 import {
   declareSteeredInput$,
@@ -493,11 +491,15 @@ const declareSteeredInputInner$ = command(
       }
     }
     if (result.replacementsAppended) {
-      await publishChatThreadMessageCreatedSafely({
-        userId: auth.userId,
-        orgId: auth.orgId,
-        threadId: result.chatThreadId,
-      });
+      await set(
+        publishChatThreadMessageCreated$,
+        {
+          userId: auth.userId,
+          orgId: auth.orgId,
+          threadId: result.chatThreadId,
+        },
+        signal,
+      );
       signal.throwIfAborted();
       await set(
         notifyRunningChatRunOfPendingInput$,

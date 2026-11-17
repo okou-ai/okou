@@ -1,13 +1,11 @@
+import { publishChatThreadMessageCreated$ } from "../services/chat-event-publication.service";
 import { command } from "ccstate";
 import { welcomeChatThreadsContract } from "@okouai/api-contracts/contracts/welcome-chat-threads";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import {
-  publishChatThreadMessageCreatedSafely,
-  publishThreadListChanged,
-} from "../external/realtime";
+import { publishThreadListChanged } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
 import { createWelcomeChatThread$ } from "../services/welcome-chat-thread.service";
 
@@ -31,11 +29,15 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
     // client's ordinary thread-list and history synchronization.
     await publishThreadListChanged(auth);
     signal.throwIfAborted();
-    await publishChatThreadMessageCreatedSafely({
-      ...auth,
-      threadId: result.body.id,
-      syncThroughSeqId: 1,
-    });
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        ...auth,
+        threadId: result.body.id,
+        syncThroughSeqId: 1,
+      },
+      signal,
+    );
     signal.throwIfAborted();
   }
   return result;

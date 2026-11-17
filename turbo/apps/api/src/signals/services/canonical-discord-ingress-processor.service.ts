@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { boolean, object } from "zod";
 import { discordIngressFailureSql } from "./discord-chat-ingress.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
@@ -42,10 +43,7 @@ import {
   fetchDiscordAttachment,
   type DiscordAttachmentDownload,
 } from "../external/discord-file-fetcher";
-import {
-  publishChatThreadMessageCreatedSafely,
-  publishThreadListChanged,
-} from "../external/realtime";
+import { publishThreadListChanged } from "../external/realtime";
 import { safeJsonParse, settle, settleIncludingAbort } from "../utils";
 import { waitUntil } from "../context/wait-until";
 import {
@@ -1246,7 +1244,11 @@ const finishRecordedIngressFailure$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     if (recorded?.notification) {
-      await publishChatThreadMessageCreatedSafely(recorded.notification);
+      await set(
+        publishChatThreadMessageCreated$,
+        recorded.notification,
+        signal,
+      );
       signal.throwIfAborted();
       await publishThreadListChanged(recorded.notification);
       signal.throwIfAborted();
@@ -1273,6 +1275,19 @@ const sendIngressQueueWaitNotice$ = command(
   },
 );
 
+const claimDiscordIngress$ = command(
+  async ({ set }, ingressId: string, signal: AbortSignal) => {
+    const plan = discordIngressClaimWritePlan(ingressId);
+    const [claimed] = await set(writeDb$)
+      .update(discordChatIngress)
+      .set(plan.values)
+      .where(plan.condition)
+      .returning({ attemptCount: discordChatIngress.processingAttemptCount });
+    signal.throwIfAborted();
+    return claimed ? { ...claimed, claimToken: plan.claimToken } : null;
+  },
+);
+
 export const processCanonicalDiscordIngress$ = command(
   async (
     { set },
@@ -1286,16 +1301,7 @@ export const processCanonicalDiscordIngress$ = command(
     if (!getDiscordAppConfig()) {
       return false;
     }
-    const db = set(writeDb$);
-    const claim = await (async () => {
-      const plan = discordIngressClaimWritePlan(args.ingressId);
-      const [claimed] = await db
-        .update(discordChatIngress)
-        .set(plan.values)
-        .where(plan.condition)
-        .returning({ attemptCount: discordChatIngress.processingAttemptCount });
-      return claimed ? { ...claimed, claimToken: plan.claimToken } : null;
-    })();
+    const claim = await set(claimDiscordIngress$, args.ingressId, signal);
     signal.throwIfAborted();
     if (!claim) {
       return false;
@@ -1356,11 +1362,15 @@ export const processCanonicalDiscordIngress$ = command(
           userId: ingress.userId,
           orgId: ingress.orgId,
         });
-        await publishChatThreadMessageCreatedSafely({
-          userId: ingress.userId,
-          orgId: ingress.orgId,
-          threadId: ingress.chatThreadId,
-        });
+        await set(
+          publishChatThreadMessageCreated$,
+          {
+            userId: ingress.userId,
+            orgId: ingress.orgId,
+            threadId: ingress.chatThreadId,
+          },
+          signal,
+        );
         const noticed = await settle(
           (async () => {
             const pick = await set(

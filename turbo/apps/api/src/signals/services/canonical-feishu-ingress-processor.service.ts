@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { addFeishuThinkingReaction$ } from "./feishu-thinking-indicator.service";
 import { connectors } from "@okouai/db/schema/connector";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
@@ -33,7 +34,6 @@ import {
   resolveFeishuRequestCredentials,
 } from "../external/feishu-client";
 import {
-  publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
   publishUserSignal,
 } from "../external/realtime";
@@ -1067,11 +1067,15 @@ export const processCanonicalFeishuIngress$ = command(
           userId: persisted.userId,
           orgId: persisted.orgId,
         });
-        await publishChatThreadMessageCreatedSafely({
-          userId: persisted.userId,
-          orgId: persisted.orgId,
-          threadId: persisted.chatThreadId,
-        });
+        await set(
+          publishChatThreadMessageCreated$,
+          {
+            userId: persisted.userId,
+            orgId: persisted.orgId,
+            threadId: persisted.chatThreadId,
+          },
+          signal,
+        );
         const noticed = await settle(
           (async () => {
             const pick = await set(

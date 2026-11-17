@@ -1,3 +1,4 @@
+import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { agentphoneConnectionCodes } from "@okouai/db/schema/agentphone-connection-code";
 import { randomUUID } from "node:crypto";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
@@ -86,12 +87,13 @@ export const switchAgentPhoneIdentity$ = command(
         ${previous.userId}, ${previous.orgId} FROM ${previous}
       RETURNING *
     `);
+    const marketingRewardEventId = randomUUID();
     const sourceEvent =
       args.channel === undefined || args.channel === "imessage"
         ? db.$with("replacement_phone_source_event", {}).as(
             marketingRewardLinkEventInsert(
               {
-                id: randomUUID(),
+                id: marketingRewardEventId,
                 environment: env("ENV"),
                 type: "imessage.identity-linked",
                 occurredAt: nowDate().toISOString(),
@@ -124,6 +126,13 @@ export const switchAgentPhoneIdentity$ = command(
     }
     const [userLink] = result.value;
     if (userLink) {
+      if (sourceEvent) {
+        set(
+          startMarketingRewardEventDelivery$,
+          { jobId: marketingRewardEventId, handlerVersion: 2 },
+          signal,
+        );
+      }
       return { kind: "linked", userLink };
     }
 
@@ -276,10 +285,11 @@ function phoneLinkPublicationPlan(
   );
   const claim = builder.$with("claim", {}).as(publication.claim);
   const reward = builder.$with("phone_link_reward", {}).as(publication.grant);
+  const marketingRewardEventId = randomUUID();
   const sourceEvent = builder.$with("phone_link_source_event", {}).as(
     marketingRewardLinkEventInsert(
       {
-        id: randomUUID(),
+        id: marketingRewardEventId,
         environment: env("ENV"),
         type: "imessage.identity-linked",
         occurredAt: at.toISOString(),
@@ -290,6 +300,7 @@ function phoneLinkPublicationPlan(
     ),
   );
   return {
+    marketingRewardEventId,
     ctes: [
       ...(consumed ? [consumed] : []),
       admitted,
@@ -423,6 +434,13 @@ export const linkAgentPhoneIdentity$ = command(
       .leftJoin(plan.existing, sql`true`)
       .leftJoin(plan.inserted, sql`true`);
     signal.throwIfAborted();
+    if (rows.some((row) => row.inserted !== null)) {
+      set(
+        startMarketingRewardEventDelivery$,
+        { jobId: plan.marketingRewardEventId, handlerVersion: 2 },
+        signal,
+      );
+    }
     return phoneLinkResult(rows, identity, phoneHandle);
   },
 );

@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import {
   OFFICIAL_TELEGRAM_BOT_ID,
   integrationsTelegramContract,
@@ -27,10 +28,7 @@ import { request$ } from "../context/hono";
 import { pathParamsOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
-import {
-  publishChatThreadMessageCreatedSafely,
-  publishThreadListChangedSafely,
-} from "../external/realtime";
+import { publishThreadListChangedSafely } from "../external/realtime";
 import {
   sendChatAction,
   sendMessage,
@@ -1327,11 +1325,15 @@ const runAgentForTelegram$ = command(
           userId: args.source.userLink.userId,
           orgId: args.source.orgId,
         });
-        await publishChatThreadMessageCreatedSafely({
-          userId: args.source.userLink.userId,
-          orgId: args.source.orgId,
-          threadId: persisted.chatThreadId,
-        });
+        await set(
+          publishChatThreadMessageCreated$,
+          {
+            userId: args.source.userLink.userId,
+            orgId: args.source.orgId,
+            threadId: persisted.chatThreadId,
+          },
+          signal,
+        );
         const noticed = await settle(
           (async () => {
             const pick = await set(

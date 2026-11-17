@@ -45,6 +45,7 @@ import {
   mockGmailConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { createUniqueEmailSignupAddressFixture } from "../../../test-fixtures/email-signup-identity";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
@@ -214,12 +215,16 @@ describe("email model recovery", () => {
 });
 
 describe("email-native signup", () => {
-  async function pendingSignup() {
-    const sender = "yuma@vm0.ai";
+  function anonymousSender() {
     context.mocks.clerk.users.getUserList.mockResolvedValue({
       data: [],
       totalCount: 0,
     });
+    return createUniqueEmailSignupAddressFixture();
+  }
+
+  async function pendingSignup() {
+    const sender = anonymousSender();
     const original = incoming({
       sender,
       text: "Please compare these options after signup",
@@ -315,11 +320,6 @@ describe("email-native signup", () => {
   }
 
   it("creates the account and workspace only after consent, then resumes the original request once", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const pending = await pendingSignup();
     const { actor, group } = await signupProvider(pending.sender);
     const confirmation = incoming({
@@ -416,21 +416,19 @@ describe("email-native signup", () => {
     });
   });
 
-  it.each(["*@vm0.ai", "YUMA@VM0.AI"])(
+  it.each(["domain", "uppercase-address"] as const)(
     "refuses a Clerk-blocked sender matching %s before confirming or creating an account",
-    async (identifier) => {
-      await setupApp({
-        context,
-        routes: integrationsEmailRoutes,
-        isolatePg: true,
-      });
+    async (kind) => {
+      const sender = anonymousSender();
+      const identifier =
+        kind === "domain" ? `*@${sender.split("@")[1]}` : sender.toUpperCase();
       context.mocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockResolvedValue(
         { data: [{ identifier }], totalCount: 1 },
       );
-      await incoming({ sender: "yuma@vm0.ai" }).send();
+      await incoming({ sender }).send();
       expect(sentEmails()).toMatchObject([
         {
-          to: "yuma@vm0.ai",
+          to: sender,
           text: expect.stringContaining("did not pass our security checks"),
         },
       ]);
@@ -484,11 +482,6 @@ describe("email-native signup", () => {
   it.each(["> CONFIRM", "Please CONFIRM this account"])(
     "does not register when the reply only contains or quotes CONFIRM: %s",
     async (text) => {
-      await setupApp({
-        context,
-        routes: integrationsEmailRoutes,
-        isolatePg: true,
-      });
       const pending = await pendingSignup();
       await incoming({
         sender: pending.sender,
@@ -505,11 +498,6 @@ describe("email-native signup", () => {
   );
 
   it("rejects another mailbox's confirmation reply address without creating or running anything", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const pending = await pendingSignup();
     const other = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
     verifiedDirectory(other);
@@ -526,11 +514,6 @@ describe("email-native signup", () => {
   });
 
   it("rejects expired consent and does not create an account", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const pending = await pendingSignup();
     const confirmation = incoming({
       sender: pending.sender,
@@ -544,11 +527,6 @@ describe("email-native signup", () => {
   });
 
   it("rejects an unissued confirmation reply address without creating an account", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const pending = await pendingSignup();
     const forged = incoming({
       sender: pending.sender,
@@ -561,11 +539,6 @@ describe("email-native signup", () => {
   });
 
   it("requires the issued reply address even when CONFIRM references the original request", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const pending = await pendingSignup();
     await incoming({
       sender: pending.sender,
@@ -580,18 +553,13 @@ describe("email-native signup", () => {
   });
 
   it("does not accuse a sender when the Clerk precheck is unavailable, and recovers on redelivery", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const unavailable = new ClerkTransportTestError(403, [
       { code: "authorization_invalid", message: "Unauthorized" },
     ]);
     context.mocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockRejectedValueOnce(
       unavailable,
     );
-    const message = incoming({ sender: "yuma@vm0.ai" });
+    const message = incoming({ sender: anonymousSender() });
     await expect(message.send(true)).rejects.toBe(unavailable);
     expect(sentEmails()).toHaveLength(0);
     expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
@@ -602,14 +570,10 @@ describe("email-native signup", () => {
   });
 
   it("bounds unconfirmed signup messages from one sender", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
+    const sender = anonymousSender();
     for (let index = 0; index < 4; index += 1) {
       await incoming({
-        sender: "yuma@vm0.ai",
+        sender,
         text: `Request ${index}`,
       }).send();
     }
@@ -622,11 +586,6 @@ describe("email-native signup", () => {
   });
 
   it("preserves Clerk's authoritative rejection after a successful precheck", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const pending = await pendingSignup();
     await signupProvider(pending.sender);
     context.mocks.clerk.users.createUser.mockRejectedValue(

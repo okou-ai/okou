@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import {
@@ -18,7 +19,7 @@ import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { AUTONOMY_BUDGET_EXHAUSTED_MESSAGE } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+
 import { settle, settleIncludingAbort } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadRunAutonomyBudget$ } from "./autonomy-budget.service";
@@ -290,20 +291,9 @@ const admitChatRunFinishedAutomation$ = command(
   },
 );
 
-/**
- * Fires `chat-run-finished` automations watching the thread whose run just
- * reached a terminal state. Called from the terminal chat callback after the
- * run lifecycle marker is durable, so the matched output is final.
- */
-export const dispatchChatRunFinishedAutomationEvents$ = command(
-  async ({ set }, event: ChatRunFinishedEvent, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    const sourceBudget = await set(loadRunAutonomyBudget$, event.runId, signal);
-    signal.throwIfAborted();
-    if (sourceBudget === null) {
-      return;
-    }
-    const automationRows = await db
+const loadChatRunFinishedAutomationTargets$ = command(
+  async ({ set }, chatThreadId: string, signal: AbortSignal) => {
+    const automationRows = await set(writeDb$)
       .select({
         automation: workflowAutomationColumns(),
         agentId: workflows.agentId,
@@ -334,10 +324,32 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
           eq(workflowAutomations.eventType, CHAT_RUN_FINISHED_EVENT_TYPE),
           eq(
             sql`${workflowAutomations.eventConfig}->>'chatThreadId'`,
-            event.chatThreadId,
+            chatThreadId,
           ),
         ),
       );
+    signal.throwIfAborted();
+    return automationRows;
+  },
+);
+
+/**
+ * Fires `chat-run-finished` automations watching the thread whose run just
+ * reached a terminal state. Called from the terminal chat callback after the
+ * run lifecycle marker is durable, so the matched output is final.
+ */
+export const dispatchChatRunFinishedAutomationEvents$ = command(
+  async ({ set }, event: ChatRunFinishedEvent, signal: AbortSignal) => {
+    const sourceBudget = await set(loadRunAutonomyBudget$, event.runId, signal);
+    signal.throwIfAborted();
+    if (sourceBudget === null) {
+      return;
+    }
+    const automationRows = await set(
+      loadChatRunFinishedAutomationTargets$,
+      event.chatThreadId,
+      signal,
+    );
     signal.throwIfAborted();
 
     const admittedAutomationIds = await set(
@@ -405,11 +417,15 @@ export const dispatchChatRunFinishedAutomationEvents$ = command(
         );
         signal.throwIfAborted();
         if (inserted) {
-          await publishChatThreadMessageCreatedSafely({
-            userId: row.automation.ownerUserId,
-            orgId: row.automation.orgId,
-            threadId: chatThreadId,
-          });
+          await set(
+            publishChatThreadMessageCreated$,
+            {
+              userId: row.automation.ownerUserId,
+              orgId: row.automation.orgId,
+              threadId: chatThreadId,
+            },
+            signal,
+          );
           signal.throwIfAborted();
         }
         continue;

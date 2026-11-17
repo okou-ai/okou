@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { command } from "ccstate";
 import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
@@ -13,7 +14,7 @@ import type {
 import { settleIncludingAbort } from "../utils";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+
 import {
   appendAssistantEventRows$,
   type InsertAssistantEventsInput,
@@ -413,11 +414,15 @@ const materializePreparedRunOutputEvents$ = command(
     // Retried receipts dedupe the row and therefore cannot own this wakeup.
     const eventPublished = Boolean(thread && insertion?.insertedRowCount);
     if (eventPublished && thread) {
-      await publishChatThreadMessageCreatedSafely({
-        userId: thread.userId,
-        orgId: thread.orgId,
-        threadId: thread.chatThreadId,
-      });
+      await set(
+        publishChatThreadMessageCreated$,
+        {
+          userId: thread.userId,
+          orgId: thread.orgId,
+          threadId: thread.chatThreadId,
+        },
+        signal,
+      );
     }
     return await set(
       materializeAdmittedRunOutputEvents$,
@@ -485,18 +490,24 @@ export const materializeRunOutputEvents$ = command(
   },
 );
 
-export async function publishMaterializedChatProjection(
-  payload: EventConsumerPayload,
-  projection: MaterializedChatProjection,
-  signal: AbortSignal,
-): Promise<void> {
-  if (projection.insertedRowCount === 0 || projection.eventPublished) {
-    return;
-  }
-  await publishChatThreadMessageCreatedSafely({
-    userId: projection.thread.userId,
-    orgId: projection.thread.orgId,
-    threadId: projection.thread.chatThreadId,
-  });
-  signal.throwIfAborted();
-}
+export const publishMaterializedChatProjection$ = command(
+  async (
+    { set },
+    projection: MaterializedChatProjection,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (projection.insertedRowCount === 0 || projection.eventPublished) {
+      return;
+    }
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        userId: projection.thread.userId,
+        orgId: projection.thread.orgId,
+        threadId: projection.thread.chatThreadId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+  },
+);

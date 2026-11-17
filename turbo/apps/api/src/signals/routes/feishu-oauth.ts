@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { startMarketingRewardEventDelivery$ } from "../services/marketing-reward-event-delivery.service";
 import {
   feishuOAuthPublicationRow,
   feishuOAuthPublicationSql,
@@ -370,10 +372,15 @@ const persistFeishuOAuthConnection$ = command(
   ): Promise<PersistFeishuOAuthConnectionResult> {
     const db = set(writeDb$);
     signal.throwIfAborted();
+    const marketingRewardEventId = randomUUID();
     const [result] = parseRawRows(
       feishuOAuthPublicationRow,
       await db.execute(
-        feishuOAuthPublicationSql(args, prepared.ok ? prepared.value : null),
+        feishuOAuthPublicationSql(
+          args,
+          prepared.ok ? prepared.value : null,
+          marketingRewardEventId,
+        ),
       ),
     );
     signal.throwIfAborted();
@@ -396,6 +403,13 @@ const persistFeishuOAuthConnection$ = command(
     if (!result.definitionEnabled) {
       throw new Error(
         "Failed to authorize Feishu custom connector: customConnectorsNotFound",
+      );
+    }
+    if (result.member) {
+      set(
+        startMarketingRewardEventDelivery$,
+        { jobId: marketingRewardEventId, handlerVersion: 1 },
+        signal,
       );
     }
     return result.member

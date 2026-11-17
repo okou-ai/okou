@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { sendTeamsRunStartIndicator } from "./teams-thinking-indicator.service";
 import type {
   TeamsInboundActivity,
@@ -26,10 +27,7 @@ import { teamsBotDisplayName } from "../../lib/teams-official-app";
 import { nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$ } from "../external/db";
-import {
-  publishChatThreadMessageCreatedSafely,
-  publishThreadListChangedSafely,
-} from "../external/realtime";
+import { publishThreadListChangedSafely } from "../external/realtime";
 import {
   checkTeamsConversationMember,
   fetchTeamsChannelMessage,
@@ -1498,11 +1496,15 @@ const runAgentForTeams$ = command(
           userId: args.connection.userId,
           orgId: args.installation.executionOrgId,
         });
-        await publishChatThreadMessageCreatedSafely({
-          userId: args.connection.userId,
-          orgId: args.installation.executionOrgId,
-          threadId: persisted.chatThreadId,
-        });
+        await set(
+          publishChatThreadMessageCreated$,
+          {
+            userId: args.connection.userId,
+            orgId: args.installation.executionOrgId,
+            threadId: persisted.chatThreadId,
+          },
+          signal,
+        );
         const noticed = await settle(
           (async () => {
             const pick = await set(

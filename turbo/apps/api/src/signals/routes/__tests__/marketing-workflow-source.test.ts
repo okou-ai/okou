@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { marketingWorkflowSourceContract } from "@okouai/api-contracts/contracts/marketing-workflow-source";
+import { marketingRewardProjectionContract } from "@okouai/api-contracts/contracts/marketing-reward-projection";
 import { workflowsDetailContract } from "@okouai/api-contracts/contracts/workflows";
 import { beforeEach, expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -8,6 +9,7 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { marketingWorkflowSourceRoutes } from "../marketing-workflow-source";
+import { marketingRewardProjectionRoutes } from "../marketing-reward-projection";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi } from "./helpers/api-bdd";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
@@ -19,6 +21,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { marketingRewardConsumer } from "./helpers/marketing-reward-consumer";
 import { readGetStartedStatus } from "./helpers/get-started";
+import { captureRewardProjectionPublications } from "./helpers/reward-projection-publications";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -40,7 +43,7 @@ function client() {
 }
 
 async function invokedWorkflow() {
-  const consumer = marketingRewardConsumer(context);
+  const consumer = marketingRewardConsumer();
   const { actor } = await workflows.setupWorkflowOrg({ tier: "team" });
   const { agentId } = await workflows.createAgent(actor, {
     visibility: "public",
@@ -79,7 +82,7 @@ async function invokedWorkflow() {
   if (!input?.runId) {
     throw new Error("Expected public Workflow Run");
   }
-  await consumer.deliver();
+  await flushWaitUntilForTest();
   const source = consumer.received.find((event) => {
     return event.type === "workflow.run-created" && event.runId === input.runId;
   });
@@ -129,11 +132,6 @@ test("requires the dedicated read-only capability before resolving a retained so
 });
 
 test("reports actual failed Run facts after Workflow deletion while preserving the original creator and financial state", async () => {
-  await setupApp({
-    context,
-    routes: marketingWorkflowSourceRoutes,
-    isolatePg: true,
-  });
   mockNow(new Date("2026-11-17T06:00:00.000Z"));
   const fixture = await invokedWorkflow();
   await createPublicAutomationRunApi(context).complete(
@@ -182,14 +180,33 @@ test("reports actual failed Run facts after Workflow deletion while preserving t
       return quest.key === "workflow";
     })?.claimedCount,
   ).toBe(0);
+  const publications = captureRewardProjectionPublications(context);
+  const progressSecret =
+    "workflow-progress-projection-1234567890123456789012345";
+  mockEnv("MARKETING_REWARDS_PROJECTION_SECRET", progressSecret);
+  await accept(
+    setupApp({ context, routes: marketingRewardProjectionRoutes })(
+      marketingRewardProjectionContract,
+    ).notifyProgress({
+      headers: { authorization: `Bearer ${progressSecret}` },
+      body: {
+        version: 1,
+        environment: "development",
+        source: { kind: "event", eventId: fixture.source.id },
+      },
+    }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+  expect(publications).toStrictEqual([
+    {
+      channel: `user:${fixture.actor.userId}`,
+      name: "getStartedRewardsChanged",
+    },
+  ]);
 });
 
 test("observes user cancellation through the same captured Run without creating an award", async () => {
-  await setupApp({
-    context,
-    routes: marketingWorkflowSourceRoutes,
-    isolatePg: true,
-  });
   const fixture = await invokedWorkflow();
   const params = { eventId: fixture.queued.id };
   const before = (await accept(client().observe({ params, headers }), [200]))

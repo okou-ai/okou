@@ -1,3 +1,4 @@
+import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { connectEmailFromMailAccount$ } from "./email-connection.service";
 import {
   builtinDeletionSqlResultSchema,
@@ -2548,6 +2549,7 @@ export const prepareBuiltinConnectorTokenPublication$ = command(
       cleanup: tokenCleanupResult(args, existing, pendingTokenRevoke),
       publication: {
         orgId: args.orgId,
+        marketingRewardEventId: randomUUID(),
         grantKind: args.runtimeMethod.method.grant.kind,
         metadata: tokenWriteArgs(
           values,
@@ -2590,6 +2592,7 @@ const publishTokenConnection$ = command(
   async (
     { set },
     prepared: PreparedBuiltinTokenPublication,
+    signal: AbortSignal,
   ): Promise<BuiltinConnectorTokenConnectionCommitResult> => {
     const db = set(writeDb$);
     const query = builtinTokenConnectionPublicationSql(prepared.publication);
@@ -2630,6 +2633,16 @@ const publishTokenConnection$ = command(
         "Connector account changed while connecting; submit the connection again",
       );
     }
+    if (isOneClickConnectorGrantKind(prepared.publication.grantKind)) {
+      set(
+        startMarketingRewardEventDelivery$,
+        {
+          jobId: prepared.publication.marketingRewardEventId,
+          handlerVersion: 1,
+        },
+        signal,
+      );
+    }
     return committedBuiltinTokenConnection(
       row.connector,
       prepared.existing,
@@ -2666,7 +2679,7 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
     const connectionResult =
       publication.kind === "rejected"
         ? publication.result
-        : await set(publishTokenConnection$, publication);
+        : await set(publishTokenConnection$, publication, signal);
     if (signal.aborted) {
       postCommitAbort = signal.reason;
     }

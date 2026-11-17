@@ -1,3 +1,4 @@
+import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { randomUUID } from "node:crypto";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { command } from "ccstate";
@@ -50,6 +51,7 @@ const publishAcceptedReward$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    const marketingRewardEventId = randomUUID();
     const { rowCount } = await db.execute(
       getStartedMemberRewardSql({
         claim: plan.claim,
@@ -58,7 +60,7 @@ const publishAcceptedReward$ = command(
         at: plan.at,
         acceptance: plan.acceptance,
         invitationEvent: {
-          id: randomUUID(),
+          id: marketingRewardEventId,
           environment: env("ENV"),
           type: "invitation.accepted",
           occurredAt: plan.acceptance.completedAt.toISOString(),
@@ -66,6 +68,11 @@ const publishAcceptedReward$ = command(
       }),
     );
     signal.throwIfAborted();
+    set(
+      startMarketingRewardEventDelivery$,
+      { jobId: marketingRewardEventId, handlerVersion: 3 },
+      signal,
+    );
     return rowCount;
   },
 );
@@ -82,6 +89,7 @@ const publishUnfundedAcceptance$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    const marketingRewardEventId = randomUUID();
     const accepted = db
       .update(getStartedClaims)
       .set({
@@ -95,7 +103,7 @@ const publishUnfundedAcceptance$ = command(
     await db.execute(
       sql`WITH accepted_invitation AS (${accepted.getSQL()}) ${marketingRewardInvitationEventInsert(
         {
-          id: randomUUID(),
+          id: marketingRewardEventId,
           environment: env("ENV"),
           type: "invitation.accepted",
           occurredAt: args.acceptance.completedAt.toISOString(),
@@ -104,6 +112,11 @@ const publishUnfundedAcceptance$ = command(
       )}`,
     );
     signal.throwIfAborted();
+    set(
+      startMarketingRewardEventDelivery$,
+      { jobId: marketingRewardEventId, handlerVersion: 3 },
+      signal,
+    );
   },
 );
 

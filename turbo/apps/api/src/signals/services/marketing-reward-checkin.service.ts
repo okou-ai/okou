@@ -5,6 +5,7 @@ import { v5 as uuidV5 } from "uuid";
 import { env } from "../../lib/env";
 import { marketingRewardCheckinEventSchema } from "../../lib/marketing-reward-events";
 import { writeDb$ } from "../external/db";
+import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import {
   MARKETING_REWARD_CHECKIN_EVENT_HANDLER_VERSION,
   MARKETING_REWARD_EVENT_JOB_KIND,
@@ -74,6 +75,16 @@ export const requestMarketingRewardCheckin$ = command(
     ) {
       throw new Error("Check-in request does not match its durable owner");
     }
+    // The exact retained request can make progress immediately; cron still
+    // recovers transport failures and requests interrupted after their commit.
+    set(
+      startMarketingRewardEventDelivery$,
+      {
+        jobId: job.id,
+        handlerVersion: MARKETING_REWARD_CHECKIN_EVENT_HANDLER_VERSION,
+      },
+      signal,
+    );
     return request;
   },
 );

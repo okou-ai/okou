@@ -1,3 +1,6 @@
+import { notifyPhoneUseOwner$ } from "./phone-use-notifications.service";
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
+import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { env } from "../../lib/env";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
@@ -19,7 +22,6 @@ import type { SandboxAuth } from "../../types/auth";
 import { db$, writeDb$ } from "../external/db";
 import {
   publishChatThreadDetailChangedSafely,
-  publishChatThreadMessageCreatedSafely,
   publishDesktopShellAuthorizationChangedSafely,
 } from "../external/realtime";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -374,11 +376,15 @@ const dispatchTerminalCompleteSideEffects$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     if (input.deliveryNotification?.chatEventsAppended) {
-      await publishChatThreadMessageCreatedSafely({
-        userId: input.deliveryNotification.userId,
-        orgId: input.orgId,
-        threadId: input.deliveryNotification.chatThreadId,
-      });
+      await set(
+        publishChatThreadMessageCreated$,
+        {
+          userId: input.deliveryNotification.userId,
+          orgId: input.orgId,
+          threadId: input.deliveryNotification.chatThreadId,
+        },
+        signal,
+      );
       signal.throwIfAborted();
     }
     const callbackStatus =
@@ -448,6 +454,11 @@ export const dispatchCompleteSideEffectsCore$ = command(
           ? input.userId
           : undefined;
     if (shellOwnerId !== undefined) {
+      await set(
+        notifyPhoneUseOwner$,
+        { orgId: input.orgId, userId: shellOwnerId },
+        signal,
+      );
       await publishDesktopShellAuthorizationChangedSafely(shellOwnerId);
       signal.throwIfAborted();
     }
@@ -459,11 +470,15 @@ export const dispatchCompleteSideEffectsCore$ = command(
         );
         signal.throwIfAborted();
         if (input.chatEventsAppended) {
-          await publishChatThreadMessageCreatedSafely({
-            userId: input.userId,
-            orgId: input.orgId,
-            threadId: input.chatThreadId,
-          });
+          await set(
+            publishChatThreadMessageCreated$,
+            {
+              userId: input.userId,
+              orgId: input.orgId,
+              threadId: input.chatThreadId,
+            },
+            signal,
+          );
           signal.throwIfAborted();
         }
       }
@@ -471,11 +486,15 @@ export const dispatchCompleteSideEffectsCore$ = command(
     }
     if (input.kind === "delivery-finalization") {
       if (input.chatEventsAppended) {
-        await publishChatThreadMessageCreatedSafely({
-          userId: input.userId,
-          orgId: input.orgId,
-          threadId: input.chatThreadId,
-        });
+        await set(
+          publishChatThreadMessageCreated$,
+          {
+            userId: input.userId,
+            orgId: input.orgId,
+            threadId: input.chatThreadId,
+          },
+          signal,
+        );
         signal.throwIfAborted();
       }
       // Undelivered input stays queued; the released slot's org pick or the
@@ -564,6 +583,25 @@ function createCompletionTerminalRedrive(runId: string) {
   });
 }
 
+/** A timed-out Runner's completion acknowledges release of its claimed packages. */
+const releaseTimedOutRunAttachments$ = command(
+  async (
+    { set },
+    owner: { readonly runId: string; readonly orgId: string },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(writeDb$)
+      .delete(claimedWorkflowAttachments)
+      .where(
+        and(
+          eq(claimedWorkflowAttachments.runId, owner.runId),
+          eq(claimedWorkflowAttachments.orgId, owner.orgId),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
+
 /** One validated completion request owns this graph and its lazy post-commit read. */
 export function createAgentRunCompletion(runId: string, userId: string) {
   const initialRun$ = createInitialCompletionRun(runId, userId);
@@ -584,14 +622,11 @@ export function createAgentRunCompletion(runId: string, userId: string) {
       if (initialRun.status === "timeout") {
         // Terminal status or silence did not release the claim's packages.
         // This authenticated completion is the Runner's actual acknowledgement.
-        await db
-          .delete(claimedWorkflowAttachments)
-          .where(
-            and(
-              eq(claimedWorkflowAttachments.runId, runId),
-              eq(claimedWorkflowAttachments.orgId, initialRun.orgId),
-            ),
-          );
+        await set(
+          releaseTimedOutRunAttachments$,
+          { runId, orgId: initialRun.orgId },
+          signal,
+        );
         signal.throwIfAborted();
         return settledRunCompletionResponse(initialRun);
       }
@@ -626,6 +661,13 @@ export function createAgentRunCompletion(runId: string, userId: string) {
               kind: "response",
               response: completionPublicationRejection(row.decision),
             } as const;
+          }
+          if (row.marketingRewardEventId) {
+            set(
+              startMarketingRewardEventDelivery$,
+              { jobId: row.marketingRewardEventId, handlerVersion: 4 },
+              signal,
+            );
           }
           const releasedSlots =
             row.releasedRunId === null || row.releasedOrgId === null

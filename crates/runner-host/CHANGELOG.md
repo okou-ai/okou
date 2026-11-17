@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.18](https://github.com/okou-ai/okou/compare/runner-host-v0.11.17...runner-host-v0.11.18) (2026-11-17)
+
+
+### Refactoring
+
+* use typed resource limit calls ([#48257](https://github.com/okou-ai/okou/issues/48257)) ([6a91f3e](https://github.com/okou-ai/okou/commit/6a91f3e48eae8cb2f0c01294602c0fa00bd2eb6c))
+
 ## [0.11.17](https://github.com/okou-ai/okou/compare/runner-host-v0.11.16...runner-host-v0.11.17) (2026-11-17)
 
 ## [0.11.16](https://github.com/okou-ai/okou/compare/runner-host-v0.11.15...runner-host-v0.11.16) (2026-11-17)

@@ -2,13 +2,14 @@ import { instructionsContract } from "@okouai/api-contracts/contracts/instructio
 import { instructionsRoutes } from "../instructions";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 
 import {
   agentInstructionsContract,
   agentsMainContract,
 } from "@okouai/api-contracts/contracts/agents";
-import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
 import { userExportContract } from "@okouai/api-contracts/contracts/user-export";
+import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
 import {
   chatThreadEventsContract,
   chatThreadByIdContract,
@@ -29,8 +30,8 @@ import { agentInstructionsRoutes } from "../agent-instructions";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { chatThreadPatchRoutes } from "../chat-threads-patch";
-import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
 import { userExportRoutes } from "../user-export";
+import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
 import { workflowsRoutes } from "../workflows";
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { mockClerkUsers } from "./helpers/clerk-users";
@@ -42,8 +43,6 @@ import {
 
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const cronSecret = "user-export-publication-cron";
-const cronHeaders = Object.freeze({ authorization: `Bearer ${cronSecret}` });
 const routes = Object.freeze([
   ...agentsRoutes,
   ...instructionsRoutes,
@@ -52,7 +51,6 @@ const routes = Object.freeze([
   ...chatThreadPatchRoutes,
   ...workflowsRoutes,
   ...userExportRoutes,
-  ...cronProcessBackgroundJobsRoutes,
 ]);
 
 function actor(orgId = `org_${randomUUID()}`) {
@@ -93,7 +91,6 @@ function initialize(
       });
     },
   );
-  mockEnv("CRON_SECRET", cronSecret);
   const storage = installDurableUserExportStorage(context, {
     prefixes: [
       "exports/",
@@ -127,16 +124,6 @@ async function startExport(fixture: Fixture, owner: ReturnType<typeof actor>) {
   );
   await flushWaitUntilForTest();
   return started.body.jobId;
-}
-
-async function process(fixture: Fixture) {
-  await accept(
-    fixture.app(cronProcessBackgroundJobsContract).process({
-      headers: cronHeaders,
-    }),
-    [200],
-  );
-  await flushWaitUntilForTest();
 }
 
 async function status(fixture: Fixture, owner: ReturnType<typeof actor>) {
@@ -291,11 +278,11 @@ test("exports PATCH-created drafts with owned thread timestamps and absent draft
   expect((await status(fixture, peer)).job).toBeNull();
 });
 
-test("publishes an owned ZIP while isolating peers and preserving replay", async () => {
+test("publishes an owned ZIP, deduplicates concurrent requests and excludes peers", async () => {
   const owner = actor();
   const peer = actor(owner.orgId);
   const outsider = actor();
-  const app = await setupApp({ context, routes, isolatePg: true });
+  const app = setupApp({ context, routes });
   const fixture = initialize(app, [owner, peer, outsider]);
   // This export includes a retained named Agent and its private Workflow.
   await updateFeatureSwitchesForUser(context, owner, { singleAgent: false });
@@ -367,10 +354,6 @@ test("publishes an owned ZIP while isolating peers and preserving replay", async
   for (const user of [peer, outsider]) {
     expect((await status(fixture, user)).job).toBeNull();
   }
-  await process(fixture);
-  const replay = await status(fixture, owner);
-  expect(replay.job?.downloadUrl).toBe(ready.job?.downloadUrl);
-  archive(fixture, replay.job?.downloadUrl);
   authenticate(owner);
   const limited = await accept(
     fixture.app(userExportContract).post({ headers }),
@@ -630,11 +613,15 @@ test.each([
   },
 );
 
-test("exports only the subject's personal Instructions, independently of shared Agent ownership", async () => {
+test("recovers the owner's private Instructions export after an S3 failure without an owner retry", async () => {
   const owner = actor();
   const peer = actor(owner.orgId);
-  const app = setupApp({ context, routes });
-  const fixture = initialize(app, [owner, peer]);
+  const app = await setupApp({
+    context,
+    routes: [...routes, ...cronProcessBackgroundJobsRoutes],
+    isolatePg: true,
+  });
+  const initial = initialize(app, [owner, peer]);
   for (const user of [owner, peer]) {
     await updateFeatureSwitchesForUser(context, user, { singleAgent: true });
     authenticate(user);
@@ -648,7 +635,48 @@ test("exports only the subject's personal Instructions, independently of shared 
       [200],
     );
   }
+  let storageFailures = 0;
+  const storage = installDurableUserExportStorage(context, {
+    prefixes: ["exports/"],
+    afterWrite: (request) => {
+      if (request instanceof PutObjectCommand && storageFailures === 0) {
+        storageFailures += 1;
+        // The real provider kept the bytes, but its successful receipt was lost.
+        // Recovery must resume this export instead of requiring another POST.
+        throw Object.assign(new Error("Temporary export storage failure"), {
+          name: "ServiceUnavailable",
+          $metadata: { httpStatusCode: 503 },
+        });
+      }
+      return Promise.resolve();
+    },
+  });
+  const fixture = { ...initial, storage };
   const jobId = await startExport(fixture, owner);
+  expect(storageFailures).toBe(1);
+  const interrupted = await status(fixture, owner);
+  expect(interrupted.job).toMatchObject({ id: jobId, downloadUrl: null });
+  expect(["pending", "running"]).toContain(interrupted.job?.status);
+
+  const cronSecret = "user-export-recovery-cron";
+  mockEnv("CRON_SECRET", cronSecret);
+  // Retry eligibility uses the database clock. Poll the actual scheduled
+  // recovery and owner-visible result without overriding its internal budget.
+  await expect
+    .poll(
+      async () => {
+        await accept(
+          app(cronProcessBackgroundJobsContract).process({
+            headers: { authorization: `Bearer ${cronSecret}` },
+          }),
+          [200],
+        );
+        await flushWaitUntilForTest();
+        return (await status(fixture, owner)).job;
+      },
+      { interval: 1000, timeout: 30_000 },
+    )
+    .toMatchObject({ id: jobId, status: "completed", error: null });
   const ready = await status(fixture, owner);
   expect(ready.job).toMatchObject({
     id: jobId,
@@ -669,4 +697,5 @@ test("exports only the subject's personal Instructions, independently of shared 
         return entry.entryName;
       }),
   ).toStrictEqual([`instructions/${owner.orgId}.json`]);
-});
+  expect((await status(fixture, peer)).job).toBeNull();
+}, 60_000);

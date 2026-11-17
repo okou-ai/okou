@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import {
   emailDeliveryTargetSchema,
   type EmailDeliveryTarget,
@@ -48,7 +49,6 @@ import { db$, writeDb$ } from "../external/db";
 import {
   publishChatIndicatorsChangedSafely,
   publishChatThreadDetailChangedSafely,
-  publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
@@ -800,55 +800,80 @@ function agentPhoneChatDeliveryFields(
   };
 }
 
-async function publishAssistantErrorEventSignals(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly threadId: string;
-  readonly lifecycleEvent: "failed" | "cancelled";
-  readonly hasCancellationRecoveryState: boolean;
-}): Promise<void> {
-  await publishChatThreadMessageCreatedSafely({
-    userId: args.userId,
-    orgId: args.orgId,
-    threadId: args.threadId,
-  });
-  await publishThreadListChangedSafely({
-    userId: args.userId,
-    orgId: args.orgId,
-  });
-  // The Run's terminal status committed before its callback wrote this marker.
-  await publishChatIndicatorsChangedSafely({
-    userId: args.userId,
-    orgId: args.orgId,
-  });
-  if (
-    args.lifecycleEvent === "cancelled" &&
-    args.hasCancellationRecoveryState
-  ) {
-    await publishChatThreadDetailChangedSafely(args.userId, args.threadId);
-  }
-}
+const publishAssistantErrorEventSignals$ = command(
+  async (
+    { set },
+    args: {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly threadId: string;
+      readonly lifecycleEvent: "failed" | "cancelled";
+      readonly hasCancellationRecoveryState: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        userId: args.userId,
+        orgId: args.orgId,
+        threadId: args.threadId,
+      },
+      signal,
+    );
+    await publishThreadListChangedSafely({
+      userId: args.userId,
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
+    // The Run's terminal status committed before its callback wrote this marker.
+    await publishChatIndicatorsChangedSafely({
+      userId: args.userId,
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
+    if (
+      args.lifecycleEvent === "cancelled" &&
+      args.hasCancellationRecoveryState
+    ) {
+      await publishChatThreadDetailChangedSafely(args.userId, args.threadId);
+      signal.throwIfAborted();
+    }
+  },
+);
 
-async function publishRunLifecycleMarkerSignals(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly threadId: string;
-}): Promise<void> {
-  await publishChatThreadMessageCreatedSafely({
-    userId: args.userId,
-    orgId: args.orgId,
-    threadId: args.threadId,
-  });
-  await publishThreadListChangedSafely({
-    userId: args.userId,
-    orgId: args.orgId,
-  });
-  // The Run's terminal status committed before its callback wrote this marker.
-  await publishChatIndicatorsChangedSafely({
-    userId: args.userId,
-    orgId: args.orgId,
-  });
-}
+const publishRunLifecycleMarkerSignals$ = command(
+  async (
+    { set },
+    args: {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly threadId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        userId: args.userId,
+        orgId: args.orgId,
+        threadId: args.threadId,
+      },
+      signal,
+    );
+    await publishThreadListChangedSafely({
+      userId: args.userId,
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
+    // The Run's terminal status committed before its callback wrote this marker.
+    await publishChatIndicatorsChangedSafely({
+      userId: args.userId,
+      orgId: args.orgId,
+    });
+    signal.throwIfAborted();
+  },
+);
 
 interface AssistantErrorEventArgs {
   readonly runId: string;
@@ -1072,7 +1097,7 @@ const insertAssistantErrorEvent$ = command(
       assistantErrorEventTouchOptions(args),
       signal,
     );
-    await publishAssistantErrorEventSignals(args);
+    await set(publishAssistantErrorEventSignals$, args, signal);
     signal.throwIfAborted();
     return assistantErrorEventResult(displayErrorMessage, inserted);
   },
@@ -1410,7 +1435,7 @@ const insertRunLifecycleMarker$ = command(
       runLifecycleMarkerTouchOptions(args, markerCreatedAt),
       signal,
     );
-    await publishRunLifecycleMarkerSignals(args);
+    await set(publishRunLifecycleMarkerSignals$, args, signal);
     signal.throwIfAborted();
     return runLifecycleMarkerResult(inserted);
   },

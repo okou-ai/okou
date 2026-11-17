@@ -1,3 +1,4 @@
+import { startMarketingRewardEventDelivery$ } from "./marketing-reward-event-delivery.service";
 import { Buffer } from "node:buffer";
 import { createHash, randomBytes } from "node:crypto";
 
@@ -768,6 +769,7 @@ const publishDeviceAuthConnection$ = command(
     { set },
     args: CommitDeviceAuthArgs,
     publication: PreparedBuiltinTokenPublication,
+    signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
     const query = deviceAuthTokenPublicationSql(
@@ -801,6 +803,14 @@ const publishDeviceAuthConnection$ = command(
     if (row.connector === null) {
       throw new Error("Completed device authorization has no connector");
     }
+    set(
+      startMarketingRewardEventDelivery$,
+      {
+        jobId: publication.publication.marketingRewardEventId,
+        handlerVersion: 1,
+      },
+      signal,
+    );
     return committedBuiltinTokenConnection(
       row.connector,
       publication.existing,
@@ -825,7 +835,7 @@ const completeClaimedSession$ = command(
             publication.result.status,
             signal,
           )
-        : await set(publishDeviceAuthConnection$, args, publication);
+        : await set(publishDeviceAuthConnection$, args, publication, signal);
     if (result === null) {
       return {
         result: await set(claimNoLongerCurrentResponse$, args.session, signal),

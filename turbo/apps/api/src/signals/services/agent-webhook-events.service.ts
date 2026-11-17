@@ -15,7 +15,7 @@ import { refreshAgentPhoneTypingEvents$ } from "./agent-event-consumer-agentphon
 import { ingestAxiomEvents$ } from "./agent-event-consumer-axiom.service";
 import {
   materializeRunOutputEvents$,
-  publishMaterializedChatProjection,
+  publishMaterializedChatProjection$,
   type MaterializedChatProjection,
 } from "./agent-event-consumer-run-output.service";
 import {
@@ -145,8 +145,8 @@ export const dispatchOptionalAgentEventConsumers$ = command(
     const otherConsumers = (async () => {
       if (accepted.chatProjection) {
         await tapError(
-          publishMaterializedChatProjection(
-            payload,
+          set(
+            publishMaterializedChatProjection$,
             accepted.chatProjection,
             signal,
           ),

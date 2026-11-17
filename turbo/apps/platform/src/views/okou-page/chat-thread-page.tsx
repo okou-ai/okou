@@ -8405,7 +8405,9 @@ function PagedGroupActions({
             return event.tree !== undefined;
           }) ? (
             <MessagePdfAction
-              key={JSON.stringify(pdfContents)}
+              key={JSON.stringify([shareEventIds, pdfContents])}
+              threadId={thread.threadId}
+              eventIds={shareEventIds}
               contents={pdfContents}
               trees={persistedMessages.flatMap((event) => {
                 return event.tree ? [event.tree] : [];

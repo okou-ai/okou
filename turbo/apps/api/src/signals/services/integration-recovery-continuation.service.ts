@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
@@ -5,10 +6,7 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { db$, writeDb$ } from "../external/db";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { sendChatAction } from "../external/telegram-client";
-import {
-  publishChatThreadMessageCreatedSafely,
-  publishThreadListChangedSafely,
-} from "../external/realtime";
+import { publishThreadListChangedSafely } from "../external/realtime";
 import { logger } from "../../lib/log";
 import { settle } from "../utils";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
@@ -182,11 +180,15 @@ export const continueIntegrationRecovery$ = command(
       { ...input, authorizedScope: input },
       signal,
     );
-    await publishChatThreadMessageCreatedSafely({
-      userId: input.userId,
-      orgId: input.orgId,
-      threadId: input.chatThreadId,
-    });
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        userId: input.userId,
+        orgId: input.orgId,
+        threadId: input.chatThreadId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     await publishThreadListChangedSafely({
       userId: input.userId,

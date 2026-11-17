@@ -34,6 +34,7 @@ import { isMorningBriefNotificationSource } from "../../lib/morning-brief-notifi
 import { db$, writeDb$ } from "../external/db";
 import { emailSubscription$ } from "./email-subscription.service";
 import {
+  sendEmailOutboxItem$,
   buildFromAddress,
   buildOneClickUnsubscribeUrl,
   buildUnsubscribeHeaders,
@@ -482,6 +483,33 @@ export const queueMailNotification$ = command(
       },
       signal,
     );
+  },
+);
+
+/** Deliver only the committed receipt accepted for this owner. */
+export const deliverMailNotification$ = command(
+  async (
+    { get, set },
+    owner: Owner,
+    notificationId: string,
+    signal: AbortSignal,
+  ) => {
+    const [receipt] = await get(db$)
+      .select({ outboxId: mailNotifications.outboxId })
+      .from(mailNotifications)
+      .where(
+        and(
+          eq(mailNotifications.id, notificationId),
+          eq(mailNotifications.orgId, owner.orgId),
+          eq(mailNotifications.userId, owner.userId),
+          eq(mailNotifications.status, "queued"),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (receipt?.outboxId) {
+      await set(sendEmailOutboxItem$, receipt.outboxId, signal);
+    }
   },
 );
 

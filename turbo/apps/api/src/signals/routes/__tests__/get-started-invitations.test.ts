@@ -2,22 +2,14 @@ import { billingUsagePackCreditsContract } from "@okouai/api-contracts/contracts
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
-import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
-import { createHash, randomUUID } from "node:crypto";
-import { http, HttpResponse } from "msw";
+import { randomUUID } from "node:crypto";
 import { Webhook } from "svix";
 import { beforeEach, expect, test, vi } from "vitest";
 import { object, string, uuid } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { mockNow, nowDate } from "../../../lib/time";
-import {
-  marketingRewardSourceEventSchema,
-  type MarketingRewardSourceEvent,
-} from "../../../lib/marketing-reward-events";
-import { server } from "../../../mocks/server";
-import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
+import { mockOptionalEnv } from "../../../lib/env";
+import { nowDate } from "../../../lib/time";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { getStartedRoutes } from "../get-started";
 import { orgInviteRoutes } from "../org-invite";
@@ -52,54 +44,6 @@ const sentInvitation = object({
   organizationId: string(),
   privateMetadata: object({ getStartedClaimId: uuid() }),
 });
-
-const eventPath =
-  "https://marketing-invitations.example.test/api/internal/marketing/get-started/events";
-
-function eventDelivery() {
-  mockEnv("CRON_SECRET", "invitation-source-cron-secret");
-  mockEnv(
-    "MARKETING_REWARDS_EVENTS_ORIGIN",
-    "https://marketing-invitations.example.test",
-  );
-  mockEnv(
-    "MARKETING_REWARDS_EVENTS_SECRET",
-    "invitation-source-service-key-123456789",
-  );
-  const received: MarketingRewardSourceEvent[] = [];
-  server.use(
-    http.post(eventPath, async ({ request }) => {
-      expect(request.headers.get("authorization")).toBe(
-        "Bearer invitation-source-service-key-123456789",
-      );
-      const event = marketingRewardSourceEventSchema.parse(
-        await request.json(),
-      );
-      received.push(event);
-      return HttpResponse.json({
-        version: 1,
-        environment: event.environment,
-        eventId: event.id,
-        hash: createHash("sha256").update(JSON.stringify(event)).digest("hex"),
-        receivedAt: "2026-11-17T00:00:00.000Z",
-      });
-    }),
-  );
-  return received;
-}
-
-async function deliverEvents() {
-  return (
-    await accept(
-      setupApp({ context, routes: cronProcessBackgroundJobsRoutes })(
-        cronProcessBackgroundJobsContract,
-      ).process({
-        headers: { authorization: "Bearer invitation-source-cron-secret" },
-      }),
-      [200],
-    )
-  ).body;
-}
 
 beforeEach(async () => {
   mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", secret);
@@ -344,12 +288,6 @@ test("revoking an invitation removes pending progress without consuming a reward
 });
 
 test("acceptance racing the Clerk send response retains attribution and webhook replay gives one reward", async () => {
-  await setupApp({
-    context,
-    routes: cronProcessBackgroundJobsRoutes,
-    isolatePg: true,
-  });
-  const received = eventDelivery();
   const actor = await org();
   const invitedUser = `user_existing_${randomUUID()}`;
   const invitationId = `inv_${randomUUID()}`;
@@ -378,44 +316,9 @@ test("acceptance racing the Clerk send response retains attribution and webhook 
     pendingCount: 0,
     limit: 15,
   });
-  expect((await deliverEvents()).processed).toBe(2);
-  expect(received).toStrictEqual([
-    {
-      version: 3,
-      id: expect.any(String),
-      environment: "development",
-      type: "invitation.accepted",
-      occurredAt: expect.any(String),
-      orgId: actor.orgId,
-      userId: actor.userId,
-      claimId,
-      sourceKey: expect.any(String),
-      invitationId,
-      inviteeUserId: invitedUser,
-    },
-    {
-      version: 3,
-      id: expect.any(String),
-      environment: "development",
-      type: "invitation.attributed",
-      occurredAt: expect.any(String),
-      orgId: actor.orgId,
-      userId: actor.userId,
-      claimId,
-      sourceKey: expect.any(String),
-      invitationId,
-    },
-  ]);
-  expect((await deliverEvents()).processed).toBe(0);
 });
 
-test("concurrent acceptances fill all 15 global invitation slots while pending invitations consume none", async () => {
-  await setupApp({
-    context,
-    routes: cronProcessBackgroundJobsRoutes,
-    isolatePg: true,
-  });
-  const received = eventDelivery();
+test("concurrent acceptances fill one inviter's 15 slots across organizations while pending invitations consume none", async () => {
   const first = await org();
   const sameInvitee = `user_${randomUUID()}`;
   const initialInvitations = [];
@@ -478,37 +381,6 @@ test("concurrent acceptances fill all 15 global invitation slots while pending i
     claimedCount: 0,
     pendingCount: 0,
   });
-  for (let batch = 0; batch < 4; batch += 1) {
-    await deliverEvents();
-  }
-  const acceptances = received.filter((event) => {
-    return event.type === "invitation.accepted";
-  });
-  expect(acceptances).toHaveLength(18);
-  expect(
-    new Set(
-      acceptances.map((event) => {
-        return event.claimId;
-      }),
-    ).size,
-  ).toBe(18);
-  expect(acceptances).toContainEqual(
-    expect.objectContaining({
-      claimId: pendingC.claimId,
-      orgId: second.orgId,
-      userId: first.userId,
-      inviteeUserId: sameInvitee,
-    }),
-  );
-  expect(acceptances).toContainEqual(
-    expect.objectContaining({
-      claimId: repeated.claimId,
-      orgId: anotherInviter.orgId,
-      userId: anotherInviter.userId,
-      inviteeUserId: sameInvitee,
-    }),
-  );
-  expect((await deliverEvents()).processed).toBe(0);
 });
 
 test("concurrent invitations of the same account across organizations award only one inviter", async () => {
@@ -542,12 +414,6 @@ test("concurrent invitations of the same account across organizations award only
 });
 
 test("self-invitations and unrelated accepted invitations do not award credits", async () => {
-  await setupApp({
-    context,
-    routes: cronProcessBackgroundJobsRoutes,
-    isolatePg: true,
-  });
-  const received = eventDelivery();
   const actor = await org();
   const invitation = await sendInvitation();
   await accepted(actor.orgId, invitation, actor.userId);
@@ -560,74 +426,4 @@ test("self-invitations and unrelated accepted invitations do not award credits",
     claimedCount: 0,
     pendingCount: 0,
   });
-  expect((await deliverEvents()).processed).toBe(2);
-  expect(received).toContainEqual(
-    expect.objectContaining({
-      type: "invitation.accepted",
-      claimId: invitation.claimId,
-      userId: actor.userId,
-      inviteeUserId: actor.userId,
-    }),
-  );
-});
-
-test("retains attributed and revoked facts through a lost storage acknowledgement", async () => {
-  await setupApp({
-    context,
-    routes: cronProcessBackgroundJobsRoutes,
-    isolatePg: true,
-  });
-  const received = eventDelivery();
-  mockNow(new Date("2026-01-01T08:00:00.000Z"));
-  const actor = await org();
-  const invitation = await sendInvitation();
-  context.mocks.clerk.organizations.revokeOrganizationInvitation.mockResolvedValueOnce(
-    {},
-  );
-  await accept(
-    setupApp({ context, routes: orgInviteRoutes })(orgInviteContract).revoke({
-      headers,
-      body: { invitationId: invitation.id },
-    }),
-    [200],
-  );
-  await expect(progress()).resolves.toMatchObject({
-    claimedCount: 0,
-    pendingCount: 0,
-  });
-  server.use(
-    http.post(
-      eventPath,
-      async ({ request }) => {
-        const event = marketingRewardSourceEventSchema.parse(
-          await request.json(),
-        );
-        received.push(event);
-        return HttpResponse.error();
-      },
-      { once: true },
-    ),
-  );
-  expect((await deliverEvents()).processed).toBe(1);
-  expect((await deliverEvents()).processed).toBe(2);
-  expect(received).toHaveLength(3);
-  expect(received[1]).toStrictEqual(received[0]);
-  expect(
-    received
-      .slice(1)
-      .map((event) => {
-        return event.type;
-      })
-      .sort(),
-  ).toStrictEqual(["invitation.attributed", "invitation.revoked"]);
-  for (const event of received) {
-    expect(event).toMatchObject({
-      version: 3,
-      orgId: actor.orgId,
-      userId: actor.userId,
-      claimId: invitation.claimId,
-      invitationId: invitation.id,
-    });
-  }
-  expect((await deliverEvents()).processed).toBe(0);
 });

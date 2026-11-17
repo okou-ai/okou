@@ -42,6 +42,11 @@ const preferences = () => {
 async function runningAgent(options: ApiTestUserOptions = {}) {
   mockEnv("RESEND_API_KEY", "test-key");
   mockEnv("RESEND_FROM_DOMAIN", "okou.io");
+  mockEnv("OKOU_API_BACKEND_URL", "https://api.example.com");
+  context.mocks.resend.send.mockResolvedValue({
+    data: { id: "provider-email" },
+    error: null,
+  });
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   const actor = bdd.user(options);
@@ -96,7 +101,7 @@ const body = () => {
 };
 
 describe("agent mail notifications", () => {
-  it("drains notifications and replays the same provider request on retry", async () => {
+  it("delivers only the requested notification and recovers its failed delivery without caller activity", async () => {
     await setupApp({
       context,
       routes: [...notificationsRoutes, ...cronDrainEmailOutboxRoutes],
@@ -105,13 +110,20 @@ describe("agent mail notifications", () => {
     const fixture = await runningAgent();
     mockEnv("OKOU_API_BACKEND_URL", "https://api.example.com");
     mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
+    context.mocks.resend.send
+      .mockResolvedValueOnce({
+        data: null,
+        error: { name: "rate_limit_exceeded", message: "Try again" },
+      })
+      .mockResolvedValue({ data: { id: "provider-email" }, error: null });
+    const drainTime = now();
+    mockNow(drainTime);
+    const firstBody = { ...body(), text: "First notification" };
     const first = await accept(
-      client().mail({
-        headers: fixture.headers,
-        body: { ...body(), text: "First notification" },
-      }),
+      client().mail({ headers: fixture.headers, body: firstBody }),
       [200],
     );
+    await flushWaitUntilForTest();
     const second = await accept(
       client().mail({
         headers: fixture.headers,
@@ -123,22 +135,7 @@ describe("agent mail notifications", () => {
       }),
       [200],
     );
-    context.mocks.resend.send
-      .mockResolvedValueOnce({
-        data: null,
-        error: { name: "rate_limit_exceeded", message: "Try again" },
-      })
-      .mockResolvedValue({ data: { id: "provider-email" }, error: null });
-    const drain = setupApp({ context, routes: cronDrainEmailOutboxRoutes })(
-      cronDrainEmailOutboxContract,
-    );
-    const drainTime = now();
-    mockNow(drainTime);
-    const drained = await accept(
-      drain.drain({ headers: { authorization: "Bearer test-cron-secret" } }),
-      [200],
-    );
-    expect(drained.body.drained).toBe(2);
+    await flushWaitUntilForTest();
     const firstAttempt = context.mocks.resend.send.mock.calls[0];
     expect(firstAttempt?.[0]).toMatchObject({
       html: expect.stringContaining("First notification"),
@@ -242,11 +239,13 @@ describe("agent mail notifications", () => {
       ).body.status,
     ).toBe("queued");
 
-    const retried = await accept(
-      drain.drain({ headers: { authorization: "Bearer test-cron-secret" } }),
+    await accept(
+      setupApp({ context, routes: cronDrainEmailOutboxRoutes })(
+        cronDrainEmailOutboxContract,
+      ).drain({ headers: { authorization: "Bearer test-cron-secret" } }),
       [200],
     );
-    expect(retried.body.drained).toBe(1);
+    await flushWaitUntilForTest();
     expect(context.mocks.resend.send).toHaveBeenCalledTimes(4);
     expect(context.mocks.resend.send.mock.calls[3]).toStrictEqual(firstAttempt);
     expect(
@@ -424,7 +423,7 @@ describe("agent mail notifications", () => {
         );
       }),
     );
-    const first = results[0]!.body;
+    const first = results.find((result) => !result.body.deduplicated)!.body;
     expect(first).toMatchObject({
       status: "queued",
       channel: "mail",
@@ -450,6 +449,7 @@ describe("agent mail notifications", () => {
       }),
       [409],
     );
+    await flushWaitUntilForTest();
     await fixture.runs.requestCancelRun(fixture.actor, fixture.runId, [200]);
     expect(
       (
@@ -461,7 +461,7 @@ describe("agent mail notifications", () => {
           [200],
         )
       ).body.status,
-    ).toBe("queued");
+    ).toBe("sent");
     expect(
       (
         await accept(
@@ -504,6 +504,7 @@ describe("agent mail notifications", () => {
         status: "queued",
         deduplicated: false,
       });
+      await flushWaitUntilForTest();
       const replayed = await accept(
         client().mail({
           headers: fixture.headers,
@@ -513,7 +514,7 @@ describe("agent mail notifications", () => {
       );
       expect(replayed.body).toMatchObject({
         notificationId: result.body.notificationId,
-        status: "queued",
+        status: "sent",
         deduplicated: true,
       });
       const stored = await accept(
@@ -525,7 +526,7 @@ describe("agent mail notifications", () => {
       );
       expect(stored.body).toMatchObject({
         notificationId: result.body.notificationId,
-        status: "queued",
+        status: "sent",
         reason: null,
       });
     }
@@ -683,10 +684,26 @@ describe("agent mail notifications", () => {
 
   it("erases queued and skipped receipts on departure, preserves other owners, and permits a living member to rejoin", async () => {
     const fixture = await runningAgent();
+    context.mocks.resend.send.mockResolvedValueOnce({
+      data: null,
+      error: { name: "rate_limit_exceeded", message: "Try again" },
+    });
     const queued = await accept(
       client().mail({ headers: fixture.headers, body: body() }),
       [200],
     );
+    await flushWaitUntilForTest();
+    expect(
+      (
+        await accept(
+          client().get({
+            headers: fixture.headers,
+            params: { id: queued.body.notificationId },
+          }),
+          [200],
+        )
+      ).body.status,
+    ).toBe("queued");
     mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
     await accept(
       preferences().update({
@@ -780,7 +797,7 @@ describe("agent mail notifications", () => {
         ).body,
       ).toMatchObject({
         notificationId: receipt.body.notificationId,
-        status: "queued",
+        status: "sent",
       });
     }
   });

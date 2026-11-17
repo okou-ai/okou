@@ -288,6 +288,7 @@
     "src/signals/services/execution-storage-cache-read.service.ts",
     "src/signals/services/execution-storage.service.ts",
     "src/signals/services/feature-switches.service.ts",
+    "src/signals/services/phone-use-notifications.service.ts",
     "src/signals/services/feishu-custom-connector-permissions.ts",
     "src/signals/services/firewall-network-policy.service.ts",
     "src/signals/services/gmail-automation-account.service.ts",
@@ -695,7 +696,12 @@
     "src/signals/services/workflow-automation-run-callback.service.ts",
     "src/signals/services/execution-workflow-selection.ts",
     "src/signals/services/unstarted-run-cleanup.ts",
-    "src/signals/services/agent-run-cancellation.service.ts"
+    "src/signals/services/agent-run-cancellation.service.ts",
+    "src/signals/services/chat-event-publication.service.ts",
+    "src/signals/services/chat-event-visibility.service.ts",
+    "src/signals/services/cron-project-chat-event-search.service.ts",
+    "src/signals/services/marketing-reward-event-delivery.service.ts",
+    "src/lib/chat-search-bigram.ts"
   ],
   "references": [
     {

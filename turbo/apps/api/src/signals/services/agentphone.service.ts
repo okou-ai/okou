@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
@@ -35,7 +36,6 @@ import {
 import { db$, writeDb$ } from "../external/db";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import {
-  publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
   publishUserSignal,
 } from "../external/realtime";
@@ -1547,11 +1547,15 @@ const runAgentForAgentPhone$ = command(
           userId: args.userLink.userId,
           orgId: args.userLink.orgId,
         });
-        await publishChatThreadMessageCreatedSafely({
-          userId: args.userLink.userId,
-          orgId: args.userLink.orgId,
-          threadId: persisted.chatThreadId,
-        });
+        await set(
+          publishChatThreadMessageCreated$,
+          {
+            userId: args.userLink.userId,
+            orgId: args.userLink.orgId,
+            threadId: persisted.chatThreadId,
+          },
+          signal,
+        );
         const noticed = await settle(
           (async () => {
             const pick = await set(
