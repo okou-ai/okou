@@ -250,7 +250,7 @@ export function FeishuSetupGuide({ step }: { readonly step: FeishuSetupStep }) {
       aria-label={t(($) => {
         return $.connectors.setupGuide.title;
       })}
-      className="order-2 flex shrink-0 flex-col gap-4 bg-gray-50 p-5 @3xl/feishu-setup:order-1 @3xl/feishu-setup:min-h-0 @3xl/feishu-setup:shrink @3xl/feishu-setup:gap-5 @3xl/feishu-setup:p-6 @5xl/feishu-setup:px-8"
+      className="order-2 flex min-w-0 shrink-0 flex-col gap-3 @3xl/feishu-setup:order-1 @3xl/feishu-setup:min-h-0 @3xl/feishu-setup:shrink"
     >
       {GUIDE_PRELOAD_SOURCES.map((src) => {
         return <link key={src} rel="preload" as="image" href={src} />;
@@ -269,7 +269,7 @@ function FeishuGuideStage({ image }: { readonly image: GuideImage }) {
       role="group"
       aria-label={image.alt}
       tabIndex={0}
-      className="relative flex h-72 min-h-0 w-full shrink-0 overflow-hidden rounded-3xl border border-surface-border bg-background @3xl/feishu-setup:h-auto @3xl/feishu-setup:flex-1 @3xl/feishu-setup:shrink"
+      className="relative flex h-80 min-h-0 w-full shrink-0 overflow-hidden rounded-3xl border border-surface-border bg-gray-50 @3xl/feishu-setup:h-auto @3xl/feishu-setup:flex-1 @3xl/feishu-setup:shrink"
     >
       <ZoomableArtifactImageCanvas
         key={image.src}
@@ -278,8 +278,8 @@ function FeishuGuideStage({ image }: { readonly image: GuideImage }) {
         signals={feishuGuideCanvas}
         canvasTestId="feishu-guide-canvas"
         imageTestId="feishu-guide-image"
-        className="bg-background"
-        contentClassName="p-4 @3xl/feishu-setup:p-5"
+        className="bg-gray-50"
+        contentClassName="p-3 @3xl/feishu-setup:p-4"
         pendingContent={<Loader2 size={20} className="animate-spin" />}
       >
         {(controls) => {
@@ -340,14 +340,14 @@ function FeishuGuideControls({
           aria-label={t(($) => {
             return $.connectors.setupGuide.images;
           })}
-          className="flex h-auto w-full items-stretch gap-2"
+          className="flex h-auto w-full flex-wrap items-stretch gap-2"
         >
           {images.map((item, itemIndex) => {
             return (
               <SegmentControlItem
                 key={item.src}
                 value={itemIndex}
-                className="h-auto min-w-0 flex-1 justify-start whitespace-normal rounded-xl border border-surface-border px-2 py-2 text-left text-xs data-checked:border-primary"
+                className="h-auto min-w-0 flex-[1_1_10rem] justify-start whitespace-normal rounded-xl border border-surface-border px-2 py-2 text-left text-xs data-checked:border-primary"
               >
                 <img
                   src={item.src}
@@ -356,7 +356,7 @@ function FeishuGuideControls({
                   height={item.height}
                   className="h-9 w-12 shrink-0 rounded border border-border bg-background object-contain"
                 />
-                <span>
+                <span className="min-w-0 break-words">
                   {itemIndex + 1}. {item.label}
                 </span>
               </SegmentControlItem>

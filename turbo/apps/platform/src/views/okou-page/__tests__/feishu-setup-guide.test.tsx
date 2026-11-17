@@ -26,6 +26,10 @@ test.each(["feishu", "lark"] as const)(
     click(await findAction("button", "Next"));
     const appId = await screen.findByLabelText("App ID");
     const secret = screen.getByLabelText("App Secret");
+    expect(queryAction("button", "Publish")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Step 2 of 7" }),
+    ).not.toBeInTheDocument();
     await fill(appId, "cli_draft");
     await fill(secret, "draft-secret");
     click(getAction("button", "Show App Secret"));
@@ -68,7 +72,7 @@ test.each(["feishu", "lark"] as const)(
 );
 
 test.each(["feishu", "lark"] as const)(
-  "%s review guide switches screenshots without changing the setup step",
+  "%s review guide navigates steps and resets reference screenshots",
   async (platform) => {
     const installation: FeishuInstallationStatus = {
       id: "f0000000-0000-4000-a000-000000000001",
@@ -93,9 +97,7 @@ test.each(["feishu", "lark"] as const)(
     click(getAction("button", "More options for Review bot"));
     click(getAction("link", "Review guide"));
     await screen.findByText("Create an Agent app");
-    for (let index = 0; index < 4; index++) {
-      click(await findAction("button", "Next"));
-    }
+    click(getAction("button", "Permissions"));
     await screen.findByText("Import app and user scopes");
     click(getAction("radio", "2. Paste the JSON and review new scopes"));
     await expect(
@@ -115,6 +117,10 @@ test.each(["feishu", "lark"] as const)(
     expect(json.textContent).toContain('"user"');
     click(await findAction("button", "Next"));
     await screen.findByText("Configure event delivery");
+    expect(screen.getByText("Image 1 of 2")).toBeInTheDocument();
+    click(screen.getByRole("combobox", { name: "Step 6 of 7" }));
+    click(await screen.findByRole("option", { name: "Permissions" }));
+    await screen.findByText("Import app and user scopes");
     expect(screen.getByText("Image 1 of 2")).toBeInTheDocument();
   },
 );
