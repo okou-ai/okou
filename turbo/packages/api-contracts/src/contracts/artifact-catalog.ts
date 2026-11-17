@@ -152,7 +152,6 @@ export interface ArtifactCatalogListQuery {
   readonly kind?: ArtifactCatalogKind;
   readonly chatThreadId?: string;
   readonly keyword?: string;
-  readonly includeKinds?: "true";
 }
 
 export interface ArtifactCatalogListClientQuery {
@@ -161,7 +160,6 @@ export interface ArtifactCatalogListClientQuery {
   readonly kind?: ArtifactCatalogKind;
   readonly chatThreadId?: string;
   readonly keyword?: string;
-  readonly includeKinds?: "true";
 }
 
 export interface ArtifactCatalogGetQuery {
@@ -184,8 +182,6 @@ export interface ArtifactIdPathParams {
 export interface ArtifactCatalogListResponse {
   artifacts: ArtifactSummary[];
   nextCursor: string | null;
-  /** Present only with includeKinds; ignores kind, keyword, cursor and limit. */
-  availableKinds?: ArtifactCatalogKind[];
 }
 
 export interface ArtifactCatalogRequestOptions {
@@ -313,7 +309,6 @@ const artifactCatalogListQuerySchema = object({
   kind: artifactKindSchema.optional(),
   chatThreadId: uuid().optional(),
   keyword: string().trim().min(1).max(256).optional(),
-  includeKinds: literal("true").optional(),
 });
 
 const artifactCatalogGetQuerySchema = object({
@@ -324,7 +319,6 @@ const artifactCatalogGetQuerySchema = object({
 const artifactCatalogListResponseSchema = object({
   artifacts: array(artifactSummarySchema),
   nextCursor: string().nullable(),
-  availableKinds: array(artifactKindSchema).optional(),
 });
 
 /**

@@ -397,21 +397,6 @@ async function publishHostedSite(args: {
 }
 
 describe("GET /api/artifacts/catalog", () => {
-  it("returns authoritative empty kinds only when requested", async () => {
-    const actor = bdd.user();
-    await expect(chat.listArtifactCatalog(actor)).resolves.toStrictEqual({
-      artifacts: [],
-      nextCursor: null,
-    });
-    await expect(
-      chat.listArtifactCatalog(actor, { includeKinds: "true" }),
-    ).resolves.toStrictEqual({
-      artifacts: [],
-      nextCursor: null,
-      availableKinds: [],
-    });
-  });
-
   it("publishes a readable private video catalog and preserves its original chat on reuse", async () => {
     const owner = await catalogActor("Private video catalog owner");
     const first = await sendChatRun(owner.actor, {
@@ -858,7 +843,6 @@ describe("GET /api/artifacts/catalog", () => {
 
     const presentations = await chat.listArtifactCatalog(owner.actor, {
       kind: "presentation",
-      includeKinds: "true",
     });
     expect(
       presentations.artifacts
@@ -867,10 +851,6 @@ describe("GET /api/artifacts/catalog", () => {
         })
         .sort(),
     ).toStrictEqual(filenames.slice().sort());
-    expect(presentations.availableKinds?.slice().sort()).toStrictEqual([
-      "file",
-      "presentation",
-    ]);
     const files = await chat.listArtifactCatalog(owner.actor, { kind: "file" });
     expect(files.artifacts).toStrictEqual([
       expect.objectContaining({ kind: "file", title: "supporting-notes.pdf" }),
@@ -894,14 +874,12 @@ describe("GET /api/artifacts/catalog", () => {
       );
     }
     await expect(
-      chat.listArtifactCatalog(owner.actor, {
-        kind: "presentation",
-        includeKinds: "true",
-      }),
-    ).resolves.toStrictEqual({
-      artifacts: [],
-      nextCursor: null,
-      availableKinds: ["file"],
+      chat.listArtifactCatalog(owner.actor, { kind: "presentation" }),
+    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+    await expect(
+      chat.listArtifactCatalog(owner.actor, { kind: "file" }),
+    ).resolves.toMatchObject({
+      artifacts: [{ kind: "file", title: "supporting-notes.pdf" }],
     });
   });
 
@@ -931,20 +909,16 @@ describe("GET /api/artifacts/catalog", () => {
     ).toStrictEqual(["first-thread-report.txt"]);
     const firstCatalog = await chat.listArtifactCatalog(owner.actor, {
       chatThreadId: first.threadId,
-      includeKinds: "true",
     });
     expect(firstCatalog.artifacts).toStrictEqual([
       expect.objectContaining({ title: "first-thread-report.txt" }),
     ]);
-    expect(firstCatalog.availableKinds).toStrictEqual(["file"]);
     const secondCatalog = await chat.listArtifactCatalog(owner.actor, {
       chatThreadId: second.threadId,
-      includeKinds: "true",
     });
     expect(secondCatalog.artifacts).toStrictEqual([
       expect.objectContaining({ title: "second-thread-report.txt" }),
     ]);
-    expect(secondCatalog.availableKinds).toStrictEqual(["file"]);
     const outsiderFiles = await chat.requestListThreadArtifacts(
       outsider.actor,
       first.threadId,
@@ -953,31 +927,17 @@ describe("GET /api/artifacts/catalog", () => {
     expectApiError(outsiderFiles.body);
     const outsiderCatalog = await chat.listArtifactCatalog(outsider.actor, {
       chatThreadId: first.threadId,
-      includeKinds: "true",
     });
-    expect(outsiderCatalog).toStrictEqual({
-      artifacts: [],
-      nextCursor: null,
-      availableKinds: [],
-    });
+    expect(outsiderCatalog.artifacts).toStrictEqual([]);
     // Check each ownership dimension independently, not only a caller whose
     // user and organization both differ.
     for (const caller of [
       bdd.user({ orgId: owner.actor.orgId }),
       bdd.user({ userId: owner.actor.userId }),
     ]) {
-      for (const chatThreadId of [undefined, first.threadId]) {
-        await expect(
-          chat.listArtifactCatalog(caller, {
-            chatThreadId,
-            includeKinds: "true",
-          }),
-        ).resolves.toStrictEqual({
-          artifacts: [],
-          nextCursor: null,
-          availableKinds: [],
-        });
-      }
+      await expect(
+        chat.listArtifactCatalog(caller, { chatThreadId: first.threadId }),
+      ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
     }
   });
 
@@ -1737,7 +1697,7 @@ describe("GET /api/artifacts/catalog", () => {
     ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
   }, 180_000);
 
-  it("keeps kinds independent of kind, pagination and keyword filters within the catalog scope", async () => {
+  it("paginates a thread and kind filtered catalog without repeats or foreign-thread entries", async () => {
     const owner = await catalogActor("Artifact catalog paging owner");
     const created: string[] = [];
     let threadId: string | undefined;
@@ -1761,16 +1721,6 @@ describe("GET /api/artifacts/catalog", () => {
       filename: "page-other-thread.txt",
       contentType: "text/plain",
     });
-    await publishHostedSite({
-      owner,
-      site: `in-thread-site-${randomUUID().slice(0, 8)}`,
-      threadId,
-    });
-    await publishHostedSite({
-      owner,
-      site: `outside-deck-${randomUUID().slice(0, 8)}`,
-      artifactKind: "presentation-html",
-    });
 
     const collected: string[] = [];
     let cursor: string | undefined;
@@ -1781,14 +1731,8 @@ describe("GET /api/artifacts/catalog", () => {
         cursor,
         chatThreadId: threadId,
         kind: "file",
-        keyword: "page-",
-        includeKinds: "true",
       });
       expect(page.artifacts.length).toBeLessThanOrEqual(1);
-      expect(page.availableKinds?.slice().sort()).toStrictEqual([
-        "file",
-        "hosted-site",
-      ]);
       collected.push(
         ...page.artifacts.map((artifact) => {
           return artifact.title;
@@ -1805,20 +1749,6 @@ describe("GET /api/artifacts/catalog", () => {
       "page-one.txt",
     ]);
     expect(new Set(collected).size).toBe(created.length);
-
-    const unmatched = await chat.listArtifactCatalog(owner.actor, {
-      kind: "avatar",
-      keyword: "no-matching-artifact-title",
-      limit: 1,
-      includeKinds: "true",
-    });
-    expect(unmatched.artifacts).toStrictEqual([]);
-    expect(unmatched.nextCursor).toBeNull();
-    expect(unmatched.availableKinds?.slice().sort()).toStrictEqual([
-      "file",
-      "hosted-site",
-      "presentation",
-    ]);
   }, 180_000);
 
   it("keeps a Runner output associated with its owning prompt when the run is interrupted", async () => {
@@ -1974,9 +1904,7 @@ describe("shared thread routes", () => {
     await readSharedThreadSnapshot(shared.id);
     const listed = await chat.listArtifactCatalog(owner.actor, {
       kind: "shared-thread",
-      includeKinds: "true",
     });
-    expect(listed.availableKinds).toStrictEqual(["shared-thread"]);
     const artifact = listed.artifacts[0];
     if (!artifact) {
       throw new Error("Expected a saved shared conversation");
@@ -1992,13 +1920,8 @@ describe("shared thread routes", () => {
     );
     const after = await chat.listArtifactCatalog(owner.actor, {
       kind: "shared-thread",
-      includeKinds: "true",
     });
-    expect(after).toStrictEqual({
-      artifacts: [],
-      nextCursor: null,
-      availableKinds: [],
-    });
+    expect(after.artifacts).toStrictEqual([]);
     await accept(
       client(sharedThreadsContract).get({ params: { id: shared.id } }),
       [404],

@@ -187,7 +187,6 @@ test("A native PPTX in Presentations keeps its Office preview and original downl
     return respond(200, {
       artifacts: [artifact({ kind: "presentation", title: filename })],
       nextCursor: null,
-      availableKinds: ["presentation"],
     });
   });
   context.mocks.api(artifactCatalogContract.get, ({ respond }) => {

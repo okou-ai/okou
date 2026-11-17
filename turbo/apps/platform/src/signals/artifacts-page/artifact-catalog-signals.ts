@@ -27,8 +27,6 @@ import { ROUTES } from "../route-paths.ts";
 import { onRef, resetSignal } from "../utils.ts";
 import { artifactDetailPreview } from "./artifact-catalog-preview.ts";
 
-export const availableArtifactCatalogKinds$ = pageCatalog.availableKinds$;
-
 export const selectedArtifactCatalogKind$ = pageCatalog.selectedKind$;
 
 export const setArtifactCatalogKindFromRoute$ = pageCatalog.setKind$;

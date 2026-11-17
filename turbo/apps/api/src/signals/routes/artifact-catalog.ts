@@ -28,7 +28,6 @@ const listArtifactCatalogInner$ = command(
         kind: query.kind,
         chatThreadId: query.chatThreadId,
         keyword: query.keyword,
-        includeKinds: query.includeKinds,
       },
       signal,
     );
@@ -39,9 +38,6 @@ const listArtifactCatalogInner$ = command(
       body: {
         artifacts: [...result.artifacts],
         nextCursor: result.nextCursor,
-        ...(result.availableKinds === undefined
-          ? {}
-          : { availableKinds: [...result.availableKinds] }),
       },
     };
   },

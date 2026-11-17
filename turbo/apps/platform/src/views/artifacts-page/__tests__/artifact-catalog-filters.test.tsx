@@ -18,33 +18,23 @@ import {
 
 const context = testContext();
 
-test("Only populated artifact kind filters remain available while switching catalogs", async () => {
+test("Artifact kind filters remain available while switching catalogs", async () => {
   const avatarRequestStarted = context.mocks.deferred<void>();
   const releaseAvatar = context.mocks.deferred<void>();
   context.mocks.api(
     artifactCatalogContract.list,
     async ({ query, respond }) => {
-      if (query.limit === 1) {
-        return respond(403, {
-          error: { code: "FORBIDDEN", message: "Kind probes are unavailable" },
-        });
-      }
       if (query.kind === "avatar") {
         avatarRequestStarted.resolve();
         await releaseAvatar.promise;
         return respond(200, {
           artifacts: [artifact({ kind: "avatar", title: "avatar-video.mp4" })],
           nextCursor: null,
-          availableKinds: ["presentation", "avatar"],
         });
       }
       return respond(200, {
-        artifacts:
-          query.kind === "presentation"
-            ? [artifact({ kind: "presentation", title: "launch-deck" })]
-            : [],
+        artifacts: [artifact({ kind: "presentation", title: "launch-deck" })],
         nextCursor: null,
-        availableKinds: ["presentation", "avatar"],
       });
     },
   );
@@ -52,12 +42,20 @@ test("Only populated artifact kind filters remain available while switching cata
   await setupArtifactCatalogPage(context);
 
   await expect(findArtifactAction("launch-deck")).resolves.toBeInTheDocument();
-  const filters = await screen.findByLabelText("Artifact kind filters");
+  const filters = screen.getByLabelText("Artifact kind filters");
   expect(
     queryAllByRoleFast("button", filters).map((button) => {
       return button.textContent?.trim();
     }),
-  ).toStrictEqual(["Presentations", "Avatars"]);
+  ).toStrictEqual([
+    "Presentations",
+    "Websites",
+    "Images",
+    "Videos",
+    "Avatars",
+    "Shared chats",
+    "Files",
+  ]);
   expect(
     getButtonByName("Show presentation artifacts", filters),
   ).toHaveAttribute("aria-pressed", "true");
@@ -72,11 +70,6 @@ test("Only populated artifact kind filters remain available while switching cata
     "aria-pressed",
     "true",
   );
-  expect(
-    queryAllByRoleFast("button", filters).map((button) => {
-      return button.textContent?.trim();
-    }),
-  ).toStrictEqual(["Presentations", "Avatars"]);
 
   releaseAvatar.resolve();
 
@@ -86,13 +79,9 @@ test("Only populated artifact kind filters remain available while switching cata
   expect(screen.queryByText("launch-deck")).not.toBeInTheDocument();
 });
 
-test("An empty artifact catalog has no kind chips", async () => {
+test("Artifact kind filters remain available for an empty catalog", async () => {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, {
-      artifacts: [],
-      nextCursor: null,
-      availableKinds: [],
-    });
+    return respond(200, { artifacts: [], nextCursor: null });
   });
 
   await setupArtifactCatalogPage(context);
@@ -100,74 +89,32 @@ test("An empty artifact catalog has no kind chips", async () => {
   await expect(
     screen.findByText("No artifacts found"),
   ).resolves.toBeInTheDocument();
-  expect(
-    screen.queryByLabelText("Artifact kind filters"),
-  ).not.toBeInTheDocument();
-});
-
-test("Kind chips include artifacts outside the current catalog page", async () => {
-  const files = Array.from({ length: 60 }, (_, index) => {
-    return artifact({
-      id: `a0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
-      title: `report-${index}.txt`,
-    });
-  });
-  const image = artifact({
-    id: "b0000000-0000-4000-a000-000000000001",
-    kind: "image",
-    title: "older-image.png",
-  });
-  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
-    return respond(200, {
-      artifacts:
-        query.kind === "file"
-          ? files.slice(0, query.limit)
-          : query.kind === "image"
-            ? [image]
-            : [],
-      nextCursor: query.kind === "file" ? "more-files" : null,
-      availableKinds: ["file", "image"],
-    });
-  });
-
-  await setupArtifactCatalogPage(context, { path: "/artifacts?tab=file" });
-
-  await expect(findArtifactAction("report-0.txt")).resolves.toBeInTheDocument();
-  const filters = await screen.findByLabelText("Artifact kind filters");
+  const filters = screen.getByLabelText("Artifact kind filters");
   expect(
     queryAllByRoleFast("button", filters).map((button) => {
       return button.textContent?.trim();
     }),
-  ).toStrictEqual(["Images", "Files"]);
+  ).toStrictEqual([
+    "Presentations",
+    "Websites",
+    "Images",
+    "Videos",
+    "Avatars",
+    "Shared chats",
+    "Files",
+  ]);
 
-  click(getButtonByName("Show image artifacts", filters));
+  click(getButtonByName("Show file artifacts", filters));
 
-  await expect(findArtifactAction(image.title)).resolves.toBeInTheDocument();
-  expect(getButtonByName("Show file artifacts", filters)).toBeInTheDocument();
-});
-
-test("Kind chips still work when an older API omits kind metadata", async () => {
-  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
-    return respond(200, {
-      artifacts:
-        query.kind === "image"
-          ? [artifact({ kind: "image", title: "legacy-api-image.png" })]
-          : [],
-      nextCursor: null,
-    });
+  await waitFor(() => {
+    expect(getButtonByName("Show file artifacts", filters)).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
-
-  await setupArtifactCatalogPage(context, { path: "/artifacts?tab=image" });
-
   await expect(
-    findArtifactAction("legacy-api-image.png"),
+    screen.findByText("No artifacts found"),
   ).resolves.toBeInTheDocument();
-  const filters = await screen.findByLabelText("Artifact kind filters");
-  expect(
-    queryAllByRoleFast("button", filters).map((button) => {
-      return button.textContent?.trim();
-    }),
-  ).toStrictEqual(["Images"]);
 });
 
 test.each([false, true])(
@@ -179,10 +126,8 @@ test.each([false, true])(
       artifactCatalogContract.list,
       async ({ query, respond }) => {
         if (query.kind === "shared-thread") {
-          if (query.limit !== 1) {
-            sharedRequestStarted.resolve();
-            await releaseSharedConversation.promise;
-          }
+          sharedRequestStarted.resolve();
+          await releaseSharedConversation.promise;
           return respond(200, {
             artifacts: [
               artifact({
@@ -212,7 +157,7 @@ test.each([false, true])(
     await expect(
       findArtifactAction("launch-deck"),
     ).resolves.toBeInTheDocument();
-    const filters = await screen.findByLabelText("Artifact kind filters");
+    const filters = screen.getByLabelText("Artifact kind filters");
     click(getButtonByName("Show shared chat artifacts", filters));
     await sharedRequestStarted.promise;
 

@@ -175,10 +175,7 @@ test.each([false, true])(
     ).resolves.toBeInTheDocument();
     expect(screen.queryByText(report.title)).not.toBeInTheDocument();
     await waitFor(() => {
-      expect(
-        screen.queryByLabelText("Artifact kind filters"),
-      ).not.toBeInTheDocument();
-      expect(document.querySelector("main")).toHaveFocus();
+      return expect(document.querySelector("main")).toHaveFocus();
     });
   },
 );
@@ -308,22 +305,12 @@ test("deleting a later-page artifact discards stale pages when the catalog refre
 
 test("a new publication can reappear under the same catalog identity", async () => {
   const website = artifact({ kind: "hosted-site" });
-  const retainedFile = artifact({
-    id: "a0000000-0000-4000-a000-000000000002",
-    title: "retained-file.txt",
-  });
   mockPreview(website);
   let removed = false;
   context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
     return respond(200, {
-      artifacts:
-        query.kind === "file"
-          ? [retainedFile]
-          : !removed && query.kind === "hosted-site"
-            ? [website]
-            : [],
+      artifacts: !removed && query.kind === "hosted-site" ? [website] : [],
       nextCursor: null,
-      availableKinds: removed ? ["file"] : ["hosted-site", "file"],
     });
   });
   context.mocks.api(artifactCatalogContract.delete, ({ respond }) => {
@@ -339,22 +326,15 @@ test("a new publication can reappear under the same catalog identity", async () 
   await expect(
     screen.findByText("No artifacts found"),
   ).resolves.toBeInTheDocument();
-  await waitFor(() => {
-    const filters = screen.getByLabelText("Artifact kind filters");
-    expect(
-      queryAllByRoleFast("button", filters).map((button) => {
-        return button.textContent?.trim();
-      }),
-    ).toStrictEqual(["Files"]);
-  });
-  // A subsequent server publication, observed through catalog invalidation.
+  // A subsequent server publication, observed through a fresh catalog request.
   removed = false;
-  context.mocks.ably.trigger("artifact:changed", { artifactId: website.id });
-  await expect(findArtifactAction(report.title)).resolves.toBeInTheDocument();
+  click(getButtonByName("Show file artifacts"));
   await waitFor(() => {
-    expect(getButtonByName("Show website artifacts")).toHaveAttribute(
+    expect(getButtonByName("Show file artifacts")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
   });
+  click(getButtonByName("Show website artifacts"));
+  await expect(findArtifactAction(report.title)).resolves.toBeInTheDocument();
 });

@@ -1229,13 +1229,11 @@ interface ListArtifactCatalogArgs {
   readonly kind?: ArtifactCatalogKind;
   readonly chatThreadId?: string;
   readonly keyword?: string;
-  readonly includeKinds?: "true";
 }
 
 interface ListArtifactCatalogResult {
   readonly artifacts: readonly ArtifactSummary[];
   readonly nextCursor: string | null;
-  readonly availableKinds?: readonly ArtifactCatalogKind[];
 }
 
 /** Bounded, explicit recovery for pending files, independent of catalog reads. */
@@ -1344,14 +1342,6 @@ export const listArtifactCatalog$ = command(
     const db = get(db$);
     const limit = args.limit ?? ARTIFACT_CATALOG_DEFAULT_LIMIT;
     const cursor = args.cursor ? decodeArtifactCursor(args.cursor) : null;
-    const scopeFilter = and(
-      eq(artifacts.orgId, args.orgId),
-      artifactCatalogOwnerFilter(args.userId),
-      isNull(artifacts.deletedAt),
-      args.chatThreadId
-        ? eq(artifacts.chatThreadId, args.chatThreadId)
-        : undefined,
-    );
     const keywordPattern = args.keyword
       ? `%${args.keyword
           .replaceAll("\\", String.raw`\\`)
@@ -1376,8 +1366,13 @@ export const listArtifactCatalog$ = command(
       .from(artifacts)
       .where(
         and(
-          scopeFilter,
+          eq(artifacts.orgId, args.orgId),
+          artifactCatalogOwnerFilter(args.userId),
+          isNull(artifacts.deletedAt),
           args.kind ? artifactCatalogKindFilter(args.kind) : undefined,
+          args.chatThreadId
+            ? eq(artifacts.chatThreadId, args.chatThreadId)
+            : undefined,
           keywordPattern ? ilike(artifacts.title, keywordPattern) : undefined,
           cursor
             ? lt(
@@ -1391,29 +1386,11 @@ export const listArtifactCatalog$ = command(
       .limit(limit + 1);
     signal.throwIfAborted();
 
-    const kinds =
-      args.includeKinds === "true"
-        ? await db
-            .selectDistinct({
-              kind: artifactCatalogEffectiveKind(),
-            })
-            .from(artifacts)
-            .where(scopeFilter)
-        : undefined;
-    signal.throwIfAborted();
-
     const hasMore = rows.length > limit;
     const pageRows = hasMore ? rows.slice(0, limit) : rows;
     const lastRow = pageRows.at(-1);
     return {
       artifacts: pageRows.map(toArtifactSummary),
-      ...(kinds === undefined
-        ? {}
-        : {
-            availableKinds: kinds.map(({ kind }) => {
-              return kind;
-            }),
-          }),
       nextCursor:
         hasMore && lastRow
           ? encodeArtifactCursor({
