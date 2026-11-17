@@ -84,6 +84,7 @@ export const featureGuideContentSchema = object({
   items: array(
     object({
       featureId: string().min(1).max(100),
+      featureSwitch: string().max(100).nullable().optional(),
       title: string().min(1).max(120),
       description: string().min(1).max(1000),
       media: featureGuideMediaSchema.optional(),
