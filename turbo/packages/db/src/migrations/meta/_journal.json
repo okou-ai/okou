@@ -3396,6 +3396,13 @@
       "when": 1794876635401,
       "tag": "1563_backfill_member_memory_preparation",
       "breakpoints": true
+    },
+    {
+      "idx": 1564,
+      "version": "7",
+      "when": 1794880308395,
+      "tag": "1564_preserve_initialized_single_agent_members",
+      "breakpoints": true
     }
   ]
 }

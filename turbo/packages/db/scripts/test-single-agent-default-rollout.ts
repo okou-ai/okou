@@ -30,7 +30,7 @@ const journal = object({
   ),
 );
 const migration = journal.entries.find((entry) => {
-  return entry.tag === "1552_preserve_initialized_single_agent_members";
+  return entry.tag === "1564_preserve_initialized_single_agent_members";
 });
 assert.ok(migration);
 const staff = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
