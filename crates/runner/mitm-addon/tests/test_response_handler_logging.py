@@ -53,7 +53,7 @@ class _DecodeGuardHeaderValue(bytes):
         raise AssertionError("over-budget dependency header values must not be decoded")
 
 
-def test_calculates_latency_and_logs(registry_file, tmp_path, real_flow, mitm_ctx):
+def test_calculates_latency_and_logs(tmp_path, real_flow, mitm_ctx):
     flow = real_flow(with_response=False, host="api.anthropic.com")
     log_path = str(tmp_path / "network.jsonl")
 
