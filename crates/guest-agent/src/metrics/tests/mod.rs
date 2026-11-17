@@ -287,7 +287,7 @@ async fn serialization_preserves_independent_unavailable_and_zero_observations()
     let mut tracker = CpuTracker::new();
     let sources = MetricsSources::new(PathBuf::from("/proc/stat"), None);
     let mut entry = collect_metrics(&mut tracker, &sources, 0).await;
-    let zero = disk::FilesystemObservation {
+    let zero = filesystem::FilesystemObservation {
         used_bytes: 0,
         total_bytes: 200,
         available_bytes: 190,

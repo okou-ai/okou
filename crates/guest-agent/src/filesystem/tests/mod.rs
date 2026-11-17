@@ -1,3 +1,4 @@
+//! Descriptor-pinned filesystem observation contracts.
 use super::*;
 use std::os::unix::fs::symlink;
 

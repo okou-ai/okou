@@ -7,7 +7,7 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
-pub(super) struct FilesystemObservation {
+pub(crate) struct FilesystemObservation {
     pub used_bytes: u64,
     pub total_bytes: u64,
     pub available_bytes: u64,
@@ -16,7 +16,7 @@ pub(super) struct FilesystemObservation {
     pub available_inodes: u64,
 }
 
-pub(super) fn observe() -> (Option<FilesystemObservation>, Option<FilesystemObservation>) {
+pub(crate) fn observe() -> (Option<FilesystemObservation>, Option<FilesystemObservation>) {
     observe_at(Path::new("/"))
 }
 
