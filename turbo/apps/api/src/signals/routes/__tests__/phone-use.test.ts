@@ -578,14 +578,6 @@ test(
         [409],
       );
     });
-    const stateOnly = await scenario.run(() => {
-      authenticate(actor.userId, orgId, sessionId);
-      return accept(
-        client.next({ headers, params, body: { generation, stateOnly: true } }),
-        [200],
-      );
-    });
-    expect(stateOnly.body.operation).toBeNull();
     const claimed = await scenario.run(() => {
       authenticate(actor.userId, orgId, sessionId);
       return accept(

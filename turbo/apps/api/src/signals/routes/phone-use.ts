@@ -1180,7 +1180,7 @@ const next$ = command(async ({ get, set }, signal: AbortSignal) => {
       };
     }
   }
-  if (!device.ready || body.data.stateOnly) {
+  if (!device.ready) {
     return { status: 200 as const, body: { operation: null } };
   }
   return set(claimPhoneOperation$, device, body.data, signal);
@@ -1272,10 +1272,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     row.status === "approval_required" &&
     result.status === "approval_required"
   ) {
-    return {
-      status: 200 as const,
-      body: { ok: true as const, expiresAt: row.expiresAt.toISOString() },
-    };
+    return { status: 200 as const, body: { ok: true as const } };
   }
   let screenshotKey: string | undefined;
   if (result.screenshotBase64) {
@@ -1324,13 +1321,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (updated) {
     publishPhoneUseResultChanged(updated);
   }
-  return {
-    status: 200 as const,
-    body: {
-      ok: true as const,
-      expiresAt: (updated ?? row).expiresAt.toISOString(),
-    },
-  };
+  return { status: 200 as const, body: { ok: true as const } };
 });
 
 const validateBody$ = bodyResultOf(contract.validate),

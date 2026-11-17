@@ -247,7 +247,6 @@ export const phoneUseContract = c.router({
       threadId: uuid().optional(),
       activeRunId: uuid().optional(),
       activeGrantId: uuid().optional(),
-      stateOnly: boolean().optional(),
     }),
     responses: {
       ...errors,
@@ -272,9 +271,6 @@ export const phoneUseContract = c.router({
     path: "/api/phone-use/devices/:deviceId/complete",
     pathParams: devicePath,
     body: authority.extend({ operationId: uuid(), result: phoneResultSchema }),
-    responses: {
-      ...errors,
-      200: object({ ok: literal(true), expiresAt: string().optional() }),
-    },
+    responses: { ...errors, 200: object({ ok: literal(true) }) },
   },
 });
