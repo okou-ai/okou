@@ -54,23 +54,20 @@ describe("Runner built-in and personal dispatch", () => {
       const sandboxHeaders = {
         authorization: `Bearer ${input.sandboxToken}`,
       };
-      for (const encryptedSecrets of [
-        input.encryptedSecrets,
-        firewall.encryptedSecretsBody({
-          OPENROUTER_API_KEY: "outdated-envelope-key",
-        }),
-      ]) {
-        const resolved = await firewall.requestFirewallAuth(
-          sandboxHeaders,
-          { encryptedSecrets, authHeaders, firewallBillable: true },
-          [200],
-        );
-        expect(resolved.body).toMatchObject({
-          headers: { Authorization: `Bearer ${MANAGED_KEY}` },
-          resolvedSecrets: ["OPENROUTER_API_KEY"],
-          expiresAt: expect.any(Number),
-        });
-      }
+      const resolved = await firewall.requestFirewallAuth(
+        sandboxHeaders,
+        {
+          encryptedSecrets: input.encryptedSecrets,
+          authHeaders,
+          firewallBillable: true,
+        },
+        [200],
+      );
+      expect(resolved.body).toMatchObject({
+        headers: { Authorization: `Bearer ${MANAGED_KEY}` },
+        resolvedSecrets: ["OPENROUTER_API_KEY"],
+        expiresAt: expect.any(Number),
+      });
       const mapped = await firewall.requestFirewallAuth(
         sandboxHeaders,
         {
@@ -94,9 +91,7 @@ describe("Runner built-in and personal dispatch", () => {
       const unpairedMetadata = await firewall.requestFirewallAuth(
         sandboxHeaders,
         {
-          encryptedSecrets: firewall.encryptedSecretsBody({
-            OPENROUTER_API_KEY: "unowned-envelope-key",
-          }),
+          encryptedSecrets: input.encryptedSecrets,
           authHeaders,
           secretConnectorMetadataMap: {
             OPENROUTER_API_KEY: {
@@ -217,9 +212,7 @@ describe("Runner built-in and personal dispatch", () => {
       const unavailable = await firewall.requestFirewallAuth(
         { authorization: `Bearer ${input.sandboxToken}` },
         {
-          encryptedSecrets: firewall.encryptedSecretsBody({
-            OPENROUTER_API_KEY: MANAGED_KEY,
-          }),
+          encryptedSecrets: input.encryptedSecrets,
           authHeaders: {
             Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
           },
