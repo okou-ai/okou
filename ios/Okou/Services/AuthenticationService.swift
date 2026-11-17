@@ -34,6 +34,9 @@ final class AuthenticationService {
   }
 
   let clerk: Clerk?
+  #if STAGING
+    @ObservationIgnored private var refreshDiagnostics: ClerkRefreshDiagnostics?
+  #endif
   private(set) var presentation: IdentityPresentation?
   private let presentationDirectory: URL?
   private var isRestoringSession = true
@@ -101,9 +104,23 @@ final class AuthenticationService {
       errorMessage = AuthenticationError.notConfigured.localizedDescription
       return
     }
-    clerk = Clerk.configure(
-      publishableKey: key,
-      options: .init(telemetryEnabled: false, keychainConfig: PushConfiguration.keychain()))
+    #if STAGING
+      let diagnostics = ClerkRefreshDiagnostics()
+      refreshDiagnostics = diagnostics
+      clerk = ClerkRefreshDiagnostics.$context.withValue(
+        .init(source: .sdk, owner: diagnostics.id)
+      ) {
+        Clerk.configure(
+          publishableKey: key,
+          options: .init(
+            telemetryEnabled: false, keychainConfig: PushConfiguration.keychain(),
+            middleware: diagnostics.middleware))
+      }
+    #else
+      clerk = Clerk.configure(
+        publishableKey: key,
+        options: .init(telemetryEnabled: false, keychainConfig: PushConfiguration.keychain()))
+    #endif
   }
 
   var isAuthenticated: Bool {
@@ -227,7 +244,11 @@ final class AuthenticationService {
     let events = clerk.auth.events
     await withTaskCancellationHandler {
       await withDiscardingTaskGroup { group in
-        group.addTask { await self.refresh() }
+        #if STAGING
+          group.addTask { await self.refresh(diagnosticSource: .startup) }
+        #else
+          group.addTask { await self.refresh() }
+        #endif
         for await event in events {
           guard !Task.isCancelled else { break }
           switch event {
@@ -268,12 +289,43 @@ final class AuthenticationService {
     await clientRefreshTask?.task.value
   }
 
+  #if STAGING
+    func refresh(diagnosticSource: ClerkRefreshDiagnostics.Source) async {
+      await ClerkRefreshDiagnostics.$source.withValue(diagnosticSource) { await refresh() }
+    }
+  #endif
+
   private func beginClientRefresh() -> Task<Result<Void, Error>, Never> {
-    if let clientRefreshTask { return clientRefreshTask.identity }
+    if let clientRefreshTask {
+      #if STAGING
+        refreshDiagnostics?.record("joined", refreshID: clientRefreshTask.id)
+      #endif
+      return clientRefreshTask.identity
+    }
     let id = UUID()
-    let identity = Task { await self.restoreSession() }
+    #if STAGING
+      refreshDiagnostics?.record("started", refreshID: id)
+      let context = refreshDiagnostics.map {
+        ClerkRefreshDiagnostics.Context(
+          source: ClerkRefreshDiagnostics.source, owner: $0.id, refreshID: id.uuidString)
+      }
+    #endif
+    let identity = Task {
+      #if STAGING
+        return await ClerkRefreshDiagnostics.$context.withValue(context) {
+          await self.restoreSession()
+        }
+      #else
+        return await self.restoreSession()
+      #endif
+    }
     let task = Task {
-      defer { if clientRefreshTask?.id == id { clientRefreshTask = nil } }
+      defer {
+        #if STAGING
+          refreshDiagnostics?.record("finished", refreshID: id)
+        #endif
+        if clientRefreshTask?.id == id { clientRefreshTask = nil }
+      }
       guard case .success = await identity.value, !Task.isCancelled else { return }
       await refreshWorkspaces()
     }
@@ -505,7 +557,14 @@ final class AuthenticationService {
     else { throw AuthenticationError.workspaceChanged }
     let presentedScope = presentationScopeID
     if resolvedWorkspaceIdentity != workspaceIdentity {
-      let result = await beginClientRefresh().value
+      #if STAGING
+        let task = ClerkRefreshDiagnostics.$source.withValue(.accessToken) {
+          beginClientRefresh()
+        }
+        let result = await task.value
+      #else
+        let result = await beginClientRefresh().value
+      #endif
       try Task.checkCancellation()
       try result.get()
     }

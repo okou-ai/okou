@@ -148,7 +148,13 @@ final class NotificationService {
     session: URLSession = .shared
   ) {
     prepareWorkspace = { [weak self] in
-      if authentication.isLoading { await authentication.refresh() }
+      if authentication.isLoading {
+        #if STAGING
+          await authentication.refresh(diagnosticSource: .notification)
+        #else
+          await authentication.refresh()
+        #endif
+      }
       return self?.data(
         authentication: authentication, configuration: configuration, session: session)
     }
