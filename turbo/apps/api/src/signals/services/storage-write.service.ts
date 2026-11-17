@@ -1,19 +1,38 @@
+import type {
+  CommitStorageUploadInput,
+  CommitStorageForStorageInput,
+  CommitStorageResponse,
+  StorageErrorResponse,
+  StorageRow,
+  StorageVersionRow,
+  VerifiedStorageCommit,
+} from "./storage-write-protocol";
 import {
   computeContentHashFromHashes,
   type FileEntryWithHash,
 } from "@okouai/api-contracts/contracts/storage-content-hash";
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
 import type { MemoryMergeContext } from "@okouai/api-contracts/contracts/webhooks";
+import {
+  memberMemories,
+  memoryVersions,
+  memoryVersionLineage,
+} from "@okouai/db/schema/member-memory";
+import {
+  memberMemoryStorageRecord,
+  memberMemoryVersionRecord,
+  isMemberMemoryIdentity,
+} from "./member-memory-records";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ne, or, sql } from "drizzle-orm";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
-import { badRequestMessage, conflict, notFound } from "../../lib/error";
+import { badRequestMessage, notFound } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
 import { db$, writeDb$ } from "../external/db";
@@ -62,26 +81,10 @@ interface PrepareStorageForStorageInput extends PrepareStorageUploadInput {
   readonly storageId: string;
 }
 
-interface CommitStorageUploadInput {
-  readonly versionId: string;
-  readonly files: readonly FileEntryWithHash[];
-  readonly runId?: string;
-  readonly parentVersionId?: string;
-  readonly message?: string;
-}
-
 interface CommitStorageInput extends CommitStorageUploadInput {
   readonly auth: SandboxAuth;
   readonly storageId: string;
 }
-
-export interface CommitStorageForStorageInput extends CommitStorageUploadInput {
-  readonly storageId: string;
-  readonly sandboxAuth?: SandboxAuth;
-}
-
-export type StorageRow = typeof storages.$inferSelect;
-export type StorageVersionRow = typeof storageVersions.$inferSelect;
 
 interface MountedWritebackStorage {
   readonly runStatus: typeof agentRuns.$inferSelect.status;
@@ -104,28 +107,6 @@ function storageRowSelection() {
   };
 }
 
-export type StorageErrorResponse =
-  | ReturnType<typeof badRequestMessage>
-  | ReturnType<typeof notFound>
-  | {
-      readonly status: 413;
-      readonly body: {
-        readonly error: {
-          readonly message: string;
-          readonly code: "PAYLOAD_TOO_LARGE";
-        };
-      };
-    }
-  | {
-      readonly status: 500;
-      readonly body: {
-        readonly error: {
-          readonly message: string;
-          readonly code: "INTERNAL_ERROR";
-        };
-      };
-    };
-
 type PrepareStorageResponse =
   | {
       readonly status: 200;
@@ -146,21 +127,6 @@ type PrepareStorageResponse =
       };
     }
   | StorageErrorResponse;
-
-export type CommitStorageResponse =
-  | {
-      readonly status: 200;
-      readonly body: {
-        readonly success: true;
-        readonly versionId: string;
-        readonly storageName: string;
-        readonly size: number;
-        readonly fileCount: number;
-        readonly deduplicated?: boolean;
-      };
-    }
-  | StorageErrorResponse
-  | ReturnType<typeof conflict>;
 
 function payloadTooLarge(message: string): StorageErrorResponse {
   return {
@@ -193,6 +159,7 @@ const readMountedWritebackStorage$ = command(
         runStatus: agentRuns.status,
         storageMounts: agentRuns.storageMounts,
         storage: storageRowSelection(),
+        memory: memberMemories,
       })
       .from(agentRuns)
       .leftJoin(
@@ -209,7 +176,19 @@ const readMountedWritebackStorage$ = command(
       WHERE mount.value->>'orgId' = ${storages.orgId}
         AND mount.value->>'userId' = ${storages.userId}
         AND mount.value->>'name' = ${storages.name}
+        AND NOT (mount.value->>'name'=${MEMORY_ARTIFACT_NAME} AND mount.value->>'userId'<>'__org__')
     )`,
+        ),
+      )
+      .leftJoin(
+        memberMemories,
+        and(
+          eq(memberMemories.id, args.storageId),
+          sql`EXISTS (SELECT 1 FROM (
+          SELECT entry.value FROM jsonb_array_elements(${agentRuns.storageMounts}) WITH ORDINALITY AS entry(value,position)
+          WHERE entry.value->>'storageId'=${args.storageId} AND entry.value->'writeback'='true'::jsonb ORDER BY entry.position LIMIT 1
+        ) AS mount WHERE mount.value->>'orgId'=${memberMemories.orgId}
+          AND mount.value->>'userId'=${memberMemories.userId} AND mount.value->>'name'=${MEMORY_ARTIFACT_NAME})`,
         ),
       )
       .where(
@@ -224,13 +203,22 @@ const readMountedWritebackStorage$ = command(
     if (!mounted) {
       return notFound("Agent run not found");
     }
-    return mounted.storage
+    const mount = mounted.storageMounts?.find((entry) => {
+      return entry.storageId === args.storageId && entry.writeback;
+    });
+    const memoryOwned = mount !== undefined && isMemberMemoryIdentity(mount);
+    if (memoryOwned && !mounted.memory) {
+      throw new Error("Accepted member Memory authority is unavailable");
+    }
+    const storage =
+      memoryOwned && mounted.memory
+        ? memberMemoryStorageRecord(mounted.memory)
+        : mounted.storage;
+    return storage
       ? {
           runStatus: mounted.runStatus,
-          storage: mounted.storage,
-          capturedVersionId: mounted.storageMounts?.find((mount) => {
-            return mount.storageId === args.storageId && mount.writeback;
-          })?.version,
+          storage,
+          capturedVersionId: mount?.version,
         }
       : notFound("Writeback storage not found");
   },
@@ -240,17 +228,31 @@ const findStorageVersion$ = command(
   async (
     { get },
     args: {
-      readonly storageId: string;
+      readonly storage: StorageRow;
       readonly versionId: string;
     },
     signal: AbortSignal,
   ): Promise<StorageVersionRow | undefined> => {
+    if (isMemberMemoryIdentity(args.storage)) {
+      const [memory] = await get(db$)
+        .select()
+        .from(memoryVersions)
+        .where(
+          and(
+            eq(memoryVersions.memoryId, args.storage.id),
+            eq(memoryVersions.id, args.versionId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      return memory ? memberMemoryVersionRecord(memory) : undefined;
+    }
     const [version] = await get(db$)
       .select()
       .from(storageVersions)
       .where(
         and(
-          eq(storageVersions.storageId, args.storageId),
+          eq(storageVersions.storageId, args.storage.id),
           eq(storageVersions.id, args.versionId),
         ),
       )
@@ -269,14 +271,24 @@ const findStorageById$ = command(
     },
     signal: AbortSignal,
   ): Promise<StorageRow | undefined> => {
-    const [storage] = await get(db$)
-      .select(storageRowSelection())
-      .from(storages)
-      .where(eq(storages.id, args.storageId))
-      .limit(1);
-
+    const [row] = await get(db$)
+      .select({ memory: memberMemories, storage: storageRowSelection() })
+      .from(sql`(SELECT ${args.storageId}::uuid AS id) AS requested_root`)
+      .leftJoin(memberMemories, eq(memberMemories.id, args.storageId))
+      .leftJoin(
+        storages,
+        and(
+          eq(storages.id, args.storageId),
+          or(
+            ne(storages.name, MEMORY_ARTIFACT_NAME),
+            eq(storages.userId, "__org__"),
+          ),
+        ),
+      );
     signal.throwIfAborted();
-    return storage;
+    return row?.memory
+      ? memberMemoryStorageRecord(row.memory)
+      : (row?.storage ?? undefined);
   },
 );
 
@@ -296,7 +308,7 @@ const prepareMemoryMergeContext$ = command(
       versions.map(async (versionId) => {
         const version = await set(
           findStorageVersion$,
-          { storageId: args.storage.id, versionId },
+          { storage: args.storage, versionId },
           signal,
         );
         const source = memberMemorySnapshotSource({
@@ -337,10 +349,10 @@ const prepareMemoryMergeContext$ = command(
 
 const resolvePreparedFiles$ = command(
   async (
-    { get },
+    { get, set },
     args: {
       readonly bucket: string;
-      readonly storageId: string;
+      readonly storage: StorageRow;
       readonly input: PrepareStorageUploadInput;
     },
     signal: AbortSignal,
@@ -350,16 +362,11 @@ const resolvePreparedFiles$ = command(
     if (!baseVersion || !changes) {
       return args.input.files;
     }
-    const [baseVersionRecord] = await get(db$)
-      .select()
-      .from(storageVersions)
-      .where(
-        and(
-          eq(storageVersions.storageId, args.storageId),
-          eq(storageVersions.id, baseVersion),
-        ),
-      )
-      .limit(1);
+    const baseVersionRecord = await set(
+      findStorageVersion$,
+      { storage: args.storage, versionId: baseVersion },
+      signal,
+    );
     signal.throwIfAborted();
     if (!baseVersionRecord || baseVersionRecord.fileCount === 0) {
       return args.input.files;
@@ -484,11 +491,6 @@ const verifyUploadedStorageFiles$ = command(
   },
 );
 
-export interface VerifiedStorageCommit {
-  readonly archiveSize: number;
-  readonly s3Key: string;
-}
-
 const verifyStorageCommit$ = command(
   async (
     { set },
@@ -549,6 +551,7 @@ const commitVerifiedStorageVersion$ = command(
     args: {
       readonly input: CommitStorageForStorageInput;
       readonly verification: VerifiedStorageCommit;
+      readonly storage: StorageRow;
     },
     signal: AbortSignal,
   ): Promise<CommitStorageResponse> => {
@@ -557,6 +560,7 @@ const commitVerifiedStorageVersion$ = command(
       args.input,
       args.verification,
       nowDate(),
+      args.storage,
     );
     signal.throwIfAborted();
     const [row] = parseRawRows(
@@ -601,7 +605,7 @@ const prepareStorageUploadForStorage$ = command(
 
     const mergedFiles = await set(
       resolvePreparedFiles$,
-      { bucket, storageId: storage.id, input: args },
+      { bucket, storage, input: args },
       signal,
     );
     signal.throwIfAborted();
@@ -609,7 +613,7 @@ const prepareStorageUploadForStorage$ = command(
 
     const existingVersion = await set(
       findStorageVersion$,
-      { storageId: storage.id, versionId },
+      { storage, versionId },
       signal,
     );
     signal.throwIfAborted();
@@ -657,7 +661,7 @@ const commitStorageUploadForStorage$ = command(
 
     const existingVersion = await set(
       findStorageVersion$,
-      { storageId: storage.id, versionId: args.versionId },
+      { storage, versionId: args.versionId },
       signal,
     );
     signal.throwIfAborted();
@@ -674,7 +678,7 @@ const commitStorageUploadForStorage$ = command(
 
     return await set(
       commitVerifiedStorageVersion$,
-      { input: args, verification },
+      { input: args, verification, storage },
       signal,
     );
   },
@@ -758,19 +762,35 @@ const readSandboxLineage$ = command(
   async (
     { get },
     input: {
-      readonly storageId: string;
+      readonly storage: StorageRow;
       readonly versionId: string;
       readonly parentVersionId: string;
       readonly runId: string;
     },
     signal: AbortSignal,
   ) => {
+    if (isMemberMemoryIdentity(input.storage)) {
+      const [lineage] = await get(db$)
+        .select()
+        .from(memoryVersionLineage)
+        .where(
+          and(
+            eq(memoryVersionLineage.memoryId, input.storage.id),
+            eq(memoryVersionLineage.versionId, input.versionId),
+            eq(memoryVersionLineage.parentVersionId, input.parentVersionId),
+            eq(memoryVersionLineage.runId, input.runId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      return lineage;
+    }
     const [lineage] = await get(db$)
       .select()
       .from(storageVersionLineage)
       .where(
         storageCommitLineageCondition(
-          input.storageId,
+          input.storage.id,
           input.versionId,
           input.parentVersionId,
           input.runId,
@@ -805,7 +825,7 @@ export const commitMemberMemoryWriteback$ = command(
     if (terminalRetry) {
       const version = await set(
         findStorageVersion$,
-        { storageId: args.storageId, versionId: args.versionId },
+        { storage: mounted.storage, versionId: args.versionId },
         signal,
       );
       if (
@@ -821,7 +841,7 @@ export const commitMemberMemoryWriteback$ = command(
       const lineage = await set(
         readSandboxLineage$,
         {
-          storageId: args.storageId,
+          storage: mounted.storage,
           versionId: args.versionId,
           parentVersionId: args.parentVersionId,
           runId: args.auth.runId,
