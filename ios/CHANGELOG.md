@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.46.1](https://github.com/okou-ai/okou/compare/ios-v0.46.0...ios-v0.46.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **ios:** keep the composer's model mark while reading history ([#48071](https://github.com/okou-ai/okou/issues/48071)) ([f59a85d](https://github.com/okou-ai/okou/commit/f59a85d6fd19a63e0f5f91368d3e51c1ba43e47b))
+
 ## [0.46.0](https://github.com/okou-ai/okou/compare/ios-v0.45.4...ios-v0.46.0) (2026-11-17)
 
 

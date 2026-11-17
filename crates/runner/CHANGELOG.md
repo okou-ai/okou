@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.249.31](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.30...runner-rs-v0.249.31) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fallible native clock queries ([#48072](https://github.com/okou-ai/okou/issues/48072)) ([4b16d0b](https://github.com/okou-ai/okou/commit/4b16d0b56361a1f955133d6a161ff21eb8083394))
+
 ## [0.249.30](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.29...runner-rs-v0.249.30) (2026-11-17)
 
 ### Release Dependencies

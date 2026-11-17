@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.79.2](https://github.com/okou-ai/okou/compare/api-v2.79.1...api-v2.79.2) (2026-11-17)
+
+
+### Refactoring
+
+* **api:** build complete execution requests in publication ([#48065](https://github.com/okou-ai/okou/issues/48065)) ([bba6568](https://github.com/okou-ai/okou/commit/bba65683295e470256cba42f0ce6c8457972fd98))
+
 ## [2.79.1](https://github.com/okou-ai/okou/compare/api-v2.79.0...api-v2.79.1) (2026-11-17)
 
 

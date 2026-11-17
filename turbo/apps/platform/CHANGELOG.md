@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1141.1](https://github.com/okou-ai/okou/compare/app-v0.1141.0...app-v0.1141.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **app:** keep chart selections inline and clear accepted drafts ([#48045](https://github.com/okou-ai/okou/issues/48045)) ([70d643f](https://github.com/okou-ai/okou/commit/70d643faea0dd89455eb79c9bc3258c55c7ceaaf))
+
 ## [0.1141.0](https://github.com/okou-ai/okou/compare/app-v0.1140.0...app-v0.1141.0) (2026-11-17)
 
 

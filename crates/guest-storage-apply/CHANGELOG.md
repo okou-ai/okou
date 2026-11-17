@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.13](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.12...guest-storage-apply-v0.32.13) (2026-11-17)
+
+
+### Refactoring
+
+* use typed fallible native clock queries ([#48072](https://github.com/okou-ai/okou/issues/48072)) ([4b16d0b](https://github.com/okou-ai/okou/commit/4b16d0b56361a1f955133d6a161ff21eb8083394))
+
 ## [0.32.12](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.11...guest-storage-apply-v0.32.12) (2026-11-16)
 
 ## [0.32.11](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.32.10...guest-storage-apply-v0.32.11) (2026-11-16)
