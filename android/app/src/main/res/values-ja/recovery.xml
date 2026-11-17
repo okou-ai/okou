@@ -8,7 +8,7 @@
     <string name="recovery_reset_retry">元のリセットを再試行</string>
     <string name="recovery_needs_changes">続行する前にモデル、アカウント設定、または会話を変更してください。</string>
     <string name="recovery_billing">ワークスペースのクレジット：%1$s。請求情報を確認してください。</string>
-    <string name="recovery_no_credit">利用可能なリセットクレジットがありません。</string>
+    <string name="recovery_no_credit">前回のリセット時に利用可能なクレジットはありませんでした。</string>
     <string name="recovery_submitted">続行を受け付けました。会話履歴の確認を待っています。</string>
     <string name="recovery_failed">復旧が完了しませんでした。再試行の前に元の操作を確認してください。</string>
     <string name="recovery_credits">リセットクレジット：%1$d</string>

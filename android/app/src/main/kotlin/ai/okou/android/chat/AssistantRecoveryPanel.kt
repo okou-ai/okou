@@ -38,6 +38,11 @@ fun AssistantRecoveryPanel(
         if (read.phase == ChatReadPhase.Failed) Text(stringResource(R.string.recovery_read_failed))
         val data = read.data
         if (data != null) {
+            val confirmedReset =
+                attempt?.reset?.accountId == data.account?.id &&
+                    attempt?.reset != null &&
+                    attempt.outcome != null &&
+                    attempt.outcome != ResetSubscriptionResultOutcome.NOCREDIT
             data.account?.accountEmail?.let { Text(it) }
             data.resetTimes.forEach { Text(it) }
             data.account?.subscriptionResetCredits?.let {
@@ -66,13 +71,13 @@ fun AssistantRecoveryPanel(
                     ) {
                         Text(stringResource(R.string.recovery_continue))
                     }
-                    if (data.resetAccount != null || unknownReset)
+                    if (data.resetAccount != null && !confirmedReset || unknownReset)
                         TextButton(
                             onClick = { composer.recover(target, data.selection.failureId, true) },
                             enabled =
                                 !busy &&
                                     !unresolvedOther &&
-                                    (!unknownReset || attempt?.reset?.accountId == data.account?.id),
+                                    (!unknownReset || attempt.reset.accountId == data.account?.id),
                         ) {
                             Text(
                                 stringResource(

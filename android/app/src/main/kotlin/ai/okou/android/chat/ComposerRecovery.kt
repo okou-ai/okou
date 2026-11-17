@@ -32,6 +32,9 @@ data class ComposerRecovery(
     val submitted: Boolean = false,
 )
 
+internal fun newRecoveryReset(data: FailureRecoveryData) =
+    RecoveryReset(checkNotNull(data.resetAccount).id, UUID.randomUUID().toString(), data.resetTimes)
+
 internal fun newRecovery(data: FailureRecoveryData, reset: Boolean): ComposerRecovery {
     val selected = data.selection
     val fast =
@@ -76,12 +79,6 @@ internal fun newRecovery(data: FailureRecoveryData, reset: Boolean): ComposerRec
                     )
                 else null,
         ),
-        if (reset)
-            RecoveryReset(
-                checkNotNull(data.resetAccount).id,
-                UUID.randomUUID().toString(),
-                data.resetTimes,
-            )
-        else null,
+        if (reset) newRecoveryReset(data) else null,
     )
 }

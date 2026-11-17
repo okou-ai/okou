@@ -12,6 +12,7 @@ import java.io.File
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.*
@@ -220,6 +221,78 @@ class AssistantRecoveryModelTest {
     }
 
     @Test
+    fun undeliveredContinueCanExplicitlyAddResetWithoutChangingInputIdentity() = runTest {
+        withRecovery { f ->
+            val previous = f.api.commandResponse
+            val reads = AtomicInteger()
+            f.api.commandResponse = { request ->
+                if (
+                    request.requestUrl?.encodedPath == "/api/model-catalog" &&
+                        reads.incrementAndGet() == 2
+                ) {
+                    jsonResponse(
+                            """{"error":{"code":"UNAVAILABLE","message":"Final preflight failed"}}"""
+                        )
+                        .setResponseCode(503)
+                } else previous(request)
+            }
+            f.composer.edit(target, "Keep this draft")
+            f.composer.recover(target, RecoveryApiFixture.FAILURE)
+            f.idle()
+            val original = f.composer.uiState.value.entry(target).recovery!!
+            assertNull(original.reset)
+            assertNull(f.composer.uiState.value.entry(target).pending)
+            assertTrue(f.remote.inputs.isEmpty())
+            f.api.commandResponse = previous
+            f.composer.recover(target, RecoveryApiFixture.FAILURE, true)
+            f.idle()
+            assertEquals(1, f.remote.resets.size)
+            assertEquals(
+                original.send.clientEventId,
+                f.remote.inputs.single().getValue("clientEventId").jsonPrimitive.content,
+            )
+            assertEquals("Keep this draft", f.composer.uiState.value.entry(target).text)
+        }
+    }
+
+    @Test
+    fun definitiveNoCreditCanStartNewResetOnlyAfterExplicitChoiceWithFreshCredits() = runTest {
+        withRecovery { f ->
+            f.remote.reset = {
+                f.remote.credits = 0
+                jsonResponse("""{"outcome":"noCredit"}""")
+            }
+            f.composer.recover(target, RecoveryApiFixture.FAILURE, true)
+            f.idle()
+            val original = f.composer.uiState.value.entry(target).recovery!!
+            assertEquals(ResetSubscriptionResultOutcome.NOCREDIT, original.outcome)
+            f.recovery.refresh()
+            f.recovery.uiState.first { it.phase == ChatReadPhase.Ready }
+            f.composer.recover(target, RecoveryApiFixture.FAILURE, true)
+            f.idle()
+            assertEquals(1, f.remote.resets.size)
+            assertTrue(f.remote.inputs.isEmpty())
+            f.remote.credits = 1
+            f.recovery.refresh()
+            f.recovery.uiState.first { it.phase == ChatReadPhase.Ready }
+            runCurrent()
+            assertEquals(1, f.remote.resets.size)
+            f.remote.reset = { jsonResponse("""{"outcome":"reset"}""") }
+            f.composer.recover(target, RecoveryApiFixture.FAILURE, true)
+            f.idle()
+            assertEquals(2, f.remote.resets.size)
+            assertNotEquals(
+                f.remote.resets[0].second.getValue("idempotencyKey"),
+                f.remote.resets[1].second.getValue("idempotencyKey"),
+            )
+            assertEquals(
+                original.send.clientEventId,
+                f.remote.inputs.single().getValue("clientEventId").jsonPrimitive.content,
+            )
+        }
+    }
+
+    @Test
     fun uncertainResetRequiresExplicitSameKeyRetryEvenWhenCreditsDisappear() = runTest {
         withRecovery { f ->
             f.remote.reset = {
@@ -260,8 +333,8 @@ class AssistantRecoveryModelTest {
     }
 
     @Test
-    fun accountChangedDuringResetRetainsReceiptWithoutSendingContinue() = runTest {
-        withRecovery { f ->
+    fun accountChangedDuringResetRequiresANewDisplayedChoice() = runTest {
+        for (resetAgain in listOf(false, true)) withRecovery { f ->
             val entered = CompletableDeferred<Unit>()
             val release = CountDownLatch(1)
             f.remote.reset = {
@@ -282,6 +355,28 @@ class AssistantRecoveryModelTest {
                     f.composer.uiState.value.entry(target).recovery!!.outcome,
                 )
                 assertEquals(1, f.remote.resets.size)
+                val first = f.composer.uiState.value.entry(target).recovery!!
+                f.recovery.refresh()
+                f.recovery.uiState.first { it.phase == ChatReadPhase.Ready }
+                assertEquals(f.remote.account, f.recovery.uiState.value.data!!.account!!.id)
+                f.composer.recover(target, RecoveryApiFixture.FAILURE, resetAgain)
+                f.idle()
+                assertEquals(1, f.remote.inputs.size)
+                assertNotEquals(
+                    first.send.clientEventId,
+                    f.remote.inputs.single().getValue("clientEventId").jsonPrimitive.content,
+                )
+                if (resetAgain) {
+                    assertEquals(2, f.remote.resets.size)
+                    assertEquals(f.remote.account, f.remote.resets.last().first)
+                    assertNotEquals(
+                        f.remote.resets.first().second.getValue("idempotencyKey"),
+                        f.remote.resets.last().second.getValue("idempotencyKey"),
+                    )
+                } else {
+                    assertEquals(1, f.remote.resets.size)
+                    assertNull(f.composer.uiState.value.entry(target).recovery!!.reset)
+                }
             } finally {
                 release.countDown()
             }

@@ -319,9 +319,10 @@ internal class ChatComposerOwner(
             return
         val previous = state.entry(target).recovery
         val generation = recovery.generation
+        val displayed = recovery.uiState.value.data?.takeIf { it.selection == selected }
         val expectedAccount =
-            previous?.takeIf { it.selection == selected }?.reset?.accountId
-                ?: recovery.uiState.value.data?.resetAccount?.id
+            previous?.takeIf { it.selection == selected && it.outcome == null }?.reset?.accountId
+                ?: displayed?.resetAccount?.id
         if (reset && expectedAccount == null) return
         if (previous?.submitted == true && previous.selection == selected) return
         if (previous?.reset != null && previous.outcome == null && previous.selection != selected)
@@ -336,14 +337,32 @@ internal class ChatComposerOwner(
                     if (reset && data.account?.id != expectedAccount) throw RecoveryUnavailable()
                     var attempt =
                         mutable.value.entry(target).recovery?.takeIf { it.selection == selected }
+                    if (
+                        attempt?.reset != null &&
+                            attempt.outcome != null &&
+                            attempt.reset.accountId != data.account?.id
+                    ) {
+                        // The previous reset is settled and no input was dispatched. A fresh
+                        // displayed account choice starts its own intent, never inherits that
+                        // reset.
+                        if (displayed == null || displayed.account?.id != data.account?.id)
+                            throw RecoveryUnavailable()
+                        attempt = null
+                    }
                     if (attempt == null) {
                         if (reset && data.resetAccount == null) throw RecoveryUnavailable()
                         attempt = newRecovery(data, reset)
                         put(op.key, mutable.value.entry(target).copy(recovery = attempt))
-                    } else if (reset && attempt.reset == null) {
-                        // A frozen continue already exists. A later tap cannot add a new credit
-                        // spend.
-                        throw RecoveryUnavailable()
+                    } else if (
+                        reset &&
+                            (attempt.reset == null ||
+                                attempt.outcome == ResetSubscriptionResultOutcome.NOCREDIT)
+                    ) {
+                        // A new explicit choice is safe before input dispatch when no reset was
+                        // attempted or noCredit definitively spent nothing. Keep the input UUIDs.
+                        if (data.resetAccount == null) throw RecoveryUnavailable()
+                        attempt = attempt.copy(reset = newRecoveryReset(data), outcome = null)
+                        put(op.key, mutable.value.entry(target).copy(recovery = attempt))
                     }
                     durableRecovery(op, attempt)
                     val resetIntent = attempt.reset

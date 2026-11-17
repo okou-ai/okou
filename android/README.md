@@ -657,6 +657,12 @@ or restoring the process never replays a reset or send. Fresh canonical history,
 control state and current account checks reject stale recovery; input retries
 retain the original event identity and first observe an uncertain send.
 
+Before any input is dispatched, an explicit new choice can add a reset to an
+unsent continue or start a new reset after a definitive no-credit result and a
+fresh positive balance. Unknown resets always reuse their original key. A
+confirmed reset on a replaced account cannot continue automatically; a fresh
+displayed account and another explicit action start a separate intent.
+
 The composer journal reads existing format 1 drafts and pending requests. Its
 first recovery intent upgrades the whole retained journal to format 2 without
 dropping those entries. Older apps reject format 2 visibly instead of overwriting
