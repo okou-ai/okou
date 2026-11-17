@@ -1,19 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { closeS3Clients } from "../../../lib/s3-client";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { createPublicRunnerMemory } from "./helpers/public-runner-memory";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { chatEventsRoutes } from "../chat-events";
 
 const context = testContext();
 
 describe("Execution Storage URL freshness", () => {
   it("refreshes a queued mount across the cache margin and publishes the winning URL", async () => {
-    await setupApp({ context, routes: chatEventsRoutes, isolatePg: true });
     const startedAt = now();
     mockNow(startedAt);
     onTestFinished(clearMockNow);

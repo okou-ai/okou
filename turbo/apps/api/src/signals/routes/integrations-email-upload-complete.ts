@@ -10,12 +10,11 @@ import {
   notFound,
   resourceUnavailable,
 } from "../../lib/error";
-import { now } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
-import { drainEmailOutboxBatch$ } from "../services/email-common.service";
+import { sendEmailOutboxItem$ } from "../services/email-common.service";
 import { enqueueEmailFile$ } from "../services/email-file-delivery.service";
 import { emailRunSource$ } from "../services/email-run-source.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
@@ -95,7 +94,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     return result;
   }
   if (result.delivery.status === "pending") {
-    waitUntil(set(drainEmailOutboxBatch$, { currentTimeMs: now() }, signal));
+    waitUntil(set(sendEmailOutboxItem$, result.operationId, signal));
   }
   return {
     status: 200 as const,

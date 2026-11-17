@@ -1229,10 +1229,12 @@ impl GuestWriteLocks {
         &self,
         sandbox: &dyn Sandbox,
         writes: &[WriteFileEntry<'_>],
-    ) -> RunnerResult<()> {
+        timing: &mut sandbox::FileWriteTiming,
+    ) -> (Duration, RunnerResult<()>) {
         if writes.is_empty() {
-            return Ok(());
+            return (Duration::ZERO, Ok(()));
         }
+        let lock_started = Instant::now();
         let mut paths = writes.iter().map(|write| write.path).collect::<Vec<_>>();
         paths.sort_unstable();
         paths.dedup();
@@ -1253,8 +1255,12 @@ impl GuestWriteLocks {
         for lock in &locks {
             guards.push(lock.lock().await);
         }
-        sandbox.write_files(writes).await?;
-        Ok(())
+        let lock_wait = lock_started.elapsed();
+        let result = sandbox
+            .write_files_with_timing(writes, timing)
+            .await
+            .map_err(Into::into);
+        (lock_wait, result)
     }
 }
 
@@ -1322,9 +1328,9 @@ impl StorageCacheStageMetrics {
     fn record_write_result(
         &mut self,
         telemetry: &mut JobTelemetry,
-        action_type: &str,
         started_at: Instant,
         result: &RunnerResult<()>,
+        observation: crate::StorageStageWrite,
     ) {
         self.attempted = true;
         let duration = started_at.elapsed();
@@ -1333,11 +1339,14 @@ impl StorageCacheStageMetrics {
         if !success {
             self.failed = true;
         }
-        telemetry.record(
-            action_type,
-            duration,
-            success,
-            (!success).then_some(STORAGE_CACHE_STAGE_FAILED),
+        telemetry.record_stage_write(
+            SandboxOpRecord::new(
+                STORAGE_CACHE_STAGE_BATCH_WRITE,
+                duration,
+                success,
+                (!success).then_some(STORAGE_CACHE_STAGE_FAILED),
+            ),
+            observation,
         );
     }
 
@@ -1362,19 +1371,23 @@ async fn flush_guest_stage_batch(
         return Ok(());
     }
     let started_at = Instant::now();
-    let result = {
+    let mut timing = sandbox::FileWriteTiming::default();
+    let (lock_wait, result) = {
         let writes = batch
             .writes
             .iter()
             .map(GuestStageWrite::as_file_entry)
             .collect::<Vec<_>>();
-        stage.guest_writes.write_files(stage.sandbox, &writes).await
+        stage
+            .guest_writes
+            .write_files(stage.sandbox, &writes, &mut timing)
+            .await
     };
     stage.metrics.record_write_result(
         stage.telemetry,
-        STORAGE_CACHE_STAGE_BATCH_WRITE,
         started_at,
         &result,
+        crate::StorageStageWrite::new(batch.writes.len(), batch.content_bytes, lock_wait, &timing),
     );
     result?;
     batch.writes.clear();
@@ -1406,19 +1419,23 @@ async fn flush_fresh_guest_stage_batch(
         return Ok(());
     }
     let started_at = Instant::now();
-    let result = {
+    let mut timing = sandbox::FileWriteTiming::default();
+    let (lock_wait, result) = {
         let writes = batch
             .entries
             .iter()
             .map(|entry| entry.write.as_file_entry())
             .collect::<Vec<_>>();
-        stage.guest_writes.write_files(stage.sandbox, &writes).await
+        stage
+            .guest_writes
+            .write_files(stage.sandbox, &writes, &mut timing)
+            .await
     };
     stage.metrics.record_write_result(
         stage.telemetry,
-        STORAGE_CACHE_STAGE_BATCH_WRITE,
         started_at,
         &result,
+        crate::StorageStageWrite::new(batch.entries.len(), batch.content_bytes, lock_wait, &timing),
     );
     result?;
     // Moving groups into outcomes must not release capacity while other

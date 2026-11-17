@@ -1,3 +1,8 @@
+import { waitUntil } from "../context/wait-until";
+import {
+  projectCommittedChatThreadSearch$,
+  publishChatThreadMessageCreated$,
+} from "./chat-event-publication.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
@@ -25,7 +30,7 @@ import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+
 import { createSlackClient } from "../external/slack-message-client";
 import { tapError } from "../utils";
 import { cancelRun$ } from "./agent-run-cancellation.service";
@@ -237,16 +242,20 @@ const cancelSlackSessionRuns$ = command(
 
 const publishStoppedSlackSession$ = command(
   async (
-    _,
+    { set },
     scope: SlackSessionStopScope,
     signal: AbortSignal,
   ): Promise<void> => {
     for (const route of scope.routes) {
-      await publishChatThreadMessageCreatedSafely({
-        userId: scope.userId,
-        orgId: scope.orgId,
-        threadId: route.chatThreadId,
-      });
+      await set(
+        publishChatThreadMessageCreated$,
+        {
+          userId: scope.userId,
+          orgId: scope.orgId,
+          threadId: route.chatThreadId,
+        },
+        signal,
+      );
       signal.throwIfAborted();
     }
   },
@@ -289,17 +298,15 @@ const postSlackSessionStopNotice$ = command(
   },
 );
 
-/** The signed Slack actor can stop only their own inputs in this physical thread. */
-export const stopSlackSession$ = command(
+const readSlackSessionStopRoutes$ = command(
   async (
     { set },
     args: {
       readonly workspaceId: string;
       readonly event: SlackSessionStoppedEvent;
-      readonly isRetry: boolean;
     },
     signal: AbortSignal,
-  ): Promise<void> => {
+  ) => {
     const db = set(writeDb$);
     const { event } = args;
     const routes = await db
@@ -353,6 +360,23 @@ export const stopSlackSession$ = command(
         ),
       );
     signal.throwIfAborted();
+    return routes;
+  },
+);
+
+/** The signed Slack actor can stop only their own inputs in this physical thread. */
+export const stopSlackSession$ = command(
+  async (
+    { set },
+    args: {
+      readonly workspaceId: string;
+      readonly event: SlackSessionStoppedEvent;
+      readonly isRetry: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const { event } = args;
+    const routes = await set(readSlackSessionStopRoutes$, args, signal);
     const binding = routes[0];
     if (!binding?.orgId) {
       return;
@@ -377,6 +401,19 @@ export const stopSlackSession$ = command(
       signal.throwIfAborted();
       stopped = inputsStopped || runsCancelled;
       if (stopped) {
+        for (const route of scope.routes) {
+          waitUntil(
+            set(
+              projectCommittedChatThreadSearch$,
+              {
+                userId: scope.userId,
+                orgId: scope.orgId,
+                threadId: route.chatThreadId,
+              },
+              signal,
+            ),
+          );
+        }
         await set(publishStoppedSlackSession$, scope, signal);
         signal.throwIfAborted();
       }

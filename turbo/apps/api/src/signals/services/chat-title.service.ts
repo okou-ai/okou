@@ -41,7 +41,7 @@ import {
   type RecordAuxiliaryGenerationDetail,
 } from "./auxiliary-generation.service";
 import { chatEventTextCondition } from "./chat-event-type.service";
-import { visibleChatEventPredicate } from "./chat-event-shared.service";
+import { visibleChatEventPredicate } from "./chat-event-visibility.service";
 import {
   RECOMMENDED_FOLLOWUP_LIMIT,
   normalizeRecommendedFollowups,

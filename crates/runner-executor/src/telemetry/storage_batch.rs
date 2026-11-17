@@ -42,13 +42,13 @@ impl HostTimingFields {
     pub(super) fn new(timing: &StorageManifestTiming) -> Self {
         let phases = [
             timing.admission,
-            timing.request.setup,
-            timing.request.frame_builder_wait,
-            timing.request.frame_encode,
-            timing.request.writer_wait,
-            timing.request.frame_write,
-            timing.request.response_wait,
-            timing.request.result_decode,
+            timing.request.host.setup,
+            timing.request.host.frame_builder_wait,
+            timing.request.host.frame_encode,
+            timing.request.host.writer_wait,
+            timing.request.host.frame_write,
+            timing.request.host.response_wait,
+            timing.request.host.result_decode,
             timing.resource_log,
         ]
         .map(milliseconds);

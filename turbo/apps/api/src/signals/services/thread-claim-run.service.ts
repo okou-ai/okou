@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { loadEmailSourceMessageContext$ } from "./email-source-message.service";
 import { scheduleUserWidgetRefresh$ } from "./ios-widget-push.service";
 import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/staff-single-agent-migration";
@@ -77,7 +78,6 @@ import { monotonicNow, now, nowDate, nowDateSql } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import {
   publishChatIndicatorsChangedSafely,
-  publishChatThreadMessageCreatedSafely,
   publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
@@ -117,7 +117,7 @@ import type {
   QueuedUserMessageContextType,
   QueueFirstRunAssociation,
 } from "./chat-queued-event.service";
-import { finalizeClaimedRunUserMessage } from "./chat-run-event.service";
+import { finalizeClaimedRunUserMessage$ } from "./chat-run-event.service";
 import { randomUUID } from "node:crypto";
 import {
   chatThreadEventSequences,
@@ -1115,6 +1115,7 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
 
 type PendingClaimRun = {
   readonly kind: "pending";
+  readonly marketingRewardEventId: string | null;
   readonly runId: string;
   readonly apiStartTime: number;
   readonly context: ThreadRunContext;
@@ -1191,7 +1192,7 @@ export function createThreadClaimRunObjects(
   });
   const publishChatQueueHeadConsumed$ = command(
     async (
-      _context,
+      { set },
       head: {
         readonly chatThreadId: string;
         readonly orgId: string;
@@ -1200,11 +1201,15 @@ export function createThreadClaimRunObjects(
       signal: AbortSignal,
     ): Promise<void> => {
       signal.throwIfAborted();
-      await publishChatThreadMessageCreatedSafely({
-        userId: head.userId,
-        orgId: head.orgId,
-        threadId: head.chatThreadId,
-      });
+      await set(
+        publishChatThreadMessageCreated$,
+        {
+          userId: head.userId,
+          orgId: head.orgId,
+          threadId: head.chatThreadId,
+        },
+        signal,
+      );
       signal.throwIfAborted();
       await publishThreadListChangedSafely({
         userId: head.userId,
@@ -3631,6 +3636,7 @@ export function createThreadClaimRunObjects(
       });
       return {
         kind: "pending",
+        marketingRewardEventId: committed.result.marketingRewardEventId,
         runId: committed.result.run.id,
         apiStartTime: input.args.apiStartTime,
         context,
@@ -3811,11 +3817,15 @@ export function createThreadClaimRunObjects(
           signal,
         );
       } else {
-        await finalizeClaimedRunUserMessage({
-          orgId: launched.orgId,
-          threadId: launched.threadId,
-          userId: launched.userId,
-        });
+        await set(
+          finalizeClaimedRunUserMessage$,
+          {
+            orgId: launched.orgId,
+            threadId: launched.threadId,
+            userId: launched.userId,
+          },
+          signal,
+        );
         signal.throwIfAborted();
         const database = set(writeDb$);
         const lastRunFields = () => {
@@ -3951,6 +3961,7 @@ interface LaunchRunIdentity {
 
 interface PersistedAtomicLaunchRows {
   readonly kind: "pending";
+  readonly marketingRewardEventId: string | null;
   readonly run: RunRecord;
 }
 
@@ -3982,6 +3993,7 @@ interface ValidatedThreadSessionSnapshot {
 type AtomicLaunchCommitResult =
   | {
       readonly kind: "pending";
+      readonly marketingRewardEventId: string | null;
       readonly run: RunRecord;
       readonly admittedLaunch: AdmittedRunLaunch;
       readonly publicationReturnedAt: number;
@@ -4899,6 +4911,7 @@ const pendingLaunchRowSchema = discriminatedUnion("kind", [
     createdAt: pgTimestampWithoutTimezoneToDateSchema,
     boundThreadId: string().nullable(),
     billingAttributionId: string().nullable(),
+    marketingRewardEventId: uuid().nullable(),
   }),
   object({ kind: literal("official") }),
   object({ kind: literal("plan") }),
@@ -4935,6 +4948,7 @@ function pendingAtomicLaunchResult(
   }
   return {
     kind: "pending",
+    marketingRewardEventId: row.marketingRewardEventId,
     run: {
       id: context.rowsArgs.identity.runId,
       createdAt: row.createdAt,
@@ -5021,6 +5035,7 @@ function pendingAtomicLaunchPlan(
       WHEN EXISTS (SELECT 1 FROM ${context.insertedRun}) THEN 'pending'
       ELSE 'claim-lost' END AS kind,
       (SELECT ${attribution.runId} FROM ${attribution}) AS "billingAttributionId",
+      (SELECT id FROM launch_workflow_source) AS "marketingRewardEventId",
       (SELECT ${returnedCteColumn(context.insertedRun, "id")} FROM ${context.insertedRun}) AS "runId",
       (SELECT ${returnedCteColumn(context.insertedRun, "created_at")} FROM ${context.insertedRun})::text AS "createdAt",
       ${returnedCteId(context.updatedThread)} AS "boundThreadId"

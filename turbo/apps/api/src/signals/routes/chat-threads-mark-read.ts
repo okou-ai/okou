@@ -29,7 +29,11 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   const prepared = await get(markReadPreparation$);
   signal.throwIfAborted();
-  if (!prepared) {
+  const auth = get(authContext$);
+  if (
+    !prepared ||
+    (auth.tokenType === "oauth" && prepared.orgId !== auth.orgId)
+  ) {
     return notFound("Chat thread not found");
   }
 
@@ -70,6 +74,6 @@ const markReadInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 export const chatThreadMarkReadRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadMarkReadContract.markRead,
-    handler: authRoute({}, markReadInner$),
+    handler: authRoute({ oauthScope: "okou:chat:read" }, markReadInner$),
   },
 ];

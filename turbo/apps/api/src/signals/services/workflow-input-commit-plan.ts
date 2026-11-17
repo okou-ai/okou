@@ -28,6 +28,7 @@ import { workflowRewardQueuedEventInsert } from "./workflow-reward-source-public
 
 export const workflowInputCommitRowSchema = object({
   eventId: uuid(),
+  marketingRewardEventId: uuid().nullable(),
   tickCount: number().int().nonnegative(),
   guard: number().int(),
 });
@@ -248,6 +249,7 @@ export function workflowInputCommitSql(args: {
   );
   return sql`WITH ${sql.join(ctes, sql`, `)}
     SELECT (SELECT id FROM inserted) AS "eventId",
+      (SELECT id FROM workflow_reward_source) AS "marketingRewardEventId",
       ${args.replacePendingTicks ? sql`(SELECT count(*)::integer FROM workflow_pending_ticks)` : sql`0`} AS "tickCount",
       (CASE ${sql.join(guards, sql` `)} ELSE '0' END)::integer AS guard`;
 }

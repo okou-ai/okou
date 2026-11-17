@@ -118,6 +118,7 @@ type ResolvedBuiltinConnectorExternalCodeClient = {
 type CompleteSuccess = {
   readonly status: 200;
   readonly body: BuiltinConnectorExternalCodeSessionCompleteResponse;
+  readonly marketingRewardEventId?: string | null;
 };
 
 const connectorExternalCodeDisabled = Object.freeze({
@@ -447,6 +448,7 @@ const persistClaimedExternalCodeConnector$ = command(
         status: "complete",
         connectionId: persisted.connector.id,
       },
+      marketingRewardEventId: persisted.marketingRewardEventId,
     };
   },
 );
@@ -934,7 +936,11 @@ const persistExternalCodeConnector$ = command(
     if (connectorResult.status !== "connected") {
       return connectorConnectionWriteRejection(connectorResult.status);
     }
-    return { ok: true as const, connector: connectorResult.connector };
+    return {
+      ok: true as const,
+      connector: connectorResult.connector,
+      marketingRewardEventId: connectorResult.marketingRewardEventId,
+    };
   },
 );
 
@@ -1056,6 +1062,9 @@ export const completeBuiltinConnectorExternalCodeSession$ = command(
       { ...args, session, connectorSlug: resolvedMethod.connectorSlug },
       signal,
     );
-    return authorizationError ?? response;
+    return {
+      ...(authorizationError ?? response),
+      marketingRewardEventId: response.marketingRewardEventId,
+    };
   },
 );

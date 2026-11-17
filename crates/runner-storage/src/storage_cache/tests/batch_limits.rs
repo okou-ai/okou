@@ -21,6 +21,7 @@ fn assert_staged_batches(
     plan: &StoragePlan,
     bodies: &[Vec<u8>],
     expected_batch_sizes: &[usize],
+    telemetry: &JobTelemetry,
 ) {
     let mut expected = bodies
         .iter()
@@ -28,6 +29,21 @@ fn assert_staged_batches(
         .map(|(index, body)| (guest_archive_path(&format!("batch-{index}"), "v1"), body))
         .collect::<HashMap<_, _>>();
     let batches = sandbox.write_files_calls();
+    let observations = telemetry.pending_stage_write_payloads();
+    assert_eq!(observations.len(), batches.len());
+    for (op, batch) in observations.iter().zip(&batches) {
+        assert_eq!(op["action_type"], STORAGE_CACHE_STAGE_BATCH_WRITE);
+        assert_eq!(op["success"], true);
+        let observation = &op["storage_stage_write"];
+        assert_eq!(observation["file_count"], batch.files.len());
+        assert_eq!(
+            observation["content_bytes"],
+            batch.files.iter().map(|f| f.content.len()).sum::<usize>()
+        );
+        assert_eq!(observation["host_timing"], "unavailable");
+        assert!(observation["lock_wait_us"].is_u64());
+        assert_eq!(observation.as_object().unwrap().len(), 4);
+    }
     assert_eq!(
         batches
             .iter()
@@ -101,7 +117,7 @@ async fn warm_batches_split_at_the_file_limit() {
             .is_none()
         );
 
-        assert_staged_batches(&sandbox, &plan, &bodies, &expected_batch_sizes);
+        assert_staged_batches(&sandbox, &plan, &bodies, &expected_batch_sizes, &telemetry);
         let ops = telemetry.pending_ops_snapshot();
         assert_op_count(
             &ops,
@@ -155,7 +171,7 @@ async fn warm_batches_preserve_exact_byte_boundaries() {
         } else {
             vec![2]
         };
-        assert_staged_batches(&sandbox, &plan, &bodies, &expected_batch_sizes);
+        assert_staged_batches(&sandbox, &plan, &bodies, &expected_batch_sizes, &telemetry);
         let ops = telemetry.pending_ops_snapshot();
         assert_op_count(
             &ops,
@@ -227,7 +243,7 @@ async fn fresh_batches_preserve_exact_byte_boundaries() {
         } else {
             vec![2]
         };
-        assert_staged_batches(&sandbox, &plan, &bodies, &expected_batch_sizes);
+        assert_staged_batches(&sandbox, &plan, &bodies, &expected_batch_sizes, &telemetry);
         for (index, body) in bodies.iter().enumerate() {
             gets[index].assert_calls_async(1).await;
             assert_eq!(

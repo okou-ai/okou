@@ -707,6 +707,31 @@ const storageBatchEvidenceIntegerSchema = number()
   .nonnegative()
   .max(Number.MAX_SAFE_INTEGER);
 
+// One existing staging attempt. Counts describe attempted batch bytes/files;
+// optional Host wall phases are not a serial partition or pure transport time.
+const storageStageWriteSchema = object({
+  file_count: number().int().min(1).max(64),
+  content_bytes: number()
+    .int()
+    .nonnegative()
+    .max(15 * 1024 * 1024),
+  host_timing: zEnum(["complete", "partial", "unavailable"]),
+  lock_wait_us: storageBatchEvidenceIntegerSchema.optional(),
+  admission_us: storageBatchEvidenceIntegerSchema.optional(),
+  validation_us: storageBatchEvidenceIntegerSchema.optional(),
+  path_lock_wait_us: storageBatchEvidenceIntegerSchema.optional(),
+  file_gate_wait_us: storageBatchEvidenceIntegerSchema.optional(),
+  request_setup_us: storageBatchEvidenceIntegerSchema.optional(),
+  frame_builder_wait_us: storageBatchEvidenceIntegerSchema.optional(),
+  frame_encode_us: storageBatchEvidenceIntegerSchema.optional(),
+  writer_wait_us: storageBatchEvidenceIntegerSchema.optional(),
+  frame_write_us: storageBatchEvidenceIntegerSchema.optional(),
+  response_wait_us: storageBatchEvidenceIntegerSchema.optional(),
+  result_decode_us: storageBatchEvidenceIntegerSchema.optional(),
+});
+
+export type StorageStageWrite = zInfer<typeof storageStageWriteSchema>;
+
 /**
  * Sandbox operation schema for internal sandbox operations (init, storage, cli, finalization, cleanup)
  */
@@ -720,6 +745,7 @@ const sandboxOperationSchema = object({
   reason: string().max(64).optional(),
   archive_size_mismatch: archiveSizeMismatchSchema.optional(),
   archive_connection_attempt: archiveConnectionAttemptSchema.optional(),
+  storage_stage_write: storageStageWriteSchema.optional(),
   dns_readiness_attempt: number().int().min(1).max(3).optional(),
   dns_readiness_final_attempt: boolean().optional(),
   dns_readiness_guest_duration_ms: number()

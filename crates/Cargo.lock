@@ -1143,6 +1143,7 @@ dependencies = [
  "cli-test-support",
  "guest-contracts",
  "libc",
+ "nix 0.32.0",
  "rustix",
  "serde_json",
  "tempfile",
@@ -2179,6 +2180,7 @@ dependencies = [
  "guest-control-server",
  "guest-write-file",
  "libc",
+ "nix 0.32.0",
  "sandbox",
  "shell-quote",
  "tempfile",
@@ -4102,7 +4104,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.249.37"
+version = "0.249.38"
 dependencies = [
  "api-contracts",
  "async-trait",

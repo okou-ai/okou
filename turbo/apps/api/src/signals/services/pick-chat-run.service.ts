@@ -1,3 +1,5 @@
+import { projectCommittedChatThreadSearch$ } from "./chat-event-publication.service";
+import { deliverMarketingRewardEvents$ } from "./marketing-reward-event-delivery.service";
 import { computed, command, state, type Computed } from "ccstate";
 import {
   count,
@@ -452,9 +454,34 @@ function createPickObjects() {
       set(preloadAgentRunContext$, claimed.context, signal);
       signal.throwIfAborted();
       const pending = await set(claimed.admitRun$, signal);
+      // Admission can append a claim or a public rejection. This pick owns
+      // publication for its captured thread, independently of Runner dispatch.
+      waitUntil(
+        set(
+          projectCommittedChatThreadSearch$,
+          {
+            userId: claim.userId,
+            orgId: claim.orgId,
+            threadId: claim.chatThreadId,
+          },
+          signal,
+        ),
+      );
       if (pending === null) {
         await set(releaseClaim$, claim, signal);
         return { kind: "none" };
+      }
+      if (pending.marketingRewardEventId) {
+        waitUntil(
+          set(
+            deliverMarketingRewardEvents$,
+            {
+              jobId: pending.marketingRewardEventId,
+              handlerVersion: 4,
+            },
+            signal,
+          ),
+        );
       }
       // Activation is outside the admission-failure boundary. Slot scheduling
       // precedes terminal callbacks so they cannot delay the next queued input.

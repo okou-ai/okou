@@ -3428,8 +3428,15 @@
     {
       "idx": 1568,
       "version": "7",
-      "when": 1794920495546,
-      "tag": "1568_ios_widget_push_token",
+      "when": 1794920638828,
+      "tag": "1568_monotonic_chat_search_publication",
+      "breakpoints": true
+    },
+    {
+      "idx": 1569,
+      "version": "7",
+      "when": 1794926990963,
+      "tag": "1569_ios_widget_push_token",
       "breakpoints": true
     }
   ]

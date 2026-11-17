@@ -70,6 +70,7 @@ export type AgentAuthContext = SingleAgentRuntimeContext &
 export type AuthContext =
   | {
       readonly tokenType: "oauth";
+      readonly expiresAt: number;
       readonly scopes: readonly string[];
       readonly clientId: string;
       readonly clientName?: string;

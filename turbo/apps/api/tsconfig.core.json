@@ -697,7 +697,12 @@
     "src/signals/services/workflow-automation-run-callback.service.ts",
     "src/signals/services/execution-workflow-selection.ts",
     "src/signals/services/unstarted-run-cleanup.ts",
-    "src/signals/services/agent-run-cancellation.service.ts"
+    "src/signals/services/agent-run-cancellation.service.ts",
+    "src/signals/services/chat-event-publication.service.ts",
+    "src/signals/services/chat-event-visibility.service.ts",
+    "src/signals/services/cron-project-chat-event-search.service.ts",
+    "src/signals/services/marketing-reward-event-delivery.service.ts",
+    "src/lib/chat-search-bigram.ts"
   ],
   "references": [
     {

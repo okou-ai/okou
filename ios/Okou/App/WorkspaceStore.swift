@@ -9,7 +9,25 @@ import SwiftUI
 /// One immutable network/cache scope, with independently observed feature state.
 @MainActor @Observable
 final class WorkspaceStore {
+  var navigationActions: WorkspaceChatActions { navigation }
+  var residentConversations: WorkspaceConversations { conversations }
   private let lifecycleTasks: LifecycleTasks
+  @ObservationIgnored private lazy var conversations = WorkspaceConversations(
+    sync: sync, limit: conversationLimit, lifecycleTasks: lifecycleTasks, markdown: messageMarkdown,
+    sleep: historyWarmingSleep, threads: { [weak self] in self?.list.threads ?? [] },
+    isProtected: { [weak self] in self?.selectedThreadID == $0 || self?.chatLinkThreadID == $0 },
+    canWarm: { [weak self] in
+      guard let self else { return false }
+      return !closed && !needsUpgrade && !refreshSuspended
+    }, generation: { [weak self] in self?.refreshGeneration },
+    didRelease: { [weak self] in self?.sidebarDrafts.noteReleased($0, hasDraft: $1) },
+    didFail: { [weak self] in self?.handle($0) })
+  @ObservationIgnored private lazy var navigation = WorkspaceChatActions(
+    workspace: self, client: client, sync: sync, commands: commands, lifecycleTasks: lifecycleTasks,
+    didSelect: { [weak self] in self?.presentChat($0) },
+    didFinishOpening: { [weak self] in self?.conversations.requestPrune() },
+    isResident: { [weak self] in self?.conversations[$0] != nil },
+    didFail: { [weak self] in self?.handle($0) })
   private let client: APIClient
   private let sync: ChatSync
   private let projectDisclosure: ProjectDisclosureStorage?
@@ -23,31 +41,19 @@ final class WorkspaceStore {
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private let historyWarmingSleep: @Sendable (Duration) async throws -> Void
   private let didRefreshReadState: @MainActor () -> Void
-  private struct NotificationReadState: Equatable {
-    let agentID: String
-    let hidden: Bool
-    let muted: Bool
-    let unreadAt: Date?
-  }
-  private var notificationReadState: [String: NotificationReadState]?
+  private var notificationReadState: [String: WorkspaceNotificationReadState]?
   private var notificationReadRevision = 0
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
   var settingsResources: WorkspaceResources { resources }
-  var billingURL: URL { webURL.appending(path: "settings/billing") }
   private(set) var needsUpgrade = false
   private(set) var isCreating = false
   private(set) var newChatSubmission: NewChatSubmission?
   var error: String?
-  private(set) var chatLinkError: String?
-  private(set) var threadFeedback: ChatThreadFeedback?
-  private(set) var fork: ChatForkStore?
-  private(set) var threadPreview: ChatThreadPreviewResources?
   let sidebarInteraction = SidebarInteraction()
   /// Mount the sidebar with its cached chats, Projects and disclosure restored together.
   private(set) var hasRestoredSidebar = false
-  private var chatLinkRequestID = UUID()
-  @ObservationIgnored private var chatLinkThreadID: String?
+  private var chatLinkThreadID: String? { navigation.openingThreadID }
   @ObservationIgnored private let selectedThread = CCState.State<String?>(nil)
   @ObservationIgnored private let selectThread: Command<Void, String?>
   var selectedThreadID: String? {
@@ -69,17 +75,7 @@ final class WorkspaceStore {
       selectedConversation?.reconcileVisibility()
     }
   }
-  var selectedAgentID: String? { selectedConversation?.thread.agentID ?? defaultAgentID }
-  var defaultAgentID: String? { list.agents.first(where: \.isDefaultAgent)?.agentId }
   private(set) var newChatProjectID: String?
-  var newChatProject: ChatProject? {
-    projects.projects.first { $0.id == newChatProjectID }
-  }
-  var newChatDraft: String {
-    get { newComposer.text }
-    set { newComposer.text = newValue }
-  }
-  var newAttachmentDraft: AttachmentDraftStore { newComposer.attachments }
   private(set) var newComposer: ComposerDraftStore
   private let draftStorage: ChatDraftStorage?
   private let voiceCapture: (@MainActor () -> any VoiceAudioCapture)?
@@ -148,21 +144,15 @@ final class WorkspaceStore {
   @ObservationIgnored lazy var sidebar = ChatSidebarStore(
     store: resources.store, threads: list.threadsValue, agents: list.agentsValue,
     projects: projects.confirmedValue, selectedThread: selectedThread)
-  @ObservationIgnored private var conversations: [String: ConversationStore] = [:]
-  @ObservationIgnored private var lastUse: [String: UInt64] = [:]
-  private var clock: UInt64 = 0
   private var realtime: RealtimeService?
   private var invalidations: Set<ChatInvalidation> = []
   private var refreshTask: Task<Void, Never>?
   private var refreshGeneration = UUID()
   private var refreshSuspended = false
   private var creationTask: Task<ChatThread?, Never>?
-  private var pruneTask: Task<Void, Never>?
-  private var pruneAgain = false
-  private var warmingTask: Task<Void, Never>?
-  private var warmAgain = false
   private var startupHistoryWarmingRequested = false
   private var closed = false
+  var isClosed: Bool { closed }
   private var isForeground = false
   private var startupGeneration = UUID()
 
@@ -234,8 +224,10 @@ final class WorkspaceStore {
         list.cancelNavigationPublication()
       }
     }
-    await list.restoreCached()
-    await projects.restore()
+    async let cachedList: Void = list.restoreCached()
+    async let cachedProjects: Void = projects.restore()
+    await cachedList
+    await cachedProjects
     guard canContinueStartup(generation) else { return }
     prepareDefaultDraft(from: list.agents)
     hasRestoredSidebar = true
@@ -249,7 +241,7 @@ final class WorkspaceStore {
         onChange: { [weak self] change in
           guard let self, !closed, !needsUpgrade else { return }
           // Manual history refreshes share this invalidation but must not start a global warm.
-          if case .history = change { warmAgain = true }
+          if case .history = change { conversations.noteHistoryChange() }
           requestRefresh(change)
         },
         onConnection: { [weak self] status in
@@ -279,18 +271,10 @@ final class WorkspaceStore {
     !closed && !needsUpgrade && !Task.isCancelled && startupGeneration == generation
   }
 
-  func refreshNavigation() async {
-    await list.refreshNavigation()
-  }
-
   private func prepareDefaultDraft(from agents: [AgentRecord]) {
     guard !closed, !needsUpgrade, !Task.isCancelled else { return }
     let id = agents.first(where: \.isDefaultAgent)?.agentId
     if let id { activateDefaultDraft(agentID: id) }
-  }
-
-  var currentAgentName: String {
-    list.agents.first(where: { $0.agentId == selectedAgentID })?.displayName ?? "Okou"
   }
 
   private(set) var selectedConversation: ConversationStore?
@@ -308,64 +292,39 @@ final class WorkspaceStore {
 
   func conversation(for id: String) -> ConversationStore? {
     guard !closed, let thread = list.threads.first(where: { $0.id == id }) else { return nil }
-    clock &+= 1
-    lastUse[id] = clock
-    if let conversation = conversations[id] { return conversation }
-    let conversation = ConversationStore(
-      thread: thread, sync: sync, commands: commands, webURL: webURL,
-      messageMarkdown: messageMarkdown,
-      isVisible: { [weak self] in
-        self?.isForeground == true && self?.selectedThreadID == id
-          && self?.sidebarInteraction.isOpen == false
-      },
-      didMarkRead: { [weak self] watermark in self?.list.markRead(id, through: watermark) },
-      didSend: { [weak self] in self?.requestRefresh(.threadList) },
-      didFail: { [weak self] in self?.handle($0) },
-      didSettle: { [weak self] in self?.requestPrune() },
-      modelSelection: ChatModelSelectionStore(
-        models: modelStore, thread: thread, lifecycleTasks: lifecycleTasks),
-      workflowSource: composerWorkflows,
-      draftRepository: draftRepository, draftStorage: draftStorage,
-      didSaveDraft: { [weak self] draft in await self?.sidebarDrafts.didSave(draft, threadID: id) },
-      measurementScope: measurementScope,
-      didRequestNewChat: { [weak self] in self?.startNewChat() },
-      readRetrySleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
-    conversation.composer.setForeground(isForeground)
-    conversation.runOutput = { [weak self] runID, handler in
-      self?.realtime?.subscribeRunOutput(runID: runID, handler: handler)
+    return conversations.retain(id) {
+      let conversation = ConversationStore(
+        thread: thread, sync: sync, commands: commands, webURL: webURL,
+        messageMarkdown: messageMarkdown,
+        isVisible: { [weak self] in
+          self?.isForeground == true && self?.selectedThreadID == id
+            && self?.sidebarInteraction.isOpen == false
+        },
+        didMarkRead: { [weak self] watermark in self?.list.markRead(id, through: watermark) },
+        didSend: { [weak self] in self?.requestRefresh(.threadList) },
+        didFail: { [weak self] in self?.handle($0) },
+        didSettle: { [weak self] in self?.conversations.requestPrune() },
+        modelSelection: ChatModelSelectionStore(
+          models: modelStore, thread: thread, lifecycleTasks: lifecycleTasks),
+        workflowSource: composerWorkflows,
+        draftRepository: draftRepository, draftStorage: draftStorage,
+        didSaveDraft: { [weak self] draft in await self?.sidebarDrafts.didSave(draft, threadID: id)
+        },
+        measurementScope: measurementScope,
+        didRequestNewChat: { [weak self] in self?.startNewChat() },
+        readRetrySleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
+      conversation.composer.setForeground(isForeground)
+      conversation.runOutput = { [weak self] runID, handler in
+        self?.realtime?.subscribeRunOutput(runID: runID, handler: handler)
+      }
+      return conversation
     }
-    conversations[id] = conversation
-    return conversation
-  }
-
-  func previewChat(_ id: String) {
-    guard !closed, !needsUpgrade, threadPreview?.threadID != id,
-      list.threads.contains(where: { $0.id == id })
-    else { return }
-    threadPreview?.close()
-    // Share serialized history reads without retaining a conversation, draft or realtime work.
-    threadPreview = ChatThreadPreviewResources(
-      threadID: id, sync: sync,
-      didFinish: { [weak self, sync] in
-        guard self?.conversations[id] == nil else { return }
-        _ = await sync.releaseHistory(threadID: id)
-      },
-      didFail: { [weak self] in self?.handle($0) })
-  }
-
-  func dismissChatPreview(_ id: String) {
-    guard threadPreview?.threadID == id else { return }
-    threadPreview?.close()
-    threadPreview = nil
   }
 
   @discardableResult
   func close() -> Task<Void, Never> {
-    fork?.close()
-    fork = nil
+    navigation.close()
     sidebarDrafts.close()
-    threadPreview?.close()
-    threadPreview = nil
     closed = true
     sidebar.close()
     startupGeneration = UUID()
@@ -373,8 +332,7 @@ final class WorkspaceStore {
     creationTask?.cancel()
     newChatSubmission?.close()
     newChatSubmission = nil
-    pruneTask?.cancel()
-    warmingTask?.cancel()
+    conversations.close()
     modelStore.close()
     composerWorkflows.close()
     newModelSelection.close()
@@ -382,10 +340,8 @@ final class WorkspaceStore {
     indicatorsBootstrap?.close()
     projects.close()
     resources.close()
-    threadFeedback = nil
     search.close()
     searchArtifacts.close()
-    for conversation in conversations.values { conversation.close() }
     realtime?.stop()
     realtime = nil
     messageMarkdown.clear()
@@ -415,9 +371,7 @@ final class WorkspaceStore {
       refreshGeneration = UUID()
       refreshTask?.cancel()
       refreshTask = nil
-      if let warmingTask, !warmingTask.isCancelled { warmAgain = true }
-      warmingTask?.cancel()
-      warmingTask = nil
+      conversations.suspendWarming()
       if list.cancelRefresh() { invalidations.insert(.threadList) }
       for conversation in conversations.values { conversation.cancelRefresh() }
       // Other resources revalidate on return; list reads retain only unfinished or new work.
@@ -541,7 +495,7 @@ final class WorkspaceStore {
     {
       await selectedConversation?.modelSelection?.refresh()
     }
-    await trimConversations(limit: conversationLimit)
+    await conversations.trimConversations(limit: conversationLimit)
     if notificationReadRevision == notificationRevision,
       batch.contains(.indicators) || batch.contains(.readCursor)
         || batch.contains(.initialSubscriptions) || batch.contains(.realtimeGap)
@@ -552,9 +506,9 @@ final class WorkspaceStore {
     }
     if batch.contains(.startup), !startupHistoryWarmingRequested {
       startupHistoryWarmingRequested = true
-      warmAgain = true
+      conversations.noteHistoryChange()
     }
-    if warmAgain { requestHistoryWarming() }
+    if conversations.needsWarming { conversations.requestHistoryWarming() }
   }
 
   private func refreshComputerAuthorizations(_ batch: Set<ChatInvalidation>) async {
@@ -658,53 +612,6 @@ final class WorkspaceStore {
     }
   }
 
-  private func requestHistoryWarming() {
-    guard !closed, !needsUpgrade, !refreshSuspended else { return }
-    warmAgain = true
-    guard warmingTask == nil else { return }
-    let generation = refreshGeneration
-    warmingTask = Task(priority: .utility) { [weak self] in
-      guard let self else { return }
-      defer {
-        if refreshGeneration == generation { warmingTask = nil }
-      }
-      repeat {
-        // Coalesce startup, indicator updates and bursts of realtime messages.
-        do { try await historyWarmingSleep(.seconds(1)) } catch { return }
-        guard !closed, !needsUpgrade, !refreshSuspended, !Task.isCancelled,
-          refreshGeneration == generation
-        else { return }
-        warmAgain = false
-        let recent = list.threads.sorted {
-          $0.sortAt == $1.sortAt ? $0.id > $1.id : $0.sortAt > $1.sortAt
-        }.prefix(100)
-        let candidates = Set(
-          recent.map(\.id) + list.threads.filter { $0.indicator != nil }.map(\.id))
-        let ids = candidates.filter { conversations[$0] == nil }.sorted()
-        do {
-          try await sync.warmHistories(threadIDs: ids)
-        } catch is CancellationError {
-          return
-        } catch {
-          guard !closed, !Task.isCancelled else { return }
-          handle(error)
-          Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-            .error(
-              "event=chat.history.warm.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
-            )
-        }
-      } while warmAgain && !closed && !needsUpgrade && !Task.isCancelled
-    }
-    if let warmingTask { lifecycleTasks.track(warmingTask) }
-  }
-
-  func selectChat(_ id: String) {
-    guard !closed, let thread = list.threads.first(where: { $0.id == id }) else { return }
-    chatLinkRequestID = UUID()
-    chatLinkThreadID = nil
-    presentChat(thread)
-  }
-
   private func presentChat(_ thread: ChatThread) {
     let id = thread.id
     let reselected = selectedThreadID == id
@@ -717,235 +624,11 @@ final class WorkspaceStore {
     if reselected { requestRefresh(.history(threadID: id)) }
   }
 
-  func dismissChatLinkError() { chatLinkError = nil }
-
-  func openChatLink(_ destination: ChatLinkDestination) async -> Bool {
-    guard !closed, !needsUpgrade, !Task.isCancelled else { return false }
-    let requestID = UUID()
-    chatLinkRequestID = requestID
-    chatLinkThreadID = nil
-    chatLinkError = nil
-    defer {
-      if chatLinkRequestID == requestID {
-        chatLinkThreadID = nil
-        requestPrune()
-      }
-    }
-    func ownsRequest() -> Bool {
-      !closed && !needsUpgrade && !Task.isCancelled && chatLinkRequestID == requestID
-    }
-    do {
-      let id: String
-      let runID: String?
-      switch destination {
-      case .thread(let threadID, let sourceRunID):
-        id = threadID
-        runID = sourceRunID
-      case .workflow(let workflowID):
-        let threadID = try await client.workflowChatThreadID(workflowID)
-        guard ownsRequest() else { return false }
-        guard let threadID else {
-          chatLinkError = "This workflow's chat is no longer available."
-          return false
-        }
-        id = threadID
-        runID = nil
-      }
-      await list.restoreCached()
-      guard ownsRequest() else { return false }
-      if !list.threads.contains(where: { $0.id == id }) {
-        let refreshed = await list.refresh(waitForCurrent: true)
-        guard ownsRequest(), refreshed, list.error == nil else { return false }
-      }
-      guard ownsRequest() else { return false }
-      // Keep the destination resident while its history resolves the run anchor.
-      chatLinkThreadID = id
-      guard let conversation = conversation(for: id) else {
-        chatLinkError = "This chat is no longer available in this workspace."
-        return false
-      }
-      presentChat(conversation.thread)
-      await conversation.restoreCached()
-      guard ownsRequest() else { return false }
-      if let runID {
-        if !conversation.revealRun(runID) {
-          await conversation.refresh(waitForCurrent: true)
-          guard ownsRequest() else { return false }
-          _ = conversation.revealRun(runID)
-        }
-      }
-      guard ownsRequest() else { return false }
-      return true
-    } catch is CancellationError {
-      return false
-    } catch {
-      guard ownsRequest() else { return false }
-      chatLinkError = error.localizedDescription
-      handle(error)
-      return false
-    }
-  }
-
-  func openSearchResult(_ id: String) async -> Bool {
-    guard !closed, !needsUpgrade else { return false }
-    let searchID = search.requestID
-    guard search.ownsPresentation(searchID) else { return false }
-    search.setOpeningError(nil)
-    let needsRefresh = !list.threads.contains(where: { $0.id == id })
-    if needsRefresh {
-      guard await list.refresh(waitForCurrent: true) else { return false }
-    }
-    guard !closed, !Task.isCancelled else { return false }
-    guard search.ownsPresentation(searchID) else { return false }
-    guard !needsRefresh || list.error == nil else { return false }
-    guard list.threads.contains(where: { $0.id == id }) else {
-      search.setOpeningError("This chat is no longer available. Refresh and try again.")
-      return false
-    }
-    // Like the PWA, message hits open the chat at its existing reading position.
-    selectChat(id)
-    search.dismiss()
-    return true
-  }
-
-  func setRead(_ thread: ChatThread, read: Bool) async {
-    let conversation = conversations[thread.id]
-    if !read { conversation?.setAutomaticReadSuppressed(true) }
-    let succeeded = await list.setRead(thread, read: read)
-    if read || !succeeded { conversation?.setAutomaticReadSuppressed(false) }
-  }
-
-  func dismissThreadFeedback(_ id: UUID) {
-    if threadFeedback?.id == id { threadFeedback = nil }
-  }
-
-  @discardableResult
-  func moveToProject(
-    _ id: String, projectID: String?, didBegin: @MainActor () -> Void = {}
-  ) async -> Bool {
-    guard !closed, !needsUpgrade else { return false }
-    return await list.setProject(
-      id, projectID: projectID,
-      onFailure: { [weak self] message in
-        guard let self, !closed, !needsUpgrade else { return }
-        threadFeedback = ChatThreadFeedback(
-          threadID: id, message: message, actionTitle: "Retry", persists: true, kind: .error
-        ) { [weak self] in
-          await self?.moveToProject(id, projectID: projectID)
-        }
-      },
-      didBegin: {
-        if threadFeedback?.threadID == id { threadFeedback = nil }
-        if let projectID { projects.expand(projectID) }
-        didBegin()
-      })
-  }
-
-  @discardableResult
-  func setArchived(
-    _ id: String, archived: Bool, leaveDetail: Bool = false,
-    restoreOnUndo: Bool = false, reopenOnSuccess: Bool = false,
-    eventID: String = UUID().uuidString.lowercased()
-  ) async -> Bool {
-    guard !closed, !needsUpgrade, list.canUpdate(id),
-      let thread = list.threads.first(where: { $0.id == id })
-    else { return false }
-    let leaving = archived && leaveDetail && selectedThreadID == id
-    // Creation already owns the next navigation when its response arrives.
-    guard !isCreating || (!leaving && !reopenOnSuccess) else { return false }
-    let restore = leaving || restoreOnUndo
-    var failure: String?
-    var pendingFeedbackID: UUID?
-    let succeeded = await list.setArchived(
-      thread, archived: archived, eventID: eventID, onFailure: { failure = $0 },
-      didBegin: {
-        // The list owns the write, so leaving the detail cannot cancel it.
-        if leaving { self.sidebarInteraction.setOpen(true) }
-        let pending = ChatThreadFeedback(
-          threadID: id,
-          message: archived
-            ? String(localized: "Archiving chat…") : String(localized: "Unarchiving chat…"),
-          actionTitle: nil, persists: true, isWorking: true
-        ) {}
-        pendingFeedbackID = pending.id
-        self.threadFeedback = pending
-      })
-    guard !closed, !needsUpgrade else { return false }
-    // A late acknowledgement must not replace feedback from a newer action or dismissal.
-    guard let pendingFeedbackID, threadFeedback?.id == pendingFeedbackID else { return succeeded }
-    if succeeded {
-      if reopenOnSuccess {
-        selectChat(id)
-        sidebarInteraction.setOpen(false)
-      }
-      let message =
-        archived
-        ? (thread.isMuted
-          ? "Chat archived. It will stay archived while muted."
-          : "Chat archived. A new reply will bring it back.")
-        : "Chat unarchived."
-      threadFeedback = ChatThreadFeedback(
-        threadID: id, message: message,
-        actionTitle: restore ? String(localized: "Undo and return to chat") : "Undo",
-        requiresNavigation: restore
-      ) { [weak self] in
-        guard let self else { return }
-        await self.setArchived(id, archived: !archived, reopenOnSuccess: restore)
-      }
-    } else {
-      threadFeedback = ChatThreadFeedback(
-        threadID: id, message: failure ?? "The archive change was not confirmed.",
-        actionTitle: "Retry", persists: true, requiresNavigation: reopenOnSuccess, kind: .error
-      ) { [weak self] in
-        await self?.setArchived(
-          id, archived: archived, restoreOnUndo: restore,
-          reopenOnSuccess: reopenOnSuccess, eventID: eventID)
-      }
-    }
-    return succeeded
-  }
-
-  func setMuted(_ id: String, muted: Bool, markRead: Bool = true) async {
-    guard !closed, !needsUpgrade, list.canMute(id) else { return }
-    var failure: String?
-    let succeeded = await list.setMuted(
-      id, muted: muted, markRead: markRead, onFailure: { failure = $0 })
-    guard !closed, !needsUpgrade else { return }
-    if succeeded {
-      let message =
-        muted
-        ? "Chat muted"
-        : "Chat unmuted"
-      threadFeedback = ChatThreadFeedback(
-        threadID: id, message: message, actionTitle: "Undo"
-      ) { [weak self] in
-        // Undo restores mute state without clearing unread replies, like the PWA.
-        await self?.setMuted(id, muted: !muted, markRead: false)
-      }
-    } else {
-      threadFeedback = ChatThreadFeedback(
-        threadID: id, message: failure ?? "The mute change was not confirmed.",
-        actionTitle: "Retry", persists: true, kind: .error
-      ) { [weak self] in
-        await self?.setMuted(id, muted: muted, markRead: markRead)
-      }
-    }
-  }
-
-  /// Puts `/name` at the start of the new chat's draft, as choosing the workflow from the
-  /// composer's `/` menu does; whatever the draft already held stays after it.
-  func useWorkflow(named name: String) {
-    let token = "/" + name + " "
-    guard !newChatDraft.hasPrefix(token) else { return }
-    newChatDraft = token + newChatDraft
-  }
-
   func startNewChat(projectID: String? = nil) {
     guard !isCreating, !needsUpgrade, !closed else { return }
     newChatSubmission?.close()
     newChatSubmission = nil
-    chatLinkRequestID = UUID()
-    chatLinkThreadID = nil
+    navigation.cancelOpening()
     selectedThreadID = nil
     newChatProjectID = projectID
     newComposer.requestSync()
@@ -953,66 +636,10 @@ final class WorkspaceStore {
     error = nil
   }
 
-  func startFork(_ selection: ChatFeedbackSelection, from conversation: ConversationStore) {
-    guard !closed, !needsUpgrade, fork == nil,
-      selectedConversation === conversation, let agentID = defaultAgentID,
-      let message = conversation.messages.first(where: { $0.id == selection.eventID }),
-      message.role == .assistant, !message.isError, !message.isQueued,
-      message.text.utf16.elementsEqual(selection.text.utf16), let runID = message.runID
-    else { return }
-    fork = ChatForkStore(
-      selection: selection, sourceRunID: runID, projectID: conversation.thread.projectId,
-      agentID: agentID, commands: commands, models: modelStore, workflowSource: composerWorkflows,
-      lifecycleTasks: lifecycleTasks,
-      didCreate: { [weak self] thread in self?.list.insertCreated(thread) },
-      didSend: { [weak self] thread in self?.finishFork(thread) },
-      didFail: { [weak self] in self?.handle($0) })
-  }
-
-  func dismissFork() {
-    guard fork?.isSending != true else { return }
-    fork?.close()
-    fork = nil
-  }
-
-  private func finishFork(_ thread: ChatThread) {
-    guard !closed else { return }
-    dismissFork()
-    requestRefresh(.threadList)
-    threadFeedback = ChatThreadFeedback(
-      threadID: thread.id, message: String(localized: "New chat created"),
-      actionTitle: String(localized: "Open"), requiresNavigation: true,
-      action: { [weak self] in self?.selectChat(thread.id) })
-  }
-
   func removeNewChatProject() { newChatProjectID = nil }
-
-  func deleteProject(_ id: String) async {
-    if await projects.delete(id), !closed, newChatProjectID == id {
-      removeNewChatProject()
-    }
-  }
 
   var canOpenNewChatFromSystem: Bool {
     isForeground && defaultAgentID != nil && !isCreating && !needsUpgrade && !closed
-  }
-
-  @discardableResult
-  func openNewChatFromSystem(startVoiceInput: Bool = false) -> Bool {
-    guard canOpenNewChatFromSystem else { return false }
-    startNewChat()
-    search.dismiss()
-    if startVoiceInput {
-      if let request = newComposer.focusRequest { newComposer.consumeFocusRequest(request) }
-      newComposer.editor.dismissKeyboard()
-      newComposer.voice?.requestStart()
-    } else {
-      newComposer.voice?.suspend()
-      if let block = newComposer.editorBlocks.last {
-        newComposer.requestEditorFocus(block.id)
-      }
-    }
-    return true
   }
 
   @discardableResult
@@ -1128,37 +755,9 @@ final class WorkspaceStore {
     if sendTransition != nil { await submission.waitUntilPresented() }
   }
 
-  func reduceMemory() async {
-    warmingTask?.cancel()
-    warmAgain = false
-    messageMarkdown.clear()
-    for conversation in conversations.values { conversation.measurements.clear() }
-    await trimConversations(limit: 0)
-  }
-
-  private func requestPrune() {
-    guard !closed else { return }
-    pruneAgain = true
-    guard pruneTask == nil else { return }
-    pruneTask = Task { [weak self] in
-      guard let self else { return }
-      defer { pruneTask = nil }
-      repeat {
-        pruneAgain = false
-        await trimConversations(limit: conversationLimit)
-      } while pruneAgain && !closed && !Task.isCancelled
-    }
-    if let pruneTask { lifecycleTasks.track(pruneTask) }
-  }
-
   private func applyThreads(_ threads: [ChatThread]) {
     guard !closed else { return }
-    let state = Dictionary(
-      uniqueKeysWithValues: threads.map {
-        let state = NotificationReadState(
-          agentID: $0.agentID, hidden: $0.isHidden, muted: $0.isMuted, unreadAt: $0.unreadAt)
-        return ($0.id, state)
-      })
+    let state = WorkspaceNotificationReadState.snapshot(threads)
     let changed = notificationReadState.map { $0 != state } ?? false
     notificationReadState = state
     if changed { notificationReadStateChanged() }
@@ -1177,52 +776,18 @@ final class WorkspaceStore {
     didRefreshReadState()
   }
 
-  private func trimConversations(limit: Int) async {
-    let candidates = conversations.keys.sorted { (lastUse[$0] ?? 0) < (lastUse[$1] ?? 0) }
-    for id in candidates {
-      guard !closed, !Task.isCancelled else { return }
-      let removed = !list.threads.contains(where: { $0.id == id })
-      guard removed || conversations.count > limit else { continue }
-      guard selectedThreadID != id, chatLinkThreadID != id,
-        let conversation = conversations[id], conversation.canRelease
-      else { continue }
-      guard await sync.releaseHistory(threadID: id), !closed, selectedThreadID != id,
-        chatLinkThreadID != id,
-        conversation.canRelease, conversations[id] === conversation
-      else { continue }
-      sidebarDrafts.noteReleased(id, hasDraft: conversation.composer.hasContent)
-      conversation.close()
-      conversations[id] = nil
-      lastUse[id] = nil
-    }
-  }
-
   /// Sidebar activation observes the cached draft resource without invalidating it.
   func activateDrafts() async {
     guard !closed, !needsUpgrade, !Task.isCancelled, draftRepository != nil else { return }
     await sidebarDrafts.activate()
   }
 
+  func reportWorkspaceFailure(_ failure: Error) { handle(failure) }
+
   private func handle(_ failure: Error) {
     guard !closed, (failure as? APIClientError)?.statusCode == 426 else { return }
     needsUpgrade = true
     close()
-  }
-
-  func prepareSettings() {
-    guard !closed, !needsUpgrade else { return }
-    do { try resources.prepareSettings() } catch { handle(error) }
-  }
-
-  func loadSettingsBilling() async {
-    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
-    do { try await resources.loadSettingsBilling() } catch is CancellationError {
-    } catch { handle(error) }
-  }
-
-  func refreshSettingsBilling() async {
-    prepareSettings()
-    await loadSettingsBilling()
   }
 
 }

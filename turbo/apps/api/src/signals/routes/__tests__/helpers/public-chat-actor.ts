@@ -14,6 +14,7 @@ import type { createRunsApi } from "./api-bdd-runs";
 export async function publicChatActor(
   context: TestContext,
   options: {
+    readonly actor?: ApiTestUser;
     readonly beforeRuns?: (actor: ApiTestUser) => Promise<void>;
     readonly tier?: "pro" | "team";
     readonly stripeTransport?: "http";
@@ -27,7 +28,7 @@ export async function publicChatActor(
   } = {},
 ) {
   const fixture = createChatEventsFixture(context);
-  const actor = fixture.bdd.user();
+  const actor = options.actor ?? fixture.bdd.user();
   const orgId = actor.orgId;
   if (!orgId) {
     throw new Error("Expected a public chat workspace owner");

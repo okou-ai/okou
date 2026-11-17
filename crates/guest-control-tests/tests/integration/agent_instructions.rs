@@ -143,8 +143,13 @@ async fn blocked_helper(disconnect: bool) {
     let state = tempfile::tempdir().unwrap();
     let fifo = state.path().join("release");
     let name = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
-    // SAFETY: the test owns this fresh path and supplies a valid C string.
-    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    assert_eq!(
+        nix::unistd::mkfifo(
+            name.as_c_str(),
+            nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+        ),
+        Ok(())
+    );
     let started = state.path().join("started");
     let program = format!(
         "#!/bin/sh\n: > '{}'\nread value < '{}'\n",

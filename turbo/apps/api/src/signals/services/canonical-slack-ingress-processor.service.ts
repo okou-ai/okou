@@ -1,3 +1,7 @@
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import type { ChatSlackMessageAssets } from "@okouai/db/jsonb-contracts/chat-slack-context";
 import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
@@ -35,10 +39,7 @@ import {
 } from "../../lib/slack-webhook-context";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import {
-  publishChatThreadMessageCreatedSafely,
-  publishThreadListChangedSafely,
-} from "../external/realtime";
+import { publishThreadListChangedSafely } from "../external/realtime";
 import {
   createSlackClient,
   isOptionalSlackConversationContextFailure,
@@ -860,11 +861,26 @@ const finishCanonicalSlackEnqueue$ = command(
       },
       signal,
     );
-    await publishChatThreadMessageCreatedSafely({
-      userId: ingress.userId,
-      orgId: ingress.orgId,
-      threadId: ingress.chatThreadId,
-    });
+    waitUntil(
+      set(
+        projectCommittedChatThreadSearch$,
+        {
+          userId: ingress.userId,
+          orgId: ingress.orgId,
+          threadId: ingress.chatThreadId,
+        },
+        signal,
+      ),
+    );
+    await set(
+      publishChatThreadMessageCreated$,
+      {
+        userId: ingress.userId,
+        orgId: ingress.orgId,
+        threadId: ingress.chatThreadId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     await publishThreadListChangedSafely({
       userId: ingress.userId,

@@ -371,7 +371,15 @@
     "src/signals/services/background-job-command.service.ts",
     "src/signals/services/background-job.service.ts",
     "src/signals/services/personal-instructions.service.ts",
-    "src/lib/invocation-budget.ts"
+    "src/lib/invocation-budget.ts",
+    "src/signals/services/chat-event-publication.service.ts",
+    "src/signals/services/chat-event-visibility.service.ts",
+    "src/signals/services/cron-project-chat-event-search.service.ts",
+    "src/signals/services/marketing-reward-event-delivery.service.ts",
+    "src/lib/chat-search-bigram.ts",
+    "src/signals/services/chat-user-message.service.ts",
+    "src/lib/generation-template-prompt.ts",
+    "src/signals/services/user-template-data.service.ts"
   ],
   "exclude": ["node_modules", "dist"],
   "references": [

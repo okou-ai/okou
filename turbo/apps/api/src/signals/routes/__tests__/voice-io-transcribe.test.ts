@@ -41,6 +41,7 @@ import {
 } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { voiceIoTranscribeRoutes } from "../voice-io-transcribe";
+import { createMcpWebApi } from "./helpers/mcp-web-api";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -744,6 +745,37 @@ function segmentForm(
 }
 
 describe("POST /api/voice-io/transcribe/segment", () => {
+  it("transcribes OAuth voice input with the existing paid-tier quota", async () => {
+    const actor = await voiceActor();
+    const token = createMcpWebApi(context).authorize(actor)({
+      scope: "user:org:read okou:voice:transcribe",
+    });
+    const headers = { authorization: `Bearer ${token}` };
+    const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
+      voiceIoQuotaContract,
+    );
+    const before = await accept(quota.get({ headers }), [200]);
+    server.use(
+      http.post(VERTEX_VOICE_URL, () => {
+        return recoveredVoiceResponse();
+      }),
+    );
+    const response = await accept(
+      client().segment({
+        headers,
+        body: segmentForm([audioFile(1)], "", 1),
+      }),
+      [200],
+    );
+    expect(response.body).toStrictEqual({
+      transcript: "Recorded speech.",
+      language: "en",
+    });
+    const after = await accept(quota.get({ headers }), [200]);
+    expect(before.body).toMatchObject({ allowed: true, count: 0 });
+    expect(after.body).toStrictEqual(before.body);
+  });
+
   it("rejects a previous transcript beyond the bounded prefix", async () => {
     const owner = await publicVoiceActor();
     await owner.run(async () => {

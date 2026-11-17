@@ -6,17 +6,24 @@ import { timingSafeEqual } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { v5 as uuidv5 } from "uuid";
 import { env } from "../../lib/env";
+import { logger } from "../../lib/log";
 import { marketingRewardIntentIdentity } from "../../lib/marketing-reward-intent-identity";
 import { authorization$, setResHeader$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
+import { waitUntil } from "../context/wait-until";
+import { tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import { enqueueBackgroundJob$ } from "../services/background-job-command.service";
 import { resolveMarketingRewardIntent$ } from "../services/marketing-reward-settlement.service";
 import { marketingRewardReceipt } from "../services/marketing-reward-receipt";
-import { MARKETING_REWARD_PROJECTION_JOB_KIND } from "../services/marketing-reward-projection.service";
+import {
+  deliverMarketingRewardProjection$,
+  MARKETING_REWARD_PROJECTION_JOB_KIND,
+} from "../services/marketing-reward-projection.service";
 import { marketingRewardProgressRoute } from "./marketing-reward-progress";
 
 const namespace = "d3f5d0e4-76eb-45b5-a34e-620b5804297b";
+const log = logger("MarketingRewardProjection");
 const body$ = bodyResultOf(marketingRewardProjectionContract.notify);
 
 const queueProjection$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -105,6 +112,21 @@ const queueProjection$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
     },
     signal,
+  );
+  waitUntil(
+    tapError(
+      set(
+        deliverMarketingRewardProjection$,
+        { jobId: notificationId, handlerVersion: 1 },
+        signal,
+      ),
+      (error) => {
+        log.warn("Reward projection delivery will recover in background", {
+          notificationId,
+          error,
+        });
+      },
+    ),
   );
   return {
     status: 200 as const,

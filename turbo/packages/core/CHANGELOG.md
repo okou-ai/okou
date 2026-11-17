@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.848.0](https://github.com/okou-ai/okou/compare/core-v8.847.6...core-v8.848.0) (2026-11-17)
+
+
+### Features
+
+* roll out free plan artifact paywall ([#48265](https://github.com/okou-ai/okou/issues/48265)) ([a8c6d85](https://github.com/okou-ai/okou/commit/a8c6d85e09610d0268362ec7db53d7ec8f031fb6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.83.0
+
 ## [8.847.6](https://github.com/okou-ai/okou/compare/core-v8.847.5...core-v8.847.6) (2026-11-17)
 
 

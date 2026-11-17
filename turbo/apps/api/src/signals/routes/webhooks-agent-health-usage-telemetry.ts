@@ -11,6 +11,7 @@ import {
   type RunnerResourceBudgetUtilizationBucket,
   type RunnerStartupPath,
   type SandboxReuseResult,
+  type StorageStageWrite,
 } from "@okouai/api-contracts/contracts/webhooks";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
@@ -35,6 +36,10 @@ import {
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { runnerAuth$ } from "../auth/runner-auth";
 import type { RouteEntry } from "../route-entry";
+import {
+  RUN_TIME_BUDGET_STEER_AT_MS,
+  steerRunNearTimeBudget$,
+} from "../services/cron-steer-run-time-budget.service";
 import { dispatchProgressCallbacks$ } from "../services/agent-run-callbacks.service";
 import { hasAgentPhoneTypingTargetForRun$ } from "../services/agent-event-consumer-agentphone-typing.service";
 import { DISCORD_TYPING_REFRESH_INTERVAL_SECONDS } from "../services/discord-run-typing.service";
@@ -42,7 +47,7 @@ import {
   WECHAT_TYPING_REFRESH_INTERVAL_SECONDS,
   hasWechatTypingTargetForRun$,
 } from "../services/wechat-thread-typing.service";
-import { settle } from "../utils";
+import { settle, tapError } from "../utils";
 import {
   recordRunnerUsageBatch$,
   RunnerUsageRunMissingError,
@@ -77,6 +82,7 @@ interface SandboxOperationDimensionInput {
   readonly reason?: string;
   readonly archive_size_mismatch?: ArchiveSizeMismatch;
   readonly archive_connection_attempt?: ArchiveConnectionAttempt;
+  readonly storage_stage_write?: StorageStageWrite;
   readonly dns_readiness_attempt?: number;
   readonly dns_readiness_final_attempt?: boolean;
   readonly dns_readiness_guest_duration_ms?: number;
@@ -311,6 +317,56 @@ function storageBatchDimensions(
   };
 }
 
+function storageStageWriteDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, string | number> {
+  const stage = op.storage_stage_write;
+  if (!stage) {
+    return {};
+  }
+  return {
+    storage_stage_file_count: stage.file_count,
+    storage_stage_content_bytes: stage.content_bytes,
+    storage_stage_host_timing: stage.host_timing,
+    ...(stage.lock_wait_us === undefined
+      ? {}
+      : { storage_stage_lock_wait_us: stage.lock_wait_us }),
+    ...(stage.admission_us === undefined
+      ? {}
+      : { storage_stage_admission_us: stage.admission_us }),
+    ...(stage.validation_us === undefined
+      ? {}
+      : { storage_stage_validation_us: stage.validation_us }),
+    ...(stage.path_lock_wait_us === undefined
+      ? {}
+      : { storage_stage_path_lock_wait_us: stage.path_lock_wait_us }),
+    ...(stage.file_gate_wait_us === undefined
+      ? {}
+      : { storage_stage_file_gate_wait_us: stage.file_gate_wait_us }),
+    ...(stage.request_setup_us === undefined
+      ? {}
+      : { storage_stage_request_setup_us: stage.request_setup_us }),
+    ...(stage.frame_builder_wait_us === undefined
+      ? {}
+      : { storage_stage_frame_builder_wait_us: stage.frame_builder_wait_us }),
+    ...(stage.frame_encode_us === undefined
+      ? {}
+      : { storage_stage_frame_encode_us: stage.frame_encode_us }),
+    ...(stage.writer_wait_us === undefined
+      ? {}
+      : { storage_stage_writer_wait_us: stage.writer_wait_us }),
+    ...(stage.frame_write_us === undefined
+      ? {}
+      : { storage_stage_frame_write_us: stage.frame_write_us }),
+    ...(stage.response_wait_us === undefined
+      ? {}
+      : { storage_stage_response_wait_us: stage.response_wait_us }),
+    ...(stage.result_decode_us === undefined
+      ? {}
+      : { storage_stage_result_decode_us: stage.result_decode_us }),
+  };
+}
+
 function archiveConnectionAttemptDimensions(
   op: SandboxOperationDimensionInput,
 ): Record<string, number | boolean> {
@@ -393,6 +449,7 @@ function sandboxOperationDimensions(
         }
       : {}),
     ...archiveConnectionAttemptDimensions(op),
+    ...storageStageWriteDimensions(op),
     ...dnsReadinessDimensions(op),
     ...storageBatchDimensions(op),
     ...sandboxStartupContextDimensions(op),
@@ -509,7 +566,11 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   signal.throwIfAborted();
   const result = await db
-    .select({ triggerSource: agentRuns.triggerSource })
+    .select({
+      triggerSource: agentRuns.triggerSource,
+      chatThreadId: agentRuns.chatThreadId,
+      startedAt: agentRuns.startedAt,
+    })
     .from(agentRuns)
     .where(
       and(
@@ -522,6 +583,33 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   if (result.length === 0) {
     return notFound("Agent run not found");
+  }
+
+  const run = result[0];
+  if (
+    run?.chatThreadId &&
+    run.startedAt &&
+    run.triggerSource &&
+    heartbeatAt.getTime() - run.startedAt.getTime() >=
+      RUN_TIME_BUDGET_STEER_AT_MS
+  ) {
+    // A healthy Run should receive its warning even when the fleet cron is late.
+    // Eligibility and the deterministic event ID are rechecked by the append.
+    waitUntil(
+      tapError(
+        set(
+          steerRunNearTimeBudget$,
+          { runId: body.runId, chatThreadId: run.chatThreadId },
+          signal,
+        ),
+        (error) => {
+          L.warn("Run heartbeat budget warning failed", {
+            runId: body.runId,
+            error,
+          });
+        },
+      ),
+    );
   }
 
   const typingRefreshIntervalSeconds = await settle(

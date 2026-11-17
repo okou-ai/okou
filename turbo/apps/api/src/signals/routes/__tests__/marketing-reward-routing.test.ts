@@ -8,6 +8,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { marketingRewardCheckinEventSchema } from "../../../lib/marketing-reward-events";
 import { mockNow } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { server } from "../../../mocks/server";
 import { getStartedRoutes } from "../get-started";
 import { marketingRewardSettlementRoutes } from "../marketing-reward-settlement";
@@ -53,12 +54,11 @@ function financialClient() {
 }
 
 test("keeps unselected users on App and recovers a selected check-in from the App ledger after a lost Marketing response", async () => {
-  await setupApp({ context, routes: getStartedRoutes, isolatePg: true });
   const api = setupApp({ context, routes: getStartedRoutes })(
     getStartedContract,
   );
   mockNow(new Date("2026-11-17T08:00:00.000Z"));
-  marketingRewardConsumer(context);
+  marketingRewardConsumer();
   const selected = {
     userId: `user_${randomUUID()}`,
     orgId: `org_${randomUUID()}`,
@@ -139,11 +139,10 @@ test("keeps unselected users on App and recovers a selected check-in from the Ap
 });
 
 test("a Marketing acknowledgement cannot fabricate money and a retained pending request can be funded later exactly once", async () => {
-  await setupApp({ context, routes: getStartedRoutes, isolatePg: true });
   const api = setupApp({ context, routes: getStartedRoutes })(
     getStartedContract,
   );
-  const consumer = marketingRewardConsumer(context);
+  const consumer = marketingRewardConsumer();
   const actor = {
     userId: `user_${randomUUID()}`,
     orgId: `org_${randomUUID()}`,
@@ -159,7 +158,7 @@ test("a Marketing acknowledgement cannot fabricate money and a retained pending 
   );
   const pending = await accept(api.checkin({ headers }), [202]);
   expect(pending.body.status).toBe("pending");
-  await consumer.deliver();
+  await flushWaitUntilForTest();
   const source = consumer.received.find((event) => {
     return event.type === "checkin.requested";
   });

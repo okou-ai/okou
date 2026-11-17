@@ -10,7 +10,10 @@ import {
 
 const WORKFLOW_REWARD_SOURCE_NAMESPACE = "a2fc9d37-2b91-4ed2-a981-5c4b108ac6f1";
 
-function factId(stage: "queued" | "run" | "completed", id: string) {
+export function workflowRewardSourceEventId(
+  stage: "queued" | "run" | "completed",
+  id: string,
+) {
   return uuidv5(
     `${stage}:${id.toLowerCase()}`,
     WORKFLOW_REWARD_SOURCE_NAMESPACE,
@@ -32,7 +35,7 @@ export function workflowRewardQueuedEventInsert(
   },
   accepted: SQL,
 ) {
-  const id = factId("queued", args.sourceEventId);
+  const id = workflowRewardSourceEventId("queued", args.sourceEventId);
   const input = {
     version: 4,
     id,
@@ -66,7 +69,7 @@ export function workflowRewardRunEventInsert(
       ...args,
       stage: "run",
       type: "workflow.run-created",
-      sourceId: factId("queued", args.sourceEventId),
+      sourceId: workflowRewardSourceEventId("queued", args.sourceEventId),
     },
     accepted,
   );
@@ -81,7 +84,7 @@ export function workflowRewardCompletedEventInsert(
       ...args,
       stage: "completed",
       type: "workflow.run-completed",
-      sourceId: factId("run", args.runId),
+      sourceId: workflowRewardSourceEventId("run", args.runId),
     },
     accepted,
   );
@@ -96,7 +99,7 @@ function linkedFactInsert(
   },
   accepted: SQL,
 ) {
-  const id = factId(args.stage, args.runId);
+  const id = workflowRewardSourceEventId(args.stage, args.runId);
   const changes = {
     id,
     type: args.type,

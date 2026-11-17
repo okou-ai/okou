@@ -3340,35 +3340,66 @@ test("approval callbacks authenticate exact bodies", async () => {
   ).toBe(401);
 });
 
-test("cron repairs a failed durable approval Workflow start without querying Link", async () => {
+test("cron recovers a failed approval Workflow without another purchase request and continues the original chat once", async () => {
   await setupApp({ context, routes: walletRoutes, isolatePg: true });
+  mockEnv("CRON_SECRET", "wallet-recovery-cron");
   const fixture = await trackedPurchase(true);
-  let reads = 0;
+  let extraPurchases = 0;
   server.use(
-    http.get(
-      `https://api.link.com/spend_requests/${fixture.provider.id}`,
-      () => {
-        reads++;
-        return HttpResponse.json(
-          { error: { message: "Unexpected provider poll" } },
-          { status: 500 },
-        );
-      },
-    ),
+    http.post("https://api.link.com/spend_requests", () => {
+      extraPurchases++;
+      return HttpResponse.json(
+        { error: { message: "Unexpected new purchase" } },
+        { status: 500 },
+      );
+    }),
   );
+  // No caller retry: the durable recovery schedule must restart the original
+  // approval watch after the initial Worker request failed.
   await accept(
     setupApp({ context, routes: cronProcessBackgroundJobsRoutes })(
       cronProcessBackgroundJobsContract,
-    ).process({
-      headers: { authorization: "Bearer test-cron-secret" },
+    ).process({ headers: { authorization: "Bearer wallet-recovery-cron" } }),
+    [200],
+  );
+  await flushWaitUntilForTest();
+  expect(fixture.starts.slice(1)).toContainEqual({
+    spendId: fixture.spend.id,
+    deadline: fixture.spend.expiresAt,
+  });
+  const resumed = await accept(
+    client().getSpend({
+      headers: fixture.headers,
+      params: { id: fixture.spend.id },
     }),
     [200],
   );
-  expect(fixture.starts).toStrictEqual([
-    { spendId: fixture.spend.id, deadline: fixture.spend.expiresAt },
-    { spendId: fixture.spend.id, deadline: fixture.spend.expiresAt },
-  ]);
-  expect(reads).toBe(0);
+  expect(resumed.body).toMatchObject({
+    id: fixture.spend.id,
+    expiresAt: fixture.spend.expiresAt,
+    approvalUrl: fixture.spend.approvalUrl,
+    autoContinue: true,
+  });
+  fixture.provider.approve();
+  await fixture.complete();
+  for (const response of await Promise.all([
+    pollPurchase(fixture.spend.id),
+    pollPurchase(fixture.spend.id),
+  ])) {
+    expect(response.body).toStrictEqual({ state: "done" });
+  }
+  await flushWaitUntilForTest();
+  expect((await approvalCard(fixture)).body.status).toBe("continued");
+  const { events } = await createChatFilesBddApi(context).listThreadEvents(
+    fixture.actor,
+    fixture.run.threadId,
+  );
+  expect(
+    events.filter((event) => {
+      return event.id === fixture.spend.id;
+    }),
+  ).toHaveLength(1);
+  expect(extraPurchases).toBe(0);
 });
 
 test("approval polling distinguishes resumable Link actions from actions requiring a new approval", async () => {

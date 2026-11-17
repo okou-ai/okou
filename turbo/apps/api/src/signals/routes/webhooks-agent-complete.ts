@@ -1,3 +1,4 @@
+import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 import { command, computed } from "ccstate";
@@ -70,6 +71,18 @@ const completeAgentRunRoute$ = command(
     );
     if (result.status === 200) {
       set(scheduleReleasedSlotPicks$, result.releasedSlots, signal);
+      if (result.marketingRewardEventId) {
+        waitUntil(
+          set(
+            deliverMarketingRewardEvents$,
+            {
+              jobId: result.marketingRewardEventId,
+              handlerVersion: 4,
+            },
+            signal,
+          ),
+        );
+      }
     }
     signal.throwIfAborted();
 

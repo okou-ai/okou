@@ -36,6 +36,89 @@ use crate::{
 // their shared request seam here so timeout lifecycle coverage remains fast.
 const FRAME_BUILDER_REQUEST_TIMEOUT: Duration = Duration::from_millis(50);
 
+#[tokio::test]
+async fn observed_batch_preserves_frames_results_and_gate_ownership() {
+    for success in [true, false] {
+        let (host, mut guest) = setup_host_and_guest().await;
+        let host = Arc::new(host);
+        let files = [WriteFileEntry {
+            path: "/tmp/measured",
+            content: b"exact\0bytes",
+        }];
+        let mut timing = sandbox::FileWriteRequestTiming::default();
+        let (result, mut guest) = {
+            let gate = host.shared.file_write_gate.lock().await;
+            let request = host.write_files_with_timing(&files, &mut timing);
+            tokio::pin!(request);
+            poll_once_pending(request.as_mut()).await;
+            assert_eq!(pending_request_count(&host), 0);
+            assert_eq!(
+                guest.try_read(&mut [0; 1]).unwrap_err().kind(),
+                io::ErrorKind::WouldBlock
+            );
+            drop(gate);
+            let guest_task = tokio::spawn(async move {
+                let frame = expect_write_files(&mut guest).await;
+                assert_eq!(
+                    frame.files,
+                    vec![("/tmp/measured".to_owned(), b"exact\0bytes".to_vec())]
+                );
+                if success {
+                    send_write_files_success(&mut guest, frame.seq()).await;
+                } else {
+                    send_write_files_failure(&mut guest, frame.seq(), "write denied").await;
+                }
+                guest
+            });
+            (request.await, guest_task.await.unwrap())
+        };
+        if success {
+            result.unwrap();
+        } else {
+            assert!(result.unwrap_err().to_string().contains("write denied"));
+        }
+        assert!(timing.validation.is_some());
+        assert!(timing.path_lock_wait.is_some());
+        assert!(timing.file_gate_wait.is_some());
+        let phases = timing.host;
+        assert!(
+            [
+                phases.setup,
+                phases.frame_builder_wait,
+                phases.frame_encode,
+                phases.writer_wait,
+                phases.frame_write,
+                phases.response_wait,
+                phases.result_decode
+            ]
+            .iter()
+            .all(Option::is_some)
+        );
+        assert_connection_accepts_exec_operation(&host, &mut guest).await;
+
+        let error = host
+            .write_files_with_timing(
+                &[WriteFileEntry {
+                    path: "",
+                    content: b"rejected",
+                }],
+                &mut timing,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(timing.validation.is_some());
+        assert!(timing.path_lock_wait.is_none());
+        assert!(timing.file_gate_wait.is_none());
+        assert_eq!(timing.host, sandbox::RequestTiming::default());
+        host.write_files_with_timing(&[], &mut timing)
+            .await
+            .unwrap();
+        assert_eq!(timing, sandbox::FileWriteRequestTiming::default());
+        assert_connection_accepts_exec_operation(&host, &mut guest).await;
+    }
+}
+
 fn assert_request_timeout(
     error: &io::Error,
     expected_stage: RequestTimeoutStage,

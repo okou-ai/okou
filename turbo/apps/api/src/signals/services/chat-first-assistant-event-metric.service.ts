@@ -1,3 +1,4 @@
+import { publishChatThreadMessageCreated$ } from "./chat-event-publication.service";
 import { command } from "ccstate";
 import { elapsedSinceApiStartMs } from "@okouai/api-contracts/contracts/api-start-time";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -5,7 +6,7 @@ import { and, eq, isNotNull, isNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
-import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { now } from "../../lib/time";
 import { tapError } from "../utils";
@@ -107,7 +108,7 @@ export const publishFirstAssistantEventCreatedSafely$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
-    await publishChatThreadMessageCreatedSafely(args);
+    await set(publishChatThreadMessageCreated$, args, signal);
     signal.throwIfAborted();
     const acknowledgedAt = now();
     await tapError(

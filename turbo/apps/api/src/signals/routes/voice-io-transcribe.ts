@@ -235,7 +235,8 @@ export const voiceIoTranscribeRoutes: readonly RouteEntry[] = [
     route: voiceIoTranscribeContract.segment,
     handler: authRoute(
       {
-        accept: ["session"],
+        accept: ["session", "oauth"],
+        oauthScope: "okou:voice:transcribe",
         requireOrganization: true,
         missingOrganizationStatus: 401,
       },

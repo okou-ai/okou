@@ -91,14 +91,17 @@ async fn read_to_string_rejects_fifo_without_blocking_child() {
 
     let fifo = PathBuf::from(fifo_path);
     let c_path = CString::new(fifo.to_string_lossy().as_bytes()).unwrap();
-    // SAFETY: `c_path` is a valid nul-terminated path for `mkfifo`.
-    let result = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
-    assert_eq!(
-        result,
-        0,
-        "mkfifo failed: {}",
-        std::io::Error::last_os_error()
+    let result = nix::unistd::mkfifo(
+        c_path.as_c_str(),
+        nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
     );
+    if let Err(error) = result {
+        assert!(
+            result.is_ok(),
+            "mkfifo failed: {}",
+            std::io::Error::from(error)
+        );
+    }
 
     let error = read_to_string(&fifo, 1024, OwnerCheck::None)
         .await

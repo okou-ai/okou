@@ -106,16 +106,16 @@ async fn expired_storage_request(gate: QueuedGate) {
             ),
         )
         .await;
-        assert!(timing.setup.is_some());
-        assert!(timing.frame_builder_wait.is_some());
+        assert!(timing.host.setup.is_some());
+        assert!(timing.host.frame_builder_wait.is_some());
         assert_eq!(
-            timing.frame_encode.is_some(),
+            timing.host.frame_encode.is_some(),
             matches!(gate, QueuedGate::Writer)
         );
-        assert!(timing.writer_wait.is_none());
-        assert!(timing.frame_write.is_none());
-        assert!(timing.response_wait.is_none());
-        assert!(timing.result_decode.is_none());
+        assert!(timing.host.writer_wait.is_none());
+        assert!(timing.host.frame_write.is_none());
+        assert!(timing.host.response_wait.is_none());
+        assert!(timing.host.result_decode.is_none());
     }
 }
 

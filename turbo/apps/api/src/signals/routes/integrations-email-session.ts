@@ -3,7 +3,6 @@ import { integrationsEmailContract as contract } from "@okouai/api-contracts/con
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { conflict, resourceUnavailable } from "../../lib/error";
-import { now } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
@@ -12,7 +11,7 @@ import { clerk$ } from "../external/clerk";
 import { listAllUserOrganizationMemberships } from "../external/clerk-organization-lists";
 import { emailRunSource$ } from "../services/email-run-source.service";
 import { changeEmailSession$ } from "../services/email-session.service";
-import { drainEmailOutboxBatch$ } from "../services/email-common.service";
+import { sendEmailOutboxItem$ } from "../services/email-common.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -116,17 +115,17 @@ const switchWorkspace$ = command(async ({ get, set }, signal: AbortSignal) => {
       "Email integration is not available in that workspace.",
     );
   }
-  const changed = await set(
+  const outboxId = await set(
     changeEmailSession$,
     { ...session.auth, source: session.source, workspace },
     signal,
   );
-  if (!changed) {
+  if (!outboxId) {
     return conflict(
       "The Email binding changed. Continue in a new email conversation.",
     );
   }
-  waitUntil(set(drainEmailOutboxBatch$, { currentTimeMs: now() }, signal));
+  waitUntil(set(sendEmailOutboxItem$, outboxId, signal));
   return {
     status: 200 as const,
     body: { emailAddress: session.source.emailAddress, workspace },
@@ -138,17 +137,17 @@ const logout$ = command(async ({ set }, signal: AbortSignal) => {
   if ("status" in session) {
     return session;
   }
-  const changed = await set(
+  const outboxId = await set(
     changeEmailSession$,
     { ...session.auth, source: session.source },
     signal,
   );
-  if (!changed) {
+  if (!outboxId) {
     return conflict(
       "The Email binding changed. Continue in a new email conversation.",
     );
   }
-  waitUntil(set(drainEmailOutboxBatch$, { currentTimeMs: now() }, signal));
+  waitUntil(set(sendEmailOutboxItem$, outboxId, signal));
   return {
     status: 200 as const,
     body: { emailAddress: session.source.emailAddress },

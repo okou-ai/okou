@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/okou-ai/okou/compare/android-v0.19.0...android-v0.19.1) (2026-11-17)
+
+
+### Refactoring
+
+* define client run and activity read models ([#48165](https://github.com/okou-ai/okou/issues/48165)) ([9be7072](https://github.com/okou-ai/okou/commit/9be7072fcdb23c781cc0d68a93dc88fc7b86f8da))
+
 ## [0.19.0](https://github.com/okou-ai/okou/compare/android-v0.18.1...android-v0.19.0) (2026-11-17)
 
 

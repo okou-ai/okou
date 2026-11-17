@@ -92,6 +92,25 @@ const publishProjection$ = command(
   },
 );
 
+/** A committed notification can be delivered without waiting for a queue sweep. */
+export const deliverMarketingRewardProjection$ = command(
+  async (
+    { set },
+    { jobId, handlerVersion }: { jobId: string; handlerVersion: 1 | 2 },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const job = await set(
+      claimBackgroundJob$,
+      { jobId, kind: MARKETING_REWARD_PROJECTION_JOB_KIND, handlerVersion },
+      signal,
+    );
+    if (job) {
+      await set(publishProjection$, job, signal);
+    }
+    signal.throwIfAborted();
+  },
+);
+
 /** Four independent leases per version preserve progress when one publish fails. */
 export const deliverMarketingRewardProjections$ = command(
   async ({ set }, signal: AbortSignal): Promise<number> => {

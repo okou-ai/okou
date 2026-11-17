@@ -1,4 +1,9 @@
+import { waitUntil } from "../context/wait-until";
 import { notifyPhoneUseOwner$ } from "./phone-use-notifications.service";
+import {
+  publishChatThreadMessageCreated$,
+  projectCommittedChatThreadSearch$,
+} from "./chat-event-publication.service";
 import { env } from "../../lib/env";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
@@ -20,7 +25,6 @@ import type { SandboxAuth } from "../../types/auth";
 import { db$, writeDb$ } from "../external/db";
 import {
   publishChatThreadDetailChangedSafely,
-  publishChatThreadMessageCreatedSafely,
   publishDesktopShellAuthorizationChangedSafely,
 } from "../external/realtime";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -99,6 +103,7 @@ interface CompletionSuccessResponse {
    * `scheduleReleasedSlotPicks$` for them before any side effect. */
   readonly releasedSlots: readonly ReleasedRunSlot[];
   readonly sideEffects?: CompleteSideEffectsInput;
+  readonly marketingRewardEventId?: string | null;
 }
 
 type CompletionResponse =
@@ -142,6 +147,7 @@ interface CompletionCommit {
 
 type ReleasedCompletionCommit = CompletionCommit & {
   readonly releasedSlots: readonly ReleasedRunSlot[];
+  readonly marketingRewardEventId?: string | null;
 };
 
 const L = logger("webhook:complete");
@@ -351,6 +357,7 @@ function completionResponse(
     status: 200,
     body: { success: true, status: commit.responseStatus },
     releasedSlots: commit.releasedSlots,
+    marketingRewardEventId: commit.marketingRewardEventId,
     ...(sideEffects ? { sideEffects } : {}),
   };
 }
@@ -375,11 +382,26 @@ const dispatchTerminalCompleteSideEffects$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     if (input.deliveryNotification?.chatEventsAppended) {
-      await publishChatThreadMessageCreatedSafely({
-        userId: input.deliveryNotification.userId,
-        orgId: input.orgId,
-        threadId: input.deliveryNotification.chatThreadId,
-      });
+      waitUntil(
+        set(
+          projectCommittedChatThreadSearch$,
+          {
+            userId: input.deliveryNotification.userId,
+            orgId: input.orgId,
+            threadId: input.deliveryNotification.chatThreadId,
+          },
+          signal,
+        ),
+      );
+      await set(
+        publishChatThreadMessageCreated$,
+        {
+          userId: input.deliveryNotification.userId,
+          orgId: input.orgId,
+          threadId: input.deliveryNotification.chatThreadId,
+        },
+        signal,
+      );
       signal.throwIfAborted();
     }
     const callbackStatus =
@@ -420,7 +442,7 @@ const dispatchTerminalCompleteSideEffects$ = command(
     await set(processOrgUsageEvents$, input.orgId, signal);
     signal.throwIfAborted();
 
-    await tapError(
+    const usagePublication = await tapError(
       set(maybeEmitRunUsageEvent$, input.runId, signal),
       (error) => {
         L.error("Failed to emit chat usage message after run completion", {
@@ -431,6 +453,11 @@ const dispatchTerminalCompleteSideEffects$ = command(
       },
     );
     signal.throwIfAborted();
+    if (usagePublication) {
+      waitUntil(
+        set(projectCommittedChatThreadSearch$, usagePublication, signal),
+      );
+    }
   },
 );
 
@@ -465,11 +492,26 @@ export const dispatchCompleteSideEffectsCore$ = command(
         );
         signal.throwIfAborted();
         if (input.chatEventsAppended) {
-          await publishChatThreadMessageCreatedSafely({
-            userId: input.userId,
-            orgId: input.orgId,
-            threadId: input.chatThreadId,
-          });
+          waitUntil(
+            set(
+              projectCommittedChatThreadSearch$,
+              {
+                userId: input.userId,
+                orgId: input.orgId,
+                threadId: input.chatThreadId,
+              },
+              signal,
+            ),
+          );
+          await set(
+            publishChatThreadMessageCreated$,
+            {
+              userId: input.userId,
+              orgId: input.orgId,
+              threadId: input.chatThreadId,
+            },
+            signal,
+          );
           signal.throwIfAborted();
         }
       }
@@ -477,11 +519,26 @@ export const dispatchCompleteSideEffectsCore$ = command(
     }
     if (input.kind === "delivery-finalization") {
       if (input.chatEventsAppended) {
-        await publishChatThreadMessageCreatedSafely({
-          userId: input.userId,
-          orgId: input.orgId,
-          threadId: input.chatThreadId,
-        });
+        waitUntil(
+          set(
+            projectCommittedChatThreadSearch$,
+            {
+              userId: input.userId,
+              orgId: input.orgId,
+              threadId: input.chatThreadId,
+            },
+            signal,
+          ),
+        );
+        await set(
+          publishChatThreadMessageCreated$,
+          {
+            userId: input.userId,
+            orgId: input.orgId,
+            threadId: input.chatThreadId,
+          },
+          signal,
+        );
         signal.throwIfAborted();
       }
       // Undelivered input stays queued; the released slot's org pick or the
@@ -570,6 +627,25 @@ function createCompletionTerminalRedrive(runId: string) {
   });
 }
 
+/** A timed-out Runner's completion acknowledges release of its claimed packages. */
+const releaseTimedOutRunAttachments$ = command(
+  async (
+    { set },
+    owner: { readonly runId: string; readonly orgId: string },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(writeDb$)
+      .delete(claimedWorkflowAttachments)
+      .where(
+        and(
+          eq(claimedWorkflowAttachments.runId, owner.runId),
+          eq(claimedWorkflowAttachments.orgId, owner.orgId),
+        ),
+      );
+    signal.throwIfAborted();
+  },
+);
+
 /** One validated completion request owns this graph and its lazy post-commit read. */
 export function createAgentRunCompletion(runId: string, userId: string) {
   const initialRun$ = createInitialCompletionRun(runId, userId);
@@ -590,14 +666,11 @@ export function createAgentRunCompletion(runId: string, userId: string) {
       if (initialRun.status === "timeout") {
         // Terminal status or silence did not release the claim's packages.
         // This authenticated completion is the Runner's actual acknowledgement.
-        await db
-          .delete(claimedWorkflowAttachments)
-          .where(
-            and(
-              eq(claimedWorkflowAttachments.runId, runId),
-              eq(claimedWorkflowAttachments.orgId, initialRun.orgId),
-            ),
-          );
+        await set(
+          releaseTimedOutRunAttachments$,
+          { runId, orgId: initialRun.orgId },
+          signal,
+        );
         signal.throwIfAborted();
         return settledRunCompletionResponse(initialRun);
       }
@@ -660,7 +733,13 @@ export function createAgentRunCompletion(runId: string, userId: string) {
               await db.execute(statement);
             }
           }
-          return { kind: "committed", commit: committed } as const;
+          return {
+            kind: "committed",
+            commit: {
+              ...committed,
+              marketingRewardEventId: row.marketingRewardEventId,
+            },
+          } as const;
         })();
         signal.throwIfAborted();
         if (result.kind === "retry") {

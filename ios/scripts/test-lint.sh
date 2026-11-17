@@ -124,6 +124,34 @@ fi
 grep -F 'statement_position' "$test_root/lint.log" >/dev/null
 rm "$fixture/Okou/Statement.swift"
 
+# The real strict entry point must enforce total file length in every target,
+# including directories whose nested configs permit force operations.
+file_length_paths=("${production_paths[@]}" "${test_paths[@]}" Widgets)
+for path in "${file_length_paths[@]}"; do
+  mkdir -p "$fixture/$path"
+  python3 - "$fixture/$path/LengthBoundary.swift" <<'PY'
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text("// File length boundary.\n" * 800)
+PY
+done
+if ! run_lint; then
+  cat "$test_root/lint.log" >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  printf '// One line beyond the strict limit.\n' >> "$fixture/$path/LengthBoundary.swift"
+done
+if run_lint; then
+  echo 'A file above 800 total lines passed strict lint.' >&2
+  exit 1
+fi
+for path in "${file_length_paths[@]}"; do
+  grep -F "$path/LengthBoundary.swift" "$test_root/lint.log" | grep -F '(file_length)' >/dev/null
+  rm "$fixture/$path/LengthBoundary.swift"
+done
+
 # The production-only state rule must be enabled by the real root config.
 for path in "${production_paths[@]}"; do
   printf 'var sharedState = 0\n' > "$fixture/$path/GlobalState.swift"

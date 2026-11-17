@@ -71,6 +71,10 @@ interface EmailOutboxDrainContext {
   readonly currentTimeMs: number;
 }
 
+interface EmailOutboxItemSelection extends EmailOutboxDrainContext {
+  readonly outboxId: string | null;
+}
+
 const log = logger("EmailCommon");
 const USER_CACHE_TTL_MS = 900_000;
 const MAX_ATTEMPTS = 3;
@@ -613,8 +617,10 @@ const emailConnectionRevoked$ = command(async ({ set }, row: OutboxRow) => {
 });
 
 async function prepareNextOutboxItem(
-  { set }: Parameters<Write<Promise<PrepareOutcome>, [number]>>[0],
-  currentTimeMs: number,
+  {
+    set,
+  }: Parameters<Write<Promise<PrepareOutcome>, [EmailOutboxItemSelection]>>[0],
+  selection: EmailOutboxItemSelection,
 ): Promise<PrepareOutcome> {
   const db = set(writeDb$);
   const [selectedRow] = await db
@@ -625,12 +631,15 @@ async function prepareNextOutboxItem(
     .from(emailOutbox)
     .where(
       and(
+        selection.outboxId === null
+          ? undefined
+          : eq(emailOutbox.id, selection.outboxId),
         // A sending row remains owned until its existing recovery lease ends.
         inArray(emailOutbox.status, ["pending", "sending"]),
         or(
           isNull(emailOutbox.nextRetryAt),
           // Keep Date encoding bound to the timestamp column.
-          lte(emailOutbox.nextRetryAt, new Date(currentTimeMs)),
+          lte(emailOutbox.nextRetryAt, new Date(selection.currentTimeMs)),
         ),
       ),
     )
@@ -844,8 +853,8 @@ const completeOutboxItem$ = command(
 );
 
 const drainNextOutboxItem$ = command(
-  async ({ set }, currentTimeMs: number): Promise<boolean> => {
-    const prepared = await set(prepareNextOutboxItem$, currentTimeMs);
+  async ({ set }, selection: EmailOutboxItemSelection): Promise<boolean> => {
+    const prepared = await set(prepareNextOutboxItem$, selection);
     if (prepared.kind === "empty") {
       return false;
     }
@@ -871,6 +880,19 @@ const drainNextOutboxItem$ = command(
   },
 );
 
+/** Immediate delivery belongs to the exact committed outbox identity. */
+export const sendEmailOutboxItem$ = command(
+  async ({ set }, outboxId: string, signal: AbortSignal): Promise<boolean> => {
+    signal.throwIfAborted();
+    const processed = await set(drainNextOutboxItem$, {
+      currentTimeMs: now(),
+      outboxId,
+    });
+    signal.throwIfAborted();
+    return processed;
+  },
+);
+
 export const drainEmailOutboxBatch$ = command(
   async (
     { set },
@@ -881,7 +903,10 @@ export const drainEmailOutboxBatch$ = command(
 
     for (let index = 0; index < MAX_OUTBOX_BATCH_SIZE; index++) {
       signal.throwIfAborted();
-      const hadItem = await set(drainNextOutboxItem$, context.currentTimeMs);
+      const hadItem = await set(drainNextOutboxItem$, {
+        currentTimeMs: context.currentTimeMs,
+        outboxId: null,
+      });
       signal.throwIfAborted();
       if (!hadItem) {
         break;

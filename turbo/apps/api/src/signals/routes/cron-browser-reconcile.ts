@@ -18,7 +18,11 @@ const reconcileBrowsersRoute$ = command(
       set(reconcileBrowsers$, null, signal),
     ]);
     signal.throwIfAborted();
-    const screenshots = await set(cleanupBrowserScreenshots$, 20, signal);
+    const screenshots = await set(
+      cleanupBrowserScreenshots$,
+      { limit: 20, chatThreadId: null },
+      signal,
+    );
     signal.throwIfAborted();
     const body = {
       checked: userActions + browsers.checked + screenshots.checked,
