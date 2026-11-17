@@ -296,19 +296,30 @@ async fn collaboration_fallback_preserves_structure_beyond_content_discovery_lim
                 .is_true(move |request| {
                     let mut payload: Value = serde_json::from_slice(request.body_ref()).unwrap();
                     let mut actual = std::mem::take(&mut payload["events"][0]);
+                    let Some(actual_states) = actual
+                        .get_mut("item")
+                        .and_then(|item| item.get_mut("agents_states"))
+                    else {
+                        return false;
+                    };
                     for (child_id, state) in expected["item"]["agents_states"].as_object().unwrap()
                     {
                         if state["message"] == "[event content truncated for delivery]" {
-                            let message = &mut actual["item"]["agents_states"][child_id]["message"];
+                            let Some(Value::String(message)) = actual_states
+                                .get_mut(child_id)
+                                .and_then(|state| state.get_mut("message"))
+                            else {
+                                return false;
+                            };
                             // A per-field notice can be smaller than the fallback notice
                             // for short strings that expand under JSON escaping.
-                            if !message.as_str().is_some_and(|text| {
-                                text == "[event content truncated for delivery]"
-                                    || text.contains("bytes truncated for delivery")
-                            }) {
+                            if message.as_str() != "[event content truncated for delivery]"
+                                && !message.contains("bytes truncated for delivery")
+                            {
                                 return false;
                             }
-                            *message = state["message"].clone();
+                            message.clear();
+                            message.push_str(state["message"].as_str().unwrap());
                         }
                     }
                     request.body_ref().len() <= LIMIT
