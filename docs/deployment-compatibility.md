@@ -141,7 +141,7 @@ externally consumed data.
 Pi executes the installed CLI for the whole session. API and Runner releases can
 differ, so launch payloads and model configurations must remain compatible with
 supported Runner builds. Deploy a new CLI reader in the Runner before activating
-an API writer that requires it; model-config generation capabilities gate claims.
+an API writer that requires it.
 
 Current Run contexts use the installed CLI and do not capture a package URL.
 Historical contexts can still reference packages used by earlier Guests or
@@ -192,7 +192,8 @@ legacy fields while tolerant older telemetry readers remain reachable.
 Compatibility applies to:
 
 - frontend/API requests and responses;
-- Runner/API poll, claim, heartbeat, completion, artifact, and resume protocols;
+- API-to-Runner dispatch and Runner/API heartbeat, completion, artifact, and
+  resume protocols;
 - data written by one API version and read by another;
 - schema migrations overlapping outgoing API instances;
 - queue and persisted job/Run/session payloads;

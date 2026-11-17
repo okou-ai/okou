@@ -844,26 +844,14 @@ pub(super) fn prepare_run_payload_for_run(
     }
 
     let mut disallowed_tools = String::new();
-    let mut tools = String::new();
-    let mut settings = String::new();
-    if effective_cli_framework(&context.cli_agent_type) == EffectiveCliFramework::ClaudeCode {
-        if let Some(values) = &context.disallowed_tools {
-            disallowed_tools = serialize_claude_tool_env(
-                guest_contracts::env::DISALLOWED_TOOLS_RUN_PAYLOAD_FIELD,
-                values,
-            )?
-            .unwrap_or_default();
-        }
-        if let Some(values) = &context.tools {
-            tools =
-                serialize_claude_tool_env(guest_contracts::env::TOOLS_RUN_PAYLOAD_FIELD, values)?
-                    .unwrap_or_default();
-        }
-        if let Some(value) = &context.settings
-            && !value.is_empty()
-        {
-            settings = value.clone();
-        }
+    if effective_cli_framework(&context.cli_agent_type) == EffectiveCliFramework::ClaudeCode
+        && let Some(values) = &context.disallowed_tools
+    {
+        disallowed_tools = serialize_claude_tool_env(
+            guest_contracts::env::DISALLOWED_TOOLS_RUN_PAYLOAD_FIELD,
+            values,
+        )?
+        .unwrap_or_default();
     }
 
     let payload = guest_contracts::env::RunPayload {
@@ -880,8 +868,6 @@ pub(super) fn prepare_run_payload_for_run(
             .unwrap_or_default(),
         secret_values: String::new(),
         disallowed_tools,
-        tools,
-        settings,
         artifacts: serialize_artifacts_payload(context)?,
         feature_flags: serialize_feature_flags_payload(context)?,
         codex_runtime_config: serialize_codex_runtime_config_payload(context)?,

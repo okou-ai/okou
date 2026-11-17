@@ -24,8 +24,6 @@ pub(super) fn build_claude_command_for_runtime(
             append_system_prompt_file: (!runtime.append_system_prompt.is_empty())
                 .then_some(runtime.claude_append_system_prompt_file.as_ref()),
             disallowed_tools: runtime.disallowed_tools.as_ref(),
-            tools: runtime.tools.as_ref(),
-            settings: runtime.settings.as_ref(),
             replay_user_messages,
         },
     )
@@ -54,8 +52,6 @@ struct ClaudeArgsConfig<'a> {
     resume_id: &'a str,
     append_system_prompt_file: Option<&'a str>,
     disallowed_tools: &'a str,
-    tools: &'a str,
-    settings: &'a str,
     replay_user_messages: bool,
 }
 
@@ -87,12 +83,6 @@ fn build_claude_args(config: ClaudeArgsConfig<'_>) -> Vec<String> {
     }
 
     push_comma_separated_flag_values(&mut args, "--disallowed-tools", config.disallowed_tools);
-    push_comma_separated_flag_values(&mut args, "--tools", config.tools);
-
-    if !config.settings.is_empty() {
-        args.push("--settings".to_string());
-        args.push(config.settings.to_string());
-    }
 
     if let Some(effort) = config
         .effort

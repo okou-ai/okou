@@ -975,10 +975,6 @@ const executionContextObjectSchema = object({
   connectorRuntimeTargets: connectorRuntimeTargetsSchema,
   // Tools to disable in Claude CLI (passed as --disallowed-tools)
   disallowedTools: array(string()).optional(),
-  // Tools to make available in Claude CLI (passed as --tools)
-  tools: array(string()).optional(),
-  // Settings JSON to pass to Claude CLI (passed as --settings)
-  settings: string().optional(),
   // Feature flags evaluated at job creation time (all switch states for user/org)
   featureFlags: record(string(), boolean()).optional(),
   billableFirewalls: array(string()).optional(),
