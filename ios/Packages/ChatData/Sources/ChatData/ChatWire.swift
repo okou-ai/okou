@@ -169,7 +169,8 @@ struct ChatEventRow: Decodable, Sendable {
   private let outputError: String?
 
   private enum CodingKeys: String, CodingKey {
-    case id, chatThreadId, runId, revokesEventId, seqId, createdAt, eventType, failureReason, payload
+    case id, chatThreadId, runId, revokesEventId, seqId, createdAt, eventType
+    case failureReason, payload
   }
   private enum PayloadKeys: String, CodingKey { case error }
 
@@ -188,7 +189,7 @@ struct ChatEventRow: Decodable, Sendable {
     } else {
       payload = try values.decodeIfPresent(ChatEvent.Payload.self, forKey: .payload)
     }
-    if (eventType == .inputRejected || eventType == .outputError), payload != nil {
+    if eventType == .inputRejected || eventType == .outputError, payload != nil {
       let fields = try values.nestedContainer(keyedBy: PayloadKeys.self, forKey: .payload)
       let error = try fields.decodeIfPresent(String.self, forKey: .error)
       inputError = eventType == .inputRejected ? error : nil
