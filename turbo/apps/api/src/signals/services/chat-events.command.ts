@@ -646,7 +646,7 @@ const resolveIncomingAttachmentObject$ = command(
       }
       counts.verifiedPrivate += 1;
       const head = await get(
-        s3ObjectHead(owned.bucket, owned.key, signal, counts),
+        s3ObjectHead(owned.bucket, owned.key, counts, signal),
       );
       signal.throwIfAborted();
       if (head.kind === "missing") {

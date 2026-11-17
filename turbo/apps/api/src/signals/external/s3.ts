@@ -1918,15 +1918,15 @@ export function isS3NotFoundError(error: unknown): boolean {
 export function s3ObjectHead(
   bucket: string,
   key: string,
-  signal?: AbortSignal,
   counts?: S3ObjectReadCounts,
+  signal?: AbortSignal,
 ): Computed<Promise<S3ObjectHead>> {
   return s3ObjectHeadWithClient(
     s3ClientForBucket(bucket),
     bucket,
     key,
-    signal,
     counts,
+    signal,
   );
 }
 
@@ -1934,8 +1934,8 @@ function s3ObjectHeadWithClient(
   client$: Computed<S3Client>,
   bucket: string,
   key: string,
-  signal?: AbortSignal,
   counts?: S3ObjectReadCounts,
+  signal?: AbortSignal,
 ): Computed<Promise<S3ObjectHead>> {
   return computed(async (get): Promise<S3ObjectHead> => {
     const client = get(client$);

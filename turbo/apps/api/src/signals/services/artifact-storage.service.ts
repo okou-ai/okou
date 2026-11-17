@@ -428,7 +428,7 @@ const resolveExactV2ArtifactObject$ = command(
   ): Promise<ResolvedArtifactObject | null> => {
     const { bucket, userId, id, filenameHint, variant } = args;
     const key = buildArtifactKeyV2(id, filenameHint, variant);
-    const head = await get(s3ObjectHead(bucket, key, signal, args.counts));
+    const head = await get(s3ObjectHead(bucket, key, args.counts, signal));
     signal.throwIfAborted();
     return resolvedV2ArtifactObjectFromHead({ userId, id, key, head });
   },
@@ -451,7 +451,7 @@ const resolveV2ArtifactObject$ = command(
     );
     signal.throwIfAborted();
     for (const object of objects) {
-      const head = await get(s3ObjectHead(bucket, object.key, signal, counts));
+      const head = await get(s3ObjectHead(bucket, object.key, counts, signal));
       signal.throwIfAborted();
       const resolved = resolvedV2ArtifactObjectFromHead({
         userId,
