@@ -20,8 +20,8 @@ const POSTER_ID = "f0000000-0000-4000-a000-000000000941";
 const VIDEO_URL = "https://videos.example.test/clip.mp4";
 const R2_ORIGIN = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
 
-function rawVideo(poster: string): string {
-  return `<video aria-label="Preview clip" controls preload="none" src="${VIDEO_URL}" poster="${poster}"></video>`;
+function rawVideo(poster?: string, label = "Preview clip"): string {
+  return `<video aria-label="${label}" controls preload="none" src="${VIDEO_URL}"${poster ? ` poster="${poster}"` : ""}></video>`;
 }
 
 test.each(["artifact-reference", "uploaded-file"] as const)(
@@ -85,7 +85,7 @@ test.each(["artifact-reference", "uploaded-file"] as const)(
   },
 );
 
-test("Shared raw videos resize public posters without changing playback", async () => {
+test("Shared raw videos preserve playback with or without public posters", async () => {
   const poster = "https://a.okou.io/shared-threads/public/video/poster.jpg";
   context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
     return respond(
@@ -95,7 +95,7 @@ test("Shared raw videos resize public posters without changing playback", async 
           {
             messageIndex: 0,
             role: "assistant",
-            content: rawVideo(poster),
+            content: `${rawVideo(poster)}\n\n${rawVideo(undefined, "Posterless clip")}`,
             runIndex: 0,
           },
         ],
@@ -111,4 +111,10 @@ test("Shared raw videos resize public posters without changing playback", async 
   );
   expect(video).toHaveAttribute("src", VIDEO_URL);
   expect(video).toHaveAttribute("controls");
+  expect(video).toHaveAttribute("preload", "none");
+
+  const posterlessVideo = await screen.findByLabelText("Posterless clip");
+  expect(posterlessVideo).toHaveAttribute("src", VIDEO_URL);
+  expect(posterlessVideo).toHaveAttribute("controls");
+  expect(posterlessVideo).toHaveAttribute("preload", "none");
 });

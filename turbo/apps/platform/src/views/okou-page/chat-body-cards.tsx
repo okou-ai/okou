@@ -67,6 +67,10 @@ import { BrowserUserActionCard } from "./browser-user-action-card.tsx";
 import { BrowserAuthorizationCard } from "./browser-authorization-card.tsx";
 import { ComputerUseAuthorizationCard } from "./computer-use-authorization-card.tsx";
 import { ChatCard } from "./components/chat-card.tsx";
+import {
+  CHAT_NOTICE_CARD_HEIGHT_CLASS,
+  ChatNoticeCard,
+} from "./components/chat-notice-card.tsx";
 import { HostAuthorizationCard } from "./host-authorization-card.tsx";
 import { DesktopShellAuthorizationCard } from "./desktop-shell-authorization-card.tsx";
 import { BankingActionCard } from "./banking-action-card.tsx";
@@ -484,7 +488,7 @@ function ArtifactCardView({
   );
 }
 
-const CHAT_ACTION_CARD_HEIGHT_CLASS = "h-[136px] @[640px]:h-[88px]";
+const CHAT_ACTION_CARD_HEIGHT_CLASS = CHAT_NOTICE_CARD_HEIGHT_CLASS;
 
 function UnavailableActionCard({ fillFrame = false }: { fillFrame?: boolean }) {
   const { t } = useTranslation();
@@ -712,31 +716,43 @@ export function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
     detach(open(pageSignal), Reason.DomCallback);
   };
 
-  if (
-    billing.state === "loading" ||
-    (billing.state === "hasData" && billing.data.tier === "limited-free-1")
-  ) {
-    return null;
-  }
+  const pending = billing.state === "loading";
+  const available =
+    billing.state === "hasData" && billing.data.tier !== "limited-free-1";
 
   return (
-    <ChatCard
-      data-testid="plan-upgrade-card"
-      className="flex h-[136px] w-full flex-col justify-between @[640px]:h-[88px] gap-3 p-3 text-left @[640px]:flex-row @[640px]:items-center @[640px]:justify-between"
+    <ChatNoticeCard
+      data-testid={
+        pending
+          ? "plan-upgrade-card-loading"
+          : available
+            ? "plan-upgrade-card"
+            : "unavailable-action-card"
+      }
+      aria-busy={pending}
+      className="flex min-w-0 flex-col justify-between gap-3 p-3 text-left @[640px]:flex-row @[640px]:items-center @[640px]:justify-between"
     >
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3 @[640px]:flex-1">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
-          <Coins size={22} />
+          {pending ? (
+            <Loader2 size={22} className="animate-spin" />
+          ) : (
+            <Coins size={22} />
+          )}
         </div>
         <div className="min-w-0">
-          <div className="truncate text-[0.9375rem] font-medium text-foreground">
+          <div className="h-6 truncate text-[0.9375rem] font-medium leading-6 text-foreground">
             {t(($) => {
-              return $.chat.billing.upgradeWorkspace;
+              return available || pending
+                ? $.chat.billing.upgradeWorkspace
+                : $.chat.actionUnavailable.title;
             })}
           </div>
-          <div className="mt-0.5 line-clamp-2 text-sm leading-5 text-muted-foreground">
+          <div className="mt-0.5 h-5 truncate text-sm leading-5 text-muted-foreground">
             {t(($) => {
-              return $.chat.billing.comparePlansDescription;
+              return available || pending
+                ? $.chat.billing.comparePlansDescription
+                : $.chat.actionUnavailable.description;
             })}
           </div>
         </div>
@@ -744,13 +760,14 @@ export function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
       <Button
         type="button"
         onClick={handleClick}
-        className="h-9 w-full shrink-0 @[640px]:w-auto"
+        disabled={!available}
+        className="h-9 w-full shrink-0 truncate @[640px]:w-auto @[640px]:max-w-[50%]"
       >
         {t(($) => {
           return $.chat.billing.comparePlans;
         })}
       </Button>
-    </ChatCard>
+    </ChatNoticeCard>
   );
 }
 
