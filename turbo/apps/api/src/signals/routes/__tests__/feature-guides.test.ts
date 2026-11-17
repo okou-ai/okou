@@ -49,11 +49,11 @@ async function identity(
 function signIn(owner: { orgId: string; userId: string }) {
   mocks.clerk.session(owner.userId, owner.orgId);
 }
-async function enable(value = true) {
+async function enable(value = true, key = FeatureSwitchKey.FeatureGuides) {
   await accept(
     clients().switches.update({
       headers,
-      body: { switches: { [FeatureSwitchKey.FeatureGuides]: value } },
+      body: { switches: { [key]: value } },
     }),
     [200],
   );
@@ -161,6 +161,107 @@ test("only delivers a published edition when its server-side feature switch is e
   );
 });
 
+test("filters bound items by effective switches and leaves empty bindings unrestricted", async () => {
+  await setupApp({
+    context,
+    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
+    isolatePg: true,
+  });
+  const input = draft();
+  const prepared = await prepare({
+    ...input,
+    content: {
+      ...input.content,
+      items: input.content.items.flatMap((item) => {
+        return [
+          { ...item, featureId: "unbound" },
+          { ...item, featureId: "null", featureSwitch: null },
+          { ...item, featureId: "empty", featureSwitch: "" },
+          {
+            ...item,
+            featureId: "projects",
+            featureSwitch: FeatureSwitchKey.Projects,
+          },
+          {
+            ...item,
+            featureId: "unavailable",
+            featureSwitch: "unavailable-switch",
+          },
+        ];
+      }),
+    },
+  });
+  await publish(prepared);
+  // Projects is available to staff through the registry audience.
+  await enable();
+  await expect(current()).resolves.toMatchObject({
+    content: { items: prepared.input.content.items.slice(0, 4) },
+  });
+
+  await identity();
+  await enable();
+  await expect(current()).resolves.toMatchObject({
+    content: { items: prepared.input.content.items.slice(0, 3) },
+  });
+  await enable(true, FeatureSwitchKey.Projects);
+  await expect(current()).resolves.toMatchObject({
+    content: { items: prepared.input.content.items.slice(0, 4) },
+  });
+  await enable(false, FeatureSwitchKey.Projects);
+  await expect(current()).resolves.toMatchObject({
+    content: { items: prepared.input.content.items.slice(0, 3) },
+  });
+});
+
+test("suppresses an entirely gated edition without revealing a backlog or consuming its receipt", async () => {
+  await setupApp({
+    context,
+    routes: [...featureGuidesRoutes, ...featureSwitchesRoutes],
+    isolatePg: true,
+  });
+  mockNow(NOW);
+  const older = await prepare();
+  await publish(older);
+  mockNow(NOW + 1000);
+  const input = draft();
+  const prepared = await prepare({
+    ...input,
+    content: {
+      ...input.content,
+      items: input.content.items.map((item) => {
+        return { ...item, featureSwitch: FeatureSwitchKey.Projects };
+      }),
+    },
+  });
+  await publish(prepared);
+  await identity();
+  await enable();
+  await expect(current()).resolves.toBeNull();
+  mockOptionalEnv("ENV", "preview");
+  const preview = await accept(
+    clients().guide.current({ headers, query: { preview: "1" } }),
+    [200],
+  );
+  expect(preview.body.edition).toBeNull();
+  await enable(true, FeatureSwitchKey.Projects);
+  await expect(current()).resolves.toMatchObject({
+    id: prepared.editionId,
+    content: prepared.input.content,
+  });
+  await accept(
+    clients().guide.seen({
+      headers,
+      params: { editionId: prepared.editionId },
+      body: { revisionId: prepared.revisionId },
+    }),
+    [200],
+  );
+  await enable(false, FeatureSwitchKey.Projects);
+  await expect(current()).resolves.toBeNull();
+  await enable(true, FeatureSwitchKey.Projects);
+  await expect(current()).resolves.toBeNull();
+});
+
 test("persists seen status per user and edition across workspaces and content revisions", async () => {
   await setupApp({
     context,
@@ -266,7 +367,12 @@ test("keeps drafts immutable and publishes only the selected revision", async ()
       headers,
       body: {
         ...prepared.input,
-        content: { ...prepared.input.content, title: "A later draft" },
+        content: {
+          ...prepared.input.content,
+          items: prepared.input.content.items.map((item) => {
+            return { ...item, featureSwitch: FeatureSwitchKey.Projects };
+          }),
+        },
       },
     }),
     [200],
@@ -277,7 +383,7 @@ test("keeps drafts immutable and publishes only the selected revision", async ()
   await enable();
   await expect(current()).resolves.toMatchObject({
     revisionId: prepared.revisionId,
-    content: { title: prepared.input.content.title },
+    content: prepared.input.content,
   });
   signIn(prepared.staff);
   await accept(
